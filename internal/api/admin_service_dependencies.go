@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -230,11 +231,20 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	// probe, not a Server-to-itself HTTP proxy request. A configured domain
 	// is deployment intent only: it does not prove ACME/TLS or public reachability.
 	caddyContainerObserved := false
+	// Deployment declaration is NOT live TLS evidence; a missing old Host
+	// Manager must never turn a configured IP-only gateway falsely green.
+	declaredLANIP := os.Getenv("XD_LAN_HTTPS_IP")
 	if gateway, valid := s.readCaddyHostStatus(); valid {
+		lanRequired := declaredLANIP != "" || gateway.LANHTTPSConfigured
 		caddyContainerObserved = gateway.State != "unknown"
-		services[10].HTTPSConfigured = &gateway.HTTPSConfigured
+		configured := gateway.HTTPSConfigured || lanRequired
+		services[10].HTTPSConfigured = &configured
+		lanTLS := caddyLANLocalEffectState(gateway, valid, declaredLANIP)
 		if gateway.TLSCheckSupported {
 			services[10].LocalTLSState = gateway.TLSState
+		}
+		if !gateway.HTTPSConfigured && lanRequired {
+			services[10].LocalTLSState = lanTLS
 		}
 		mode := "宿主机配置未要求自定义 HTTPS 域名"
 		if gateway.HTTPSConfigured {
@@ -260,6 +270,27 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 				default:
 					services[10].Status = "unknown"
 					services[10].Detail = "内部 HTTP 代理健康，但宿主机尚未报告可信 HTTPS 证书验证状态"
+				}
+			}
+			// A healthy Caddy process alone never proves the configured private
+			// IP entry. Both endpoints must independently verify when enabled.
+			if lanRequired {
+				switch lanTLS {
+				case "verified":
+					if gateway.HTTPSConfigured && services[10].Status == "ready" {
+						services[10].Detail = "本机公网域名及私网 IP HTTPS 证书链分别验证通过；公网访问与终端 CA 信任未验证"
+					} else if !gateway.HTTPSConfigured {
+						services[10].Status = "ready"
+						services[10].Detail = "内部 HTTP 代理健康；私网 IP HTTPS 的本机 CA、证书 IP SAN 和健康响应已验证；终端 CA 信任及公网访问未验证"
+					}
+				case "failed", "invalid-config":
+					services[10].Status = "unavailable"
+					services[10].Detail = "Caddy 内部 HTTP 健康，但私网 IP HTTPS 本机证书/配置或健康验证失败"
+				default:
+					if services[10].Status == "ready" {
+						services[10].Status = "unknown"
+					}
+					services[10].Detail = "Caddy 内部 HTTP 健康，但缺少可信的私网 IP HTTPS 本机验证；不代表已生效"
 				}
 			}
 		case "unhealthy":

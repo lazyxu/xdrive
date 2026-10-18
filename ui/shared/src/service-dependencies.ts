@@ -67,6 +67,7 @@ export type XDriveCaddyHTTPSConfig = {
   host_observed: boolean
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  host_lan_tls_state?: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
 }
 export type XDriveCaddyHTTPSUpdate = {
   revision: number
