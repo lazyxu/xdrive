@@ -53,7 +53,7 @@ Usage:
   xdrive-server media status [--json]
   xdrive-server media verify [--json]
   xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails] [--gc-intelligence]
-  xdrive-server migrate-user USER
+  xdrive-server migrate-user USER [--grant-docker-group]
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
   xdrive-server admin list

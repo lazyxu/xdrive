@@ -7,7 +7,7 @@ usage() {
 Migrate an xDrive server deployment from root to a normal Linux user.
 
 Usage:
-  server-migrate-user.sh USER
+  server-migrate-user.sh USER [--grant-docker-group]
 
 Typical:
   /root/.xd/bin/xdrive-server migrate-user alice
@@ -16,13 +16,30 @@ Defaults:
   source: /root/.xd (or the current xDrive home when invoked via xdrive-server)
   target: /home/USER/.xd
 
+Use --grant-docker-group only when deliberately approving root-equivalent host
+privileges. The group grant persists even if migration fails.
+
 The source deployment is retained after success as a rollback copy. It is not
 deleted automatically.
 EOF
 }
 
-[[ $# -eq 1 ]] || { usage >&2; exit 2; }
-TARGET_USER="$1"
+GRANT_DOCKER_GROUP=0
+case "$#" in
+  1)
+    [[ "$1" != -* ]] || { usage >&2; exit 2; }
+    TARGET_USER="$1"
+    ;;
+  2)
+    [[ "$1" != -* && "$2" == "--grant-docker-group" ]] || { usage >&2; exit 2; }
+    TARGET_USER="$1"
+    GRANT_DOCKER_GROUP=1
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
 
 if [[ "${EUID:-$(id -u)}" -ne 0 && "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" != "1" ]]; then
   echo "xDrive migration must be started by root because it reads the root deployment and changes file ownership." >&2
@@ -174,6 +191,55 @@ select_target_docker() {
   [[ -n "$TARGET_DOCKER_SECURITY" ]] || TARGET_DOCKER_SECURITY='[]'
 }
 
+grant_target_docker_group() {
+  local group_line group_gid socket_gid security_options
+  local -a clean_docker_env=(
+    env
+    -u DOCKER_HOST
+    -u DOCKER_CONTEXT
+    -u DOCKER_CONFIG
+    -u DOCKER_TLS_VERIFY
+    -u DOCKER_CERT_PATH
+    -u DOCKER_API_VERSION
+  )
+
+  group_line="$(getent group docker 2>/dev/null || true)"
+  group_gid="$(printf '%s\n' "$group_line" | cut -d: -f3)"
+  if [[ ! "$group_gid" =~ ^[0-9]+$ ]]; then
+    echo "xDrive migration: system docker group does not exist; no privileges changed." >&2
+    return 1
+  fi
+  if ! command -v usermod >/dev/null 2>&1; then
+    echo "xDrive migration: usermod is required to grant Docker group access." >&2
+    return 1
+  fi
+  if id -nG "$TARGET_USER" | tr ' ' '\n' | grep -Fxq docker; then
+    echo "xDrive migration: user '$TARGET_USER' is already in docker group but Docker is inaccessible." >&2
+    return 1
+  fi
+
+  # Verify the real local rootful socket before granting a host-root-equivalent
+  # group; do not confuse a working remote/rootless context with system Docker.
+  socket_gid="$(stat -Lc '%g' /var/run/docker.sock 2>/dev/null || true)"
+  if [[ "$socket_gid" != "$group_gid" ]]; then
+    echo "xDrive migration: /var/run/docker.sock is not owned by docker group; no privileges changed." >&2
+    return 1
+  fi
+  if ! security_options="$("${clean_docker_env[@]}" docker --host unix:///var/run/docker.sock \
+        info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null)" ||
+      [[ -z "$security_options" || "$security_options" == *rootless* ]]; then
+    echo "xDrive migration: a rootful system Docker daemon is not available; no privileges changed." >&2
+    return 1
+  fi
+
+  echo "[xDrive] granting '$TARGET_USER' docker group membership (root-equivalent host access)..." >&2
+  if ! usermod -aG docker "$TARGET_USER"; then
+    echo "xDrive migration: failed to update docker group membership." >&2
+    return 1
+  fi
+  echo "[xDrive] docker group membership is permanent even if the following migration fails." >&2
+}
+
 source_compose() {
   docker compose --env-file "$SOURCE_ENV" -f "$SOURCE_COMPOSE" "$@" </dev/null
 }
@@ -183,10 +249,19 @@ target_compose() {
 }
 
 if ! select_target_docker; then
-  echo "xDrive migration: user '$TARGET_USER' cannot access a Docker daemon." >&2
-  echo "Checked the target user's clean Docker context, $TARGET_RUNTIME_DIR/docker.sock, and /var/run/docker.sock." >&2
-  echo "Configure Docker Rootless Mode or grant this user Docker access, then retry." >&2
-  exit 1
+  # Group membership grants root-equivalent control. Only an explicit opt-in
+  # may change it, and only after all ordinary/Rootless probes fail.
+  if [[ "$GRANT_DOCKER_GROUP" != "1" ]] ||
+      ! grant_target_docker_group || ! select_target_docker; then
+    echo "xDrive migration: user '$TARGET_USER' cannot access a Docker daemon." >&2
+    echo "Checked the target user's clean Docker context, $TARGET_RUNTIME_DIR/docker.sock, and /var/run/docker.sock." >&2
+    if [[ "$GRANT_DOCKER_GROUP" == "1" ]]; then
+      echo "Docker group authorization failed or did not provide access; check the daemon and socket configuration." >&2
+    else
+      echo "Configure Docker Rootless Mode, grant Docker access yourself, or retry with USER --grant-docker-group." >&2
+    fi
+    exit 1
+  fi
 fi
 if ! target_docker compose version </dev/null >/dev/null 2>&1; then
   echo "xDrive migration: Docker Compose v2 is unavailable to user '$TARGET_USER'." >&2
