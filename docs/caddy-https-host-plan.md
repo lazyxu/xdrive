@@ -1,5 +1,29 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C1-B · 已签名批准的 Rescue 镜像与异机停机观察绑定（只读，2026-10-18）
+
+**前置：** NET-M5-C1-A #2080 已通过准确工作提交的完整 CI 并以 Rebase 合并，旧 Caddy 专题分支已清理。C1-A 四阶段 before → primary-down → 异机 SSH 管理员登录 → primary-down → restored 只证明相互关联的只读观察，原先**没有在每阶段复核已签名批准的 Rescue 镜像**。
+
+C1-B 为同一个异机验收脚本增加**显式 opt-in 的** `--require-approved-runtime` 附加参数，不影响已有只读命令。独立操作员需从另外的可信渠道分别固定远端两个 Python 检查器 SHA-256、操作员 Ed25519 公钥 DER 指纹及由该密钥审核的独立 OCI Rescue 镜像 digest；批准清单/签名/公钥位于远端受保护文件，不传至 CLI 输出、浏览器、Server 或 Desktop。原阶段脚本与主机密钥钉住逻辑不放宽。
+
+每次阶段采样严格执行：（1）核对四个远端只读 checker 脚本 SHA；（2）对远端私有 `.env`、Compose、签名清单、签名和公钥读取 5 个 SHA（仅散列，不读取明文，拒绝字段/路径错序）；（3）执行已经审查的 `caddy-rescue-approved-runtime-check.py`，复核受签名批准的 OCI digest、真实 Rescue 容器身份、独立运行状态和输入文件在同一窗口未变；（4）再次核对五项私有文件摘要，获取原只读 Caddy 阶段证据后第三次核对；（5）重复核对四个远端 checker 本身。跨 before/down/down/restored 四次采样的所有五个文件摘要必须字节一致；任何失败立即阻断，没有「有条件通过」或误称 `Host Apply`。
+
+新增参数（必须完整提供，且只允许在**另一个可信操作员终端**且主机明确准备恢复方案后手动运行）：
+
+```bash
+python3 scripts/caddy-rescue-supervised-outage-check.py \
+  "$TRUSTED_OPERATOR_SSH_TARGET" "$PINNED_KNOWN_HOSTS" 3080 22 \
+  "$REMOTE_TRUSTED_XDRIVE_SCRIPTS/caddy-rescue-primary-state-witness.py" \
+  "$REMOTE_XDRIVE_ENV" "$REMOTE_XDRIVE_COMPOSE" \
+  "$INDEPENDENT_WITNESS_SHA256" "$INDEPENDENT_OPERATOR_CHECK_SHA256" \
+  --require-approved-runtime \
+  "$PINNED_APPROVED_RUNTIME_CHECK_SHA256" "$PINNED_IMAGE_APPROVAL_CHECK_SHA256" \
+  "$REMOTE_APPROVAL_MANIFEST" "$REMOTE_APPROVAL_SIGNATURE" "$REMOTE_APPROVAL_PUBKEY" \
+  "$INDEPENDENT_OPERATOR_PUBKEY_DER_SHA256" "$APPROVED_IMMUTABLE_RESCUE_IMAGE"
+```
+
+**安全与验收限制：** 签名的**Rescue 镜像运营者批准**不等于发行商/OCI provenance、主网关 Host Apply 授权或具备高可用保证。即便获得通过结果，也仍然是离散 read-only 观察，不能证明连续 outage、实际关闭入口不可达、域名公网链路、真实应用、自动受控重启和独立超时回滚。通过标记也始终 `apply_supported=false`；未提供额外参数时必须明确报告 `signed-rescue-runtime-across-phases: not-checked`。本阶段仅新增静态代码和离线 Python 正反回归，没有运行用户生产 Caddy 停机、真实异机 SSH、证书/文件修改或 Host Apply。
+
 ## NET-M5-C1-A — 异机监督主 Caddy 停机／独立 Rescue 管理员连续性验证（只读，2026-10-18）
 
 **前置状态：** #2071 双入口初始化与页面去重已合并；NET-M5-C0 只能独立验证已经开启的 IP/域名登录，现有 `caddy-rescue-primary-state-witness.py` 和 `caddy-rescue-ssh-auth-check.py` 分别观测宿主生命周期或异机救援登录，过去**不能绑定在同一次实际主网关中断期间**。本阶段只增补可验证的观察链，不授予 Host Apply/Restart。
