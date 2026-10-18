@@ -144,3 +144,31 @@ test('P58: no wrapping on narrow viewports; no duplicate Gallery/API or thumbnai
   assert.equal(source.includes('flexWrap="wrap" useFlexGap'), false)
   assert.equal(source.includes('api.listAlbumFolders('), false)
 })
+
+test('P68: real Organizer first folder-index read stays quiet even past 300ms', async () => {
+  let complete, reads=0, view
+  const pending = new Promise(resolve => { complete=resolve })
+  const actions={list:()=>{ reads++; return pending }}
+  const props={
+    albums:[],accountScope:'p68-source-folder-index',
+    folderActions:actions,loadThumbnail:async()=>null,
+  }
+  try {
+    await act(async()=>{view=Renderer.create(React.createElement(Organizer,props))})
+    const host=()=>byAttribute(view,'data-xdrive-gallery-album-folders',true)
+    assert.equal(host().props.sx.minHeight,88)
+    assert.equal(host().props['aria-busy'],true)
+    assert.equal(view.root.findAll(n=>n.type==='circularprogress').length,0)
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,360))})
+    assert.equal(host().props.sx.minHeight,88)
+    assert.equal(host().props['aria-busy'],true)
+    assert.equal(view.root.findAll(n=>n.type==='circularprogress').length,0,
+      'a sustained real Source folder list read must not flash an overlay')
+    await act(async()=>{complete([]);await flush()})
+    assert.equal(host().props['aria-busy'],undefined)
+    assert.equal(reads,1)
+    assert.ok(view.root.findAll(n=>n.type==='typography' &&
+      n.props.children==='还没有相册').length>0,
+      'only confirmed true empty index can show the empty message')
+  }finally{if(view)await act(async()=>view.unmount())}
+})

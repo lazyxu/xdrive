@@ -18,7 +18,7 @@ import {
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
-import { useXDriveDeferredLoading, useXDriveDeferredPendingLoading } from './useDeferredLoading'
+import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -247,7 +247,6 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const scopedFolders = foldersVerified ? folders : []
   const visibleFolderID = foldersVerified ? activeFolderID : 0
   const currentFolderLoading = folderBusyState.scope === folderActionScope && foldersLoading
-  const showDelayedFolderLoading = useXDriveDeferredLoading(currentFolderLoading, folderListVersionRef.current)
   const showDelayedIndexRead = useXDriveDeferredPendingLoading(!indexVerified && indexPending)
   const visibleFolderError = folderBusyState.scope === folderActionScope ? folderError : ''
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
@@ -445,7 +444,9 @@ export function XDriveMediaGalleryAlbumOrganizer({
   return (
     <Stack spacing={1.75} data-xdrive-gallery-album-organizer>
       {folderActions && (
-        <Stack spacing={1} data-xdrive-gallery-album-folders sx={{ position: 'relative', minHeight: 88 }}>
+        <Stack spacing={1} data-xdrive-gallery-album-folders
+          aria-busy={currentFolderLoading || undefined}
+          sx={{ position: 'relative', minHeight: 88 }}>
           <Stack data-xdrive-gallery-album-folder-nav-row direction="row" alignItems="center"
             spacing={1} sx={{ minHeight: 44, minWidth: 0, flexWrap: 'nowrap' }}>
             <Box ref={folderBreadcrumbViewportRef} data-xdrive-gallery-album-breadcrumb-viewport
@@ -484,16 +485,6 @@ export function XDriveMediaGalleryAlbumOrganizer({
               </Button>
             )}
           </Stack>
-          {showDelayedFolderLoading ? (
-            <Box data-xdrive-gallery-folder-loading role="status" aria-label="加载相册文件夹"
-              sx={{
-                position: 'absolute', top: 50, right: 8, zIndex: 2,
-                pointerEvents: 'none', display: 'flex', alignItems: 'center',
-                gap: 0.75, px: 1.25, py: 0.5, borderRadius: 1, bgcolor: 'background.paper',
-              }}>
-              <CircularProgress size={18} /><Typography variant="caption">加载相册文件夹…</Typography>
-            </Box>
-          ) : null}
           {visibleFolderError && <Alert severity="error" role="alert">{visibleFolderError}</Alert>}
           {visibleFolders.length > 0 && (
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1 }}>
