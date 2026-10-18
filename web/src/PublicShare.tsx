@@ -49,12 +49,13 @@ export default function PublicShareView({ token }: { token: string }) {
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     ;(async () => {
       try {
-        const result = await api.publicShare(token)
-        if (active) setShare(result)
+        const result = await api.publicShare(token, controller.signal)
+        if (active && !controller.signal.aborted) setShare(result)
       } catch (err) {
-        if (!active) return
+        if (!active || controller.signal.aborted) return
         if (err instanceof ApiError && err.status === 410) {
           setError('此分享已过期、达到下载上限或已被撤销。')
         } else if (err instanceof ApiError && err.status === 404) {
@@ -63,10 +64,10 @@ export default function PublicShareView({ token }: { token: string }) {
           setError(err instanceof Error ? err.message : '无法加载此分享。')
         }
       } finally {
-        if (active) setLoading(false)
+        if (active && !controller.signal.aborted) setLoading(false)
       }
     })()
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [api, token])
 
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads

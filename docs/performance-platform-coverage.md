@@ -1,5 +1,17 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## SH-P002 首次公共分享元数据取消（2026-10-18）
+
+**SH-P002 candidate server n3 proven, NOT 6 client acceptance:** [special #39108356394](https://github.com/lazyxu/xdrive/actions/runs/39108356394) React current→candidate cancel 0/3→3/3, new React P50 0.073157ms within 16ms; real Go/PostgreSQL held SQL Handler P50 0.114ms, SQL waiter release P50 6.439ms (all 3 under 160ms), no residual waits. Simulated held frontend Promise and separate real Go router do not form one real browser→Go proof; all six physical platform rows below remain **Not measured**. Immutable exact raw [React](performance-evidence/sh-p002-public-share-first-get/ci-run-39108356394-react.zip) / [Go](performance-evidence/sh-p002-public-share-first-get/ci-run-39108356394-go.zip). Original successful-cancel latency absent, speedup=N/A. Latest evidence-source full CI still required.
+
+来源精确 [React 原版 CI #39107293759](https://github.com/lazyxu/xdrive/actions/runs/39107293759) 的 first GET 信号 0/3、卸载 0/3、耗时不可定义；新增候选 React n3/3 与真实 PostgreSQL n3 单独验证，**0/3 first GET** 不是 Web/Desktop/Mobile/PWA 真端到端实测，六端 Not measured 不变。
+
+共享 PublicShare 首次 GET 的 UI 端尚无信号传递；另设 React 源码 n3 取消基线及真实 Go/SQL 单层 n3，禁止将任一模拟源等同六端真实浏览器→Go 测量。冻结 UI 3/3 <=16ms、Go <=160ms，保留 100k/4GiB 历史接受记录。 [SH-P002 合同](public-share-request-cancel-performance.md)。
+
+| 真正100k分享目录 Web→Go 首 GET 取消 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 真实端到端、物理媒体 | Not measured | Not measured | Not measured | Not measured | Not measured | Not measured |
+
 ## SH-P001 · shared-folder public page (2026-10-18)
 
 [Shared-folder performance protocol](folder-share-performance.md) and [immutable original SH-P001 n3 evidence](performance-evidence/folder-share-100k-public-metadata/README.md) record one **accepted genuine PostgreSQL17 Server/Gin HTTP metadata** baseline: 100,000 Node directory metadata, 1,000×100 keyset pages, n3 complete walks 16,894 / 16,699 / 16,630ms, full-walk P50 **16,699ms**, slowest page **31.165ms**, 5,733,793 HTTP body bytes each; first accurate-source [CI #39099608613](https://github.com/lazyxu/xdrive/actions/runs/39099608613) passed original freeze. This is **not** any of the six Client/GUI columns and not 100k original physical media CAS. AFTER=N/A, speedup=N/A. Separately, the true Go/PostgreSQL cancellation **single-source n1** [subtest #39099609595](https://github.com/lazyxu/xdrive/actions/runs/39099609595) observed 1 blocked SQL waiter and measured **0.290ms** `Request.Context` cancellation to handler exit with zero residual SQL waiters, below a frozen 160ms limit; still **not** a six-client or user-task-cancellation benchmark. Shared MUI and Web code cannot stand in for a real installed-PWA/browser test.

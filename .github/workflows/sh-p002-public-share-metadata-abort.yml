@@ -1,0 +1,153 @@
+name: SH-P002 Public Share metadata GET cancellation
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  mounted-react-n3:
+    if: github.head_ref == 'perf/public-share-initial-metadata-cancel-shp002-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify immutable SH-P002 original and candidate source-exact n3 archives
+        run: |
+          set -euo pipefail
+          archive_dir=docs/performance-evidence/sh-p002-public-share-first-get
+          printf '%s  %s\n' \
+            'bf42a58879f7a45853df76283ca4ece2b2b47874d2c47391109e19661e581051' "$archive_dir/ci-run-39107293759.zip" \
+            'dc78663094785ae47eb38188b9fe14993ddb07dd776aae9cbc0c2ba29edb6f63' "$archive_dir/ci-run-39108356394-react.zip" \
+            'c5766b210eb5d5560917f86e5ebccbe77a8277e1e941946b20f31365ef2e170f' "$archive_dir/ci-run-39108356394-go.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import json,pathlib,zipfile
+          folder=pathlib.Path("docs/performance-evidence/sh-p002-public-share-first-get")
+          scenarios=(
+            ("ci-run-39107293759.zip","f944b5877e291d84a6cf3628b9432a603677a047",39107293759,"react-original"),
+            ("ci-run-39108356394-react.zip","9c976a6a38acbb3e0ca4e3582ec5b448fb7cb265",39108356394,"react-candidate"),
+            ("ci-run-39108356394-go.zip","9c976a6a38acbb3e0ca4e3582ec5b448fb7cb265",39108356394,"go-real"),
+          )
+          for filename,sha,run,kind in scenarios:
+            with zipfile.ZipFile(folder/filename) as z:
+              assert set(z.namelist())=={"run.log","source.txt","resources.txt","summary.json"},filename
+              source=z.read("source.txt").decode()
+              assert "EXACT_SOURCE_HEAD="+sha in source,filename
+              assert "CI_RUN_ID="+str(run) in source,filename
+              x=json.loads(z.read("summary.json"))
+              assert x["n"]==3 and len(x["samples"])==3,filename
+              if kind=="react-original":
+                assert x["cancelled"]==0 and x["actual_http"] is False and x["physically_allocated_CAS"]==0
+                assert all(not y["aborted"] and y["abort_ms"] is None for y in x["samples"])
+              elif kind=="react-candidate":
+                assert x["cancelled"]==3 and x["actual_http"] is False and x["physically_allocated_CAS"]==0
+                assert all(y["aborted"] and 0<=y["abort_ms"]<=16 for y in x["samples"])
+              else:
+                assert x["real_postgresql"] is True and x["real_browser"] is False
+                assert x["physical_cas_originals"]==0 and x["budget_ms"]==160
+                assert all(0<=y["handler_ms"]<=160 and 0<=y["sql_release_ms"]<=160 for y in x["samples"])
+              print("SH_P002_ARCHIVE_PINNED",filename,kind)
+          PY
+      - name: Install actual React and TypeScript test dependencies
+        run: npm install --prefix desktop --no-audit --no-fund
+      - name: Three independently mounted real component requests
+        env:
+          XD_SH_P002_REQUIRE_CANCEL: '1'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          mkdir -p perf-results/sh-p002
+          printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > perf-results/sh-p002/source.txt
+          node --version >> perf-results/sh-p002/source.txt
+          /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' -o perf-results/sh-p002/resources.txt \
+            node --test desktop/tests/web-public-share-form.cjs | tee perf-results/sh-p002/run.log
+          python3 - <<'PY'
+          import json,pathlib,re
+          out=pathlib.Path('perf-results/sh-p002')
+          matches=re.findall(r'SH_P002_METADATA_CANCEL (\{[^\n]+\})',(out/'run.log').read_text())
+          assert len(matches)==1,len(matches)
+          result=json.loads(matches[0])
+          assert result['n']==3 and len(result['samples'])==3
+          assert result['actual_http'] is False and result['physically_allocated_CAS']==0
+          assert all(x['n']==i for i,x in enumerate(result['samples'],1))
+          (out/'summary.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print('SH_P002_N3',json.dumps(result,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p002-mounted-react-n3-${{ github.run_id }}
+          path: perf-results/sh-p002/
+          retention-days: 30
+          if-no-files-found: warn
+
+  real-postgres-metadata-get-n3:
+    if: github.head_ref == 'perf/public-share-initial-metadata-cancel-shp002-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Exact-source Go formatting
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/api/public_share_metadata_cancel_shp002_test.go)"
+      - name: n3 authentic PostgreSQL held SQL metadata GET cancellation
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results/sh-p002-go
+          printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > perf-results/sh-p002-go/source.txt
+          go version >> perf-results/sh-p002-go/source.txt
+          /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+            -o perf-results/sh-p002-go/resources.txt \
+            go test -mod=readonly -run '^TestPublicShareMetadataRequestContextCancellation$' \
+              -count=1 -timeout=12m -v ./internal/api | tee perf-results/sh-p002-go/run.log
+          python3 - <<'PY'
+          import json,pathlib,re
+          out=pathlib.Path('perf-results/sh-p002-go')
+          log=(out/'run.log').read_text()
+          hits=re.findall(r'SH_P002_REAL_POSTGRES_CANCEL (\{[^\n]+\})',log)
+          assert len(hits)==1, (len(hits),log[-2500:])
+          x=json.loads(hits[0])
+          assert x['n']==3 and x['real_postgresql'] and not x['real_browser']
+          assert x['physical_cas_originals']==0 and x['budget_ms']==160
+          assert len(x['samples'])==3
+          assert all(0<=r['handler_ms']<=160 and 0<=r['sql_release_ms']<=160 for r in x['samples'])
+          assert x['handler_p50_ms']<=160 and 'FAIL' not in log
+          (out/'summary.json').write_text(json.dumps(x,indent=2,sort_keys=True)+'\n')
+          print('SH_P002_GO_REAL_POSTGRES_N3',json.dumps(x,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p002-real-postgres-n3-${{ github.run_id }}
+          path: perf-results/sh-p002-go/
+          retention-days: 30
+          if-no-files-found: warn
