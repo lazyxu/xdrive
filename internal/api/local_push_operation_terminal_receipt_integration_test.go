@@ -254,3 +254,104 @@ func TestLocalPushTerminalReceiptConcurrentTwoPoolReplay(t *testing.T) {
 		t.Fatalf("parallel terminal inserts=%d: %v", count, err)
 	}
 }
+
+// The existing private first-leaf writer COMMIT and the reservation-terminal
+// path must serialize on the SAME operation UPDATE lock. A real SQL COMMIT
+// must defeat a later abort AND a later synthetic lease-expiry receipt;
+// otherwise an owning Agent could observe mutually contradictory durable
+// outcomes after losing the initial HTTP response.
+func TestLocalPushCommittedFirstLeafRejectsLaterAbortAndExpiredTerminal(t *testing.T) {
+	f, key, operation := makeLocalPushBoundFirstLeafFixture(t)
+	committed, ok, err := f.server.commitBoundLocalPushFirstLeafWithCurrentOperation(
+		f.ctx, f.source.ID, f.source.Revision, f.proof,
+		f.stage.StageID, localPushFirstLeafFixtureName,
+		key, operation.ID, operation.Generation)
+	if err != nil || !ok || committed.NodeID == 0 || committed.SourceItemID == 0 {
+		t.Fatalf("physical first-leaf SQL COMMIT prerequisite failed: %+v %t %v", committed, ok, err)
+	}
+	if err := f.server.abortBoundLocalPushOperationIntent(
+		f.ctx, f.source.ID, f.source.Revision, operation.ID, operation.Generation); err == nil {
+		t.Fatal("already committed first leaf was subsequently aborted")
+	}
+	var reserved meta.LocalPushOperationIntent
+	if err := f.server.DB.Where("id = ?", operation.ID).Take(&reserved).Error; err != nil ||
+		reserved.State != meta.LocalPushOperationIntentReserved || reserved.AbortedAt != nil {
+		t.Fatalf("post-COMMIT abort changed operation: %+v %v", reserved, err)
+	}
+	// Simulate lease expiration AFTER a real SQL commit. Expiry is not proof
+	// that the commit did not happen, even when its HTTP response was lost.
+	expired := f.server.DB.Exec(
+		"UPDATE xd_local_push_operation_intents SET issued_at = CURRENT_TIMESTAMP - INTERVAL '31 seconds', expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = ?",
+		operation.ID)
+	if expired.Error != nil || expired.RowsAffected != 1 {
+		t.Fatalf("unable to create post-COMMIT expired lease: %+v", expired)
+	}
+	terminal, err := f.server.recordBoundLocalPushReservationTerminal(
+		f.ctx, f.source.ID, f.source.Revision, key,
+		operation.ID, operation.Generation)
+	if err == nil || terminal != (localPushPrivateReservationTerminal{}) {
+		t.Fatalf("post-COMMIT expiry fabricated terminal receipt: %+v %v", terminal, err)
+	}
+	var commitCount, terminalCount, runCount int64
+	if err := f.server.DB.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+		Where("operation_id = ?", operation.ID).Count(&commitCount).Error; err != nil || commitCount != 1 {
+		t.Fatalf("immutable first-leaf COMMIT missing: %d %v", commitCount, err)
+	}
+	if err := f.server.DB.Model(&meta.LocalPushOperationTerminalReceipt{}).
+		Where("operation_id = ?", operation.ID).Count(&terminalCount).Error; err != nil || terminalCount != 0 {
+		t.Fatalf("conflicting terminal evidence persisted: %d %v", terminalCount, err)
+	}
+	if err := f.server.DB.Model(&meta.SyncRun{}).
+		Where("source_id = ?", f.source.ID).Count(&runCount).Error; err != nil || runCount != 0 {
+		t.Fatalf("SQL exclusion invented backup completion: %d %v", runCount, err)
+	}
+	var item meta.SourceItem
+	if err := f.server.DB.Where("id = ?", committed.SourceItemID).Take(&item).Error; err != nil ||
+		item.State != meta.SourceItemStatePending || item.LastSyncedAt != nil {
+		t.Fatalf("first-leaf remains PENDING, never synced: %+v %v", item, err)
+	}
+}
+
+// Old/missing schema must NOT silently downgrade the read of immutable
+// commit evidence to a zero count. Without the table we cannot prove
+// that no SQL COMMIT happened, so both negative outcome paths fail closed.
+func TestLocalPushMissingCommitTableRejectsAbortAndTerminal(t *testing.T) {
+	f := makeLocalOperationFixture(t)
+	s := &Server{DB: f.primary}
+	key := bytes.Repeat([]byte{0x66}, localPushOperationRequestKeySize)
+	operation, err := s.reserveBoundLocalPushOperationIntentWithKey(
+		f.owningRequest(), f.source.ID, f.source.Revision, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.primary.Migrator().DropTable(&meta.LocalPushFirstLeafOperationCommit{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.abortBoundLocalPushOperationIntent(
+		f.owningRequest(), f.source.ID, f.source.Revision,
+		operation.ID, operation.Generation); err == nil {
+		t.Fatal("missing commit migration permitted abort")
+	}
+	expired := f.primary.Exec(
+		"UPDATE xd_local_push_operation_intents SET issued_at = CURRENT_TIMESTAMP - INTERVAL '31 seconds', expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = ?",
+		operation.ID)
+	if expired.Error != nil || expired.RowsAffected != 1 {
+		t.Fatalf("failed to expire private operation: %+v", expired)
+	}
+	got, err := s.recordBoundLocalPushReservationTerminal(
+		f.owningRequest(), f.source.ID, f.source.Revision, key,
+		operation.ID, operation.Generation)
+	if err == nil || got != (localPushPrivateReservationTerminal{}) {
+		t.Fatalf("missing commit table permitted false expiry: %+v %v", got, err)
+	}
+	var intent meta.LocalPushOperationIntent
+	if err := f.primary.Where("id = ?", operation.ID).Take(&intent).Error; err != nil ||
+		intent.State != meta.LocalPushOperationIntentReserved || intent.AbortedAt != nil {
+		t.Fatalf("missing schema mutated operation: %+v %v", intent, err)
+	}
+	var terminals int64
+	if err := f.primary.Model(&meta.LocalPushOperationTerminalReceipt{}).
+		Count(&terminals).Error; err != nil || terminals != 0 {
+		t.Fatalf("missing schema inserted terminal evidence: %d %v", terminals, err)
+	}
+}
