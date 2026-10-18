@@ -1,0 +1,602 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/maintenance"
+	"github.com/lazyxu/xdrive/internal/meta"
+)
+
+type httpMetricKey struct {
+	Method string
+	Route  string
+	Status int
+}
+
+type httpMetricValue struct {
+	Count           uint64
+	DurationSeconds float64
+}
+
+type uploadMetricKey struct {
+	Operation string
+	Result    string
+}
+
+type serverObservability struct {
+	mu sync.Mutex
+
+	startedAt time.Time
+	logger    *slog.Logger
+
+	httpRequests       map[httpMetricKey]httpMetricValue
+	uploads            map[uploadMetricKey]uint64
+	internalOperations map[string]httpMetricValue
+	stagingCacheHits   uint64
+	stagingCacheMisses uint64
+
+	loginFailures    uint64
+	quotaRejections  uint64
+	api5xx           uint64
+	collectionErrors uint64
+}
+
+type liveMetrics struct {
+	DatabaseSizeBytes    int64
+	ActiveUploadSessions int64
+	RetainedBlobBytes    int64
+	StagingBlobBytes     int64
+	RetainedBlobObjects  int64
+	StagingBlobObjects   int64
+	Storage              storageStatsDTO
+	CASHealth            maintenance.CASHealthReport
+	DBOpenConnections    int
+	DBInUseConnections   int
+	DBIdleConnections    int
+	DBWaitCount          int64
+}
+
+func newServerObservability(logger *slog.Logger) *serverObservability {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &serverObservability{
+		startedAt:          time.Now().UTC(),
+		logger:             logger,
+		httpRequests:       make(map[httpMetricKey]httpMetricValue),
+		uploads:            make(map[uploadMetricKey]uint64),
+		internalOperations: make(map[string]httpMetricValue),
+	}
+}
+
+func (s *Server) ensureObservability() {
+	if s.obs == nil {
+		s.obs = newServerObservability(slog.Default())
+	}
+}
+
+func (s *Server) requestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := strings.TrimSpace(c.GetHeader("X-Request-ID"))
+		if !validRequestID(requestID) {
+			requestID = uuid.NewString()
+		}
+		c.Request.Header.Set("X-Request-ID", requestID)
+		c.Header("X-Request-ID", requestID)
+		c.Set("requestID", requestID)
+		c.Next()
+	}
+}
+
+func validRequestID(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.', r == ':':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func requestIDFromContext(c *gin.Context) string {
+	if value, ok := c.Get("requestID"); ok {
+		if requestID, ok := value.(string); ok {
+			return requestID
+		}
+	}
+	return strings.TrimSpace(c.GetHeader("X-Request-ID"))
+}
+
+func (s *Server) recovery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				route := c.FullPath()
+				if route == "" {
+					route = "unmatched"
+				}
+				s.obs.logger.Error("http_panic",
+					"request_id", requestIDFromContext(c),
+					"method", c.Request.Method,
+					"route", route,
+					"panic", fmt.Sprint(recovered),
+					"stack", string(debug.Stack()),
+				)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			}
+		}()
+		c.Next()
+	}
+}
+
+func (s *Server) observeHTTP() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		started := time.Now()
+		c.Next()
+
+		status := c.Writer.Status()
+		route := c.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		duration := time.Since(started)
+		s.obs.observeRequest(c.Request.Method, route, status, duration)
+
+		if isQuietProbe(route) && status < http.StatusBadRequest {
+			return
+		}
+		attrs := []any{
+			"request_id", requestIDFromContext(c),
+			"method", c.Request.Method,
+			"route", route,
+			"status", status,
+			"duration_ms", float64(duration.Microseconds()) / 1000,
+			"response_bytes", c.Writer.Size(),
+			"client_ip", clientIPAddress(c),
+		}
+		if uid := userID(c); uid != 0 {
+			attrs = append(attrs, "user_id", uid)
+		}
+		s.obs.logger.Info("http_access", attrs...)
+	}
+}
+
+func isQuietProbe(route string) bool {
+	switch route {
+	case "/api/v1/healthz", "/api/v1/readyz", "/metrics":
+		return true
+	default:
+		return false
+	}
+}
+
+func (o *serverObservability) observeRequest(method, route string, status int, duration time.Duration) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	key := httpMetricKey{Method: method, Route: route, Status: status}
+	value := o.httpRequests[key]
+	value.Count++
+	value.DurationSeconds += duration.Seconds()
+	o.httpRequests[key] = value
+
+	if status >= http.StatusInternalServerError {
+		o.api5xx++
+	}
+	if route == "/api/v1/auth/login" && method == http.MethodPost &&
+		(status == http.StatusUnauthorized || status == http.StatusForbidden) {
+		o.loginFailures++
+	}
+	if status == http.StatusInsufficientStorage {
+		o.quotaRejections++
+	}
+	if operation := uploadOperation(method, route); operation != "" {
+		result := "success"
+		if status >= http.StatusBadRequest {
+			result = "failure"
+		}
+		o.uploads[uploadMetricKey{Operation: operation, Result: result}]++
+	}
+}
+
+func uploadOperation(method, route string) string {
+	switch {
+	case method == http.MethodPost && route == "/api/v1/nodes/:id/files":
+		return "multipart"
+	case method == http.MethodPut && route == "/api/v1/files/:id/content":
+		return "overwrite"
+	case method == http.MethodPost && route == "/api/v1/uploads":
+		return "session_create"
+	case method == http.MethodPut && route == "/api/v1/uploads/:id/chunks/:index":
+		return "chunk"
+	case method == http.MethodPost && route == "/api/v1/uploads/:id/finalize":
+		return "finalize"
+	case method == http.MethodDelete && route == "/api/v1/uploads/:id":
+		return "abort"
+	default:
+		return ""
+	}
+}
+
+func (o *serverObservability) noteUpload(operation, result string) {
+	o.mu.Lock()
+	o.uploads[uploadMetricKey{Operation: operation, Result: result}]++
+	o.mu.Unlock()
+}
+
+func (o *serverObservability) noteCollectionError() {
+	o.mu.Lock()
+	o.collectionErrors++
+	o.mu.Unlock()
+}
+
+func (o *serverObservability) observeInternalOperation(operation string, duration time.Duration) {
+	o.mu.Lock()
+	value := o.internalOperations[operation]
+	value.Count++
+	value.DurationSeconds += duration.Seconds()
+	o.internalOperations[operation] = value
+	o.mu.Unlock()
+}
+
+func (o *serverObservability) noteStagingSnapshotCache(hit bool) {
+	o.mu.Lock()
+	if hit {
+		o.stagingCacheHits++
+	} else {
+		o.stagingCacheMisses++
+	}
+	o.mu.Unlock()
+}
+
+func (s *Server) metrics(c *gin.Context) {
+	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	c.Header("Cache-Control", "no-store")
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	live, err := s.collectLiveMetrics(ctx)
+	collectionOK := 1
+	if err != nil {
+		collectionOK = 0
+		s.obs.noteCollectionError()
+		s.obs.logger.Warn("metrics_collection_failed",
+			"request_id", requestIDFromContext(c),
+			"error", err.Error(),
+		)
+	}
+
+	s.obs.mu.Lock()
+	requests := make(map[httpMetricKey]httpMetricValue, len(s.obs.httpRequests))
+	for key, value := range s.obs.httpRequests {
+		requests[key] = value
+	}
+	uploads := make(map[uploadMetricKey]uint64, len(s.obs.uploads))
+	for key, value := range s.obs.uploads {
+		uploads[key] = value
+	}
+	internalOperations := make(map[string]httpMetricValue, len(s.obs.internalOperations))
+	for key, value := range s.obs.internalOperations {
+		internalOperations[key] = value
+	}
+	stagingCacheHits := s.obs.stagingCacheHits
+	stagingCacheMisses := s.obs.stagingCacheMisses
+	loginFailures := s.obs.loginFailures
+	quotaRejections := s.obs.quotaRejections
+	api5xx := s.obs.api5xx
+	collectionErrors := s.obs.collectionErrors
+	uptime := time.Since(s.obs.startedAt).Seconds()
+	s.obs.mu.Unlock()
+
+	var b strings.Builder
+	fmt.Fprintln(&b, "# HELP xdrive_uptime_seconds Time since the API process initialized observability.")
+	fmt.Fprintln(&b, "# TYPE xdrive_uptime_seconds gauge")
+	fmt.Fprintf(&b, "xdrive_uptime_seconds %.3f\n", uptime)
+
+	if s.BackgroundScheduler != nil {
+		writeBackgroundSchedulerMetrics(
+			&b,
+			s.BackgroundScheduler.Snapshot(),
+		)
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_http_requests_total HTTP requests grouped by method, route template, and status.")
+	fmt.Fprintln(&b, "# TYPE xdrive_http_requests_total counter")
+	httpKeys := make([]httpMetricKey, 0, len(requests))
+	for key := range requests {
+		httpKeys = append(httpKeys, key)
+	}
+	sort.Slice(httpKeys, func(i, j int) bool {
+		a, z := httpKeys[i], httpKeys[j]
+		if a.Route != z.Route {
+			return a.Route < z.Route
+		}
+		if a.Method != z.Method {
+			return a.Method < z.Method
+		}
+		return a.Status < z.Status
+	})
+	for _, key := range httpKeys {
+		value := requests[key]
+		fmt.Fprintf(&b, "xdrive_http_requests_total{method=%q,route=%q,status=%q} %d\n",
+			key.Method, key.Route, strconv.Itoa(key.Status), value.Count)
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_http_request_duration_seconds HTTP request duration by method and route template.")
+	fmt.Fprintln(&b, "# TYPE xdrive_http_request_duration_seconds summary")
+	type durationKey struct {
+		Method string
+		Route  string
+	}
+	durationValues := make(map[durationKey]httpMetricValue)
+	for key, value := range requests {
+		dk := durationKey{Method: key.Method, Route: key.Route}
+		current := durationValues[dk]
+		current.Count += value.Count
+		current.DurationSeconds += value.DurationSeconds
+		durationValues[dk] = current
+	}
+	durationKeys := make([]durationKey, 0, len(durationValues))
+	for key := range durationValues {
+		durationKeys = append(durationKeys, key)
+	}
+	sort.Slice(durationKeys, func(i, j int) bool {
+		if durationKeys[i].Route != durationKeys[j].Route {
+			return durationKeys[i].Route < durationKeys[j].Route
+		}
+		return durationKeys[i].Method < durationKeys[j].Method
+	})
+	for _, key := range durationKeys {
+		value := durationValues[key]
+		fmt.Fprintf(&b, "xdrive_http_request_duration_seconds_sum{method=%q,route=%q} %.6f\n",
+			key.Method, key.Route, value.DurationSeconds)
+		fmt.Fprintf(&b, "xdrive_http_request_duration_seconds_count{method=%q,route=%q} %d\n",
+			key.Method, key.Route, value.Count)
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_api_5xx_total HTTP responses with status >= 500.")
+	fmt.Fprintln(&b, "# TYPE xdrive_api_5xx_total counter")
+	fmt.Fprintf(&b, "xdrive_api_5xx_total %d\n", api5xx)
+
+	fmt.Fprintln(&b, "# HELP xdrive_login_failures_total Login requests returning an error response.")
+	fmt.Fprintln(&b, "# TYPE xdrive_login_failures_total counter")
+	fmt.Fprintf(&b, "xdrive_login_failures_total %d\n", loginFailures)
+
+	fmt.Fprintln(&b, "# HELP xdrive_quota_rejections_total Requests rejected because retained data would exceed user quota.")
+	fmt.Fprintln(&b, "# TYPE xdrive_quota_rejections_total counter")
+	fmt.Fprintf(&b, "xdrive_quota_rejections_total %d\n", quotaRejections)
+
+	fmt.Fprintln(&b, "# HELP xdrive_upload_operations_total Upload-related requests grouped by operation and result.")
+	fmt.Fprintln(&b, "# TYPE xdrive_upload_operations_total counter")
+	uploadKeys := make([]uploadMetricKey, 0, len(uploads))
+	for key := range uploads {
+		uploadKeys = append(uploadKeys, key)
+	}
+	sort.Slice(uploadKeys, func(i, j int) bool {
+		if uploadKeys[i].Operation != uploadKeys[j].Operation {
+			return uploadKeys[i].Operation < uploadKeys[j].Operation
+		}
+		return uploadKeys[i].Result < uploadKeys[j].Result
+	})
+	for _, key := range uploadKeys {
+		fmt.Fprintf(&b, "xdrive_upload_operations_total{operation=%q,result=%q} %d\n",
+			key.Operation, key.Result, uploads[key])
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_internal_operation_duration_seconds Internal heavy-operation duration by bounded operation name.")
+	fmt.Fprintln(&b, "# TYPE xdrive_internal_operation_duration_seconds summary")
+	internalOperationKeys := make([]string, 0, len(internalOperations))
+	for operation := range internalOperations {
+		internalOperationKeys = append(internalOperationKeys, operation)
+	}
+	sort.Strings(internalOperationKeys)
+	for _, operation := range internalOperationKeys {
+		value := internalOperations[operation]
+		fmt.Fprintf(&b, "xdrive_internal_operation_duration_seconds_sum{operation=%q} %.6f\n",
+			operation, value.DurationSeconds)
+		fmt.Fprintf(&b, "xdrive_internal_operation_duration_seconds_count{operation=%q} %d\n",
+			operation, value.Count)
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_staging_snapshot_cache_total Staging snapshot cache lookups grouped by hit or miss.")
+	fmt.Fprintln(&b, "# TYPE xdrive_staging_snapshot_cache_total counter")
+	fmt.Fprintf(&b, "xdrive_staging_snapshot_cache_total{result=%q} %d\n", "hit", stagingCacheHits)
+	fmt.Fprintf(&b, "xdrive_staging_snapshot_cache_total{result=%q} %d\n", "miss", stagingCacheMisses)
+
+	fmt.Fprintln(&b, "# HELP xdrive_metrics_collection_success Whether live DB-backed gauges were collected successfully.")
+	fmt.Fprintln(&b, "# TYPE xdrive_metrics_collection_success gauge")
+	fmt.Fprintf(&b, "xdrive_metrics_collection_success %d\n", collectionOK)
+	fmt.Fprintln(&b, "# HELP xdrive_metrics_collection_errors_total Failed live metrics collection attempts.")
+	fmt.Fprintln(&b, "# TYPE xdrive_metrics_collection_errors_total counter")
+	fmt.Fprintf(&b, "xdrive_metrics_collection_errors_total %d\n", collectionErrors)
+
+	if err == nil {
+		fmt.Fprintln(&b, "# HELP xdrive_upload_sessions_active Currently active, non-expired upload sessions.")
+		fmt.Fprintln(&b, "# TYPE xdrive_upload_sessions_active gauge")
+		fmt.Fprintf(&b, "xdrive_upload_sessions_active %d\n", live.ActiveUploadSessions)
+
+		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_bytes Unique retained physical blob bytes plus non-reused upload staging chunks.")
+		fmt.Fprintln(&b, "# TYPE xdrive_managed_blob_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_managed_blob_bytes %d\n", live.RetainedBlobBytes+live.StagingBlobBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_retained_blob_bytes Unique physical blob bytes referenced by current files and historical versions.")
+		fmt.Fprintln(&b, "# TYPE xdrive_retained_blob_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_retained_blob_bytes %d\n", live.RetainedBlobBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_staging_blob_bytes Bytes stored by non-reused in-progress upload chunks.")
+		fmt.Fprintln(&b, "# TYPE xdrive_staging_blob_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_staging_blob_bytes %d\n", live.StagingBlobBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_objects Unique retained physical blob objects plus staging blob objects.")
+		fmt.Fprintln(&b, "# TYPE xdrive_managed_blob_objects gauge")
+		fmt.Fprintf(&b, "xdrive_managed_blob_objects %d\n", live.RetainedBlobObjects+live.StagingBlobObjects)
+
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blobs Ready content-addressed blobs with at least one durable reference.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blobs %d\n", live.Storage.CASBlobCount)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_physical_bytes Physical bytes occupied by ready content-addressed blobs.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_physical_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_physical_bytes %d\n", live.Storage.CASPhysicalBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_logical_referenced_bytes Logical bytes referenced by current files, recycle-bin files, and history that use CAS.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_logical_referenced_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_logical_referenced_bytes %d\n", live.Storage.CASLogicalReferencedBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_dedup_saved_bytes Logical CAS bytes avoided by physical content deduplication.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_dedup_saved_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_dedup_saved_bytes %d\n", live.Storage.CASDedupSavedBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_dedup_ratio Logical CAS referenced bytes divided by CAS physical bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_dedup_ratio gauge")
+		fmt.Fprintf(&b, "xdrive_cas_dedup_ratio %.6f\n", live.Storage.CASDedupRatio)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_average_size_bytes Average ready CAS blob size in bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_average_size_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blob_average_size_bytes %.3f\n", live.Storage.AverageBlobSizeBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_size_quantile_bytes CAS blob size percentile in bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_size_quantile_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.50", live.Storage.P50BlobSizeBytes)
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.90", live.Storage.P90BlobSizeBytes)
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.99", live.Storage.P99BlobSizeBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_count_by_size Ready CAS blob count by non-overlapping size range.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_count_by_size gauge")
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_bytes_by_size Ready CAS physical bytes by non-overlapping size range.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_bytes_by_size gauge")
+		for _, bucket := range live.Storage.Buckets {
+			fmt.Fprintf(&b, "xdrive_cas_blob_count_by_size{range=%q} %d\n", bucket.Key, bucket.Count)
+			fmt.Fprintf(&b, "xdrive_cas_blob_bytes_by_size{range=%q} %d\n", bucket.Key, bucket.Bytes)
+		}
+		fmt.Fprintln(&b, "# HELP xdrive_legacy_blob_objects Distinct retained pre-CAS storage objects still referenced by metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_legacy_blob_objects gauge")
+		fmt.Fprintf(&b, "xdrive_legacy_blob_objects %d\n", live.Storage.LegacyBlobCount)
+		fmt.Fprintln(&b, "# HELP xdrive_legacy_blob_bytes Distinct retained pre-CAS physical bytes still referenced by metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_legacy_blob_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_legacy_blob_bytes %d\n", live.Storage.LegacyPhysicalBytes)
+
+		fmt.Fprintln(&b, "# HELP xdrive_cas_metadata_health Whether CAS metadata/reference invariants are healthy.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_metadata_health gauge")
+		if live.CASHealth.Healthy {
+			fmt.Fprintln(&b, "xdrive_cas_metadata_health 1")
+		} else {
+			fmt.Fprintln(&b, "xdrive_cas_metadata_health 0")
+		}
+		fmt.Fprintln(&b, "# HELP xdrive_cas_deleting_blobs CAS blobs awaiting garbage collection.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_deleting_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_deleting_blobs %d\n", live.CASHealth.DeletingBlobs)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_stale_deleting_blobs CAS deleting rows older than the stale threshold.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_stale_deleting_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_stale_deleting_blobs %d\n", live.CASHealth.StaleDeletingBlobs)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_missing_metadata Referenced CAS keys without xd_content_blobs metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_missing_metadata gauge")
+		fmt.Fprintf(&b, "xdrive_cas_missing_metadata %d\n", live.CASHealth.MissingMetadata)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_refcount_mismatches CAS metadata refcounts that disagree with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_refcount_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_refcount_mismatches %d\n", live.CASHealth.RefCountMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_state_mismatches CAS metadata states inconsistent with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_state_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_state_mismatches %d\n", live.CASHealth.StateMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_size_mismatches CAS metadata sizes inconsistent with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_size_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_size_mismatches %d\n", live.CASHealth.SizeMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_key_hash_mismatches CAS metadata whose storage key is not canonical for its SHA-256.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_key_hash_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_key_hash_mismatches %d\n", live.CASHealth.KeyHashMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_invalid_states CAS metadata rows with an unsupported state.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_invalid_states gauge")
+		fmt.Fprintf(&b, "xdrive_cas_invalid_states %d\n", live.CASHealth.InvalidStates)
+
+		fmt.Fprintln(&b, "# HELP xdrive_database_size_bytes PostgreSQL size of the current xDrive database.")
+		fmt.Fprintln(&b, "# TYPE xdrive_database_size_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_database_size_bytes %d\n", live.DatabaseSizeBytes)
+
+		fmt.Fprintln(&b, "# HELP xdrive_db_connections_open Open SQL database connections.")
+		fmt.Fprintln(&b, "# TYPE xdrive_db_connections_open gauge")
+		fmt.Fprintf(&b, "xdrive_db_connections_open %d\n", live.DBOpenConnections)
+		fmt.Fprintln(&b, "# HELP xdrive_db_connections_in_use SQL database connections currently in use.")
+		fmt.Fprintln(&b, "# TYPE xdrive_db_connections_in_use gauge")
+		fmt.Fprintf(&b, "xdrive_db_connections_in_use %d\n", live.DBInUseConnections)
+		fmt.Fprintln(&b, "# HELP xdrive_db_connections_idle Idle SQL database connections.")
+		fmt.Fprintln(&b, "# TYPE xdrive_db_connections_idle gauge")
+		fmt.Fprintf(&b, "xdrive_db_connections_idle %d\n", live.DBIdleConnections)
+		fmt.Fprintln(&b, "# HELP xdrive_db_connection_wait_total Total waits for an available SQL database connection.")
+		fmt.Fprintln(&b, "# TYPE xdrive_db_connection_wait_total counter")
+		fmt.Fprintf(&b, "xdrive_db_connection_wait_total %d\n", live.DBWaitCount)
+	}
+
+	c.Data(http.StatusOK, "text/plain; version=0.0.4; charset=utf-8", []byte(b.String()))
+}
+
+func (s *Server) collectLiveMetrics(ctx context.Context) (liveMetrics, error) {
+	var live liveMetrics
+	sqlDB, err := s.DB.DB()
+	if err != nil {
+		return live, err
+	}
+	dbStats := sqlDB.Stats()
+	live.DBOpenConnections = dbStats.OpenConnections
+	live.DBInUseConnections = dbStats.InUse
+	live.DBIdleConnections = dbStats.Idle
+	live.DBWaitCount = dbStats.WaitCount
+
+	row := s.DB.WithContext(ctx).Raw(`SELECT
+pg_database_size(current_database()) AS database_size_bytes,
+(SELECT COUNT(*) FROM xd_upload_sessions WHERE status = ? AND expires_at > NOW()) AS active_upload_sessions,
+COALESCE((
+  SELECT SUM(size) FROM (
+    SELECT storage_key, MAX(size) AS size
+    FROM (
+      SELECT storage_key, size FROM xd_files
+      UNION ALL
+      SELECT storage_key, size FROM xd_file_versions
+    ) retained_refs
+    GROUP BY storage_key
+  ) unique_retained
+), 0) AS retained_blob_bytes,
+COALESCE((SELECT SUM(size) FROM xd_upload_parts WHERE reused = false), 0) AS staging_blob_bytes,
+COALESCE((
+  SELECT COUNT(*) FROM (
+    SELECT storage_key
+    FROM (
+      SELECT storage_key FROM xd_files
+      UNION ALL
+      SELECT storage_key FROM xd_file_versions
+    ) retained_refs
+    GROUP BY storage_key
+  ) unique_retained
+), 0) AS retained_blob_objects,
+(SELECT COUNT(*) FROM xd_upload_parts WHERE reused = false) AS staging_blob_objects`,
+		meta.UploadStatusActive).Row()
+	if err := row.Scan(
+		&live.DatabaseSizeBytes,
+		&live.ActiveUploadSessions,
+		&live.RetainedBlobBytes,
+		&live.StagingBlobBytes,
+		&live.RetainedBlobObjects,
+		&live.StagingBlobObjects,
+	); err != nil {
+		return live, err
+	}
+	storageStats, err := s.loadGlobalStorageStats(ctx)
+	if err != nil {
+		return live, err
+	}
+	live.Storage = storageStats
+	health, err := maintenance.CASHealth(s.DB.WithContext(ctx), maintenance.CASDeletingStaleAfter)
+	if err != nil {
+		return live, err
+	}
+	live.CASHealth = health
+	return live, nil
+}

@@ -45,6 +45,10 @@
 
 累积的 `performance` 仍来自 [OBS-P001](global-storage-performance-observability.md)，新增只读 `recent_performance` 来自后台每60秒复制一次、最多7个RAM快照，不触及每HTTP请求记录路径。每行明示真实 `window_seconds`、`requests_per_second`、5xx、mean；不是p95/p99和真正的浏览器/后台Worker时间。重启和缺少采样不当作0、单实例可用且不持久化。具体预算、测试约束和状态见 [OBS-P002规格](global-storage-performance-window-obs-p002.md)；源准确新Head本轮尚未完成CI验收时不得宣称已上线。
 
+## OBS-P003 固定桶延迟上界候选（2026-10-17）
+
+此前OBS-P001/2从Route/status/时长和每分钟Count差分**无法得出p95/p99**。新增[OBS-P003性能成本合同](global-storage-percentile-overhead-obs-p003.md)在**既有HTTP计数Mutex内**给匿名九类的单个固定桶增加uint64计数，60秒一份内存快照、最多7份，管理员Manual Refresh显示p95/p99**桶上界**；不添加SQL/文件Walk/个人标签。不同于此前不修改热路径的P002，P003是有意增加少量请求CPU，需要在同Runner的原始函数/新函数 n3 串行+并行 A/B 通过冻结≤25%和≤50ns且0 alloc预算，**否则必须回退新仪表代码，不能为了显示分位数牺牲基础文件传输**。未有真实六端GUI/PWA测量，也未保存每日操作延迟历史。
+
 ## 已有 vs 后续
 
 当前已经有**每日容量/GC持久化快照**、上传staging/孤儿明细、Blob物理/逻辑去重倍率和Prometheus指标。新面板只解决“管理员不接Prometheus也能看到运行中Server哪些请求类别积累延迟/5xx”的第一层可观察性。

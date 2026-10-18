@@ -6,6 +6,10 @@ This document is the normative contract for the separation between xDrive **云�
 
 在[OBS-P001累积匿名9类性能指标](global-storage-performance-observability.md)之后，管理员可查看**实际覆盖秒数≤300**的近期HTTP请求/s、HTTP5xx与平均耗时，由现存存储采样器每60秒**只读取内存**并以严格7槽上限保存；不写新SQL、不中断用户自己的传输任务、不扫描100k Blob，也不进行客户端自动轮询。各平台实机与p95均未验收，详细 [OBS-P002合同](global-storage-performance-window-obs-p002.md)。
 
+## OBS-P003 全局存储近期 HTTP p95/p99 桶上界（2026-10-17）
+
+若 [P003冻结采集开销验收](global-storage-percentile-overhead-obs-p003.md) 通过，管理员现有 **全局存储** 表格在近期请求/s、均值旁展示从9类固定25桶内存 histogram 计算的HTTP `p95_upper_ms/p99_upper_ms`，明确“≤”，只在真实请求样本/最新5分钟可用且最大桶有界时展示；溢出、无样本、重启等显示“—”。它不是精确分位数、不是网络字节吞吐或后台Task Center Worker执行耗时。内存常量有界、0新SQL/Hash/Scan，不存User/Node/path/IP，不为每次 HTTP 写日志/DB。不改变已有每日容量/GC快照，操作时延每日持久化仍未实现。性能门槛未通过前不得宣称已经上线。
+
 ## Goals
 
 ## 全局存储运行时性能观测（OBS-P001）

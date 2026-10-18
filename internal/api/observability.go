@@ -43,6 +43,7 @@ type serverObservability struct {
 	httpRequests       map[httpMetricKey]httpMetricValue
 	uploads            map[uploadMetricKey]uint64
 	internalOperations map[string]httpMetricValue
+	p003Histogram      storageP003Histogram
 	stagingCacheHits   uint64
 	stagingCacheMisses uint64
 
@@ -214,6 +215,12 @@ func (o *serverObservability) observeRequest(method, route string, status int, d
 			result = "failure"
 		}
 		o.uploads[uploadMetricKey{Operation: operation, Result: result}]++
+	}
+	// OBS-P003 uses the already-held HTTP counter mutex. Fixed anonymous
+	// route groups and preallocated bucket counters add no new lock or IO.
+	if category := storagePerformanceCategory(method, route); category >= 0 {
+		bucket := storageP003BucketForDuration(duration)
+		o.p003Histogram.bins[category][bucket]++
 	}
 }
 
