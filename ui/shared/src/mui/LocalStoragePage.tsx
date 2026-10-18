@@ -329,10 +329,17 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
         </XDriveActionButton>
       )}
     >
-      {error ? <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
+      {error ? !snapshot ? (
+        <Box data-xdrive-local-storage-first-read-error
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+        </Box>
+      ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
       {notice ? <XDriveStatusAlert tone="good" sx={{ mb: 2 }}>{notice}</XDriveStatusAlert> : null}
       {!snapshot && !error ? (
-        <Box data-xdrive-local-storage-loading-slot sx={{ minHeight: 180 }}>
+        <Box data-xdrive-local-storage-loading-slot
+          aria-busy={loading || undefined}
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
           {loading ? (
             showDelayedLoading
               ? <XDriveStatePanel variant="plain" loading message="正在加载本地存储信息…" />

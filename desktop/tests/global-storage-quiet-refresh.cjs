@@ -16,7 +16,19 @@ test('cold Global Storage never claims zero or flashes immediate progress before
     'data-xdrive-storage-first-read',
     'minHeight: 180',
     'showDeferredLoading ? (',
+    'data-xdrive-storage-first-read-error',
+    'aria-busy={loading || undefined}',
+    "minHeight: 180, display: 'grid', placeItems: 'center'",
   ]) assert.ok(page.includes(token), token)
+  const coldStart=page.indexOf('data-xdrive-storage-first-read\n              aria-busy')
+  assert.ok(coldStart>0,'verify the actual pending slot, not error-slot prefix')
+  const cold=page.slice(coldStart,coldStart+180)
+  const terminal=page.slice(page.indexOf('data-xdrive-storage-first-read-error'),
+    page.indexOf('data-xdrive-storage-first-read-error')+180)
+  assert.ok(cold.includes('minHeight: 180'))
+  assert.ok(terminal.includes('minHeight: 180'))
+  assert.ok(terminal.includes('XDriveStatusAlert'),
+    'genuine first-load error must be visible without shrinking the page')
   assert.equal(page.includes("message={loading ? '正在加载存储统计…' : '暂无存储统计'}"), false)
   assert.ok(page.includes('if (active) setError('), 'real initial failure must remain visible')
 })
