@@ -1633,14 +1633,18 @@ function requireAgentCapability(hello: AgentHello, capability: string) {
 }
 
 async function refreshAgentState() {
+  // A later Main refresh or Agent monitor publication owns the newer state.
+  const stateBeforeRefresh = agentState
   try {
     const hello = await requireAgentLifecycle().ensureRunning()
     const status = await requireAgentClient().status()
     const next: AgentConnectionState = { connected: true, hello, status }
+    if (agentState !== stateBeforeRefresh) return agentState
     publishAgentState(next)
     return next
   } catch (error) {
     const next: AgentConnectionState = { connected: false, error: agentError(error).message }
+    if (agentState !== stateBeforeRefresh) return agentState
     publishAgentState(next)
     return next
   }
