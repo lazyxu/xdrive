@@ -42,7 +42,7 @@ test('Web public share uses the shared auth and brand surfaces', () => {
 
 test('Web public share keeps native download, password and eligibility feedback', () => {
   for (const token of [
-    'api.publicShare(token)',
+    'api.publicShare(token, controller.signal)',
     'api.downloadPublicShare(token, password, entry?.name ?? share.name, entry?.id)',
     "setNotice('已交给浏览器下载。')",
     'share.requires_password',
@@ -90,4 +90,25 @@ test('Web public share delegates the file stream to a short-lived native ticket'
   const method = api.slice(start, end)
   assert.equal(method.includes('response.blob()'), false)
   assert.equal(method.includes('URL.createObjectURL'), false)
+})
+
+
+test('SH-P002 first public metadata GET owns an abortable request, not a durable download', () => {
+  const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
+  const a = api.indexOf('  publicShare(token: string, signal?: AbortSignal) {')
+  const b = api.indexOf('  publicShareChildren(', a)
+  assert.ok(a >= 0 && b > a, 'shared Web/Mobile transport needs metadata request AbortSignal')
+  const getter = api.slice(a, b)
+  assert.ok(getter.includes("'/api/v1/public/share'"))
+  assert.ok(getter.includes('signal,'), 'the actual fetch RequestInit must carry the signal')
+  const first = publicShare.slice(
+    publicShare.indexOf('  useEffect(() => {\n    let active = true'),
+    publicShare.indexOf('  const exhausted ='),
+  )
+  assert.ok(first.includes('const controller = new AbortController()'))
+  assert.ok(first.includes('api.publicShare(token, controller.signal)'))
+  assert.ok(first.includes('if (!active || controller.signal.aborted) return'))
+  assert.ok(first.includes('return () => { active = false; controller.abort() }'))
+  assert.ok(publicShare.includes('api.downloadPublicShare(token, password, entry?.name ?? share.name, entry?.id)'),
+    'do not cancel a user-started native download from metadata teardown')
 })

@@ -399,3 +399,50 @@ test('Unmounting an unconsumed public-folder page aborts its actual signal', asy
     await Promise.resolve()
   })
 })
+
+
+test('SH-P002 original public metadata request unmount cancellation n3', async () => {
+  const samples = []
+  for (let n = 1; n <= 3; n++) {
+    let metadataSignal, resolveRead, abortedAt
+    class Api {
+      publicShare(token, signal) {
+        assert.equal(token, 'test-share-token')
+        metadataSignal = signal
+        signal?.addEventListener('abort', () => { abortedAt = process.hrtime.bigint() }, { once: true })
+        return new Promise(resolve => { resolveRead = resolve })
+      }
+    }
+    const PublicShare = loadPublicShare(Api)
+    let renderer
+    await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+    assert.equal(typeof resolveRead, 'function', 'real production first effect must start metadata read')
+    const slot = renderer.root.findAll(x => typeof x.type === 'string' &&
+      x.props['data-xdrive-public-share-read-slot'] === true)
+    assert.equal(slot.length, 1)
+    assert.equal(slot[0].props['aria-busy'], true)
+    const start = process.hrtime.bigint()
+    await act(async () => { renderer.unmount() })
+    const hasSignal = metadataSignal instanceof AbortSignal
+    const didAbort = hasSignal && metadataSignal.aborted
+    const abortMs = abortedAt === undefined ? null : Number(abortedAt - start) / 1e6
+    samples.push({ n, has_signal: hasSignal, aborted: didAbort, abort_ms: abortMs })
+    await act(async () => {
+      resolveRead({ type: 'dir', name: 'Shared Album', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null })
+      await Promise.resolve()
+    })
+  }
+  const cancelled = samples.filter(x => x.aborted).length
+  const result = { workload: 'SH-P002/mounted-React-public-share-initial-metadata-unmount',
+    n: 3, cancelled, samples, actual_http: false, physically_allocated_CAS: 0,
+    original_or_candidate: process.env.XD_SH_P002_REQUIRE_CANCEL === '0' ? 'original-CURRENT' : 'candidate-AFTER' }
+  console.log('SH_P002_METADATA_CANCEL ' + JSON.stringify(result))
+  if (process.env.XD_SH_P002_REQUIRE_CANCEL !== '0') {
+    assert.equal(cancelled, 3, 'first GET must receive a per-mount abortable request')
+    for (const x of samples) {
+      assert.ok(x.abort_ms !== null && x.abort_ms >= 0 && x.abort_ms <= 16,
+        'unmount to AbortSignal must be synchronous within 16ms')
+    }
+  }
+})

@@ -3195,9 +3195,10 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/shares/${shareID}`, { method: 'DELETE' })
   }
 
-  publicShare(token: string) {
+  publicShare(token: string, signal?: AbortSignal) {
     return this.request<PublicShare>('/api/v1/public/share', {
       headers: { 'X-XDrive-Share-Token': token },
+      signal,
     }, false)
   }
 
