@@ -1,5 +1,27 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C1-A — 异机监督主 Caddy 停机／独立 Rescue 管理员连续性验证（只读，2026-10-18）
+
+**前置状态：** #2071 双入口初始化与页面去重已合并；NET-M5-C0 只能独立验证已经开启的 IP/域名登录，现有 `caddy-rescue-primary-state-witness.py` 和 `caddy-rescue-ssh-auth-check.py` 分别观测宿主生命周期或异机救援登录，过去**不能绑定在同一次实际主网关中断期间**。本阶段只增补可验证的观察链，不授予 Host Apply/Restart。
+
+- `caddy-rescue-primary-state-witness.py --json before|primary-down|restored ENV COMPOSE` 在**宿主只读验证成功后**额外返回严格、单行、无凭据 JSON（固定协议、阶段、当前 UTC、哈希过的同 Compose 项目／主网关容器／Server 与 Rescue 进程代际、主 Caddy 启停时间，始终 `apply_supported=false`）。默认旧版人类可读输出不变；没有原始 Docker inspect、域名/IP、环境值、凭据或证书输出。Docker 状态、独立 Rescue 本机健康、匿名 401 与镜像隔离仍通过已有检查器。
+- 新 `scripts/caddy-rescue-supervised-outage-check.py` **只能由另一台受信任操作员电脑在交互式终端显式运行**。准备已审查的独立 Rescue、可信 SSH known_hosts、真实双操作员受监督维护窗口及独立恢复方案之后，工具通过固定主机密钥与独立固定的远端 witness/checker SHA-256 执行四次**只读远端观察**：主网关健康 → 外部运维人员已停止主网关 → 在另一路固定 SSH -W 救援连接验证管理员登录（必须有 401、管理员身份和 11 项服务清单）之后再确认主网关仍停止 → 外部运维人员将主网关恢复健康。每阶段重新核验两个脚本内容摘要；从一次私有 SSH known_hosts 快照复用主机身份；不从保存配置猜测任何已生效事实。
+- 本工具**不**执行 Docker stop/start/restart、Compose Apply、主机/DNS/证书写入、SSH 自动远程执行任意用户命令，也不自动操作现网端口。所有私有密码只从当前操作员的交互终端取得，经匿名本地子进程输入管道交给既有安全 Rescue SSH 检查器；禁止把密码和 Token 放进 CLI、环境或日志。输出仅固定枚举，不输出原始 SSH、Docker/Compose、用户地址或口令。
+- 通过条件：同一项目、主 Caddy 容器身份、Server 与 Rescue 启动代际跨四次采样不变；Docker `StartedAt` → `FinishedAt` → 真实新的 `StartedAt` 时间线合理；两次主网关停机观测之间的独立 SSH 管理员登录成功。拒绝旧数据、重复键、非法 SHA、未经信任的远端脚本、失效主机证书、权限/登录失败、过期时间、代际变更或主 Caddy 未真正恢复。
+- **证据限制：** 这是同一次受监督操作的「离散采样一致性」，不能证明两次停机采样之间毫秒级不间断、对外 DNS/公网 HTTPS、全客户端 CA 信任、已关闭入口不可访问、签名镜像发行商身份、Caddy 新配置实际应用或独立自动回滚；脚本绝不产生可被当作 Host Apply 授权的签名回执，`apply_supported=false`。**本轮只有离线夹具与源码/CI 测试，没有执行实体主 Caddy 停机或现场异机登录；生产 Host Apply 仍 NO-GO。**
+
+使用示意（仅限已建立运维安全条件的监督演练；以下变量均需由操作员事先安全获得）：
+
+```bash
+python3 scripts/caddy-rescue-supervised-outage-check.py \
+  "$TRUSTED_OPERATOR_SSH_TARGET" "$PINNED_KNOWN_HOSTS" 3080 22 \
+  "$REMOTE_TRUSTED_XDRIVE_SCRIPTS/caddy-rescue-primary-state-witness.py" \
+  "$REMOTE_XDRIVE_ENV" "$REMOTE_XDRIVE_COMPOSE" \
+  "$INDEPENDENT_WITNESS_SHA256" "$INDEPENDENT_OPERATOR_CHECK_SHA256"
+```
+
+操作员不得在未准备主网关恢复、可信独立管理员救援及维护窗口的情况下尝试物理演练；参数对应真实平台端口与绝对路径，镜像签名及真实公网 TLS 必须另行验收。CI 原有 `scripts/test-caddy-rescue-profile.sh` 集成新的离线 Python 负例测试，不改工作流、不跳过旧检查，不触及 Web/Desktop Server Auth/Agent IPC。
+
 本阶段把 xDrive「系统依赖 → Caddy」已审计、已保存的目标配置导出为**规范、无密钥的版本化运维计划**，并在宿主机只读复核配置一致性。它准备最终的“保存 → 安全应用 → 受控重启 → 实效验证 → 超时回滚”流程，**本阶段没有实际应用能力**。
 
 ## 实现与证据边界
