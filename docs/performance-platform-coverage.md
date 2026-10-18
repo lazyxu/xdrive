@@ -1,5 +1,15 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## SH-P003 genuine browser public-share GET cancel + bounded 100k metadata pages (2026-10-18)
+
+**SH-P003 measured genuine browser CURRENT (2026-10-18):** [CI #39118655827](https://github.com/lazyxu/xdrive/actions/runs/39118655827), exact original SHA `0121b4a5`; 1440px Chromium Web and 390px Chromium CDP Mobile Web simulation each n3, with 100000 actual PostgreSQL17 metadata Nodes, 0 distinct physical CAS originals. Six browser-initiated real Gin/PG first GET cancels and six genuine Browse/Next-page samples all accepted. Browser navigation→PG waiting SQL release P50 45.580ms / worst 64.762ms (≤500ms); first 100-row real DOM page P50 59.867ms / worst 62.649ms (≤2000ms); zero residual SQL waiter, no duplicate/stale rows. [Exact original machine metrics](performance-evidence/sh-p003-public-share-real-browser/README.md). Do not relabel emulator as physical handset, installed PWA, Native Desktop Agent, WAN, or original 100k JPEG/Live/H264 CAS. Production unchanged, AFTER=N/A.
+
+[New baseline frozen before measurement](public-share-real-browser-100k-performance.md). Existing SH-P001 100k PostgreSQL Node metadata P50 16699ms and SH-P002 separate React/Go cancellation n3 are not this actual browser→Gin→PostgreSQL performance test. New opt-in test uses production 1440px Chromium Wide Web and 390px Chromium CDP mobile viewport/touch emulation, each n3 with 100000 genuine metadata Nodes, 0 physical CAS originals. Each requires actual PostgreSQL lock wait then real browser navigate-away cancellation to Handler/SQL release ≤500ms, real bounded 100-item pages ≤2000ms. Before exact source CI this is **Not measured** on every platform, including Native Desktop and installed PWA hardware. CDP 390px emulation is not a real Android/iOS device.
+
+| Independent SH-P003 workload | Native Desktop | Wide Web Chromium | Mobile Web Chromium 390px CDP | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| Actual browser network first GET abort→Gin/PG + two pages of 100k metadata share | Not measured | **Accepted n3 Linux Chromium** | **Accepted n3 Chromium CDP emulation** | Not measured | Not measured | Not measured |
+
 **P057 master-reconciled performance status (2026-10-18):** Historical exact real PG17/LocalCAS 100k different physical-original n3 [#39028684342](https://github.com/lazyxu/xdrive/actions/runs/39028684342) DELETE Worker P50 **1.610s**, Undo **1.459s**, actual allocated 409604096B and 100001 SHA/refcounts unchanged. Old full CI [#39029596381](https://github.com/lazyxu/xdrive/actions/runs/39029596381) was RED in unrelated PostgreSQL/upload integration ([#1997](https://github.com/lazyxu/xdrive/issues/1997)), not a measured DELETE slow path. New HEAD must pass full accurate CI; six true GUI/installed-PWA modes for the same durable work remain **Not measured**. No Race or viewport cancellation of user-owned jobs.
 
 ## P057 Server真实物理原版 n3（非六平台GUI），2026-10-17
