@@ -23,6 +23,25 @@ type localPushPrivateReservationTerminal struct {
 	recordedAt  time.Time
 }
 
+// requireLocalPushOperationWithoutSQLCommitTx must be called under the
+// owning operation's UPDATE lock in the caller's active SQL transaction.
+// It prevents a recorded first-leaf SQL COMMIT and a later abort/expired
+// reservation receipt from both being issued for the SAME operation.
+// A missing receipt table or any contradictory row fails closed. This
+// is only SQL outcome exclusion, NOT distributed physical cancellation,
+// native file attestation, SourceRun completion or key retirement.
+func requireLocalPushOperationWithoutSQLCommitTx(tx *gorm.DB, operationID string) error {
+	if tx == nil || tx.Error != nil || operationID == "" {
+		return errLocalPushOperationIntentDenied
+	}
+	var count int64
+	if err := tx.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+		Where("operation_id = ?", operationID).Count(&count).Error; err != nil || count != 0 {
+		return errLocalPushOperationIntentDenied
+	}
+	return nil
+}
+
 // recordBoundLocalPushReservationTerminal creates or reloads an immutable
 // reservation-terminal receipt for the exact latest UUID, generation and
 // previously minted native request key. It is deliberately UNROUTED; a later
@@ -77,6 +96,13 @@ func (s *Server) recordBoundLocalPushReservationTerminal(
 			subtle.ConstantTimeCompare([]byte(*latest.RequestKeyDigest), []byte(digest)) != 1 ||
 			latest.IssuedAt.IsZero() || !latest.ExpiresAt.After(latest.IssuedAt) ||
 			now.Before(latest.IssuedAt) {
+			return denied
+		}
+		// Both the first-leaf writer and this terminal observer hold the
+		// same operation UPDATE lock until COMMIT. If physical CAS/SQL was
+		// committed first, neither expiry nor abort may mint a contradictory
+		// reservation terminal receipt.
+		if err := requireLocalPushOperationWithoutSQLCommitTx(tx, operationID); err != nil {
 			return denied
 		}
 		var terminalState string

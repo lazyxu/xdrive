@@ -2448,3 +2448,40 @@ Real PostgreSQL integration tests verify canonical directory key parity with the
 ## L03-G0-c2c3b1 · operation-fenced private first-file physical CAS/SQL writer (2026-10-18)
 
 After #2023 completed full 76-job exact-head CI and merged as `e8c9bebe382974b76d99cbbef32bc12b4015c195`, introduce the separate **UNROUTED** current-operation-aware first-leaf writer. It checks the exact owning Agent request key and current UUID/generation inside its original held SQL transaction **after User quota admission, before Stage/CAS/Node locks**, and checks the current DB clock/lease, device, Root, Source and terminal receipt **again immediately before the same physical-pinned SQL COMMIT**. The older CI-only writer/route stays off the production Router for backward test coverage. This is not native held-CURRENT attestation, production file backup, SourceRun, cancellation completion, key retirement or any permission to enable local-folder activation. See [localpush-operation-fenced-first-leaf.md](./localpush-operation-fenced-first-leaf.md); next c2c3b2/c2c3c must establish actual native handle/operation integration and durable physical cancel/commit exclusion.
+
+
+## L03-G1a · Existing SQL COMMIT excludes later reservation abort/expiry (2026-10-18)
+
+This **limited follow-on security fence** extends the previously merged private
+L03-G0-c2c3b9 held-native-original + historical SQL/CAS observation. The
+existing Server first-leaf SQL writer persists an immutable
+`LocalPushFirstLeafOperationCommit` during the same transaction as its
+canonical CAS/Node/File/PENDING SourceItem. A later ordinary reservation
+abort or expired-lease terminal could previously insert *contradictory*
+negative records despite that already-committed first-leaf SQL result.
+
+Under the **same existing latest-operation FOR UPDATE lock**, both
+`abortBoundLocalPushOperationIntent` and
+`recordBoundLocalPushReservationTerminal` now require that **NO** exact
+OperationID has a persisted first-leaf SQL COMMIT. Missing/corrupt/migrated-away
+commit tables are fail-closed, not assumed empty. The writer's existing
+operation UPDATE lock already prevents the reverse order (abort/terminal
+first, writer after), and its commit/terminal count check remains intact.
+Real PostgreSQL/local-CAS regressions cover an actual canonical first-leaf
+COMMIT followed by an attempted abort and by a simulated expired lease,
+as well as missing-schema fail-closed behavior. No historical committed row
+is deleted or marked synced and no new terminal status is fabricated.
+
+**HARD NO-GO:** This is only one-operation **SQL outcome exclusion**, not a
+cross-machine atomic physical cancel-vs-commit protocol or permanent
+native-held-file attestation. The original may change after inspection,
+CAS can be collected, response loss/crash recovery and *new generation*
+admission remain unresolved. No Run/SourceItem-synced outcome, permission
+to retire the OS-private request key, upload Runner, Desktop/Web operation
+button, schedule, Mirror delete, NAS Push or `local_folder` activation.
+Stage stays <=64 MiB; other Desktops and Web/Mobile/PWA stay read-only.
+
+Require one scoped PR work commit, THIS HEAD's complete Go/PostgreSQL
+API Race, Linux/Windows/Web/Desktop/Rootless/artifact/single-commit and
+final-gate CI plus current clean mergeability before Ready/Rebase. Installed
+physical Windows/Linux 1k/10k/100k and >=4GiB backup tests are NOT RUN.

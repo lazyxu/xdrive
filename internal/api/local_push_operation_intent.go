@@ -224,6 +224,13 @@ func (s *Server) abortBoundLocalPushOperationIntent(
 			latest.RootFingerprint != fingerprint || !now.Before(latest.ExpiresAt) {
 			return denied
 		}
+		// The first-leaf writer holds this exact operation row FOR UPDATE
+		// through its SQL COMMIT. An abort that follows that COMMIT must
+		// never create a competing durable negative operation outcome.
+		// Also fail closed if the immutable commit table is unavailable.
+		if err := requireLocalPushOperationWithoutSQLCommitTx(tx, operationID); err != nil {
+			return denied
+		}
 		if latest.State == meta.LocalPushOperationIntentAborted && latest.AbortedAt != nil {
 			return nil // idempotent only for the same current owner-bound generation
 		}

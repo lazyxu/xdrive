@@ -17,6 +17,7 @@ func makeLocalPushFencedFirstLeafFixture(
 	f := makeLocalPushFirstFileCommitFixture(t)
 	if err := f.server.DB.AutoMigrate(
 		&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{},
+		&meta.LocalPushFirstLeafOperationCommit{},
 	); err != nil {
 		t.Fatal(err)
 	}
