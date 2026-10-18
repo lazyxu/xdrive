@@ -1,4 +1,23 @@
-# 2026-10-18 · Files UX 43 项最新源码/自动化交付核查（P72 已合入）
+# xDrive Files UX · 43 项验收账本（2026-10-18）
+
+## P73/P74 · 验收账本最新补充（已合入当前 master）
+
+**冻结核验基线**：`lazyxu/xdrive` GitHub `master@08d7513d0566525489175a1206e43f770ca657b3`。以下为本次新增实际合入证明，紧随其后的 P72 阶段完整 43 项表以及其他历史审计仍按其原日期、构建 SHA 解读；不将旧资料覆写为新实测结论。
+
+| 阶段 | 已合入的原有页面修复 | 准确 HEAD CI/门槛 | 本次结论 |
+| --- | --- | --- | --- |
+| P73 · Gallery #2067 | Memories/Cleanup 首次真实 Owner 索引未确认前不呈现假空/假错误；People/Places 去掉装饰性的延迟环，保留真实分页、失败和媒体网络加载 | [#39116075396](https://github.com/lazyxu/xdrive/actions/runs/39116075396)：77 job，25 success、52 conditional skipped、0 failed、Final Gate success | 已 Rebase 合入 `ba7cc52f4d730fd8e346bf8947a6d05923e11735`；对应分支已清理 |
+| P74 · Mobile Files #2068 | Browse Home Organization、Recent/Favorites、行内子文件夹 disclosure 去掉 300ms 装饰性圆环；保留原 Owner GET、180px/44px 预留布局、`aria-busy`、重试和真实缩略图/传输进度 | [#39118236089](https://github.com/lazyxu/xdrive/actions/runs/39118236089)：77 job，25 success、52 conditional skipped、0 failed、Final Gate success | 已 Rebase 合入 `08d7513d0566525489175a1206e43f770ca657b3`；对应分支已清理 |
+
+**43 项与后续代码的对应关系**：F02–F04 和 U01–U14 的既有修复及 P69–P72 已合入记录仍有效。P74 进一步补齐 U01/U08/M07 等关联导航时的短暂视觉反馈；P73 是共享 Gallery 的相邻专项，不意味着额外图库地图、缩略图分页或媒体生成全部通过。此次核查直接相关 Files UX 的 PR、临时工作分支均已关闭/清理，其余 Gallery、LocalPush、System Dependencies、Race、性能专题独立进行，不应擅自关闭。
+
+**剩余验收边界**：上述普通 CI 不等于 43 项在真实系统逐项 PASS，更不等于只有手机真机需要验证。实际可信部署 HTTPS、真实 Server 慢网和权限/100k 场景、Windows CfAPI/Finder/Electron 和不同 DPI、iOS 27 视觉 1:1、NVDA/VoiceOver/TalkBack、iOS/Android Installed PWA、系统分享、原件上传重选与 1–4 GiB 最终落盘全字节 SHA-256 仍需独立证据。[`docs/pwa-s5-acceptance.md`](pwa-s5-acceptance.md) 七平台物理矩阵仍为 `NOT RUN`，Release `NO-GO`；52px 全局标题栏、900px 断点、共享后端/虚拟列表及网络加载反馈保持不变。
+
+---
+
+## P72 阶段 43 项交付与验收快照（保留原始记录）
+
+
 
 > 这是位于历史验收记录顶部的**新核查快照**，不是将硬件/系统/部署环境 `NOT RUN` 改为 PASS。下方历史阶段原样保留以避免错误覆盖既有证据。
 
