@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 import sys
 import tempfile
 import unittest
@@ -235,6 +236,119 @@ class OfflineHostPlanTest(unittest.TestCase):
         self.assertNotIn("requests.", source)
         self.assertNotIn("socket.", source)
 
+
+
+class OfflineHostStageTest(unittest.TestCase):
+    """This is operator-private staging, never mutation of installed Caddy."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.plan = self.root / "plan.json"
+        self.conf = self.root / "config"
+        self.conf.mkdir()
+        self.env = self.conf / ".env"
+        self.compose = self.conf / "docker-compose.yml"
+        self.state = self.root / "state"
+        self.state.mkdir()
+        self.stage_dir = self.state / "caddy-https-staging"
+        self.stage_dir.mkdir(mode=0o700)
+        self.prepare()
+
+    def prepare(self, data=BASE, env=ENV):
+        self.plan.write_bytes(canonical(data))
+        self.env.write_text(env)
+        self.compose.write_text(COMPOSE)
+        for path in (self.plan, self.env, self.compose):
+            path.chmod(0o600)
+
+    def stage(self, pin=None, path=None):
+        script = Path(__file__).with_name("caddy-https-host-stage.py")
+        raw = self.plan.read_bytes()
+        argv = [sys.executable, str(script),
+                "--plan", str(self.plan), "--env-file", str(self.env),
+                "--compose-file", str(self.compose),
+                "--expected-plan-sha256", pin or hashlib.sha256(raw).hexdigest(),
+                "--staging-dir", str(path or self.stage_dir)]
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=5)
+        self.assertNotIn("never-print-this", out.stdout + out.stderr)
+        self.assertNotIn("192.168.2.4", out.stdout + out.stderr)
+        self.assertNotIn(str(self.root), out.stdout + out.stderr)
+        return out.returncode, json.loads(out.stdout)
+
+    def test_private_atomic_stage_does_not_modify_live_env(self):
+        before = (self.env.read_bytes(), self.compose.read_bytes())
+        rc, out = self.stage()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["state"], "candidate-staged-unapplied")
+        self.assertFalse(out["apply_supported"])
+        self.assertIn("live-host-cas-and-rollback-not-authorized", out["blockers"])
+        self.assertEqual(before, (self.env.read_bytes(), self.compose.read_bytes()))
+        staged = list(self.stage_dir.glob("candidate-*.env"))
+        receipts = list(self.stage_dir.glob("receipt-*.json"))
+        self.assertEqual(len(staged), 1)
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(staged[0].read_bytes(), before[0])
+        self.assertEqual(stat.S_IMODE(staged[0].stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(receipts[0].stat().st_mode), 0o600)
+        self.assertEqual(out["candidate_environment_sha256"],
+                         hashlib.sha256(staged[0].read_bytes()).hexdigest())
+        receipt = json.loads(receipts[0].read_text())
+        self.assertEqual(receipt["desired_revision"], 7)
+        self.assertFalse(receipt["apply_supported"])
+        self.assertNotIn("never-print-this", receipts[0].read_text())
+        self.assertEqual(out["stage_receipt_sha256"],
+                         hashlib.sha256(receipts[0].read_bytes()).hexdigest())
+        # Never replace or overwrite an earlier private candidate silently.
+        rc, blocked = self.stage()
+        self.assertEqual(rc, 2)
+        self.assertEqual(blocked["state"], "blocked")
+        self.assertEqual(len(list(self.stage_dir.glob("candidate-*.env"))), 1)
+
+    def test_refuse_domain_secret_handoff_and_existing_ingress_removal(self):
+        scenarios = [
+            {**BASE, "domain_enabled": True, "domain": "drive.example.com",
+             "credential_revision": 5},
+            {**BASE, "lan_ip": "192.168.2.5"},
+            {**BASE, "lan_enabled": False, "lan_ip": "",
+             "domain_enabled": True, "domain": "drive.example.com",
+             "credential_revision": 5},
+        ]
+        for data in scenarios:
+            with self.subTest(plan=data):
+                self.prepare(data)
+                rc, out = self.stage()
+                self.assertEqual(rc, 2)
+                self.assertFalse(out["apply_supported"])
+                self.assertEqual(list(self.stage_dir.iterdir()), [])
+
+    def test_untrusted_staging_directory_and_pin_fail_closed(self):
+        self.stage_dir.chmod(0o755)
+        rc, out = self.stage()
+        self.assertEqual(rc, 2)
+        self.assertEqual(out["state"], "blocked")
+        self.stage_dir.chmod(0o700)
+        rc, out = self.stage(pin="f" * 64)
+        self.assertEqual(rc, 2)
+        self.assertEqual(out["state"], "blocked")
+        other = self.state / "real-caddy-https-staging"
+        self.stage_dir.rename(other)
+        self.stage_dir.symlink_to(other, target_is_directory=True)
+        rc, out = self.stage()
+        self.assertEqual(rc, 2)
+        self.assertEqual(out["state"], "blocked")
+        self.assertEqual(list(other.iterdir()), [])
+
+    def test_no_caddy_docker_network_or_live_apply_surface(self):
+        source = Path(__file__).with_name("caddy-https-host-stage.py").read_text()
+        self.assertNotIn("subprocess", source)
+        self.assertNotIn("docker compose", source)
+        self.assertNotIn("--insecure", source)
+        self.assertNotIn("os.replace", source)
+        self.assertNotIn("urllib", source)
+        self.assertNotIn("socket.", source)
+        self.assertNotIn("apply_supported\": True", source)
 
 if __name__ == "__main__":
     unittest.main()
