@@ -1,0 +1,134 @@
+name: SH-P003 Live Browser 100k Public Share Navigate Cancel
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  live-chromium-pg-share-100k:
+    if: github.head_ref == 'perf/sh-p003-real-browser-share-get-cancel-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_SH_P003_REAL_BROWSER_PERF: '1'
+      XD_SH_P003_GO_TEST_BIN: ${{ github.workspace }}/desktop/sh-p003-bin/api.test
+      XD_SH_P003_RESULTS: ${{ github.workspace }}/desktop/sh-p003-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify immutable first accepted source-exact SH-P003 n3 artifact
+        run: |
+          set -euo pipefail
+          dir=docs/performance-evidence/sh-p003-public-share-real-browser/ci-run-39118655827
+          test "$(git hash-object "$dir/summary.json")" = 8c2335a45f56e7722e5ed5598823a26f0c275db9
+          test "$(git hash-object "$dir/source.txt")" = 68300a9c1cadd97e9479d851c341ce4af2972e0b
+          test "$(git hash-object "$dir/resources.txt")" = ca3008907f8ec4730bc9ae237765f19511016dc8
+          python3 - "$dir/summary.json" "$dir/source.txt" <<'PY'
+          import json,pathlib,sys
+          result=json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+          provenance=pathlib.Path(sys.argv[2]).read_text()
+          assert result['exact_source_head']=='0121b4a581948dcacf3f5640104334544efec27b'
+          assert 'CI_RUN_ID=39118655827' in provenance
+          assert result['all_passed'] is True and result['target_metadata_nodes']==100000
+          assert result['physical_cas_originals']==0
+          assert len(result['cancel_samples'])==6 and len(result['page_samples'])==6
+          for width in (1440,390):
+              assert {v['sample'] for v in result['cancel_samples'] if v['width']==width}=={1,2,3}
+              assert {v['sample'] for v in result['page_samples'] if v['width']==width}=={1,2,3}
+          assert all(v['real_sql_waiter'] and v['sql_waiters_after']==0
+                     and 0<=v['browser_nav_to_pg_release_ms']<=500
+                     and 0<=v['handler_since_pre_nav_mark_ms']<=500
+                     for v in result['cancel_samples'])
+          assert all(v['first_dom_rows']==v['second_dom_rows']==100
+                     and v['new_page_has_entry_100'] and not v['horizontal_overflow']
+                     and 0<=v['first_page_ms']<=2000
+                     for v in result['page_samples'])
+          print('SH_P003_PERMANENT_FIRST_ACCEPTED_SOURCE_EXACT_6PLUS6_VERIFIED')
+          PY
+      - name: Freeze exact source, reject mock browser and changed Go formatting
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          source=internal/api/sh_p003_real_browser_share_100k_performance_test.go
+          changed="$(gofmt -l "$source")"
+          if [ -n "$changed" ]; then gofmt -d "$source"; exit 1; fi
+          node --check desktop/scripts/sh-p003-real-browser-share-100k.cjs
+          test -f docs/public-share-real-browser-100k-performance.md
+          ! grep -q 'route.fulfill' desktop/scripts/sh-p003-real-browser-share-100k.cjs
+      - name: Build actual production Web and genuine PostgreSQL17/Gin source
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix web run build
+          mkdir -p desktop/sh-p003-bin desktop/sh-p003-results
+          go test -mod=readonly -c -o "$XD_SH_P003_GO_TEST_BIN" ./internal/api
+      - name: Six actual Chromium browser sessions and live Gin/PG17 100k share pages
+        run: |
+          set -euo pipefail
+          printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > desktop/sh-p003-results/source.txt
+          go version >> desktop/sh-p003-results/source.txt
+          node --version >> desktop/sh-p003-results/source.txt
+          /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+            -o desktop/sh-p003-results/resources.txt \
+            timeout --signal=TERM --kill-after=15s 10m \
+              xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+              ./desktop/node_modules/.bin/electron --no-sandbox \
+              desktop/scripts/sh-p003-real-browser-share-100k.cjs \
+              | tee desktop/sh-p003-results/run.log
+          python3 - <<'PY'
+          import json,pathlib
+          f=pathlib.Path('desktop/sh-p003-results/summary.json')
+          x=json.loads(f.read_text())
+          assert x['all_passed'] is True and x['target_metadata_nodes']==100000
+          assert x['physical_cas_originals']==0
+          assert len(x['cancel_samples'])==6 and len(x['page_samples'])==6
+          for width in (390,1440):
+              assert {a['sample'] for a in x['cancel_samples'] if a['width']==width}=={1,2,3}
+              assert {a['sample'] for a in x['page_samples'] if a['width']==width}=={1,2,3}
+          assert all(a['real_sql_waiter'] and a['sql_waiters_after']==0
+                     and 0<=a['browser_nav_to_pg_release_ms']<=500
+                     and 0<=a['handler_since_pre_nav_mark_ms']<=500
+                     for a in x['cancel_samples'])
+          assert all(a['first_dom_rows']==a['second_dom_rows']==100 and
+                     a['new_page_has_entry_100'] and not a['horizontal_overflow'] and
+                     a['first_page_ms']<=2000 for a in x['page_samples'])
+          print('SH_P003_REAL_BROWSER_100K_ACCEPTED',json.dumps({
+            'head':x['exact_source_head'],'cancel_max_ms':x['max_browser_pg_cancel_ms'],
+            'first_page_max_ms':x['max_first_page_ms'],
+            'samples':len(x['cancel_samples']),
+            'limits':'Linux Chromium 1440/390 + real PostgreSQL, no mobile physical device/100k original CAS'
+          },sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p003-real-Chromium-Gin-PG17-share-100k
+          path: desktop/sh-p003-results/
+          retention-days: 30
+          if-no-files-found: warn

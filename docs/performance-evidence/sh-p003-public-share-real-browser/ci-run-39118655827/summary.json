@@ -1,0 +1,132 @@
+{
+  "workload": "SH-P003/live-Chromium-Web-and-MobileWeb-public-share-100k-PG-cancel",
+  "exact_source_head": "0121b4a581948dcacf3f5640104334544efec27b",
+  "physical_cas_originals": 0,
+  "target_metadata_nodes": 100000,
+  "cancel_budget_ms": 500,
+  "page_budget_ms": 2000,
+  "sample_count_per_viewport": 3,
+  "scopes": [
+    "1440px-Linux-Chromium-Web",
+    "390px-Linux-Chromium-MobileWeb-emulation"
+  ],
+  "excludes": "Native Electron App/Agent IPC, installed PWA, Android/iOS hardware, WAN, 100k physical image/video/Live CAS, durable transfer cancellation",
+  "cancel_samples": [
+    {
+      "width": 1440,
+      "sample": 1,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 64.76198300000033,
+      "handler_since_pre_nav_mark_ms": 34.535,
+      "sql_waiters_after": 0,
+      "canceled_requests": 1
+    },
+    {
+      "width": 1440,
+      "sample": 2,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 45.17265300000008,
+      "handler_since_pre_nav_mark_ms": 28.555,
+      "sql_waiters_after": 0,
+      "canceled_requests": 2
+    },
+    {
+      "width": 1440,
+      "sample": 3,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 45.92925899999955,
+      "handler_since_pre_nav_mark_ms": 30.819,
+      "sql_waiters_after": 0,
+      "canceled_requests": 3
+    },
+    {
+      "width": 390,
+      "sample": 1,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 45.23161900000014,
+      "handler_since_pre_nav_mark_ms": 30.175,
+      "sql_waiters_after": 0,
+      "canceled_requests": 4
+    },
+    {
+      "width": 390,
+      "sample": 2,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 48.47611800000004,
+      "handler_since_pre_nav_mark_ms": 34.387,
+      "sql_waiters_after": 0,
+      "canceled_requests": 5
+    },
+    {
+      "width": 390,
+      "sample": 3,
+      "real_sql_waiter": true,
+      "browser_nav_to_pg_release_ms": 44.86548099999982,
+      "handler_since_pre_nav_mark_ms": 30.735,
+      "sql_waiters_after": 0,
+      "canceled_requests": 6
+    }
+  ],
+  "page_samples": [
+    {
+      "width": 1440,
+      "sample": 1,
+      "first_page_ms": 60.21477899999991,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 2,
+      "first_page_ms": 62.6490019999992,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 3,
+      "first_page_ms": 55.83297399999992,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 1,
+      "first_page_ms": 59.21665200000007,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 2,
+      "first_page_ms": 61.672913999999764,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 3,
+      "first_page_ms": 59.5199790000006,
+      "first_dom_rows": 100,
+      "second_dom_rows": 100,
+      "new_page_has_entry_100": true,
+      "horizontal_overflow": false
+    }
+  ],
+  "all_passed": true,
+  "electron_main_maxrss_kib": 195696,
+  "electron_main_user_cpu_us": 597177,
+  "electron_main_system_cpu_us": 272023,
+  "max_browser_pg_cancel_ms": 64.76198300000033,
+  "max_first_page_ms": 62.6490019999992
+}
