@@ -77,10 +77,12 @@ test('single shared responsive page has tinted cards, count-filters and four sep
   assert.match(page, /data-xdrive-system-dependencies-active-filter/)
   assert.match(page, /xDriveDashboardCounts\(overviewEntries\)/)
   assert.match(page, /xDriveDashboardMatches/)
-  assert.match(page, /data-xdrive-system-dependency-actions/)
+  assert.doesNotMatch(page, /data-xdrive-system-dependency-actions/,
+    'one-page detail must not repeat quick links to its own configuration and verification sections')
+  assert.match(page, /data-xdrive-unified-detail-section=\{currentTab\}/)
   // Overview/detail shortcuts must use current server and bridge-method
   // evidence; never navigate from an unvalidated static capability alone.
-  assert.equal((page.match(/xDriveSystemDependencyAvailableTargets\(/g) || []).length, 2)
+  assert.equal((page.match(/xDriveSystemDependencyAvailableTargets\(/g) || []).length, 1)
   assert.match(page, /navigateTo\(configTarget\)/)
   assert.match(page, /navigateTo\(verifyTarget\)/)
   assert.doesNotMatch(page, /navigateTo\(capability\.(?:configTarget|verifyTarget)!?\)/)

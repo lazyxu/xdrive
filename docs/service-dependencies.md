@@ -1,5 +1,17 @@
 # Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
+## SD-UI-V1.3 · 系统依赖单页去重（2026-10-18）
+
+**前置已合并：** SD-UI-V1.2 [#2061](https://github.com/lazyxu/xdrive/pull/2061) 准确 HEAD [CI #39111381362](https://github.com/lazyxu/xdrive/actions/runs/39111381362) 共 77 job：25 成功、52 条件跳过，Final Gate 通过，旧工作分支清理完毕。Web/Mobile Web/PWA/Desktop 已使用同一个 MUI 服务详情：状态、配置、检测和历史都在同一滚动页面的折叠区块。
+
+**本次去重：** 系统依赖**总览**保留每项服务受当前 Server/Agent 配置与检测能力校验的快捷入口，进入**详情**后删除曾重复显示的「配置与检测」按钮卡；原按钮只会跳到本页现存的两个折叠区块。详情下方仍保留实际操作、动态只读状态、权限要求、未保存编辑保护、手动检测及审计回滚；不减少 API 能力和安全边界。
+
+Caddy 的历史区之前复用整个 HTTPS 配置面板，重复显示当前域名/IP、宿主 TLS、期望修订徽章和「核查配置」按钮。现在历史分区只显示当前期望修订号、选择历史修订/受控回滚及明确的**仅创建新期望修订，不代表宿主已应用**说明；完整 LAN IP/域名字段、合法性校验、双关拒绝、加密 AliDNS 管理和本机 TLS 概览保留在配置和检测分区，原七项受限 Caddy 只读安全预检完全不变。
+
+- 单一共享详情页及原管理权限保持不变，无新 REST/Agent IPC/Docker/Caddy Host 写入。保存仍只持久化期望，`apply_supported=false`；真实应用/受控重启/独立救援/回滚看门狗/Applied Receipt 尚未授权。
+- 回归合同核验：详情不再出现第二张快捷卡；总览保留**唯一**受限能力解析与真实入口；Caddy 历史不重复宿主/TLS 摘要，保留 CAS 回滚；配置保留 IP/域名两开关、不能全部关闭、未应用说明。Web/桌面共用同一源码和后端契约。
+- 独立 PR、单工作提交、准确 HEAD 新全量 CI（Go PostgreSQL API Race、Linux/Windows、Web/Desktop、Caddy Rootless、制品、Final Gate）和当前 Github `mergeable_state=clean` 全部通过后才能合并；不冒称实体设备 iOS/Android/WAN 验收。
+
 ## SD-UI-V1.2 · 系统依赖每项服务一个详情页（2026-10-18）
 
 系统依赖总览保持 11 项固定 ID + 独立全局分析策略；**每项服务不再切换四个顶层 Tab**。使用同一个 Web/Mobile Web/PWA/Desktop 共享 `ServiceDependenciesPage`，在唯一详情页按顺序呈现「当前状态」「配置与修改」「检测与生效证据」「配置历史与回滚」可折叠分区。状态只渲染一次，原 Verify 分区保留真实探针的安全范围说明和手动检测按钮，不再重复绘制 ServiceRow；Caddy 保存/预检/历史沿用已有接口、加密 AliDNS 编辑和七项防失联预检，绝不增加 Apply、Restart 或 Docker 操作。
