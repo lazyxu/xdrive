@@ -47,5 +47,16 @@ test('real Mobile Trash only advertises zero after confirmed current GET, keeps 
     "const totalCount = props.virtualCollection?.itemCount ?? props.items.length",
   ]) assert.ok(mobile.includes(token), token)
   assert.ok(mobile.includes("minHeight: 180, display: 'grid', placeItems: 'center'"))
-  assert.ok(mobile.includes('300'))
+  assert.ok(mobile.includes("props.searchActive || (props.trashActive && totalCount > 0)"),
+    'unverified zero Trash may not schedule a display-only timer')
+  assert.ok(mobile.includes("aria-busy={props.loading || trashReadState === 'unverified' || undefined}"))
+  assert.equal(mobile.includes('正在读取最近删除…'), false,
+    'no transient first-GET loading caption may reappear on Mobile Web')
+  const start = mobile.indexOf('data-mobile-files-trash-first-read')
+  const end = mobile.indexOf('data-mobile-files-trash-read-error', start)
+  assert.ok(start >= 0 && end > start)
+  assert.equal(mobile.slice(start, end).includes('XDriveStatePanel'), false,
+    'original Mobile Trash unverified branch must stay a self-closing silent slot')
+  assert.ok(mobile.includes('300'),
+    'deliberate Search and already-populated Trash feedback is not disabled')
 })

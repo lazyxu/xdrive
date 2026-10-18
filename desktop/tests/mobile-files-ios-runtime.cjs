@@ -3851,11 +3851,22 @@ test('P47 Mobile Trash never claims empty before accepted GET; failed reads offe
     assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1)
     assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
       'first unverified frame must not advertise a real empty Trash')
+    assert.equal(find(h.view, 'data-mobile-files-trash-first-read', true).props['aria-busy'], true,
+      'idle before first authenticated GET is still unverified and semantically busy')
     await h.update({ loading: true })
     assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1)
     assert.equal(find(h.view, 'data-mobile-files-trash-first-read', true).props['aria-busy'], true)
     assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
       'short Trash GET is visually quiet')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 355)) })
+    assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1,
+      'held >300ms first Trash GET retains exactly one unchanged silent slot')
+    assert.equal(find(h.view, 'data-mobile-files-trash-first-read', true).props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'slow first Trash GET must NEVER introduce a timer-driven intermediate spinner')
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none',
+      'unverified zero Trash must not show a floating loading caption')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
     await h.update({ loading: false, trashReadState: 'error' })
     const error = find(h.view, 'data-mobile-files-trash-read-error', true)
     assert.equal(error.props.role, 'alert')
@@ -3883,6 +3894,26 @@ test('P47 Mobile Trash never claims empty before accepted GET; failed reads offe
     loading: false, onRefresh: () => { reloads += 1 } } })
 })
 
+
+test('P79: accepted populated Mobile Trash refresh retains rows and its truthful in-place status', async () => {
+  await withView(async h => {
+    const status = () => find(h.view, 'data-mobile-files-arrangement-status', true)
+    const initialRows = count(h.view, 'data-mobile-files-item')
+    assert.ok(initialRows > 0, 'original accepted Trash rows remain visible')
+    await h.update({ loading: true })
+    assert.equal(status().props.sx.display, 'none', 'short refresh has no decorative badge')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 345)) })
+    assert.equal(status().props.sx.display, 'block',
+      'sustained refresh of populated data keeps the original in-place user feedback')
+    assert.equal(count(h.view, 'data-mobile-files-item'), initialRows)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await h.update({ loading: false })
+    assert.equal(status().props.sx.display, 'none', 'feedback clears on real completion')
+  }, { props: {
+    trashActive: true, trashReadState: 'ready', loading: false,
+    items: [{ id: 991, name: 'old-deleted.jpg', kind: 'file', revision: 1 }],
+  } })
+})
 
 test('M07: global Search exits to original Recent/Favorites virtual rail position', async () => {
   const recentItems = Array.from({ length: 240 }, (_, i) => ({

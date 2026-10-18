@@ -2,6 +2,13 @@
 
 **Status (2026-10-15):** First scoped corrective implementation prepared; source-exact browser and full CI pending. This is a shared visual/state geometry investigation, not the independent Go race or 100k performance benchmark track.
 
+## P79 · Mobile Trash verified-first quiet read (2026-10-18)
+
+- P78 anti-jitter policy [#2085](https://github.com/lazyxu/xdrive/pull/2085) and P77 wide Web/Desktop Trash [#2079](https://github.com/lazyxu/xdrive/pull/2079) are merged. A follow-up audit found that **the actual Mobile Web `MobileFiles.tsx` still inserted a 300ms-delayed “正在读取最近删除…” StatePanel** during an unverified Trash first GET. This was missed because original P47 mounted tests asserted only the immediate frame, not the held frame.
+- P79 keeps the original **180px** silent first-read region and truthful `aria-busy` before dispatch and throughout slow GET. Only the Owner-scoped authenticated `ready` zero reveals “最近删除为空”; terminal `error` retains the original 44px retry. No new first-visit loading ring, timer, or in-flow row; the real Trash request is never delayed or skipped.
+- **Deliberate progress remains** for real Search requests and a slow refresh of already accepted nonempty Trash rows, plus original thumbnail/video/Live Photo/poster, pagination and file transfer feedback. This is strictly presentation-only: no Server/Agent API or virtualizer/cancel changes.
+- Extend original mounted `mobile-files-ios-runtime.cjs` to hold the genuine React Trash component's first GET representation beyond 355ms, verify no StatePanel or float badge, identical 180px floor and one scroll owner; check idle-before-GET semantic busy, terminal retry, verified zero, and populated refresh. Retain P78 source guard and the older P47 source check. Target Desktop/Web CI, Linux/Windows and full current-HEAD Final Gate. A source/mounted test does **not** prove physical iOS/Android/installed PWA or WAN CLS/FPS; those remain **NOT RUN**.
+
 ## Constraints
 
 - Preserve the full-screen mobile Web App Frame, fixed 52px xDrive global app title bar, and separate Files internal header/Recents/Favorites/Browse rail.

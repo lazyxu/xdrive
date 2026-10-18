@@ -65,12 +65,12 @@ test('P78 Mobile Files: verified first Range owns ONE destination/scroll commit,
     'data-xdrive-file-explorer-scroll-host',
     'data-mobile-files-collection-first-read',
     'data-mobile-files-organization-loading',
-    'const showRangeLoading = (props.loading || searchCountPending) &&\n    (props.searchActive || props.trashActive)',
+    'const showRangeLoading = (props.loading || searchCountPending) &&\n    (props.searchActive || (props.trashActive && totalCount > 0))',
   ], 'original mobile navigation')
   mustOmit(mobile, [
     'beginBrowse(entry.id)', 'beginBrowse(selectedEntry.id)',
     'showOrganizationLoading', 'showRecentFirstRead', 'showFavoriteFirstRead',
-    'useXDriveDeferredPendingLoading', '正在加载文件…',
+    'useXDriveDeferredPendingLoading', '正在加载文件…', '正在读取最近删除…',
   ], 'normal folder, rail and collection navigation')
   assert.equal(stableHeight(mobile, 'data-mobile-files-zero-state'), 180)
   assert.equal(stableHeight(mobile, 'data-mobile-files-collection-state'), 180)
