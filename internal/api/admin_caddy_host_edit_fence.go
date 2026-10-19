@@ -39,3 +39,15 @@ func lockCaddyDesiredBeforeAliDNSMutationTx(tx *gorm.DB) error {
 	}
 	return err
 }
+
+// Report only the existence of a durable Host reservation. Never return its
+// signed intent fingerprints, operator identity, plans or candidate digests.
+// Missing tables or DB errors MUST fail closed instead of showing an editable UI.
+func readCaddyHostPendingUnappliedDB(db *gorm.DB) (bool, error) {
+	var pending meta.AdminCaddyHostApplyReservation
+	err := db.Select("name").Where("name = ?", caddyHostDBReservationName).Take(&pending).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}

@@ -116,8 +116,16 @@ func TestCaddyPendingDBFenceBlocksAdminHTTPSAndAliDNSMutations(t *testing.T) {
 		json.Unmarshal(httpsStatus.Body.Bytes(), &config) != nil {
 		t.Fatalf("read-only HTTPS state lost while pending: %d", httpsStatus.Code)
 	}
-	if config.ApplySupported || config.ApplyState != "pending" {
+	if config.ApplySupported || config.ApplyState != "pending" ||
+		!config.HostApplyPending || config.Editable {
 		t.Fatalf("DB pending reservation falsely presented applied Caddy: %+v", config)
+	}
+	alidnsStatus := call(routerB, http.MethodGet, base+"/alidns", "")
+	var alidns adminCaddyAliDNSConfigDTO
+	if alidnsStatus.Code != http.StatusOK ||
+		json.Unmarshal(alidnsStatus.Body.Bytes(), &alidns) != nil ||
+		!alidns.HostApplyPending || alidns.Editable || alidns.ApplySupported {
+		t.Fatalf("AliDNS state did not expose a read-only pending fence: %d %+v", alidnsStatus.Code, alidns)
 	}
 	// The same pending remains sticky. No automatic expiry or unsafe discard.
 	var count int64

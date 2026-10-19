@@ -143,7 +143,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
   }
 
   const save = async () => {
-    if (!config || !source.saveCaddyHTTPSConfig || busy || !validDomain(domain) ||
+    if (!config || !config.editable || !source.saveCaddyHTTPSConfig || busy || !validDomain(domain) ||
       (enabled && !domain) || !supportsLAN || !valid) return
     const epoch = ++epochRef.current
     setBusy(true)
@@ -171,7 +171,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
   }
 
   const rollback = async () => {
-    if (!config || !source.rollbackCaddyHTTPS || busy || !target) return
+    if (!config || !config.editable || !source.rollbackCaddyHTTPS || busy || !target) return
     const epoch = ++epochRef.current
     setBusy(true)
     setConfirmRollback(false)
@@ -224,11 +224,15 @@ export function XDriveCaddyHTTPSDesiredPanel({
             {section === 'config' && (<>
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
               <Chip variant="outlined" size="small" color="warning"
-                label={config.apply_state === 'pending' ? '期望配置未应用' : '未由管理员管理'} />
+                label={config.host_apply_pending ? 'Host 申请待协调 · 编辑已锁定' :
+                  config.apply_state === 'pending' ? '期望配置未应用' : '未由管理员管理'} />
               <Typography variant="caption" color="text.secondary">
                 期望修订 #{config.revision} · {config.source === 'saved' ? '持久化期望配置' : '部署入口初始值（未保存，非生效证明）'}
               </Typography>
             </Stack>
+            {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-host-pending-fence>
+              存在待协调的宿主配置申请，IP/域名修改和历史回滚已锁定；这不是已部署或已重启的证明。
+            </Typography>}
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
               运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
             </Typography>

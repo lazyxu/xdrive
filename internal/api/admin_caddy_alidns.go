@@ -20,6 +20,7 @@ const (
 	caddyAliDNSSecretKind         = "admin-service-caddy-alidns"
 	caddyAliDNSSecretAADID uint64 = 2
 )
+const caddyAliDNSPendingRequirement = "存在待协调的 Host 配置申请；AliDNS 凭据修改与清除已被锁定。需由独立操作员核对或恢复，不代表 DNS/HTTPS 已生效。"
 const caddyAliDNSRequirement = "AliDNS 凭据仅加密保存为全局管理员期望值，尚未交付宿主机，也未进行真实 DNS/ACME 验证。实际使用需后续受限 Host Manager 预检、防失联、审计应用和核验；当前不会修改 Caddy 或影响传输。"
 
 var errCaddyAliDNSConflict = errors.New("Caddy AliDNS configuration revision changed")
@@ -58,6 +59,8 @@ type adminCaddyAliDNSConfigDTO struct {
 	ApplyState     string     `json:"apply_state"`
 	ApplySupported bool       `json:"apply_supported"`
 	Requirement    string     `json:"requirement"`
+
+	HostApplyPending bool `json:"host_apply_pending"`
 }
 
 func (s *Server) readCaddyAliDNSSetting(c *gin.Context) (meta.AdminServiceSecret, bool, error) {
@@ -92,6 +95,15 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "Caddy AliDNS configuration unavailable")
 		return
 	}
+	hostPending, err := readCaddyHostPendingUnappliedDB(s.DB.WithContext(c.Request.Context()))
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy host reservation state unavailable")
+		return
+	}
+	requirement := caddyAliDNSRequirement
+	if hostPending {
+		requirement = caddyAliDNSPendingRequirement
+	}
 	state, source := "unmanaged", "unset"
 	if exists {
 		state, source = "pending", "saved"
@@ -105,8 +117,9 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 			}
 			return nil
 		}(),
-		Editable:   s.ConnectorSecrets != nil,
-		ApplyState: state, ApplySupported: false, Requirement: caddyAliDNSRequirement,
+		Editable:   s.ConnectorSecrets != nil && !hostPending,
+		ApplyState: state, ApplySupported: false, HostApplyPending: hostPending,
+		Requirement: requirement,
 	})
 }
 
