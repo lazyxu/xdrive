@@ -8,6 +8,19 @@ const React = require('react')
 const Renderer = require('react-test-renderer')
 const { act } = Renderer
 const root = path.resolve(__dirname, '../..')
+const deviceValidationExports = (() => {
+  // Retain the original mounted page; exercise its actual redacted validator.
+  const filename = path.join(root, 'ui/shared/src/device-backup-device-page-validation.ts')
+  const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const exported = {}
+  new Function('exports', 'require', js)(exported, () => {
+    throw Error('Device backup read validator must not import runtime dependencies')
+  })
+  return exported
+})()
 // The original renderers schedule a real, non-layout refresh indicator after
 // an accepted snapshot. Provide browser timer APIs for the mounted renderer.
 globalThis.window = { setTimeout, clearTimeout }
@@ -34,12 +47,8 @@ function page(file, exportName) {
     if (name === '../device-backup-folder-page-validation') return {
       validateXDriveDeviceBackupFolderPage: () => {},
     }
-    // P82 measures first-read geometry, not continuation payload validation.
-    // Keep the original mounted component and mock only its pure validator,
-    // exactly as the existing folder-page validator is mocked above.
-    if (name === '../device-backup-device-page-validation') return {
-      validateXDriveDeviceBackupDevicePage: () => {},
-    }
+    // P0-C1f also verifies the actual first-overview redaction contract.
+    if (name === '../device-backup-device-page-validation') return deviceValidationExports
     if (name === '../device-backup-run-page-validation') return {
       validateXDriveDeviceBackupRunPage: () => {},
     }
@@ -133,7 +142,7 @@ test('P82 original Device Backup retains silent 180px first read; real slow acce
     cold()
     await act(async () => { await wait(365) })
     cold()
-    await act(async () => { first.resolve({ devices: [] }); await first.promise })
+    await act(async () => { first.resolve({ devices: [], has_more: false, has_more_folders: false, next_after_device_id: '' }); await first.promise })
     assert.equal(marked(v, 'data-xdrive-device-backup-first-read').length, 0)
     assert.equal(marked(v, 'data-xdrive-device-backup-overview')[0].props.sx.minHeight, 180,
       'authoritative empty device list keeps the cold-slot height')
@@ -145,6 +154,49 @@ test('P82 original Device Backup retains silent 180px first read; real slow acce
     await act(async () => { await wait(365) })
     assert.equal(marked(v, 'data-xdrive-device-backup-first-read').length, 0)
     assert.equal(spinners(v).length, 0)
-    await act(async () => { next.resolve({ devices: [] }); await next.promise })
+    await act(async () => { next.resolve({ devices: [], has_more: false, has_more_folders: false, next_after_device_id: '' }); await next.promise })
+  })
+})
+
+
+test('P0-C1f mounted Device Backup rejects private first-read and preserves verified refresh cards', async () => {
+  const safe = {
+    devices: [{ id: '10000000-0000-4000-8000-000000000001',
+      name: 'Verified desktop', platform: 'linux',
+      connection_state: 'unknown', revoked: false, folders: [] }],
+    has_more: false, has_more_folders: false, next_after_device_id: '',
+  }
+  const hostile = {
+    ...safe, devices: [{ ...safe.devices[0], name: 'Untrusted desktop',
+      root_fingerprint: 'PRIVATE-ROOT-FINGERPRINT', local_path: '/secret/private' }],
+  }
+  const first = defer(), refreshResponse = defer()
+  let reads = 0
+  const source = { list: () => (++reads === 1 ? first.promise : refreshResponse.promise) }
+  const nameCount = (view, value) => view.root.findAll(el =>
+    el.type === 'Typography' && el.props.children === value).length
+  await mount(Device, { source }, async view => {
+    await act(async () => { first.resolve(safe); await first.promise })
+    assert.equal(nameCount(view, 'Verified desktop'), 1,
+      'valid first overview must paint without requiring a continuation page')
+    const refresh = view.root.findAll(el =>
+      el.type === 'Button' && el.props.children === '刷新')[0]
+    assert.ok(refresh)
+    await act(async () => { refresh.props.onClick() })
+    await act(async () => { refreshResponse.resolve(hostile); await refreshResponse.promise })
+    assert.equal(nameCount(view, 'Verified desktop'), 1,
+      'rejected same-source refresh must retain the last verified cards')
+    assert.equal(nameCount(view, 'Untrusted desktop'), 0)
+    const displayedText = view.root.findAll(el => typeof el.props.children === 'string')
+      .map(el => el.props.children).join('|')
+    assert.doesNotMatch(displayedText, /PRIVATE-ROOT-FINGERPRINT|\/secret\/private/)
+    assert.ok(view.root.findAll(el => el.type === 'XDriveStatusAlert'
+      && String(el.props.children).includes('已保留上次成功读取')).length > 0)
+  })
+  await mount(Device, { source: { list: async () => hostile } }, async view => {
+    assert.equal(nameCount(view, 'Untrusted desktop'), 0,
+      'malformed cold owner page must not render device cards')
+    assert.ok(view.root.findAll(el => el.type === 'XDriveStatePanel'
+      && el.props.message === '设备备份信息读取失败，请刷新重试。').length > 0)
   })
 })
