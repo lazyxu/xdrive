@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Typography } from '@mui/material'
+import { xDriveKeepBaiduJSAPI4MapSessionAlive } from '../media-gallery-baidu-jsapi4-session-lifecycle'
 import {
   xDriveCreateBaiduJSAPI4IndexedBD09Mount,
 } from '../media-gallery-baidu-jsapi4-browser-loader'
@@ -57,6 +58,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let native: Awaited<ReturnType<typeof mount.acquire>> | null = null
     let bridge: XDriveBaiduJSAPI4IndexedViewportBridge | null = null
     let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => pending.abort(), 8000)
+    let stopRenewal: (() => void) | null = null
     setResult('')
     setCellSummary(null)
     onReady(false)
@@ -96,8 +98,25 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       const first = await bridge.refresh()
       if (!active || pending.signal.aborted) return
       setResult(first.kind)
-      onReady(first.kind === 'rendered' || first.kind === 'aggregated' ||
-        first.kind === 'incomplete')
+      const ready = first.kind === 'rendered' || first.kind === 'aggregated' ||
+        first.kind === 'incomplete'
+      onReady(ready)
+      if (ready) {
+        stopRenewal = xDriveKeepBaiduJSAPI4MapSessionAlive(
+          mintMapOnlySession, pending.signal, container.ownerDocument, () => {
+            if (!active || pending.signal.aborted) return
+            // The 2-minute map Cookie was revoked or could not be renewed.
+            // Tear down BMap/ClusterLayer NOW; static Baidu remains available.
+            pending.abort()
+            bridge?.dispose()
+            bridge = null
+            latestBridge.current = null
+            native?.dispose()
+            native = null
+            setResult('unavailable')
+            onReady(false)
+          })
+      }
     }
     void opened().catch(() => {
       // A failed SDK bind, revoked Session or unusable viewport must release
@@ -113,6 +132,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       }
     })
     return () => {
+      stopRenewal?.()
       active = false
       pending.abort()
       if (clock !== null) clearTimeout(clock)
