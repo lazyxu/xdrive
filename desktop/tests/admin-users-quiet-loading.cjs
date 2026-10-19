@@ -13,7 +13,8 @@ test('admin users stays quiet until authoritative first read, never advertises f
   assert.ok(view.includes('!readComplete ? ('))
   assert.ok(view.includes('data-xdrive-admin-users-first-read'))
   assert.ok(view.includes('minHeight: 180'))
-  assert.ok(view.includes('showNetworkFeedback ? ('))
+  assert.ok(view.includes('data-xdrive-admin-users-first-read aria-busy="true"'))
+  assert.equal(view.includes('正在加载用户…'), false, 'cold Admin Users has no delayed StatePanel')
   assert.ok(view.includes('loadError ? \'用户列表读取失败，请刷新重试。\' : \'暂无用户\''))
   assert.ok(view.includes('setCompletedSource(api)'))
   assert.equal(view.includes('{loading && users.length === 0 ? ('), false)
@@ -27,7 +28,9 @@ test('real reads start without visual delay; stale account and request results c
   assert.ok(view.includes('return () => { readEpochRef.current += 1 }'))
   assert.ok(view.includes('window.setTimeout(() => setVisibleReadEpoch(readEpoch), 300)'))
   assert.ok(view.includes('window.clearTimeout(timer)'))
+  assert.ok(view.includes('readComplete && users.length > 0 &&'))
   assert.ok(view.includes('pendingReadSource === api && visibleReadEpoch === readEpoch'))
+  assert.ok(view.includes('!readComplete || users.length === 0'), 'never schedule a spinner during cold first GET')
 })
 
 test('refresh retains accepted rows and does not insert a progressing layout row', () => {
@@ -36,6 +39,7 @@ test('refresh retains accepted rows and does not insert a progressing layout row
   assert.ok(view.includes('disabled={loading}'))
   assert.ok(view.includes("position: 'absolute', top: 0, left: 0, right: 0"))
   assert.ok(view.includes('readComplete && showNetworkFeedback'))
+  assert.ok(view.includes('aria-busy="true"'), 'unverified state is accessible')
   assert.ok(view.includes('data-xdrive-admin-users-responsive'))
   assert.ok(web.includes('<AdminUsersPanel'))
   assert.ok(desktop.includes('<XDriveAdminUsersPage'))

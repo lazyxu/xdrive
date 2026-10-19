@@ -11,15 +11,17 @@ const desktop = fs.readFileSync(path.join(root, 'desktop/src/renderer/App.tsx'),
 
 test('cold audit first page has a fixed-height quiet slot and no immediate fake empty/spinner', () => {
   for (const token of [
-    'useXDriveDeferredLoading(loading, requestGeneration)',
+    'useXDriveDeferredLoading(loading && totalCount !== null, requestGeneration)',
     'data-xdrive-admin-audit-first-read',
     'minHeight: 180',
-    'delayedLoading ? (',
+    'aria-busy={loading || !error || undefined}',
     '审计日志读取失败，请重试。',
     'acceptedSource === api ? virtualCollection.totalCount : null',
     'setAcceptedSource(api)',
   ]) assert.ok(view.includes(token), token)
-  assert.equal(view.includes("message={loading ? '正在加载审计日志…'"), false)
+  assert.equal(view.includes('正在加载审计日志…'), false, 'cold audit GET must never spawn a delayed spinner')
+  assert.ok(view.includes('totalCount === null || totalCount === 0 ? 180 : undefined'),
+    'verified zero must retain the exact cold height')
   assert.ok(view.includes('loading={false}') === false)
 })
 
@@ -66,6 +68,7 @@ test('filter buttons and update feedback never push a virtualized audit table do
   assert.ok(view.includes('onClick={() => applyFilters({ action, result, actor })}'))
   assert.ok(view.includes('data-xdrive-admin-audit-content'))
   assert.ok(view.includes('totalCount !== null && delayedLoading'))
+  assert.ok(view.includes('!loading && error ? ('), 'preserve true error/retry')
   assert.ok(view.includes("position: 'absolute', top: 0, left: 0, right: 0"))
   assert.equal(view.includes('loadingLabel="正在加载…"'), false)
   assert.ok(view.includes('data-xdrive-admin-audit-mobile-list'))

@@ -187,15 +187,15 @@ export function XDriveDeviceBackupPage({
   const [delayedRead, setDelayedRead] = useState<{
     source: XDriveDeviceBackupDataSource; revision: number
   } | null>(null)
-  const showReadProgress = Boolean(source && loading && delayedRead?.source === source &&
+  const showReadProgress = Boolean(source && overview && loading && delayedRead?.source === source &&
     delayedRead.revision === refreshID)
-  // Request immediately; only cosmetic progress waits 300ms. The source and
-  // revision boundary prevents a previous session/refresh spinner leaking.
+  // Only an accepted overview refresh gets delayed in-place feedback.
+  // An unverified first Owner/Agent read must stay silent, even after 300ms.
   useEffect(() => {
-    if (!source || !loading) return
+    if (!source || !loading || !overview) return
     const timer = window.setTimeout(() => setDelayedRead({ source, revision: refreshID }), 300)
     return () => window.clearTimeout(timer)
-  }, [source, refreshID, loading])
+  }, [source, refreshID, loading, overview])
   const pageLoading = current && Boolean(snapshot.pageLoading)
   const pageFailed = current && Boolean(snapshot.pageFailed)
   const [expanded, setExpanded] = useState<{ source?: XDriveDeviceBackupDataSource; id: number | null }>({
@@ -465,7 +465,8 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       <Box data-xdrive-device-backup-overview sx={{
-        position: 'relative', minWidth: 0, minHeight: source && !overview ? 180 : undefined,
+        position: 'relative', minWidth: 0,
+        minHeight: source && (!overview || overview.devices.length === 0) ? 180 : undefined,
       }}>
       {failed && overview ? (
         <XDriveStatusAlert tone="neutral">
@@ -477,13 +478,9 @@ export function XDriveDeviceBackupPage({
           当前 Desktop Agent 暂不支持读取脱敏设备备份数据。请更新 Agent；不能从普通 Source 接口读取异机私有路径。
         </XDriveStatusAlert>
       ) : loading && !overview ? (
-        <Box data-xdrive-device-backup-first-read sx={{
+        <Box data-xdrive-device-backup-first-read aria-busy="true" sx={{
           minHeight: 180, display: 'grid', placeItems: 'center',
-        }}>
-          {showReadProgress ? (
-            <XDriveStatePanel loading variant="plain" message="正在读取设备备份…" />
-          ) : null}
-        </Box>
+        }} />
       ) : failed && !overview ? (
         <XDriveStatePanel variant="plain" message="设备备份信息读取失败，请刷新重试。" />
       ) : !overview || overview.devices.length === 0 ? (
