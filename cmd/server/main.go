@@ -285,11 +285,15 @@ func main() {
 	}
 	// Internal xDrive-owned keys belong to this installation, not to Baidu.
 	// Provision safely once via PostgreSQL and the existing protected keyring.
-	// Its absence may disable optional JSAPI4 internals but never stop core
-	// file transfer/sync or bypass the independent operator release gate.
+	// Managed signer/cookie keys are persistent across Server replicas;
+	// only complete reviewed resources plus Admin intent allow release.
+	// Missing keys never stop core file transfer/sync.
 	if err := srv.EnsureBaiduJSAPI4InternalKeys(serverCtx); err != nil {
 		slog.Warn("internal_service_key_provision_unavailable")
 	}
+	// Automatically renew a scoped Server release using its existing keys;
+	// incomplete official resource policy is a hard NO-GO (zero egress).
+	srv.StartBaiduJSAPI4ManagedRelease(serverCtx)
 	srv.PhotoModelBearerConfigured = strings.TrimSpace(cfg.PhotoFaceAnalyzerToken) != ""
 	srv.StartPostgresPoolReconciliation(serverCtx)
 	srv.StartPostgresPoolReplicaPresence(serverCtx)

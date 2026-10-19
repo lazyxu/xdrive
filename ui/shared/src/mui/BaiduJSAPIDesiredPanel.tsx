@@ -15,7 +15,7 @@ const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
   desired_disabled: '管理员期望开关未开启',
   encryption_keyring_unavailable: 'Server 尚未配置凭据加密密钥环',
   trusted_https_origin_invalid: 'Server 的 HTTPS Origin 尚未配置正确',
-  operator_signing_root_not_pinned: '当前构建未固定生产签名公钥',
+  instance_signing_identity_unavailable: '自动托管的实例签名密钥尚未准备好',
   child_resource_inventory_not_reviewed: '尚无完整、逐项审核的地图子资源白名单',
   signed_release_not_installed: '尚未安装当前有效的 Server 受信签名发布',
 }

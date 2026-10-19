@@ -239,5 +239,9 @@ func (s *Server) adminSaveBaiduJSAPIConfig(c *gin.Context) {
 		}
 		return
 	}
+	// Read CURRENT committed state, not this request's stale desired value:
+	// a newer admin save must never be undone by an older response handler.
+	// With an incomplete policy this only revokes the optional map runtime.
+	_ = s.RefreshBaiduJSAPI4ManagedRelease(c.Request.Context())
 	s.adminBaiduJSAPIConfig(c)
 }

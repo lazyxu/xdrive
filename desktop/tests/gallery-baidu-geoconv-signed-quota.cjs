@@ -44,7 +44,7 @@ test('signed Geoconv remains private when JSAPI4 has real but unapproved HTTP en
   // Unlike Geoconv, JSAPI is still default NO-GO: no pinned release signer
   // or complete reviewed JS, tile, font, WASM child inventory.
   assert.match(resources, /reviewedJSAPI4ChildResourceCount = 0/)
-  assert.match(release, /jsapi4PinnedProductionPublicKey = ""/)
+  assert.match(release, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.equal(bootstrap.includes('RuntimeAuthorized:     true'), false)
   assert.equal(candidate.includes('func (s *Server)'), false)
   assert.equal(candidate.includes('http.Handler'), false)

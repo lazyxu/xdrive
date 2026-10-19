@@ -146,5 +146,5 @@ test('C20 one real Server /cells and shared Gallery path, no separate desktop fi
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
     /reviewedJSAPI4ChildResourceCount = 0/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
-    /jsapi4PinnedProductionPublicKey = ""/)
+    /VerifyManagedJSAPI4ProductionRelease\(/)
 })

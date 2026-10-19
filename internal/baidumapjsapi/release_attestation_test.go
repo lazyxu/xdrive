@@ -38,11 +38,8 @@ func TestJSAPI4AttestationSignatureOnlyNotRuntimePermission(t *testing.T) {
 	if err := verifyJSAPI4ReleaseAttestation(a, public, expected, now); err != nil {
 		t.Fatalf("synthetic signature rejected: %v", err)
 	}
-	if !JSAPI4ChildInventoryComplete() && jsapi4PinnedProductionPublicKey != "" {
-		t.Fatal("unreviewed inventory must not have a production signer")
-	}
-	if err := VerifyPinnedJSAPI4ProductionRelease(a, expected, now); !errors.Is(err, ErrGateClosed) {
-		t.Fatalf("fixture wrongly activated JSAPI4 runtime: %v", err)
+	if err := VerifyManagedJSAPI4ProductionRelease(a, expected, public, now); !errors.Is(err, ErrGateClosed) {
+		t.Fatalf("fixture wrongly activated unreviewed JSAPI4 runtime: %v", err)
 	}
 }
 
@@ -129,5 +126,25 @@ func TestJSAPI4AttestationEmptyEvidenceAndDomainIsolation(t *testing.T) {
 	copy(a.Signature[:], ed25519.Sign(privateKey, []byte("some other product operation")))
 	if err := verifyJSAPI4ReleaseAttestation(a, public, expected, now); !errors.Is(err, errJSAPI4ReleaseProofDenied) {
 		t.Fatal("cross-domain signature accepted")
+	}
+}
+
+func TestJSAPI4ManagedSignerIsScopedButCannotApproveUnknownChildren(t *testing.T) {
+	_, public, scope, now := sampleReleaseAttestation(t)
+	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x5a}, ed25519.SeedSize))
+	defer clear(private)
+	proof, err := SignManagedJSAPI4Release(private, scope, now)
+	if err != nil || verifyJSAPI4ReleaseAttestation(proof, public, scope, now) != nil {
+		t.Fatal("managed instance signature failed to bind its scope")
+	}
+	if proof.ExpiresUnix-proof.IssuedUnix > 5*60 ||
+		VerifyManagedJSAPI4ProductionRelease(proof, scope, public, now) == nil {
+		t.Fatal("managed signature approved an incomplete resource graph")
+	}
+	if _, err := SignManagedJSAPI4Release(private[:32], scope, now); !errors.Is(err, ErrGateClosed) {
+		t.Fatal("short/malformed managed private key was accepted")
+	}
+	if hash, ok := JSAPI4ApprovedPolicySHA256(); ok || hash != ([32]byte{}) {
+		t.Fatal("empty child manifest produced an apparently-approved policy digest")
 	}
 }

@@ -531,7 +531,7 @@ export type XDriveBaiduJSAPIConfig = {
   release_blockers?: Array<
     | 'browser_ak_not_configured' | 'desired_disabled'
     | 'encryption_keyring_unavailable' | 'trusted_https_origin_invalid'
-    | 'operator_signing_root_not_pinned' | 'child_resource_inventory_not_reviewed'
+    | 'instance_signing_identity_unavailable' | 'child_resource_inventory_not_reviewed'
     | 'signed_release_not_installed'
   >
 }

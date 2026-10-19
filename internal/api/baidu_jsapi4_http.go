@@ -5,17 +5,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/baidumapjsapi"
 )
 
-// baiduJSAPI4LiveAuthority is process-private runtime trust provisioned ONLY
-// from an independently reviewed deployment release. No Admin/HTTP/Renderer
-// input, desired_enabled or Browser AK can create it. The empty source-pinned
-// production signer/child inventory in this build keeps it impossible to
-// install, even for an administrator with a configured Browser AK.
+// baiduJSAPI4LiveAuthority holds a short release signed by the durable
+// encrypted xDrive installation identity, not a separately configured
+// production public key. An incomplete source-reviewed resource inventory
+// or disabled Browser AK STILL denies runtime and all map resources.
 //
 // The cookie key MUST be a separately generated 32-byte secret, persistent
 // across authorized Server replicas and never exposed to JSAPI, IPC or logs.
@@ -23,7 +23,7 @@ import (
 // the signed short TTL and live User/AK/map-epoch validation.
 type baiduJSAPI4LiveAuthority struct {
 	cookieKey   [32]byte
-	attestation baidumapjsapi.JSAPI4ReleaseAttestation
+	attestation atomic.Pointer[baidumapjsapi.JSAPI4ReleaseAttestation]
 	scope       baidumapjsapi.JSAPI4ReleaseScope
 }
 
@@ -33,12 +33,9 @@ func (s *Server) ClearBaiduJSAPI4OperatorRelease() {
 	}
 }
 
-// InstallBaiduJSAPI4OperatorRelease is a Server-process provisioning boundary;
-// it is NOT a route and there is no caller in the shipped deployment. A future
-// trusted operator workflow must independently prove licensed entitlement,
-// audited full immutable child graph, CSP/Caddy/Electron/PWA isolation, release
-// build/policy scope and real paired Browser+upstream HAR before invoking it.
-// The pinned release verifier, not a boolean or desired setting, is decisive.
+// This Server-only installation boundary verifies the persisted encrypted
+// instance identity, cookie key and independently reconstructed current
+// build/policy/origin/AK-revision/epoch. Admin/HTTP cannot supply trust.
 func (s *Server) InstallBaiduJSAPI4OperatorRelease(
 	ctx context.Context, cookieKey []byte,
 	attestation baidumapjsapi.JSAPI4ReleaseAttestation,
@@ -51,8 +48,7 @@ func (s *Server) InstallBaiduJSAPI4OperatorRelease(
 	var empty [32]byte
 	if bytes.Equal(cookieKey, empty[:]) ||
 		sha256.Sum256([]byte(s.AllowedOrigin)) != expected.TrustedOriginSHA256 ||
-		baidumapjsapi.VerifyPinnedJSAPI4ProductionRelease(
-			attestation, expected, time.Now().UTC()) != nil {
+		s.verifyBaiduJSAPI4ManagedRelease(ctx, attestation, expected, cookieKey) != nil {
 		return errBaiduJSAPIResourceDenied
 	}
 	cfg, err := s.baiduJSAPIDesired(ctx)
@@ -60,8 +56,16 @@ func (s *Server) InstallBaiduJSAPI4OperatorRelease(
 		cfg.Revision == 0 || cfg.Revision != expected.BrowserAKRevision {
 		return errBaiduJSAPIResourceDenied
 	}
-	next := &baiduJSAPI4LiveAuthority{attestation: attestation, scope: expected}
+	// Renewals for an unchanged scope keep the authority pointer stable,
+	// avoiding arbitrary cancellations and map frame jitter on each renewal.
+	previous := s.baiduJSAPI4Authority.Load()
+	if previous != nil && previous.scope == expected && bytes.Equal(previous.cookieKey[:], cookieKey) {
+		previous.attestation.Store(&attestation)
+		return nil
+	}
+	next := &baiduJSAPI4LiveAuthority{scope: expected}
 	copy(next.cookieKey[:], cookieKey)
+	next.attestation.Store(&attestation)
 	s.baiduJSAPI4Authority.Store(next)
 	return nil
 }
@@ -78,9 +82,12 @@ func (s *Server) currentBaiduJSAPI4OperatorRelease(
 		return nil, errBaiduJSAPIResourceDenied
 	}
 	p := s.baiduJSAPI4Authority.Load()
-	if p == nil || sha256.Sum256([]byte(s.AllowedOrigin)) != p.scope.TrustedOriginSHA256 ||
-		baidumapjsapi.VerifyPinnedJSAPI4ProductionRelease(
-			p.attestation, p.scope, time.Now().UTC()) != nil {
+	if p == nil || sha256.Sum256([]byte(s.AllowedOrigin)) != p.scope.TrustedOriginSHA256 {
+		return nil, errBaiduJSAPIResourceDenied
+	}
+	proof := p.attestation.Load()
+	if proof == nil || s.verifyBaiduJSAPI4ManagedRelease(
+		ctx, *proof, p.scope, p.cookieKey[:]) != nil {
 		return nil, errBaiduJSAPIResourceDenied
 	}
 	cfg, err := s.baiduJSAPIDesired(ctx)
@@ -146,8 +153,13 @@ func (s *Server) baiduJSAPI4LoaderHTTP(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return
 	}
+	proof := authority.attestation.Load()
+	if proof == nil {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
 	body, headers, err := s.baiduJSAPI4SignedLiveLoader(c.Request.Context(),
-		c.Request, authority.cookieKey[:], authority.attestation, authority.scope)
+		c.Request, authority.cookieKey[:], *proof, authority.scope)
 	if err != nil {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return
@@ -188,8 +200,13 @@ func (s *Server) baiduJSAPI4ChildHTTP(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return
 	}
+	proof := authority.attestation.Load()
+	if proof == nil {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
 	body, headers, err := s.baiduJSAPI4SignedLiveLoader(c.Request.Context(),
-		c.Request, authority.cookieKey[:], authority.attestation, authority.scope)
+		c.Request, authority.cookieKey[:], *proof, authority.scope)
 	if err != nil {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return

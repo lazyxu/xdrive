@@ -11,7 +11,7 @@ const (
 	baiduJSAPI4DesiredDisabled     = "desired_disabled"
 	baiduJSAPI4EncryptionMissing   = "encryption_keyring_unavailable"
 	baiduJSAPI4HTTPSOriginInvalid  = "trusted_https_origin_invalid"
-	baiduJSAPI4SignerUnpinned      = "operator_signing_root_not_pinned"
+	baiduJSAPI4SignerUnavailable   = "instance_signing_identity_unavailable"
 	baiduJSAPI4ResourcesUnreviewed = "child_resource_inventory_not_reviewed"
 	baiduJSAPI4ReleaseUnavailable  = "signed_release_not_installed"
 )
@@ -40,8 +40,8 @@ func (s *Server) baiduJSAPI4ReleaseBlockers(
 	} else if _, err := baidumapjsapi.TrustedProxyBase(s.AllowedOrigin); err != nil {
 		blockers = append(blockers, baiduJSAPI4HTTPSOriginInvalid)
 	}
-	if !baidumapjsapi.JSAPI4ProductionSignerPinned() {
-		blockers = append(blockers, baiduJSAPI4SignerUnpinned)
+	if !s.baiduJSAPI4ManagedSignerReady() {
+		blockers = append(blockers, baiduJSAPI4SignerUnavailable)
 	}
 	if !baidumapjsapi.JSAPI4ChildInventoryComplete() {
 		blockers = append(blockers, baiduJSAPI4ResourcesUnreviewed)
