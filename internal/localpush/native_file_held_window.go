@@ -38,6 +38,39 @@ func WithHeldCurrentOriginalReadCheckpoint(
 	expectedSize int64,
 	checkpoint func(context.Context, NativeHeldCurrentOriginal) error,
 ) (NativeHeldCurrentOriginal, error) {
+	return withHeldCurrentOriginalCheckpoint(ctx, configDir, grant,
+		expectedSnapshotSHA256, relativePath, expectedContentSHA256,
+		expectedSize, checkpoint)
+}
+
+// WithHeldCurrentOriginalFirstLeafCommitWindow explicitly names the one
+// Agent-private exception to the READ-ONLY checkpoint contract: a caller may
+// perform the exact authenticated first-leaf HTTP operation while the original
+// strongly identified native fd is still held and independently post-hashed.
+// This operation does NOT supply remote atomic COMMIT/cancel exclusion, grant
+// Server mutation authority, prove a finished SourceRun, or authorize key
+// retirement. Keep ALL product entrypoints disabled until G2c has durable
+// terminal outcome/cancellation proof and installed-device acceptance.
+func WithHeldCurrentOriginalFirstLeafCommitWindow(
+	ctx context.Context, configDir string, grant RootGrant,
+	expectedSnapshotSHA256, relativePath, expectedContentSHA256 string,
+	expectedSize int64,
+	commit func(context.Context, NativeHeldCurrentOriginal) error,
+) (NativeHeldCurrentOriginal, error) {
+	return withHeldCurrentOriginalCheckpoint(ctx, configDir, grant,
+		expectedSnapshotSHA256, relativePath, expectedContentSHA256,
+		expectedSize, commit)
+}
+
+// withHeldCurrentOriginalCheckpoint is the shared native descriptor verifier.
+// It is not an admission gate; the specialized Agent caller must separately
+// prove Owner/Device/Root/Source/revision and exact keyed Stage/Operation SQL.
+func withHeldCurrentOriginalCheckpoint(
+	ctx context.Context, configDir string, grant RootGrant,
+	expectedSnapshotSHA256, relativePath, expectedContentSHA256 string,
+	expectedSize int64,
+	checkpoint func(context.Context, NativeHeldCurrentOriginal) error,
+) (NativeHeldCurrentOriginal, error) {
 	var empty NativeHeldCurrentOriginal
 	deny := func(err error) (NativeHeldCurrentOriginal, error) {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
