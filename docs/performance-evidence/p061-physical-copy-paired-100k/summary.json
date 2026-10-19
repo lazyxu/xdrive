@@ -1,0 +1,62 @@
+{
+  "arms": {
+    "candidate": {
+      "maximum": {
+        "authenticated_purge_100k_copy_trash_ms": 8760.201,
+        "copy_actual_durable_worker_ms": 111984.922,
+        "copy_http_enqueue_ms": 120.616,
+        "go_process_25ms_peak_rss_growth_bytes": 122535936,
+        "go_process_cpu_ticks_for_copy_and_undo": 7590,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "undo_actual_durable_worker_ms": 1595.99
+      },
+      "median": {
+        "authenticated_purge_100k_copy_trash_ms": 8717.811,
+        "copy_actual_durable_worker_ms": 111823.809,
+        "copy_http_enqueue_ms": 119.854,
+        "go_process_25ms_peak_rss_growth_bytes": 122335232,
+        "go_process_cpu_ticks_for_copy_and_undo": 7581,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "undo_actual_durable_worker_ms": 1587.044
+      }
+    },
+    "original": {
+      "maximum": {
+        "authenticated_purge_100k_copy_trash_ms": 9152.498,
+        "copy_actual_durable_worker_ms": 336050.395,
+        "copy_http_enqueue_ms": 120.105,
+        "go_process_25ms_peak_rss_growth_bytes": 111271936,
+        "go_process_cpu_ticks_for_copy_and_undo": 11718,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "undo_actual_durable_worker_ms": 1631.6
+      },
+      "median": {
+        "authenticated_purge_100k_copy_trash_ms": 8792.168,
+        "copy_actual_durable_worker_ms": 335975.607,
+        "copy_http_enqueue_ms": 119.898,
+        "go_process_25ms_peak_rss_growth_bytes": 111095808,
+        "go_process_cpu_ticks_for_copy_and_undo": 11716,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "undo_actual_durable_worker_ms": 1589.837
+      }
+    }
+  },
+  "candidate_material_performance": true,
+  "candidate_max_worker_elapsed_ratio": 0.33323847752061114,
+  "candidate_p50_improvement_fraction": 0.6671668815528028,
+  "decision": "PERFORMANCE_TRIAL_MATERIAL_NOT_PRODUCTION_APPROVAL",
+  "original_go_blob": "338abf54deede6a86b8b41f97494f3e7fedbd908",
+  "per_arm_n": 3,
+  "physical_originals_per_sample": 100000,
+  "production_change": false,
+  "real_user_cancel_trial": "NOT MEASURED; separate mandatory test before production consideration",
+  "run_order": [
+    "sample-1:original",
+    "sample-1:candidate",
+    "sample-2:candidate",
+    "sample-2:original",
+    "sample-3:original",
+    "sample-3:candidate"
+  ],
+  "workload": "P061-same-runner-true-100k-CAS-Copy-paired"
+}
