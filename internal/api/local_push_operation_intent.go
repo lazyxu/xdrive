@@ -154,22 +154,18 @@ func (s *Server) reserveBoundLocalPushOperationIntentInternal(
 				return denied
 			}
 		}
+		// Every NEW private reservation, even generation one, requires an
+		// immutable first-leaf COMMIT schema with no existing Source commit.
+		// Missing Operation history cannot prove no canonical CAS/SQL commit.
+		// The owning Source UPDATE lock is retained through this SQL COMMIT.
+		// Live same-key replays above only reuse the original reservation.
+		if err := requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx, sourceID); err != nil {
+			return denied
+		}
 		generation := uint64(1)
 		if lookup == nil {
 			if last.Generation == 0 || last.Generation == math.MaxUint64 ||
 				(last.State == meta.LocalPushOperationIntentReserved && now.Before(last.ExpiresAt)) {
-				return denied
-			}
-			// The canonical writer holds the same Source/operation locks
-			// through SQL COMMIT. Until separately proved native recovery and
-			// request-key retirement exist, a prior committed first leaf from
-			// ANY Source generation must prevent a fresh admission. Missing
-			// commit metadata is uncertainty, not evidence of no commit.
-			var committed meta.LocalPushFirstLeafOperationCommit
-			probe := tx.Model(&meta.LocalPushFirstLeafOperationCommit{}).
-				Select("operation_id").Where("source_id = ?", sourceID).
-				Limit(1).Find(&committed)
-			if probe.Error != nil || probe.RowsAffected != 0 {
 				return denied
 			}
 			generation = last.Generation + 1
