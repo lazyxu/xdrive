@@ -43,7 +43,7 @@ function callbackInitializer(relativePath, variableName) {
 
 function compileChildrenFor(callbackSource) {
   const source = `
-    module.exports = (pageByParent, lifecycleKey) => {
+    module.exports = (pageByParent, lifecycleKey, loadDirectoryPageGenerationRef) => {
       const childrenFor = ${callbackSource}
       return childrenFor
     }
@@ -392,7 +392,7 @@ test('cached navigation-tree child rebases crumbs when parent path metadata chan
     name: newParent.name,
     crumbs: [root, newParent],
   }
-  const childrenFor = makeChildrenFor(pageByParent, 'test-lifecycle')
+  const childrenFor = makeChildrenFor(pageByParent, 'test-lifecycle', { current: 1 })
   const renderedChild = childrenFor(currentParentNode)[0]
 
   assert.ok(renderedChild)
@@ -401,4 +401,9 @@ test('cached navigation-tree child rebases crumbs when parent path metadata chan
     [root, newParent, child],
     'clicking a cached child must use the latest parent breadcrumb metadata rather than restoring an old address/tab path',
   )
+  // The same extracted ORIGINAL callback also refuses a page from the
+  // previous Server/Agent loader generation, even with an identical owner.
+  const replacedLoader = makeChildrenFor(pageByParent, 'test-lifecycle', { current: 2 })
+  assert.deepEqual(replacedLoader(currentParentNode), [],
+    'stale loader generation cannot show obsolete child crumbs')
 })

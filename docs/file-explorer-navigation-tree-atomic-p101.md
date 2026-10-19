@@ -19,3 +19,9 @@ A current first page with no children and no next cursor is an authenticated lea
 ## Rapid repeated disclosure on one in-flight first GET
 
 A second tap can cancel only the pending **visual** expansion, then a third tap can request it again while the Server/Agent GET remains active. The original loader correctly coalesces duplicate requests but returns early; a Promise completion callback on that second caller is not a valid Range receipt. P101 therefore observes the authenticated current page and loader busy state in a pre-paint layout effect, commits only the most recent pending visual ticket, and keeps the genuine one-request network semantics. Added original mounted >370ms triple-click regression.
+
+## P102 first-paint Owner/loader fence (2026-10-20)
+
+P101 staged cold expansion but an existing expanded React Set was only cleared by a passive effect after lifecycle changes. With reused root IDs, the first new-account render could still show an expanded chevron and an empty `role=group`, followed by a collapse. A Server/Agent loader replacement under an unchanged lifecycle could reuse stale pages. P102 scopes both expansion and accepted pages to the current authenticated lifecycle **and** loader generation during render, so neither obsolete disclosure nor stale `aria-busy` is painted. Only the current first verified page expands; actual networking, pagination, DnD and thumbnail progress are unmodified.
+
+The original custom-hook test now asserts the **first** B-account snapshot before its effects, not just the eventual end state, and separately exercises a same-account new-loader generation with reused root ID. Original P101 React-mounted >370ms/cancel/empty/cached/page-2 tests remain. Real mobile Chrome 375/390/899px, native iOS Safari/Android, installed PWA, WAN and real 100k CLS/FPS are NOT RUN unless specifically executed; no platform-wide success claim.

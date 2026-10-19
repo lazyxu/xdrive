@@ -319,11 +319,20 @@ export function XDriveFileExplorerNavigationPane({
     loadDirectoryPageRef.current = loadDirectoryPage
     lifecycleKeyRef.current = lifecycleKey
     loadDirectoryPageGenerationRef.current += 1
-    if (lifecycleChanged) {
-      pageByParentRef.current = {}
-      loadingIDsRef.current.clear()
-    }
+    // Switching Server/Agent loader without changing the account string is
+    // still a new data Owner. A stale page or loading token must not survive.
+    pageByParentRef.current = {}
+    loadingIDsRef.current.clear()
   }
+  // The previous Owner's expanded Set is still in React state on the first
+  // new render, before passive effects clear it. Fence presentation during
+  // render, so reused root IDs cannot flash an empty group or old chevron.
+  const [expandedVisualScope, setExpandedVisualScope] = useState(
+    () => ({ lifecycleKey, generation: loadDirectoryPageGenerationRef.current }),
+  )
+  const expansionBelongsToCurrentOwner =
+    expandedVisualScope.lifecycleKey === lifecycleKey &&
+    expandedVisualScope.generation === loadDirectoryPageGenerationRef.current
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
   const [customizeAnchor, setCustomizeAnchor] = useState<HTMLElement | null>(null)
   const [savedSearchMenu, setSavedSearchMenu] = useState<{ anchor: HTMLElement; search: XDriveFileSavedSearch } | null>(null)
@@ -341,6 +350,11 @@ export function XDriveFileExplorerNavigationPane({
   )
 
   useEffect(() => {
+    setExpandedVisualScope((current) => (
+      current.lifecycleKey === lifecycleKey &&
+      current.generation === loadDirectoryPageGenerationRef.current
+        ? current : { lifecycleKey, generation: loadDirectoryPageGenerationRef.current }
+    ))
     pageByParentRef.current = {}
     setPageByParent({})
     loadingIDsRef.current.clear()
@@ -349,7 +363,7 @@ export function XDriveFileExplorerNavigationPane({
     setLoadingIDs(new Set())
     setExpandedIDs(new Set())
     setDropTargetID(null)
-  }, [lifecycleKey])
+  }, [lifecycleKey, loadDirectoryPage])
 
   useEffect(() => {
     setExpandedSections(loadNavigationSectionState(sectionPreferencesKey))
@@ -421,7 +435,8 @@ export function XDriveFileExplorerNavigationPane({
 
   const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => {
     const page = pageByParent[String(node.id)]
-    if (!page || page.lifecycleKey !== lifecycleKey) return []
+    if (!page || page.lifecycleKey !== lifecycleKey ||
+        page.generation !== loadDirectoryPageGenerationRef.current) return []
     return page.children.map((candidate) => ({
       ...candidate,
       crumbs: [
@@ -546,7 +561,7 @@ export function XDriveFileExplorerNavigationPane({
       })
       return
     }
-    if (expandedIDs.has(node.id)) {
+    if (expansionBelongsToCurrentOwner && expandedIDs.has(node.id)) {
       setExpandedIDs((current) => {
         const next = new Set(current)
         next.delete(node.id)
@@ -717,11 +732,14 @@ export function XDriveFileExplorerNavigationPane({
   const renderNode = (node: XDriveFileExplorerNavigationTreeNode, depth: number) => {
     const children = childrenFor(node)
     const candidatePage = pageByParent[String(node.id)]
-    const page = candidatePage?.lifecycleKey === lifecycleKey ? candidatePage : undefined
+    const page = candidatePage?.lifecycleKey === lifecycleKey &&
+      candidatePage.generation === loadDirectoryPageGenerationRef.current
+        ? candidatePage : undefined
     const loaded = Boolean(page?.loaded)
     const hasMore = Boolean(page?.hasMore)
-    const loading = loadingIDs.has(node.id)
-    const expanded = expandedIDs.has(node.id)
+    const loading = loadingIDs.has(node.id) &&
+      loadingIDsRef.current.get(node.id) === loadDirectoryPageGenerationRef.current
+    const expanded = expansionBelongsToCurrentOwner && expandedIDs.has(node.id)
     const ticket = pendingExpandRef.current.get(node.id)
     const pendingExpand = pendingExpandIDs.has(node.id) && Boolean(ticket &&
       ticket.generation === loadDirectoryPageGenerationRef.current &&
