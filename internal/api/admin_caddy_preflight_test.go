@@ -361,4 +361,37 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if err != nil || now.Credential.Revision != 2 {
 		t.Fatalf("fresh preflight snapshot missed rotation: %+v, %v", now, err)
 	}
+
+	// Upgrade compatibility: old saved rows may contain BOTH HTTPS switches
+	// disabled, even though all NEW saves and rollbacks reject that state.
+	// A persisted revision must not falsely report configuration_complete.
+	var auditBeforeLegacy int64
+	if err := db.Model(&meta.AuditEvent{}).Count(&auditBeforeLegacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.AdminCaddyHTTPSSetting{}).
+		Where("name = ?", caddyHTTPSSettingName).
+		Updates(map[string]any{
+			"enabled": false, "domain": "", "lan_enabled": false, "lan_ip": "",
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := read()
+	if legacy.DesiredRevision != 2 || legacy.ConfigurationComplete ||
+		legacy.ApplySupported || legacy.DesiredLANEnabled ||
+		legacy.Checks[0].ID != "desired" || legacy.Checks[0].State != "blocked" ||
+		legacy.Checks[5].ID != "restricted-apply" || legacy.Checks[5].State != "blocked" {
+		t.Fatalf("legacy all-off must remain visible but fail closed, never ready: %+v", legacy)
+	}
+	if out := call(http.MethodPut, "/api/v1/admin/services/caddy/https", adminToken,
+		`{"revision":2,"enabled":false,"domain":"","lan_enabled":false,"lan_ip":""}`); out.Code != 400 {
+		t.Fatalf("all-off save should remain rejected despite legacy DB data: %d %s", out.Code, out.Body.String())
+	}
+	var auditAfterLegacy int64
+	if err := db.Model(&meta.AuditEvent{}).Count(&auditAfterLegacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditAfterLegacy != auditBeforeLegacy {
+		t.Fatalf("blocked preflight or rejected save wrote an audit event: %d -> %d", auditBeforeLegacy, auditAfterLegacy)
+	}
 }
