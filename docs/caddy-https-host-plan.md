@@ -250,3 +250,12 @@ python3 scripts/caddy-https-remote-login-check.py \
 **证据边界：** 只验证当前操作员所在网络能够到达开启的入口，并通过真实证书、管理员登录和已保存期望修订一致性检查；没有检测已关闭入口是否完全不可访问，无法断言两个 Origin 由同一 Server 进程服务、所有客户设备信任私有 CA、当前 Caddy 使用了该修订、WAN 所有路径可达或改动能够安全重启/回滚。`state=enabled-origin-logins-verified-unapplied`，固定 `apply_supported=false`。证据仍需由可信 Host Manager 与事务、启动配置摘要、不可变 Applied Receipt、独立超时回滚和实际设备验收联合使用，不能单独向“系统依赖”页面开放应用按钮。
 
 CI 现有 `server-validation` 执行 `scripts/test-caddy-https-host-plan.py`，由此固定入口调用 `test-caddy-https-remote-login-check.py`，不需要修改 CI 工作流 YAML：使用真实临时 OpenSSL CA/IP SAN 证书和 loopback TLS HTTP Server，验证真实匿名 401、登录、权限、原始 Plan 字节、错误证书名/CA、阻断非管理员/篡改/健康失败、HTTP 代理旁路和不修改宿主机。所有密钥/管理员口令都是临时无效测试夹具，不连接生产网络。
+
+
+## NET-M5-C2-E · 宿主原始回滚备份复核（只读，2026-10-19）
+
+C2-D 的一次性 `rollback-anchor` 生成之后，操作员可独立固定 `receipt.json` SHA-256，并使用 `scripts/caddy-https-host-rollback-anchor-verify.py` 执行**仅用于变更前**的受保护回滚原件复核。该新工具不会创建、覆盖、恢复或删除备份，不会改写 `.env`／Compose，也不会联系 Docker/Caddy 或调用服务重启。
+
+复核以受信签名 Apply Intent、Host Plan、stage receipt、Pending journal 和两个独立固定 SHA 为前提。在原有同一主机私有目录的**共享非阻塞锁**内，固定原 `rollback-anchor` 目录 inode、0700 权限和恰好三个 0600 私有文件；要求常规文件、当前操作员所有、单硬链且不允许符号链接。逐字节和 inode 二次读取 `original.env`、`original.compose`、规范 `receipt.json`，校验 receipt schema、协议、`apply_supported=false`、预定阻断原因、期望 HTTPS/AliDNS 修订、Pending 和签名请求指纹、两个原文件与**仍未改动的**实际宿主配置一致。任一修改、旧签名、私有输入丢失、额外文件、并发独占事务或独立 PIN 错误都固定 `blocked` 且不输出密钥、原始 IP、域名或绝对路径。
+
+用原计划中的全部固定参数调用，只在末尾增加 `--expected-anchor-receipt-sha256 $TRUSTED_ANCHOR_RECEIPT_SHA256`；此 SHA 必须由不同可信渠道审核钉住，不可在同一个不可信源文件上计算后自称独立批准。成功固定输出 `state=host-rollback-anchor-reverified-unapplied`、`apply_supported=false`。此结果**不**是恢复可执行验证、不保证异机 Rescue、受限 Host CAS、AliDNS 密钥转交、Caddy 重启、超时看门狗、WAN/IP 正反 TLS 登录或签名 Applied Receipt。生产「应用并重启」仍禁止。新增离线正反例随原 `scripts/test-caddy-https-host-plan.py` 的 server-validation 执行，无新 Controller/Agent/UI 权限。
