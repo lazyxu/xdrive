@@ -32,6 +32,18 @@ type ColumnState = {
   generation: number
 }
 
+type ColumnNavigation = {
+  parentID: string
+  item: XDriveFileExplorerItem
+  nextCrumbs: XDriveFileExplorerCrumb[]
+  lifecycleKey: string
+  crumbSignature: string
+  pending: boolean
+  error: boolean
+}
+
+// This is an intent, not a committed destination column. The current crumbs,
+// scroll host and selection remain mounted until the child's first page arrives.
 const emptyColumn = (): ColumnState => ({
   items: [],
   nextCursor: '',
@@ -63,12 +75,19 @@ export function XDriveFileExplorerColumnView({
   onItemContextMenu?: (event: ReactMouseEvent<HTMLElement>, item: XDriveFileExplorerItem) => void
 }) {
   const [columns, setColumns] = useState<Record<string, ColumnState>>({})
+  const [columnNavigation, setColumnNavigation] = useState<ColumnNavigation | null>(null)
   const columnsRef = useRef(columns)
   columnsRef.current = columns
   const controllersRef = useRef(new Map<string, AbortController>())
   const generationRef = useRef(new Map<string, number>())
+  const columnNavigationControllerRef = useRef<AbortController | null>(null)
+  const columnNavigationGenerationRef = useRef(0)
   const lifecycleKeyRef = useRef(lifecycleKey)
   const crumbSignature = crumbs.map((crumb) => String(crumb.id)).join('/')
+  // Render-time scope fencing: a just-switched Owner cannot accept a late
+  // navigation completion while passive effect cleanup is still pending.
+  const routeSnapshotRef = useRef({ lifecycleKey, crumbSignature })
+  routeSnapshotRef.current = { lifecycleKey, crumbSignature }
   const ownerCurrent = lifecycleKeyRef.current === lifecycleKey
   const displayColumns = ownerCurrent ? columns : {}
 
@@ -121,6 +140,95 @@ export function XDriveFileExplorerColumnView({
     }
   }, [loadPage])
 
+  // A directory click is only intent. A successful first child page is the
+  // receipt that permits an atomic column/path/selection commit. Ordinary
+  // navigation never replaces accepted rows with an empty pending column.
+  const navigateToFolder = useCallback((
+    parentID: XDriveFileExplorerID,
+    item: XDriveFileExplorerItem,
+    nextCrumbs: XDriveFileExplorerCrumb[],
+  ) => {
+    const sourceScope = { lifecycleKey, crumbSignature }
+    const ticket = ++columnNavigationGenerationRef.current
+    columnNavigationControllerRef.current?.abort()
+    const controller = new AbortController()
+    columnNavigationControllerRef.current = controller
+    const next: ColumnNavigation = {
+      parentID: String(parentID), item, nextCrumbs,
+      lifecycleKey, crumbSignature, pending: true, error: false,
+    }
+    setColumnNavigation(next)
+
+    const key = String(item.id)
+    const cached = columnsRef.current[key]
+    const reuseVerifiedPage = Boolean(cached?.loaded && !cached.loading && !cached.error)
+    const requestGeneration = (generationRef.current.get(key) ?? 0) + 1
+    if (!reuseVerifiedPage) {
+      controllersRef.current.get(key)?.abort()
+      controllersRef.current.set(key, controller)
+      generationRef.current.set(key, requestGeneration)
+    }
+    const read = reuseVerifiedPage
+      ? Promise.resolve({ items: cached!.items, nextCursor: cached!.nextCursor })
+      : loadPage(item.id, '', controller.signal)
+    void read.then(async (page) => {
+      const currentScope = routeSnapshotRef.current
+      if (controller.signal.aborted || ticket !== columnNavigationGenerationRef.current ||
+          currentScope.lifecycleKey !== sourceScope.lifecycleKey ||
+          currentScope.crumbSignature !== sourceScope.crumbSignature ||
+          (!reuseVerifiedPage && generationRef.current.get(key) !== requestGeneration)) return
+      if (!Array.isArray(page.items) ||
+          (page.nextCursor !== undefined && typeof page.nextCursor !== 'string')) {
+        throw new Error('Invalid column page')
+      }
+      if (!reuseVerifiedPage) {
+        setColumns((value) => ({
+          ...value,
+          [key]: {
+            items: page.items, nextCursor: page.nextCursor ?? '',
+            loading: false, loaded: true, error: false,
+            generation: requestGeneration,
+          },
+        }))
+      }
+      setColumnNavigation(null)
+      onSelect(item)
+      await onNavigate(nextCrumbs)
+    }).catch(() => {
+      if (!controller.signal.aborted &&
+          ticket === columnNavigationGenerationRef.current &&
+          routeSnapshotRef.current.lifecycleKey === sourceScope.lifecycleKey &&
+          routeSnapshotRef.current.crumbSignature === sourceScope.crumbSignature) {
+        setColumnNavigation({ ...next, pending: false, error: true })
+      }
+    }).finally(() => {
+      if (columnNavigationControllerRef.current === controller) {
+        columnNavigationControllerRef.current = null
+      }
+      if (controllersRef.current.get(key) === controller) {
+        controllersRef.current.delete(key)
+      }
+    })
+  }, [crumbSignature, lifecycleKey, loadPage, onNavigate, onSelect])
+
+  const cancelPendingColumnNavigation = useCallback(() => {
+    // Opening/selecting a file is a newer interaction: an older folder GET
+    // must never steal the view back when it eventually resolves.
+    columnNavigationGenerationRef.current += 1
+    columnNavigationControllerRef.current?.abort()
+    columnNavigationControllerRef.current = null
+    setColumnNavigation(null)
+  }, [])
+
+  useEffect(() => {
+    // External breadcrumb changes (including Back, deep links and Owner
+    // changes) invalidate in-flight folder intents without changing the view.
+    columnNavigationGenerationRef.current += 1
+    columnNavigationControllerRef.current?.abort()
+    columnNavigationControllerRef.current = null
+    setColumnNavigation(null)
+  }, [crumbSignature, lifecycleKey])
+
   useEffect(() => {
     if (lifecycleKeyRef.current !== lifecycleKey) {
       lifecycleKeyRef.current = lifecycleKey
@@ -151,11 +259,15 @@ export function XDriveFileExplorerColumnView({
   }, [crumbSignature, crumbs, lifecycleKey, load])
 
   useEffect(() => () => {
+    columnNavigationGenerationRef.current += 1
+    columnNavigationControllerRef.current?.abort()
     for (const controller of controllersRef.current.values()) controller.abort()
     controllersRef.current.clear()
   }, [])
 
   const selected = useMemo(() => new Set(selectedIDs.map(String)), [selectedIDs])
+  const activeColumnNavigation = columnNavigation?.lifecycleKey === lifecycleKey &&
+    columnNavigation.crumbSignature === crumbSignature ? columnNavigation : null
 
   return (
     <Box
@@ -175,14 +287,16 @@ export function XDriveFileExplorerColumnView({
     >
       {crumbs.map((crumb, columnIndex) => {
         const state = displayColumns[String(crumb.id)] ?? emptyColumn()
+        const pendingChild = activeColumnNavigation?.parentID === String(crumb.id)
+          ? activeColumnNavigation : null
         const nextCrumbID = crumbs[columnIndex + 1]?.id
         return (
           <Box
             key={String(crumb.id)}
             role="group"
             aria-label={crumb.name}
-            aria-busy={state.loading || undefined}
-            data-xdrive-column-pending={state.loading || undefined}
+            aria-busy={state.loading || pendingChild?.pending || undefined}
+            data-xdrive-column-pending={state.loading || pendingChild?.pending || undefined}
             sx={{
               width: 252,
               minWidth: 220,
@@ -208,16 +322,21 @@ export function XDriveFileExplorerColumnView({
                     data-xdrive-file-explorer-column-item
                     selected={active}
                     onClick={() => {
-                      onSelect(item)
                       if (directory) {
-                        void onNavigate([
+                        navigateToFolder(crumb.id, item, [
                           ...crumbs.slice(0, columnIndex + 1),
                           { id: item.id, name: item.name },
                         ])
+                      } else {
+                        cancelPendingColumnNavigation()
+                        onSelect(item)
                       }
                     }}
                     onDoubleClick={() => {
-                      if (!directory) onOpenFile(item)
+                      if (!directory) {
+                        cancelPendingColumnNavigation()
+                        onOpenFile(item)
+                      }
                     }}
                     onContextMenu={(event) => onItemContextMenu?.(event, item)}
                     sx={{ minHeight: 30, py: 0.25, px: 1, gap: 0.75 }}
@@ -242,6 +361,20 @@ export function XDriveFileExplorerColumnView({
               </Stack>
             ) : state.loaded && !state.error && state.items.length === 0 ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1.25, py: 1 }}>空文件夹</Typography>
+            ) : null}
+            {pendingChild?.error ? (
+              <Box role="alert" data-xdrive-column-navigation-error sx={{
+                position: 'absolute', left: 8, right: 8, bottom: 8, zIndex: 4,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 1, px: 1.25, py: 0.5, borderRadius: 1,
+                bgcolor: 'background.paper', boxShadow: 2,
+              }}>
+                <Typography variant="caption" color="text.secondary">子文件夹读取失败</Typography>
+                <Button size="small" sx={{ minWidth: 44, minHeight: 44 }}
+                  onClick={() => navigateToFolder(crumb.id, pendingChild.item, pendingChild.nextCrumbs)}>
+                  重试
+                </Button>
+              </Box>
             ) : null}
             {state.error ? (
               <Box role="alert" data-xdrive-column-error sx={{

@@ -50,8 +50,13 @@ test('both Web and Desktop retain the same authenticated shared Search/Range and
   assert.equal(shared.includes('setDelayedLoadingScope'), false,
     'obsolete string-timer source assertion must not invite a stale after-paint spinner')
   assert.ok(shared.includes('XDriveFileExplorerThumbnail'), 'actual thumbnail bytes/progress not replaced')
-  assert.ok(column.includes('aria-busy={state.loading || undefined}'),
-    'Column exposes actual pending Range without a decorative navigation overlay')
+  assert.ok(column.includes('aria-busy={state.loading || pendingChild?.pending || undefined}'),
+    'Column exposes both root and child-first-page pending reads, without a decorative overlay')
+  assert.ok(column.includes("loadPage(item.id, '', controller.signal)") &&
+    column.includes('ticket !== columnNavigationGenerationRef.current'),
+    'child navigation must wait for accepted authenticated first-page intent')
+  assert.ok(column.includes('cancelPendingColumnNavigation()'),
+    'a newer file action must cancel an obsolete folder intent')
   assert.ok(column.includes('controller.signal.aborted || generationRef.current.get(key) !== generation'),
     'Column preserves request generation cancellation')
   assert.equal(column.includes('ColumnNetworkFeedback'), false,
