@@ -1,0 +1,171 @@
+name: P064 Real 100k Copy Bounded Progress Product Trial
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  completion-paired:
+    if: github.head_ref == 'perf/p064-copy-only-bounded-progress-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify original Go/test SHA, candidate formatting, 120-item progress and SQL cancel invariants
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          python3 -m py_compile scripts/performance/p064_switch_copy_progress_source.py
+          python3 scripts/performance/p064_switch_copy_progress_source.py candidate
+          gofmt -d internal/api/file_operations.go internal/api/file_operation_progress_performance_integration_test.go
+          test -z "$(gofmt -l internal/api/file_operations.go internal/api/file_operation_progress_performance_integration_test.go)"
+          go test -mod=readonly ./internal/api \
+            -run '^(TestCopyBoundedProgressPreservesFinalItem|TestCopyBoundedProgressObservesRemoteCancel|TestFileOperationProgressCoalescesCompletedDeltas|TestFileOperationProgressPreservesDatabaseCancellationCheckpoint)$' \
+            -count=1 -timeout=8m -v
+      - name: Authentic original and candidate 1k physical Copy smoke (excluded)
+        run: |
+          set -euo pipefail
+          for arm in original candidate; do
+            python3 scripts/performance/p064_switch_copy_progress_source.py "$arm"
+            env -u XD_P059_COPY_SQL_PROFILE XD_P056_REAL_COPY_PERF=1 XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+              go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+          done
+      - name: Six real 100k SHA physical CAS Copy Worker plus Undo and purge original vs candidate
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/p064-copy-completion-100k-paired"
+          mkdir -p "$out"
+          printf '${{ github.event.pull_request.head.sha }}=%s\nORIGINAL_GO_BLOB=338abf54deede6a86b8b41f97494f3e7fedbd908\n' \
+            "$(git rev-parse HEAD)" > "$out/source.txt"
+          for entry in sample-1:original sample-1:candidate sample-2:candidate sample-2:original sample-3:original sample-3:candidate; do
+            IFS=: read -r sample arm <<< "$entry"
+            python3 scripts/performance/p064_switch_copy_progress_source.py "$arm"
+            docker exec -e PGPASSWORD=xdrive "${{ job.services.postgres.id }}" \
+              psql -v ON_ERROR_STOP=1 -U xdrive -d xdrive_test \
+                -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO xdrive;'
+            /usr/bin/time -v -o "$out/$sample-$arm-resources.txt" \
+              env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE XD_P056_REAL_COPY_PERF=1 \
+                XD_P056_SAMPLE="$sample" go test -mod=readonly ./internal/api \
+                  -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=38m -v \
+                2>&1 | tee "$out/$sample-$arm.log"
+          done
+          python3 scripts/performance/p064_switch_copy_progress_source.py candidate
+          python3 scripts/performance/p061_copy_progress_trial.py summary "$out"
+          python3 - "$out/summary.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['per_arm_n']==3 and d['physical_originals_per_sample']==100000
+          assert d['candidate_material_performance'] is True, 'not materially faster; REJECT proposed Go'
+          assert d['production_change'] is False
+          PY
+      - name: Preserve original and production-proposal six physical CAS Go machine samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p064-copy-completion-paired-100k
+          path: p064-copy-completion-100k-paired/
+          if-no-files-found: warn
+          retention-days: 30
+
+  cancel-paired:
+    if: github.head_ref == 'perf/p064-copy-only-bounded-progress-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Authentic 1k Owner Cancel smoke original and candidate local and remote
+        run: |
+          set -euo pipefail
+          for topology in local remote; do
+            for arm in original candidate; do
+              python3 scripts/performance/p064_switch_copy_progress_source.py "$arm"
+              env -u XD_P059_COPY_SQL_PROFILE XD_P056_REAL_COPY_PERF=1 XD_P062_REAL_CANCEL=1 \
+                XD_P062_TOPOLOGY="$topology" XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+                go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+            done
+          done
+      - name: Twelve actual 100k physical CAS user HTTP Cancel local and remote original vs proposed Go
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/p064-copy-cancel-100k-paired"
+          mkdir -p "$out"
+          printf '${{ github.event.pull_request.head.sha }}=%s\nORIGINAL_GO_BLOB=338abf54deede6a86b8b41f97494f3e7fedbd908\n' \
+            "$(git rev-parse HEAD)" > "$out/source.txt"
+          for topology in local remote; do
+            for entry in sample-1:original sample-1:candidate sample-2:candidate sample-2:original sample-3:original sample-3:candidate; do
+              IFS=: read -r sample arm <<< "$entry"
+              python3 scripts/performance/p064_switch_copy_progress_source.py "$arm"
+              docker exec -e PGPASSWORD=xdrive "${{ job.services.postgres.id }}" \
+                psql -v ON_ERROR_STOP=1 -U xdrive -d xdrive_test \
+                  -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO xdrive;'
+              /usr/bin/time -v -o "$out/$topology-$sample-$arm-resources.txt" \
+                env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE XD_P056_REAL_COPY_PERF=1 \
+                  XD_P062_REAL_CANCEL=1 XD_P062_TOPOLOGY="$topology" XD_P056_SAMPLE="$sample" \
+                  go test -mod=readonly ./internal/api \
+                    -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=25m -v \
+                  2>&1 | tee "$out/$topology-$sample-$arm.log"
+            done
+          done
+          python3 scripts/performance/p064_switch_copy_progress_source.py candidate
+          python3 scripts/performance/p063_copy_cancel_pair_summary.py "$out"
+          python3 - "$out/summary.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['n_per_arm_per_topology']==3
+          assert d['candidate_cancellation_accepted'] is True, 'REJECT: user Cancel regression'
+          assert d['candidate_production_approved'] is False
+          PY
+      - name: Preserve source-exact authentic 12 Owner Cancel machine records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p064-copy-cancel-paired-100k
+          path: p064-copy-cancel-100k-paired/
+          if-no-files-found: warn
+          retention-days: 30

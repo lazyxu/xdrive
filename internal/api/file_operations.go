@@ -1040,6 +1040,10 @@ type fileOperationProgressCoalescer struct {
 	operationID  string
 	pendingItems int64
 	pendingBytes int64
+	copyBounded  bool
+	nodeVisits   int
+	lastReport   time.Time
+	lastItem     string
 }
 
 func newFileOperationProgressCoalescer(
@@ -1055,6 +1059,47 @@ func newFileOperationProgressCoalescer(
 }
 
 func (progress *fileOperationProgressCoalescer) begin(name string) error {
+	if progress.copyBounded {
+		if err := progress.ctx.Err(); err != nil {
+			return err
+		}
+		progress.nodeVisits++
+		progress.lastItem = name
+		now := time.Now()
+		// Observe cross-Server cancellation independently from coalesced progress
+		// writes. Local ctx.Err() cannot see another Server's persisted request.
+		if progress.nodeVisits%8 == 0 && progress.nodeVisits < 64 {
+			var current meta.FileOperation
+			if err := progress.server.DB.WithContext(progress.ctx).
+				Select("status").Where("id = ?", progress.operationID).
+				First(&current).Error; err != nil {
+				return err
+			}
+			switch current.Status {
+			case meta.FileOperationStatusRunning:
+			case meta.FileOperationStatusCancelRequested, meta.FileOperationStatusCancelled:
+				return errFileOperationCancelled
+			default:
+				return errors.New("file operation is no longer running")
+			}
+		}
+		if progress.nodeVisits < 64 && !progress.lastReport.IsZero() &&
+			now.Sub(progress.lastReport) < 250*time.Millisecond {
+			return nil
+		}
+		if err := progress.server.beginFileOperationItemWithProgress(
+			progress.ctx, progress.operationID, name,
+			progress.pendingItems, progress.pendingBytes,
+		); err != nil {
+			return err
+		}
+		progress.pendingItems = 0
+		progress.pendingBytes = 0
+		progress.nodeVisits = 0
+		progress.lastReport = now
+		progress.lastItem = ""
+		return nil
+	}
 	if err := progress.server.beginFileOperationItemWithProgress(
 		progress.ctx,
 		progress.operationID,
@@ -1075,6 +1120,19 @@ func (progress *fileOperationProgressCoalescer) add(itemDelta, byteDelta int64) 
 }
 
 func (progress *fileOperationProgressCoalescer) flush() error {
+	if progress.copyBounded && progress.lastItem != "" {
+		// Flush Copy's true last node name alongside pending counters.
+		if err := progress.server.beginFileOperationItemWithProgress(
+			progress.ctx, progress.operationID, progress.lastItem,
+			progress.pendingItems, progress.pendingBytes,
+		); err != nil {
+			return err
+		}
+		progress.pendingItems = 0
+		progress.pendingBytes = 0
+		progress.lastItem = ""
+		return nil
+	}
 	if progress.pendingItems == 0 && progress.pendingBytes == 0 {
 		return nil
 	}
@@ -1165,6 +1223,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
 		replaceOrMerge := false
 		operationProgress := newFileOperationProgressCoalescer(s, ctx, operation.ID)
+		operationProgress.copyBounded = true
 		hooks := s.fileOperationCopyHooks(operationProgress)
 		var copiedNodes []fileOperationUndoNodeRef
 		hooks.AfterNode = func(_ meta.Node, copied meta.Node, _ string) error {

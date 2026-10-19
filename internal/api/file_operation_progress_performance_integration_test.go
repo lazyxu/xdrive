@@ -189,6 +189,84 @@ func TestFileOperationProgressCoalescesCompletedDeltas(t *testing.T) {
 	}
 }
 
+func TestCopyBoundedProgressPreservesFinalItem(t *testing.T) {
+	db, counter := openFileOperationProgressPerformanceDB(t)
+	user := meta.User{
+		Username: "copy-bounded-progress-owner", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	op := createRunningFileOperation(t, db, user.ID, meta.FileOperationTypeCopy)
+	progress := newFileOperationProgressCoalescer(&Server{DB: db}, context.Background(), op.ID)
+	progress.copyBounded = true
+	counter.start()
+	for index := 0; index < 120; index++ {
+		if index > 0 {
+			progress.lastReport = time.Now()
+		}
+		if err := progress.begin(fmt.Sprintf("copy-%03d", index)); err != nil {
+			t.Fatal(err)
+		}
+		progress.add(1, int64(index+1))
+	}
+	if err := progress.flush(); err != nil {
+		t.Fatal(err)
+	}
+	if got := counter.stop(); got != 3 {
+		t.Fatalf("Copy progress SQL UPDATEs=%d want 3", got)
+	}
+	var saved meta.FileOperation
+	if err := db.First(&saved, "id = ?", op.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.ProcessedItems != 120 || saved.ProcessedBytes != 7260 || saved.CurrentItem != "copy-119" {
+		t.Fatalf("bounded Copy lost final persisted item/counters: %+v", saved)
+	}
+}
+
+func TestCopyBoundedProgressObservesRemoteCancel(t *testing.T) {
+	db, _ := openFileOperationProgressPerformanceDB(t)
+	user := meta.User{
+		Username: "copy-bounded-cancel-owner", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	op := createRunningFileOperation(t, db, user.ID, meta.FileOperationTypeCopy)
+	progress := newFileOperationProgressCoalescer(&Server{DB: db}, context.Background(), op.ID)
+	progress.copyBounded = true
+	if err := progress.begin("original-node"); err != nil {
+		t.Fatal(err)
+	}
+	progress.add(1, 123)
+	if err := db.Model(&meta.FileOperation{}).Where("id = ?", op.ID).
+		Update("status", meta.FileOperationStatusCancelRequested).Error; err != nil {
+		t.Fatal(err)
+	}
+	var caught error
+	for index := 0; index < 8; index++ {
+		progress.lastReport = time.Now()
+		caught = progress.begin(fmt.Sprintf("pending-%03d", index))
+		if caught != nil {
+			break
+		}
+		progress.add(1, 1)
+	}
+	if !errors.Is(caught, errFileOperationCancelled) {
+		t.Fatalf("Copy did not detect remote cancel within 8 nodes: %v", caught)
+	}
+	var saved meta.FileOperation
+	if err := db.First(&saved, "id = ?", op.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.ProcessedItems != 0 || saved.ProcessedBytes != 0 || saved.CurrentItem != "original-node" {
+		t.Fatalf("cancel flushed partial progress: %+v", saved)
+	}
+}
+
 func TestFileOperationProgressPreservesDatabaseCancellationCheckpoint(t *testing.T) {
 	db, _ := openFileOperationProgressPerformanceDB(t)
 	user := meta.User{
