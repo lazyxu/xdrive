@@ -300,17 +300,116 @@ test('mounted all-files Search from Browse home clears back to the home without 
     assert.equal(search.length, 1)
     await act(async () => { search[0].props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
     assert.deepEqual(searches, ['report'])
-    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'search intent cannot reveal the old root before a current counted Range')
     await h.update({
       searchActive: true,
-      searchSummary: { query: 'report', conditions: [], resultCount: 0, onClear() {} },
+      searchSummary: { query: 'report', conditions: [], resultCount: null, loading: true, onClear() {} },
     })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 0,
+      'no intermediate 44px query row can shift Browse Home')
+    await h.update({
+      searchSummary: { query: 'report', conditions: [], resultCount: 0, loading: false, onClear() {} },
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0,
+      'the verified zero result is sufficient for exactly one Browse reveal')
     const clears = h.view.root.findAll(node => node.props?.onClick && node.props.children === '清除')
     assert.equal(clears.length, 1)
     await act(async () => { clears[0].props.onClick() })
     await h.update({ searchActive: false, searchSummary: undefined })
     assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
   }, { props: { searchValue: 'report', onSearch: q => { searches.push(q) } } })
+})
+
+
+test('P99: mounted Browse Home Search holds old page through >365ms, failed first result, unrelated Range and accepted zero', async () => {
+  const sent = []
+  let aborts = 0
+  await withView(async h => {
+    const homeCount = () => count(h.view, 'data-xdrive-mobile-files-home')
+    const hostCount = () => count(h.view, 'data-xdrive-file-explorer-scroll-host')
+    const searchField = h.view.root.findAll(n => n.props?.['aria-label'] === '搜索全部文件')[0]
+    assert.ok(searchField)
+    assert.equal(homeCount(), 1)
+    assert.equal(hostCount(), 1)
+    await act(async () => { searchField.props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
+    assert.deepEqual(sent, ['照片'])
+    assert.equal(homeCount(), 1)
+    await h.update({ searchActive: true,
+      searchSummary: { query: '照片', resultCount: null, loading: true },
+      virtualCollection: undefined, items: [] })
+    assert.equal(homeCount(), 1)
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 0)
+    assert.equal(find(h.view, 'data-xdrive-mobile-files-home', true).props['aria-busy'], true)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 370)) })
+    assert.equal(homeCount(), 1, 'no 300ms delayed loading frame or stale Browse root')
+    assert.equal(hostCount(), 1)
+    await h.update({
+      searchSummary: { query: '照片', resultCount: null, loading: false,
+        error: '网络错误', onRetry() {} },
+    })
+    assert.equal(homeCount(), 1, 'failed Search must not commit the new rail')
+    assert.ok(h.view.root.findAll(n => n.props?.role === 'alert')
+      .some(n => textOf(n.props.children).includes('网络错误')),
+    'actual error/retry stays visible on the retained Home')
+    await h.update({
+      searchSummary: { query: '照片', resultCount: null, loading: true },
+    })
+    assert.equal(homeCount(), 1)
+    await h.update({
+      searchSummary: { query: '照片', resultCount: 0, loading: false },
+      virtualCollection: {
+        itemCount: 0, interactionKey: 'p99-verified-zero',
+        loadedItems: new Map(), itemAt: () => undefined,
+        onRangeChange() {}, groups: [],
+      },
+    })
+    assert.equal(homeCount(), 0)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'browse').props['aria-current'], 'page')
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    assert.equal(hostCount(), 1)
+    assert.equal(aborts, 0)
+  }, { props: { searchValue: '照片', onSearch: query => sent.push(query),
+    onClearSearch: () => { aborts++ } } })
+})
+
+test('P99: a newer Mobile rail choice aborts pending Search before it can steal Home/Recent scroll', async () => {
+  let clears = 0
+  const sent = []
+  await withView(async h => {
+    const searchField = h.view.root.findAll(n => n.props?.['aria-label'] === '搜索全部文件')[0]
+    await act(async () => { searchField.props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
+    // The next visible rail may arrive before the Search definition is
+    // published by the Web controller; it must still abort the Owner request.
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(clears, 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'recent').props['aria-current'], 'page')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.deepEqual(sent, ['照片'])
+  }, { props: { searchValue: '照片', onSearch: query => sent.push(query),
+    onClearSearch: () => { clears++ } } })
+})
+
+test('P99: original Search owner receipt, quiet summary and permanent AGENTS contract', () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  assert.match(source, /pendingGlobalSearchRef = useRef/)
+  assert.match(source, /pendingGlobalSearchPresentation/)
+  assert.match(source, /Number\.isSafeInteger\(props\.searchSummary\?\.resultCount\)/)
+  assert.match(source, /pendingGlobalSearchRef\.current = null/)
+  assert.match(source, /!pendingGlobalSearchPresentation \? \(/)
+  assert.match(source, /const abandonPendingGlobalSearch = \(\) =>/)
+  assert.match(source, /props\.onClearSearch\(\)/)
+  assert.match(source, /useLayoutEffect\(\(\) => \{/)
+  const launch = source.slice(source.indexOf('  const launchGlobalSearch = ('),
+    source.indexOf('  const navigateUp =', source.indexOf('  const launchGlobalSearch = (')))
+  assert.match(launch, /if \(browseHome \|\| section === 'recent' \|\| section === 'favorites'\)/)
+  assert.ok(launch.indexOf('pendingGlobalSearchRef.current = { intent') <
+    launch.indexOf("setSection('browse')"),
+  'only previously committed directory search may use old eager path')
+  assert.ok(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+    .includes('P99 Mobile Home/Recent/Favorites Search verified-first-Range (mandatory)'))
 })
 
 test('restored folder calls exactly one authorized navigation and does not expose stale account state', async () => {
@@ -4107,14 +4206,20 @@ test('M07: global Search exits to original Recent/Favorites virtual rail positio
       const input = h.view.root.findAll(n => n.props?.['aria-label'] === '搜索全部文件')
       assert.equal(input.length, 1)
       await act(async () => { input[0].props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
-      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0,
-        'a global Search intentionally uses the existing Browse results surface')
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+        'a pending Search must retain the original authenticated rail and scroll')
       const pendingState = state.mobileFilesDecodeState(
         h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
       assert.equal(pendingState.folderID, null,
-        'Search intent before the owner confirms results must not commit a false Browse folder')
+        'Search intent before owner first Range must not commit a false Browse folder')
       await h.update({ searchActive: true,
-        searchSummary: { query: 'report', conditions: [], resultCount: 0, onClear() {} } })
+        searchSummary: { query: 'report', conditions: [], resultCount: null, loading: true, onClear() {} } })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+      await h.update({
+        searchSummary: { query: 'report', conditions: [], resultCount: 0, loading: false, onClear() {} },
+      })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0,
+        'only the current zero-count result reveals Browse Search')
       const clear = h.view.root.findAll(n => n.props?.onClick && n.props.children === '清除')
       assert.equal(clear.length, 1)
       await act(async () => { clear[0].props.onClick() })

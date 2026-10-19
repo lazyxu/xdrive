@@ -498,6 +498,9 @@ export default function MobileFiles(props: Props) {
   // Search is an intent before the owning Web props acknowledge it. During
   // that gap, do not persist the underlying root as if a folder was opened.
   const globalSearchPresentationRef = useRef(false)
+  // A Home/Recent/Favorites Search tap is only intent until the shared Web
+  // Owner has returned its matching, counted first Range (including zero).
+  const pendingGlobalSearchRef = useRef<{ intent: number; lifecycleKey: string } | null>(null)
   const restoreFolderRef = useRef(props.onRestoreFolder)
   restoreFolderRef.current = props.onRestoreFolder
   const restoreTaskRef = useRef<{ id: number; promise: Promise<void> } | null>(null)
@@ -541,7 +544,11 @@ export default function MobileFiles(props: Props) {
   arrangeSignatureRef.current = arrangeSignature
   const verifiedLocatorRef = useRef(props.locateVerifiedCurrentChild)
   verifiedLocatorRef.current = props.locateVerifiedCurrentChild
-  const showDirectory = section === 'browse' && (!browseHome || props.trashActive || props.searchActive)
+  const pendingGlobalSearchPresentation = Boolean(pendingGlobalSearchRef.current &&
+    pendingGlobalSearchRef.current.intent === navigationIntentRef.current &&
+    pendingGlobalSearchRef.current.lifecycleKey === props.lifecycleKey)
+  const showDirectory = section === 'browse' &&
+    (!browseHome || props.trashActive || (props.searchActive && !pendingGlobalSearchPresentation))
   const viewPositionScope = [
     selectionScopeKey, props.sort.key, props.sort.direction,
     props.grouping?.groupBy ?? 'none', props.grouping?.foldersFirst ?? true,
@@ -795,6 +802,7 @@ export default function MobileFiles(props: Props) {
     searchReturnHomeRef.current = initial.folderID === null
     searchClearPendingRef.current = false
     globalSearchPresentationRef.current = false
+    pendingGlobalSearchRef.current = null
   }, [storageKey])
 
   useEffect(() => {
@@ -1184,14 +1192,44 @@ export default function MobileFiles(props: Props) {
     persist({ folderID: directoryID, scrollTop: browseScrollRef.current })
   }, [ready, showDirectory, props.searchActive, props.trashActive, directoryID, persist])
 
+  useLayoutEffect(() => {
+    const ticket = pendingGlobalSearchRef.current
+    if (!ticket || ticket.intent !== navigationIntentRef.current ||
+        ticket.lifecycleKey !== props.lifecycleKey ||
+        !props.searchActive || props.searchSummary?.loading ||
+        props.searchSummary?.error ||
+        !Number.isSafeInteger(props.searchSummary?.resultCount)) return
+    // First counted Owner Search Range was accepted, including real zero.
+    // Commit rail/title/scroll in one pre-paint frame, never show old root.
+    pendingGlobalSearchRef.current = null
+    if (section === 'recent' || section === 'favorites') {
+      const departedTop = scrollHostRef.current?.scrollTop ?? scrollTop
+      collectionScrollRef.current[section] = departedTop
+      persist(section === 'recent'
+        ? { recentScrollTop: departedTop } : { favoritesScrollTop: departedTop })
+    }
+    if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+    scrollSaveRef.current = null
+    pendingSectionScrollRef.current = 0
+    browseScrollRef.current = 0
+    setSection('browse')
+    setBrowseHome(false)
+    setReady(true)
+    setScrollTop(0)
+    if (scrollHostRef.current) scrollHostRef.current.scrollTop = 0
+    persist({ section: 'browse' })
+  }, [props.lifecycleKey, props.searchActive, props.searchSummary?.resultCount,
+    props.searchSummary?.loading, props.searchSummary?.error, section, scrollTop, persist])
+
   useEffect(() => {
     if (!props.searchActive) {
       searchClearPendingRef.current = false
       return
     }
-    if (section === 'browse' || searchClearPendingRef.current) return
-    // A Search may also be opened by the owning Web workspace, not only
-    // through this component's Search field. Capture that rail origin once.
+    // Locally launched Search has a verified-first-Range pre-paint commit.
+    // This effect only handles externally activated workspace Search.
+    if (globalSearchPresentationRef.current ||
+        section === 'browse' || searchClearPendingRef.current) return
     searchReturnSectionRef.current = section
     searchReturnHomeRef.current = browseHome
     globalSearchPresentationRef.current = true
@@ -1306,7 +1344,18 @@ export default function MobileFiles(props: Props) {
       pendingCollectionScrollRef.current = null
     }
   }
+  const abandonPendingGlobalSearch = () => {
+    if (!pendingGlobalSearchRef.current) return false
+    pendingGlobalSearchRef.current = null
+    globalSearchPresentationRef.current = false
+    searchClearPendingRef.current = true
+    // Abort the real shared Search Owner; a later accepted Range cannot steal
+    // a newer Browse/Recent/Favorites/folder navigation.
+    props.onClearSearch()
+    return true
+  }
   const beginBrowse = (id: number | null = null) => {
+    abandonPendingGlobalSearch()
     pendingPathOriginRef.current = null
     pendingBrowseRootRef.current = null
     flushBrowseScroll()
@@ -1325,6 +1374,7 @@ export default function MobileFiles(props: Props) {
     scrollHostRef.current?.scrollTo({ top: 0 })
   }
   const openExternalDirectory = (id: number, activate: () => Promise<boolean>) => {
+    abandonPendingGlobalSearch()
     const intent = ++navigationIntentRef.current
     const alreadyCommitted = directoryID === id && Boolean(props.virtualCollection) && !props.loading
     pendingExternalDirectoryRef.current = { directoryID: id, intent, alreadyCommitted }
@@ -1409,6 +1459,7 @@ export default function MobileFiles(props: Props) {
       })
       return
     }
+    abandonPendingGlobalSearch()
     const intent = ++navigationIntentRef.current
     if (item.kind === 'dir') {
       pendingRowDirectoryRef.current = {
@@ -1432,6 +1483,7 @@ export default function MobileFiles(props: Props) {
     })
   }
   const changeSection = (next: MobileFilesSection) => {
+    const abandonedGlobalSearch = abandonPendingGlobalSearch()
     pendingPathOriginRef.current = null
     pendingBrowseRootRef.current = null
     flushBrowseScroll()
@@ -1446,9 +1498,8 @@ export default function MobileFiles(props: Props) {
       props.onCloseTrash()
       if (next === 'browse') setBrowseHome(true)
     }
-    if (props.searchActive && next !== 'browse') {
-      // A previous Search may still be true until the owning workspace
-      // processes the clear. Do not bounce this explicit rail switch back.
+    if (!abandonedGlobalSearch && props.searchActive && next !== 'browse') {
+      // The shared Search Owner must not later override this explicit rail.
       searchClearPendingRef.current = true
       props.onClearSearch()
     }
@@ -1464,6 +1515,8 @@ export default function MobileFiles(props: Props) {
     persist({ section: next })
   }
   const clearGlobalSearch = () => {
+    pendingGlobalSearchRef.current = null
+    navigationIntentRef.current += 1
     const returnSection = searchReturnSectionRef.current
     searchClearPendingRef.current = true
     globalSearchPresentationRef.current = false
@@ -1485,7 +1538,17 @@ export default function MobileFiles(props: Props) {
     }
     searchClearPendingRef.current = false
     globalSearchPresentationRef.current = true
-    navigationIntentRef.current += 1
+    const intent = ++navigationIntentRef.current
+    if (browseHome || section === 'recent' || section === 'favorites') {
+      // Home and the independent Recent/Favorites virtual rails have their
+      // own accepted content. Do not expose the old root or empty Search while
+      // its first network Range is still unresolved.
+      pendingGlobalSearchRef.current = { intent, lifecycleKey: props.lifecycleKey }
+      action()
+      return
+    }
+    // Already open folder Search still follows the existing shared owner.
+    pendingGlobalSearchRef.current = null
     setSection('browse')
     setBrowseHome(false)
     setScrollTop(0)
@@ -2489,7 +2552,8 @@ export default function MobileFiles(props: Props) {
                 endAdornment: props.searchValue ? <InputAdornment position="end"><IconButton size="small" aria-label="清除搜索文本" onClick={() => props.onSearchValueChange('')}><CloseRoundedIcon fontSize="small"/></IconButton></InputAdornment> : null }}}/>
             {props.filtersControl}
             </Stack>
-            {props.searchActive || props.searchSummary ? (
+            {(props.searchActive || props.searchSummary) &&
+              !pendingGlobalSearchPresentation ? (
               <Stack data-mobile-files-search-summary
                 direction="row" alignItems="center" spacing={1}
                 aria-busy={Boolean(props.searchActive && props.searchSummary?.loading &&
@@ -2516,7 +2580,7 @@ export default function MobileFiles(props: Props) {
           </Box>
           {section === 'browse' && !showDirectory ? (
             <Box data-xdrive-mobile-files-home
-              aria-busy={props.organizationLoading || undefined}
+              aria-busy={props.organizationLoading || pendingGlobalSearchPresentation || undefined}
               sx={{ position: 'relative' }}>
               <Typography variant="overline" sx={{ px: 2, color: 'text.secondary',
                 display: 'block', pt: 1.5, pb: 0.5 }}>位置</Typography>

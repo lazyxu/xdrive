@@ -16,7 +16,9 @@ test('real compact Browse Home never inserts an ephemeral organization loading r
   assert.ok(start >= 0 && end > start)
   const home = mobile.slice(start, end)
   assert.ok(home.includes('data-xdrive-mobile-files-home'))
-  assert.ok(home.includes('aria-busy={props.organizationLoading || undefined}'))
+  assert.ok(home.includes(
+    'aria-busy={props.organizationLoading || pendingGlobalSearchPresentation || undefined}'),
+    'Home must stay semantically busy for an authorized Search intent without adding a loading row')
   assert.ok(home.includes('data-mobile-files-organization-loading'))
   assert.equal((mobile.match(/data-mobile-files-organization-loading/g) || []).length, 1,
     'one persistent status slot instead of a conditional extra row')

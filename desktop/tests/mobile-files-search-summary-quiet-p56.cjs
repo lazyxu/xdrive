@@ -8,10 +8,12 @@ const mobile = read('web/src/MobileFiles.tsx')
 const web = read('web/src/WebFileExplorer.tsx')
 const hook = read('ui/shared/src/mui/useDeferredLoading.ts')
 test('real compact Search summary has one fixed 44px rail and no immediate query spinner/phrase',()=>{
-  const start = mobile.indexOf('{props.searchActive || props.searchSummary ? (')
+  const start = mobile.indexOf('{(props.searchActive || props.searchSummary) &&')
   const end = mobile.indexOf('{props.searchSummary?.error ? (',start)
   assert.ok(start>0 && end>start)
   const jsx=mobile.slice(start,end)
+  assert.ok(jsx.includes('!pendingGlobalSearchPresentation ? ('),
+    'unconfirmed Home/Recent/Favorites Search must not insert a 44px summary row')
   for(const token of [
     'data-mobile-files-search-summary','data-mobile-files-search-count-slot',
     'component="span"', "minWidth: '12ch'", "whiteSpace: 'nowrap'",
