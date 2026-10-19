@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
-import { Alert, Box, Button, Dialog, LinearProgress, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Dialog, Stack, Typography } from '@mui/material'
 import {
   xDriveFileExplorerDestinationTargetDisabledReason,
   type XDriveFileExplorerDestinationCrumb,
@@ -9,7 +9,6 @@ import {
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type { XDriveFileExplorerNavigationTreePage } from './FileExplorerNavigationPane'
 
 export type XDriveFileExplorerDestinationDialogProps = {
@@ -60,7 +59,6 @@ export function XDriveFileExplorerDestinationDialog({
   const [page, setPage] = useState<XDriveFileExplorerNavigationTreePage | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingViewKey, setLoadingViewKey] = useState('')
-  const [loadingGeneration, setLoadingGeneration] = useState(0)
   const [acceptedViewKey, setAcceptedViewKey] = useState('')
   const [loadErrorViewKey, setLoadErrorViewKey] = useState('')
   const failedTargetRef = useRef<{
@@ -84,7 +82,6 @@ export function XDriveFileExplorerDestinationDialog({
     // Keep confirmed folder rows, breadcrumbs and pager mounted while this
     // genuine server request is pending. Intent never commits visual state.
     setLoadingViewKey(key)
-    setLoadingGeneration(request)
     setLoading(true)
     setLoadError('')
     setSubmitError('')
@@ -140,7 +137,6 @@ export function XDriveFileExplorerDestinationDialog({
   const visibleLoading = open && loading && loadingViewKey === viewKey
   const visibleLoadError = loadErrorViewKey === viewKey ? loadError : ''
   const visibleSubmitError = pageAccepted ? submitError : ''
-  const showDelayedProgress = useXDriveDeferredLoading(visibleLoading, loadingGeneration)
   const targetReason = xDriveFileExplorerDestinationTargetDisabledReason(operation, sources, visibleCrumbs)
   const submitDisabled = visibleLoading || !visiblePage || Boolean(visibleLoadError) || Boolean(targetReason) || submitting
   const close = () => {
@@ -226,12 +222,12 @@ export function XDriveFileExplorerDestinationDialog({
             ))}
           </Stack>
           {targetReason ? <Alert severity="info" sx={{ overflowWrap: 'anywhere' }}>{targetReason}</Alert> : null}
+          {/* Navigating a target folder is not an operation: keep the stable 4px
+              slot and semantic busy state but never insert a delayed loader.
+              The previously confirmed path/rows stay visible until receipt. */}
           <Box data-xdrive-destination-quiet-loading
             aria-busy={visibleLoading || undefined}
-            sx={{ position: 'relative', height: 4, flexShrink: 0 }}>
-            {showDelayedProgress ? <LinearProgress aria-label="正在加载文件夹"
-              sx={{ position: 'absolute', inset: 0 }} /> : null}
-          </Box>
+            sx={{ height: 4, flexShrink: 0 }} />
           {visibleLoadError ? (
             <Stack spacing={0.5}>
               <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}>{visibleLoadError}</Alert>
