@@ -43,6 +43,7 @@ test('Caddy network policy is two separate audited, revisioned desired entries',
 
 test('shared Caddy MUI page requires at least one enabled HTTPS entry, rejects stale LAN contract', () => {
   const page = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  const evidence = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
   const web = read('web/src/App.tsx')
   const desk = read('desktop/src/renderer/App.tsx')
   assert.match(page, /validPrivateLANIP/)
@@ -52,8 +53,10 @@ test('shared Caddy MUI page requires at least one enabled HTTPS entry, rejects s
   assert.match(page, /const supportsLAN =/)
   assert.match(page, /!supportsLAN \|\| !valid/)
   assert.match(page, /lan_enabled: lanEnabled, lan_ip: lanIP/)
-  assert.match(page, /config\.host_lan_configured/)
-  assert.match(page, /不代表 IP TLS 已验证/)
+  assert.match(page, /data-xdrive-caddy-evidence-location/)
+  assert.doesNotMatch(page, /config\.host_lan_configured|config\.host_lan_tls_state/)
+  assert.match(evidence, /result\.host_lan_local_tls_verified/)
+  assert.match(evidence, /data-xdrive-caddy-desired-lan-local-match/)
   assert.match(page, /仅保存期望配置（不操作 Caddy）/)
   assert.match(page, /局域网 IP HTTPS · 默认部署入口/)
   assert.match(page, /公网域名 HTTPS · 可选入口/)

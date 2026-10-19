@@ -414,7 +414,7 @@ test('one shared detail page replaces status/config/verify/history tabs without 
   assert.ok(caddy.includes("(lanEnabled || enabled)"),
     'both-disable rejection remains in the editable configuration panel')
   assert.ok(caddy.includes("{section === 'config' && (<>"),
-    'full current HTTPS/TLS summary belongs only to configuration, not history')
+    'Caddy editor stays scoped to configuration without duplicating status or history')
   assert.ok(caddy.includes("当前期望修订 #{config.revision}。选择历史修订只会创建新的审计记录"),
     'history contains a concise revision context, not duplicated runtime and TLS status')
   assert.ok(caddy.includes("(lanEnabled || enabled)"))
@@ -423,6 +423,35 @@ test('one shared detail page replaces status/config/verify/history tabs without 
     assert.equal(page.includes(forbidden), false)
 });
 
+
+test('SD-UI-V1.5: Caddy editor avoids duplicate TLS status, preserves drafts and lazy history', () => {
+  const caddy = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(caddy.includes('data-xdrive-caddy-evidence-location'))
+  assert.ok(caddy.includes('运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」'))
+  assert.equal(caddy.includes('tlsLabels['), false)
+  assert.equal(caddy.includes('lanTLSLabels['), false)
+  assert.equal(caddy.includes('config.host_https_configured'), false)
+  assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"),
+    'the existing parent status/verification body owns runtime evidence')
+  assert.ok(caddy.includes('if (!source.loadCaddyHTTPSConfig || busy || changed) return'),
+    'a refresh event must not overwrite unsaved fields even if invoked programmatically')
+  assert.ok(caddy.includes('disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}'))
+  assert.ok(caddy.includes('data-xdrive-caddy-draft-refresh-guard'))
+  assert.ok(caddy.includes('重新读取已保存配置'))
+  assert.ok(caddy.includes('disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}'),
+    'cannot disable the only active IP ingress')
+  assert.ok(caddy.includes('disabled={!canEdit || (enabled && !lanEnabled)}'),
+    'cannot disable the only active domain ingress')
+  assert.ok(caddy.includes('(!lanEnabled || !enabled)') === false)
+  assert.ok(caddy.includes('(lanEnabled || enabled)'), 'server-validation still fail-closes both-disabled drafts')
+  const reload = caddy.slice(caddy.indexOf('  const reload = async () => {'), caddy.indexOf('  const save = async () => {'))
+  assert.ok(reload.includes("if (section === 'history' && source.loadCaddyHTTPSRevisions)"),
+    'configuration refresh must not fetch audit history')
+  const save = caddy.slice(caddy.indexOf('  const save = async () => {'), caddy.indexOf('  const rollback = async () => {'))
+  assert.equal(save.includes('loadCaddyHTTPSRevisions'), false,
+    'saving desired settings must not eagerly read history')
+});
 
 test('Photo model details expose shared manual verification but only the host owns mutable configuration', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')

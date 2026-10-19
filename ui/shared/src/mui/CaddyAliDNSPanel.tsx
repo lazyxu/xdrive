@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCaddyReadFailureMessage } from '../caddy-read-error'
 import type { XDriveCaddyAliDNSConfig, XDriveCaddyAliDNSUpdate, XDriveCaddyAliDNSReveal } from '../service-dependencies'
 
 export type XDriveCaddyAliDNSPort = {
@@ -25,6 +26,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   const revealEpochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyAliDNSConfig | null>(null)
   const [loading, setLoading] = useState(true)
+  const [retryReadID, setRetryReadID] = useState(0)
   const [busy, setBusy] = useState(false)
   const [revealing, setRevealing] = useState(false)
   const [keyID, setKeyID] = useState('')
@@ -76,8 +78,8 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     if (source.loadCaddyAliDNSConfig) {
       void source.loadCaddyAliDNSConfig().then((cfg) => {
         if (active && epoch === requestEpochRef.current) setConfig(cfg)
-      }).catch(() => {
-        if (active && epoch === requestEpochRef.current) setError('无法读取 AliDNS 配置，请检查 Server/Agent 版本及加密密钥。')
+      }).catch((err: unknown) => {
+        if (active && epoch === requestEpochRef.current) setError(xDriveCaddyReadFailureMessage(err, 'alidns'))
       }).finally(() => {
         if (active && epoch === requestEpochRef.current) setLoading(false)
       })
@@ -85,7 +87,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
       setLoading(false)
     }
     return () => { active = false; ++requestEpochRef.current; ++revealEpochRef.current }
-  }, [source, refreshID])
+  }, [source, refreshID, retryReadID])
 
   const valid = validSecret(keyID, 8, 128) && validSecret(keySecret, 8, 256)
   const canEdit = !!config?.editable && !busy && !loading && !revealing
@@ -154,6 +156,9 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
         </Typography>
         {config ? (
           <>
+            {!config.editable && <Typography variant="caption" color="warning.main" data-xdrive-caddy-alidns-no-keyring>
+              当前服务器尚无可用的凭据加密密钥，AliDNS 配置只能读取、不能修改；读取接口本身不要求配置密钥。
+            </Typography>}
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip size="small" variant="outlined"
                 color={config.configured ? 'warning' : 'default'}
@@ -204,9 +209,18 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
               onConfirm={() => { void save(true) }} />
           </>
         ) : (
-          <Typography variant="body2" color="text.secondary">
-            {loading ? '正在读取 AliDNS 凭据状态…' : '此 Server/Agent 不支持 AliDNS 全局凭据管理，不提供失效操作。'}
-          </Typography>
+          loading ? <Typography variant="body2" color="text.secondary">正在读取 AliDNS 凭据状态…</Typography>
+          : source.loadCaddyAliDNSConfig ? (
+            <Stack spacing={1} data-xdrive-caddy-alidns-read-failed>
+              <Typography variant="body2" color="text.secondary">
+                未能读取凭据状态；为避免误操作，暂时禁止保存、清除和显示凭据。这不等于缺少加密密钥。
+              </Typography>
+              <Button size="small" variant="outlined" disabled={busy}
+                onClick={() => setRetryReadID((value) => value + 1)}>重试读取 AliDNS 配置</Button>
+            </Stack>
+          ) : <Typography variant="body2" color="text.secondary">
+              此客户端尚未提供 AliDNS 管理接口，请更新匹配的客户端与 Server/Agent 版本。
+            </Typography>
         )}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
         {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}

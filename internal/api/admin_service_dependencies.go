@@ -58,7 +58,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		{ID: "baidu-map", Group: "location", Label: "百度地图 Server API", Status: "disabled", Detail: "尚未启用百度地图；不使用其他地图底图"},
 		{ID: "photo-creative", Group: "intelligence", Label: "照片创作处理", Status: "disabled", Detail: "未配置抠图、照片电影与拼图分析器"},
 		{ID: "background-worker", Group: "core", Label: "后台 Worker", Status: "unknown", Detail: "尚未确认独立 Pull Worker 的心跳状态"},
-		{ID: "caddy", Group: "core", Label: "Caddy / HTTPS 网关", Status: "unknown", Detail: "当前 Server 未提供独立网关进程健康探针"},
+		{ID: "caddy", Group: "core", Label: "Caddy / HTTPS 网关", Status: "unknown", Detail: "未收到可信 Caddy Host Control 网关观测：宿主控制挂载、心跳或快照可能缺失、过期或无效；不能据此判断 Caddy 已停止"},
 	}
 
 	cfg, configErr := s.effectiveBaiduMapConfig(ctx)
