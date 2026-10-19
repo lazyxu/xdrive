@@ -49,7 +49,12 @@ export type XDriveBaiduJSAPI4SameOriginOptions = {
 
 const unavailable = 'baidu_jsapi4_not_authorized'
 const trustedSDK = new WeakMap<Document, NativeNamespace>()
-const pendingSDK = new WeakMap<Document, Promise<NativeNamespace>>()
+type PendingSDKLoad = {
+  promise: Promise<NativeNamespace>
+  consumers: number
+  cancel(): void
+}
+const pendingSDK = new WeakMap<Document, PendingSDKLoad>()
 
 function validNativeNamespace(candidate: unknown): candidate is NativeNamespace {
   if (!candidate || typeof candidate !== 'object') return false
@@ -91,6 +96,9 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 function loadSDK(doc: Document, browser: MapWindow, serviceHost: string,
   signal: AbortSignal): Promise<NativeNamespace> {
+  // An expired gallery generation must never start a script after its Owner
+  // session has already been cancelled.
+  if (signal.aborted) return Promise.reject(new Error(unavailable))
   const previous = browser._BMapSecurityConfig
   if (previous && previous.serviceHost !== serviceHost) {
     return Promise.reject(new Error(unavailable))
@@ -100,48 +108,81 @@ function loadSDK(doc: Document, browser: MapWindow, serviceHost: string,
     if (browser.BMap !== already) return Promise.reject(new Error(unavailable))
     return abortable(Promise.resolve(already), signal)
   }
-  let promise = pendingSDK.get(doc)
-  if (!promise) {
+
+  let pending = pendingSDK.get(doc)
+  if (!pending) {
     browser._BMapSecurityConfig = { serviceHost }
-    promise = new Promise<NativeNamespace>((resolve, reject) => {
+    let cancelLoad: () => void = () => {}
+    const promise = new Promise<NativeNamespace>((resolve, reject) => {
       const script = doc.createElement('script')
-      script.async = true
-      script.type = 'text/javascript'
-      // Fixed same-origin, exact JSAPI4 route. No Browser AK or untrusted URL.
-      script.src = new URL('/_BMapService/api?v=4.0', serviceHost).href
-      script.referrerPolicy = 'no-referrer'
-      script.onload = () => {
+      let settled = false
+      let timeout: ReturnType<typeof setTimeout> | null = null
+      const finish = (sdk: NativeNamespace | null) => {
+        if (settled) return
+        settled = true
+        if (timeout !== null) clearTimeout(timeout)
         script.onload = null
         script.onerror = null
-        if (!validNativeNamespace(browser.BMap)) {
+        if (!sdk) {
           script.remove()
           reject(new Error(unavailable))
           return
         }
-        trustedSDK.set(doc, browser.BMap)
-        resolve(browser.BMap)
+        trustedSDK.set(doc, sdk)
+        resolve(sdk)
       }
-      script.onerror = () => {
-        script.onload = null
-        script.onerror = null
-        script.remove()
-        reject(new Error(unavailable))
+      cancelLoad = () => finish(null)
+      script.async = true
+      script.type = 'text/javascript'
+      // Fixed same-origin, exact JSAPI4 route, NO client AK or URL input.
+      script.src = new URL('/_BMapService/api?v=4.0', serviceHost).href
+      script.referrerPolicy = 'no-referrer'
+      script.onload = () => {
+        finish(validNativeNamespace(browser.BMap) ? browser.BMap : null)
       }
-      doc.head.appendChild(script)
+      script.onerror = () => finish(null)
+      // A hung third-party script may never deliver onload OR onerror. A
+      // bounded deadline must release its shared slot so a new signed Owner
+      // session can retry without reusing a permanently pending Promise.
+      timeout = setTimeout(() => finish(null), 8_000)
+      try {
+        doc.head.appendChild(script)
+      } catch {
+        finish(null)
+      }
     })
-    pendingSDK.set(doc, promise)
-    const active = promise
-    void promise.catch(() => {
-      if (pendingSDK.get(doc) === active) {
-        pendingSDK.delete(doc)
-        if (!trustedSDK.has(doc) && browser._BMapSecurityConfig?.serviceHost === serviceHost) {
-          if (previous) browser._BMapSecurityConfig = previous
-          else delete browser._BMapSecurityConfig
+    pending = { promise, consumers: 0, cancel: () => cancelLoad() }
+    pendingSDK.set(doc, pending)
+    const active = pending
+    void promise.then(
+      () => {
+        if (pendingSDK.get(doc) === active) pendingSDK.delete(doc)
+      },
+      () => {
+        if (pendingSDK.get(doc) === active) {
+          pendingSDK.delete(doc)
+          if (!trustedSDK.has(doc) &&
+              browser._BMapSecurityConfig?.serviceHost === serviceHost) {
+            if (previous) browser._BMapSecurityConfig = previous
+            else delete browser._BMapSecurityConfig
+          }
         }
-      }
-    })
+      },
+    )
   }
-  return abortable(promise, signal)
+
+  const active = pending
+  active.consumers++
+  return abortable(active.promise, signal).finally(() => {
+    active.consumers--
+    // Each Web/Mobile/PWA/HTTPS Desktop viewer cancels independently. One
+    // cancellation must not break another; when the LAST viewer navigates
+    // away, remove the shared script immediately instead of continuing to
+    // spend Baidu quota and load tiles for an obsolete Gallery viewport.
+    if (active.consumers === 0 && pendingSDK.get(doc) === active) {
+      active.cancel()
+    }
+  })
 }
 
 /** Official WGS84 (1) -> BD-09 (5), not a hand-rolled coordinate guess. */
