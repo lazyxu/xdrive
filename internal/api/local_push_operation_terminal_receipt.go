@@ -43,9 +43,11 @@ func requireLocalPushOperationWithoutSQLCommitTx(tx *gorm.DB, operationID string
 }
 
 // requireLocalPushSourceWithoutFirstLeafSQLCommitTx is an additional
-// Source-WIDE durability veto, including committed older generations behind
-// a newer legacy pending/aborted reservation. The caller already holds the
-// owning Source UPDATE and latest Operation UPDATE locks through SQL COMMIT.
+// Source-WIDE durability veto, including an orphaned first-leaf COMMIT
+// after its private Operation row disappeared and historical generations
+// behind a newer legacy reservation. Caller holds the owning Source UPDATE
+// lock, and the latest Operation UPDATE lock when one exists, through SQL
+// COMMIT. This must also be checked on FIRST-generation admission.
 // This DOES NOT prove native-file or physical CAS quiescence.
 func requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx *gorm.DB, sourceID uint64) error {
 	if tx == nil || tx.Error != nil || sourceID == 0 {
