@@ -126,16 +126,18 @@ test('G11 actual completion effect waits for terminal states and stays in curren
   let pending = ['cleanup-task-12']
   const originalReviewByTask = new Map([['cleanup-task-12', 'burst-5']])
   const refreshes = []
-  const evaluate = (operations, section = 'cleanup', reviewID = 'burst-5') => {
+  const evaluate = (operations, section = 'cleanup', reviewID = 'burst-5', compact = false) => {
     const cb = compileExpression(effect, 'callback', {
       pendingCleanupDeleteIDs: pending,
       fileOperations: operations,
       section,
+      mobileGalleryViewport: compact,
       currentCleanupReview: reviewID ? { group: { id: reviewID } } : null,
       pendingCleanupReviewByTaskRef: { current: originalReviewByTask },
       xDriveMediaGallerySettledDeleteIDs: model.xDriveMediaGallerySettledDeleteIDs,
       setPendingCleanupDeleteIDs: (update) => { pending = update(pending) },
       loadCleanup: () => { refreshes.push('server-query') },
+      openCleanupFromCollections: () => { refreshes.push('compact-owner-query') },
     })
     cb()
   }
@@ -181,6 +183,15 @@ test('G11 actual completion effect waits for terminal states and stays in curren
   assert.equal(originalReviewByTask.size, 0,
     'simultaneous completion must consume all pending group associations')
 
+  // The real shared effect now chooses the staged compact first-list
+  // receipt, not eager loadCleanup. Keep the original wide assertions above.
+  pending = ['cleanup-task-19']
+  originalReviewByTask.set('cleanup-task-19', 'burst-5')
+  evaluate([{ id: 'cleanup-task-19', status: 'completed' }],
+    'cleanup', 'burst-5', true)
+  assert.deepEqual(refreshes.slice(-1), ['compact-owner-query'])
+  assert.deepEqual(pending, [])
+  assert.equal(originalReviewByTask.size, 0)
 })
 
 test('G11 Web/Desktop connect the same durable operation lifecycle, without new polling', () => {

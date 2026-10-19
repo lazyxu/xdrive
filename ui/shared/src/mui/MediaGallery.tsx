@@ -1602,7 +1602,64 @@ export function XDriveMediaGalleryPage({
     })
   }, [loadFirstPage, onSectionRouteChange])
 
+  // Every compact Cleanup entry (navigation/Collections/Refresh/Back)
+  // shares one Owner-accepted list receipt; never expose an empty interim
+  // index or discard the sparse photo wall while real GET is unresolved.
+  const openCleanupFromCollections = useCallback(async () => {
+    if (!source.listBurstReviews) {
+      setError('当前客户端不支持图库清理建议')
+      return
+    }
+    const request = ++requestID.current
+    setLoading(true)
+    setError('')
+    try {
+      const nextBursts = await source.listBurstReviews(48, 0)
+      if (request !== requestID.current) return
+      cleanupMoreInFlightRef.current = false
+      setCleanupMoreLoading(null)
+      collectionTargetRef.current = null
+      setCollectionTarget(null)
+      setCurrentAlbum(null)
+      setCurrentSuggestedPerson(null)
+      setCurrentPerson(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      setCurrentFolderView(null)
+      syncFolderRequestID.current += 1
+      placesReturnPageRef.current = null
+      placeOpenedFromCollectionsRef.current = false
+      setLastOpenedPlaceID(null)
+      placesExpandedRef.current = false
+      setItems([])
+      setTimelineGroupSets(emptyMediaTimelineGroupSets())
+      virtualCollection.reset(`media-gallery:cleanup:index:${request}`)
+      setBurstReviews(nextBursts)
+      setCleanupIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
+      setSection('cleanup')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+      // The authorized route echo must not issue a second Cleanup list GET.
+      routeSectionAppliedRef.current = 'cleanup'
+      onSectionRouteChange?.('cleanup')
+    } catch (loadError) {
+      if (request !== requestID.current) return
+      reportError(loadError)
+    } finally {
+      if (request === requestID.current) setLoading(false)
+    }
+  }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
+
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    // A direct compact Cleanup tab is no different from its Collections
+    // card: only a genuinely accepted first list can change the visible UI.
+    if (mobileGalleryViewport && nextSection === 'cleanup') {
+      void openCleanupFromCollections()
+      return
+    }
     // Compact Memories is an asynchronous Owner index, not an eagerly
     // committed tab. The previous accepted Gallery/Collections remains
     // mounted through slow, failed and superseded list reads.
@@ -1686,57 +1743,7 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders,
     mobileGalleryViewport, onSectionRouteChange, openTrashFromCollections,
-    openCompactPhotoSection])
-
-  // This Mobile Collections index uses a different Server DTO from photo
-  // ranges. Fetch the owner-authorized BurstReview list WITHOUT changing the
-  // visible Collections or resetting its sparse photo/scroll host. Only an
-  // accepted, current first list may atomically commit the Cleanup screen.
-  const openCleanupFromCollections = useCallback(async () => {
-    if (!source.listBurstReviews) {
-      setError('当前客户端不支持图库清理建议')
-      return
-    }
-    const request = ++requestID.current
-    setLoading(true)
-    setError('')
-    try {
-      const nextBursts = await source.listBurstReviews(48, 0)
-      if (request !== requestID.current) return
-      cleanupMoreInFlightRef.current = false
-      setCleanupMoreLoading(null)
-      collectionTargetRef.current = null
-      setCollectionTarget(null)
-      setCurrentAlbum(null)
-      setCurrentSuggestedPerson(null)
-      setCurrentPerson(null)
-      setCurrentPet(null)
-      setCurrentMemory(null)
-      setCurrentCleanupReview(null)
-      setCurrentFolderView(null)
-      syncFolderRequestID.current += 1
-      placesReturnPageRef.current = null
-      placeOpenedFromCollectionsRef.current = false
-      setLastOpenedPlaceID(null)
-      placesExpandedRef.current = false
-      setItems([])
-      setTimelineGroupSets(emptyMediaTimelineGroupSets())
-      virtualCollection.reset(`media-gallery:cleanup:index:${request}`)
-      setBurstReviews(nextBursts)
-      setCleanupIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
-      setSection('cleanup')
-      setActiveMediaType('')
-      setDraftFilters(emptyMediaGalleryFilterDraft)
-      setQuery({})
-      setMobileCollectionsOverview(false)
-      onSectionRouteChange?.('cleanup')
-    } catch (loadError) {
-      if (request !== requestID.current) return
-      reportError(loadError)
-    } finally {
-      if (request === requestID.current) setLoading(false)
-    }
-  }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
+    openCompactPhotoSection, openCleanupFromCollections])
 
   // Page replacement (not append) bounds the number of live location cards.
   // The photo-wall remains on the existing shared sparse VirtualCollection.
@@ -2355,7 +2362,10 @@ export function XDriveMediaGalleryPage({
       return
     }
     if (currentCleanupReview) {
-      void loadCleanup()
+      // Detail -> Cleanup index: keep the authenticated detail/scroll until
+      // the current first list succeeds. Wide clients retain old semantics.
+      if (mobileGalleryViewport) void openCleanupFromCollections()
+      else void loadCleanup()
       return
     }
     if (currentMemory) {
@@ -2387,6 +2397,8 @@ export function XDriveMediaGalleryPage({
     loadCleanup,
     loadFirstPage,
     loadMemories,
+    mobileGalleryViewport,
+    openCleanupFromCollections,
     openSyncFolderDirectory,
     query.place,
     section,
@@ -2910,10 +2922,13 @@ export function XDriveMediaGalleryPage({
       current.filter((id) => !finishedIDs.has(id))
     ))
     // Returning to Cleanup through navigation always loads authoritative data.
-    if (section === 'cleanup' && shouldRefreshCurrentReview) void loadCleanup()
+    if (section === 'cleanup' && shouldRefreshCurrentReview) {
+      if (mobileGalleryViewport) void openCleanupFromCollections()
+      else void loadCleanup()
+    }
   }, [
-    currentCleanupReview, fileOperations, loadCleanup,
-    pendingCleanupDeleteIDs, section,
+    currentCleanupReview, fileOperations, loadCleanup, mobileGalleryViewport,
+    openCleanupFromCollections, pendingCleanupDeleteIDs, section,
   ])
 
   const exportLivePhoto = useCallback(async (item: MediaItem) => {
@@ -2976,7 +2991,7 @@ export function XDriveMediaGalleryPage({
     // already marked committed in the onCommitted callback.
     const pendingCompactPhoto = mobileGalleryViewport &&
       (nextSection === 'library' || nextSection === 'favorites' ||
-       nextSection === 'memories')
+       nextSection === 'memories' || nextSection === 'cleanup')
     if (!pendingCompactPhoto) setMobileCollectionsOverview(false)
     if (nextSection === 'library' && !pendingCompactPhoto) void loadFirstPage(null, {})
     else selectSection(nextSection)
@@ -3029,7 +3044,10 @@ export function XDriveMediaGalleryPage({
       return
     }
     if (section === 'cleanup' && !currentCleanupReview) {
-      void loadCleanup()
+      // A verified compact index refresh retains its cards and scroll until
+      // the replacement current Owner list is accepted.
+      if (mobileGalleryViewport) void openCleanupFromCollections()
+      else void loadCleanup()
       return
     }
     // A visible, already-authorized compact Library photo wall remains

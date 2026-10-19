@@ -118,6 +118,8 @@ function harness(mobile) {
     // callback dependencies; preserve its real source while this P98 suite
     // exercises the original Memories loader and compact section routing.
     openCompactPhotoSection() {},
+    // The P100 direct Cleanup callback is a separate scoped owner in this harness.
+    openCleanupFromCollections() {},
     mediaGallerySectionDraft: section => ({ section }),
     mediaGalleryQueryFromDraft: draft => ({ ...draft }),
   }
