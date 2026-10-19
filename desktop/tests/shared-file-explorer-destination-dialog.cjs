@@ -268,7 +268,7 @@ test('P51: held child folder navigation preserves accepted target, rows and page
   }finally{await h.unmount()}
 })
 
-test('P51: a sustained load uses only the fixed-slot progress; failure retries the intended target',async()=>{
+test('P85: a sustained folder read stays silent in its fixed slot and retries the intended target',async()=>{
   const held=deferred()
   let attempts=0
   const h=await mount({loadDirectoryPage:async id=>{
@@ -277,8 +277,16 @@ test('P51: a sustained load uses only the fixed-slot progress; failure retries t
   }})
   try{
     await click(button(h.renderer,'打开文件夹 目录-30'))
-    await TestRenderer.act(async()=>{await new Promise(resolve=>setTimeout(resolve,350))})
-    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,1)
+    const slot = host(h.renderer,'data-xdrive-destination-quiet-loading')[0]
+    assert.ok(slot, 'target picker must reserve its original fixed progress slot')
+    assert.match(fs.readFileSync(filename, 'utf8'), /sx=\{\{ height: 4, flexShrink: 0 \}\}/,
+      'original renderer must declare a stable 4px slot without relying on erased MUI sx host props')
+    assert.equal(slot.props['aria-busy'],true,'real server GET remains semantically busy')
+    await TestRenderer.act(async()=>{await new Promise(resolve=>setTimeout(resolve,365))})
+    assert.equal(host(h.renderer,'data-xdrive-destination-quiet-loading')[0],slot,
+      'held >300ms folder read must retain the exact original mounted slot')
+    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,0,
+      'a slow ordinary folder navigation is still silent, not a deferred progress bar')
     assert.match(text(h.renderer.root),/目录-50/,'old rows persist while a real GET waits')
     await TestRenderer.act(async()=>{held.reject(new Error('目标目录服务暂不可用'));await held.promise.catch(()=>undefined)})
     assert.match(text(h.renderer.root),/目标目录服务暂不可用/)
@@ -289,6 +297,8 @@ test('P51: a sustained load uses only the fixed-slot progress; failure retries t
     assert.equal(attempts,2,'Retry must address failed target rather than last accepted parent')
     assert.match(text(host(h.renderer,'data-xdrive-file-explorer-destination-path')[0]),/目录-30/)
     assert.equal(Boolean(button(h.renderer,'复制到这里').props.disabled),false)
+    assert.equal(host(h.renderer,'data-xdrive-destination-quiet-loading')[0].props['aria-busy'],undefined,
+      'a successful Retry clears semantic busy without moving the slot')
   }finally{await h.unmount()}
 })
 
