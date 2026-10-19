@@ -96,6 +96,8 @@ function owner(compact) {
     mediaGalleryQueryFromDraft: draft => ({ ...draft }),
     loadMemories: () => {},
     loadCleanup: () => {},
+    // An independently verified compact Cleanup callback is not invoked here.
+    openCleanupFromCollections: () => {},
     loadSyncFolders: () => {},
     loadFirstPage: (...args) => {
       const ticket = ++generation
