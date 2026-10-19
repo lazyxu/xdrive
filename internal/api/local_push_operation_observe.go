@@ -66,6 +66,19 @@ func (s *Server) observeBoundLocalPushOperationIntent(
 			latest.RootFingerprint != fingerprint {
 			return denied
 		}
+		// Reservation state alone is never a trustworthy no-COMMIT answer.
+		// The first-leaf writer holds this latest Operation row FOR UPDATE
+		// through its SQL COMMIT; our SHARE lock serializes this source-wide
+		// read with the writer. Older committed generations count too.
+		// A missing/corrupt immutable receipt table is uncertainty, not
+		// permission to report "reserved", "aborted" or "expired".
+		var committed meta.LocalPushFirstLeafOperationCommit
+		probe := tx.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+			Select("operation_id").Where("source_id = ?", sourceID).
+			Limit(1).Find(&committed)
+		if probe.Error != nil || probe.RowsAffected != 0 {
+			return denied
+		}
 		switch {
 		case latest.State == meta.LocalPushOperationIntentAborted && latest.AbortedAt != nil &&
 			!latest.AbortedAt.Before(latest.IssuedAt) && !latest.AbortedAt.After(latest.ExpiresAt):
