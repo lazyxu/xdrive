@@ -133,7 +133,11 @@ export function XDriveBaiduJSAPIDesiredPanel({
       setNewAK('')
       setProbeResult(null)
       setProbeError('')
-      setNotice('Browser AK 期望配置已加密保存。动态 JSAPI 4.0 仍须通过独立签名发布、资源清单和真实三端验收才会生效。')
+      setNotice(result.runtime_enabled
+        ? '当前 Server 已完成签名授权并启用动态地图。请打开图库的「地点 → 地图」验证平移、缩放、聚合及 Viewer；真实三端和资源安全仍需验收。'
+        : result.desired_enabled
+          ? '启用设置已保存，但当前 Server 尚未授权运行。请切换「检测与生效证据」查看准确的阻断原因。'
+          : 'JSAPI 4.0 已停用，原有百度静态地图仍可使用。')
     } catch {
       if (revision === generation.current) setError('保存失败；如其他管理员已修改修订，请重新打开此页面再试。')
     } finally {
@@ -177,7 +181,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
         {mode === 'config' ? (
           <Typography variant="body2" color="text.secondary">
             独立于静态地图 Server AK。此处仅加密保存 Browser AK 和期望开关，
-            保存后立即更新期望修订，不等于动态地图获准运行。
+            保存后 Server 会立即尝试签发运行权限；实际结果以当前授权状态为准。
           </Typography>
         ) : (
           <Typography variant="body2" color="text.secondary">
@@ -198,7 +202,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
         ) : null}
         {mode === 'config' && config?.editable && (
           <>
-            <FormControlLabel label="期望启用 JSAPI 4.0（不等于运行授权）"
+            <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
               control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
                 disabled={busy} />} />
             <TextField fullWidth size="small" type="password" autoComplete="new-password"
@@ -208,7 +212,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
               value={newAK} disabled={busy} onChange={event => setNewAK(event.target.value)} />
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
               <Button size="small" variant="contained" disabled={busy}
-                onClick={() => { void apply(false) }}>保存期望配置</Button>
+                onClick={() => { void apply(false) }}>保存并应用</Button>
               <Button size="small" color="error" variant="outlined"
                 disabled={busy || !config.configured}
                 onClick={() => setConfirmClear(true)}>清除 Browser AK</Button>
