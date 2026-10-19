@@ -54,6 +54,9 @@ type Server struct {
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
 	BaiduMapHTTPClient             *http.Client
+	BaiduJSAPIProbeHTTPClient      *http.Client
+	baiduJSAPIProbeMu              sync.Mutex
+	baiduJSAPIProbeAt              time.Time
 	baiduJSAPI4Authority           atomic.Pointer[baiduJSAPI4LiveAuthority]
 	baiduMapLimiter                baiduMapLimiter
 	baiduMapVerifyMu               sync.Mutex
@@ -484,6 +487,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)
 	admin.GET("/services/baidu-jsapi", s.adminBaiduJSAPIConfig)
 	admin.PUT("/services/baidu-jsapi", s.adminSaveBaiduJSAPIConfig)
+	// A3d1: fixed one-shot ADMIN probe; no JS body, Cookie or child proxy route.
+	admin.POST("/services/baidu-jsapi/verify-loader", s.adminVerifyBaiduJSAPI4Loader)
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
