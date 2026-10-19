@@ -47,6 +47,7 @@ func TestBaiduJSAPI4ManualFixedLoaderOnlyNoRelease(t *testing.T) {
 					req.URL.Query().Get("v") != "4.0" || req.URL.Query().Get("ak") != ak ||
 					len(req.URL.Query()) != 2 ||
 					req.Header.Get("BMAP_PROXY_URL") != "https://gallery.example.invalid/_BMapService/" ||
+					req.Header.Get("Referer") != "https://gallery.example.invalid/" ||
 					req.Header.Get("Accept-Encoding") != "identity" ||
 					req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
 					t.Fatal("unexpected Loader request or missing credential isolation")
@@ -146,7 +147,8 @@ func TestBaiduJSAPI4AdminLoaderProbeRealPostgresRevisionAndAudit(t *testing.T) {
 		clientCalls++
 		if req.URL.Host != "api.map.baidu.com" || req.URL.Path != "/api" ||
 			req.URL.Query().Get("ak") != secret || req.URL.Query().Get("v") != "4.0" ||
-			req.Header.Get("BMAP_PROXY_URL") != "https://gallery.example.invalid/_BMapService/" {
+			req.Header.Get("BMAP_PROXY_URL") != "https://gallery.example.invalid/_BMapService/" ||
+			req.Header.Get("Referer") != "https://gallery.example.invalid/" {
 			t.Fatal("Browser AK Loader audit probe did not use fixed upstream")
 		}
 		return &http.Response{

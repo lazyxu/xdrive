@@ -156,6 +156,7 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 	inbound := func() *http.Request {
 		r := httptest.NewRequest(http.MethodGet, "/_BMapService/api?v=4.0", nil)
 		r.Header.Set("Origin", "https://gallery.invalid")
+		r.Header.Set("Referer", "https://forged-attacker.invalid/") // never forwarded
 		r.Header.Set("Sec-Fetch-Site", "same-origin")
 		return r
 	}
@@ -180,6 +181,7 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 			req.URL.Path != "/api" || req.URL.Query().Get("v") != "4.0" ||
 			req.URL.Query().Get("ak") != "synthetic-browser-ak-one" ||
 			req.Header.Get("Bmap_proxy_url") != "https://gallery.invalid/_BMapService/" ||
+			req.Header.Get("Referer") != "https://gallery.invalid/" ||
 			req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") != "" ||
 			req.Header.Get("Proxy-Authorization") != "" {
 			t.Fatal("synthetic upstream was not a pinned Server-only Loader plan")
