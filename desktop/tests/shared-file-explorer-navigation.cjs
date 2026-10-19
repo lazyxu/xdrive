@@ -89,7 +89,8 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
   }
   assert.ok(workspace.includes('useXDriveFileExplorerNavigation({'), 'workspace controller must compose shared navigation')
   assert.ok(workspace.includes('const navigationIntentID = navigation.beginNavigationIntent()'), 'typed-path resolution must reserve a navigation intent before async traversal')
-  assert.ok(workspace.includes('navigation.navigateTo(nextCrumbs, true, navigationIntentID)'), 'typed-path navigation must consume its original intent')
+  assert.ok(workspace.includes('navigation.navigateTo(nextCrumbs, true, navigationIntentID,'), 'typed-path navigation must consume its original intent')
+  assert.ok(workspace.includes('(committed) => { accepted = committed }'), 'typed-path navigation must await the current first-page receipt')
   assert.ok(workspace.includes('navigation.isNavigationIntentCurrent(navigationIntentID)'), 'stale typed-path errors must be ignored')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('const navigationIntentID = beginNavigationIntent()'), `${label} pre-resolved navigation must reserve an intent`)

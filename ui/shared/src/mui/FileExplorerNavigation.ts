@@ -816,15 +816,20 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     nextCrumbs: TCrumb[],
     record = true,
     navigationIntentID?: number,
+    onAccepted?: (accepted: boolean) => void,
   ) => {
     const target = nextCrumbs.at(-1)
-    if (!target) return
+    if (!target) { onAccepted?.(false); return }
     const requestID = navigationIntentID ?? beginNavigation(activeTabID)
-    if (!isNavigationCurrent(requestID)) return
+    if (!isNavigationCurrent(requestID)) { onAccepted?.(false); return }
     const committed = await onLoadDirectory(target.id, nextCrumbs, sort, grouping)
-    if (committed === false || !isNavigationCurrent(requestID)) return
+    if (committed === false || !isNavigationCurrent(requestID)) {
+      onAccepted?.(false)
+      return
+    }
     if (record) recordHistory(nextCrumbs)
     finishNavigation(nextCrumbs)
+    onAccepted?.(true) // actual current authenticated first-page receipt
   }
 
   const goBack = async () => {

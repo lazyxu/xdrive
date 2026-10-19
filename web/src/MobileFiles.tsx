@@ -123,7 +123,7 @@ type Props = {
   onGoUp: () => void
   onCrumbClick: (index: number) => void
   pathValue?: string
-  onPathSubmit?: (path: string) => void
+  onPathSubmit?: (path: string) => boolean | void | Promise<boolean | void>
   onRestoreFolder: (id: number) => Promise<void>
   onOpenItem: (item: XDriveFileExplorerItem, parentID?: number) => boolean | void | Promise<boolean | void>
   onQuickLookItem?: (item: XDriveFileExplorerItem, parentID?: number) => void
@@ -471,7 +471,12 @@ export default function MobileFiles(props: Props) {
   const navigationIntentRef = useRef(0)
   // A typed path is only a navigation intent until shared authorized crumbs
   // and its counted first range commit. Retain old section/scroll meanwhile.
-  const pendingPathOriginRef = useRef<{ directoryID: number | null } | null>(null)
+  const pendingPathOriginRef = useRef<{
+    directoryID: number | null
+    intent: number
+  } | null>(null)
+  // The stable FileExplorer interactionKey is NOT a per-request receipt.
+  const [acceptedPathIntent, setAcceptedPathIntent] = useState(0)
   // A Browse Home → Cloud root tap is a pending intent, not a committed page.
   const pendingBrowseRootRef = useRef<{ rootID: number; intent: number } | null>(null)
   // A Recent/Quick Access folder is only an intent until the shared counted
@@ -865,19 +870,25 @@ export default function MobileFiles(props: Props) {
       !props.trashActive && !props.searchActive &&
       props.virtualCollection && !props.loading &&
       props.virtualCollection.interactionKey !== pendingRow.previousRangeKey)
-    // A Home/Recent/Quick Access or Search row only enters Browse when its
-    // matching, newly counted directory Range is accepted. A fulfilled Open
-    // Promise, unrelated old Range, or superseded tap cannot move the rail.
+    // The new different-folder crumb commits only after the accepted first
+    // Range. Same-directory paths cannot use interactionKey as a generation:
+    // require the original shared Web navigation's success receipt instead.
+    const pendingPath = pendingPathOriginRef.current
+    const pathCommit = Boolean(pendingPath &&
+      pendingPath.intent === navigationIntentRef.current &&
+      !props.trashActive && !props.searchActive && !props.loading &&
+      (pendingPath.directoryID !== directoryID ||
+       acceptedPathIntent === pendingPath.intent))
+    // A Home/Recent/Quick Access/Search/path ticket must not reset the scroll
+    // just because a Promise resolved or an obsolete range remains mounted.
     if (lastCommittedDirectoryRef.current === directoryID &&
-        !homeRootCommit && !externalDirectoryCommit && !rowDirectoryCommit) return
+        !homeRootCommit && !externalDirectoryCommit && !rowDirectoryCommit && !pathCommit) return
     lastCommittedDirectoryRef.current = directoryID
     if (homeRootCommit) pendingBrowseRootRef.current = null
     if (externalDirectoryCommit) pendingExternalDirectoryRef.current = null
     if (rowDirectoryCommit) pendingRowDirectoryRef.current = null
     const routedCommit = Boolean(props.requestedDirectoryID &&
       directoryID === props.requestedDirectoryID)
-    const pathCommit = pendingPathOriginRef.current !== null &&
-      pendingPathOriginRef.current.directoryID !== directoryID
     if (pathCommit) pendingPathOriginRef.current = null
     const authorizedCommit = routedCommit || pathCommit || homeRootCommit || externalDirectoryCommit || rowDirectoryCommit
     // A deep link opened from Browse Home/Recent/Favorites must enter Browse
@@ -911,7 +922,8 @@ export default function MobileFiles(props: Props) {
     setScrollTop(0)
     if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
   }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
-    props.requestedDirectoryID, props.virtualCollection, props.loading, initial.folderID, persist])
+    props.requestedDirectoryID, props.virtualCollection, props.loading,
+    acceptedPathIntent, initial.folderID, persist])
 
   useLayoutEffect(() => {
     // An identical ResizeObserver delivery must not re-render the 100k
@@ -1349,19 +1361,34 @@ export default function MobileFiles(props: Props) {
     const target = goToPathDraft.trim()
     if (!target || !props.onPathSubmit || props.trashActive) return
     setGoToPathOpen(false)
-    // A path lookup may fail, be canceled, or take time to reach the Server.
-    // Do not reset the current virtual scroll or reveal Browse on intent.
-    // The committed-crumb layout effect performs that once the shared
-    // controller has accepted the authorized destination.
-    if (section === 'browse' && browseHome && directoryID !== null) {
-      // Existing Browse Home has no visible directory scroll to preserve.
-      // Keep its original explicit-path entry into the current Browse root.
-      beginBrowse(directoryID)
-    } else {
-      navigationIntentRef.current += 1
-      pendingPathOriginRef.current = { directoryID }
+    // Every path entry is just intent, including Browse Home while the old
+    // root's counted Range is already mounted. Never call beginBrowse here:
+    // doing so reveals the wrong directory and resets scroll before lookup.
+    // The pre-paint effect owns the single destination commit after the
+    // shared workspace accepts a new first Range/crumb scope.
+    const intent = ++navigationIntentRef.current
+    pendingPathOriginRef.current = { directoryID, intent }
+    // A failed or superseded path must not later be revived by an unrelated
+    // current-folder refresh with a different virtual range identity.
+    let result: boolean | void | Promise<boolean | void>
+    try {
+      result = props.onPathSubmit(target)
+    } catch (error) {
+      if (pendingPathOriginRef.current?.intent === intent) pendingPathOriginRef.current = null
+      props.onOpenError(error)
+      return
     }
-    props.onPathSubmit(target)
+    void Promise.resolve(result).then(accepted => {
+      if (navigationIntentRef.current !== intent ||
+          pendingPathOriginRef.current?.intent !== intent) return
+      if (accepted === true) setAcceptedPathIntent(intent)
+      else if (accepted === false) pendingPathOriginRef.current = null
+    }).catch(error => {
+      if (navigationIntentRef.current !== intent ||
+          pendingPathOriginRef.current?.intent !== intent) return
+      pendingPathOriginRef.current = null
+      props.onOpenError(error)
+    })
   }
   const onOpenEntry = (item: XDriveFileExplorerItem, ownerID?: number) => {
     // Trash actions stay in the existing restore/delete Context Menu. A

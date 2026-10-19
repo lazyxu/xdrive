@@ -1072,12 +1072,177 @@ test('F-PARITY-05: Mobile path dialog preloads authoritative workspace path and 
     assert.deepEqual(search, [], 'typed path must not be converted into a fake global Search query')
     assert.equal(find(h.view, 'data-mobile-files-go-to-path', true).props.open, false)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1, 'navigation does not remount scroll owner')
-    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0, 'path submission reveals Browse, not Home')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'an unconfirmed Home path must not briefly reveal the old root')
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 77, name: '新目录' }],
+      items: [{ id: 99, name: '新文件.txt', kind: 'file', revision: 1 }],
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0,
+      'only the accepted destination may replace the mounted Home')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
   }, { props: {
     pathValue: '我的文件/旧目录',
     onPathSubmit: value => paths.push(value),
     onSearch: value => search.push(value),
   } })
+})
+
+test('P95: mounted Browse Home typed path remains completely stable through held and failed lookup', async () => {
+  const requested = []
+  const original = { id: 3, name: '旧文件.txt', kind: 'file', revision: 1 }
+  const accepted = { id: 99, name: '新文件.txt', kind: 'file', revision: 1 }
+  const rootRange = {
+    interactionKey: 'p95-accepted-old-root',
+    itemCount: 1, loadedItems: new Map([[0, original]]),
+    itemAt: index => index === 0 ? original : undefined, onRangeChange() {},
+  }
+  const childRange = {
+    interactionKey: 'p95-verified-child-first-range',
+    itemCount: 1, loadedItems: new Map([[0, accepted]]),
+    itemAt: index => index === 0 ? accepted : undefined, onRangeChange() {},
+  }
+  await withView(async h => {
+    const persisted = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const pathAction = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    assert.ok(pathAction)
+    await act(async () => { pathAction.props.onClick() })
+    await act(async () => {
+      find(h.view, 'aria-label', '文件夹路径').props.onChange({
+        target: { value: '我的文件/新目录' },
+      })
+    })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.deepEqual(requested, ['我的文件/新目录'])
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    assert.equal(persisted().folderID, null)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 365)) })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1, 'no 300ms transitional Browse frame')
+    await h.update({ loading: true })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    await h.update({ loading: false })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'failed or uncommitted lookup retains Home even when Loading resets')
+    assert.equal(persisted().folderID, null)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await h.update({
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 77, name: '新目录' }],
+      items: [accepted], virtualCollection: childRange, loading: false,
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.equal(persisted().folderID, 77)
+    assert.equal(persisted().section, 'browse')
+    assert.equal(persisted().scrollTop, 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.ok(host, 'original mounted virtual scroll owner did not disappear during request')
+  }, { props: {
+    virtualCollection: rootRange, items: [original],
+    crumbs: [{ id: 1, name: '我的文件' }],
+    onPathSubmit: path => { requested.push(path) },
+  } })
+})
+
+test('P95: same-directory path waits for current shared first-page receipt, not cache-key changes', async () => {
+  let resolvePath
+  const pathRequest = new Promise(resolve => { resolvePath = resolve })
+  const item = { id: 3, name: '已验证文件.txt', kind: 'file', revision: 1 }
+  const initialRange = {
+    interactionKey: 'p95-original-range',
+    itemCount: 1, loadedItems: new Map([[0, item]]),
+    itemAt: index => index === 0 ? item : undefined, onRangeChange() {},
+  }
+  await withView(async h => {
+    const persisted = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const pathAction = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    await act(async () => { pathAction.props.onClick() })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'the old Range alone does not authorize same-directory Browse')
+    await h.update({ loading: false, virtualCollection: { ...initialRange } })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'equivalent same-key re-render is not a new first Range')
+    await h.update({
+      virtualCollection: { ...initialRange, interactionKey: 'p95-new-accepted-range' },
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'an unrelated cache-key change must not authorize a pending path')
+    await act(async () => { resolvePath(true); await pathRequest })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0,
+      'only the real verified navigation receipt reveals Browse')
+    assert.equal(persisted().folderID, 1)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    pathValue: '我的文件', items: [item],
+    virtualCollection: initialRange,
+    onPathSubmit: () => pathRequest,
+  } })
+})
+
+test('P95: failed path cannot be revived by unrelated new Range identity', async () => {
+  let resolvePath
+  const pathRequest = new Promise(resolve => { resolvePath = resolve })
+  const item = { id: 7, name: '旧文件.txt', kind: 'file', revision: 1 }
+  const range = {
+    interactionKey: 'p95-original-owner',
+    itemCount: 1, loadedItems: new Map([[0, item]]),
+    itemAt: index => index === 0 ? item : undefined, onRangeChange() {},
+  }
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const action = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    await act(async () => { action.props.onClick() })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    await act(async () => { resolvePath(false); await pathRequest })
+    await h.update({ virtualCollection: { ...range, interactionKey: 'unrelated-current-refresh' } })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    pathValue: '我的文件', items: [item], virtualCollection: range,
+    onPathSubmit: () => pathRequest,
+  } })
+})
+
+test('P95: new Mobile Files rail intent rejects a pending typed path without a late Browse flash', async () => {
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const pathAction = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    await act(async () => { pathAction.props.onClick() })
+    await act(async () => {
+      find(h.view, 'aria-label', '文件夹路径').props.onChange({
+        target: { value: '我的文件/即将过期的路径' },
+      })
+    })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 55, name: '旧导航结果' }],
+      items: [{ id: 333, name: '过期.txt', kind: 'file', revision: 1 }],
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'new Recent intent must win even if a stale directory update is delivered')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: { onPathSubmit() {} } })
 })
 
 test('F-PARITY-05: empty path cannot navigate and Trash never exposes the operation', async () => {
