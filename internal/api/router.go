@@ -409,6 +409,9 @@ func (s *Server) Router() *gin.Engine {
 	// G2b1: Agent-authenticated IMMUTABLE Stage/Operation SQL correlation only.
 	// Does not commit Node/CAS, activate local Push, retire keys or start SourceRun.
 	authed.POST("/sources/:id/local-staging/:stageID/operation-bind", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.bindLocalPushOperationStage)
+	// G2b2a: physical first-file CAS/SQL COMMIT, only with exact current
+	// owning-Agent Stage + durable Operation proof, no SourceRun/scheduler.
+	authed.POST("/sources/:id/local-staging/:stageID/operation-first-leaf-commit", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.commitLocalPushFirstLeafOperation)
 	// This test-only route is OMITTED from all production Routers. No config,
 	// environment or user setting can turn on this internal first-file writer.
 	if s.localPushCIOnlyFirstLeaf {
