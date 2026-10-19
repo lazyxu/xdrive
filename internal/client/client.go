@@ -351,6 +351,7 @@ type AdminCaddyHTTPSConfig struct {
 	ApplyState                    string     `json:"apply_state"`
 	Editable                      bool       `json:"editable"`
 	ApplySupported                bool       `json:"apply_supported"`
+	HostApplyPending              bool       `json:"host_apply_pending"`
 	RequiresRestrictedMaintenance bool       `json:"requires_restricted_maintenance"`
 	Requirement                   string     `json:"requirement"`
 	HostObserved                  bool       `json:"host_observed"`

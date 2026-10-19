@@ -225,13 +225,19 @@ export function XDriveCaddyHTTPSDesiredPanel({
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
               <Chip variant="outlined" size="small" color="warning"
                 label={config.host_apply_pending ? 'Host 申请待协调 · 编辑已锁定' :
+                  config.source === 'host-import' ? '旧宿主配置已导入 · 生效待核验' :
                   config.apply_state === 'pending' ? '期望配置未应用' : '未由管理员管理'} />
               <Typography variant="caption" color="text.secondary">
-                期望修订 #{config.revision} · {config.source === 'saved' ? '持久化期望配置' : '部署入口初始值（未保存，非生效证明）'}
+                期望修订 #{config.revision} · {config.source === 'host-import' ? '升级时导入的原 Caddy 入口（不构成已应用回执）' :
+                  config.source === 'saved' ? '持久化期望配置' : '部署入口初始值（未保存，非生效证明）'}
               </Typography>
             </Stack>
             {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-host-pending-fence>
               存在待协调的宿主配置申请，IP/域名修改和历史回滚已锁定；这不是已部署或已重启的证明。
+            </Typography>}
+            {config.source === 'host-import' && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
+              已导入旧 Caddy 的 IP／域名管理记录。原证书和网关配置继续保留；请在「状态与检测」确认实际连接，
+              不要把导入的修订号当成后续修改已生效。
             </Typography>}
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
               运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。

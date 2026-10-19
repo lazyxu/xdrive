@@ -11,6 +11,7 @@ type AdminCaddyHTTPSSetting struct {
 	Domain     string `gorm:"size:253;not null"`
 	LANEnabled bool   `gorm:"not null;default:false"`
 	LANIP      string `gorm:"size:45;not null;default:''"`
+	Origin     string `gorm:"size:16;not null;default:'saved'"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
