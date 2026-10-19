@@ -288,9 +288,17 @@ func TestP056Real100KPhysicalCASCopyUndo(t *testing.T) {
 		t.Fatalf("authentic queued Copy response: %+v %v", copyJob, err)
 	}
 	request(foreignToken, http.MethodGet, "/api/v1/file-operations/"+copyJob.ID, nil, http.StatusNotFound)
+	// P059 only: observe the original 100k COPY Worker without changing production.
+	// Unprofiled P056 remains byte-for-byte identical in behavior.
+	var copySQLProfile *p059CopySQLProfile
+	if os.Getenv("XD_P059_COPY_SQL_PROFILE") == "1" {
+		copySQLProfile = &p059CopySQLProfile{Interface: logger.Default.LogMode(logger.Silent)}
+		server.DB = db.Session(&gorm.Session{Logger: copySQLProfile})
+	}
 	copyStart := time.Now()
 	processed, copyErr := server.processNextFileOperation(ctx)
 	copyMS := float64(time.Since(copyStart).Microseconds()) / 1000
+	server.DB = db // Undo, purge and source validation are deliberately unprofiled.
 	if copyErr != nil || !processed {
 		t.Fatalf("original product physical 100k Copy RED, worker processed=%v err=%v elapsed_ms=%.3f", processed, copyErr, copyMS)
 	}
@@ -466,6 +474,9 @@ func TestP056Real100KPhysicalCASCopyUndo(t *testing.T) {
 	result["physical_allocated_bytes_after_purge"] = purgeAllocated
 	result["go_process_kernel_write_bytes_for_all_stages"] = writes
 	delete(result, "go_process_kernel_write_bytes_for_copy_and_undo")
+	if copySQLProfile != nil {
+		result["copy_sql_profile"] = copySQLProfile.snapshot()
+	}
 	jsonRow, marshalErr := json.Marshal(result)
 	if marshalErr != nil {
 		t.Fatal(marshalErr)

@@ -1,0 +1,89 @@
+{
+  "authenticated_purge_100k_copy_trash_ms": 10235.522,
+  "complete_physical_original_sha_verify_ms": 2771.697,
+  "copy_actual_durable_worker_ms": 353529.817,
+  "copy_http_enqueue_ms": 122.566,
+  "copy_sql_profile": {
+    "coverage": "test-only worker GORM Trace spans; not PostgreSQL CPU, transaction commit, or complete Worker wall",
+    "grouped_statement_count": 500016,
+    "statement_count": 500016,
+    "statement_families": {
+      "insert_file": {
+        "statements": 100000,
+        "trace_wall_ms": 30231.08711599963,
+        "worst_trace_wall_ms": 3.442038
+      },
+      "insert_node": {
+        "statements": 100001,
+        "trace_wall_ms": 25426.895144000184,
+        "worst_trace_wall_ms": 8.31911
+      },
+      "select_content_blob": {
+        "statements": 100000,
+        "trace_wall_ms": 24875.800352999908,
+        "worst_trace_wall_ms": 2.576168
+      },
+      "select_file": {
+        "statements": 1,
+        "trace_wall_ms": 0.334034,
+        "worst_trace_wall_ms": 0.334034
+      },
+      "select_node": {
+        "statements": 3,
+        "trace_wall_ms": 1.9094669999999998,
+        "worst_trace_wall_ms": 0.797421
+      },
+      "select_operation": {
+        "statements": 2,
+        "trace_wall_ms": 6.9994700000000005,
+        "worst_trace_wall_ms": 6.065989
+      },
+      "update_content_blob": {
+        "statements": 100000,
+        "trace_wall_ms": 30175.11653300001,
+        "worst_trace_wall_ms": 5.660291
+      },
+      "update_operation": {
+        "statements": 100006,
+        "trace_wall_ms": 233216.47226999962,
+        "worst_trace_wall_ms": 42.629148
+      },
+      "with_file": {
+        "statements": 1,
+        "trace_wall_ms": 1063.812899,
+        "worst_trace_wall_ms": 1063.812899
+      },
+      "with_node": {
+        "statements": 2,
+        "trace_wall_ms": 1.36603,
+        "worst_trace_wall_ms": 0.752164
+      }
+    },
+    "sum_sql_trace_wall_ms": 344999.793316
+  },
+  "go_process_25ms_peak_rss_growth_bytes": 117145600,
+  "go_process_cpu_ticks_for_copy_and_undo": 12706,
+  "go_process_kernel_write_bytes_for_all_stages": 0,
+  "original_content_blob_ref_count_after_purge": 100001,
+  "original_physical_CAS_inodes": 100001,
+  "passed": true,
+  "physical_allocated_bytes_after_copy": 409604096,
+  "physical_allocated_bytes_after_purge": 409604096,
+  "physical_allocated_bytes_after_undo": 409604096,
+  "physical_allocated_bytes_before": 409604096,
+  "physical_content_bytes": 102401024,
+  "physical_sources": 100000,
+  "sample": "sample-3",
+  "scope": "Authentic HTTP enqueue and Go PostgreSQL17 durable worker, physical SHA-distinct Local CAS; not OS-installed client/browser GUI, WAN or true durable upload/sync.",
+  "seed_local_cas_and_metadata_ms": 59167.141,
+  "sentinel_content_blob_ref_count_1_after_undo": 1,
+  "smoke_only": false,
+  "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+  "source_copy_content_blob_ref_count_2": 100000,
+  "trash_retained_content_blob_ref_count_2_after_undo": 100000,
+  "trashed_copied_file_count_after_undo": 100000,
+  "undo_actual_durable_worker_ms": 1600.931,
+  "undo_http_enqueue_ms": 108.401,
+  "verified_copied_file_metadata_count": 100000,
+  "workload": "P056-authenticated-100k-unique-physical-CAS-folder-copy-undo"
+}
