@@ -6,6 +6,7 @@ const ts = require('typescript')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
+const visual = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx'), 'utf8')
 const thumbnail = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerThumbnail.tsx'), 'utf8')
 const web = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
@@ -43,10 +44,11 @@ function loadPerformanceTypeScriptModule(relativePath) {
 }
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
-  assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
-  assert.ok(shared.includes('export function xDriveFileTypeLabel'), 'shared file-type labels are missing')
+  assert.ok(visual.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
+  assert.ok(shared.includes("from './FileExplorerItemPresentation'"), 'Owner Explorer must reuse the exact shared visual classifier')
+  assert.ok(visual.includes('export function xDriveFileTypeLabel'), 'shared file-type labels are missing')
   for (const kind of ['image', 'video', 'audio', 'pdf', 'document', 'spreadsheet', 'presentation', 'archive', 'code', 'text']) {
-    assert.ok(shared.includes(`'${kind}'`), `missing shared file kind: ${kind}`)
+    assert.ok(visual.includes(`'${kind}'`), `missing shared file kind: ${kind}`)
   }
   for (const icon of [
     'ImageRoundedIcon',
@@ -58,16 +60,16 @@ test('FileExplorer derives system-style file types and icons from extensions', (
     'DescriptionRoundedIcon',
     'CodeRoundedIcon',
   ]) {
-    assert.ok(shared.includes(icon), `missing Explorer file icon: ${icon}`)
+    assert.ok(visual.includes(icon), `missing Explorer file icon: ${icon}`)
   }
   assert.equal(web.includes("typeLabel: node.type === 'dir' ? '文件夹' : '文件'"), false, 'Web must not override shared file type inference')
   assert.equal(desktop.includes("typeLabel: node.type === 'dir' ? '文件夹' : '文件'"), false, 'Desktop must not override shared file type inference')
 })
 
 test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
-  assert.ok(shared.includes('export function xDriveFileSupportsThumbnail'), 'thumbnail eligibility classifier is missing')
-  assert.ok(shared.includes("return fileKind === 'image' || fileKind === 'video'"), 'FileExplorer thumbnail eligibility must include the persisted video-poster path')
-  assert.ok(shared.includes("const videoExtensions = new Set"), 'video poster eligibility must stay extension-classified through the shared file-kind contract')
+  assert.ok(visual.includes('export function xDriveFileSupportsThumbnail'), 'thumbnail eligibility classifier is missing')
+  assert.ok(visual.includes("return fileKind === 'image' || fileKind === 'video'"), 'FileExplorer thumbnail eligibility must include the persisted video-poster path')
+  assert.ok(visual.includes("const videoExtensions = new Set"), 'video poster eligibility must stay extension-classified through the shared file-kind contract')
   assert.ok(thumbnail.includes('let fileThumbnailVisibilityObserver: IntersectionObserver | null = null'), 'thumbnail visibility must use one shared observer')
   assert.ok(thumbnail.includes('const fileThumbnailVisibilityCallbacks = new Map<Element, FileThumbnailVisibilityEntry>()'), 'shared thumbnail visibility callback registry is missing')
   assert.ok(thumbnail.includes('const fileThumbnailScrollSettleMs = 80'), 'thumbnail scroll-settle gate is missing')

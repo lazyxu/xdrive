@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const thumbnail = read('ui', 'shared', 'src', 'mui', 'FileExplorerThumbnail.tsx')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const visual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const properties = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const recent = read('ui', 'shared', 'src', 'mui', 'FileExplorerRecentController.ts')
@@ -59,8 +60,9 @@ test('Recent preserves thumbnail identity and supported image/video media is eli
   for (const token of ['revision?: string | number', 'updatedAt?: string', 'size?: number']) {
     assert.ok(recent.includes(token), 'Recent thumbnail identity missing: ' + token)
   }
-  assert.ok(explorer.includes("'livp'"), 'FileExplorer image-like thumbnail allowlist must include LIVP')
-  assert.ok(explorer.includes("return fileKind === 'image' || fileKind === 'video'"))
+  assert.ok(visual.includes("'livp'"), 'FileExplorer image-like thumbnail allowlist must include LIVP')
+  assert.ok(visual.includes("return fileKind === 'image' || fileKind === 'video'"))
+  assert.ok(explorer.includes("from './FileExplorerItemPresentation'"), 'large Owner Explorer must import shared presentation')
   assert.ok(thumbnail.includes('title="实况照片"'), 'LIVP thumbnails must expose a static Live Photo badge')
   assert.ok(thumbnail.includes('XDriveLivePhotoGlyph'), 'LIVP thumbnails must use the shared Live Photo glyph instead of a play button')
   assert.ok(thumbnail.includes('width: 14') && thumbnail.includes('height: 14'), 'compact LIVP badge must scale down with small thumbnails')
@@ -70,7 +72,7 @@ test('Recent preserves thumbnail identity and supported image/video media is eli
     'LIVP badge must not claim Live Photo readiness over a failed/generic placeholder',
   )
   assert.ok(
-    explorer.includes("'3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'"),
+    visual.includes("'3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'"),
     'FileExplorer video poster eligibility must cover the shared common-video allowlist',
   )
 })
