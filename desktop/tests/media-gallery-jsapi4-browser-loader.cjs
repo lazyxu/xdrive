@@ -203,6 +203,86 @@ test('failed script and mismatched pre-existing serviceHost fail closed', async 
   assert.equal(conflicting.requests.length, 0)
 })
 
+
+test('A3c22 aborting one consumer preserves the other; last abort cancels the script immediately', async () => {
+  const f = fixture('https://c22.example/')
+  global.document = f.doc
+  const port = createPort(makeOptions(async () => approved))
+  const firstAbort = new AbortController()
+  const secondAbort = new AbortController()
+  const first = port.acquire(f.container, firstAbort.signal, camera)
+  const second = port.acquire(f.container, secondAbort.signal, camera)
+  await later()
+  assert.equal(f.requests.length, 1, 'one shared script for two Owner sessions')
+  const obsolete = f.requests[0]
+  const staleOnload = obsolete.onload
+  firstAbort.abort()
+  await assert.rejects(first, /baidu_jsapi4_not_authorized/)
+  assert.notEqual(obsolete.removed, true, 'second consumer still owns script')
+  secondAbort.abort()
+  await assert.rejects(second, /baidu_jsapi4_not_authorized/)
+  await later()
+  assert.equal(obsolete.removed, true, 'last abort must remove the script')
+  assert.equal(obsolete.onload, null, 'stale onload callback disarmed')
+  assert.equal(f.browser._BMapSecurityConfig, undefined)
+  f.installSDK()
+  staleOnload()
+  const retry = port.acquire(f.container, new AbortController().signal, camera)
+  await later()
+  assert.equal(f.requests.length, 2, 'fresh signed session starts a fresh script')
+  f.requests[1].onload()
+  const mounted = await retry
+  assert.equal(f.maps.length, 1)
+  mounted.dispose()
+})
+
+test('A3c22 a script without onload/onerror expires and can be retried', async () => {
+  const f = fixture('https://never-loads.example/')
+  global.document = f.doc
+  const port = createPort(makeOptions(async () => approved))
+  const realSetTimeout = global.setTimeout
+  const realClearTimeout = global.clearTimeout
+  const scheduled = []
+  global.setTimeout = (fn, duration, ...args) => {
+    if (duration === 8_000) {
+      const task = { fn, cancelled: false }
+      scheduled.push(task)
+      return task
+    }
+    return realSetTimeout(fn, duration, ...args)
+  }
+  global.clearTimeout = token => {
+    if (scheduled.includes(token)) token.cancelled = true
+    else realClearTimeout(token)
+  }
+  try {
+    const first = port.acquire(f.container, new AbortController().signal, camera)
+    await later()
+    assert.equal(f.requests.length, 1)
+    assert.equal(scheduled.length, 1)
+    assert.equal(scheduled[0].cancelled, false)
+    // Fire the REAL registered timeout callback with a controlled clock,
+    // not an old source regex or an invented authorized SDK.
+    scheduled[0].fn()
+    await assert.rejects(first, /baidu_jsapi4_not_authorized/)
+    await later()
+    assert.equal(f.requests[0].removed, true)
+    assert.equal(f.browser._BMapSecurityConfig, undefined)
+    const second = port.acquire(f.container, new AbortController().signal, camera)
+    await later()
+    assert.equal(f.requests.length, 2)
+    f.installSDK()
+    f.requests[1].onload()
+    const mounted = await second
+    assert.equal(f.maps.length, 1)
+    assert.equal(scheduled[1].cancelled, true, 'successful load clears its timer')
+    mounted.dispose()
+  } finally {
+    global.setTimeout = realSetTimeout
+    global.clearTimeout = realClearTimeout
+  }
+})
+
 test('static contract: only Baidu, original WGS84, no browser AK or alternate map source', () => {
   for (const value of [
     '/_BMapService/api?v=4.0', 'mintMapOnlySession(signal)',
