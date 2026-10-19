@@ -2043,21 +2043,27 @@ export function XDriveMediaGalleryPage({
 
   const openAlbum = useCallback((album: MediaAlbum, fromCollections = false) => {
     syncFolderRequestID.current += 1
-    // The Collections overview and its scroll belong to the last accepted
-    // location until this album's first Server page actually succeeds.
-    const commitFromCollections = fromCollections ? () => {
+    // A mounted compact Albums index (including its folder organizer) owns
+    // the visible cards and scroll until the new album's first accepted Range.
+    // Collections already used this same staged commit; do not treat the
+    // folder card click or Promise start as permission to clear the photo wall.
+    const fromCommittedMobileIndex = mobileGalleryViewport && !fromCollections &&
+      section === 'albums' && !currentAlbum && !currentFolderView
+    const commitAfterFirstRange = (fromCollections || fromCommittedMobileIndex) ? () => {
       setCurrentFolderView(null)
       setSection('albums')
       setActiveMediaType('')
-      setDraftFilters(album.kind === 'smart'
-        ? mediaGalleryDraftFromQuery(album.query)
-        : emptyMediaGalleryFilterDraft)
-      setQuery({})
-      setMobileCollectionsOverview(false)
+      if (fromCollections || album.kind === 'smart') {
+        setDraftFilters(album.kind === 'smart'
+          ? mediaGalleryDraftFromQuery(album.query)
+          : emptyMediaGalleryFilterDraft)
+        setQuery({})
+      }
+      if (fromCollections) setMobileCollectionsOverview(false)
     } : undefined
-    if (!fromCollections) {
-      // Wide Web/Desktop and already-open album navigation retain the
-      // established immediate route behavior.
+    if (!fromCollections && !fromCommittedMobileIndex) {
+      // Preserve the existing immediate route for wide Web/Desktop and
+      // navigation from an already-open detail, not compact index cards.
       setCurrentFolderView(null)
       setSection('albums')
       setActiveMediaType('')
@@ -2067,8 +2073,8 @@ export function XDriveMediaGalleryPage({
       }
     }
     void loadFirstPage(album, fromCollections || album.kind === 'smart' ? {} : query,
-      null, null, 'default', null, null, null, commitFromCollections)
-  }, [loadFirstPage, query])
+      null, null, 'default', null, null, null, commitAfterFirstRange)
+  }, [currentAlbum, currentFolderView, loadFirstPage, mobileGalleryViewport, query, section])
 
   const nativePhotoOpenAbort = useRef<AbortController | null>(null)
   useEffect(() => () => {
@@ -2182,12 +2188,21 @@ export function XDriveMediaGalleryPage({
   }, [currentPerson, currentPet, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, section])
 
   const openSuggestedPerson = useCallback((person: MediaSuggestedPerson) => {
-    setSection('people')
-    setActiveMediaType('')
-    setQuery({})
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    void loadFirstPage(null, {}, person, null)
-  }, [loadFirstPage])
+    // Suggested-person cards live inside the same accepted compact People
+    // index. Do not unmount it or reset its virtual wall before the first
+    // authenticated suggested-person Range succeeds.
+    const fromCommittedMobileIndex = mobileGalleryViewport &&
+      section === 'people' && !currentPerson && !currentPet && !currentSuggestedPerson
+    const commitAfterFirstRange = () => {
+      setSection('people')
+      setActiveMediaType('')
+      setQuery({})
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+    }
+    if (!fromCommittedMobileIndex) commitAfterFirstRange()
+    void loadFirstPage(null, {}, person, null, 'default', null, null, null,
+      fromCommittedMobileIndex ? commitAfterFirstRange : undefined)
+  }, [currentPerson, currentPet, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, section])
 
   const openPerson = useCallback((person: MediaPersonIdentity, fromCollections = false) => {
     const nextDraft = {
@@ -2195,26 +2210,30 @@ export function XDriveMediaGalleryPage({
       personIdentity: person.id,
     }
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
-    // Do not expose an empty Person range while its authenticated first page
-    // is still pending; the previous Mobile Collections owns the scroll.
-    const commitFromCollections = fromCollections ? () => {
+    // Both Mobile Collections and the already-accepted compact People
+    // index must remain painted while an individual Person's first counted
+    // photo Range is pending, including retries and superseded requests.
+    const fromCommittedMobileIndex = mobileGalleryViewport && !fromCollections &&
+      section === 'people' && !currentPerson && !currentPet && !currentSuggestedPerson
+    const commitAfterFirstRange = (fromCollections || fromCommittedMobileIndex) ? () => {
       setCurrentFolderView(null)
       setSection('people')
       setActiveMediaType('')
       setQuery(nextQuery)
       setDraftFilters(nextDraft)
-      setMobileCollectionsOverview(false)
+      if (fromCollections) setMobileCollectionsOverview(false)
     } : undefined
-    if (!fromCollections) {
-      // Wide Web/Desktop and already-entered People retain prior navigation.
+    if (!fromCollections && !fromCommittedMobileIndex) {
+      // Preserve established immediate navigation from a current detail
+      // and wide Web/Desktop; keep the shared REST/virtual Range unchanged.
       setSection('people')
       setActiveMediaType('')
       setQuery(nextQuery)
       setDraftFilters(nextDraft)
     }
     void loadFirstPage(null, nextQuery, null, person, 'default', null, null,
-      null, commitFromCollections)
-  }, [loadFirstPage])
+      null, commitAfterFirstRange)
+  }, [currentPerson, currentPet, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, section])
 
   const openMediaType = useCallback((assetKind: string) => {
     const nextDraft = mediaGallerySectionDraft('media-types', assetKind)
