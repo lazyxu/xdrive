@@ -398,6 +398,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-staging/:stageID/physical-receipt", s.requireLocalSourceExecutor(), s.readLocalPushFirstLeafCommittedPhysicalReceipt)
 	// Exact keyed SQL COMMIT + real historical CAS read, never a Push executor.
 	authed.POST("/sources/:id/local-staging/:stageID/operation-physical-receipt", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.readLocalPushHistoricalOperationPhysical)
+	// G2b1: Agent-authenticated IMMUTABLE Stage/Operation SQL correlation only.
+	// Does not commit Node/CAS, activate local Push, retire keys or start SourceRun.
+	authed.POST("/sources/:id/local-staging/:stageID/operation-bind", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.bindLocalPushOperationStage)
 	// This test-only route is OMITTED from all production Routers. No config,
 	// environment or user setting can turn on this internal first-file writer.
 	if s.localPushCIOnlyFirstLeaf {
