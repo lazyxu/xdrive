@@ -212,7 +212,12 @@ const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
 }
 
 function ServiceRow({ service }: { service: XDriveServiceDependency }) {
-  const state = statusLabels[service.status] ?? statusLabels.unknown
+  // Baidu's static-map health is manual/quota-consuming. An unrun probe is
+  // NOT a broken detection capability, and saved credentials are not proof.
+  const state = service.id === 'baidu-map' && service.status === 'unknown' &&
+    service.health_state === 'not-checked'
+    ? { label: '待人工在线验证', color: 'warning' as const }
+    : statusLabels[service.status] ?? statusLabels.unknown
   const evidenceDetails = [
     configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知',
     installationStateLabels[service.installation_state ?? 'unknown'] ?? '部署未确认',
@@ -234,6 +239,14 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
             {service.detail}
           </Typography>
+          {service.id === 'baidu-map' && service.health_state === 'not-checked' && (
+            <Typography variant="caption" color="text.secondary"
+              data-xdrive-baidu-static-unverified-hint
+              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+              已配置只表示 Server 有凭据。静态图需在本页手动执行一次在线验证
+              （消耗一次百度 API 配额）；JSAPI 4.0 动态发布授权另行判定。
+            </Typography>
+          )}
           {(service.version || service.model) && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
               {service.version ? '版本：' + service.version : ''}
@@ -1967,12 +1980,21 @@ export function XDriveServiceDependenciesPage({
               {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
-                    <Typography variant="subtitle2" fontWeight={700}>百度地图 Server AK</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      仅用于百度地图服务端静态图。AK 在 Server 安全保存；只有主动点击“显示”才会临时读取，30 秒后自动隐藏。
-                      保存后立即生效，不会重启 Server，也不会中断上传、下载或同步。
+                    <Typography variant="subtitle2" fontWeight={700}>
+                      {currentTab === 'config' ? '百度地图 Server AK' : '静态地图 · 在线生效验证'}
                     </Typography>
-                    {baiduConfig && (
+                    {currentTab === 'config' ? (
+                      <Typography variant="body2" color="text.secondary">
+                        仅用于百度地图服务端静态图。AK 在 Server 安全保存；只有主动点击“显示”才会临时读取，30 秒后自动隐藏。
+                        保存后立即生效，不会重启 Server，也不会中断上传、下载或同步。
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        检查当前 Server 是否能使用已保存的 Server AK 获取真实 Static Map v2 图片；
+                        检测需明确点击并消耗一次 API 配额，不会验证或开启 JSAPI 4.0 动态地图。
+                      </Typography>
+                    )}
+                    {currentTab === 'config' && baiduConfig && (
                       <Typography variant="caption" color="text.secondary">
                         {baiduConfig.configured ? '已配置 AK' : '尚未配置 AK'}
                         {' · '}

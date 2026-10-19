@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -102,6 +103,10 @@ func TestAdminServiceDependencyLifecycleBaiduAndCaddyNoFalseApplied(t *testing.T
 		baidu.InstallationState != "external" || baidu.HealthState != "not-checked" ||
 		baidu.ActivationState != "local-effective" {
 		t.Fatalf("configured AK must not fabricate remote Baidu health: %+v", baidu)
+	}
+	if !strings.Contains(baidu.Detail, "管理员手动在线验证会消耗一次 Static Map API 配额") ||
+		strings.Contains(baidu.Detail, "不消耗额外 API 配额") {
+		t.Fatalf("Baidu status must distinguish saved AK from a quota-consuming live PNG probe: %q", baidu.Detail)
 	}
 	if before["caddy"].InstallationState != "unknown" ||
 		before["caddy"].ActivationState != "deployment-only" {
