@@ -1310,6 +1310,109 @@ class OfflineHostStageTest(unittest.TestCase):
         self.assertIn("fcntl.LOCK_SH | fcntl.LOCK_NB", src)
         self.assertEqual(self.inspect_private_original_anchor(staged)[0], 0)
 
+    def run_restore_rehearsal(self, staged, anchor_pin=None, pending_pin=None):
+        directory = self.state / "caddy-https-admissions"
+        receipt = directory / "rollback-anchor" / "receipt.json"
+        journal = directory / "pending.json"
+        pinned_anchor = anchor_pin if anchor_pin is not None else (
+            hashlib.sha256(receipt.read_bytes()).hexdigest())
+        pinned_pending = pending_pin if pending_pin is not None else (
+            hashlib.sha256(journal.read_bytes()).hexdigest())
+        argv = [
+            sys.executable, str(Path(__file__).with_name(
+                "caddy-https-host-restore-rehearsal.py")),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(
+                self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", staged["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", self.review_public_pin,
+            "--admission-dir", str(directory),
+            "--expected-pending-sha256", pinned_pending,
+            "--expected-anchor-receipt-sha256", pinned_anchor,
+        ]
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=55)
+        self.assertEqual(len(proc.stdout.splitlines()), 1)
+        self.assertEqual(proc.stderr, "")
+        for secret in ("never-print-this", "192.168.2.4", str(self.root),
+                       "test-approval-key.pem"):
+            self.assertNotIn(secret, proc.stdout + proc.stderr)
+        return proc.returncode, json.loads(proc.stdout), argv
+
+    def test_private_restore_rehearsal_byte_exact_and_never_applies(self):
+        status, staged = self.stage()
+        self.assertEqual(status, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 0)
+        protected = tuple(p.read_bytes() for p in (
+            self.env, self.compose, directory / "pending.json",
+            directory / "rollback-anchor" / "original.env",
+            directory / "rollback-anchor" / "original.compose",
+            directory / "rollback-anchor" / "receipt.json"))
+        rc, result, _ = self.run_restore_rehearsal(staged)
+        self.assertEqual(rc, 0)
+        self.assertEqual(result["state"],
+                         "private-original-restore-rehearsed-unapplied")
+        self.assertIs(result["apply_supported"], False)
+        self.assertEqual(result["desired_revision"], 7)
+        restored = directory / "rollback-rehearsal"
+        self.assertEqual(stat.S_IMODE(restored.stat().st_mode), 0o700)
+        self.assertEqual(sorted(p.name for p in restored.iterdir()),
+                         ["recovered.compose", "recovered.env", "report.json"])
+        self.assertEqual((restored / "recovered.env").read_bytes(), protected[0])
+        self.assertEqual((restored / "recovered.compose").read_bytes(), protected[1])
+        self.assertEqual(json.loads((restored / "report.json").read_bytes()), result)
+        for path in restored.iterdir():
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(protected, tuple(p.read_bytes() for p in (
+            self.env, self.compose, directory / "pending.json",
+            directory / "rollback-anchor" / "original.env",
+            directory / "rollback-anchor" / "original.compose",
+            directory / "rollback-anchor" / "receipt.json")))
+        self.assertEqual(self.run_restore_rehearsal(staged)[0], 2)
+
+    def test_private_restore_rehearsal_fails_closed_on_bad_pins_symlink_and_lock(self):
+        import fcntl
+        status, staged = self.stage()
+        self.assertEqual(status, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 0)
+        output = directory / "rollback-rehearsal"
+        self.assertEqual(self.run_restore_rehearsal(staged, anchor_pin="f"*64)[0], 2)
+        self.assertEqual(self.run_restore_rehearsal(staged, pending_pin="f"*64)[0], 2)
+        self.assertFalse(output.exists())
+        output.symlink_to(directory / "rollback-anchor")
+        self.assertEqual(self.run_restore_rehearsal(staged)[0], 2)
+        output.unlink()
+        with (directory / ".intent.lock").open("rb") as fd:
+            fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                self.assertEqual(self.run_restore_rehearsal(staged)[0], 2)
+            finally:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+        before = (directory / "rollback-anchor" / "original.env").read_bytes()
+        (directory / "rollback-anchor" / "original.env").write_bytes(
+            before + b"TAMPERED=1\n")
+        self.assertEqual(self.run_restore_rehearsal(staged)[0], 2)
+        self.assertFalse(output.exists())
+        (directory / "rollback-anchor" / "original.env").write_bytes(before)
+        self.assertEqual(self.run_restore_rehearsal(staged)[0], 0)
+        src = Path(__file__).with_name(
+            "caddy-https-host-restore-rehearsal.py").read_text()
+        for forbidden in ("docker restart", "docker compose", "os.replace(",
+                          "os.rename(", "os.unlink(", "subprocess.",
+                          "socket.", "requests.", '"apply_supported": True'):
+            self.assertNotIn(forbidden, src)
+
 
 if __name__ == "__main__":
     # NET-M5-C0: the existing server-validation entrypoint executes the real
