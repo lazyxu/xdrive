@@ -1,0 +1,118 @@
+name: P065 Original 100k Copy HTTP admission diagnosis
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+
+jobs:
+  p065-test-source-format:
+    if: github.head_ref == 'perf/p065-original-copy-admission-profile-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: P065 only test source Go formatting
+        run: |
+          set -euo pipefail
+          files='internal/api/p065_original_admission_trace_linux_test.go internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go'
+          changes="$(gofmt -l $files)"
+          if [ -n "$changes" ]; then
+            echo GOFMT_NEEDS_SOURCE_CHANGE
+            for file in $changes; do
+              gofmt -w "$file"
+              echo "GOFMT_B64 $(printf '%s' "$file") $(base64 -w0 "$file")"
+            done
+            exit 1
+          fi
+          echo GOFMT_SOURCE_EXACT_OK
+
+  p065-three-original-100k-admission:
+    if: github.head_ref == 'perf/p065-original-copy-admission-profile-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_P056_REAL_COPY_PERF: '1'
+      XD_P065_ORIGINAL_ENQUEUE: '1'
+      XD_P065_POSTFLIGHT_EXPLAIN: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Genuine original 100k physical CAS Owner authenticated HTTP enqueue, n3
+        run: |
+          set -euo pipefail
+          mkdir -p p065-original-results
+          printf 'SOURCE_HEAD=%s\nWORKFLOW=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > p065-original-results/source.txt
+          go version >> p065-original-results/source.txt
+          for i in 1 2 3; do
+            export XD_P056_SAMPLE="sample-$i"
+            go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' \
+              -count=1 -timeout=20m -v | tee "p065-original-results/sample-$i.log"
+          done
+          python3 - <<'PY'
+          import json, pathlib, statistics
+          folder=pathlib.Path('p065-original-results')
+          rows=[]
+          for i in range(1,4):
+              matches=[]
+              for line in (folder/f'sample-{i}.log').read_text().splitlines():
+                  if 'P065_ORIGINAL_ADMISSION_PROFILE {' in line:
+                      matches.append(json.loads(line.split('P065_ORIGINAL_ADMISSION_PROFILE ',1)[1]))
+              if len(matches)!=1: raise SystemExit('missing actual original sample '+str(i))
+              r=matches[0]
+              if r['sample']!=f'sample-{i}' or r['physical_sources']!=100000 or r['original_physical_cas_inodes']!=100001:
+                  raise SystemExit('sample not genuine 100k physical original')
+              if r['product_copy_worker_executed']:
+                  raise SystemExit('P065 diagnostic must not benchmark worker instead of admission')
+              if not r['gorm_trace_by_sql_family']:
+                  raise SystemExit('cannot attribute original HTTP SQL')
+              rows.append(r)
+          if len(set(r['source_aggregate_sha256'] for r in rows))!=3:
+              raise SystemExit('original full 100k SHA sources not independent')
+          summary={
+              'workload':'P065-original-Copy-100k-owner-HTTP-admission-test-only',
+              'source':folder.joinpath('source.txt').read_text().splitlines()[0],
+              'samples':rows,
+              'n':3,
+              'enqueue_p50_ms':statistics.median(r['original_http_enqueue_ms'] for r in rows),
+              'enqueue_max_ms':max(r['original_http_enqueue_ms'] for r in rows),
+              'original_120s_budget_red_samples':[r['sample'] for r in rows if not r['frozen_120s_admission_budget_met']],
+              'source_scope':'real Gin/PG17/100k SHA-distinct physical CAS original Owner JWT POST, no Copy Worker; opt-in instrumentation',
+              'product_changed':False,
+              'after_speedup':'N/A; original-only diagnostic',
+          }
+          folder.joinpath('summary.json').write_text(json.dumps(summary,indent=2,ensure_ascii=False)+'\n')
+          print('P065_ORIGINAL_100K_DIAGNOSTIC_N3',json.dumps(summary,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p065-genuine-original-100k-admission-trace
+          path: p065-original-results/
+          if-no-files-found: warn
+          retention-days: 30
