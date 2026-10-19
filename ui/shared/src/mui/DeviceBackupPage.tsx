@@ -42,7 +42,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
 import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
-import { validateXDriveDeviceBackupDevicePage } from '../device-backup-device-page-validation'
+import { validateXDriveDeviceBackupDevicePage, validateXDriveDeviceBackupInitialOverview } from '../device-backup-device-page-validation'
 import { validateXDriveDeviceBackupRunPage } from '../device-backup-run-page-validation'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
@@ -256,7 +256,9 @@ export function XDriveDeviceBackupPage({
       loading: true, failed: false,
     }))
     void source.list().then((result) => {
-      if (active) setSnapshot({ source, overview: result, loading: false, failed: false })
+      if (!active) return
+      validateXDriveDeviceBackupInitialOverview(result)
+      setSnapshot({ source, overview: result, loading: false, failed: false })
     }).catch(() => {
       if (active) setSnapshot((prev) => prev.source === source
         ? { ...prev, loading: false, failed: true }

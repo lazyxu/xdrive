@@ -39,13 +39,30 @@ function onlyFields(value: object, allowed: ReadonlySet<string>): boolean {
 // Transport types cannot establish that a continuation is complete or valid.
 // Check the redacted shape and cursor before inserting rows into the
 // shared Web/Mobile Web/Desktop overview; preserve prior rows on rejection.
+// The initial owner-scoped Server/Agent response must pass the same
+// strict redacted DTO checks as a continuation page before React paints.
+// null is an initial-page marker, never a fabricated device cursor.
+export function validateXDriveDeviceBackupInitialOverview(
+  page: XDriveDeviceBackupOverview,
+): void {
+  validateXDriveDeviceBackupPage(page, null, new Set<string>())
+}
+
 export function validateXDriveDeviceBackupDevicePage(
   page: XDriveDeviceBackupOverview,
   afterDeviceID: string,
   knownDeviceIDs: ReadonlySet<string>,
 ): void {
+  validateXDriveDeviceBackupPage(page, afterDeviceID, knownDeviceIDs)
+}
+
+function validateXDriveDeviceBackupPage(
+  page: XDriveDeviceBackupOverview,
+  afterDeviceID: string | null,
+  knownDeviceIDs: ReadonlySet<string>,
+): void {
   const invalid = (): never => { throw new Error('Invalid redacted backup device page') }
-  if (!canonicalDeviceID.test(afterDeviceID) ||
+  if ((afterDeviceID !== null && !canonicalDeviceID.test(afterDeviceID)) ||
       !page || typeof page !== 'object' || Array.isArray(page) ||
       !onlyFields(page, overviewFields) ||
       !Array.isArray(page.devices) || page.devices.length > 100 ||
