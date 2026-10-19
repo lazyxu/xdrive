@@ -1375,6 +1375,28 @@ test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local St
 })
 
 
+test('P87 shared Gallery Inspector never animates its virtual-grid layout geometry', () => {
+  // This is the ORIGINAL shared JSX used by Web/Mobile Web/Desktop, not a
+  // fabricated inspector model. A CSS transition on root padding changes
+  // effective width on every frame and forces the 100k sparse grid to reflow.
+  const index = sharedGalleryMain.indexOf('id="xdrive-mobile-gallery-main"')
+  assert.ok(index > 0, 'the original one mounted Gallery root is required')
+  const next = sharedGalleryMain.indexOf('{compactGallery ? (', index)
+  assert.ok(next > index, 'inspector geometry must be scoped to the real root Stack')
+  const root = sharedGalleryMain.slice(index, next)
+  assert.match(root, /pr: \{ lg: selected && !previewItem \? '380px' : 0 \}/,
+    'keep the deliberate 380px wide Inspector gutter')
+  assert.match(root, /pb: compactGallery \? \(/,
+    'keep Mobile photo wall bottom dock reservation')
+  assert.doesNotMatch(root, /transition:\s*['"`][^'"`]*(?:padding|margin|width|height|top|left)/,
+    'animated layout properties cause repeated virtual grid resize and anchor movement')
+  assert.doesNotMatch(root, /animation:\s*['"`][^'"`]*(?:padding|margin|width|height|top|left)/)
+  assert.match(root, /data-xdrive-media-loading-progress/,
+    'real thumbnail progress fitting must remain intact')
+  assert.match(root, /data-xdrive-media-tile/,
+    'reuse the existing shared media tile instead of introducing a separate layout')
+})
+
 test('Gallery media details use shared responsive Inspector and Drawer instead of a modal', () => {
   assert.ok(sharedGalleryMain.includes('<XDriveMediaDetailsInspector'), 'Gallery must render the shared media inspector')
   assert.ok(sharedGalleryDetails.includes('export function XDriveMediaDetailsContent'), 'missing reusable MediaGallery details content')
