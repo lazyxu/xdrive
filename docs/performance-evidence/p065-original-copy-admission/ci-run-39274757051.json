@@ -1,0 +1,290 @@
+{
+  "workload": "P065-original-Copy-100k-owner-HTTP-admission-test-only",
+  "source": "SOURCE_HEAD=a9ffbd60b71e403eab475636aac53fd43e139142",
+  "samples": [
+    {
+      "frozen_120s_admission_budget_met": true,
+      "gorm_trace_by_sql_family": {
+        "ancestor_scope_CTE": {
+          "count": 1,
+          "trace_wall_ms": 1.164,
+          "worst_trace_wall_ms": 1.164
+        },
+        "file_metadata": {
+          "count": 1,
+          "trace_wall_ms": 0.843,
+          "worst_trace_wall_ms": 0.843
+        },
+        "node_lock": {
+          "count": 1,
+          "trace_wall_ms": 1.378,
+          "worst_trace_wall_ms": 1.378
+        },
+        "node_validation": {
+          "count": 1,
+          "trace_wall_ms": 0.69,
+          "worst_trace_wall_ms": 0.69
+        },
+        "owner_auth": {
+          "count": 1,
+          "trace_wall_ms": 0.745,
+          "worst_trace_wall_ms": 0.745
+        },
+        "queued_operation_insert": {
+          "count": 1,
+          "trace_wall_ms": 5.163,
+          "worst_trace_wall_ms": 5.163
+        },
+        "recursive_size_CTE": {
+          "count": 1,
+          "trace_wall_ms": 101.549,
+          "worst_trace_wall_ms": 101.549
+        }
+      },
+      "original_http_enqueue_ms": 111.889,
+      "original_physical_allocated_bytes": 409604096,
+      "original_physical_cas_inodes": 100001,
+      "pg_relation_statistics": [
+        {
+          "table": "xd_file_operations",
+          "live_estimate": 0,
+          "dead_estimate": 0
+        },
+        {
+          "table": "xd_files",
+          "live_estimate": 100000,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:06:37.927852Z"
+        },
+        {
+          "table": "xd_nodes",
+          "live_estimate": 100005,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:06:37.779319Z"
+        }
+      ],
+      "pg_stats_query_failed": false,
+      "physical_sources": 100000,
+      "postflight_original_recursive_query_explain": {
+        "actual_root_rows": 1,
+        "estimated_root_rows": 1,
+        "execution_ms": 140.295,
+        "planning_ms": 0.236,
+        "root_plan_type": "Subquery Scan",
+        "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+        "shared_hit_blocks": 5374,
+        "shared_read_blocks": 0,
+        "temp_read_blocks": 220,
+        "temp_written_blocks": 439
+      },
+      "postgres_wait_type_samples": {
+        "active_wait_type_observations": {},
+        "peak_active_client_backends": 0,
+        "poll_query_errors": 0,
+        "sample_polls": 0,
+        "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+      },
+      "product_copy_worker_executed": false,
+      "sample": "sample-1",
+      "scope": "test-only isolated real Gin authenticated original 100k physical Owner POST; not Copy worker, not 100k native GUI; PostgreSQL wait sampling is not PID-exact",
+      "seed_ms_excluded": 97211.079,
+      "smoke_only": false,
+      "source_aggregate_sha256": "5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03",
+      "source_kind": "ORIGINAL_PRODUCT_SQL_NO_WORKER_TUNING",
+      "workload": "P065-original-100k-physical-CAS-Owner-Copy-HTTP-enqueue"
+    },
+    {
+      "frozen_120s_admission_budget_met": true,
+      "gorm_trace_by_sql_family": {
+        "ancestor_scope_CTE": {
+          "count": 1,
+          "trace_wall_ms": 0.991,
+          "worst_trace_wall_ms": 0.991
+        },
+        "file_metadata": {
+          "count": 1,
+          "trace_wall_ms": 0.764,
+          "worst_trace_wall_ms": 0.764
+        },
+        "node_lock": {
+          "count": 1,
+          "trace_wall_ms": 1.271,
+          "worst_trace_wall_ms": 1.271
+        },
+        "node_validation": {
+          "count": 1,
+          "trace_wall_ms": 0.695,
+          "worst_trace_wall_ms": 0.695
+        },
+        "owner_auth": {
+          "count": 1,
+          "trace_wall_ms": 0.703,
+          "worst_trace_wall_ms": 0.703
+        },
+        "queued_operation_insert": {
+          "count": 1,
+          "trace_wall_ms": 5.309,
+          "worst_trace_wall_ms": 5.309
+        },
+        "recursive_size_CTE": {
+          "count": 1,
+          "trace_wall_ms": 104.186,
+          "worst_trace_wall_ms": 104.186
+        }
+      },
+      "original_http_enqueue_ms": 114.464,
+      "original_physical_allocated_bytes": 409604096,
+      "original_physical_cas_inodes": 100001,
+      "pg_relation_statistics": [
+        {
+          "table": "xd_file_operations",
+          "live_estimate": 0,
+          "dead_estimate": 0
+        },
+        {
+          "table": "xd_files",
+          "live_estimate": 100501,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:08:37.901887Z"
+        },
+        {
+          "table": "xd_nodes",
+          "live_estimate": 100005,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:08:37.757184Z"
+        }
+      ],
+      "pg_stats_query_failed": false,
+      "physical_sources": 100000,
+      "postflight_original_recursive_query_explain": {
+        "actual_root_rows": 1,
+        "estimated_root_rows": 1,
+        "execution_ms": 149.918,
+        "planning_ms": 0.237,
+        "root_plan_type": "Subquery Scan",
+        "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+        "shared_hit_blocks": 5374,
+        "shared_read_blocks": 0,
+        "temp_read_blocks": 220,
+        "temp_written_blocks": 439
+      },
+      "postgres_wait_type_samples": {
+        "active_wait_type_observations": {},
+        "peak_active_client_backends": 0,
+        "poll_query_errors": 0,
+        "sample_polls": 0,
+        "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+      },
+      "product_copy_worker_executed": false,
+      "sample": "sample-2",
+      "scope": "test-only isolated real Gin authenticated original 100k physical Owner POST; not Copy worker, not 100k native GUI; PostgreSQL wait sampling is not PID-exact",
+      "seed_ms_excluded": 102669.925,
+      "smoke_only": false,
+      "source_aggregate_sha256": "71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e",
+      "source_kind": "ORIGINAL_PRODUCT_SQL_NO_WORKER_TUNING",
+      "workload": "P065-original-100k-physical-CAS-Owner-Copy-HTTP-enqueue"
+    },
+    {
+      "frozen_120s_admission_budget_met": true,
+      "gorm_trace_by_sql_family": {
+        "ancestor_scope_CTE": {
+          "count": 1,
+          "trace_wall_ms": 1.064,
+          "worst_trace_wall_ms": 1.064
+        },
+        "file_metadata": {
+          "count": 1,
+          "trace_wall_ms": 0.782,
+          "worst_trace_wall_ms": 0.782
+        },
+        "node_lock": {
+          "count": 1,
+          "trace_wall_ms": 1.296,
+          "worst_trace_wall_ms": 1.296
+        },
+        "node_validation": {
+          "count": 1,
+          "trace_wall_ms": 0.647,
+          "worst_trace_wall_ms": 0.647
+        },
+        "owner_auth": {
+          "count": 1,
+          "trace_wall_ms": 0.692,
+          "worst_trace_wall_ms": 0.692
+        },
+        "queued_operation_insert": {
+          "count": 1,
+          "trace_wall_ms": 5.309,
+          "worst_trace_wall_ms": 5.309
+        },
+        "recursive_size_CTE": {
+          "count": 1,
+          "trace_wall_ms": 99.56,
+          "worst_trace_wall_ms": 99.56
+        }
+      },
+      "original_http_enqueue_ms": 109.733,
+      "original_physical_allocated_bytes": 409604096,
+      "original_physical_cas_inodes": 100001,
+      "pg_relation_statistics": [
+        {
+          "table": "xd_file_operations",
+          "live_estimate": 1,
+          "dead_estimate": 0
+        },
+        {
+          "table": "xd_files",
+          "live_estimate": 101001,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:10:38.175847Z"
+        },
+        {
+          "table": "xd_nodes",
+          "live_estimate": 100005,
+          "dead_estimate": 0,
+          "last_autoanalyze": "2026-10-19T15:10:37.964559Z"
+        }
+      ],
+      "pg_stats_query_failed": false,
+      "physical_sources": 100000,
+      "postflight_original_recursive_query_explain": {
+        "actual_root_rows": 1,
+        "estimated_root_rows": 1,
+        "execution_ms": 149.243,
+        "planning_ms": 0.236,
+        "root_plan_type": "Subquery Scan",
+        "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+        "shared_hit_blocks": 5374,
+        "shared_read_blocks": 0,
+        "temp_read_blocks": 220,
+        "temp_written_blocks": 439
+      },
+      "postgres_wait_type_samples": {
+        "active_wait_type_observations": {},
+        "peak_active_client_backends": 0,
+        "poll_query_errors": 0,
+        "sample_polls": 0,
+        "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+      },
+      "product_copy_worker_executed": false,
+      "sample": "sample-3",
+      "scope": "test-only isolated real Gin authenticated original 100k physical Owner POST; not Copy worker, not 100k native GUI; PostgreSQL wait sampling is not PID-exact",
+      "seed_ms_excluded": 84077.855,
+      "smoke_only": false,
+      "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+      "source_kind": "ORIGINAL_PRODUCT_SQL_NO_WORKER_TUNING",
+      "workload": "P065-original-100k-physical-CAS-Owner-Copy-HTTP-enqueue"
+    }
+  ],
+  "n": 3,
+  "enqueue_p50_ms": 111.889,
+  "enqueue_max_ms": 114.464,
+  "original_120s_budget_red_samples": [],
+  "source_scope": "real Gin/PG17/100k SHA-distinct physical CAS original Owner JWT POST, no Copy Worker; opt-in instrumentation",
+  "product_changed": false,
+  "after_speedup": "N/A; original-only diagnostic",
+  "raw_source_run_url": "https://github.com/lazyxu/xdrive/actions/runs/39274757051",
+  "source_exact_ci_note": "P065 genuine original 100k diagnostic SUCCESS; P065 source gofmt FAILED; full CI RED on original diagnostic SHA. Rebuilt evidence/format work SHA must independently revalidate all tests.",
+  "note": "Sanitized aggregated trace and numeric postflight plan; no credentials/SQL binds/tokens/paths",
+  "compiled_on": "2026-10-20"
+}

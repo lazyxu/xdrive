@@ -1,3 +1,23 @@
+## P065 diagnostic platform scope — actual PostgreSQL17 100k Copy original enqueue (2026-10-20)
+
+[P065 original diagnostic #39274757051](https://github.com/lazyxu/xdrive/actions/runs/39274757051) source `a9ffbd60b71e403eab475636aac53fd43e139142`: genuine Server Gin/PG17/LocalCAS authenticated 100k distinct physical SHA Copy *HTTP admission only*, n3 original 111.889/114.464/109.733ms P50 111.889ms; one original recursive-size SQL trace ~100ms each, zero 250ms PG activity polls, no Worker/copy execution. Previous 344–642s original long-tail still NOT explained; no product optimization/AFTER. Status **original measured, diagnostic job success; formatting/full CI RED, rebuilt HEAD pending**. Machine JSON [here](performance-evidence/p065-original-copy-admission/ci-run-39274757051.json).
+
+| Platform or task dimension | P065 measurement status |
+| --- | --- |
+| Go Server + PostgreSQL17 + physical LocalCAS, JWT HTTP Copy enqueue 100k | **Measured original n=3**, scope admission only |
+| Same data after product SQL optimization | **Not measured**, no product patch |
+| Web wide / Mobile Web / native Desktop / desktop installed PWA / Android installed PWA / iOS installed PWA | **Not measured in P065** |
+| 100k Gallery photos/video/Live thumbnail decode and virtualized scroll, viewport-to-Go cancellation | **Not measured in P065** (separate prior workload IDs) |
+| 1GiB and 4GiB actual Web/Desktop transfer, interrupted/resume, WAN, physical phones | **Not measured in P065** (separate prior workload IDs) |
+
+## P065 — 100k ORIGINAL Copy HTTP admission profile (test-only; 2026-10-19)
+
+**BEFORE (original unmodified product) known RED:** historical genuine Owner POST 100k enqueue **641660.037ms / 638310.714ms / 344237.960ms** in multiple frozen paired trials, versus immutable **120000ms** admission limit. Copy SHA/Undo/Trash and 12 original/candidate cancel pairs remain separately safe; final P064 #2136 cannot merge from incomplete exact-head n3 despite valid prior same-runner research speedup. **AFTER=N/A** (no production optimization). [P065 Issue](https://github.com/lazyxu/xdrive/issues/2153) tracks true PostgreSQL plan/wait vs original code attribution, not Race work.
+
+**New P065 opt-in workload (not yet measured):** three independent original genuinely **100k SHA-distinct physical CAS** original source trees, authenticated Gin 202; test-only categorized GORM SQL Trace around HTTP enqueue, bounded 250ms PostgreSQL wait-event sampler, postflight relation stats and independent EXPLAIN, with no raw SQL, auth tokens or paths in machine logs; originally accepted P056 default remains byte-for-byte behavior. Never pre-ANALYZE away baseline. If actual original CTE/lock/IO cause is confirmed, freeze new same-runner n3 A/B before any production SQL/index optimization and retain >=20% improvement + CPU/RSS/bytes/Owner/Cancel gates, else revert/hold. Current results pending exact-head dedicated CI. [Canonical P065 diagnostic contract](p065-original-copy-enqueue-diagnostic.md).
+
+---
+
 ## SH-P007 second genuine 100k physical ZIP n3 — actual Go Context.Done VERIFIED (2026-10-19)
 
 **Before=new public-share whole ZIP feature absent (not a 0ms baseline), AFTER=CURRENT tested; speedup=N/A**. New valid source `9ea936fb22bb822fddc35f24e6a183775fdc4e52`, authentic [SH-P007 100k ZIP native #39255424998](https://github.com/lazyxu/xdrive/actions/runs/39255424998): real PostgreSQL17 feature lifecycle **SUCCESS** + source-go-format **SUCCESS** + three true independent 100k SHA-distinct physical JPEG ZIP **SUCCESS**. Source-exact full 77-job CI was RED **only** in global Go formatting of `internal/api/router_contract_test.go` (route authentication exemption map alignment missed source-specific formatting list); this does **not** invalidate the n3 ZIP physical measurements. The exact `gofmt -d` output has been reconstructed and the map blob will be fixed before final HEAD CI. Go Race product semantics unchanged. [Permanent 3 raw Go machine JSON rows](performance-evidence/public-share-folder-zip/ci-run-39255424998.json).

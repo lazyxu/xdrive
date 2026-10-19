@@ -282,9 +282,53 @@ func TestP056Real100KPhysicalCASCopyUndo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// P065 is an explicit test-only diagnostic of the ORIGINAL authenticated
+	// 100k owner HTTP admission. It never changes the product SQL or accepted
+	// P056 completion/Cancel behavior when the opt-in flag is absent.
+	var p065Trace *p065AdmissionSQLTrace
+	var p065PG *p065AdmissionPGActivity
+	if os.Getenv("XD_P065_ORIGINAL_ENQUEUE") == "1" {
+		p065Trace = &p065AdmissionSQLTrace{Interface: logger.Default.LogMode(logger.Silent)}
+		server.DB = db.Session(&gorm.Session{Logger: p065Trace})
+		p065PG = p065StartAdmissionPGActivity(db)
+		defer p065PG.snapshotAndStop()
+	}
 	enqueueStart := time.Now()
 	out := request(token, http.MethodPost, "/api/v1/file-operations", bytes.NewReader(raw), http.StatusAccepted)
 	enqueueMS := float64(time.Since(enqueueStart).Microseconds()) / 1000
+	if p065Trace != nil {
+		server.DB = db
+		waits := p065PG.snapshotAndStop()
+		tables, statsErr := p065PostseedStats(ctx, db)
+		var explain map[string]any
+		if os.Getenv("XD_P065_POSTFLIGHT_EXPLAIN") == "1" {
+			explain = p065PostflightExplain(ctx, db, source.ID, user.ID)
+		}
+		profile := map[string]any{
+			"workload":    "P065-original-100k-physical-CAS-Owner-Copy-HTTP-enqueue",
+			"source_kind": "ORIGINAL_PRODUCT_SQL_NO_WORKER_TUNING",
+			"sample":      sample, "physical_sources": count, "smoke_only": smoke,
+			"seed_ms_excluded":                            seedMS,
+			"source_aggregate_sha256":                     sourceHash,
+			"original_physical_cas_inodes":                preCount,
+			"original_physical_allocated_bytes":           preAllocated,
+			"original_http_enqueue_ms":                    enqueueMS,
+			"frozen_120s_admission_budget_met":            enqueueMS <= 120000,
+			"gorm_trace_by_sql_family":                    p065Trace.snapshot(),
+			"postgres_wait_type_samples":                  waits,
+			"pg_relation_statistics":                      tables,
+			"pg_stats_query_failed":                       statsErr != nil,
+			"postflight_original_recursive_query_explain": explain,
+			"product_copy_worker_executed":                false,
+			"scope":                                       "test-only isolated real Gin authenticated original 100k physical Owner POST; not Copy worker, not 100k native GUI; PostgreSQL wait sampling is not PID-exact",
+		}
+		jsonDiag, err := json.Marshal(profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("P065_ORIGINAL_ADMISSION_PROFILE %s", jsonDiag)
+		return
+	}
 	var copyJob fileOperationDTO
 	if err := json.Unmarshal(out, &copyJob); err != nil || copyJob.Status != meta.FileOperationStatusQueued {
 		t.Fatalf("authentic queued Copy response: %+v %v", copyJob, err)
