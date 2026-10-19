@@ -1,0 +1,92 @@
+name: P061 Real 100k Physical Copy Paired A-B
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  original-versus-coalesced:
+    if: github.head_ref == 'perf/p061-copy-progress-paired-100k-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Validate accurate-source original and temporary Go trial
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          python3 -m py_compile scripts/performance/p061_copy_progress_trial.py
+          test -z "$(gofmt -l internal/api/file_operations.go)"
+          python3 scripts/performance/p061_copy_progress_trial.py candidate
+          test -z "$(gofmt -l internal/api/file_operations.go)"
+          git diff --check
+          python3 scripts/performance/p061_copy_progress_trial.py original
+          git diff --exit-code -- internal/api/file_operations.go
+      - name: Real 1k physical original sanity before 100k
+        run: |
+          set -euo pipefail
+          env -u XD_P059_COPY_SQL_PROFILE XD_P056_REAL_COPY_PERF=1 XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+            go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+      - name: Original candidate paired real 3x100k SHA physical copies
+        run: |
+          set -euo pipefail
+          results="$GITHUB_WORKSPACE/p061-100k-original-vs-candidate"
+          mkdir -p "$results"
+          printf 'EXACT_SOURCE_HEAD=%s\nBASE_GO_BLOB=%s\nMODE=unprofiled-alternating-paired\n' \
+            "$(git rev-parse HEAD)" 338abf54deede6a86b8b41f97494f3e7fedbd908 > "$results/source.txt"
+          for entry in sample-1:original sample-1:candidate sample-2:candidate sample-2:original sample-3:original sample-3:candidate; do
+            IFS=: read -r sample arm <<< "$entry"
+            echo "P061_BEGIN $entry"
+            python3 scripts/performance/p061_copy_progress_trial.py "$arm"
+            test -z "$(gofmt -l internal/api/file_operations.go)"
+            if [ "$arm" = original ]; then
+              git diff --exit-code -- internal/api/file_operations.go
+            else
+              test -n "$(git diff -- internal/api/file_operations.go)"
+            fi
+            docker exec -e PGPASSWORD=xdrive "${{ job.services.postgres.id }}" \
+              psql -v ON_ERROR_STOP=1 -U xdrive -d xdrive_test \
+                -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO xdrive;'
+            /usr/bin/time -v -o "$results/$sample-$arm-resources.txt" \
+              env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE \
+                XD_P056_REAL_COPY_PERF=1 XD_P056_SAMPLE="$sample" \
+                go test -mod=readonly ./internal/api \
+                  -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=38m -v 2>&1 \
+              | tee "$results/$sample-$arm.log"
+          done
+          python3 scripts/performance/p061_copy_progress_trial.py original
+          git diff --exit-code -- internal/api/file_operations.go
+          python3 scripts/performance/p061_copy_progress_trial.py summary "$results"
+      - name: Preserve 6 original machine samples and source SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p061-copy-progress-true-100k-paired
+          path: p061-100k-original-vs-candidate/
+          if-no-files-found: warn
+          retention-days: 30
