@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert } from '@xdrive/ui/mui'
@@ -24,6 +25,11 @@ export default function PublicShareView({ token }: { token: string }) {
   const [folder, setFolder] = useState<FolderPage | null>(null)
   const [folderError, setFolderError] = useState('')
   const [folderPending, setFolderPending] = useState(false)
+  const [zipPreparing, setZipPreparing] = useState(false)
+  const [zipTaskID, setZipTaskID] = useState('')
+  const [zipNotice, setZipNotice] = useState('')
+  const [zipError, setZipError] = useState('')
+  const zipPollRef = useRef<AbortController | null>(null)
   const pendingPage = useRef<AbortController | null>(null)
   // Public metadata and normal folder navigation are presentation-silent.
   // Real GETs start immediately; authenticated rows/crumbs remain mounted.
@@ -42,6 +48,10 @@ export default function PublicShareView({ token }: { token: string }) {
       if (hasDocument) document.removeEventListener('visibilitychange', onVisibilityChange)
       pendingPage.current?.abort()
       pendingPage.current = null
+      // Stop only the browser's status requests, not the durable preparation
+      // the recipient explicitly started. That task owns its own cancellation.
+      zipPollRef.current?.abort()
+      zipPollRef.current = null
     }
   }, [])
 
@@ -130,6 +140,82 @@ export default function PublicShareView({ token }: { token: string }) {
     }
   }
 
+  const startSharedFolderZIP = async () => {
+    if (!share || share.type !== 'dir' || !canDownload || zipPreparing) return
+    zipPollRef.current?.abort()
+    const controller = new AbortController()
+    zipPollRef.current = controller
+    setZipPreparing(true)
+    setZipTaskID('')
+    setZipNotice('')
+    setZipError('')
+    try {
+      let status = await api.preparePublicShareArchive(token, password, controller.signal)
+      if (controller.signal.aborted) return
+      setZipTaskID(status.prepare_id)
+      while (!controller.signal.aborted) {
+        if (status.state === 'completed') {
+          await api.downloadPublicShareArchive(
+            token, password, status.prepare_id, status.filename || `${share.name}.zip`,
+            controller.signal,
+          )
+          if (controller.signal.aborted) return
+          setShare((current) => current
+            ? { ...current, download_count: current.download_count + 1 }
+            : current)
+          setZipTaskID('')
+          setZipNotice('ZIP 已交给浏览器下载，准备任务已完成。')
+          return
+        }
+        if (status.state === 'failed' || status.state === 'cancelled') {
+          setZipTaskID('')
+          setZipError(status.error || 'ZIP 准备失败，请重试。')
+          return
+        }
+        // An explicit, persistent archive is a real network task, not a
+        // decorative loading spinner. Poll the durable Server state gently.
+        await new Promise<void>((resolve, reject) => {
+          const finish = () => {
+            controller.signal.removeEventListener('abort', cancel)
+            resolve()
+          }
+          const cancel = () => {
+            clearTimeout(timer)
+            reject(new DOMException('Aborted', 'AbortError'))
+          }
+          const timer = setTimeout(finish, 2500)
+          controller.signal.addEventListener('abort', cancel, { once: true })
+        })
+        status = await api.publicShareArchiveStatus(
+          token, password, status.prepare_id, controller.signal,
+        )
+      }
+    } catch (err) {
+      if (controller.signal.aborted) return
+      setZipError(err instanceof ApiError && err.status === 410
+        ? '分享已过期或已被撤销，无法生成 ZIP。'
+        : err instanceof Error ? err.message : 'ZIP 准备失败。')
+    } finally {
+      if (zipPollRef.current === controller) {
+        zipPollRef.current = null
+        setZipPreparing(false)
+      }
+    }
+  }
+
+  const cancelSharedFolderZIP = async () => {
+    if (!zipTaskID || !zipPreparing) return
+    zipPollRef.current?.abort()
+    setZipPreparing(false)
+    try {
+      await api.cancelPublicShareArchive(token, password, zipTaskID)
+      setZipTaskID('')
+      setZipNotice('已请求取消 ZIP 准备。')
+    } catch (err) {
+      setZipError(err instanceof Error ? err.message : '无法取消 ZIP 准备。')
+    }
+  }
+
   return (
     <XDriveAuthShell viewport decorated spacing="compact">
       <XDriveAuthPanel size="compact" maxWidth={920} form onSubmit={(event) => {
@@ -201,6 +287,31 @@ export default function PublicShareView({ token }: { token: string }) {
 
               {share.type === 'dir' ? (
                 <>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                    <XDriveActionButton type="button" intent="primary"
+                      disabled={!canDownload || zipPreparing}
+                      loading={zipPreparing}
+                      loadingLabel="正在准备 ZIP…"
+                      startIcon={<FolderZipRoundedIcon />}
+                      onClick={() => void startSharedFolderZIP()}>
+                      下载整个文件夹 ZIP
+                    </XDriveActionButton>
+                    {zipTaskID && zipPreparing && (
+                      <XDriveActionButton type="button" intent="secondary"
+                        onClick={() => void cancelSharedFolderZIP()}>
+                        取消准备
+                      </XDriveActionButton>
+                    )}
+                  </Stack>
+                  <Box sx={{ minHeight: 24 }} aria-live="polite">
+                    {zipPreparing && (
+                      <Typography variant="caption" color="text.secondary">
+                        正在准备文件夹 ZIP，准备任务可在页面离开后继续。
+                      </Typography>
+                    )}
+                    {zipNotice && <Typography variant="caption" color="success.main">{zipNotice}</Typography>}
+                    {zipError && <XDriveStatusAlert tone="bad">{zipError}</XDriveStatusAlert>}
+                  </Box>
                   <XDrivePublicShareReadOnlyExplorer
                     kind="dir"
                     items={folder?.items ?? []}

@@ -230,6 +230,14 @@ type AuthenticatedDownloadTicket = {
   transfer_id?: string
 }
 
+type PublicShareArchivePrepare = {
+  prepare_id: string
+  state: 'queued' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed'
+  filename?: string
+  total_bytes?: number
+  error?: string
+}
+
 type NativeDownloadProgress = {
   transfer_id: string
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -3308,6 +3316,49 @@ export class XDriveApi {
       throw new ApiError(response.status, error)
     }
     const ticket = (await response.json()) as AuthenticatedDownloadTicket
+    xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)
+  }
+
+  // The public archive is a separate capability: no Owner FileExplorer API,
+  // account authorization, saved share password or bearer in a download URL.
+  preparePublicShareArchive(token: string, password: string, signal?: AbortSignal) {
+    return this.request<PublicShareArchivePrepare>('/api/v1/public/share/archive/prepare', {
+      method: 'POST',
+      headers: { 'X-XDrive-Share-Token': token },
+      body: JSON.stringify({ password }),
+      signal,
+    }, false)
+  }
+
+  publicShareArchiveStatus(token: string, password: string, prepareID: string, signal?: AbortSignal) {
+    return this.request<PublicShareArchivePrepare>('/api/v1/public/share/archive/status', {
+      method: 'POST',
+      headers: { 'X-XDrive-Share-Token': token },
+      body: JSON.stringify({ password, prepare_id: prepareID }),
+      signal,
+    }, false)
+  }
+
+  cancelPublicShareArchive(token: string, password: string, prepareID: string) {
+    return this.request<PublicShareArchivePrepare>('/api/v1/public/share/archive/cancel', {
+      method: 'POST',
+      headers: { 'X-XDrive-Share-Token': token },
+      body: JSON.stringify({ password, prepare_id: prepareID }),
+    }, false)
+  }
+
+  async downloadPublicShareArchive(token: string, password: string, prepareID: string, filename: string, signal?: AbortSignal) {
+    const ticket = await this.request<AuthenticatedDownloadTicket>(
+      '/api/v1/public/share/archive/download-ticket', {
+        method: 'POST',
+        headers: { 'X-XDrive-Share-Token': token },
+        body: JSON.stringify({ password, prepare_id: prepareID }),
+        signal,
+      }, false,
+    )
+    signal?.throwIfAborted()
+    // The browser saves the streamed ZIP directly, never buffers a whole
+    // 100k-file ZIP in renderer JS/OPFS memory.
     xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)
   }
 
