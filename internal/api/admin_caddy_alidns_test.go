@@ -65,7 +65,8 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.AdminServiceSecret{}, &meta.AuditEvent{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.AdminServiceSecret{}, &meta.AuditEvent{},
+		&meta.AdminCaddyHTTPSSetting{}, &meta.AdminCaddyHostApplyReservation{}); err != nil {
 		t.Fatal(err)
 	}
 	ring, err := connectorsecret.NewKeyring(1, map[uint32]string{1: strings.Repeat("ba", 32)})

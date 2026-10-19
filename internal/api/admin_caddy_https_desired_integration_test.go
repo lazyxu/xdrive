@@ -47,7 +47,7 @@ func TestAdminCaddyHTTPSDesiredRevisionAndActualStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminCaddyHTTPSSetting{},
-		&meta.AdminCaddyHTTPSRevision{}); err != nil {
+		&meta.AdminCaddyHTTPSRevision{}, &meta.AdminCaddyHostApplyReservation{}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{DB: db, Auth: auth.New("caddy-https-config-test-secret", time.Hour), HostControlDir: t.TempDir()}

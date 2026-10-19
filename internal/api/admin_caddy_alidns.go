@@ -137,6 +137,12 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 	s.caddyAliDNSSaveMu.Lock()
 	defer s.caddyAliDNSSaveMu.Unlock()
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Match the Host DB reservation lock order: HTTPS desired -> AliDNS
+		// credential -> fixed pending row. A credential row may not exist yet;
+		// the desired lock still prevents a concurrent DB reservation race.
+		if err := lockCaddyDesiredBeforeAliDNSMutationTx(tx); err != nil {
+			return err
+		}
 		var previous meta.AdminServiceSecret
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", caddyAliDNSSecretName).Take(&previous).Error
 		exists := err == nil
@@ -145,6 +151,9 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 		}
 		if (exists && previous.Revision != *input.Revision) || (!exists && *input.Revision != 0) {
 			return errCaddyAliDNSConflict
+		}
+		if err := rejectCaddyHostPendingMutationTx(tx); err != nil {
+			return err
 		}
 		if input.Clear && (!exists || len(previous.Ciphertext) == 0) {
 			return errCaddyAliDNSNotConfigured
@@ -200,6 +209,9 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 		))
 	})
 	switch {
+	case errors.Is(err, errCaddyHostDBReservationBlocked):
+		fail(c, http.StatusConflict, "Unapplied Caddy host reservation blocks AliDNS edits until operator reconciliation")
+		return
 	case errors.Is(err, errCaddyAliDNSConflict):
 		fail(c, http.StatusConflict, "Caddy AliDNS credential revision changed; refresh")
 		return

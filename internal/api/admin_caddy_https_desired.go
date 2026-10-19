@@ -191,6 +191,11 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 		if (exists && previous.Revision != *input.Revision) || (!exists && *input.Revision != 0) {
 			return errCaddyHTTPSRevision
 		}
+		// The desired row lock also serializes this edit with the private
+		// DB-side Host intent reservation across independent Server replicas.
+		if err := rejectCaddyHostPendingMutationTx(tx); err != nil {
+			return err
+		}
 		oldEnabled, oldDomain, oldLANEnabled, oldLANIP, oldOrigin := false, "", false, "", "default"
 		if exists {
 			oldEnabled, oldDomain = previous.Enabled, previous.Domain
@@ -254,6 +259,10 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 	}
 	if errors.Is(err, errCaddyHTTPSRevision) {
 		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed; refresh")
+		return
+	}
+	if errors.Is(err, errCaddyHostDBReservationBlocked) {
+		fail(c, http.StatusConflict, "Unapplied Caddy host reservation blocks HTTPS edits until operator reconciliation")
 		return
 	}
 	if err != nil {
@@ -325,6 +334,9 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 		if row.Revision != *input.Revision {
 			return errCaddyHTTPSRevision
 		}
+		if err := rejectCaddyHostPendingMutationTx(tx); err != nil {
+			return err
+		}
 		var history meta.AdminCaddyHTTPSRevision
 		if err := tx.Where("name = ? AND revision = ?",
 			caddyHTTPSSettingName, *input.TargetRevision).Take(&history).Error; err != nil {
@@ -364,6 +376,10 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 	})
 	if errors.Is(err, errCaddyHTTPSRevision) {
 		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed")
+		return
+	}
+	if errors.Is(err, errCaddyHostDBReservationBlocked) {
+		fail(c, http.StatusConflict, "Unapplied Caddy host reservation blocks HTTPS rollback until operator reconciliation")
 		return
 	}
 	if errors.Is(err, errCaddyHTTPSIngress) {
