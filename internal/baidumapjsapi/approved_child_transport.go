@@ -83,6 +83,8 @@ func NewApprovedJSAPI4ChildRequest(
 	if err != nil {
 		return nil, ErrUnsafeUpstream
 	}
+	// The trusted HTTPS origin, never caller headers, determines Browser AK Referer.
+	request.Header.Set("Referer", origin+"/")
 	request.Header.Set("BMAP_PROXY_URL", proxyBase)
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("Accept", child.MediaType)

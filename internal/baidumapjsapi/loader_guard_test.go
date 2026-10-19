@@ -82,6 +82,7 @@ func TestReleaseGatesAndServerOnlyBrowserAK(t *testing.T) {
 	if req.URL.Host != "api.map.baidu.com" || req.URL.Scheme != "https" || req.URL.Path != "/api" || req.Method != "GET" ||
 		req.URL.Query().Get("ak") != "private-ak-test" || req.URL.Query().Get("v") != "4.0" ||
 		req.Header.Get("BMAP_PROXY_URL") != "https://gallery.example/_BMapService/" ||
+		req.Header.Get("Referer") != "https://gallery.example/" ||
 		req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
 		t.Fatal("unsafe immutable upstream plan")
 	}

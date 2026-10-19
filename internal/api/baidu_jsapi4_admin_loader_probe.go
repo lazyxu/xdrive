@@ -150,6 +150,9 @@ func checkFixedBaiduJSAPI4Loader(ctx context.Context, origin, ak string, injecte
 	if err != nil {
 		return "unavailable"
 	}
+	// The saved Browser AK uses its registered Referer whitelist even from
+	// a Server-only probe. Never reflect inbound Origin, Referer or Host.
+	req.Header.Set("Referer", origin+"/")
 	req.Header.Set("BMAP_PROXY_URL", proxyBase)
 	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Accept", "application/javascript, text/javascript")

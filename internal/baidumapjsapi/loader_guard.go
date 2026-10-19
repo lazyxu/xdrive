@@ -91,6 +91,9 @@ func NewLoaderRequest(ctx context.Context, origin, browserAK string, gates Relea
 	if err != nil {
 		return nil, ErrUnsafeUpstream
 	}
+	// Browser AK Referer is fixed to the trusted HTTPS Server origin;
+	// an inbound Referer or Host must never control this header.
+	req.Header.Set("Referer", origin+"/")
 	req.Header.Set("BMAP_PROXY_URL", host)
 	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Accept", "application/javascript, text/javascript")
