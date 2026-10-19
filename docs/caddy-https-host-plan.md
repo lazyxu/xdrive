@@ -259,3 +259,15 @@ C2-D 的一次性 `rollback-anchor` 生成之后，操作员可独立固定 `rec
 复核以受信签名 Apply Intent、Host Plan、stage receipt、Pending journal 和两个独立固定 SHA 为前提。在原有同一主机私有目录的**共享非阻塞锁**内，固定原 `rollback-anchor` 目录 inode、0700 权限和恰好三个 0600 私有文件；要求常规文件、当前操作员所有、单硬链且不允许符号链接。逐字节和 inode 二次读取 `original.env`、`original.compose`、规范 `receipt.json`，校验 receipt schema、协议、`apply_supported=false`、预定阻断原因、期望 HTTPS/AliDNS 修订、Pending 和签名请求指纹、两个原文件与**仍未改动的**实际宿主配置一致。任一修改、旧签名、私有输入丢失、额外文件、并发独占事务或独立 PIN 错误都固定 `blocked` 且不输出密钥、原始 IP、域名或绝对路径。
 
 用原计划中的全部固定参数调用，只在末尾增加 `--expected-anchor-receipt-sha256 $TRUSTED_ANCHOR_RECEIPT_SHA256`；此 SHA 必须由不同可信渠道审核钉住，不可在同一个不可信源文件上计算后自称独立批准。成功固定输出 `state=host-rollback-anchor-reverified-unapplied`、`apply_supported=false`。此结果**不**是恢复可执行验证、不保证异机 Rescue、受限 Host CAS、AliDNS 密钥转交、Caddy 重启、超时看门狗、WAN/IP 正反 TLS 登录或签名 Applied Receipt。生产「应用并重启」仍禁止。新增离线正反例随原 `scripts/test-caddy-https-host-plan.py` 的 server-validation 执行，无新 Controller/Agent/UI 权限。
+
+
+## NET-M5-C2-F · Caddy Host Control 只读失效原因细分（2026-10-19）
+
+**目标：** 管理员使用「系统依赖 → Caddy → 状态与检测 → HTTPS 配置预检」时，如果宿主机网关状态缺失，原先只显示“缺失或过期”，无法区分正常运行的主 Caddy 与宿主只读数据供应链故障。新增静态限定的失效原因：未配置 Host Control 目录、心跳缺失／过期／非普通文件／不可访问、Caddy 观测快照缺失／过期／非普通文件／不可访问，以及原权威读取器拒绝内容或观测期间变更。对异常仅检查固定文件的 `Lstat`、时间和类型，**不读取额外 JSON 明文、不输出宿主路径、IP/域名、密钥、容器详情或 Token**。原有效状态读数、七项 Preflight 检查 ID/数量及各项通过规则保持原样；原 Go Reader 对 JSON 约束和 45 秒时效验证仍是唯一权威，诊断失败原因仅在 `host-manager=unknown` 时附加说明。
+
+- 此检测通过原有管理员身份认证的 GET `/api/v1/admin/services/caddy/https/preflight` 的第 4 项 `host-manager.detail` 直接展示在 Web/Mobile Web/PWA/Desktop 共用页面，**不创建新 REST、Agent IPC 或定时轮询**。
+- 单元测试覆盖缺失控制目录、心跳/快照缺失、损坏、超时、未来日期、拒绝不可信常规文件以及消息不泄漏。实际宿主机状态依赖当前运行 Server 的 `XD_HOST_CONTROL_DIR`、Compose 绑定卷 `XD_HOST_CONTROL_HOST_DIR`、Host Control 运行程序 `scripts/server-control.sh` 以及相同宿主时间。**CI 的夹具绿色不代表用户现网问题已经消失**。
+- `host-manager=pass` 仅表示宿主状态最近通过原受限校验，不构成真实 HTTPS 域名或 LAN IP 登录生效、已应用数据库修订或 Host Apply 授权。 `restricted-apply=blocked`、`public-https=unknown`、`apply_supported=false` 保持不变；NET-M5 安全 Host CAS、AliDNS 密钥安全交接、独立救援实测、原子安装及 Caddy 重启、脱离进程的 watchdog 回滚、双入口启用/禁用正反验证和签名回执尚未完成。
+
+
+- 服务详情的**当前状态**复用同一诊断，在 Caddy 原受限权威状态不可用时仅替换未知描述；不更改 `status=unknown`、生命周期或任何安全执行权限。无需点击预检也可识别缺失的心跳或快照。

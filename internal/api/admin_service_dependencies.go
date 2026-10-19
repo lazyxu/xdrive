@@ -306,6 +306,10 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		default:
 			services[10].Detail = "Host Manager 无法获取可信 Caddy 容器健康状态；" + mode
 		}
+	} else {
+		// Preserve unverified status; explain which fixed Host Control witness
+		// is missing, stale or invalid without reading credential-bearing data.
+		services[10].Detail = s.caddyHostUnobservedDetail()
 	}
 
 	if s.DB != nil {
