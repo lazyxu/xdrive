@@ -17,6 +17,9 @@ function createHookRuntime() {
   let pendingEffects = []
 
   const react = {
+    // The original pane commits accepted children before paint; this custom
+    // hook harness executes layout effects in the same deterministic flush.
+    useLayoutEffect(effect, deps) { return react.useEffect(effect, deps) },
     useId() {
       return react.useRef(`navigation-test-${cursor}`).current
     },
@@ -245,6 +248,10 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
   expandA.props.onClick({ stopPropagation() {} })
   await flushAsync()
   tree = render()
+  // This custom hook runner executes layout effects after producing its JSX
+  // snapshot. Actual React flushes the expansion they authorize before paint;
+  // observe that committed pass rather than asserting the intermediate tree.
+  tree = render()
 
   assert.ok(findByAriaLabel(tree, 'A-child'), 'account A child should be rendered after expansion')
   assert.equal(callsA, 1)
@@ -265,6 +272,7 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
   assert.ok(expandB, 'tree should reset expansion after account lifecycle changes')
   expandB.props.onClick({ stopPropagation() {} })
   await flushAsync()
+  tree = render()
   tree = render()
 
   assert.ok(findByAriaLabel(tree, 'B-child'), 'account B should load its own tree children')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -16,7 +16,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Collapse,
   Divider,
   IconButton,
   ListItemButton,
@@ -302,6 +301,13 @@ export function XDriveFileExplorerNavigationPane({
   }>>({})
   const pageByParentRef = useRef(pageByParent)
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
+  // A cold tree expansion is intent only. Do not animate an empty Collapse
+  // and then stretch it again when the real paged directory GET returns.
+  const [pendingExpandIDs, setPendingExpandIDs] = useState<Set<number>>(() => new Set())
+  const pendingExpandRef = useRef(new Map<number, {
+    token: number; generation: number; lifecycleKey: string
+  }>())
+  const nextExpandTokenRef = useRef(0)
   const [loadingIDs, setLoadingIDs] = useState<Set<number>>(() => new Set())
   const loadingIDsRef = useRef(new Map<number, number>())
   const loadDirectoryPageRef = useRef(loadDirectoryPage)
@@ -338,6 +344,8 @@ export function XDriveFileExplorerNavigationPane({
     pageByParentRef.current = {}
     setPageByParent({})
     loadingIDsRef.current.clear()
+    pendingExpandRef.current.clear()
+    setPendingExpandIDs(new Set())
     setLoadingIDs(new Set())
     setExpandedIDs(new Set())
     setDropTargetID(null)
@@ -525,15 +533,91 @@ export function XDriveFileExplorerNavigationPane({
   }, [commitParentPage, loadDirectoryPage, onError])
 
   const toggleExpanded = (node: XDriveFileExplorerNavigationTreeNode) => {
-    const expanded = expandedIDs.has(node.id)
-    setExpandedIDs((current) => {
-      const next = new Set(current)
-      if (expanded) next.delete(node.id)
-      else next.add(node.id)
-      return next
-    })
-    if (!expanded) void loadChildren(node)
+    const pending = pendingExpandRef.current.get(node.id)
+    if (pending && pending.generation === loadDirectoryPageGenerationRef.current &&
+        pending.lifecycleKey === lifecycleKeyRef.current) {
+      // Second activation cancels ONLY the uncommitted visual expansion.
+      // The shared GET still owns its real request/error lifecycle.
+      pendingExpandRef.current.delete(node.id)
+      setPendingExpandIDs((current) => {
+        const next = new Set(current)
+        next.delete(node.id)
+        return next
+      })
+      return
+    }
+    if (expandedIDs.has(node.id)) {
+      setExpandedIDs((current) => {
+        const next = new Set(current)
+        next.delete(node.id)
+        return next
+      })
+      return
+    }
+
+    const generation = loadDirectoryPageGenerationRef.current
+    const owner = lifecycleKeyRef.current
+    const page = pageByParentRef.current[String(node.id)]
+    if (page?.lifecycleKey === owner && page.generation === generation && page.loaded) {
+      // Only already-verified children reveal instantly; do not refetch them.
+      setExpandedIDs((current) => new Set(current).add(node.id))
+      return
+    }
+
+    const token = ++nextExpandTokenRef.current
+    pendingExpandRef.current.set(node.id, { token, generation, lifecycleKey: owner })
+    setPendingExpandIDs((current) => new Set(current).add(node.id))
+    // Dispatch immediately. The current first page is the visual commit
+    // receipt; failure, owner change, supersession and cancellation never
+    // mount a zero-height intermediate group.
+    void loadChildren(node)
   }
+
+  // A second user activation can arrive while the first real page is still
+  // in flight. The shared loader coalesces that GET; its immediate void return
+  // is NOT a verified page receipt. Observe authenticated page + busy state
+  // before paint, so fast cancel/reopen never gets stuck or flashes empty.
+  useLayoutEffect(() => {
+    if (pendingExpandRef.current.size === 0) return
+    const completedIDs: number[] = []
+    const acceptedIDs: number[] = []
+    for (const [id, ticket] of pendingExpandRef.current) {
+      if (ticket.generation !== loadDirectoryPageGenerationRef.current ||
+          ticket.lifecycleKey !== lifecycleKeyRef.current) {
+        pendingExpandRef.current.delete(id)
+        completedIDs.push(id)
+        continue
+      }
+      const accepted = pageByParent[String(id)]
+      if (accepted?.loaded && accepted.generation === ticket.generation &&
+          accepted.lifecycleKey === ticket.lifecycleKey) {
+        pendingExpandRef.current.delete(id)
+        completedIDs.push(id)
+        // Verified zero becomes a leaf, never an empty group.
+        if (accepted.children.length === 0 && !accepted.hasMore) continue
+        acceptedIDs.push(id)
+      } else if (!loadingIDs.has(id)) {
+        // The original GET ended without an accepted first page (real error or
+        // cancellation); retain the prior tree and let the user retry.
+        pendingExpandRef.current.delete(id)
+        completedIDs.push(id)
+      }
+    }
+    if (completedIDs.length > 0) {
+      setPendingExpandIDs((current) => {
+        const next = new Set(current)
+        for (const id of completedIDs) next.delete(id)
+        return next
+      })
+    }
+    if (acceptedIDs.length > 0) {
+      setExpandedIDs((current) => {
+        const next = new Set(current)
+        for (const id of acceptedIDs) next.add(id)
+        return next
+      })
+    }
+  }, [pageByParent, loadingIDs, lifecycleKey, loadDirectoryPage])
 
   const dragOverNode = (
     event: ReactDragEvent<HTMLElement>,
@@ -638,6 +722,10 @@ export function XDriveFileExplorerNavigationPane({
     const hasMore = Boolean(page?.hasMore)
     const loading = loadingIDs.has(node.id)
     const expanded = expandedIDs.has(node.id)
+    const ticket = pendingExpandRef.current.get(node.id)
+    const pendingExpand = pendingExpandIDs.has(node.id) && Boolean(ticket &&
+      ticket.generation === loadDirectoryPageGenerationRef.current &&
+      ticket.lifecycleKey === lifecycleKeyRef.current)
     const expandable = !loaded || children.length > 0 || hasMore
 
     return (
@@ -645,7 +733,7 @@ export function XDriveFileExplorerNavigationPane({
         key={node.id}
         role="treeitem"
         aria-expanded={expandable ? expanded : undefined}
-        aria-busy={loading || undefined}
+        aria-busy={loading || pendingExpand || undefined}
       >
         <Box
           sx={{
@@ -668,7 +756,7 @@ export function XDriveFileExplorerNavigationPane({
             {expandable ? (
               <IconButton
                 size="small"
-                aria-label={expanded ? `折叠 ${node.name}` : `展开 ${node.name}`}
+                aria-label={pendingExpand ? `取消展开 ${node.name}` : expanded ? `折叠 ${node.name}` : `展开 ${node.name}`}
                 onClick={(event) => {
                   event.stopPropagation()
                   toggleExpanded(node)
@@ -725,8 +813,8 @@ export function XDriveFileExplorerNavigationPane({
           </ListItemButton>
         </Box>
 
-        <Collapse in={expanded} timeout="auto" unmountOnExit>
-          <Box role="group">
+        {expanded ? (
+          <Box role="group" data-xdrive-file-explorer-tree-verified-group={node.id}>
             {children.map((child) => renderNode(child, depth + 1))}
             {hasMore ? (
               <Box
@@ -745,7 +833,7 @@ export function XDriveFileExplorerNavigationPane({
               </Box>
             ) : null}
           </Box>
-        </Collapse>
+        ) : null}
       </Box>
     )
   }
