@@ -1,5 +1,10 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## P060 physical 100k CAS Copy — genuine original Server n3, no GUI measurement (2026-10-19)
+
+[Exact physical 3x100k specialized CI #39188489310](https://github.com/lazyxu/xdrive/actions/runs/39188489310) PASSED: original unprofiled Copy P50 **511978.747ms**, Undo P50 **1664.771ms**, all 100001 original CAS/physical SHA/Owner/Trash/RefCount intact. All six client GUI modes remain **Not measured for this specific 100k Copy**, including installed Desktop and PWA, real phones and WAN. No AFTER or speedup claim. [Original source and machine evidence](performance-evidence/p060-unprofiled-copy-100k/README.md).
+
+
 ## P059 · source-exact real 100k physical CAS Copy SQL profiling ACCEPTED n3 (2026-10-19)
 
 **Latest stage (supersedes older P059 n=0 planning paragraphs below):** frozen source `6019f5eff26eb80a37d3012744f58ab2ba9a0d84`, [actual 3×100k PostgreSQL17 native #39143149021](https://github.com/lazyxu/xdrive/actions/runs/39143149021) **SUCCESS**, [77-job full #39143148917](https://github.com/lazyxu/xdrive/actions/runs/39143148917) **SUCCESS** (25 succeeded/52 conditional skips, genuine API Race gate unchanged, Final Gate green). Three independent true 100000 SHA-distinct 1KiB Local CAS originals + one outside sentinel per source; all Owner/foreign/Undo/Trash/RefCount1→2→2→1/full original SHA intact, physical allocated 409604096B never changed; Go PID measured write_bytes 0B.

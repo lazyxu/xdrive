@@ -1,0 +1,129 @@
+name: P060 Original Unprofiled 100k Physical CAS Copy Baseline
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  p060-unprofiled-physical-original:
+    if: github.head_ref == 'perf/p060-unprofiled-100k-copy-original-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify exact original source, Go format, and opt-out
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          test -z "$(gofmt -l internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go)"
+          test -z "$(gofmt -l internal/api/file_operations.go)"
+          env -u XD_P056_REAL_COPY_PERF -u XD_P059_COPY_SQL_PROFILE \
+            go test -mod=readonly ./internal/api \
+              -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=90s
+          df -h .
+      - name: Real 1k physical CAS HTTP Copy Undo and purge smoke
+        run: |
+          set -euo pipefail
+          env -u XD_P059_COPY_SQL_PROFILE \
+            XD_P056_REAL_COPY_PERF=1 XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+            go test -mod=readonly ./internal/api \
+              -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+      - name: Genuine original unprofiled 3x100k physical SHA-distinct Copy
+        run: |
+          set -euo pipefail
+          results="$GITHUB_WORKSPACE/p060-100k-copy-original-results"
+          mkdir -p "$results"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\nMODE=unprofiled-production-original\n' \
+            "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$results/source.txt"
+          for i in 1 2 3; do
+            sample="sample-$i"
+            df -h .
+            /usr/bin/time -v -o "$results/$sample-resources.txt" \
+              env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE \
+                XD_P056_REAL_COPY_PERF=1 XD_P056_SAMPLE="$sample" \
+                go test -mod=readonly ./internal/api \
+                  -run '^TestP056Real100KPhysicalCASCopyUndo$' \
+                  -count=1 -timeout=38m -v | tee "$results/$sample.log"
+            python3 - "$results/$sample.log" "$results/$sample.json" <<'PY'
+          import json,sys
+          lines=[line for line in open(sys.argv[1]) if 'P056_REAL_PHYSICAL_COPY_UNDO ' in line]
+          assert len(lines)==1, f"expected one genuine Go sample, got {len(lines)}"
+          row=json.loads(lines[0].split('P056_REAL_PHYSICAL_COPY_UNDO ',1)[1])
+          assert row['workload']=='P056-authenticated-100k-unique-physical-CAS-folder-copy-undo'
+          assert 'copy_sql_profile' not in row, "the baseline must have zero P059 GORM Trace instrumentation"
+          assert row['passed'] is True and row['smoke_only'] is False
+          assert row['physical_sources']==100000
+          assert row['verified_copied_file_metadata_count']==100000
+          assert row['source_copy_content_blob_ref_count_2']==100000
+          assert row['trash_retained_content_blob_ref_count_2_after_undo']==100000
+          assert row['sentinel_content_blob_ref_count_1_after_undo']==1
+          assert row['trashed_copied_file_count_after_undo']==100000
+          assert row['original_content_blob_ref_count_after_purge']==100001
+          assert row['original_physical_CAS_inodes']==100001
+          for stage in ('copy','undo','purge'):
+              assert row[f'physical_allocated_bytes_after_{stage}']==row['physical_allocated_bytes_before']
+          assert row['copy_actual_durable_worker_ms']>0
+          with open(sys.argv[2],'w') as f: json.dump(row,f,sort_keys=True,indent=2)
+          PY
+          done
+          python3 - "$results" <<'PY'
+          import json,os,statistics,sys
+          directory=sys.argv[1]
+          rows=[json.load(open(os.path.join(directory,f'sample-{i}.json'))) for i in (1,2,3)]
+          assert len({r['source_aggregate_sha256'] for r in rows})==3
+          assert all(r['passed'] for r in rows)
+          fields=('copy_actual_durable_worker_ms','copy_http_enqueue_ms',
+                  'undo_actual_durable_worker_ms','authenticated_purge_100k_copy_trash_ms',
+                  'seed_local_cas_and_metadata_ms','complete_physical_original_sha_verify_ms',
+                  'go_process_cpu_ticks_for_copy_and_undo',
+                  'go_process_25ms_peak_rss_growth_bytes',
+                  'go_process_kernel_write_bytes_for_all_stages')
+          copy_p50=statistics.median(r['copy_actual_durable_worker_ms'] for r in rows)
+          report={'workload':'P060-original-unprofiled-100k-physical-CAS-Copy',
+                  'head_source':open(os.path.join(directory,'source.txt')).read().splitlines()[0],
+                  'n':3,'valid_physical_sources_per_sample':100000,
+                  'different_source_hashes':[r['source_aggregate_sha256'] for r in rows],
+                  'median':{k:statistics.median(r[k] for r in rows) for k in fields},
+                  'maximum':{k:max(r[k] for r in rows) for k in fields},
+                  'copy_p50_target_ms_aspirational':120000,
+                  'candidate_warranted_if_above_target':copy_p50>120000,
+                  'production_changed':False,'after_speedup':'N/A',
+                  'passed_original_P056_hard_gates':True}
+          with open(os.path.join(directory,'summary.json'),'w') as f:
+              json.dump(report,f,sort_keys=True,indent=2)
+          print('P060_ORIGINAL_UNPROFILED_SOURCE_EXACT_SUMMARY',json.dumps(report,sort_keys=True))
+          PY
+      - name: Preserve machine samples, source SHA, physical SHA and process resources
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p060-unprofiled-original-100k
+          path: p060-100k-copy-original-results/
+          if-no-files-found: warn
+          retention-days: 30
