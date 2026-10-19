@@ -2485,3 +2485,14 @@ Require one scoped PR work commit, THIS HEAD's complete Go/PostgreSQL
 API Race, Linux/Windows/Web/Desktop/Rootless/artifact/single-commit and
 final-gate CI plus current clean mergeability before Ready/Rebase. Installed
 physical Windows/Linux 1k/10k/100k and >=4GiB backup tests are NOT RUN.
+
+
+## L03-G1b · source-wide committed first-leaf generation embargo (2026-10-19)
+
+The merged L03-G1a prevents a contradictory abort/expiry terminal receipt AFTER the exact first-leaf SQL COMMIT. It does not stop the Source from minting another private operation UUID/generation after that committed operation's short 30-second reservation expires. That would obscure an unresolved canonical first-leaf commit before native/physical-CAS recovery and OS-secret key retirement can be proven.
+
+The new private admission fence is evaluated **inside the existing owner/device/Root/Source transaction**, AFTER the Source and latest Operation UPDATE locks, and BEFORE advancing a successor generation. It probes the immutable `LocalPushFirstLeafOperationCommit` table with a bounded indexed `SELECT operation_id WHERE source_id = ? LIMIT 1`. ANY historical committed first leaf (including from an older-than-latest generation) or a missing/corrupt commit table rejects new generations, without rewriting historical SQL, advancing SourceItem, altering credentials or creating SourceRuns. The same live request key can still replay its own current UUID; a Source without an earlier committed first leaf retains its existing valid aborted/expired successor admission, which is **NOT** physical native-work retirement proof.
+
+Regression tests use real canonical physical CAS/Node/File/PENDING SourceItem SQL COMMIT, then expire its operation lease and deny keyed/unkeyed successors; also cover older committed history hidden behind an already-created uncommitted generation and fail-closed missing migration. No history is automatically deleted, unlocked by TTL, or marked backup-complete.
+
+**HARD NO-GO:** This is only a protective **SQL generation admission embargo**. It is NOT a cross-machine atomic cancel/commit protocol, current native-original proof after response loss, durable physical recovery, request-key retirement approval, production local_folder SourceRun, real Agent Runner/Start/Cancel, watcher/schedule, Mirror deletion, NAS Push or installed Windows/Linux 1k/10k/100k/>=4GiB validation. The temporary Stage remains <=64 MiB. Remote Desktop/Web/Mobile/PWA continue read-only. Real Go/PostgreSQL API Race and full 77+ source-exact CI/final-gate are required before merge.

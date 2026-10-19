@@ -160,6 +160,18 @@ func (s *Server) reserveBoundLocalPushOperationIntentInternal(
 				(last.State == meta.LocalPushOperationIntentReserved && now.Before(last.ExpiresAt)) {
 				return denied
 			}
+			// The canonical writer holds the same Source/operation locks
+			// through SQL COMMIT. Until separately proved native recovery and
+			// request-key retirement exist, a prior committed first leaf from
+			// ANY Source generation must prevent a fresh admission. Missing
+			// commit metadata is uncertainty, not evidence of no commit.
+			var committed meta.LocalPushFirstLeafOperationCommit
+			probe := tx.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+				Select("operation_id").Where("source_id = ?", sourceID).
+				Limit(1).Find(&committed)
+			if probe.Error != nil || probe.RowsAffected != 0 {
+				return denied
+			}
 			generation = last.Generation + 1
 		}
 		id, err := uuid.NewRandom()
