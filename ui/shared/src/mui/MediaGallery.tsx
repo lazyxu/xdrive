@@ -1558,7 +1558,39 @@ export function XDriveMediaGalleryPage({
       setDraftFilters(emptyMediaGalleryFilterDraft)
       setQuery({})
       setMobileCollectionsOverview(false)
+      routeSectionAppliedRef.current = 'trash'
       onSectionRouteChange?.('trash')
+    })
+  }, [loadFirstPage, onSectionRouteChange])
+
+  // A compact photo-wall tab is navigation intent, not visible state.
+  // Reuse the original Owner/Port/request first counted Range transaction:
+  // current Gallery tiles, scroll and Collections stay mounted until it commits.
+  const openCompactPhotoSection = useCallback((nextSection: 'library' | 'favorites') => {
+    const nextDraft = mediaGallerySectionDraft(nextSection)
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    void loadFirstPage(null, nextQuery, null, null, 'default', null, null, null, () => {
+      placesReturnPageRef.current = null
+      placeOpenedFromCollectionsRef.current = false
+      setLastOpenedPlaceID(null)
+      placePageRequestID.current += 1
+      setPlacesPagePending(false)
+      setPlacesPageError('')
+      syncFolderRequestID.current += 1
+      setCurrentFolderView(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      placesExpandedRef.current = false
+      setSection(nextSection)
+      setActiveMediaType('')
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+      setMobileCollectionsOverview(false)
+      // Do not replay this authorized first Range when our own URL callback
+      // feeds the same section back through initialSection on the next render.
+      routeSectionAppliedRef.current = nextSection
+      onSectionRouteChange?.(nextSection)
     })
   }, [loadFirstPage, onSectionRouteChange])
 
@@ -1569,12 +1601,18 @@ export function XDriveMediaGalleryPage({
       openTrashFromCollections()
       return
     }
+    if (mobileGalleryViewport &&
+        (nextSection === 'library' || nextSection === 'favorites')) {
+      openCompactPhotoSection(nextSection)
+      return
+    }
     placesReturnPageRef.current = null
     placeOpenedFromCollectionsRef.current = false
     setLastOpenedPlaceID(nextSection === 'places' ? placesCameraRef.current?.focusPlaceID ?? null : null)
     placePageRequestID.current += 1
     setPlacesPagePending(false)
     setPlacesPageError('')
+    routeSectionAppliedRef.current = nextSection
     onSectionRouteChange?.(nextSection)
     syncFolderRequestID.current += 1
     setCurrentFolderView(null)
@@ -1613,7 +1651,8 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders,
-    mobileGalleryViewport, onSectionRouteChange, openTrashFromCollections])
+    mobileGalleryViewport, onSectionRouteChange, openTrashFromCollections,
+    openCompactPhotoSection])
 
   // This Mobile Collections index uses a different Server DTO from photo
   // ranges. Fetch the owner-authorized BurstReview list WITHOUT changing the
@@ -2896,10 +2935,15 @@ export function XDriveMediaGalleryPage({
     const nextSection = initialSection ?? 'library'
     if (routeSectionAppliedRef.current === nextSection) return
     routeSectionAppliedRef.current = nextSection
-    setMobileCollectionsOverview(false)
-    if (nextSection === 'library') void loadFirstPage(null, {})
+    // External route changes also retain the accepted compact photo wall
+    // until the target is genuinely available. The internal URL echo was
+    // already marked committed in the onCommitted callback.
+    const pendingCompactPhoto = mobileGalleryViewport &&
+      (nextSection === 'library' || nextSection === 'favorites')
+    if (!pendingCompactPhoto) setMobileCollectionsOverview(false)
+    if (nextSection === 'library' && !pendingCompactPhoto) void loadFirstPage(null, {})
     else selectSection(nextSection)
-  }, [initialSection, loadFirstPage, selectSection])
+  }, [initialSection, loadFirstPage, mobileGalleryViewport, selectSection])
 
   useEffect(() => () => {
     requestID.current += 1
@@ -3005,35 +3049,17 @@ export function XDriveMediaGalleryPage({
             warmMobileCollectionsPreview()
             setMobileCollectionsOverview(true)
           } else {
-            // A committed compact Album is the visible page until the real
-            // owner Library Range0 is accepted. Selecting a bottom tab is
-            // only navigation intent: do not clear 100k-safe sparse rows or
-            // expose a blank Library while its first request is pending.
-            if (mobileGalleryViewport && section === 'albums' && currentAlbum &&
-                collectionTargetRef.current?.kind === 'album') {
-              const libraryDraft = mediaGallerySectionDraft('library')
-              const libraryQuery = mediaGalleryQueryFromDraft(libraryDraft)
-              void loadFirstPage(null, libraryQuery, null, null, 'default',
-                null, null, null, () => {
-                  placesReturnPageRef.current = null
-                  placeOpenedFromCollectionsRef.current = false
-                  setLastOpenedPlaceID(null)
-                  placePageRequestID.current += 1
-                  setPlacesPagePending(false)
-                  setPlacesPageError('')
-                  syncFolderRequestID.current += 1
-                  setCurrentFolderView(null)
-                  setCurrentPet(null)
-                  setCurrentMemory(null)
-                  setCurrentCleanupReview(null)
-                  placesExpandedRef.current = false
-                  setSection('library')
-                  setActiveMediaType('')
-                  setDraftFilters(libraryDraft)
-                  setQuery(libraryQuery)
-                  setMobileCollectionsOverview(false)
-                  onSectionRouteChange?.('library')
-                })
+            // Returning to an already accepted Library can reveal its mounted
+            // photo wall immediately. Every other compact photo-tab entry
+            // waits for the current first Range; no interim old album or empty
+            // Library frame, and never reset the 100k virtual scroll on intent.
+            if (mobileGalleryViewport && section === 'library' &&
+                collectionTargetRef.current?.kind === 'all') {
+              setMobileCollectionsOverview(false)
+              return
+            }
+            if (mobileGalleryViewport) {
+              openCompactPhotoSection('library')
               return
             }
             setMobileCollectionsOverview(false)
@@ -3278,6 +3304,12 @@ export function XDriveMediaGalleryPage({
               void openCleanupFromCollections()
               return
             }
+          }
+          // Compact photo-wall destinations must retain Collections and its
+          // scroll until their verified first page has been primed.
+          if (mobileGalleryViewport && (next === 'library' || next === 'favorites')) {
+            selectSection(next)
+            return
           }
           setMobileCollectionsOverview(false)
           selectSection(next)
@@ -6766,8 +6798,8 @@ export function XDriveMediaGallery({
             // that collection's shared Server query and available operations.
             // Only the Collections *overview* starts a library-wide search.
             if (mobileCollectionsOverview) {
-              onMobileCollectionsOverviewChange?.(false)
               if (section !== 'library') onSectionChange?.('library')
+              else onMobileCollectionsOverviewChange?.(false)
             }
           }}
           onFilterOpen={onOpenMobileFilters}
@@ -6822,7 +6854,8 @@ export function XDriveMediaGallery({
           onOpenSection={(next) => {
             // Trash is staged by the page controller until its first owner
             // range is authorized. The child must not hide Collections early.
-            if (next !== 'trash' && next !== 'cleanup') {
+            if (next !== 'trash' && next !== 'cleanup' &&
+                next !== 'library' && next !== 'favorites') {
               onMobileCollectionsOverviewChange?.(false)
             }
             onSectionChange?.(next)

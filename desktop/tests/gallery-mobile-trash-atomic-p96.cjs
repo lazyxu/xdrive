@@ -28,6 +28,7 @@ function actualCallbacks(env) {
   // Original production callback declarations, not hand-written replacements.
   const factory = 'function instantiate() { const ' +
     declaration('openTrashFromCollections') + '; const ' +
+    declaration('openCompactPhotoSection') + '; const ' +
     declaration('selectSection') +
     '; return { openTrashFromCollections, selectSection }; }'
   const js = ts.transpileModule(factory, {
@@ -76,6 +77,7 @@ function owner(compact) {
     placePageRequestID: { current: 0 },
     syncFolderRequestID: { current: 0 },
     placesExpandedRef: { current: false },
+    routeSectionAppliedRef: { current: null },
     emptyMediaGalleryFilterDraft: {},
     setLastOpenedPlaceID: record('place'),
     setPlacesPagePending: record('place-pending'),
@@ -162,9 +164,14 @@ test('P96 newer ordinary Gallery intent invalidates obsolete compact Trash first
   assert.equal(state.requests.length, 1)
   state.callbacks.selectSection('library')
   assert.equal(state.requests.length, 2)
+  assert.equal(count(state.mutations, 'section'), 0,
+    'new Library intent must not reveal an unverified intermediary')
   state.requests[0].accept()
   assert.equal(count(state.mutations, 'section', 'trash'), 0)
   assert.equal(count(state.mutations, 'route', 'trash'), 0)
+  assert.equal(count(state.mutations, 'section', 'library'), 0,
+    'stale Trash cannot commit and Library still awaits its own Range')
+  state.requests[1].accept()
   assert.equal(count(state.mutations, 'section', 'library'), 1)
   assert.equal(count(state.mutations, 'route', 'library'), 1)
 })
