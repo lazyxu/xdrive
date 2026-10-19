@@ -1176,7 +1176,7 @@ export function XDriveMediaGalleryPage({
     virtualCollection.reset,
   ])
 
-  const loadMemories = useCallback(async () => {
+  const loadMemories = useCallback(async (onCommitted?: () => void) => {
     if (!source.listMemories) {
       setMemories([])
       setMemoryIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'error' })
@@ -1184,15 +1184,21 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
-    collectionTargetRef.current = null
-    setCollectionTarget(null)
-    setCurrentAlbum(null)
-    setCurrentSuggestedPerson(null)
-    setCurrentPerson(null)
-    setCurrentMemory(null)
-    setItems([])
-    setTimelineGroupSets(emptyMediaTimelineGroupSets())
-    virtualCollection.reset(`media-gallery:memories:index:${request}`)
+    const commitIndex = () => {
+      collectionTargetRef.current = null
+      setCollectionTarget(null)
+      setCurrentAlbum(null)
+      setCurrentSuggestedPerson(null)
+      setCurrentPerson(null)
+      setCurrentMemory(null)
+      setItems([])
+      setTimelineGroupSets(emptyMediaTimelineGroupSets())
+      virtualCollection.reset(`media-gallery:memories:index:${request}`)
+    }
+    // When navigating from a compact authenticated photo/Collections index,
+    // a read is only intent: never clear the visible sparse rows or return
+    // anchor before a current, real Memories index response is accepted.
+    if (!onCommitted) commitIndex()
     setLoading(true)
     setError('')
     try {
@@ -1202,8 +1208,10 @@ export function XDriveMediaGalleryPage({
         mediaTimeZoneRef.current,
       )
       if (request !== requestID.current) return
+      if (onCommitted) commitIndex()
       setMemories(nextMemories)
       setMemoryIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
+      onCommitted?.()
     } catch (loadError) {
       if (request !== requestID.current) return
       setMemoryIndexReceipt(current =>
@@ -1595,6 +1603,32 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, onSectionRouteChange])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    // Compact Memories is an asynchronous Owner index, not an eagerly
+    // committed tab. The previous accepted Gallery/Collections remains
+    // mounted through slow, failed and superseded list reads.
+    if (mobileGalleryViewport && nextSection === 'memories') {
+      void loadMemories(() => {
+        placesReturnPageRef.current = null
+        placeOpenedFromCollectionsRef.current = false
+        setLastOpenedPlaceID(null)
+        placePageRequestID.current += 1
+        setPlacesPagePending(false)
+        setPlacesPageError('')
+        syncFolderRequestID.current += 1
+        setCurrentFolderView(null)
+        setCurrentPet(null)
+        setCurrentCleanupReview(null)
+        placesExpandedRef.current = false
+        setSection('memories')
+        setActiveMediaType('')
+        setDraftFilters(emptyMediaGalleryFilterDraft)
+        setQuery({})
+        setMobileCollectionsOverview(false)
+        routeSectionAppliedRef.current = 'memories'
+        onSectionRouteChange?.('memories')
+      })
+      return
+    }
     // A compact Trash tab is navigation intent only. Hold accepted content
     // through slow/rejected reads and commit after the current counted Range.
     if (mobileGalleryViewport && nextSection === 'trash') {
@@ -2325,7 +2359,9 @@ export function XDriveMediaGalleryPage({
       return
     }
     if (currentMemory) {
-      void loadMemories()
+      // Memory detail -> index keeps current authenticated photo wall until
+      // the real first list arrives, including weak-WAN failure/retry.
+      void loadMemories(mobileGalleryViewport ? () => {} : undefined)
       return
     }
     if (section === 'media-types' && activeMediaType) {
@@ -2939,7 +2975,8 @@ export function XDriveMediaGalleryPage({
     // until the target is genuinely available. The internal URL echo was
     // already marked committed in the onCommitted callback.
     const pendingCompactPhoto = mobileGalleryViewport &&
-      (nextSection === 'library' || nextSection === 'favorites')
+      (nextSection === 'library' || nextSection === 'favorites' ||
+       nextSection === 'memories')
     if (!pendingCompactPhoto) setMobileCollectionsOverview(false)
     if (nextSection === 'library' && !pendingCompactPhoto) void loadFirstPage(null, {})
     else selectSection(nextSection)
@@ -2985,7 +3022,10 @@ export function XDriveMediaGalleryPage({
       void loadSyncFolders()
     }
     if (section === 'memories' && !currentMemory) {
-      void loadMemories()
+      // Keep verified compact index cards and header until the actual
+      // refresh response is accepted; no decorative mid-refresh clearing.
+      void loadMemories(mobileGalleryViewport && memoriesReadState === 'ready'
+        ? () => {} : undefined)
       return
     }
     if (section === 'cleanup' && !currentCleanupReview) {
@@ -3302,6 +3342,10 @@ export function XDriveMediaGalleryPage({
             }
             if (next === 'cleanup') {
               void openCleanupFromCollections()
+              return
+            }
+            if (next === 'memories') {
+              selectSection(next)
               return
             }
           }
@@ -6854,7 +6898,7 @@ export function XDriveMediaGallery({
           onOpenSection={(next) => {
             // Trash is staged by the page controller until its first owner
             // range is authorized. The child must not hide Collections early.
-            if (next !== 'trash' && next !== 'cleanup' &&
+            if (next !== 'trash' && next !== 'cleanup' && next !== 'memories' &&
                 next !== 'library' && next !== 'favorites') {
               onMobileCollectionsOverviewChange?.(false)
             }
