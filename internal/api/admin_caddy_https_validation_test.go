@@ -52,3 +52,32 @@ func TestCaddyPrivateLANIPAndDualEntryIntent(t *testing.T) {
 		t.Fatal("accepted loopback pretending to be LAN")
 	}
 }
+
+func TestCaddyHTTPSPreflightConfigurationCompleteRequiresValidSavedIngress(t *testing.T) {
+	cases := []struct {
+		name        string
+		desired     adminCaddyHTTPSDesired
+		domainReady bool
+		pairReady   bool
+		want        bool
+	}{
+		{"no saved revision", adminCaddyHTTPSDesired{LANEnabled: true, LANIP: "192.168.2.4"}, false, false, false},
+		{"legacy both disabled", adminCaddyHTTPSDesired{Revision: 1}, false, false, false},
+		{"legacy invalid private IP", adminCaddyHTTPSDesired{Revision: 1, LANEnabled: true, LANIP: "8.8.8.8"}, false, false, false},
+		{"LAN only without AliDNS", adminCaddyHTTPSDesired{Revision: 1, LANEnabled: true, LANIP: "192.168.2.4"}, false, false, true},
+		{"domain only missing AliDNS", adminCaddyHTTPSDesired{Revision: 1, Enabled: true, Domain: "photos.example.com"}, true, false, false},
+		{"domain only with AliDNS", adminCaddyHTTPSDesired{Revision: 1, Enabled: true, Domain: "photos.example.com"}, true, true, true},
+		{"dual ingress missing AliDNS", adminCaddyHTTPSDesired{Revision: 1, Enabled: true, Domain: "photos.example.com", LANEnabled: true, LANIP: "192.168.2.4"}, true, false, false},
+		{"dual ingress with AliDNS", adminCaddyHTTPSDesired{Revision: 1, Enabled: true, Domain: "photos.example.com", LANEnabled: true, LANIP: "192.168.2.4"}, true, true, true},
+		{"enabled domain but invalid hostname", adminCaddyHTTPSDesired{Revision: 1, Enabled: true, Domain: "bad-domain"}, false, true, false},
+		{"disabled domain containing invalid stale value", adminCaddyHTTPSDesired{Revision: 1, Domain: "bad-domain", LANEnabled: true, LANIP: "192.168.2.4"}, false, false, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := caddyHTTPSPreflightConfigurationComplete(tt.desired, tt.domainReady, tt.pairReady)
+			if got != tt.want {
+				t.Fatalf("configuration_complete=%v want %v for %+v", got, tt.want, tt.desired)
+			}
+		})
+	}
+}

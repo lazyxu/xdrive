@@ -40,6 +40,17 @@ type adminCaddyPreflightDTO struct {
 	Checks                  []adminCaddyPreflightCheck `json:"checks"`
 }
 
+// A saved revision alone cannot make a Caddy HTTPS preflight complete:
+// historic rows may legitimately contain two disabled entries for migration.
+// A valid enabled ingress is mandatory; domain HTTPS additionally requires a
+// locally verified, decryptable DNS-01 credential pair. LAN-only needs no AliDNS.
+// This is configuration consistency ONLY, never a Host Apply authorization.
+func caddyHTTPSPreflightConfigurationComplete(desired adminCaddyHTTPSDesired, domainReady, pairReady bool) bool {
+	return desired.Revision > 0 &&
+		validCaddyIngressSelection(desired.Enabled, desired.Domain, desired.LANEnabled, desired.LANIP) &&
+		(!desired.Enabled || (domainReady && pairReady))
+}
+
 func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
@@ -62,10 +73,12 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	add := func(id, state, detail string) {
 		checks = append(checks, adminCaddyPreflightCheck{ID: id, State: state, Detail: detail})
 	}
-	if desired.Revision > 0 {
-		add("desired", "pass", "管理员期望配置已持久化；不代表实际网关状态")
-	} else {
+	if desired.Revision == 0 {
 		add("desired", "missing", "请先保存 HTTPS 启用或停用意图")
+	} else if !validCaddyIngressSelection(desired.Enabled, desired.Domain, desired.LANEnabled, desired.LANIP) {
+		add("desired", "blocked", "旧期望配置没有任何有效的 HTTPS 入口；请先启用并保存至少一个入口")
+	} else {
+		add("desired", "pass", "管理员期望配置已持久化；不代表实际网关状态")
 	}
 	domainReady := desired.Enabled && validCaddyHTTPSDomain(desired.Domain)
 	if action != "enable" {
@@ -120,7 +133,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	add("restricted-apply", "blocked", "尚无防失联、受限审计、版本绑定、回滚与生效证明的 Host Manager 应用协议")
 	add("public-https", "unknown", "本机观测不能证明公网 DNS、证书签发、端口及 WAN 可达性")
 
-	complete := desired.Revision > 0 && (!desired.Enabled || (domainReady && pairReady))
+	complete := caddyHTTPSPreflightConfigurationComplete(desired, domainReady, pairReady)
 	// Check again after plaintext validation and host observation. A
 	// concurrent administrator edit/rotation produces an explicit 409, not
 	// a mixed/stale positive preflight. This is NOT a host-apply CAS.
