@@ -1171,6 +1171,146 @@ class OfflineHostStageTest(unittest.TestCase):
         self.assertIn("admission.exclusive_private_lock(dirfd)", src)
         self.assertIn("pending.identity(os.fstat(lockfd))", src)
 
+
+    def inspect_private_original_anchor(self, staged, receipt_pin=None,
+                                        pending_pin=None):
+        directory = self.state / "caddy-https-admissions"
+        anchor_dir = directory / "rollback-anchor"
+        receipt_path = anchor_dir / "receipt.json"
+        journal = directory / "pending.json"
+        receipt_pin = receipt_pin if receipt_pin is not None else (
+            hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+            if receipt_path.is_file() else "0" * 64)
+        pending_pin = pending_pin if pending_pin is not None else (
+            hashlib.sha256(journal.read_bytes()).hexdigest()
+            if journal.is_file() else "0" * 64)
+        script = Path(__file__).with_name(
+            "caddy-https-host-rollback-anchor-verify.py")
+        cmd = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(
+                self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", staged["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", self.review_public_pin,
+            "--admission-dir", str(directory),
+            "--expected-pending-sha256", pending_pin,
+            "--expected-anchor-receipt-sha256", receipt_pin,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+        self.assertEqual(len(result.stdout.splitlines()), 1)
+        for secret in ("never-print-this", "192.168.2.4",
+                       str(self.root), "test-approval-key.pem"):
+            self.assertNotIn(secret, result.stdout + result.stderr)
+        return result.returncode, json.loads(result.stdout)
+
+    def test_private_anchor_readonly_reverification_is_source_exact(self):
+        status, staged = self.stage()
+        self.assertEqual(status, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        status, prepared, _ = self.make_private_rollback_anchor(staged)
+        self.assertEqual(status, 0)
+        before = tuple(path.read_bytes() for path in (
+            self.env, self.compose,
+            directory / "pending.json",
+            directory / "rollback-anchor" / "original.env",
+            directory / "rollback-anchor" / "original.compose",
+            directory / "rollback-anchor" / "receipt.json",
+        ))
+        status, result = self.inspect_private_original_anchor(staged)
+        self.assertEqual(status, 0)
+        self.assertEqual(result["state"],
+                         "host-rollback-anchor-reverified-unapplied")
+        self.assertIs(result["apply_supported"], False)
+        self.assertEqual(result["receipt_sha256"], prepared["receipt_sha256"])
+        self.assertEqual(result["desired_revision"], 7)
+        self.assertIn("bounded-caddy-restart-and-detached-watchdog-not-implemented",
+                      result["blockers"])
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 0)
+        self.assertEqual(before, tuple(path.read_bytes() for path in (
+            self.env, self.compose,
+            directory / "pending.json",
+            directory / "rollback-anchor" / "original.env",
+            directory / "rollback-anchor" / "original.compose",
+            directory / "rollback-anchor" / "receipt.json",
+        )))
+
+    def test_private_anchor_readonly_reverification_rejects_tamper(self):
+        status, staged = self.stage()
+        self.assertEqual(status, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 0)
+        anchor_dir = directory / "rollback-anchor"
+        receipt = anchor_dir / "receipt.json"
+        original_receipt = receipt.read_bytes()
+        original_env = (anchor_dir / "original.env").read_bytes()
+        self.assertEqual(self.inspect_private_original_anchor(
+            staged, receipt_pin="f" * 64)[0], 2)
+        self.assertEqual(self.inspect_private_original_anchor(
+            staged, pending_pin="f" * 64)[0], 2)
+        receipt.write_bytes(original_receipt + b"\n")
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+        receipt.write_bytes(original_receipt)
+        receipt.chmod(0o644)
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+        receipt.chmod(0o600)
+        env_copy = anchor_dir / "original.env"
+        env_copy.write_bytes(original_env + b"UNTRUSTED_CHANGE=1\n")
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+        env_copy.write_bytes(original_env)
+        env_copy.chmod(0o600)
+        receipt.rename(anchor_dir / "receipt-original")
+        receipt.symlink_to(anchor_dir / "receipt-original")
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+        receipt.unlink()
+        (anchor_dir / "receipt-original").rename(receipt)
+        anchor_dir.chmod(0o755)
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+        anchor_dir.chmod(0o700)
+        receipt.chmod(0o600)
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 0)
+        self.env.write_text(self.env.read_text() + "CHANGED_SINCE_ANCHOR=yes\n")
+        self.env.chmod(0o600)
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+
+    def test_private_anchor_reader_blocks_concurrent_writer_and_host_mutations(self):
+        import fcntl
+        status, staged = self.stage()
+        self.assertEqual(status, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 0)
+        lock = directory / ".intent.lock"
+        with lock.open("rb") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                self.assertEqual(self.inspect_private_original_anchor(staged)[0], 2)
+            finally:
+                fcntl.flock(held.fileno(), fcntl.LOCK_UN)
+        src = Path(__file__).with_name(
+            "caddy-https-host-rollback-anchor-verify.py").read_text()
+        for forbidden in (
+            "O_CREAT", "O_WRONLY", "O_TRUNC", "os.replace(",
+            "os.rename(", "os.unlink(", "subprocess.", "docker compose",
+            "docker restart", "docker stop", "requests.", "socket.",
+            "--insecure", '"apply_supported": True',
+        ):
+            self.assertNotIn(forbidden, src)
+        self.assertIn("fcntl.LOCK_SH | fcntl.LOCK_NB", src)
+        self.assertEqual(self.inspect_private_original_anchor(staged)[0], 0)
+
+
 if __name__ == "__main__":
     # NET-M5-C0: the existing server-validation entrypoint executes the real
     # isolated loopback TLS fixture without changing unrelated CI workflows.
