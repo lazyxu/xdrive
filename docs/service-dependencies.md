@@ -1,3 +1,7 @@
+## NET-M5-C2-L · 已部署 Caddy 仍显示快照缺失的升级兼容修复（2026-10-19）
+
+详细实现与安全边界：[既有 Caddy 部署的只读宿主观测兼容](caddy-existing-deployment-observation-netm5c2l.md)。原先安装新版 Host Control 脚本不会替换仍在运行的旧 Bash runner；旧 runner 能更新 `heartbeat`，却可能永远没有新增的 `caddy-runtime-status.json`。只读兼容观测器在版本不匹配时接管**Caddy 状态采样**而不触碰旧 Runner、Docker Compose、Caddy 配置或运行进程，直到新版主 Runner 恢复当前版本。应用内 HTTPS/AliDNS `#0` 仅指数据库尚无管理员管理修订，不表示现有宿主机没有 HTTPS/DNS 凭据；不自动导入或暴露原密钥。物理 HTTPS/WAN/CA、签名应用和回滚仍独立验收；`apply_supported=false`。
+
 ## GLOBAL-SD-KEY-001 · 「系统依赖」内部服务密钥自动托管（永久产品约束，2026-10-19）
 
 **固定产品规范：** [内部服务密钥生命周期 v1.0](system-dependencies-internal-service-key-policy.md)。xDrive 自有的签名、会话加密、服务身份等内部密钥必须由可信部署/Server 自动、安全地首次初始化并持久保存，跨副本共享且升级、重启、镜像替换和备份恢复不变。管理员只查看状态、来源、revision、公钥指纹、实际生效/阻断证据并执行经二次确认、审计和撤销的必要轮换；普通部署流程**不得要求运行 OpenSSL、填写内部密钥、修改源码常量或重新编译**。外部百度 Server AK/Browser AK、AliDNS 等第三方凭据不适用「自动生成供应商密钥」。
