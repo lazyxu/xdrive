@@ -536,6 +536,29 @@ export type XDriveBaiduJSAPIConfig = {
   >
 }
 
+/** Sanitized Administrator-only response. It does NOT authorize JSAPI runtime. */
+export type XDriveBaiduJSAPI4LoaderProbe = {
+  state: 'loader_accepted' | 'denied' | 'unavailable'
+  revision: number
+  checked_at: string
+  loader_accepted: boolean
+  runtime_enabled: false
+  detail: string
+}
+
+export function xDriveValidBaiduJSAPI4LoaderProbe(
+  input: unknown, expectedRevision: number,
+): input is XDriveBaiduJSAPI4LoaderProbe {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false
+  const v = input as Partial<XDriveBaiduJSAPI4LoaderProbe>
+  return Number.isSafeInteger(expectedRevision) && expectedRevision > 0 &&
+    (v.state === 'loader_accepted' || v.state === 'denied' || v.state === 'unavailable') &&
+    v.revision === expectedRevision && v.runtime_enabled === false &&
+    v.loader_accepted === (v.state === 'loader_accepted') &&
+    typeof v.checked_at === 'string' && Number.isFinite(Date.parse(v.checked_at)) &&
+    typeof v.detail === 'string' && v.detail.length <= 256
+}
+
 export type XDriveBaiduJSAPIUpdate = {
   desired_enabled: boolean
   revision: number

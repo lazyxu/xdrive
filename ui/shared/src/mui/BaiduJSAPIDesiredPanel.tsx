@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, FormControlLabel, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
-import type { XDriveBaiduJSAPIConfig, XDriveBaiduJSAPIUpdate } from '../service-dependencies'
+import {
+  xDriveValidBaiduJSAPI4LoaderProbe,
+  type XDriveBaiduJSAPI4LoaderProbe,
+  type XDriveBaiduJSAPIConfig,
+  type XDriveBaiduJSAPIUpdate,
+} from '../service-dependencies'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 
@@ -19,6 +24,7 @@ const releaseBlockerIDs = Object.keys(releaseBlockerLabels)
 export type XDriveBaiduJSAPIDesiredPort = {
   loadBaiduJSAPIConfig?: () => Promise<XDriveBaiduJSAPIConfig>
   saveBaiduJSAPIConfig?: (input: XDriveBaiduJSAPIUpdate) => Promise<XDriveBaiduJSAPIConfig>
+  verifyBaiduJSAPI4Loader?: (revision: number) => Promise<XDriveBaiduJSAPI4LoaderProbe>
 }
 
 function validConfig(value: unknown): value is XDriveBaiduJSAPIConfig {
@@ -57,6 +63,9 @@ export function XDriveBaiduJSAPIDesiredPanel({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [probeBusy, setProbeBusy] = useState(false)
+  const [probeResult, setProbeResult] = useState<XDriveBaiduJSAPI4LoaderProbe | null>(null)
+  const [probeError, setProbeError] = useState('')
   const generation = useRef(0)
   const dirty = Boolean(config && (config.desired_enabled !== enabled || newAK !== ''))
 
@@ -74,6 +83,9 @@ export function XDriveBaiduJSAPIDesiredPanel({
     setNotice('')
     setBusy(false)
     setConfirmClear(false)
+    setProbeBusy(false)
+    setProbeResult(null)
+    setProbeError('')
     setReading(true)
     if (!source.loadBaiduJSAPIConfig) {
       setReading(false)
@@ -119,6 +131,8 @@ export function XDriveBaiduJSAPIDesiredPanel({
       setConfig(result)
       setEnabled(result.desired_enabled)
       setNewAK('')
+      setProbeResult(null)
+      setProbeError('')
       setNotice('Browser AK 期望配置已加密保存。动态 JSAPI 4.0 仍须通过独立签名发布、资源清单和真实三端验收才会生效。')
     } catch {
       if (revision === generation.current) setError('保存失败；如其他管理员已修改修订，请重新打开此页面再试。')
@@ -127,6 +141,28 @@ export function XDriveBaiduJSAPIDesiredPanel({
         setBusy(false)
         setConfirmClear(false)
       }
+    }
+  }
+
+  const verifyLoader = async () => {
+    if (!source.verifyBaiduJSAPI4Loader || !config?.configured || !config.desired_enabled ||
+        config.revision <= 0 || probeBusy || busy) return
+    const revision = generation.current
+    const expected = config.revision
+    setProbeBusy(true)
+    setProbeResult(null)
+    setProbeError('')
+    try {
+      const result = await source.verifyBaiduJSAPI4Loader(expected)
+      if (revision !== generation.current) return
+      if (!xDriveValidBaiduJSAPI4LoaderProbe(result, expected)) throw new Error('invalid_probe')
+      setProbeResult(result)
+    } catch {
+      if (revision === generation.current) {
+        setProbeError('真实 Loader 检测失败、暂不可用或触发 30 秒冷却。请检查当前 Server 和审计日志后重试。')
+      }
+    } finally {
+      if (revision === generation.current) setProbeBusy(false)
     }
   }
 
@@ -188,6 +224,33 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 {' · '}Browser AK {config.configured ? '已保存' : '未配置'}
                 {' · '}期望{config.desired_enabled ? '开启' : '关闭'}
               </Typography>
+            )}
+            {config && (
+              <Stack spacing={1} data-xdrive-baidu-jsapi4-live-probe>
+                <Button size="small" variant="outlined" disabled={probeBusy || busy ||
+                  !source.verifyBaiduJSAPI4Loader || !config.configured ||
+                  !config.desired_enabled || config.revision <= 0}
+                  onClick={() => { void verifyLoader() }}>
+                  {probeBusy ? '正在检测真实 Loader…' : '检测真实百度 JSAPI 4.0 Loader'}
+                </Button>
+                <Typography variant="caption" color="text.secondary">
+                  管理员手动发起一次 Server→百度 HTTPS 请求，可能消耗 API 配额；
+                  不发送 AK 到浏览器，不执行地图脚本，不代表动态地图已开启。
+                  {config.configured && !config.desired_enabled ?
+                    ' 当前期望开关未开启，请先在配置页启用并保存。' : ''}
+                </Typography>
+                {probeResult && (
+                  <XDriveStatusAlert tone={probeResult.loader_accepted ? 'good' : 'bad'}>
+                    {probeResult.state === 'loader_accepted'
+                      ? '百度 Loader 真实响应校验通过；子资源、地图交互及签名发布仍需独立验证。'
+                      : probeResult.state === 'denied'
+                        ? '百度拒绝了 Loader 请求，请检查所配置权限和域名限制。'
+                        : 'Loader 本次不可用，请查看 Server 网络与审计状态。'}
+                    {' · '}检测时间：{probeResult.checked_at}
+                  </XDriveStatusAlert>
+                )}
+                {probeError && <XDriveStatusAlert tone="bad">{probeError}</XDriveStatusAlert>}
+              </Stack>
             )}
             {verified ? (
               <XDriveStatusAlert tone="good">当前 Server 返回已签名放行；仍须以真实三端地图交互和资源审计作为验收依据。</XDriveStatusAlert>

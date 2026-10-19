@@ -13,6 +13,40 @@ type desktopIPCBaiduJSAPIController interface {
 	CloudSetAdminBaiduJSAPIConfig(context.Context, client.AdminBaiduJSAPIUpdate) (client.AdminBaiduJSAPIConfig, error)
 }
 
+type desktopIPCBaiduJSAPIProbeController interface {
+	CloudVerifyAdminBaiduJSAPI4Loader(context.Context, uint64) (client.AdminBaiduJSAPI4LoaderProbe, error)
+}
+
+// Explicit, authenticated and bounded local IPC POST. The remote Server
+// independently enforces administrator ACL, revision, audit and rate limits.
+func (h *desktopIPCHandler) cloudVerifyAdminBaiduJSAPI4Loader(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCBaiduJSAPIProbeController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_baidu_jsapi_loader_unavailable",
+			"current Agent cannot verify JSAPI4 Loader")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSONLimit(w, r, &input, 128) {
+		return
+	}
+	if input.Revision == nil || *input.Revision == 0 || *input.Revision > 1<<60 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_baidu_jsapi_revision", "valid current revision required")
+		return
+	}
+	out, err := provider.CloudVerifyAdminBaiduJSAPI4Loader(r.Context(), *input.Revision)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
 type desktopIPCBaiduJSAPIInput struct {
 	DesiredEnabled *bool   `json:"desired_enabled"`
 	Revision       *uint64 `json:"revision"`

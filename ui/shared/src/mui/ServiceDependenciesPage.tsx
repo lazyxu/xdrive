@@ -76,6 +76,7 @@ export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMedia
   verifyBaiduMap?: (revision: number) => Promise<XDriveBaiduMapVerification>
   loadBaiduJSAPIConfig?: () => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
   saveBaiduJSAPIConfig?: (input: import('../service-dependencies').XDriveBaiduJSAPIUpdate) => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
+  verifyBaiduJSAPI4Loader?: (revision: number) => Promise<import('../service-dependencies').XDriveBaiduJSAPI4LoaderProbe>
   loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
   savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
   loadPhotoAutoRevisions?: () => Promise<XDrivePhotoAutoRevisionPage>

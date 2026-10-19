@@ -1028,6 +1028,12 @@ export class XDriveApi {
       { method: 'PUT', body: JSON.stringify(input), cache: 'no-store' },
     )
   }
+  adminVerifyBaiduJSAPI4Loader(revision: number) {
+    return this.request<import('../../ui/shared/src').XDriveBaiduJSAPI4LoaderProbe>(
+      '/api/v1/admin/services/baidu-jsapi/verify-loader',
+      { method: 'POST', body: JSON.stringify({ revision }), cache: 'no-store' },
+    )
+  }
   adminBaiduMapConfig() {
     return this.request<XDriveBaiduMapAdminConfig>('/api/v1/admin/services/baidu-map')
   }

@@ -1072,6 +1072,27 @@ func (c *Client) UpdateAdminBaiduJSAPIConfig(ctx context.Context, input AdminBai
 	return out, err
 }
 
+// Administrator-only fixed external Loader verification; never returns script bytes
+// or grants a signed dynamic map runtime release.
+type AdminBaiduJSAPI4LoaderProbe struct {
+	State          string    `json:"state"`
+	Revision       uint64    `json:"revision"`
+	CheckedAt      time.Time `json:"checked_at"`
+	LoaderAccepted bool      `json:"loader_accepted"`
+	RuntimeEnabled bool      `json:"runtime_enabled"`
+	Detail         string    `json:"detail"`
+}
+
+func (c *Client) VerifyAdminBaiduJSAPI4Loader(
+	ctx context.Context, revision uint64,
+) (AdminBaiduJSAPI4LoaderProbe, error) {
+	var out AdminBaiduJSAPI4LoaderProbe
+	err := c.json(ctx, http.MethodPost,
+		"/api/v1/admin/services/baidu-jsapi/verify-loader",
+		map[string]uint64{"revision": revision}, &out)
+	return out, err
+}
+
 type ServiceDependenciesSnapshot struct {
 	CheckedAt string              `json:"checked_at"`
 	Services  []ServiceDependency `json:"services"`
