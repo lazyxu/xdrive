@@ -15,19 +15,16 @@ import (
 //
 // Preconditions:
 //   - Independently reviewed and source-pinned COMPLETE JSAPI4 child inventory.
-//   - A trusted production Ed25519 operator root and fresh signed release,
-//     bound to the current build/policy/trusted origin/AK revision/epoch.
+//   - The existing auto-managed, encrypted Ed25519 installation identity and
+//     a fresh signed release bound to build/policy/origin/AK revision/epoch.
 //   - The caller independently derives the expected scope from CURRENT Server
 //     state (not from HTTP arguments) and supplies an installation-persistent,
 //     Server-only >=32 byte map Cookie key.
 //   - All map resource paths are code-allowlisted and Owner/session/cookie
 //     proofs are verified anew on every request.
 //
-// There is intentionally NO public Router binding or session issuer until
-// those external authorizations and all child JS/tile/font/WASM shapes pass
-// real Browser+upstream HAR and three-platform review. In the shipped build
-// the pinned production key and reviewed child inventory remain EMPTY, so
-// this method fails before any Browser AK access, network or quota charge.
+// Real Loader and Session routes remain blocked while source-reviewed child
+// JS/tile/font/WASM shapes are absent. Auto signing NEVER approves children.
 func (s *Server) baiduJSAPI4SignedLiveLoader(
 	ctx context.Context, request *http.Request, cookieKey []byte,
 	release baidumapjsapi.JSAPI4ReleaseAttestation,
@@ -41,8 +38,7 @@ func (s *Server) baiduJSAPI4SignedLiveLoader(
 	// The existing hard-closed legacy boolean guard is NOT release proof.
 	// Only this scoped signed authority path can ever reach real transport.
 	now := time.Now().UTC()
-	if baidumapjsapi.VerifyPinnedJSAPI4ProductionRelease(
-		release, currentScope, now) != nil {
+	if s.verifyBaiduJSAPI4ManagedRelease(ctx, release, currentScope, cookieKey) != nil {
 		return nil, nil, denied
 	}
 	if _, err := baidumapjsapi.ReviewJSAPI4ResourceRequest(request); err != nil {

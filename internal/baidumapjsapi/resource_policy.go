@@ -2,6 +2,8 @@ package baidumapjsapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 )
 
@@ -114,4 +116,28 @@ func JSAPI4ProductionResourceGate(ctx context.Context, req *http.Request, gates 
 	// release decision, or current Owner permission. A later separately
 	// reviewed implementation must verify those facts before opening this.
 	return ErrGateClosed
+}
+
+// JSAPI4ApprovedPolicySHA256 identifies the immutable compiled reviewed
+// resource graph. Missing children have no policy hash and cannot be
+// transformed into runtime permission by an operator checkbox or wildcard.
+func JSAPI4ApprovedPolicySHA256() ([32]byte, bool) {
+	if !JSAPI4ChildInventoryComplete() {
+		return [32]byte{}, false
+	}
+	payload, err := json.Marshal(struct {
+		Domain   string
+		Revision string
+		Loader   string
+		Children []JSAPI4ChildCandidate
+	}{
+		Domain:   "xdrive/baidu-jsapi4/source-policy/v1",
+		Revision: reviewedJSAPI4ChildInventoryRevision,
+		Loader:   LoaderPath + "?v=4.0",
+		Children: sourceReviewedJSAPI4Children,
+	})
+	if err != nil {
+		return [32]byte{}, false
+	}
+	return sha256.Sum256(payload), true
 }

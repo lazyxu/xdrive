@@ -26,7 +26,7 @@ func TestBaiduJSAPI4ReleaseReadinessActualSourceGates(t *testing.T) {
 	want := []string{
 		baiduJSAPI4MissingBrowserAK, baiduJSAPI4DesiredDisabled,
 		baiduJSAPI4EncryptionMissing, baiduJSAPI4HTTPSOriginInvalid,
-		baiduJSAPI4SignerUnpinned, baiduJSAPI4ResourcesUnreviewed,
+		baiduJSAPI4SignerUnavailable, baiduJSAPI4ResourcesUnreviewed,
 	}
 	got := server.baiduJSAPI4ReleaseBlockers(empty, false)
 	if len(got) != len(want) {
@@ -43,9 +43,8 @@ func TestBaiduJSAPI4ReleaseReadinessActualSourceGates(t *testing.T) {
 	}, false)
 	if hasBaiduJSAPI4Blocker(desired, baiduJSAPI4MissingBrowserAK) ||
 		hasBaiduJSAPI4Blocker(desired, baiduJSAPI4DesiredDisabled) ||
-		!hasBaiduJSAPI4Blocker(desired, baiduJSAPI4SignerUnpinned) ||
+		!hasBaiduJSAPI4Blocker(desired, baiduJSAPI4SignerUnavailable) ||
 		!hasBaiduJSAPI4Blocker(desired, baiduJSAPI4ResourcesUnreviewed) ||
-		baidumapjsapi.JSAPI4ProductionSignerPinned() ||
 		baidumapjsapi.JSAPI4ChildInventoryComplete() {
 		t.Fatalf("unreviewed policy activated by admin desired intent: %v", desired)
 	}
@@ -67,7 +66,7 @@ func TestBaiduJSAPI4AdminReadinessIsNoStoreAndAKFree(t *testing.T) {
 	if out.Code != http.StatusOK || !ok ||
 		len(blockersAny) < 4 || raw["runtime_enabled"] != false ||
 		raw["activation_state"] != "blocked_pending_licence_and_proxy" ||
-		!strings.Contains(out.Body.String(), baiduJSAPI4SignerUnpinned) ||
+		!strings.Contains(out.Body.String(), baiduJSAPI4SignerUnavailable) ||
 		!strings.Contains(out.Body.String(), baiduJSAPI4ResourcesUnreviewed) ||
 		strings.Contains(out.Body.String(), server.BaiduMapAK) ||
 		out.Header().Get("Cache-Control") != "no-store" {

@@ -39,7 +39,8 @@ test('A3 Go binds only one reviewed map resource and a Bearer-authenticated mint
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   const signed = read('internal/baidumapjsapi/release_attestation.go')
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
-  assert.match(signed, /jsapi4PinnedProductionPublicKey = ""/)
+  assert.match(read('internal/api/baidu_jsapi4_managed_runtime.go'), /verifyBaiduJSAPI4ManagedRelease\(/)
+  assert.match(signed, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('internal/api/baidu_jsapi_config.go'),
     /RuntimeEnabled:\s+approved/)
 })

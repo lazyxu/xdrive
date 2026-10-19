@@ -9,12 +9,16 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8')
 test('A3c18 owner-safe Server release reasons cannot enable the map', () => {
   const api = read('internal/api/baidu_jsapi_config.go')
   const report = read('internal/api/baidu_jsapi4_release_readiness.go')
+  const managed = read('internal/api/baidu_jsapi4_managed_runtime.go')
+  assert.match(managed, /loadBaiduJSAPI4ManagedMaterials\(/)
+  assert.match(managed, /JSAPI4ApprovedPolicySHA256\(/)
+  assert.match(managed, /RefreshBaiduJSAPI4ManagedRelease\(/)
   assert.match(api, /ReleaseBlockers:\s+s\.baiduJSAPI4ReleaseBlockers\(cfg, approved\)/)
-  assert.match(report, /JSAPI4ProductionSignerPinned\(\)/)
+  assert.match(report, /baiduJSAPI4ManagedSignerReady\(\)/)
   assert.match(report, /JSAPI4ChildInventoryComplete\(\)/)
   assert.match(report, /TrustedProxyBase\(s\.AllowedOrigin\)/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
-    /jsapi4PinnedProductionPublicKey = ""/)
+    /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
     /reviewedJSAPI4ChildResourceCount = 0/)
   assert.doesNotMatch(report, /os\.Getenv|http\.Get|window\.|browser_ak\s*:/)

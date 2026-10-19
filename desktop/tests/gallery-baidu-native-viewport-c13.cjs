@@ -52,7 +52,7 @@ test('A3c13 release remains NO-GO without signed reviewed Baidu resources', () =
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
     /reviewedJSAPI4ChildResourceCount = 0/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
-    /jsapi4PinnedProductionPublicKey = ""/)
+    /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('ui/shared/src/models.ts'), /coordinate_space: 'bd09ll'/)
   assert.match(read('ui/shared/src/models.ts'), /index_scope: 'explicit_opt_in_only'/)
   assert.doesNotMatch(read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),

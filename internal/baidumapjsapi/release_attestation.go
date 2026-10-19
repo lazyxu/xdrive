@@ -3,7 +3,6 @@ package baidumapjsapi
 import (
 	"crypto/ed25519"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"time"
@@ -18,9 +17,6 @@ const (
 	jsapi4RequiredPlatforms  byte = 0b111 // Web, Mobile Web, Desktop
 	jsapi4MaxReleaseValidity      = 5 * time.Minute
 	jsapi4ReleaseDomain           = "xdrive/baidu-jsapi4/operator-release/v1\x00"
-	// Deliberately unprovisioned: no operator-approved signing authority or
-	// source-reviewed complete JSAPI4 inventory exists in production.
-	jsapi4PinnedProductionPublicKey = ""
 )
 
 var errJSAPI4ReleaseProofDenied = errors.New("jsapi release attestation unavailable")
@@ -103,33 +99,41 @@ func verifyJSAPI4ReleaseAttestation(a JSAPI4ReleaseAttestation, trustedKey ed255
 	return nil
 }
 
-// VerifyPinnedJSAPI4ProductionRelease validates the operator's actual
-// source-pinned Ed25519 public key, a COMPLETE independently reviewed child
-// inventory and the exact current Server build/policy/origin/Browser AK/epoch
-// scope. A signature is not a provider licence: release metadata must only be
-// pinned after separate legal and raw-HAR audits and Server policy review.
-// Empty/invalid pin and incomplete inventory always fail closed.
-// Never accept this key from an administrator field or browser request.
-func VerifyPinnedJSAPI4ProductionRelease(a JSAPI4ReleaseAttestation, expected JSAPI4ReleaseScope, now time.Time) error {
-	if jsapi4PinnedProductionPublicKey == "" || !JSAPI4ChildInventoryComplete() {
-		return ErrGateClosed
+// SignManagedJSAPI4Release uses the durable encrypted instance Ed25519
+// identity to sign a CURRENT Server build/policy/origin/AK/epoch scope. A
+// signature is NOT permission: unreviewed resources still fail closed.
+func SignManagedJSAPI4Release(private []byte, expected JSAPI4ReleaseScope, now time.Time) (JSAPI4ReleaseAttestation, error) {
+	var denied JSAPI4ReleaseAttestation
+	if len(private) != ed25519.PrivateKeySize || !jsapi4ReleaseScopeValid(expected) ||
+		now.IsZero() || now.Unix() <= 0 {
+		return denied, ErrGateClosed
 	}
-	key, err := base64.StdEncoding.Strict().DecodeString(jsapi4PinnedProductionPublicKey)
-	if err != nil || len(key) != ed25519.PublicKeySize {
-		return ErrGateClosed
+	derived := ed25519.NewKeyFromSeed(private[:ed25519.SeedSize])
+	defer clear(derived)
+	if subtle.ConstantTimeCompare(derived, private) != 1 {
+		return denied, ErrGateClosed
 	}
-	if verifyJSAPI4ReleaseAttestation(a, ed25519.PublicKey(key), expected, now) != nil {
+	a := JSAPI4ReleaseAttestation{
+		Format: jsapi4ReleaseFormat, Scope: expected,
+		PlatformMask: jsapi4RequiredPlatforms,
+		IssuedUnix:   now.Unix(), ExpiresUnix: now.Add(4 * time.Minute).Unix(),
+	}
+	message := jsapi4ReleaseMessage(a)
+	defer clear(message)
+	signature := ed25519.Sign(ed25519.PrivateKey(private), message)
+	defer clear(signature)
+	copy(a.Signature[:], signature)
+	return a, nil
+}
+
+// The public key MUST be loaded by the Server from its authenticated
+// persisted encrypted identity and fingerprint anchor, NEVER supplied by
+// browser/Admin input. Complete source-reviewed resources remain mandatory.
+func VerifyManagedJSAPI4ProductionRelease(a JSAPI4ReleaseAttestation, expected JSAPI4ReleaseScope,
+	trustedPublic ed25519.PublicKey, now time.Time) error {
+	if !JSAPI4ChildInventoryComplete() ||
+		verifyJSAPI4ReleaseAttestation(a, trustedPublic, expected, now) != nil {
 		return ErrGateClosed
 	}
 	return nil
-}
-
-// JSAPI4ProductionSignerPinned checks ONLY the syntax of the build-pinned
-// Ed25519 public key. It is not a licence, operator approval or live release.
-func JSAPI4ProductionSignerPinned() bool {
-	if jsapi4PinnedProductionPublicKey == "" {
-		return false
-	}
-	key, err := base64.StdEncoding.Strict().DecodeString(jsapi4PinnedProductionPublicKey)
-	return err == nil && len(key) == ed25519.PublicKeySize
 }

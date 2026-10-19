@@ -50,6 +50,7 @@ test('A3c12 shared mobile/wide configuration never labels saved intent as entitl
   assert.match(parent, /baiduJSAPIDirty/)
   assert.match(parent, /XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
-  assert.match(pin, /jsapi4PinnedProductionPublicKey = ""/)
+  assert.match(read('internal/api/baidu_jsapi4_managed_runtime.go'), /StartBaiduJSAPI4ManagedRelease\(/)
+  assert.match(pin, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.doesNotMatch(component, /_BMapSecurityConfig|\.src\s*=|fetch\(/)
 })
