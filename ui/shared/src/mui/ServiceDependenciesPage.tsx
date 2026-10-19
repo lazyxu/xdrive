@@ -223,9 +223,13 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
     configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知',
     installationStateLabels[service.installation_state ?? 'unknown'] ?? '部署未确认',
     healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认',
-    service.id === 'background-worker' && service.activation_state === 'verified'
-      ? '已观测的在线 Pull Worker 均确认目标修订（不代表全部部署实例）'
-      : activationStateLabels[service.activation_state ?? 'unknown'] ?? '生效未确认',
+    service.id === 'caddy' && service.activation_state === 'deployment-only'
+      ? (service.installation_state === 'observed'
+        ? '已观测到宿主网关；应用内目标修订仍须单独验证，不代表自动应用'
+        : '当前缺少可信网关观测；不能因此判定原有 Caddy 未部署')
+      : service.id === 'background-worker' && service.activation_state === 'verified'
+        ? '已观测的在线 Pull Worker 均确认目标修订（不代表全部部署实例）'
+        : activationStateLabels[service.activation_state ?? 'unknown'] ?? '生效未确认',
   ]
   return (
     <Box

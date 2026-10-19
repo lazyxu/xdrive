@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT
+trap 'if [[ -f "$scratch/state/control/caddy-observer.pid" ]]; then : > "$scratch/state/control/caddy-observer-stop"; sleep 2; fi; rm -rf "$scratch"' EXIT
 export XD_CONFIG_DIR="$scratch"
 export XD_CADDY_TEST_FIXTURE="$scratch/caddy-health"
 export XD_CADDY_RUNTIME_DOMAIN_FIXTURE="$scratch/caddy-runtime-domain"
@@ -384,4 +384,46 @@ test "$(json_bool_value "$status" lan_https_configured)" = false
 rm -f "$XD_CADDY_TEST_FIXTURE"
 caddy_host_refresh
 test "$(json_value "$status" state)" = unknown
-echo "Caddy fixed runtime health, process-generation and double config-sample fences, TLS, startup Env, fail-closed privacy: OK"
+
+# An existing deployment may still have a live OLD Bash Host Control daemon
+# after the installer atomically replaced the script. Its heartbeat can be
+# fresh but a new Caddy runtime snapshot is never generated. The new installer
+# must supply one independently locked, READ-ONLY observer instead of killing
+# the old runner (which could be performing a server update).
+mkdir -p "$scratch/bin"
+cp "$ROOT/scripts/server-control.sh" "$scratch/bin/server-control.sh"
+chmod 0700 "$scratch/bin/server-control.sh"
+printf 'XD_DOMAIN=\n' > "$scratch/config/.env"
+printf 'true|healthy\n' > "$XD_CADDY_TEST_FIXTURE"
+printf '%s\n' "$BASHPID" > "$dir/runner.pid"
+rm -f -- "$dir/caddy-runner-source.sha" "$status"
+printf '{"update":"must-not-interrupt"}\n' > "$dir/active.json"
+original_active_sha="$(sha256sum "$dir/active.json" | awk '{print $1}')"
+start_cmd
+for _ in {1..100}; do
+  [[ -s "$status" ]] && break
+  sleep 0.1
+done
+[[ -s "$status" ]] || { echo "legacy Host Control kept heartbeat but no new Caddy snapshot" >&2; exit 1; }
+test "$(json_value "$status" state)" = healthy
+test "$(json_bool_value "$status" tls_check_supported)" = true
+test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
+test -f "$dir/caddy-observer.pid"
+# A cooperative observer stop is NOT a Caddy or Host Control stop.
+: > "$dir/caddy-observer-stop"
+for _ in {1..80}; do
+  [[ ! -e "$dir/caddy-observer.pid" ]] && break
+  sleep 0.1
+done
+test ! -e "$dir/caddy-observer.pid"
+test -f "$dir/runner.pid"
+test -f "$dir/active.json"
+# A current-source Host Control daemon needs no duplicate Caddy observer.
+printf '%s|%s\n' "$BASHPID" "$(caddy_host_control_script_sha)" > "$dir/caddy-runner-source.sha"
+caddy_host_control_current_runner "$dir" "$BASHPID"
+rm -f -- "$status"
+start_cmd
+test ! -e "$dir/caddy-observer.pid"
+test ! -e "$status"
+rm -f -- "$dir/active.json" "$dir/runner.pid" "$dir/caddy-runner-source.sha"
+echo "Caddy fixed runtime health, process-generation and double config-sample fences, TLS, startup Env, read-only legacy runner compatibility, fail-closed privacy: OK"

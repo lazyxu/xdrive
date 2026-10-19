@@ -1444,6 +1444,100 @@ photo_intelligence_host_refresh() {
   mv -f "$tmp" "$dir/photo-intelligence-runtime-status.json"
 }
 
+
+# A running Bash process keeps the code loaded when it was started. An
+# upgrade installs a NEW server-control.sh but does not replace an existing
+# long-running Host Control daemon (which may be processing an update).
+# The fixed SHA marker is ONLY a read-only source-identity hint. It never
+# authorizes a Host action, grants a session or exposes secret material.
+caddy_host_control_script_sha() {
+  local digest
+  [[ -f "$BIN_DIR/server-control.sh" && ! -L "$BIN_DIR/server-control.sh" ]] || return 1
+  digest="$(sha256sum "$BIN_DIR/server-control.sh" 2>/dev/null | awk '{print $1}')" || return 1
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$digest"
+}
+
+caddy_host_control_current_runner() {
+  local dir="$1" pid="$2" sha marker
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  sha="$(caddy_host_control_script_sha)" || return 1
+  marker="$(cat "$dir/caddy-runner-source.sha" 2>/dev/null)" || return 1
+  [[ "$marker" == "$pid|$sha" ]]
+}
+
+caddy_host_control_mark_runner() {
+  local dir="$1" sha tmp
+  sha="$(caddy_host_control_script_sha)" || return 1
+  tmp="$(mktemp "$dir/.caddy-runner-source.XXXXXX")" || return 1
+  if ! printf '%s|%s\n' "$BASHPID" "$sha" > "$tmp" ||
+      ! chmod 0660 "$tmp" ||
+      ! mv -f "$tmp" "$dir/caddy-runner-source.sha"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+# This separate observer is needed ONLY when an older Host Control runner
+# is still alive after a script upgrade. It never calls Compose up/down,
+# restarts Caddy, edits .env, reveals credentials or consumes Host Pending.
+# flock guarantees at most one supplemental Caddy-only observer.
+caddy_compat_observe_cmd() {
+  [[ $# -eq 0 ]] || { echo "usage: server-control.sh caddy-observe" >&2; return 2; }
+  local dir sha current pid i
+  command -v flock >/dev/null 2>&1 || return 1
+  dir="$(prepare_dir)"
+  sha="$(caddy_host_control_script_sha)" || return 1
+  exec 7>"$dir/caddy-observer.lock"
+  flock -n 7 || return 0
+  printf '%s\n' "$BASHPID" > "$dir/caddy-observer.pid"
+  chmod 0660 "$dir/caddy-observer.pid"
+  # EXIT runs after local variables leave scope; retain only a private
+  # observer PID-file path, never paths/credentials from Caddy.
+  CADDY_OBSERVER_PID_FILE="$dir/caddy-observer.pid"
+  trap 'if [[ -n "${CADDY_OBSERVER_PID_FILE:-}" && "$(cat "$CADDY_OBSERVER_PID_FILE" 2>/dev/null || true)" == "$BASHPID" ]]; then rm -f -- "$CADDY_OBSERVER_PID_FILE"; fi' EXIT
+  trap 'exit 0' INT TERM
+  while true; do
+    [[ ! -e "$dir/caddy-observer-stop" ]] || return 0
+    current="$(caddy_host_control_script_sha)" || current=""
+    if [[ "$current" != "$sha" ]]; then
+      # The installed source changed again during an upgrade. Release our
+      # own lock before loading the newest read-only observation logic.
+      flock -u 7
+      exec env XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" caddy-observe
+    fi
+    pid="$(cat "$dir/runner.pid" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null &&
+        caddy_host_control_current_runner "$dir" "$pid"; then
+      return 0
+    fi
+    if ! caddy_host_refresh; then
+      # The original snapshot reader will remain fail-closed. Do not emit
+      # raw Docker/openssl/curl output, private paths, domain or credentials.
+      echo "xDrive Caddy read-only observation unavailable" >&2
+    fi
+    [[ "${XD_CADDY_OBSERVER_ONCE:-0}" != 1 ]] || return 0
+    for i in {1..15}; do
+      [[ ! -e "$dir/caddy-observer-stop" ]] || return 0
+      sleep 1
+    done
+  done
+}
+
+start_caddy_compat_observer() {
+  local dir="$1"
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "xDrive: Caddy read-only upgrade observer requires flock." >&2
+    return 1
+  fi
+  rm -f -- "$dir/caddy-observer-stop"
+  # The ordinary runner owns updates. This subprocess owns only fresh
+  # sanitized Caddy observations; neither can terminate the other.
+  nohup env XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" caddy-observe \
+    >>"$LOG_DIR/caddy-observer.log" 2>&1 </dev/null 9>&- &
+  echo "Caddy read-only observer launched for the older Host Control runtime."
+}
+
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
@@ -1476,6 +1570,9 @@ serve_cmd() {
   CONTROL_LOCK_DIR="$lock_dir"
   trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
   trap 'exit 0' INT TERM
+  # Identify the code that THIS daemon actually loaded. A new installer
+  # can then detect an older live runner without killing a running update.
+  caddy_host_control_mark_runner "$dir" || true
 
   # An interrupted media activation is never acknowledged after a runner crash.
   if [[ -f "$dir/media-worker-control-active.json" ]]; then
@@ -1573,9 +1670,16 @@ start_cmd() {
   pid_file="$dir/runner.pid"
   pid="$(cat "$pid_file" 2>/dev/null || true)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    # A previously installed Caddy may be healthy while an older Bash runner
+    # still emits heartbeat but has NO caddy-runtime-status.json producer.
+    # Never interrupt that process (it could be in a live server update).
+    if ! caddy_host_control_current_runner "$dir" "$pid"; then
+      start_caddy_compat_observer "$dir" || true
+    fi
     echo "Host control already running (pid $pid)."
     return 0
   fi
+  rm -f -- "$dir/caddy-observer-stop"
   rm -f "$pid_file"
   # The installer owns transaction lock fd 9. A long-lived background
   # runner must not inherit it, otherwise all later updates remain locked.
@@ -1594,6 +1698,9 @@ stop_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh stop" >&2; return 2; }
   local dir pid_file pid
   dir="$(control_dir)"
+  # Stop the supplemental read-only observer cooperatively, without signaling
+  # a potentially unrelated PID and without touching Docker or Caddy.
+  if [[ -d "$dir" ]]; then : > "$dir/caddy-observer-stop"; fi
   pid_file="$dir/runner.pid"
   pid="$(cat "$pid_file" 2>/dev/null || true)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
@@ -1642,8 +1749,9 @@ case "$cmd" in
   install) install_cmd "$@" ;;
   start) start_cmd "$@" ;;
   serve) serve_cmd "$@" ;;
+  caddy-observe) caddy_compat_observe_cmd "$@" ;;
   stop) stop_cmd "$@" ;;
   status) status_cmd "$@" ;;
   remove-schedule) remove_schedule ;;
-  *) echo "usage: server-control.sh <install|start|serve|stop|status|remove-schedule>" >&2; exit 2 ;;
+  *) echo "usage: server-control.sh <install|start|serve|caddy-observe|stop|status|remove-schedule>" >&2; exit 2 ;;
 esac

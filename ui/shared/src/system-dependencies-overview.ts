@@ -48,7 +48,12 @@ export function xDriveSystemDependencyOverviewSignals(
   const health = service.health_state === 'ready'
     ? '正常' : service.health_state === 'failed' ? '异常'
       : service.health_state === 'not-checked' ? '未检测' : '未确认'
-  const activation = service.activation_state === 'verified'
+  // A healthy existing Caddy deployment is observed even when it has NO
+  // administrator-saved desired revision. Never call that a completed Apply.
+  const activation = service.id === 'caddy' &&
+    service.installation_state === 'observed' &&
+    service.activation_state === 'deployment-only'
+    ? '宿主已观测' : service.activation_state === 'verified'
     ? '已核验' : service.activation_state === 'local-effective' ? '本机读取'
       : service.activation_state === 'pending' ? '待生效'
         : service.activation_state === 'deployment-only' ? '需受控部署' : '未核验'
