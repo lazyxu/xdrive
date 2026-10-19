@@ -22,7 +22,7 @@ import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOvervie
 import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
-import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
@@ -518,14 +518,18 @@ export function XDriveServiceDependenciesPage({
   const unsavedRef = useRef(false)
   const resetKeyRef = useRef(navigationResetKey)
   const externalLocationKey = xDriveSystemDependenciesLocationKey(location ?? {})
-  const [snapshot, setSnapshot] = useState<XDriveServiceDependenciesSnapshot | null>(null)
+  const [snapshotState, setSnapshot] = useState<XDriveServiceDependenciesSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   // Keep a successfully loaded inventory mounted during status-only refresh.
   // Only an actual server/account source change may discard the old snapshot.
   const snapshotSourceRef = useRef<XDriveServiceDependenciesPort | null>(null)
   const cachedSnapshotRef = useRef<XDriveServiceDependenciesSnapshot | null>(null)
+  // Fence the read during render: a changed Server/Owner cannot paint a
+  // previous account's saved health snapshot even before effects run.
+  const snapshot = snapshotSourceRef.current === source ? snapshotState : null
   const [error, setError] = useState('')
+  const visibleError = snapshotSourceRef.current === source ? error : ''
   const [refreshID, setRefreshID] = useState(0)
   // Local HTTPS/AliDNS edits invalidate sibling preflight and read-auth proof
   // without resetting the editing panel's saved acknowledgement or draft.
@@ -1294,6 +1298,7 @@ export function XDriveServiceDependenciesPage({
     }
   }
 
+  const coldReadPending = !snapshot && !visibleError
   const checkedAt = snapshot?.checked_at
     ? new Date(snapshot.checked_at).toLocaleString()
     : ''
@@ -1351,23 +1356,22 @@ export function XDriveServiceDependenciesPage({
           startIcon={<RefreshRoundedIcon fontSize="small" />}
           onClick={() => setRefreshID((value) => value + 1)}
           disabled={loading || refreshing || unsavedRef.current}
+          aria-busy={refreshing || undefined}
+          sx={{ minWidth: 112 }}
         >
-          {refreshing ? '正在刷新…' : '刷新状态'}
+          刷新状态
         </Button>
       )}
     >
       <Stack spacing={2.5} data-xdrive-admin-service-dependencies>
-        <Typography variant="body2" color="text.secondary">
-          {loading
-            ? '正在检查服务…'
-            : snapshot
-              ? '最近检测：' + checkedAt + ' · 服务状态快照' +
-                (refreshing ? ' · 正在刷新（当前保留上次成功结果）' : '')
-              : '尚未取得服务检测结果'}
+        <Typography variant="body2" color="text.secondary" role="status"
+          data-xdrive-system-dependencies-quiet-status
+          sx={{ minHeight: 24 }}>
+          {snapshot ? '最近检测：' + checkedAt + ' · 服务状态快照'
+            : coldReadPending ? '' : '尚未取得服务检测结果'}
         </Typography>
-        {loading && <CircularProgress size={22} aria-label="正在加载服务状态" />}
-        {error && <XDriveStatusAlert tone="bad">
-          {snapshot ? '刷新失败，当前显示上次成功检测的快照，状态可能已过期：' : ''}{error}
+        {visibleError && <XDriveStatusAlert tone="bad">
+          {snapshot ? '刷新失败，当前显示上次成功检测的快照，状态可能已过期：' : ''}{visibleError}
         </XDriveStatusAlert>}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
           <Box component="nav" aria-label="系统依赖页内导航" sx={{
@@ -1426,6 +1430,11 @@ export function XDriveServiceDependenciesPage({
                   ? [<MenuItem key="photo-auto" value="photo-auto">全局分析策略</MenuItem>] : []),
               ])}
             </TextField>
+            {!snapshot && (
+              <Box data-xdrive-system-dependencies-cold-slot
+                aria-busy={coldReadPending || undefined}
+                sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
+            )}
             {!loading && snapshot && selectedPage === 'overview' && (
               <Box component="section" aria-label="系统依赖总览" data-xdrive-system-dependencies-overview>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
