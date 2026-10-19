@@ -39,11 +39,16 @@ test('both Web and Desktop retain the same authenticated shared Search/Range and
     assert.ok(src.includes('onRetry: () => { void retrySearch() }'),name)
     assert.ok(src.includes('api.searchRange') || src.includes('cloudSearch'),name)
   }
-  assert.ok(shared.includes("globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)"))
+  assert.ok(shared.includes("import { useXDriveDeferredLoading } from './useDeferredLoading'"))
   assert.ok(shared.includes('refreshFeedbackPending = loading && logicalItemCount > 0'),
-    'only populated-list refresh may schedule decorative progress')
-  assert.ok(shared.includes('showDelayedLoading = refreshFeedbackPending &&'),
-    'the existing 2px true refresh overlay remains available')
+    'only populated-list refresh may schedule the real subtle progress')
+  assert.ok(shared.includes('refreshFeedbackCycleRef.current.pending !== refreshFeedbackPending') &&
+    shared.includes('refreshFeedbackCycleRef.current.scope !== interactionScopeKey'),
+    'same-scope rapid refresh must not leak the old visual state into its first render')
+  assert.ok(shared.includes('showDelayedLoading = useXDriveDeferredLoading('),
+    'the original request-generation-fenced 2px true refresh remains available')
+  assert.equal(shared.includes('setDelayedLoadingScope'), false,
+    'obsolete string-timer source assertion must not invite a stale after-paint spinner')
   assert.ok(shared.includes('XDriveFileExplorerThumbnail'), 'actual thumbnail bytes/progress not replaced')
   assert.ok(column.includes('aria-busy={state.loading || undefined}'),
     'Column exposes actual pending Range without a decorative navigation overlay')

@@ -116,6 +116,7 @@ import type {
   XDriveFileExplorerGrouping,
 } from '../file-explorer-grouping'
 import { XDriveStatePanel } from './StatePanel'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 import { useXDrivePointerDrag } from './usePointerDrag'
 import type { XDrivePointerDragPoint } from './usePointerDrag'
@@ -1532,17 +1533,22 @@ export function XDriveFileExplorer({
   const keepAcceptedEmpty = logicalItemCount === 0 &&
     acceptedEmptyScopeRef.current === interactionScopeKey
   const refreshFeedbackPending = loading && logicalItemCount > 0
-  const [delayedLoadingScope, setDelayedLoadingScope] = useState<string | null>(null)
-  useEffect(() => {
-    if (!refreshFeedbackPending) {
-      setDelayedLoadingScope(null)
-      return
+  // Presentation-only feedback must belong to this exact pending cycle and
+  // directory scope. Clearing a string in useEffect happens AFTER paint and
+  // can flash the previous refresh's 2px bar for one stale frame when the
+  // same folder is quickly refreshed twice.
+  const refreshFeedbackCycleRef = useRef({
+    pending: refreshFeedbackPending, scope: interactionScopeKey, generation: 0,
+  })
+  if (refreshFeedbackCycleRef.current.pending !== refreshFeedbackPending ||
+      refreshFeedbackCycleRef.current.scope !== interactionScopeKey) {
+    refreshFeedbackCycleRef.current = {
+      pending: refreshFeedbackPending, scope: interactionScopeKey,
+      generation: refreshFeedbackCycleRef.current.generation + 1,
     }
-    const timer = globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)
-    return () => globalThis.clearTimeout(timer)
-  }, [interactionScopeKey, refreshFeedbackPending])
-  const showDelayedLoading = refreshFeedbackPending &&
-    delayedLoadingScope === interactionScopeKey
+  }
+  const showDelayedLoading = useXDriveDeferredLoading(
+    refreshFeedbackPending, refreshFeedbackCycleRef.current.generation)
   const groupIndex = virtualCollection?.groups ?? []
   const groupedDetailsLayout = useMemo(
     () => xDriveCreateFileExplorerGroupLayout({
