@@ -596,16 +596,27 @@ export default function MobileFiles(props: Props) {
     ? `search:${props.lifecycleKey}:${props.searchSummary?.query ?? ''}:${props.virtualCollection?.interactionKey ?? ''}`
     : props.trashActive ? `trash:${props.lifecycleKey}`
       : `cold:${props.lifecycleKey}:${directoryID ?? 0}`
-  const [delayedLoadScope, setDelayedLoadScope] = useState<string | null>(null)
-  useEffect(() => {
-    if (!showRangeLoading) {
-      setDelayedLoadScope(null)
-      return
+  // Search and populated Trash have real pending feedback, but a previous
+  // SAME-scope request must never paint its old 300ms indicator on this render.
+  const loadFeedbackCycleRef = useRef({
+    pending: showRangeLoading, scope: loadFeedbackScope, generation: 0,
+  })
+  if (loadFeedbackCycleRef.current.pending !== showRangeLoading ||
+      loadFeedbackCycleRef.current.scope !== loadFeedbackScope) {
+    loadFeedbackCycleRef.current = {
+      pending: showRangeLoading, scope: loadFeedbackScope,
+      generation: loadFeedbackCycleRef.current.generation + 1,
     }
-    const timer = window.setTimeout(() => setDelayedLoadScope(loadFeedbackScope), 300)
+  }
+  const loadFeedbackGeneration = loadFeedbackCycleRef.current.generation
+  const [delayedLoadGeneration, setDelayedLoadGeneration] = useState<number | null>(null)
+  useEffect(() => {
+    if (!showRangeLoading) return
+    const timer = window.setTimeout(() => setDelayedLoadGeneration(loadFeedbackGeneration), 300)
     return () => window.clearTimeout(timer)
-  }, [showRangeLoading, loadFeedbackScope])
-  const showArrangementLoading = showRangeLoading && delayedLoadScope === loadFeedbackScope
+  }, [showRangeLoading, loadFeedbackScope, loadFeedbackGeneration])
+  const showArrangementLoading = showRangeLoading &&
+    delayedLoadGeneration === loadFeedbackGeneration
 
   const trashReadState = props.trashReadState ?? 'ready'
   const verifiedTrashEmpty = props.trashActive && trashReadState === 'ready' && totalCount === 0

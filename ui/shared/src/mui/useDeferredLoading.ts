@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // Feedback belongs to the current request generation. The previous delayed
 // status cannot flash at the start of a new refresh, even if React batches two
@@ -27,15 +27,21 @@ export function useXDriveDeferredPendingLoading(
   pending: boolean,
   delayMs = XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS,
 ): boolean {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    if (!pending) {
-      setVisible(false)
-      return
+  // The previous cycle's visible spinner must NOT leak into the new render.
+  // A passive-effect Boolean reset is after paint; fence display during render.
+  const cycleRef = useRef({ pending, delayMs, generation: 0 })
+  if (cycleRef.current.pending !== pending || cycleRef.current.delayMs !== delayMs) {
+    cycleRef.current = {
+      pending, delayMs, generation: cycleRef.current.generation + 1,
     }
-    setVisible(false)
-    const timer = globalThis.setTimeout(() => setVisible(true), delayMs)
+  }
+  const generation = cycleRef.current.generation
+  const [visibleGeneration, setVisibleGeneration] = useState<number | null>(null)
+  useEffect(() => {
+    if (!pending) return
+    const timer = globalThis.setTimeout(() => setVisibleGeneration(generation), delayMs)
     return () => globalThis.clearTimeout(timer)
-  }, [pending, delayMs])
+  }, [pending, generation, delayMs])
+  const visible = visibleGeneration === generation
   return pending && visible
 }
