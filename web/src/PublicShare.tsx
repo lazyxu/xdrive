@@ -4,12 +4,11 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { Box, Button, InputAdornment, Stack, TextField, Typography } from '@mui/material'
-import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
+import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare, PublicShareChild } from '../../ui/shared/src'
 import { formatBytes } from '../../ui/shared/src'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
-import { useXDriveDeferredPendingLoading } from '../../ui/shared/src/mui/useDeferredLoading'
 
 type FolderPath = { id: number; name: string }
 type FolderPage = { path: FolderPath[]; items: PublicShareChild[]; cursor: number; next: number; history: number[] }
@@ -26,9 +25,8 @@ export default function PublicShareView({ token }: { token: string }) {
   const [folderError, setFolderError] = useState('')
   const [folderPending, setFolderPending] = useState(false)
   const pendingPage = useRef<AbortController | null>(null)
-  // The network starts immediately; only sustained first reads reveal progress.
-  const showFirstReadLoading = useXDriveDeferredPendingLoading(loading && !share && !error)
-  const showFolderPending = useXDriveDeferredPendingLoading(folderPending)
+  // Public metadata and normal folder navigation are presentation-silent.
+  // Real GETs start immediately; authenticated rows/crumbs remain mounted.
 
   useEffect(() => {
     // Unmount must ALWAYS cancel an unused directory request, including in
@@ -150,17 +148,6 @@ export default function PublicShareView({ token }: { token: string }) {
           aria-busy={loading}
           sx={{ minHeight: 180, minWidth: 0, position: 'relative' }}
         >
-          {showFirstReadLoading ? (
-            <Box
-              data-xdrive-public-share-delayed-feedback
-              sx={{
-                position: 'absolute', inset: 0, display: 'grid',
-                placeItems: 'center', pointerEvents: 'none',
-              }}
-            >
-              <XDriveStatePanel variant="plain" loading message="正在加载分享…" />
-            </Box>
-          ) : null}
           {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
           {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
 
@@ -213,7 +200,7 @@ export default function PublicShareView({ token }: { token: string }) {
               {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
 
               {share.type === 'dir' ? (
-                <Stack spacing={1.25}>
+                <Stack data-xdrive-public-share-folder-browser aria-busy={folderPending || undefined} spacing={1.25}>
                   {folder ? (
                     <Box role="region" aria-label="分享文件夹内容" aria-busy={folderPending}
                       sx={{ minHeight: 180, position: 'relative' }}>
@@ -283,19 +270,10 @@ export default function PublicShareView({ token }: { token: string }) {
                           )}
                         </Stack>
                       )}
-                      {showFolderPending && (
-                        <Box sx={{
-                          position: 'absolute', inset: 0, display: 'grid',
-                          placeItems: 'center', pointerEvents: 'none',
-                          bgcolor: 'background.paper', opacity: 0.88,
-                        }}>
-                          <XDriveStatePanel variant="plain" loading message="正在读取文件夹…" />
-                        </Box>
-                      )}
                     </Box>
                   ) : (
                     <XDriveActionButton intent="primary" type="button" fullWidth
-                      disabled={!canDownload} loading={folderPending}
+                      disabled={!canDownload || folderPending}
                       onClick={() => void loadFolder([{ id: 0, name: share.name }])}>
                       浏览文件夹
                     </XDriveActionButton>

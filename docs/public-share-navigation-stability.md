@@ -1,5 +1,12 @@
 # Public Share navigation / first-read visual stability (UI-Share-Q1)
 
+## P90 · no transient public share/folder overlay (2026-10-19)
+
+- The older Q1 change delayed a spinner to 300ms, but **ordinary share metadata and folder navigation** should never insert a visual loading frame, regardless of GET duration. The real authorized Server API request still starts immediately; the same 180px `aria-busy` first-read slot is silent before, during and after a held >350ms read. A verified folder retains its accepted path, rows, fixed content geometry and pager throughout the next directory GET; on failure it keeps those rows and a genuine actionable error. On success only the matching current Server response replaces the page.
+- Remove both `PublicShareView` decorative 300ms timers and absolute pending overlays, not the real GET/AbortSignal. The first user-invoked Browse button keeps the same label and is disabled with truthful `aria-busy` on its fixed parent (the shared `XDriveActionButton` has no `aria-busy` prop); actual download progress stays visible. Existing 100-item bounded paging and 404/410, password/eligibility, native-download ticket, cancellation remain unchanged.
+- Extend **original mounted React** `desktop/tests/web-public-share-form.cjs` to hold the first GET and first folder/child GET >350ms, assert silent geometry/one old page, failure+retry, then accepted new page. Keep `desktop/tests/web-public-share.cjs`, optional built Chromium public-share acceptance and the permanent P78/P88 tests. Require complete accurate-head 77+ CI/Final Gate and fresh GitHub clean before Ready/Rebase; actual iOS Safari/Android/installed PWA, WAN CLS/FPS/physical 100k still **NOT RUN**. No Server/thumbnail/performance/race contract change.
+
+
 **Scope / 2026-10-18:** Public capability-link view only, separate from the in-flight P54 Gallery and P56 Mobile Files status changes. Keep current Web hash token routing, Server anonymous capability API, native short-lived download ticket and shared AuthPanel/form unchanged.
 
 ## Original source defect
