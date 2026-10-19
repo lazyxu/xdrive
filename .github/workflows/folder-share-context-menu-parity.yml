@@ -1,0 +1,31 @@
+name: Folder Share Direct Context Menu Parity
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  folder-share-direct-menu:
+    if: github.head_ref == 'fix/folder-share-context-menu-parity-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm work HEAD and install test dependencies
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          npm --prefix desktop install --no-audit --no-fund --ignore-scripts
+      - name: Execute real shared TSX menu factory with file and folder cases
+        run: |
+          set -euo pipefail
+          node --check desktop/tests/folder-share-context-menu-parity.cjs
+          node --test desktop/tests/folder-share-context-menu-parity.cjs

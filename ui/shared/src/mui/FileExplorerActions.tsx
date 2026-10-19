@@ -161,22 +161,25 @@ export function xDriveFileExplorerStandardItemMenuItems({
         onSelect: onReveal,
       })
     }
-    if (onShare) {
-      items.push({
-        id: 'share',
-        label: '分享',
-        icon: <ShareRoundedIcon fontSize="small" />,
-        onSelect: onShare,
-      })
-    }
-    if (onHistory) {
-      items.push({
-        id: 'history',
-        label: '历史版本',
-        icon: <HistoryRoundedIcon fontSize="small" />,
-        onSelect: onHistory,
-      })
-    }
+  }
+
+  // Share the same Owner capability-link dialog for files and non-root folders.
+  // Preserve the file menu's original Share -> History ordering.
+  if (onShare) {
+    items.push({
+      id: 'share',
+      label: '分享',
+      icon: <ShareRoundedIcon fontSize="small" />,
+      onSelect: onShare,
+    })
+  }
+  if (kind === 'file' && onHistory) {
+    items.push({
+      id: 'history',
+      label: '历史版本',
+      icon: <HistoryRoundedIcon fontSize="small" />,
+      onSelect: onHistory,
+    })
   }
 
   if (onShowContainingFolder) {
