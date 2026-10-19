@@ -1,3 +1,10 @@
+## GLOBAL-SD-KEY-001 · 「系统依赖」内部服务密钥自动托管（永久产品约束，2026-10-19）
+
+**固定产品规范：** [内部服务密钥生命周期 v1.0](system-dependencies-internal-service-key-policy.md)。xDrive 自有的签名、会话加密、服务身份等内部密钥必须由可信部署/Server 自动、安全地首次初始化并持久保存，跨副本共享且升级、重启、镜像替换和备份恢复不变。管理员只查看状态、来源、revision、公钥指纹、实际生效/阻断证据并执行经二次确认、审计和撤销的必要轮换；普通部署流程**不得要求运行 OpenSSL、填写内部密钥、修改源码常量或重新编译**。外部百度 Server AK/Browser AK、AliDNS 等第三方凭据不适用「自动生成供应商密钥」。
+- 这是**目标产品合同，不是当前已实施功能**。缺密钥且首次安装才可幂等自动生成；历史密钥丢失、不可解密、存储/副本不一致必须 fail closed 并引导恢复，不能悄悄重建或伪报健康。密钥材料只在受信 Server/Host 中受保护持久化，Web/Desktop/Agent/API/日志/审计/CI 禁止泄漏私钥。
+- JSAPI4 的实例自有 Ed25519 签名密钥应受托管，不再要求管理员编辑 `jsapi4PinnedProductionPublicKey`；但是**自动生成密钥 != 独立发布批准 != 百度合法许可/完整子资源白名单/AK 防泄漏/真实三端通过**。管理开关或自签证明不能覆盖受信发布门禁；保持当前 source-pinned signing root 为空、approved children 为 0、`runtime_enabled=false` 的生产 NO-GO，直到单独实现经过审查的可信授权与资源审核。
+- 后续开发此功能必须覆盖 PostgreSQL/持久密文原始双副本并发启动、升级回滚与恢复、密钥环丢失、旋转 CAS/审计/撤销、拒绝越权、静态地图不受影响和 UI/API 真正生效状态的自动化测试；不允许只改页面文案、假开启或生成后即放行。Web/Mobile Web/PWA/Desktop 共享原组件/Server 授权 API；保留 `AGENTS.md` 全部历史。独立工作提交、准确 HEAD 全量 CI/Final Gate、GitHub clean mergeability 后才能合并。
+
 ## SD-UI-V1.6 · Caddy 配置/凭据读取失败诊断与安全重试（2026-10-19）
 
 现场观察：管理员服务清单可展示 Caddy 默认 `unknown`，但 HTTPS、AliDNS、历史同时提示“不支持/无法读取”。这些文字不能证明 Server 路由不存在；原 UI 只要配置请求失败，就无条件显示“不支持”，同时另报通用错误。新版 HTTPS 和 AliDNS 管理路由本身已在 Server 注册；GET AliDNS 配置只读状态**不需要** ConnectorSecrets，缺少加密 keyring 只影响写入/显密钥等安全能力。Host Control 观测独立于上述 PostgreSQL 配置状态；健康未知不等于 Caddy 已停止。
