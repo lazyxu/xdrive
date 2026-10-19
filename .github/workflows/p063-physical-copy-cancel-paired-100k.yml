@@ -1,0 +1,101 @@
+name: P063 Real 100k Physical Copy User-Cancel Paired A-B
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  p063-physical-100k-paired-cancel:
+    if: github.head_ref == 'perf/p063-100k-copy-cancel-paired-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 165
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Source-exact original and benchmark-only P061 64-node 250ms candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          python3 -m py_compile scripts/performance/p061_copy_progress_trial.py scripts/performance/p063_copy_cancel_pair_summary.py
+          python3 scripts/performance/p061_copy_progress_trial.py candidate
+          test -z "$(gofmt -l internal/api/file_operations.go)"
+          git diff --check
+          python3 scripts/performance/p061_copy_progress_trial.py original
+          git diff --exit-code -- internal/api/file_operations.go
+          grep -q 'XD_P062_REAL_CANCEL' internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go
+      - name: Real 1000 physical CAS Owner Cancel smoke local/remote original and candidate
+        run: |
+          set -euo pipefail
+          for topo in local remote; do
+            for arm in original candidate; do
+              python3 scripts/performance/p061_copy_progress_trial.py "$arm"
+              env -u XD_P059_COPY_SQL_PROFILE \
+                XD_P056_REAL_COPY_PERF=1 XD_P062_REAL_CANCEL=1 \
+                XD_P062_TOPOLOGY="$topo" XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+                go test -mod=readonly ./internal/api \
+                  -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+            done
+          done
+          python3 scripts/performance/p061_copy_progress_trial.py original
+          git diff --exit-code -- internal/api/file_operations.go
+      - name: Same runner 12 authentic 100k physical Copy active HTTP cancels
+        run: |
+          set -euo pipefail
+          output="$GITHUB_WORKSPACE/p063-copy-cancel-paired-100k"
+          mkdir -p "$output"
+          printf 'EXACT_HEAD=%s\nPRODUCTION_GO_BLOB=338abf54deede6a86b8b41f97494f3e7fedbd908\n' \
+            "$(git rev-parse HEAD)" > "$output/source.txt"
+          for topo in local remote; do
+            for entry in sample-1:original sample-1:candidate sample-2:candidate sample-2:original sample-3:original sample-3:candidate; do
+              IFS=: read -r sample arm <<< "$entry"
+              echo "P063_BEGIN topology=$topo sample=$sample arm=$arm"
+              python3 scripts/performance/p061_copy_progress_trial.py "$arm"
+              test -z "$(gofmt -l internal/api/file_operations.go)"
+              docker exec -e PGPASSWORD=xdrive "${{ job.services.postgres.id }}" \
+                psql -v ON_ERROR_STOP=1 -U xdrive -d xdrive_test \
+                  -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO xdrive;'
+              /usr/bin/time -v -o "$output/$topo-$sample-$arm-resources.txt" \
+                env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE \
+                  XD_P056_REAL_COPY_PERF=1 XD_P062_REAL_CANCEL=1 \
+                  XD_P062_TOPOLOGY="$topo" XD_P056_SAMPLE="$sample" \
+                  go test -mod=readonly ./internal/api \
+                    -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=25m -v \
+                2>&1 | tee "$output/$topo-$sample-$arm.log"
+            done
+          done
+          python3 scripts/performance/p061_copy_progress_trial.py original
+          git diff --exit-code -- internal/api/file_operations.go
+          python3 scripts/performance/p063_copy_cancel_pair_summary.py "$output"
+      - name: Preserve source-accurate paired original and candidate real CAS machine evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p063-100k-physical-user-cancel-original-vs-P061
+          path: p063-copy-cancel-paired-100k/
+          if-no-files-found: warn
+          retention-days: 30

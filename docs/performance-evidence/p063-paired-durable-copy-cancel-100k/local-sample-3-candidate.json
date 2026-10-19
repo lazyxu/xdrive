@@ -1,0 +1,19 @@
+{
+  "cancel_http_ms": 5.232,
+  "cancel_start_to_worker_exit_ms": 8.895,
+  "go_rss_growth_bytes": 109023232,
+  "observed_current_item": "source-100k-physical/p056-000256.bin",
+  "original_one_ref_count": 100001,
+  "passed": true,
+  "physical_CAS_object_count": 100001,
+  "physical_allocated_bytes_after": 409604096,
+  "physical_allocated_bytes_before": 409604096,
+  "physical_sources": 100000,
+  "remaining_target_nodes": 0,
+  "sample": "sample-3",
+  "smoke_only": false,
+  "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+  "topology": "local",
+  "worker_until_cancel_ms": 1029.223,
+  "workload": "P062-authenticated-100k-physical-CAS-owner-copy-cancel"
+}

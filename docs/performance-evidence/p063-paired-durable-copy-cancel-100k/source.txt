@@ -1,0 +1,9 @@
+ORIGINAL_EXACT_SOURCE_HEAD=a00961120dded29569267d6e7b443133c5b7e75c
+ORIGINAL_REAL_N12_WORKFLOW=https://github.com/lazyxu/xdrive/actions/runs/39210403277
+ORIGINAL_FULL_CI=https://github.com/lazyxu/xdrive/actions/runs/39210404977
+ORIGINAL_RAW_LOGS_RESOURCES_ARTIFACT=https://github.com/lazyxu/xdrive/actions/runs/39210403277/artifacts/12167943747
+ORIGINAL_PRODUCT_GO_BLOB=338abf54deede6a86b8b41f97494f3e7fedbd908
+PR=https://github.com/lazyxu/xdrive/pull/2129
+sample-1 source_sha=5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03
+sample-2 source_sha=71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e
+sample-3 source_sha=fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996
