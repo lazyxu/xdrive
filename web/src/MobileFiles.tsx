@@ -479,6 +479,12 @@ export default function MobileFiles(props: Props) {
   const pendingExternalDirectoryRef = useRef<{
     directoryID: number; intent: number; alreadyCommitted: boolean
   } | null>(null)
+  // A file-row tap from Search/Browse Home cannot switch the rail merely
+  // because its navigation Promise resolves. The current counted directory
+  // and a new range identity must arrive together before any visual commit.
+  const pendingRowDirectoryRef = useRef<{
+    directoryID: number; intent: number; previousRangeKey: string | null
+  } | null>(null)
   const searchReturnHomeRef = useRef(initial.folderID === null)
   // A Search entered from Recent/Favorites is still the one global Search.
   // Remember its presentation origin, without retaining another query/ACL.
@@ -852,20 +858,28 @@ export default function MobileFiles(props: Props) {
       !pendingExternal.alreadyCommitted &&
       !props.trashActive && !props.searchActive &&
       props.virtualCollection && !props.loading)
-    // Both Home-root and Recent/Quick Access may commit a counted Range
-    // without changing an already known crumb. Never treat a Promise
-    // resolution or a pending first Range as an authorized page switch.
+    const pendingRow = pendingRowDirectoryRef.current
+    const rowDirectoryCommit = Boolean(pendingRow &&
+      pendingRow.intent === navigationIntentRef.current &&
+      pendingRow.directoryID === directoryID &&
+      !props.trashActive && !props.searchActive &&
+      props.virtualCollection && !props.loading &&
+      props.virtualCollection.interactionKey !== pendingRow.previousRangeKey)
+    // A Home/Recent/Quick Access or Search row only enters Browse when its
+    // matching, newly counted directory Range is accepted. A fulfilled Open
+    // Promise, unrelated old Range, or superseded tap cannot move the rail.
     if (lastCommittedDirectoryRef.current === directoryID &&
-        !homeRootCommit && !externalDirectoryCommit) return
+        !homeRootCommit && !externalDirectoryCommit && !rowDirectoryCommit) return
     lastCommittedDirectoryRef.current = directoryID
     if (homeRootCommit) pendingBrowseRootRef.current = null
     if (externalDirectoryCommit) pendingExternalDirectoryRef.current = null
+    if (rowDirectoryCommit) pendingRowDirectoryRef.current = null
     const routedCommit = Boolean(props.requestedDirectoryID &&
       directoryID === props.requestedDirectoryID)
     const pathCommit = pendingPathOriginRef.current !== null &&
       pendingPathOriginRef.current.directoryID !== directoryID
     if (pathCommit) pendingPathOriginRef.current = null
-    const authorizedCommit = routedCommit || pathCommit || homeRootCommit || externalDirectoryCommit
+    const authorizedCommit = routedCommit || pathCommit || homeRootCommit || externalDirectoryCommit || rowDirectoryCommit
     // A deep link opened from Browse Home/Recent/Favorites must enter Browse
     // only AFTER its authorized directory is genuinely visible. This state
     // update is pre-paint, so no intermediate wrong-folder frame is exposed.
@@ -1369,14 +1383,26 @@ export default function MobileFiles(props: Props) {
       return
     }
     const intent = ++navigationIntentRef.current
-    void Promise.resolve(props.onOpenItem(item, ownerID)).then(accepted => {
-      if (accepted !== false && intent === navigationIntentRef.current && item.kind === 'dir' &&
-          (section !== 'browse' || browseHome)) {
-        // An ordinary folder→folder transition was already reset pre-paint
-        // by the committed-crumb effect; do not reset a second time here.
-        beginBrowse(Number(item.id))
+    if (item.kind === 'dir') {
+      pendingRowDirectoryRef.current = {
+        directoryID: Number(item.id),
+        intent,
+        previousRangeKey: props.virtualCollection?.interactionKey ?? null,
       }
-    }).catch(props.onOpenError)
+    }
+    void Promise.resolve(props.onOpenItem(item, ownerID)).then(accepted => {
+      // A failed activation must not authorize a later coincidental Range.
+      // An accepted activation is still only intent: layout-effect commits it
+      // once matching crumbs and the first counted Range arrive together.
+      if (accepted === false && pendingRowDirectoryRef.current?.intent === intent) {
+        pendingRowDirectoryRef.current = null
+      }
+    }).catch(error => {
+      if (pendingRowDirectoryRef.current?.intent === intent) {
+        pendingRowDirectoryRef.current = null
+      }
+      if (intent === navigationIntentRef.current) props.onOpenError(error)
+    })
   }
   const changeSection = (next: MobileFilesSection) => {
     pendingPathOriginRef.current = null

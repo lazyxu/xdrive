@@ -10,15 +10,25 @@ export function useXDriveDeferredLoading(
   requestGeneration: number,
   delayMs = XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS,
 ): boolean {
-  const [visibleGeneration, setVisibleGeneration] = useState<number | null>(null)
+  // A request ID can be reused for a later visual pending cycle (e.g. a
+  // same-folder retry), and the display delay may also change. An effect-only
+  // reset runs after paint, so fence the old spinner in this render.
+  const cycleRef = useRef({ pending, requestGeneration, delayMs, cycle: 0 })
+  if (cycleRef.current.pending !== pending ||
+      cycleRef.current.requestGeneration !== requestGeneration ||
+      cycleRef.current.delayMs !== delayMs) {
+    cycleRef.current = {
+      pending, requestGeneration, delayMs, cycle: cycleRef.current.cycle + 1,
+    }
+  }
+  const cycle = cycleRef.current.cycle
+  const [visibleCycle, setVisibleCycle] = useState<number | null>(null)
   useEffect(() => {
     if (!pending) return
-    const timer = globalThis.setTimeout(() => {
-      setVisibleGeneration(requestGeneration)
-    }, delayMs)
+    const timer = globalThis.setTimeout(() => setVisibleCycle(cycle), delayMs)
     return () => globalThis.clearTimeout(timer)
-  }, [pending, requestGeneration, delayMs])
-  return pending && visibleGeneration === requestGeneration
+  }, [pending, cycle, delayMs])
+  return pending && visibleCycle === cycle
 }
 // Some presentational panes expose only a pending Boolean and have no request
 // sequence ID. Restart the *visual* delay for each pending cycle; the real
