@@ -1536,7 +1536,39 @@ export function XDriveMediaGalleryPage({
     }
   }, [draftFilters, loadFirstPage, mobileGalleryViewport, onError, query.include_descendants, source])
 
+  // All compact Mobile Gallery Trash entries (navigation tab AND Collections
+  // card) share the same verified first Range commit. No early route/title,
+  // virtual-photo wall, or scroll mutation. Wide clients stay as before.
+  const openTrashFromCollections = useCallback(() => {
+    void loadFirstPage(null, {}, null, null, 'trash', null, null, null, () => {
+      placesReturnPageRef.current = null
+      placeOpenedFromCollectionsRef.current = false
+      setLastOpenedPlaceID(null)
+      placePageRequestID.current += 1
+      setPlacesPagePending(false)
+      setPlacesPageError('')
+      syncFolderRequestID.current += 1
+      setCurrentFolderView(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      placesExpandedRef.current = false
+      setSection('trash')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+      onSectionRouteChange?.('trash')
+    })
+  }, [loadFirstPage, onSectionRouteChange])
+
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    // A compact Trash tab is navigation intent only. Hold accepted content
+    // through slow/rejected reads and commit after the current counted Range.
+    if (mobileGalleryViewport && nextSection === 'trash') {
+      openTrashFromCollections()
+      return
+    }
     placesReturnPageRef.current = null
     placeOpenedFromCollectionsRef.current = false
     setLastOpenedPlaceID(nextSection === 'places' ? placesCameraRef.current?.focusPlaceID ?? null : null)
@@ -1580,33 +1612,8 @@ export function XDriveMediaGalleryPage({
       return
     }
     void loadFirstPage(null, nextQuery)
-  }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders, onSectionRouteChange])
-
-  // Only this compact Collections -> Trash card must wait for its owner
-  // first counted page before switching the visible app section. Direct
-  // section navigation (including wide Web/Desktop) retains its behavior.
-  const openTrashFromCollections = useCallback(() => {
-    void loadFirstPage(null, {}, null, null, 'trash', null, null, null, () => {
-      placesReturnPageRef.current = null
-      placeOpenedFromCollectionsRef.current = false
-      setLastOpenedPlaceID(null)
-      placePageRequestID.current += 1
-      setPlacesPagePending(false)
-      setPlacesPageError('')
-      syncFolderRequestID.current += 1
-      setCurrentFolderView(null)
-      setCurrentPet(null)
-      setCurrentMemory(null)
-      setCurrentCleanupReview(null)
-      placesExpandedRef.current = false
-      setSection('trash')
-      setActiveMediaType('')
-      setDraftFilters(emptyMediaGalleryFilterDraft)
-      setQuery({})
-      setMobileCollectionsOverview(false)
-      onSectionRouteChange?.('trash')
-    })
-  }, [loadFirstPage, onSectionRouteChange])
+  }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders,
+    mobileGalleryViewport, onSectionRouteChange, openTrashFromCollections])
 
   // This Mobile Collections index uses a different Server DTO from photo
   // ranges. Fetch the owner-authorized BurstReview list WITHOUT changing the
