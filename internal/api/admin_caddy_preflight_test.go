@@ -51,7 +51,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&meta.User{}, &meta.AdminServiceSecret{}, &meta.AuditEvent{},
-		&meta.AdminCaddyHTTPSSetting{}, &meta.AdminCaddyHTTPSRevision{}); err != nil {
+		&meta.AdminCaddyHTTPSSetting{}, &meta.AdminCaddyHTTPSRevision{},
+		&meta.AdminCaddyHostApplyReservation{}); err != nil {
 		t.Fatal(err)
 	}
 	ring, err := connectorsecret.NewKeyring(1, map[uint32]string{1: strings.Repeat("da", 32)})
