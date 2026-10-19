@@ -43,6 +43,11 @@ type archiveDownloadEntry struct {
 	StorageKey string    `json:"storage_key,omitempty"`
 	Size       int64     `json:"size,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// Public ZIP snapshot revalidation needs exact subtree identity. These
+	// optional fields do not affect existing Owner archive download entries.
+	NodeID   uint64 `json:"node_id,omitempty"`
+	ParentID uint64 `json:"parent_id,omitempty"`
+	Revision uint64 `json:"revision,omitempty"`
 }
 
 type archiveDownloadManifest struct {
@@ -153,6 +158,14 @@ func (s *Server) serveArchiveDownload(
 		}
 	}
 
+	// The streaming bytes are shared, but public shares never inherit the
+	// account progress ticket or Owner authorization from this handler.
+	s.streamArchiveDownloadEntries(c, manifest, filename, transferID, false)
+}
+
+func (s *Server) streamArchiveDownloadEntries(
+	c *gin.Context, manifest archiveDownloadManifest, filename, transferID string, requestScoped bool,
+) {
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filename))
 	c.Header("X-Content-Type-Options", "nosniff")
@@ -171,7 +184,7 @@ func (s *Server) serveArchiveDownload(
 				s.updateArchiveDownloadProgress(transferID, entry.Path, "transferring", done, nil)
 			}
 		}
-		if err := writeArchiveDownloadEntry(c.Request.Context(), s, zw, entry, onProgress); err != nil {
+		if err := writeArchiveDownloadEntry(c.Request.Context(), s, zw, entry, onProgress, requestScoped); err != nil {
 			_ = zw.Close()
 			if transferID != "" && !entry.IsDir {
 				s.updateArchiveDownloadProgress(transferID, entry.Path, "failed", done, err)
@@ -466,9 +479,14 @@ func (s *Server) appendArchiveDownloadNode(
 		return errArchiveTooManyEntries
 	}
 
+	parentID := uint64(0)
+	if node.ParentID != nil {
+		parentID = *node.ParentID
+	}
 	if node.Type == meta.NodeTypeDir {
 		manifest.Entries = append(manifest.Entries, archiveDownloadEntry{
 			Path: archivePath + "/", IsDir: true, UpdatedAt: node.UpdatedAt,
+			NodeID: node.ID, ParentID: parentID, Revision: node.Revision,
 		})
 		for _, child := range childrenByParent[node.ID] {
 			segment, err := archivePathSegment(child.Name)
@@ -504,6 +522,7 @@ func (s *Server) appendArchiveDownloadNode(
 	manifest.TotalBytes += node.File.Size
 	manifest.Entries = append(manifest.Entries, archiveDownloadEntry{
 		Path: archivePath, StorageKey: node.File.StorageKey, Size: node.File.Size, UpdatedAt: node.UpdatedAt,
+		NodeID: node.ID, ParentID: parentID, Revision: node.Revision,
 	})
 	return nil
 }
@@ -600,6 +619,7 @@ func writeArchiveDownloadEntry(
 	zw *zip.Writer,
 	entry archiveDownloadEntry,
 	onProgress func(int64),
+	requestScoped ...bool,
 ) error {
 	header := &zip.FileHeader{Name: entry.Path, Method: zip.Store}
 	header.SetModTime(entry.UpdatedAt)
@@ -620,6 +640,9 @@ func writeArchiveDownloadEntry(
 	}
 	defer f.Close()
 	source := io.Reader(f)
+	if len(requestScoped) > 0 && requestScoped[0] {
+		source = publicArchiveContextReader{ctx: ctx, source: f}
+	}
 	var progressReader *archiveProgressReader
 	if onProgress != nil {
 		progressReader = &archiveProgressReader{reader: f, onRead: onProgress}
@@ -636,4 +659,19 @@ func writeArchiveDownloadEntry(
 		return fmt.Errorf("archive source size changed: got %s want %s", humanize.IBytes(uint64(max(int64(0), written))), humanize.IBytes(uint64(max(int64(0), entry.Size))))
 	}
 	return nil
+}
+
+// A public archive stream is an HTTP request, not a persistent task. Checking
+// cancellation on each bounded read stops a detached browser transfer even
+// when the underlying local CAS reader ignores context after Open.
+type publicArchiveContextReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (r publicArchiveContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.source.Read(p)
 }

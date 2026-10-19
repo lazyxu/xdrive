@@ -166,17 +166,44 @@ func (s *Server) archivePrepareLeaseProvider(runID string) background.LeaseProvi
 
 func (s *Server) archivePrepareCancellationRequested(ctx context.Context, runID string) (bool, error) {
 	var row struct {
-		Status string
+		Status        string
+		PublicShareID *uint64
 	}
 	if err := s.DB.WithContext(ctx).
 		Model(&meta.ArchivePrepareRun{}).
-		Select("status").
+		Select("status", "public_share_id").
 		Where("id = ?", runID).
 		First(&row).Error; err != nil {
 		return false, err
 	}
-	return row.Status == meta.ArchivePrepareStatusCancelRequested ||
-		row.Status == meta.ArchivePrepareStatusCancelled, nil
+	if row.Status == meta.ArchivePrepareStatusCancelRequested ||
+		row.Status == meta.ArchivePrepareStatusCancelled {
+		return true, nil
+	}
+	if row.PublicShareID == nil {
+		return false, nil // Owner archive behavior remains unchanged.
+	}
+	// A revoked/exhausted/expired public capability can no longer spend the
+	// Owner's archive-preparation resources. The existing lease heartbeat will
+	// cancel the durable job, even if the requesting browser is long gone.
+	var share meta.Share
+	if err := s.DB.WithContext(ctx).Where("id = ?", *row.PublicShareID).First(&share).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	if shareStatus(share, time.Now().UTC()) != "active" {
+		return true, nil
+	}
+	var owner meta.User
+	if err := s.DB.WithContext(ctx).Select("id", "disabled_at").First(&owner, share.OwnerID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	return owner.DisabledAt != nil, nil
 }
 
 func (s *Server) handleArchivePrepareInterruption(runID string, cause error) error {
@@ -244,6 +271,10 @@ func (s *Server) executeArchivePrepareRun(ctx context.Context, runID string) err
 		return err
 	}
 	manifest, err := s.buildArchiveDownloadManifest(ctx, run.OwnerID, ids)
+	if err == nil && run.PublicShareID != nil &&
+		(manifest.TotalBytes < 0 || manifest.TotalBytes > publicShareArchiveMaxBytes) {
+		err = errArchiveTooManyEntries
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return s.handleArchivePrepareInterruption(run.ID, context.Cause(ctx))

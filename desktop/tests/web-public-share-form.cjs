@@ -626,3 +626,74 @@ test('Folder capability switches real shared Explorer Details/Grid without chang
       'shared folder must not expose Owner command ' + forbidden)
   }
 })
+
+
+test('Public folder ZIP prepares durable job and uses ONE anonymous signed archive ticket, no Owner API', async (t) => {
+  const calls = []
+  class Api {
+    async publicShare() {
+      return { name: 'family photos', type: 'dir', size: 0, requires_password: true,
+        max_downloads: 2, download_count: 0, expires_at: null }
+    }
+    async preparePublicShareArchive(token, password, signal) {
+      calls.push(['prepare',token,password,Boolean(signal)])
+      return { prepare_id: 'prepared-zip-uuid', state: 'completed', filename: 'family photos.zip', total_bytes: 1024 }
+    }
+    async downloadPublicShareArchive(token, password, id, filename, signal) {
+      calls.push(['download',token,password,id,filename,Boolean(signal)])
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const click = async (label) => {
+    const button = renderer.root.findAllByType('button').find(x => textContent(x.children).trim() === label)
+    assert.ok(button, 'missing public-only ZIP control ' + label)
+    await act(async () => { button.props.onClick() })
+  }
+  let zipButton = renderer.root.findAllByType('button')
+    .find(x => textContent(x.children).trim() === '下载整个文件夹 ZIP')
+  assert.equal(zipButton.props.disabled, true, 'missing share password disables ZIP')
+  const passwordInput = renderer.root.findAllByType('input')[0]
+  await act(async () => { passwordInput.props.onChange({ target: { value: ' exact-password ' } }) })
+  await click('下载整个文件夹 ZIP')
+  assert.deepEqual(calls, [
+    ['prepare','test-share-token',' exact-password ',true],
+    ['download','test-share-token',' exact-password ','prepared-zip-uuid','family photos.zip',true],
+  ])
+  assert.ok(textContent(renderer.toJSON()).includes('剩余 1 / 2 次下载'))
+  assert.ok(textContent(renderer.toJSON()).includes('ZIP 已交给浏览器下载'))
+  for(const forbidden of ['上传','删除','移动','重命名','粘贴']) {
+    assert.equal(renderer.root.findAllByType('button').filter(x => textContent(x.children).trim() === forbidden).length,0)
+  }
+})
+
+test('Public ZIP explicit cancel is independent from tab-unmount polling, leaves durable task to Server', async (t) => {
+  const actions = []
+  class Api {
+    async publicShare() {
+      return { name: 'shared', type: 'dir', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async preparePublicShareArchive() { return { prepare_id:'one-queued-id',state:'running' } }
+    async publicShareArchiveStatus() { return { prepare_id:'one-queued-id',state:'running' } }
+    async cancelPublicShareArchive(token,password,id) {
+      actions.push([token,password,id])
+      return { prepare_id:id,state:'cancel_requested' }
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare,{token:'test-share-token'})) })
+  t.after(() => act(() => renderer.unmount()))
+  const click = async (label) => {
+    const node = renderer.root.findAllByType('button').find(x=>textContent(x.children).trim()===label)
+    assert.ok(node,'missing explicit action '+label)
+    await act(async () => {node.props.onClick(); await Promise.resolve()})
+  }
+  await click('下载整个文件夹 ZIP')
+  await click('取消准备')
+  assert.deepEqual(actions,[['test-share-token','','one-queued-id']])
+  assert.ok(textContent(renderer.toJSON()).includes('已请求取消 ZIP 准备'))
+})

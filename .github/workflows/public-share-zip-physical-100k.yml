@@ -1,0 +1,150 @@
+name: SH-P007 Public Share Whole-Folder ZIP PostgreSQL and 100k
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+
+jobs:
+  source-go-format:
+    if: github.head_ref == 'feat/public-share-folder-zip-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check pure source-specific Go formatting
+        run: |
+          set -euo pipefail
+          files='internal/auth/public_share_archive.go internal/auth/public_share_archive_test.go internal/meta/archive_prepare.go internal/api/archive_download.go internal/api/archive_prepare.go internal/api/public_share_archive.go internal/api/public_share_archive_integration_test.go internal/api/public_share_archive_100k_performance_linux_test.go internal/api/router.go'
+          changes="$(gofmt -l $files)"
+          if [ -n "$changes" ]; then
+            printf 'GOFMT_NEEDS_SOURCE_CHANGE\n%s\n' "$changes"
+            for file in $changes; do
+              gofmt -w "$file"
+              printf 'GOFMT_B64\t%s\t%s\n' "$file" "$(base64 -w0 "$file")"
+            done
+            exit 1
+          fi
+          echo GOFMT_EXACT_HEAD_OK
+
+  public-zip-real-postgres:
+    if: github.head_ref == 'feat/public-share-folder-zip-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Real owner and anonymous ZIP capability tests
+        run: |
+          set -euo pipefail
+          go test -mod=readonly ./internal/auth -run '^TestPublicShareArchiveTicketIsPurposeLimited$' -count=1 -v
+          go test -mod=readonly ./internal/api -run '^TestPublicShareFolderZIPLifecycleAndSecurity$' -count=1 -timeout=14m -v
+
+  real-100k-physical-public-zip:
+    if: github.head_ref == 'feat/public-share-folder-zip-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PUBLIC_SHARE_ZIP_100K: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Three fresh real 100k physical JPEG ZIP preparations and streamed browser-compatible archive requests
+        run: |
+          set -euo pipefail
+          mkdir -p public-zip-100k-results
+          printf 'EXACT_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > public-zip-100k-results/source.txt
+          go version >> public-zip-100k-results/source.txt
+          for sample in 1 2 3; do
+            export XD_PUBLIC_SHARE_ZIP_SAMPLE="sample-$sample"
+            go test -mod=readonly ./internal/api -run '^TestPublicShareZIP100KPhysical$' -count=1 -timeout=22m -v \
+              | tee "public-zip-100k-results/sample-$sample.log"
+          done
+          python3 - <<'PY'
+          import json, pathlib, statistics
+          base=pathlib.Path('public-zip-100k-results')
+          rows=[]
+          for sample in range(1,4):
+              found=[]
+              for line in (base / f'sample-{sample}.log').read_text().splitlines():
+                  if 'PUBLIC_SHARE_ZIP_100K_RESULT ' in line:
+                      found.append(json.loads(line.split('PUBLIC_SHARE_ZIP_100K_RESULT ',1)[1]))
+              if len(found)!=1: raise SystemExit(f'missing authentic physical sample {sample}')
+              r=found[0]
+              if r['sample']!=f'sample-{sample}' or r['exact_physical_originals']!=100000 or not r['passed']:
+                  raise SystemExit('not true passed 100k ZIP '+str(r))
+              if r['zip_entry_count']!=100001 or r['zip_entries_crc_verified']!=100000 or r['sampled_original_files_sha_exact']!=4:
+                  raise SystemExit('partial/unauthorized ZIP')
+              if r['public_zip_prepare_ms']>300000 or r['public_zip_stream_ms']>300000 or r['go_http_cancel_to_handler_exit_ms']>1000:
+                  raise SystemExit('frozen timeout or Go Context cancellation regression')
+              if not r['go_abandoned_stream_context_done']:
+                  raise SystemExit('abandoned ZIP did not reach true Go Request.Context.Done')
+              if r['go_postseed_rss_growth_bytes']>512*1024*1024:
+                  raise SystemExit('Go RSS regression')
+              rows.append(r)
+          if len(set(r['aggregate_original_sha256'] for r in rows))!=3:
+              raise SystemExit('100k populations have duplicate SHA aggregate')
+          p50=statistics.median(r['public_zip_prepare_ms'] for r in rows)
+          if p50>120000: raise SystemExit('public ZIP prepare P50 exceeds frozen 120s')
+          summary={'head':pathlib.Path('public-zip-100k-results/source.txt').read_text().splitlines()[0],
+                   'population_count':3,'true_sha_distinct_physical_jpeg_each':100000,
+                   'prepare_p50_ms':p50,
+                   'stream_p50_ms':statistics.median(r['public_zip_stream_ms'] for r in rows),
+                   'prepare_max_ms':max(r['public_zip_prepare_ms'] for r in rows),
+                   'stream_max_ms':max(r['public_zip_stream_ms'] for r in rows),
+                   'cancel_max_ms':max(r['go_http_cancel_to_handler_exit_ms'] for r in rows),
+                   'rss_growth_max_bytes':max(r['go_postseed_rss_growth_bytes'] for r in rows),
+                   'passed':True,'samples':rows}
+          (base/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
+          print('PUBLIC_SHARE_ZIP_100K_N3_ACCEPTED',json.dumps(summary,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p007-three-real-100k-physical-zip
+          path: public-zip-100k-results/
+          if-no-files-found: warn
+          retention-days: 30

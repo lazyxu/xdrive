@@ -12,20 +12,24 @@ const (
 )
 
 type ArchivePrepareRun struct {
-	ID                string     `gorm:"size:36;primaryKey"`
-	OwnerID           uint64     `gorm:"not null;index;index:idx_xd_archive_prepare_owner_created"`
-	RequestedIDsJSON  string     `gorm:"type:text;not null"`
-	Status            string     `gorm:"size:24;not null;index"`
-	Filename          string     `gorm:"size:255"`
-	TotalBytes        int64      `gorm:"not null;default:0"`
-	ManifestJSON      string     `gorm:"type:text"`
-	Error             string     `gorm:"type:text"`
-	CancelRequestedAt *time.Time `gorm:"index"`
-	StartedAt         *time.Time `gorm:"index"`
-	FinishedAt        *time.Time `gorm:"index"`
-	ExpiresAt         time.Time  `gorm:"not null;index"`
-	CreatedAt         time.Time  `gorm:"not null;index;index:idx_xd_archive_prepare_owner_created"`
-	UpdatedAt         time.Time
+	ID      string `gorm:"size:36;primaryKey"`
+	OwnerID uint64 `gorm:"not null;index;index:idx_xd_archive_prepare_owner_created"`
+	// Optional restricted public capability that initiated this Owner-owned job.
+	// Never store the raw bearer, share password or download JWT.
+	PublicShareID      *uint64    `gorm:"index"`
+	PublicRootRevision uint64     `gorm:"not null;default:0"`
+	RequestedIDsJSON   string     `gorm:"type:text;not null"`
+	Status             string     `gorm:"size:24;not null;index"`
+	Filename           string     `gorm:"size:255"`
+	TotalBytes         int64      `gorm:"not null;default:0"`
+	ManifestJSON       string     `gorm:"type:text"`
+	Error              string     `gorm:"type:text"`
+	CancelRequestedAt  *time.Time `gorm:"index"`
+	StartedAt          *time.Time `gorm:"index"`
+	FinishedAt         *time.Time `gorm:"index"`
+	ExpiresAt          time.Time  `gorm:"not null;index"`
+	CreatedAt          time.Time  `gorm:"not null;index;index:idx_xd_archive_prepare_owner_created"`
+	UpdatedAt          time.Time
 
 	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
