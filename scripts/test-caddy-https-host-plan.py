@@ -1027,6 +1027,150 @@ class OfflineHostStageTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
 
+
+    def make_private_rollback_anchor(self, staged, pin=None, directory=None):
+        script = Path(__file__).with_name("caddy-https-host-rollback-anchor.py")
+        directory = directory or self.state / "caddy-https-admissions"
+        journal = directory / "pending.json"
+        pinned = pin or (hashlib.sha256(journal.read_bytes()).hexdigest()
+                         if journal.is_file() else "0" * 64)
+        command = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", staged["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", self.review_public_pin,
+            "--admission-dir", str(directory),
+            "--expected-pending-sha256", pinned,
+        ]
+        run = subprocess.run(command, capture_output=True, text=True, timeout=35)
+        self.assertEqual(len(run.stdout.splitlines()), 1)
+        for secret in ("never-print-this", "192.168.2.4", str(self.root),
+                       "test-approval-key.pem"):
+            self.assertNotIn(secret, run.stdout + run.stderr)
+        return run.returncode, json.loads(run.stdout), command
+
+    def test_private_rollback_anchor_preserves_original_secret_bytes_not_running_gateway(self):
+        rc, staged = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        before = (self.env.read_bytes(), self.compose.read_bytes(),
+                  (directory / "pending.json").read_bytes())
+        status, output, _ = self.make_private_rollback_anchor(staged)
+        self.assertEqual(status, 0)
+        self.assertEqual(output["state"], "host-rollback-anchor-prepared-unapplied")
+        self.assertIs(output["apply_supported"], False)
+        self.assertEqual(output["desired_revision"], 7)
+        self.assertEqual(output["credential_revision"], 0)
+        self.assertIn("bounded-caddy-restart-and-detached-watchdog-not-implemented",
+                      output["blockers"])
+        backup = directory / "rollback-anchor"
+        self.assertEqual(stat.S_IMODE(backup.stat().st_mode), 0o700)
+        self.assertEqual(sorted(p.name for p in backup.iterdir()),
+                         ["original.compose", "original.env", "receipt.json"])
+        self.assertEqual((backup / "original.env").read_bytes(), before[0])
+        self.assertEqual((backup / "original.compose").read_bytes(), before[1])
+        receipt = (backup / "receipt.json").read_bytes()
+        self.assertEqual(hashlib.sha256(receipt).hexdigest(), output["receipt_sha256"])
+        self.assertEqual(json.loads(receipt)["pending_sha256"],
+                         hashlib.sha256(before[2]).hexdigest())
+        for entry in backup.iterdir():
+            self.assertEqual(stat.S_IMODE(entry.stat().st_mode), 0o600)
+        for secret in ("never-print-this", "192.168.2.4", str(self.root)):
+            self.assertNotIn(secret, receipt.decode("ascii"))
+        self.assertEqual(before, (self.env.read_bytes(), self.compose.read_bytes(),
+                                  (directory / "pending.json").read_bytes()))
+        # A valid receipt never consumes the signed nonce or changes Caddy.
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 2)
+
+    def test_private_rollback_anchor_requires_pending_and_blocks_tampered_source(self):
+        rc, staged = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+        self.assertFalse((directory / "rollback-anchor").exists())
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        self.assertEqual(self.make_private_rollback_anchor(staged, pin="f"*64)[0], 2)
+        self.assertFalse((directory / "rollback-anchor").exists())
+        original = self.env.read_bytes()
+        self.env.write_bytes(original + b"OTHER_SECRET=switch\n")
+        self.env.chmod(0o600)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+        self.assertFalse((directory / "rollback-anchor").exists())
+        self.env.write_bytes(original)
+        self.env.chmod(0o600)
+        # Sticky partial recovery must NEVER be silently overwritten.
+        backup = directory / "rollback-anchor"
+        backup.mkdir(mode=0o700)
+        (backup / "original.env").write_bytes(b"partial-private-source")
+        (backup / "original.env").chmod(0o600)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+        self.assertEqual((backup / "original.env").read_bytes(),
+                         b"partial-private-source")
+
+    def test_private_rollback_anchor_refuses_symlinks_and_inflight_exclusive_lock(self):
+        import fcntl
+        rc, staged = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        anchor = directory / "rollback-anchor"
+        anchor.symlink_to(self.state)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+        anchor.unlink()
+        with (directory / ".intent.lock").open("rb") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                self.assertEqual(self.make_private_rollback_anchor(staged)[0], 2)
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        self.assertEqual(self.make_private_rollback_anchor(staged)[0], 0)
+
+    def test_private_rollback_anchor_three_processes_only_one_wins(self):
+        rc, staged = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(staged)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(staged)[0], 0)
+        # A deliberate invalid pin cannot create a private backup.
+        self.assertEqual(self.make_private_rollback_anchor(staged, pin="a"*64)[0], 2)
+        pinned = hashlib.sha256((directory / "pending.json").read_bytes()).hexdigest()
+        _, _, argv = self.make_private_rollback_anchor(staged, pin="a"*64)
+        index = argv.index("--expected-pending-sha256") + 1
+        argv[index] = pinned
+        processes = [subprocess.Popen(argv, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True)
+                     for _ in range(3)]
+        completed = [p.communicate(timeout=45) for p in processes]
+        self.assertEqual(sum(p.returncode == 0 for p in processes), 1)
+        self.assertEqual(sum(p.returncode == 2 for p in processes), 2)
+        for stdout, stderr in completed:
+            self.assertIs(json.loads(stdout)["apply_supported"], False)
+            self.assertEqual(stderr, "")
+        self.assertEqual(len(list((directory / "rollback-anchor").iterdir())), 3)
+
+    def test_private_rollback_anchor_never_installs_or_auto_restores_gateway(self):
+        src = Path(__file__).with_name("caddy-https-host-rollback-anchor.py").read_text()
+        for forbidden in ("docker compose", "docker stop", "docker restart",
+                          "os.replace(", "os.unlink(", "os.rename(",
+                          "subprocess.", "socket.", "requests.", "--insecure",
+                          '"apply_supported": True', "os.kill(", "os.system("):
+            self.assertNotIn(forbidden, src)
+        self.assertIn("os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW", src)
+        self.assertIn("admission.exclusive_private_lock(dirfd)", src)
+        self.assertIn("pending.identity(os.fstat(lockfd))", src)
+
 if __name__ == "__main__":
     # NET-M5-C0: the existing server-validation entrypoint executes the real
     # isolated loopback TLS fixture without changing unrelated CI workflows.

@@ -1,5 +1,13 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C2-D · 一次性私有回滚原件锚定（2026-10-19）
+
+**已完成前置：** C2-A 独立 Ed25519 签名申请、C2-B 私有单 Pending 登记、C2-C 只读 Pending 复核。本阶段新增 `scripts/caddy-https-host-rollback-anchor.py`，只备份**正式宿主机当前 .env/Compose 的完整原始字节**（含可能存在的凭据），**不修改这些文件**，不调用 Docker，不启停 Caddy，不构成可用的回滚执行器。
+
+- 操作员提供与 C2-C 一样的全部受信任路径及独立的 Plan、Stage Receipt、Pending 原始 SHA-256、Ed25519 公钥 DER 指纹；先运行原 C2-C 只读核验，再于 `state/caddy-https-admissions/.intent.lock` 的排它非阻塞锁内完整复核签名、双修订、当前 `.env`/Compose 和现有 Pending 记录。旧运行入口安全性与证书信任仍待实体现场确认。
+- 只允许在同一 xDrive 安装 HOME 的私有 `state/caddy-https-admissions/rollback-anchor` 目录创建**唯一**备份。目录必须为操作员自有 0700，内部 `original.env`、`original.compose`、`receipt.json` 使用 `O_CREAT|O_EXCL|O_NOFOLLOW` 0600 创建，完整写入及 fsync 文件和父目录；校验备份前后原配置字节、文件身份、签名、Pending 摘要均不变。任何重复/既存锚点、符号链接、部分写入、错误权限和竞争都直接拒绝，不能自动清理、继续或重试。
+- 回执只保存 Plan/Pending/原始配置摘要、两修订与固定阻断项，**不能**输出 `.env`、AliDNS 密钥、域名、私网 IP、Root CA 或绝对路径。即使写入完整成功，返回状态也仅为 `host-rollback-anchor-prepared-unapplied`、`apply_supported=false`。
+- 该锚点只是后续隔离事务、独立 watchdog 超时回滚的材料。没有真 Host/DB CAS、nonce 消耗、安全 AliDNS 密钥交付、受信实体独立 Rescue、重启后的已启用入口正向验证与已关闭入口负向验证、不可变签名 Applied Receipt，绝不授权自动应用/重启。实体设备登录、证书信任、宿主停机和生产回滚未执行。测试使用原始离线 OpenSSL/Ed25519 夹具覆盖成功、机密保护、残留、非法源、符号链接、排它锁和三进程竞争。
 ## NET-M5-C2-C · 已登记签名申请的独立只读复核（2026-10-18）
 
 **前置：** [#2089](https://github.com/lazyxu/xdrive/pull/2089) 的 C2-A 规范签名请求检验、[#2091](https://github.com/lazyxu/xdrive/pull/2091) 的 C2-B 宿主私有单 Pending 围栏均已合入。本阶段仍 **不会** 修改正式 Caddy 配置，也不具备 Host Apply/Restart、运行回滚或已应用回执。
