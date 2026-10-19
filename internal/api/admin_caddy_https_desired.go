@@ -81,7 +81,12 @@ func readCaddyHTTPSDesiredDB(db *gorm.DB) (adminCaddyHTTPSDesired, error) {
 	return adminCaddyHTTPSDesired{
 		Revision: row.Revision, Enabled: row.Enabled, Domain: row.Domain,
 		LANEnabled: row.LANEnabled, LANIP: row.LANIP,
-		Source: "saved", UpdatedAt: &row.UpdatedAt,
+		Source: func() string {
+			if row.Origin == caddyImportedHostOrigin {
+				return caddyImportedHostOrigin
+			}
+			return "saved"
+		}(), UpdatedAt: &row.UpdatedAt,
 	}, nil
 }
 
@@ -212,6 +217,9 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 		if exists {
 			oldEnabled, oldDomain = previous.Enabled, previous.Domain
 			oldLANEnabled, oldLANIP, oldOrigin = previous.LANEnabled, previous.LANIP, "saved"
+			if previous.Origin == caddyImportedHostOrigin {
+				oldOrigin = caddyImportedHostOrigin
+			}
 		}
 		lanEnabled, lanIP := oldLANEnabled, oldLANIP
 		if input.LANEnabled != nil {
@@ -233,7 +241,7 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 				Where("name = ? AND revision = ?", caddyHTTPSSettingName, previous.Revision).
 				Updates(map[string]any{"enabled": *input.Enabled, "domain": domain,
 					"lan_enabled": lanEnabled, "lan_ip": lanIP,
-					"revision": next, "updated_at": time.Now().UTC()})
+					"revision": next, "origin": "saved", "updated_at": time.Now().UTC()})
 			if updated.Error != nil {
 				return updated.Error
 			}
@@ -367,7 +375,7 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 			Where("name = ? AND revision = ?", caddyHTTPSSettingName, row.Revision).
 			Updates(map[string]any{"enabled": history.Enabled, "domain": history.Domain,
 				"lan_enabled": history.LANEnabled, "lan_ip": history.LANIP,
-				"revision": next, "updated_at": time.Now().UTC()})
+				"revision": next, "origin": "rollback", "updated_at": time.Now().UTC()})
 		if update.Error != nil {
 			return update.Error
 		}

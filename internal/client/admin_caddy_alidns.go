@@ -16,6 +16,8 @@ type AdminCaddyAliDNSConfig struct {
 	ApplyState     string     `json:"apply_state"`
 	ApplySupported bool       `json:"apply_supported"`
 	Requirement    string     `json:"requirement"`
+
+	HostApplyPending bool `json:"host_apply_pending"`
 }
 type AdminCaddyAliDNSUpdate struct {
 	Revision        uint64 `json:"revision"`

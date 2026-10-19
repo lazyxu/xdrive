@@ -165,7 +165,8 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip size="small" variant="outlined"
                 color={config.configured ? 'warning' : 'default'}
-                label={config.configured ? '已加密保存 · 待应用' : '服务器未保存凭据'} />
+                label={config.source === 'host-import' ? '原 Caddy 凭据已加密导入 · 生效另验' :
+                  config.configured ? '已加密保存 · 待应用' : '服务器未保存凭据'} />
               <Chip size="small" variant="outlined" label={`凭据修订 #${config.revision}`} />
             </Stack>
             <TextField fullWidth size="small" label="AccessKey ID（新值）"
@@ -195,6 +196,10 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
                 <Button size="small" onClick={hide}>立即隐藏凭据</Button>
               </Box>
             )}
+            {config.source === 'host-import' && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-alidns-host-import>
+              AliDNS 凭据来自旧宿主并已加密入库；运行中的 Caddy 未因此重启或轮换密钥。
+              后续编辑仍需独立的安全应用流程及 DNS／证书验证。
+            </Typography>}
             <Typography variant="caption" color="warning.main">{config.requirement}</Typography>
             <Typography variant="caption" color="text.secondary">
               实际生效检测：尚不支持。当前凭据状态仅说明加密存储，不代表 AliDNS 权限有效、

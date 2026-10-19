@@ -21,7 +21,8 @@ var errCaddyHostPlanIncomplete = errors.New("Caddy host plan requires valid save
 // encoding/json sorts map keys, matching the host-only Python parser.
 func buildCaddyHTTPSHostPlan(snapshot caddyPreflightSnapshot) ([]byte, error) {
 	desired := snapshot.Desired
-	if desired.Source != "saved" || desired.Revision == 0 || desired.Revision >= 1<<60 ||
+	if (desired.Source != "saved" && desired.Source != caddyImportedHostOrigin) ||
+		desired.Revision == 0 || desired.Revision >= 1<<60 ||
 		!validCaddyIngressSelection(desired.Enabled, desired.Domain, desired.LANEnabled, desired.LANIP) ||
 		strings.ToLower(desired.Domain) != desired.Domain {
 		return nil, errCaddyHostPlanIncomplete

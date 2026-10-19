@@ -2126,10 +2126,55 @@ if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
   wait_lan_https "$(env_value XD_LAN_HTTPS_IP)" "$(env_value XD_HTTPS_PORT)"
 fi
 
+# Migrate a WORKING existing ingress into the same durable administrator
+# tables used by System Dependencies. Only after both the fixed Caddy HTTP
+# health and every explicitly enabled HTTPS entry have passed authentic
+# certificate verification; the original .env and Caddy data volumes remain.
+# Send provider credentials over a bounded private stdin pipe to the
+# trusted server container: NEVER on argv, in a temp JSON file or in logs.
+# Existing administrator configuration wins and is never overwritten.
+caddy_import_domain="$(env_value XD_DOMAIN)"
+caddy_import_lan_ip="$(env_value XD_LAN_HTTPS_IP)"
+if [[ -n "$caddy_import_domain" || -n "$caddy_import_lan_ip" ]]; then
+  caddy_import_key_id=""
+  caddy_import_key_secret=""
+  if [[ -n "$caddy_import_domain" ]]; then
+    caddy_import_key_id="$(env_value ALIYUN_ACCESS_KEY_ID)"
+    caddy_import_key_secret="$(env_value ALIYUN_ACCESS_KEY_SECRET)"
+  fi
+  if ! {
+    printf '%s\0' "$caddy_import_domain"
+    printf '%s\0' "$caddy_import_lan_ip"
+    printf '%s\0' "$caddy_import_key_id"
+    printf '%s\0' "$caddy_import_key_secret"
+  } | compose_with_stdin exec -T server xdrive-server caddy-host adopt-stdin; then
+    unset caddy_import_key_id caddy_import_key_secret
+    echo "xDrive Caddy host adoption could not be committed; original deployment and encrypted data remain protected." >&2
+    exit 1
+  fi
+  unset caddy_import_key_id caddy_import_key_secret
+else
+  # Old HTTP-only deployments must not be silently assigned an unverified
+  # new HTTPS identity. They stay accessible under explicit legacy policy.
+  echo "[xDrive] legacy HTTP-only Caddy remains excluded from HTTPS managed adoption."
+fi
+unset caddy_import_domain caddy_import_lan_ip
+
+# Preserve an existing site config in the private host state for operator
+# review. The managed edge image uses its own fixed Caddyfile, but a legacy
+# custom file must never be silently destroyed or made public.
+if [[ "$UPGRADE_EXISTING" == "1" && -f "$CADDY_PATH" && ! -L "$CADDY_PATH" ]]; then
+  mkdir -p "$STATE_DIR/legacy-caddy"
+  chmod 0700 "$STATE_DIR/legacy-caddy"
+  if [[ ! -e "$STATE_DIR/legacy-caddy/original.Caddyfile" ]]; then
+    install -m 0600 "$CADDY_PATH" "$STATE_DIR/legacy-caddy/original.Caddyfile"
+  fi
+fi
+
 DATABASE_ROLLBACK_REQUIRED=0
 commit_upgrade_transaction
-# Caddy/Web configuration is embedded in the versioned edge image. Keep an old
-# host Caddyfile only until the upgrade transaction can no longer roll back.
+# Runtime Caddy config is owned by the versioned managed edge image; only
+# the old host Caddyfile is removed after its protected original is retained.
 rm -f "$CADDY_PATH"
 finalize_host_layout
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then

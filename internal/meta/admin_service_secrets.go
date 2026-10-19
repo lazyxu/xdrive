@@ -11,6 +11,7 @@ type AdminServiceSecret struct {
 	Ciphertext []byte `gorm:"type:bytea"`
 	KeyVersion uint32 `gorm:"not null;default:0"`
 	Revision   uint64 `gorm:"not null;default:1"`
+	Origin     string `gorm:"size:16;not null;default:'saved'"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

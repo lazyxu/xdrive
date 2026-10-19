@@ -57,7 +57,7 @@ export type XDriveCaddyHTTPSConfig = {
   host_lan_configured?: boolean // deployment environment only, NOT effective HTTPS proof
   host_lan_ip?: string
   revision: number
-  source: 'default' | 'saved'
+  source: 'default' | 'saved' | 'host-import'
   updated_at?: string
   apply_state: 'unmanaged' | 'pending'
   // Existence of a sticky Host intent, never an applied Caddy receipt.
@@ -84,7 +84,7 @@ export type XDriveCaddyHTTPSRevision = {
   domain: string
   lan_enabled?: boolean
   lan_ip?: string
-  origin: 'default' | 'saved' | 'rollback'
+  origin: 'default' | 'saved' | 'rollback' | 'host-import'
   created_at: string
 }
 export type XDriveCaddyHTTPSRevisionPage = { items: XDriveCaddyHTTPSRevision[] }
@@ -94,7 +94,7 @@ export type XDriveCaddyHTTPSRollbackInput = { revision: number; target_revision:
 export type XDriveCaddyAliDNSConfig = {
   configured: boolean
   revision: number
-  source: 'unset' | 'saved'
+  source: 'unset' | 'saved' | 'host-import'
   updated_at?: string
   editable: boolean
   apply_state: 'unmanaged' | 'pending'

@@ -107,6 +107,9 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 	state, source := "unmanaged", "unset"
 	if exists {
 		state, source = "pending", "saved"
+		if row.Origin == caddyImportedHostOrigin {
+			source = caddyImportedHostOrigin
+		}
 	}
 	c.JSON(http.StatusOK, adminCaddyAliDNSConfigDTO{
 		Configured: exists && len(row.Ciphertext) > 0,
@@ -190,7 +193,7 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 				Where("name = ? AND revision = ?", caddyAliDNSSecretName, previous.Revision).
 				Updates(map[string]any{
 					"enabled": !input.Clear, "ciphertext": ciphertext,
-					"key_version": keyVersion, "revision": next,
+					"key_version": keyVersion, "revision": next, "origin": "saved",
 					"updated_at": time.Now().UTC(),
 				})
 			if updated.Error != nil {
