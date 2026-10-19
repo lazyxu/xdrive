@@ -113,7 +113,20 @@ for (const app of ['preview', 'media-viewer', 'text-viewer', 'pdf-viewer', 'audi
       assert.equal(frame.props.sx.position, 'fixed')
       assert.equal(frame.props.sx.inset, 0)
       assert.equal(buttons(renderer, '返回').length, 1, 'loading must remain dismissible')
+      const quiet = () => renderer.root.findAll((element) =>
+        element.type === 'div' && element.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
+      assert.equal(quiet().length, 1, app + ' must mount a stable silent first-read canvas')
+      assert.equal(quiet()[0].props['aria-busy'], true, 'unverified file metadata is semantically busy')
+      assert.equal(renderer.root.findAll((element) =>
+        element.type === 'p' && element.children.join('').includes('正在加载')).length, 0,
+      'ordinary viewer entry must not paint a transient loading label')
+      if (app === 'preview') {
+        await new Promise((resolve) => setTimeout(resolve, 365))
+        assert.equal(quiet().length, 1, 'held owner read must remain visually quiet >300ms')
+        assert.equal(frames()[0], frame, 'held request must retain the same fullscreen frame')
+      }
       await act(async () => { rejectRead(new Error('metadata unavailable')) })
+      assert.equal(quiet().length, 0, 'genuine terminal error replaces silent first-read canvas')
       assert.equal(frames().length, 1, 'failure must stay in the full-screen app')
       assert.equal(frames()[0], frame, 'loading-to-failure must preserve the app frame')
       assert.equal(renderer.root.findAll((element) => element.props.role === 'alert').length, 1)
@@ -121,6 +134,66 @@ for (const app of ['preview', 'media-viewer', 'text-viewer', 'pdf-viewer', 'audi
       assert.equal(closes, 1)
     } finally {
       await act(async () => renderer.unmount())
+    }
+  })
+}
+
+for (const app of ['text-viewer', 'pdf-viewer', 'audio-player']) {
+  test(`P84 ${app} fences a superseded routed file before first authorized metadata`, async () => {
+    const oldNode = { id: 101, revision: 1, name: 'prior-file.txt', type: 'file', size: 16 }
+    const nextNode = { id: 102, revision: 2, name: 'accepted-file.txt', type: 'file', size: 28 }
+    let releaseNode
+    let releaseText
+    const pendingNode = new Promise((resolve) => { releaseNode = resolve })
+    const pendingText = new Promise((resolve) => { releaseText = resolve })
+    const api = {
+      node: (id) => id === oldNode.id ? Promise.resolve(oldNode) : pendingNode,
+      fileTextPreview: (id) => id === oldNode.id
+        ? Promise.resolve({ text: 'OLD CONTENT', size: 11, truncated: false })
+        : pendingText,
+    }
+    const props = (id) => ({
+      route: { app, params: { node: id } },
+      api, gallerySource: {}, shareDialogAdapter: {},
+      onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+    })
+    let renderer
+    const frame = () => renderer.root.findAll((element) =>
+      element.props['data-xdrive-web-viewer'] !== undefined)[0]
+    const quiet = () => renderer.root.findAll((element) =>
+      element.type === 'div' && element.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
+    const verifiedContent = () => renderer.root.findAll((element) =>
+      element.type === 'textarea' || element.type === 'preview-content')
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, props(oldNode.id)),
+          { createNodeMock: () => ({ focus() {} }) })
+      })
+      assert.equal(quiet().length, 0, 'first accepted file has no intermediate state')
+      assert.ok(verifiedContent().length > 0, 'real accepted file must render')
+      const originalFrame = frame()
+      await act(async () => {
+        renderer.update(React.createElement(WebFileViewerApps, props(nextNode.id)))
+      })
+      assert.equal(frame(), originalFrame, 'route reuse keeps the exact Viewer App Frame')
+      assert.equal(quiet().length, 1, 'different route invalidates previous metadata')
+      assert.equal(verifiedContent().length, 0, 'previous file bytes must not leak into new route')
+      await new Promise((resolve) => setTimeout(resolve, 365))
+      assert.equal(quiet().length, 1, 'slow new route cannot spawn a delayed loading screen')
+      await act(async () => {
+        releaseNode(nextNode)
+        releaseText({ text: 'NEW CONTENT', size: 11, truncated: false })
+      })
+      assert.equal(quiet().length, 0, 'authorized replacement is visible without another state')
+      const rendered = verifiedContent()
+      assert.ok(rendered.length > 0, 'new file must render after its own response')
+      if (app === 'text-viewer') {
+        assert.equal(rendered[0].props.value, 'NEW CONTENT')
+      } else {
+        assert.equal(rendered[0].props.target.id, nextNode.id)
+      }
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
     }
   })
 }
