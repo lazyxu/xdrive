@@ -1292,7 +1292,7 @@ export default function WebFileExplorer({
           onGoUp={() => { void goUp() }}
           onCrumbClick={index => { void navigateToCrumb(index) }}
           pathValue={trashActive ? undefined : pathValue}
-          onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
+          onPathSubmit={trashActive ? undefined : (path) => submitPath(path)}
           onRestoreFolder={restoreMobileDirectory}
           onOpenItem={(item, ownerID) => {
             if (trashActive) return false
@@ -1521,7 +1521,7 @@ export default function WebFileExplorer({
           void navigateTo(ancestry).catch(onError)
         }}
         pathValue={trashActive ? '回收站' : pathValue}
-        onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
+        onPathSubmit={trashActive ? undefined : (path) => submitPath(path)}
         searchEnabled={!trashActive}
         searchValue={trashActive ? '' : searchValue}
         onSearchValueChange={changeSearchValue}

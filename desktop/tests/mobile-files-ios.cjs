@@ -184,7 +184,7 @@ test('F-iOS27-10D: compact location uses the title menu, not a separate recursiv
   assert.match(mobileSource, /externalDragOver\(event, \{ kind: 'crumb', crumb \}\)/)
   assert.doesNotMatch(mobileSource, /data-mobile-files-location-path|showLocationPath|显示位置路径/)
   assert.match(webAdapter, /onCrumbClick=\{index => \{ void navigateToCrumb\(index\) \}\}/)
-  assert.match(webAdapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => \{ void submitPath\(path\) \}\}/)
+  assert.match(webAdapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => submitPath\(path\)\}/)
   assert.match(sharedExplorer, /data-xdrive-file-explorer-address-bar/)
 })
 
@@ -585,9 +585,9 @@ test('F-PARITY-05: Mobile typed folder path delegates only to the shared Web sub
   const adapter = read('web/src/WebFileExplorer.tsx')
   const controller = read('ui/shared/src/mui/FileExplorerWorkspaceController.ts')
   assert.match(adapter, /pathValue=\{trashActive \? undefined : pathValue\}/)
-  assert.match(adapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => \{ void submitPath\(path\) \}\}/)
+  assert.match(adapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => submitPath\(path\)\}/)
   assert.match(mobileSource, /pathValue\?: string/)
-  assert.match(mobileSource, /onPathSubmit\?: \(path: string\) => void/)
+  assert.match(mobileSource, /onPathSubmit\?: \(path: string\) => boolean \| void \| Promise<boolean \| void>/)
   assert.match(mobileSource, /overflowAction\('前往文件夹路径…', openGoToPath\)/)
   assert.match(mobileSource, /data-mobile-files-go-to-path/)
   assert.match(mobileSource, /data-mobile-files-go-to-path-submit/)
@@ -600,12 +600,32 @@ test('F-PARITY-05: Mobile typed folder path delegates only to the shared Web sub
 
 test('F-PARITY-05: typed path keeps FileExplorer tabs and all-files Search separate', () => {
   assert.match(mobileSource, /不是全库搜索/)
-  assert.match(mobileSource, /beginBrowse\(directoryID\)/)
+  assert.doesNotMatch(mobileSource, /beginBrowse\(directoryID\)/)
   assert.match(mobileSource, /!props\.trashActive && props\.onPathSubmit/)
   assert.doesNotMatch(mobileSource, /props\.onNewTab\(/)
   const ios = read('docs/mobile-files-ios27.md')
   assert.match(ios, /F-PARITY-05/)
   assert.match(ios, /52px/)
+})
+
+test('P95 typed path must wait for current shared navigation first-page receipt', () => {
+  const navigation = read('ui/shared/src/mui/FileExplorerNavigation.ts')
+  const controller = read('ui/shared/src/mui/FileExplorerWorkspaceController.ts')
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  for (const s of ['onAccepted?: (accepted: boolean) => void','onAccepted?.(false)','onAccepted?.(true)','if (committed === false || !isNavigationCurrent(requestID))']) assert.ok(navigation.includes(s),s)
+  for (const s of ['let accepted = false','(committed) => { accepted = committed }','return accepted && navigation.isNavigationIntentCurrent(navigationIntentID)','return false']) assert.ok(controller.includes(s),s)
+  assert.match(adapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => submitPath\(path\)\}/)
+  for (const s of ['const [acceptedPathIntent, setAcceptedPathIntent] = useState(0)','acceptedPathIntent === pendingPath.intent','if (accepted === true) setAcceptedPathIntent(intent)','else if (accepted === false) pendingPathOriginRef.current = null']) assert.ok(mobileSource.includes(s),s)
+  // Row navigation needs previousRangeKey; typed paths must use the real Owner receipt.
+  const pathEffectStart = mobileSource.indexOf('    const pendingPath = pendingPathOriginRef.current')
+  const pathEffectEnd = mobileSource.indexOf('    // A Home/Recent/Quick Access/Search/path ticket', pathEffectStart)
+  assert.ok(pathEffectStart > 0 && pathEffectEnd > pathEffectStart)
+  assert.doesNotMatch(mobileSource.slice(pathEffectStart, pathEffectEnd), /previousRangeKey/)
+  assert.match(mobileSource, /acceptedPathIntent, initial\.folderID, persist\]\)/)
+  const pathSubmitStart = mobileSource.indexOf('  const submitGoToPath = () => {')
+  const pathSubmitEnd = mobileSource.indexOf('  const onOpenEntry =', pathSubmitStart)
+  assert.ok(pathSubmitStart > 0 && pathSubmitEnd > pathSubmitStart)
+  assert.doesNotMatch(mobileSource.slice(pathSubmitStart, pathSubmitEnd), /previousRangeKey/)
 })
 
 test('F-PARITY-06: Mobile Files external drop shares wide Web reader and upload controllers', () => {
