@@ -1,0 +1,124 @@
+{
+  "name": "SH-P005 public share readonly Explorer first source-exact revalidation",
+  "sourceSha": "97fa0a2eb773de30b48b37394005daf4376abcd8",
+  "workflowRun": 39235535700,
+  "jobId": 118003570042,
+  "status": "SUCCESS exact original r1 UI head / not latest evidence-amended final head",
+  "scope": "Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails",
+  "original_jpeg_cas": 100000,
+  "allocated_cas_bytes": 409604096,
+  "browser_sessions": 6,
+  "byWidth": {
+    "390": {
+      "n": 3,
+      "first_page_p50_ms": 108.18526399999973,
+      "next_page_p50_ms": 156.20796800000244,
+      "first_page_max_ms": 130.72867199999746,
+      "next_page_max_ms": 175.75174399999378
+    },
+    "1440": {
+      "n": 3,
+      "first_page_p50_ms": 108.40318599999591,
+      "next_page_p50_ms": 168.67839199998707,
+      "first_page_max_ms": 116.56828900000255,
+      "next_page_max_ms": 169.5869789999997
+    }
+  },
+  "allPassed": true,
+  "sessions": [
+    {
+      "width": 1440,
+      "sample": 1,
+      "first_page_ms": 93.56742700000177,
+      "next_page_ms": 146.2195020000072,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 67.98361999999906,
+      "next_download_ms": 83.7918750000099,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 2,
+      "first_page_ms": 116.56828900000255,
+      "next_page_ms": 169.5869789999997,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 78.85525500000222,
+      "next_download_ms": 91.70354899999802,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 3,
+      "first_page_ms": 108.40318599999591,
+      "next_page_ms": 168.67839199998707,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 62.38980299999821,
+      "next_download_ms": 68.0498660000012,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 1,
+      "first_page_ms": 106.35846400000446,
+      "next_page_ms": 156.20796800000244,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 61.90954399999464,
+      "next_download_ms": 65.9426739999908,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 2,
+      "first_page_ms": 108.18526399999973,
+      "next_page_ms": 147.96267400000943,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 58.659499999994296,
+      "next_download_ms": 67.53194600000279,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 3,
+      "first_page_ms": 130.72867199999746,
+      "next_page_ms": 175.75174399999378,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 95.78998800000409,
+      "next_download_ms": 69.26717900000222,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    }
+  ],
+  "sourceMachineArtifact": "https://github.com/lazyxu/xdrive/actions/runs/39235535700",
+  "notMeasured": [
+    "native Windows/macOS",
+    "actual mobile hardware",
+    "installed PWA",
+    "WAN",
+    "H264 and Live Photo dynamic playback",
+    "100k thumbnails decoded simultaneously"
+  ],
+  "note": "Original historical CI 39130331355 is not paired same-runner BEFORE; no valid acceleration claim."
+}

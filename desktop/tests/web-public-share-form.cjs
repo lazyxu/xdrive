@@ -64,10 +64,14 @@ function loadPublicShare(api) {
       if (name === './api') return { ApiError: TestApiError, XDriveApi: api }
       if (name === '../../ui/shared/src') return load('ui/shared/src/format.ts')
       if (name === '../../ui/shared/src/mui/useDeferredLoading') return load('ui/shared/src/mui/useDeferredLoading.ts')
+      if (name === './FileExplorerItemPresentation') return load('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+      if (name === './ActionButton') return load('ui/shared/src/mui/ActionButton.tsx')
+      if (name === '../format') return load('ui/shared/src/format.ts')
       if (name === '@xdrive/ui/mui') {
         return {
           ...load('ui/shared/src/mui/AuthSurface.tsx'),
           ...load('ui/shared/src/mui/ActionButton.tsx'),
+          ...load('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'),
           XDriveBrandLockup: () => null,
           XDriveStatePanel: ({ message }) => React.createElement('div', null, message),
           XDriveStatusAlert: ({ children, tone }) => React.createElement('div', { role: 'alert', 'data-tone': tone }, children),
@@ -533,4 +537,92 @@ test('P90 actual React public folder browse and nested folder retain geometry an
   assert.ok(!text().includes('旧文件.txt'))
   assert.ok(!text().includes('临时网络错误'))
   assert.equal(calls.length, 3, 'no decorative request or extra page read may be dispatched')
+})
+
+
+test('File capability shows shared read-only Explorer item and keeps sole native download action', async (t) => {
+  const view = await mountShare(t, {
+    share: { name: 'camera.jpg', type: 'file', size: 8192, requires_password: false },
+  })
+  const fileBrowser = view.renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props['data-xdrive-public-share-file-browser'] === true)
+  assert.equal(fileBrowser.length, 1, 'single-file share must mount the same read-only Explorer presentation')
+  const items = view.renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props.role === 'listitem')
+  assert.equal(items.length, 1)
+  assert.equal(items[0].props['data-xdrive-public-share-item-id'], 0)
+  assert.ok(view.text().includes('camera.jpg'))
+  assert.ok(view.text().includes('JPG 图像'))
+  assert.equal(view.button().props.type, 'submit')
+  for (const forbidden of ['上传', '删除', '重命名', '移动', '粘贴']) {
+    assert.equal(view.renderer.root.findAllByType('button')
+      .filter(button => textContent(button.children).trim() === forbidden).length, 0,
+      'a public file capability cannot expose Owner operation ' + forbidden)
+  }
+  await view.submit()
+  assert.deepEqual(view.downloads.map(d => d.filename), ['camera.jpg'])
+})
+
+test('Folder capability switches real shared Explorer Details/Grid without changing page or granting writes', async (t) => {
+  const downloads = []
+  const entries = [
+    { id: 31, name: 'Pictures', type: 'dir', size: 0 },
+    { id: 32, name: 'frame.heic', type: 'file', size: 64 },
+  ]
+  class Api {
+    async publicShare() {
+      return { name: 'Shared Photos', type: 'dir', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren(_token, _password, parentID) {
+      return { parent_id: parentID, next_cursor: 0,
+        items: parentID === 0 ? entries : [{ id: 33, name: 'child.txt', type: 'file', size: 4 }] }
+    }
+    async downloadPublicShare(_token, _password, name, id) {
+      downloads.push({ name, id })
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => {
+    renderer = create(React.createElement(PublicShare, { token: 'test-share-token' }))
+  })
+  t.after(() => act(() => renderer.unmount()))
+  const click = async label => {
+    const button = renderer.root.findAllByType('button')
+      .find(item => textContent(item.children).trim() === label)
+    assert.ok(button, 'missing shared Explorer action: ' + label)
+    await act(async () => { button.props.onClick() })
+  }
+  const rows = () => renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props.role === 'listitem')
+  const view = () => renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props['data-xdrive-public-share-explorer-view'])[0]
+  await click('浏览文件夹')
+  assert.equal(rows().length, 2)
+  assert.equal(view().props['data-xdrive-public-share-explorer-view'], 'details')
+  assert.ok(textContent(renderer.toJSON()).includes('HEIC 图像'))
+  await click('网格')
+  assert.equal(view().props['data-xdrive-public-share-explorer-view'], 'grid')
+  assert.equal(rows().length, 2, 'view switching must not re-fetch or materialize extra pages')
+  await click('列表')
+  assert.equal(view().props['data-xdrive-public-share-explorer-view'], 'details')
+  const fileRow = rows().find(row => row.props['data-xdrive-public-share-item-id'] === 32)
+  assert.ok(fileRow)
+  let prevented = false
+  await act(async () => {
+    fileRow.props.onKeyDown({ target: fileRow, currentTarget: fileRow,
+      key: 'Enter', preventDefault() { prevented = true } })
+    await Promise.resolve()
+  })
+  assert.equal(prevented, true)
+  assert.deepEqual(downloads, [{ name: 'frame.heic', id: 32 }])
+  await click('打开')
+  assert.equal(rows().length, 1)
+  assert.ok(textContent(renderer.toJSON()).includes('child.txt'))
+  for (const forbidden of ['上传', '删除', '重命名', '移动', '粘贴', '新建文件夹']) {
+    assert.equal(renderer.root.findAllByType('button')
+      .filter(button => textContent(button.children).trim() === forbidden).length, 0,
+      'shared folder must not expose Owner command ' + forbidden)
+  }
 })

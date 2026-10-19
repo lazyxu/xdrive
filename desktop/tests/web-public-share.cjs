@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const publicShare = fs.readFileSync(path.join(repo, 'web', 'src', 'PublicShare.tsx'), 'utf8')
+const publicReadOnlyExplorer = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'PublicShareReadOnlyExplorer.tsx'), 'utf8')
 const webStyles = fs.readFileSync(path.join(repo, 'web', 'src', 'styles.css'), 'utf8')
 const authSurface = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'AuthSurface.tsx'), 'utf8')
 const brandLockup = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
@@ -18,7 +19,7 @@ test('Web public share uses the shared auth and brand surfaces', () => {
     'variant="large"',
     'subtitle="安全文件分享"',
     '<XDriveAuthShell viewport decorated spacing="compact">',
-    '<XDriveAuthPanel size="compact" form onSubmit=',
+    '<XDriveAuthPanel size="compact" maxWidth={920} form onSubmit=',
   ]) {
     assert.ok(publicShare.includes(token), `Public Share shared surface missing: ${token}`)
   }
@@ -67,11 +68,25 @@ test('Web folder share stays bounded, read-only and cancels stale page requests'
     'const controller = new AbortController()',
     'items: page.items',
     'next: page.next_cursor',
-    'folder.items.map((entry)',
-    'folder.next > 0',
-    'folder.history.length > 0',
+    'hasPreviousPage={Boolean(folder?.history.length)}',
+    'hasNextPage={Boolean(folder && folder.next > 0)}',
+    'onPreviousPage={() => {',
+    'onNextPage={() => {',
   ]) {
     assert.ok(publicShare.includes(token), `Shared folder pagination missing: ${token}`)
+  }
+  for (const token of [
+    'items.slice(0, 100).map((entry)',
+    'data-xdrive-public-share-folder-browser',
+    'data-xdrive-public-share-explorer-view',
+    'onOpenFolder?.(entry)',
+    'onDownloadItem?.(entry)',
+    'role="listitem"',
+  ]) {
+    assert.ok(publicReadOnlyExplorer.includes(token), 'shared read-only Explorer presentation missing: ' + token)
+  }
+  for (const forbidden of ['onUpload', 'onDeleteItems', 'onRenameItem', 'onMoveItemsTo', 'onCopyItemsTo']) {
+    assert.equal(publicReadOnlyExplorer.includes(forbidden), false, 'public share must not delegate Owner command: ' + forbidden)
   }
   assert.equal(publicShare.includes('items: [...old.items'), false, '100k folder must not accumulate every page in the DOM')
 })

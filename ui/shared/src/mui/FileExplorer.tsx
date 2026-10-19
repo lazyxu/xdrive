@@ -1,4 +1,16 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  XDriveFileExplorerItemIcon,
+  xDriveFileKind,
+  xDriveFileTypeLabel,
+  xDriveFileSupportsThumbnail,
+} from './FileExplorerItemPresentation'
+export {
+  XDriveFileExplorerItemIcon,
+  xDriveFileKind,
+  xDriveFileTypeLabel,
+  xDriveFileSupportsThumbnail,
+} from './FileExplorerItemPresentation'
 import type { DragEvent as ReactDragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent, WheelEvent as ReactWheelEvent } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
@@ -17,29 +29,20 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
-import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
-import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
-import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
-import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
-import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
-import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
-import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
-import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewColumnRoundedIcon from '@mui/icons-material/ViewColumnRounded'
 import ViewSidebarRoundedIcon from '@mui/icons-material/ViewSidebarRounded'
 import {
@@ -549,67 +552,6 @@ export type XDriveFileExplorerMenuItem = {
   onSelect: () => void
 }
 
-const imageExtensions = new Set(['arw', 'avif', 'bmp', 'cr3', 'dng', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'livp', 'nef', 'png', 'tif', 'tiff', 'webp'])
-const videoExtensions = new Set(['3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'])
-const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
-const documentExtensions = new Set(['doc', 'docx', 'odt', 'rtf'])
-const spreadsheetExtensions = new Set(['csv', 'ods', 'xls', 'xlsx'])
-const presentationExtensions = new Set(['odp', 'ppt', 'pptx'])
-const archiveExtensions = new Set(['7z', 'bz2', 'gz', 'rar', 'tar', 'tgz', 'xz', 'zip'])
-const codeExtensions = new Set([
-  'c', 'cc', 'cpp', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'json', 'jsx',
-  'kt', 'md', 'php', 'py', 'rb', 'rs', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
-  'xml', 'yaml', 'yml',
-])
-const textExtensions = new Set(['ini', 'log', 'text', 'txt'])
-
-function explorerExtension(name: string) {
-  const dot = name.lastIndexOf('.')
-  if (dot <= 0 || dot === name.length - 1) return ''
-  return name.slice(dot + 1).toLowerCase()
-}
-
-export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
-  if (kind === 'dir') return 'folder'
-  const extension = explorerExtension(name)
-  if (imageExtensions.has(extension)) return 'image'
-  if (videoExtensions.has(extension)) return 'video'
-  if (audioExtensions.has(extension)) return 'audio'
-  if (extension === 'pdf') return 'pdf'
-  if (documentExtensions.has(extension)) return 'document'
-  if (spreadsheetExtensions.has(extension)) return 'spreadsheet'
-  if (presentationExtensions.has(extension)) return 'presentation'
-  if (archiveExtensions.has(extension)) return 'archive'
-  if (codeExtensions.has(extension)) return 'code'
-  if (textExtensions.has(extension)) return 'text'
-  return 'file'
-}
-
-export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
-  if (kind === 'dir') return '文件夹'
-  const extension = explorerExtension(name)
-  if (extension === 'livp') return 'LIVP 实况照片'
-  const fileKind = xDriveFileKind(name, kind)
-  switch (fileKind) {
-    case 'image': return extension ? `${extension.toUpperCase()} 图像` : '图像'
-    case 'video': return extension ? `${extension.toUpperCase()} 视频` : '视频'
-    case 'audio': return extension ? `${extension.toUpperCase()} 音频` : '音频'
-    case 'pdf': return 'PDF 文档'
-    case 'document': return extension ? `${extension.toUpperCase()} 文档` : '文档'
-    case 'spreadsheet': return extension ? `${extension.toUpperCase()} 工作表` : '工作表'
-    case 'presentation': return extension ? `${extension.toUpperCase()} 演示文稿` : '演示文稿'
-    case 'archive': return extension ? `${extension.toUpperCase()} 压缩文件` : '压缩文件'
-    case 'code': return extension ? `${extension.toUpperCase()} 文件` : '代码文件'
-    case 'text': return '文本文档'
-    default: return extension ? `${extension.toUpperCase()} 文件` : '文件'
-  }
-}
-
-export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
-  const fileKind = xDriveFileKind(name, kind)
-  return fileKind === 'image' || fileKind === 'video'
-}
-
 function fileExplorerShortcutTitle(
   label: string,
   command: XDriveFileExplorerKeyboardCommand,
@@ -686,31 +628,6 @@ function setFileExplorerDragImage(
   document.body.appendChild(ghost)
   event.dataTransfer.setDragImage(ghost, 18, 18)
   window.setTimeout(() => ghost.remove(), 0)
-}
-
-const xDriveWindowsFolderYellow = '#ffcb3d'
-
-export function XDriveFileExplorerItemIcon({
-  item,
-  size = 21,
-  folderSize = size,
-}: {
-  item: Pick<XDriveFileExplorerItem, 'name' | 'kind' | 'fileKind'>
-  size?: number
-  folderSize?: number
-}) {
-  const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
-  if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: folderSize, color: xDriveWindowsFolderYellow }} />
-  if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'pdf') return <PictureAsPdfRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'spreadsheet') return <TableChartRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'presentation') return <ViewCarouselRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'archive') return <FolderZipRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'document' || fileKind === 'text') return <DescriptionRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  if (fileKind === 'code') return <CodeRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
-  return <InsertDriveFileRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
 }
 
 export function XDriveFileExplorerAvailabilityBadge({

@@ -6,7 +6,9 @@ permissions:
   contents: read
 jobs:
   live-physical-100k-share-browser:
-    if: github.head_ref == 'perf/sh-p005-browser-physical-jpeg-share-100k-20261018'
+    if: >-
+      github.head_ref == 'perf/sh-p005-browser-physical-jpeg-share-100k-20261018' ||
+      github.head_ref == 'feat/public-share-readonly-explorer-20261019'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     services:

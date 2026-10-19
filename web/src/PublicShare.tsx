@@ -3,8 +3,8 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
-import { Box, Button, InputAdornment, Stack, TextField, Typography } from '@mui/material'
-import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDriveStatusAlert } from '@xdrive/ui/mui'
+import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare, PublicShareChild } from '../../ui/shared/src'
 import { formatBytes } from '../../ui/shared/src'
@@ -132,7 +132,7 @@ export default function PublicShareView({ token }: { token: string }) {
 
   return (
     <XDriveAuthShell viewport decorated spacing="compact">
-      <XDriveAuthPanel size="compact" form onSubmit={(event) => {
+      <XDriveAuthPanel size="compact" maxWidth={920} form onSubmit={(event) => {
         event.preventDefault()
         if (share?.type === 'dir') void loadFolder([{ id: 0, name: share.name }])
         else void download()
@@ -200,92 +200,49 @@ export default function PublicShareView({ token }: { token: string }) {
               {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
 
               {share.type === 'dir' ? (
-                <Stack data-xdrive-public-share-folder-browser aria-busy={folderPending || undefined} spacing={1.25}>
-                  {folder ? (
-                    <Box role="region" aria-label="分享文件夹内容" aria-busy={folderPending}
-                      sx={{ minHeight: 180, position: 'relative' }}>
-                      <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.5} sx={{ mb: 1 }}>
-                        {folder.path.map((crumb, index) => (
-                          <Button key={crumb.id} type="button" size="small"
-                            disabled={index === folder.path.length - 1}
-                            onClick={() => void loadFolder(folder.path.slice(0, index + 1))}>
-                            {crumb.name}
-                          </Button>
-                        ))}
-                      </Stack>
-                      <Box role="list" sx={{ maxHeight: 400, overflowY: 'auto' }}>
-                        {folder.items.map((entry) => (
-                          <Stack key={entry.id} role="listitem" direction="row" spacing={1}
-                            alignItems="center"
-                            sx={{ py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
-                            {entry.type === 'dir'
-                              ? <FolderRoundedIcon fontSize="small" color="action" />
-                              : <InsertDriveFileRoundedIcon fontSize="small" color="action" />}
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                                {entry.name}
-                              </Typography>
-                              {entry.type === 'file' && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {formatBytes(entry.size)}
-                                </Typography>
-                              )}
-                            </Box>
-                            {entry.type === 'dir' ? (
-                              <Button type="button" size="small"
-                                onClick={() => void loadFolder([...folder.path,
-                                  { id: entry.id, name: entry.name }])}>
-                                打开
-                              </Button>
-                            ) : (
-                              <Button type="button" size="small" disabled={!canDownload}
-                                startIcon={<DownloadRoundedIcon />}
-                                onClick={() => void download(entry)}>
-                                下载
-                              </Button>
-                            )}
-                          </Stack>
-                        ))}
-                      </Box>
-                      {!folderPending && folder.items.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                          此文件夹为空
-                        </Typography>
-                      )}
-                      {(folder.history.length > 0 || folder.next > 0) && (
-                        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                          {folder.history.length > 0 && (
-                            <Button type="button" fullWidth size="small" disabled={folderPending}
-                              onClick={() => void loadFolder(
-                                folder.path, folder.history[folder.history.length - 1], true,
-                              )}>
-                              上一页
-                            </Button>
-                          )}
-                          {folder.next > 0 && (
-                            <Button type="button" fullWidth size="small" disabled={folderPending}
-                              onClick={() => void loadFolder(folder.path, folder.next)}>
-                              下一页
-                            </Button>
-                          )}
-                        </Stack>
-                      )}
-                    </Box>
-                  ) : (
-                    <XDriveActionButton intent="primary" type="button" fullWidth
-                      disabled={!canDownload || folderPending}
-                      onClick={() => void loadFolder([{ id: 0, name: share.name }])}>
-                      浏览文件夹
-                    </XDriveActionButton>
-                  )}
+                <>
+                  <XDrivePublicShareReadOnlyExplorer
+                    kind="dir"
+                    items={folder?.items ?? []}
+                    path={folder?.path ?? []}
+                    folderOpened={Boolean(folder)}
+                    pending={folderPending}
+                    canDownload={canDownload}
+                    hasPreviousPage={Boolean(folder?.history.length)}
+                    hasNextPage={Boolean(folder && folder.next > 0)}
+                    onBrowse={() => void loadFolder([{ id: 0, name: share.name }])}
+                    onCrumbClick={(index) => {
+                      if (folder) void loadFolder(folder.path.slice(0, index + 1))
+                    }}
+                    onOpenFolder={(entry) => {
+                      if (folder) void loadFolder([...folder.path, { id: entry.id, name: entry.name }])
+                    }}
+                    onDownloadItem={(entry) => void download(entry)}
+                    onPreviousPage={() => {
+                      if (folder?.history.length) {
+                        void loadFolder(folder.path, folder.history[folder.history.length - 1], true)
+                      }
+                    }}
+                    onNextPage={() => {
+                      if (folder?.next) void loadFolder(folder.path, folder.next)
+                    }}
+                  />
                   {folderError && <XDriveStatusAlert tone="bad">{folderError}</XDriveStatusAlert>}
-                </Stack>
+                </>
               ) : (
-                <XDriveActionButton intent="primary" type="submit" fullWidth
-                  startIcon={<DownloadRoundedIcon />} loading={downloading}
-                  loadingLabel="正在下载…" disabled={!canDownload}>
-                  下载
-                </XDriveActionButton>
+                <>
+                  <XDrivePublicShareReadOnlyExplorer
+                    kind="file"
+                    items={[{ id: 0, name: share.name, type: 'file', size: share.size }]}
+                    canDownload={canDownload}
+                    onDownloadItem={() => void download()}
+                  />
+                  <XDriveActionButton intent="primary" type="submit" fullWidth
+                    startIcon={<DownloadRoundedIcon />} loading={downloading}
+                    loadingLabel="正在下载…" disabled={!canDownload}>
+                    下载
+                  </XDriveActionButton>
+                </>
               )}
             </Stack>
           )}
