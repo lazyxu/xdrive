@@ -130,7 +130,6 @@ export default function AdminAuditPanel({
   const [acceptedSource, setAcceptedSource] = useState<XDriveAdminAuditPort | null>(null)
   const [loading, setLoading] = useState(true)
   const [requestGeneration, setRequestGeneration] = useState(1)
-  const delayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
   const [errorSnapshot, setErrorSnapshot] = useState<{
     source: XDriveAdminAuditPort; message: string
   } | null>(null)
@@ -281,6 +280,9 @@ export default function AdminAuditPanel({
   }, [])
 
   const totalCount = acceptedSource === api ? virtualCollection.totalCount : null
+  // A first unverified index is silent; an accepted table can keep its
+  // original non-reflowing progress indicator during a later real refresh.
+  const delayedLoading = useXDriveDeferredLoading(loading && totalCount !== null, requestGeneration)
   const logicalCount = totalCount ?? 0
   const virtualWindow = useMemo(() => xDriveVirtualCollectionFixedRowWindow({
     itemCount: logicalCount,
@@ -451,15 +453,13 @@ export default function AdminAuditPanel({
           {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
 
           <Box data-xdrive-admin-audit-content sx={{
-            position: 'relative', minWidth: 0, minHeight: totalCount === null ? 180 : undefined,
+            position: 'relative', minWidth: 0, minHeight: totalCount === null || totalCount === 0 ? 180 : undefined,
           }}>
           {totalCount === null ? (
-            <Box data-xdrive-admin-audit-first-read sx={{
-              minHeight: 180, display: 'grid', placeItems: 'center',
-            }}>
-              {delayedLoading ? (
-                <XDriveStatePanel variant="plain" loading message="正在加载审计日志…" />
-              ) : !loading && error ? (
+            <Box data-xdrive-admin-audit-first-read
+              aria-busy={loading || !error || undefined}
+              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+              {!loading && error ? (
                 <XDriveStatePanel variant="plain" message="审计日志读取失败，请重试。" />
               ) : null}
             </Box>

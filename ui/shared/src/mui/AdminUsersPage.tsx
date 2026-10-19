@@ -136,7 +136,8 @@ export default function AdminUsersPanel({
   const [readEpoch, setReadEpoch] = useState(0)
   const [visibleReadEpoch, setVisibleReadEpoch] = useState<number | null>(null)
   const readEpochRef = useRef(0)
-  const showNetworkFeedback = loading && pendingReadSource === api && visibleReadEpoch === readEpoch
+  const showNetworkFeedback = loading && readComplete && users.length > 0 &&
+    pendingReadSource === api && visibleReadEpoch === readEpoch
   const [loadError, setLoadError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -184,13 +185,13 @@ export default function AdminUsersPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
 
-  // Begin authenticated requests immediately, but delay only decorative
-  // feedback. A superseding read/account cannot inherit an older spinner.
+  // No first-read timer: only an already authorized, populated user list
+  // may show the original non-reflowing refresh indicator.
   useEffect(() => {
-    if (!loading || pendingReadSource !== api) return
+    if (!loading || pendingReadSource !== api || !readComplete || users.length === 0) return
     const timer = window.setTimeout(() => setVisibleReadEpoch(readEpoch), 300)
     return () => window.clearTimeout(timer)
-  }, [api, loading, pendingReadSource, readEpoch])
+  }, [api, loading, pendingReadSource, readEpoch, readComplete, users.length])
 
   useEffect(() => {
     if (!focusUserID || users.length === 0) return
@@ -349,13 +350,9 @@ export default function AdminUsersPanel({
               position: 'relative', minWidth: 0, minHeight: users.length === 0 ? 180 : undefined,
             }}>
               {!readComplete ? (
-                <Box data-xdrive-admin-users-first-read sx={{
+                <Box data-xdrive-admin-users-first-read aria-busy="true" sx={{
                   minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {showNetworkFeedback ? (
-                    <XDriveStatePanel variant="plain" loading message="正在加载用户…" />
-                  ) : null}
-                </Box>
+                }} />
               ) : users.length === 0 ? (
                 <XDriveStatePanel variant="plain" message={
                   loadError ? '用户列表读取失败，请刷新重试。' : '暂无用户'
