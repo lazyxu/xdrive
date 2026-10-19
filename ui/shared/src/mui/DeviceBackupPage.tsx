@@ -43,6 +43,7 @@ import { formatBytes } from '../format'
 import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
 import { validateXDriveDeviceBackupDevicePage } from '../device-backup-device-page-validation'
+import { validateXDriveDeviceBackupRunPage } from '../device-backup-run-page-validation'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
   XDriveDeviceBackupDevice, XDriveDeviceBackupFolder,
@@ -394,6 +395,7 @@ export function XDriveDeviceBackupPage({
     try {
       const data = await source.runs(id, pageSize, (page - 1) * pageSize)
       if (requests.current[id] !== request) return
+      validateXDriveDeviceBackupRunPage(data, id, pageSize, (page - 1) * pageSize)
       setHistoryState((prev) => {
         if (prev.source !== source) return prev
         return {

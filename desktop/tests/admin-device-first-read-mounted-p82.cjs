@@ -40,6 +40,9 @@ function page(file, exportName) {
     if (name === '../device-backup-device-page-validation') return {
       validateXDriveDeviceBackupDevicePage: () => {},
     }
+    if (name === '../device-backup-run-page-validation') return {
+      validateXDriveDeviceBackupRunPage: () => {},
+    }
     if (name === './WorkspaceSurface') return {
       XDriveWorkspaceSurface: ({ children, pageActions }) =>
         React.createElement('WorkspaceSurface', {}, pageActions, children),
