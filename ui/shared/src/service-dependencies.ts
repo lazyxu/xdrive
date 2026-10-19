@@ -60,6 +60,8 @@ export type XDriveCaddyHTTPSConfig = {
   source: 'default' | 'saved'
   updated_at?: string
   apply_state: 'unmanaged' | 'pending'
+  // Existence of a sticky Host intent, never an applied Caddy receipt.
+  host_apply_pending?: boolean
   editable: boolean
   apply_supported: boolean
   requires_restricted_maintenance: boolean
@@ -96,6 +98,8 @@ export type XDriveCaddyAliDNSConfig = {
   updated_at?: string
   editable: boolean
   apply_state: 'unmanaged' | 'pending'
+  // Existence of a sticky Host intent, never an applied Caddy receipt.
+  host_apply_pending?: boolean
   apply_supported: false
   requirement: string
 }

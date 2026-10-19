@@ -37,6 +37,7 @@ type adminCaddyHTTPSConfigDTO struct {
 	DesiredDomain                 string     `json:"desired_domain"`
 	DesiredLANEnabled             bool       `json:"desired_lan_enabled"`
 	DesiredLANIP                  string     `json:"desired_lan_ip"`
+	HostApplyPending              bool       `json:"host_apply_pending"`
 	HostLANConfigured             bool       `json:"host_lan_configured"`
 	HostLANIP                     string     `json:"host_lan_ip,omitempty"`
 	Revision                      uint64     `json:"revision"`
@@ -53,6 +54,7 @@ type adminCaddyHTTPSConfigDTO struct {
 	HostLANTLSState               string     `json:"host_lan_tls_state"`
 }
 
+const caddyHTTPSPendingRequirement = "存在待协调的 Host 配置申请；系统已锁定 IP/域名编辑和历史回滚。独立操作员完成受控核对或恢复之前，不得重新保存或宣称已应用。"
 const caddyHTTPSApplyRequirement = "已保存的 HTTPS 期望配置尚未应用。修改实际域名、DNS 凭据或启停 Caddy 需要具备防管理入口失联、预检、回滚及审计能力的受限 Host Manager；当前阶段不允许从 Server 或浏览器执行容器操作。"
 
 func (s *Server) readCaddyHTTPSDesired(ctx context.Context) (adminCaddyHTTPSDesired, error) {
@@ -90,6 +92,15 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired settings unavailable")
 		return
 	}
+	hostPending, err := readCaddyHostPendingUnappliedDB(s.DB.WithContext(c.Request.Context()))
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy host reservation state unavailable")
+		return
+	}
+	requirement := caddyHTTPSApplyRequirement
+	if hostPending {
+		requirement = caddyHTTPSPendingRequirement
+	}
 	// Initial unsaved editor hints are derived from explicitly declared,
 	// individually validated host entry identities, not running Caddy proof.
 	// Once saved, the PostgreSQL desired revision is authoritative even when
@@ -123,8 +134,9 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 		HostLANConfigured: hostLANIP != "",
 		HostLANIP:         hostLANIP,
 		Revision:          desired.Revision, Source: desired.Source, UpdatedAt: desired.UpdatedAt,
-		ApplyState: state, Editable: true, ApplySupported: false,
-		RequiresRestrictedMaintenance: true, Requirement: caddyHTTPSApplyRequirement,
+		ApplyState: state, Editable: !hostPending, ApplySupported: false,
+		HostApplyPending:              hostPending,
+		RequiresRestrictedMaintenance: true, Requirement: requirement,
 		HostObserved: observed, HostHTTPSConfigured: observed && host.HTTPSConfigured,
 		HostTLSState:    tlsState,
 		HostLANTLSState: caddyLANLocalEffectState(host, observed, hostLANIP),

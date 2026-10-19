@@ -93,7 +93,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   const canEdit = !!config?.editable && !busy && !loading && !revealing
 
   const save = async (clear = false) => {
-    if (!config || !source.saveCaddyAliDNS || busy || (!clear && !valid) || (clear && !config.configured)) return
+    if (!config || !config.editable || !source.saveCaddyAliDNS || busy || (!clear && !valid) || (clear && !config.configured)) return
     const epoch = ++requestEpochRef.current
     ++revealEpochRef.current
     setBusy(true)
@@ -156,7 +156,10 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
         </Typography>
         {config ? (
           <>
-            {!config.editable && <Typography variant="caption" color="warning.main" data-xdrive-caddy-alidns-no-keyring>
+            {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-alidns-host-pending>
+              存在未应用的 Host 申请，AliDNS 凭据修改与清除已锁定，须由独立操作员核对；此状态不表示 Caddy 或 DNS 已生效。
+            </Typography>}
+            {!config.editable && !config.host_apply_pending && <Typography variant="caption" color="warning.main" data-xdrive-caddy-alidns-no-keyring>
               当前服务器尚无可用的凭据加密密钥，AliDNS 配置只能读取、不能修改；读取接口本身不要求配置密钥。
             </Typography>}
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
