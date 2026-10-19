@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/background"
+	"github.com/lazyxu/xdrive/internal/baidumapjsapi"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/mediaworker"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -120,6 +121,11 @@ func (s *Server) Router() *gin.Engine {
 	r.MaxMultipartMemory = 8 << 20
 	// Only exact reviewed map Loader resources are routable; children fail closed.
 	r.GET("/_BMapService/api", s.baiduJSAPI4LoaderHTTP)
+	// Source-reviewed exact paths ONLY, never a wildcard or runtime/admin HAR
+	// input. The compiled child inventory is empty until licensed proof review.
+	for _, path := range baidumapjsapi.ApprovedJSAPI4ChildPaths() {
+		r.GET(path, s.baiduJSAPI4ChildHTTP)
+	}
 	r.GET("/metrics", s.metrics)
 
 	v1 := r.Group("/api/v1")

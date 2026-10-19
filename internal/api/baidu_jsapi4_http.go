@@ -170,3 +170,47 @@ func (s *Server) baiduJSAPI4LoaderHTTP(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "application/javascript; charset=utf-8", body)
 }
+
+// This handler can be registered ONLY at a source-approved, exact child path.
+// There is no /_BMapService/* catch-all: until private entitlement/HAR review
+// establishes the immutable manifest the real Router registers ZERO children.
+// Cookie, release, quota, Browser AK revision and Owner are all rechecked
+// before returning any bytes, using the same Server transport as the Loader.
+func (s *Server) baiduJSAPI4ChildHTTP(c *gin.Context) {
+	baiduJSAPI4NoStore(c)
+	review, err := baidumapjsapi.ReviewJSAPI4ResourceRequest(c.Request)
+	if err != nil || review.Kind != baidumapjsapi.JSAPI4ResourceChild {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	authority, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context())
+	if err != nil {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	body, headers, err := s.baiduJSAPI4SignedLiveLoader(c.Request.Context(),
+		c.Request, authority.cookieKey[:], authority.attestation, authority.scope)
+	if err != nil {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	defer clear(body)
+	if s.baiduJSAPI4Authority.Load() != authority {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	if current, checkErr := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); checkErr != nil || current != authority {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	if headers == nil || headers.Get("Content-Type") != review.MediaType {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			c.Writer.Header().Add(name, value)
+		}
+	}
+	c.Data(http.StatusOK, review.MediaType, body)
+}

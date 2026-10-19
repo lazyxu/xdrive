@@ -136,3 +136,27 @@ func TestBaiduJSAPI4RouterRestrictsOnlyExactLoaderAndAuthenticatedSession(t *tes
 		}
 	}
 }
+
+// The child HTTP handler is production-shaped, but it cannot be armed via
+// an untrusted route. Only the reviewed source table can register routes.
+func TestBaiduJSAPI4ChildHandlerHardDeniesWithoutReviewedSourceRelease(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{AllowedOrigin: "https://gallery.example.invalid"}
+	r := gin.New()
+	r.GET("/_BMapService/tiles/test.png", s.baiduJSAPI4ChildHTTP)
+	for _, path := range []string{
+		"/_BMapService/tiles/test.png?x=1",
+		"/_BMapService/tiles/test.png?ak=secret_canary",
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Cookie", "XD_BMAP_SESSION=forged")
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable ||
+			rec.Header().Get("Cache-Control") != "private, no-store" ||
+			rec.Header().Get("Set-Cookie") != "" ||
+			strings.Contains(rec.Body.String(), "secret_canary") {
+			t.Fatal("unreviewed child exposed content or a private cookie")
+		}
+	}
+}
