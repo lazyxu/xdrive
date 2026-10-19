@@ -1,3 +1,9 @@
+## NET-M5-C2-H · protected exact-byte restore rehearsal (2026-10-19)
+
+After C2-D backup and C2-E independently pinned read-only anchor re-verification, an operator can rehearse *copying* the original `.env` and Compose bytes into a brand-new private `state/caddy-https-admissions/rollback-rehearsal` directory using `scripts/caddy-https-host-restore-rehearsal.py` with exactly the C2-E flags. This tool requires the independently pinned signed manifest, pending and anchor-receipt digests, a 0700 owned admission tree, and the unchanged LIVE originals. It verifies both original byte streams and writes only `recovered.env`, `recovered.compose`, `report.json` as 0600 no-follow, exclusive-create, fsync-protected private files. It never sends credentials or trusted paths to stdout. A second run, symlink, incomplete directory, bad pin, altered anchor, lock contention or stale host fails closed without deleting prior evidence. Copies contain credentials and must remain in an operator-only directory; do not upload or log them.
+
+**This is not a live rollback or a restart:** no live host file, Docker/Caddy, DNS, Server DB, system certificates or credentials are changed. `apply_supported=false` remains. The independent rescue/witness, atomic Host/DB revision and nonce CAS, secure AliDNS handoff, detached timeout watchdog, real enabled/disabled endpoint TLS+admin-login verification and immutable Applied Receipt still block any UI Apply/Restart.
+
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
 ## NET-M5-C2-D · 一次性私有回滚原件锚定（2026-10-19）
