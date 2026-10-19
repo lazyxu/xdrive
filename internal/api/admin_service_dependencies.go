@@ -68,7 +68,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		services[7].Detail = "百度地图配置无法读取，请检查加密密钥或数据库"
 	case cfg.Enabled && cfg.Configured:
 		services[7].Status = "unknown"
-		services[7].Detail = "百度地图 AK 已配置且启用，按需取图验证，不消耗额外 API 配额"
+		services[7].Detail = "百度地图 Server AK 已配置且启用；远端静态地图尚未验证。仅管理员手动在线验证会消耗一次 Static Map API 配额"
 		services[7].Version = "Static Map v2 · WGS84"
 	case cfg.Enabled && !cfg.Configured:
 		services[7].Status = "disabled"

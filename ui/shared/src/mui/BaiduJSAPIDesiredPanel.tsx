@@ -135,14 +135,22 @@ export function XDriveBaiduJSAPIDesiredPanel({
     <Paper variant="outlined" data-xdrive-baidu-jsapi4-admin
       sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={1.5}>
-        <Typography variant="subtitle2" fontWeight={700}>百度 JSAPI 4.0 · Browser AK</Typography>
-        <Typography variant="body2" color="text.secondary">
-          与上方静态地图的 Server AK 独立。此处只保存加密凭据和期望开关；
-          动态地图是否真正可用完全由 Server 的可信签名发布状态决定，客户端不能强制开启。
-          原有百度静态地图与图库访问不受此处配置影响。
+        <Typography variant="subtitle2" fontWeight={700}>
+          {mode === 'config' ? '百度 JSAPI 4.0 · Browser AK' : '动态地图 · Server 发布授权'}
         </Typography>
+        {mode === 'config' ? (
+          <Typography variant="body2" color="text.secondary">
+            独立于静态地图 Server AK。此处仅加密保存 Browser AK 和期望开关，
+            保存后立即更新期望修订，不等于动态地图获准运行。
+          </Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            此处检查当前 Server 对真实 JSAPI 4.0 的发布授权，和上方静态地图在线检测完全独立。
+            Browser AK 和 HTTPS 即使已配置，也不能替代已审核资源清单和有效签名发布。
+          </Typography>
+        )}
         {reading ? <Box sx={{ minHeight: 32 }} aria-busy="true" /> : null}
-        {config ? (
+        {config && mode === 'config' ? (
           <Typography variant="caption" color={verified ? 'success.main' : 'text.secondary'}
             data-xdrive-baidu-jsapi4-status>
             {config.configured ? 'Browser AK 已加密配置' : '未配置 Browser AK'}
@@ -173,27 +181,39 @@ export function XDriveBaiduJSAPIDesiredPanel({
         )}
         {mode === 'verify' && (
           <>
-            <Typography variant="body2" color="text.secondary">
-              这是当前 Server 的只读发布授权状态；保存 Browser AK 不能代替百度许可、
-              完整子资源白名单、AK 防泄漏审计或 Web/Mobile/Desktop 真实验收。
-              未放行时不会试探加载外部百度脚本。
-            </Typography>
+            {config && (
+              <Typography variant="caption" color="text.secondary"
+                data-xdrive-baidu-jsapi4-release-state>
+                当前运行：{verified ? 'Server 已授权动态地图' : 'Server 尚未放行动态地图'}
+                {' · '}Browser AK {config.configured ? '已保存' : '未配置'}
+                {' · '}期望{config.desired_enabled ? '开启' : '关闭'}
+              </Typography>
+            )}
             {verified ? (
               <XDriveStatusAlert tone="good">当前 Server 返回已签名放行；仍须以真实三端地图交互和资源审计作为验收依据。</XDriveStatusAlert>
             ) : (
               <XDriveStatusAlert tone="bad">动态地图仍受 Server 安全门禁限制；现有百度静态地图可继续使用。</XDriveStatusAlert>
             )}
-            {!verified && config?.release_blockers && (
+            {!verified && config && (
               <Box data-xdrive-baidu-jsapi4-release-blockers>
                 <Typography variant="subtitle2">当前 Server 未生效的原因</Typography>
-                <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
-                  {config.release_blockers.map(reason => (
-                    <Typography key={reason} component="li" variant="body2"
-                      color="text.secondary">{releaseBlockerLabels[reason]}</Typography>
-                  ))}
-                </Stack>
+                {config.release_blockers?.length ? (
+                  <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+                    {config.release_blockers.map(reason => (
+                      <Typography key={reason} component="li" variant="body2"
+                        color="text.secondary">{releaseBlockerLabels[reason]}</Typography>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary"
+                    data-xdrive-baidu-jsapi4-missing-blocker-evidence>
+                    Server 未返回详细阻断原因；请检查服务端版本和发布状态。
+                    不需要再次填写已保存的 AK，也不能将缺少原因当作验证通过。
+                  </Typography>
+                )}
                 <Typography variant="caption" color="text.secondary">
-                  仅展示 Server 结构性门禁；仍须进行真实资源 HAR、许可和三端真机验收。此处不请求 SDK，也不能强制放行。
+                  这是 Server 结构性门禁；真实百度子资源、许可、AK 防泄漏和三端真机仍需独立验收。
+                  未放行时不会试探加载脚本，更不会仅凭配置开启动态地图。
                 </Typography>
               </Box>
             )}
