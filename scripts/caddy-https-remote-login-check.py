@@ -207,6 +207,130 @@ def verify(plan_path, pinned_plan_sha, port_text, ca_path,
     }
 
 
+
+# Operator-only extra regression guard for a formerly enabled origin that
+# the desired revision now disables or replaces. A negative network response
+# is NEVER proof of physical Caddy removal or a successful Host Apply.
+def retired_targets(current, previous):
+    need(type(current) is dict and type(previous) is dict)
+    need(type(current.get("desired_revision")) is int and
+         type(previous.get("desired_revision")) is int and
+         previous["desired_revision"] > 0 and
+         current["desired_revision"] > previous["desired_revision"])
+    need(current.get("lan_enabled") or current.get("domain_enabled"))
+    targets = []
+    for label, enabled, value in (
+        ("lan", "lan_enabled", "lan_ip"),
+        ("domain", "domain_enabled", "domain"),
+    ):
+        if previous.get(enabled) is True and (
+                current.get(enabled) is not True or
+                current.get(value) != previous.get(value)):
+            need(bool(previous.get(value)))
+            targets.append((label, previous[value]))
+    need(bool(targets))
+    return targets
+
+
+def probe_retired_origin(address, port, tls):
+    """Anonymous same-origin probe: NO login or bearer token to an old host."""
+    need(isinstance(address, str) and address and valid_port(str(port)))
+    try:
+        ready, payload = bounded_request(
+            address, port, tls, "GET", "/api/v1/readyz")
+        if ready != 200 or object_json(payload).get("ok") is not True:
+            return "unverified"
+        anonymous, _ = bounded_request(
+            address, port, tls, "GET", "/api/v1/admin/services")
+        plan_status, _ = bounded_request(
+            address, port, tls, "GET",
+            "/api/v1/admin/services/caddy/https/host-plan")
+        if anonymous == 401 and plan_status == 401:
+            return "still-serving-xdrive"
+    except (OSError, ssl.SSLError, socket.timeout,
+            http.client.HTTPException, Blocked):
+        return "unverified"
+    return "unverified"
+
+
+def verify_retired_origins(current_path, current_pin, previous_path,
+                           previous_pin, port_text, ca_path, ca_pin,
+                           previous_ca_path, previous_ca_pin,
+                           username, password):
+    """Additional alert, NEVER a positive disabled-origin confirmation."""
+    need(isinstance(previous_pin, str) and
+         host_plan.HEXDIGEST.fullmatch(previous_pin) and
+         valid_port(port_text))
+    current_snapshot = host_plan.regular_snapshot(current_path, 4096, True)
+    previous_snapshot = host_plan.regular_snapshot(previous_path, 4096, True)
+    need(hmac.compare_digest(
+        host_plan.fingerprint(current_snapshot[0]), current_pin))
+    need(hmac.compare_digest(
+        host_plan.fingerprint(previous_snapshot[0]), previous_pin))
+    current = host_plan.validate_plan(current_snapshot[0])
+    previous = host_plan.validate_plan(previous_snapshot[0])
+    targets = retired_targets(current, previous)
+
+    old_lan_snapshot = None
+    old_lan_tls = None
+    if any(label == "lan" for label, _ in targets):
+        need(bool(previous_ca_path) and
+             isinstance(previous_ca_pin, str) and
+             host_plan.HEXDIGEST.fullmatch(previous_ca_pin))
+        old_lan_snapshot = host_plan.regular_snapshot(
+            previous_ca_path, 131072)
+        need(hmac.compare_digest(host_plan.fingerprint(
+            old_lan_snapshot[0]), previous_ca_pin))
+        try:
+            old_lan_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            old_lan_tls.minimum_version = ssl.TLSVersion.TLSv1_2
+            old_lan_tls.load_verify_locations(
+                cadata=old_lan_snapshot[0].decode("ascii"))
+        except (ValueError, UnicodeError, ssl.SSLError):
+            raise Blocked() from None
+    else:
+        need(not previous_ca_path and not previous_ca_pin)
+
+    # Positive authentication FIRST on every intended current ingress.
+    # Only these current origins ever receive the operator credentials.
+    current_proof = verify(current_path, current_pin, port_text,
+                           ca_path, ca_pin, username, password)
+    need(current_proof["state"] ==
+         "enabled-origin-logins-verified-unapplied" and
+         current_proof["apply_supported"] is False)
+
+    observations = {"lan": "not-retired", "domain": "not-retired"}
+    for label, address in targets:
+        tls = old_lan_tls if label == "lan" else ssl.create_default_context()
+        if label == "domain":
+            tls.minimum_version = ssl.TLSVersion.TLSv1_2
+        observations[label] = probe_retired_origin(
+            address, int(port_text), tls)
+    need(host_plan.same_snapshot(current_path, current_snapshot, 4096, True))
+    need(host_plan.same_snapshot(previous_path, previous_snapshot, 4096, True))
+    if old_lan_snapshot is not None:
+        need(host_plan.same_snapshot(
+            previous_ca_path, old_lan_snapshot, 131072))
+    # A live old endpoint is a hard blocker; an unreachable old endpoint
+    # is just inconclusive. Neither authorizes restart, receipt or apply.
+    need(not any(v == "still-serving-xdrive"
+                 for v in observations.values()))
+    return {
+        "protocol": "xdrive.caddy.https.retired-origin-guard.v1",
+        "state": "old-origin-removal-unverified-unapplied",
+        "apply_supported": False,
+        "desired_revision": current["desired_revision"],
+        "previous_revision": previous["desired_revision"],
+        "observations": observations,
+        "limitations": [
+            "unreachable-does-not-prove-origin-disabled",
+            "observation-does-not-prove-host-applied-revision",
+            "no-physical-rescue-or-watchdog-rollback-proof",
+            "old-origin-probe-never-sends-credentials",
+        ],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", required=True)
@@ -214,15 +338,33 @@ def main():
     parser.add_argument("--https-port", required=True)
     parser.add_argument("--lan-root-ca", default=None)
     parser.add_argument("--expected-lan-ca-sha256", default=None)
+    parser.add_argument("--previous-plan", default=None)
+    parser.add_argument("--expected-previous-plan-sha256", default=None)
+    parser.add_argument("--previous-lan-root-ca", default=None)
+    parser.add_argument("--expected-previous-lan-ca-sha256", default=None)
     args = parser.parse_args()
     try:
         print("xDrive operator username:", file=sys.stderr)
         username = sys.stdin.readline(130).rstrip("\r\n")
         password = getpass.getpass("xDrive administrator password: ")
-        result = verify(
-            args.plan, args.expected_plan_sha256, args.https_port,
-            args.lan_root_ca, args.expected_lan_ca_sha256,
-            username, password)
+        if any((
+                args.previous_plan, args.expected_previous_plan_sha256,
+                args.previous_lan_root_ca, args.expected_previous_lan_ca_sha256)):
+            need(bool(args.previous_plan) and
+                 bool(args.expected_previous_plan_sha256))
+            result = verify_retired_origins(
+                args.plan, args.expected_plan_sha256,
+                args.previous_plan, args.expected_previous_plan_sha256,
+                args.https_port, args.lan_root_ca,
+                args.expected_lan_ca_sha256,
+                args.previous_lan_root_ca,
+                args.expected_previous_lan_ca_sha256,
+                username, password)
+        else:
+            result = verify(
+                args.plan, args.expected_plan_sha256, args.https_port,
+                args.lan_root_ca, args.expected_lan_ca_sha256,
+                username, password)
     except (Blocked, host_plan.Blocked, OSError, TypeError, ValueError,
             UnicodeError, KeyError, ssl.SSLError, socket.timeout,
             http.client.HTTPException, EOFError, KeyboardInterrupt):

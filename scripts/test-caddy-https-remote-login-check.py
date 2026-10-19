@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 SOURCE = Path(__file__).with_name("caddy-https-remote-login-check.py")
 spec = importlib.util.spec_from_file_location("xdrive_offhost_caddy_proof", SOURCE)
@@ -216,6 +217,129 @@ class RealLoopbackHTTPSCheck(unittest.TestCase):
         with self.assertRaises(probe.host_plan.Blocked):
             probe.verify(str(file), hashlib.sha256(file.read_bytes()).hexdigest(),
                          "8443", None, None, USERNAME, PASSWORD)
+
+
+    def test_prior_origin_probe_detects_old_xdrive_without_sending_credentials(self):
+        # The 3 original anonymous endpoints identify a still-serving xDrive
+        # instance without ever sending a username, password or bearer token.
+        self.assertEqual(probe.probe_retired_origin(
+            "127.0.0.1", self.server.server_port, self.tls()),
+            "still-serving-xdrive")
+        for field, value in (("ready", False), ("anonymous_open", True),
+                             ("public_plan_open", True)):
+            setattr(HTTPSHandler, field, value)
+            try:
+                self.assertEqual(probe.probe_retired_origin(
+                    "127.0.0.1", self.server.server_port, self.tls()),
+                    "unverified")
+            finally:
+                setattr(HTTPSHandler, field, not value)
+        self.assertEqual(probe.probe_retired_origin(
+            "localhost", self.server.server_port, self.tls()),
+            "unverified")
+
+    def test_retired_targets_include_disabled_and_switched_lan_domain_only(self):
+        previous = dict(PLAN, desired_revision=7, lan_enabled=True,
+                        domain_enabled=True, domain="old.example.com",
+                        credential_revision=4)
+        current = dict(previous, desired_revision=8, lan_enabled=False,
+                       lan_ip="", domain="new.example.com")
+        self.assertEqual(probe.retired_targets(current, previous), [
+            ("lan", "192.168.2.4"), ("domain", "old.example.com")])
+        with self.assertRaises(probe.Blocked):
+            probe.retired_targets(previous, previous)
+        with self.assertRaises(probe.Blocked):
+            probe.retired_targets(dict(previous, desired_revision=8), previous)
+        with self.assertRaises(probe.Blocked):
+            probe.retired_targets(dict(previous, desired_revision=6), previous)
+        with self.assertRaises(probe.Blocked):
+            probe.retired_targets(dict(previous, desired_revision=8,
+                                       lan_enabled=False, domain_enabled=False),
+                                  previous)
+
+    def test_previous_plan_opt_in_fails_closed_before_any_network(self):
+        former = dict(PLAN, desired_revision=7, lan_enabled=True)
+        current = dict(PLAN, desired_revision=8, lan_enabled=False,
+                       lan_ip="", domain_enabled=True,
+                       domain="new.example.com", credential_revision=3)
+        private = Path(self.tmp.name)
+        prev_path, next_path = private / "previous.json", private / "current.json"
+        def canonical(data):
+            return (json.dumps(data, sort_keys=True, separators=(",", ":")) +
+                    "\n").encode("ascii")
+        prev_path.write_bytes(canonical(former))
+        next_path.write_bytes(canonical(current))
+        prev_path.chmod(0o600)
+        next_path.chmod(0o600)
+        with self.assertRaises(probe.Blocked):
+            probe.verify_retired_origins(
+                str(next_path), hashlib.sha256(next_path.read_bytes()).hexdigest(),
+                str(prev_path), "f" * 64, str(self.server.server_port),
+                None, None, str(self.ca),
+                hashlib.sha256(self.ca.read_bytes()).hexdigest(),
+                USERNAME, PASSWORD)
+        with self.assertRaises(probe.Blocked):
+            probe.verify_retired_origins(
+                str(next_path), hashlib.sha256(next_path.read_bytes()).hexdigest(),
+                str(prev_path), hashlib.sha256(prev_path.read_bytes()).hexdigest(),
+                str(self.server.server_port), None, None,
+                None, None, USERNAME, PASSWORD)
+
+    def test_prior_host_revision_proofs_remain_advisory_and_block_live_old_origin(self):
+        previous = dict(PLAN, desired_revision=7, lan_enabled=True,
+                        domain_enabled=False, domain="")
+        current = dict(PLAN, desired_revision=8, lan_enabled=False,
+                       lan_ip="", domain_enabled=True,
+                       domain="new.example.com", credential_revision=3)
+        root = Path(self.tmp.name)
+        old_path, now_path = root / "before.json", root / "after.json"
+        def save_plan(path, value):
+            data = (json.dumps(value, sort_keys=True, separators=(",", ":")) +
+                    "\n").encode("ascii")
+            path.write_bytes(data)
+            path.chmod(0o600)
+            return hashlib.sha256(data).hexdigest()
+        old_pin = save_plan(old_path, previous)
+        now_pin = save_plan(now_path, current)
+        ca_pin = hashlib.sha256(self.ca.read_bytes()).hexdigest()
+        observed = []
+        def current_login(*_args):
+            observed.append("current")
+            return {"state": "enabled-origin-logins-verified-unapplied",
+                    "apply_supported": False}
+        def old_check(*_args):
+            observed.append("old")
+            return "still-serving-xdrive"
+        args = (str(now_path), now_pin, str(old_path), old_pin,
+                str(self.server.server_port), None, None,
+                str(self.ca), ca_pin, USERNAME, PASSWORD)
+        with mock.patch.object(probe, "verify", side_effect=current_login), \
+             mock.patch.object(probe, "probe_retired_origin", side_effect=old_check):
+            with self.assertRaises(probe.Blocked):
+                probe.verify_retired_origins(*args)
+        self.assertEqual(observed, ["current", "old"])
+        observed.clear()
+        with mock.patch.object(probe, "verify", side_effect=current_login), \
+             mock.patch.object(probe, "probe_retired_origin",
+                               return_value="unverified"):
+            reply = probe.verify_retired_origins(*args)
+        self.assertEqual(reply["state"], "old-origin-removal-unverified-unapplied")
+        self.assertIs(reply["apply_supported"], False)
+        self.assertEqual(reply["observations"]["lan"], "unverified")
+        self.assertEqual(reply["observations"]["domain"], "not-retired")
+        self.assertEqual(reply["desired_revision"], 8)
+        self.assertEqual(reply["previous_revision"], 7)
+
+    def test_retired_probe_source_preserves_full_offhost_no_apply_boundary(self):
+        src = SOURCE.read_text()
+        marker = src[src.index("def probe_retired_origin("):
+                     src.index("def verify_retired_origins(")]
+        self.assertNotIn('"POST"', marker)
+        self.assertNotIn("Authorization", marker)
+        self.assertIn("old-origin-probe-never-sends-credentials", src)
+        self.assertIn('"apply_supported": False', src)
+        self.assertNotIn("docker restart", src)
+        self.assertNotIn("subprocess.", src)
 
     def test_operator_only_security_source(self):
         source = SOURCE.read_text()
