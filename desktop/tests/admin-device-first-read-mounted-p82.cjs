@@ -34,6 +34,12 @@ function page(file, exportName) {
     if (name === '../device-backup-folder-page-validation') return {
       validateXDriveDeviceBackupFolderPage: () => {},
     }
+    // P82 measures first-read geometry, not continuation payload validation.
+    // Keep the original mounted component and mock only its pure validator,
+    // exactly as the existing folder-page validator is mocked above.
+    if (name === '../device-backup-device-page-validation') return {
+      validateXDriveDeviceBackupDevicePage: () => {},
+    }
     if (name === './WorkspaceSurface') return {
       XDriveWorkspaceSurface: ({ children, pageActions }) =>
         React.createElement('WorkspaceSurface', {}, pageActions, children),

@@ -42,6 +42,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
 import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
+import { validateXDriveDeviceBackupDevicePage } from '../device-backup-device-page-validation'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
   XDriveDeviceBackupDevice, XDriveDeviceBackupFolder,
@@ -277,6 +278,7 @@ export function XDriveDeviceBackupPage({
       ? { ...prev, pageLoading: true, pageFailed: false } : prev)
     try {
       const page = await source.listPage(100, cursor)
+      validateXDriveDeviceBackupDevicePage(page, cursor, new Set(requestedOverview.devices.map((device) => device.id)))
       setSnapshot((prev) => {
         if (prev.source !== source || prev.overview !== requestedOverview) return prev
         const devices = [...requestedOverview.devices]
