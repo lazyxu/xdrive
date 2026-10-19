@@ -13,6 +13,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -288,6 +290,182 @@ func TestP056Real100KPhysicalCASCopyUndo(t *testing.T) {
 		t.Fatalf("authentic queued Copy response: %+v %v", copyJob, err)
 	}
 	request(foreignToken, http.MethodGet, "/api/v1/file-operations/"+copyJob.ID, nil, http.StatusNotFound)
+
+	// P062 is opt-in real Owner HTTP durable Copy cancellation only.
+	if os.Getenv("XD_P062_REAL_CANCEL") == "1" {
+		topology := os.Getenv("XD_P062_TOPOLOGY")
+		if topology != "local" && topology != "remote" {
+			t.Fatalf("invalid P062 topology: %s", topology)
+		}
+		request(foreignToken, http.MethodPost, "/api/v1/file-operations/"+copyJob.ID+"/cancel", nil, http.StatusNotFound)
+		cancelURL := peer.URL
+		if topology == "remote" {
+			other := &Server{DB: db, Store: store, Auth: server.Auth,
+				RefreshTTL: server.RefreshTTL, AllowedOrigin: server.AllowedOrigin}
+			external := httptest.NewServer(other.Router())
+			defer external.Close()
+			cancelURL = external.URL
+		}
+		type receipt struct {
+			start time.Time
+			end   time.Time
+			item  string
+			err   error
+		}
+		issued := make(chan receipt, 1)
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		defer stopWatch()
+		go func() {
+			tick := time.NewTicker(10 * time.Millisecond)
+			defer tick.Stop()
+			timeout := time.NewTimer(45 * time.Second)
+			defer timeout.Stop()
+			for {
+				select {
+				case <-watchCtx.Done():
+					issued <- receipt{err: watchCtx.Err()}
+					return
+				case <-timeout.C:
+					issued <- receipt{err: fmt.Errorf("no genuine in-flight index >=256 before timeout")}
+					return
+				case <-tick.C:
+				}
+				var observed meta.FileOperation
+				if err := db.WithContext(watchCtx).Select("status", "current_item").
+					Where("id = ?", copyJob.ID).First(&observed).Error; err != nil {
+					issued <- receipt{err: err}
+					return
+				}
+				if observed.Status != meta.FileOperationStatusRunning {
+					continue
+				}
+				offset := strings.LastIndex(observed.CurrentItem, "p056-")
+				if offset < 0 {
+					continue
+				}
+				number, err := strconv.Atoi(strings.TrimSuffix(observed.CurrentItem[offset+5:], ".bin"))
+				if err != nil || number < 256 {
+					continue
+				}
+				start := time.Now()
+				cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				req, err := http.NewRequestWithContext(cancelCtx, http.MethodPost,
+					cancelURL+"/api/v1/file-operations/"+copyJob.ID+"/cancel", nil)
+				if err != nil {
+					cancel()
+					issued <- receipt{start: start, err: err}
+					return
+				}
+				req.Header.Set("Authorization", "Bearer "+token)
+				resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+				if err != nil {
+					cancel()
+					issued <- receipt{start: start, err: err}
+					return
+				}
+				_, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+				closeErr := resp.Body.Close()
+				cancel()
+				end := time.Now()
+				if resp.StatusCode != http.StatusOK || readErr != nil || closeErr != nil {
+					err = fmt.Errorf("cancel HTTP%d read=%v close=%v", resp.StatusCode, readErr, closeErr)
+				}
+				issued <- receipt{start: start, end: end, item: observed.CurrentItem, err: err}
+				return
+			}
+		}()
+		copyStarted := time.Now()
+		processed, copyErr := server.processNextFileOperation(ctx)
+		copyEnded := time.Now()
+		var got receipt
+		select {
+		case got = <-issued:
+		case <-time.After(15 * time.Second):
+			t.Fatal("no owner HTTP cancel receipt")
+		}
+		stopWatch()
+		if got.err != nil || got.start.IsZero() {
+			t.Fatalf("real P062 HTTP cancel failed: %v", got.err)
+		}
+		if !processed || copyErr != nil {
+			t.Fatalf("cancelled Worker failed: processed=%t err=%v", processed, copyErr)
+		}
+		var finished meta.FileOperation
+		if err := db.Where("id = ?", copyJob.ID).First(&finished).Error; err != nil {
+			t.Fatal(err)
+		}
+		if finished.Status != meta.FileOperationStatusCancelled ||
+			finished.ProcessedItems != 0 || finished.ProcessedBytes != 0 || finished.CurrentItem != "" {
+			t.Fatalf("cancelled Worker left invalid status/progress: %+v", finished)
+		}
+		var targetCount, oneRefs int64
+		if err := db.Unscoped().Model(&meta.Node{}).Where("owner_id = ? AND parent_id = ?", user.ID, target.ID).
+			Count(&targetCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.ContentBlob{}).
+			Where("ref_count = ? AND state = ?", 1, meta.ContentBlobStateReady).Count(&oneRefs).Error; err != nil {
+			t.Fatal(err)
+		}
+		casCount, casAllocated, err := p055RealCASAllocated(ctx, store)
+		if err != nil || targetCount != 0 || oneRefs != int64(count+1) ||
+			casCount != preCount || casAllocated != preAllocated {
+			t.Fatalf("cancel leaked data: targets=%d refs=%d physical=%d/%d allocated=%d/%d err=%v",
+				targetCount, oneRefs, casCount, preCount, casAllocated, preAllocated, err)
+		}
+		for i := 0; i <= count; i++ {
+			original := p046Bytes(i, "p056-"+sample)
+			sha := sha256.Sum256(original)
+			key, err := storage.ContentAddressedKey(fmt.Sprintf("%x", sha[:]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := store.Open(ctx, key)
+			if err != nil {
+				t.Fatalf("original CAS %d missing: %v", i, err)
+			}
+			data, readErr := io.ReadAll(io.LimitReader(f, p047SourceBytes+1))
+			closeErr := f.Close()
+			if readErr != nil || closeErr != nil || !bytes.Equal(data, original) {
+				t.Fatalf("original CAS %d changed: read=%v close=%v", i, readErr, closeErr)
+			}
+		}
+		close(stop)
+		<-done
+		rssAfter, err := p046RSS()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rssAfter > peakRSS.Load() {
+			peakRSS.Store(rssAfter)
+		}
+		exitMS := float64(copyEnded.Sub(got.start).Microseconds()) / 1000
+		httpMS := float64(got.end.Sub(got.start).Microseconds()) / 1000
+		rssGrowth := max(int64(0), peakRSS.Load()-rssBefore)
+		passed := exitMS >= 0 && exitMS <= 1000 && httpMS <= 1000 && rssGrowth <= 512<<20
+		row := map[string]any{
+			"workload": "P062-authenticated-100k-physical-CAS-owner-copy-cancel",
+			"topology": topology, "sample": sample, "smoke_only": smoke,
+			"physical_sources": count, "source_aggregate_sha256": sourceHash,
+			"observed_current_item":          got.item,
+			"cancel_start_to_worker_exit_ms": exitMS, "cancel_http_ms": httpMS,
+			"worker_until_cancel_ms": float64(copyEnded.Sub(copyStarted).Microseconds()) / 1000,
+			"remaining_target_nodes": targetCount, "original_one_ref_count": oneRefs,
+			"physical_CAS_object_count":       casCount,
+			"physical_allocated_bytes_before": preAllocated, "physical_allocated_bytes_after": casAllocated,
+			"go_rss_growth_bytes": rssGrowth, "passed": passed,
+		}
+		output, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("P062_REAL_100K_CANCEL %s", output)
+		if !passed {
+			t.Fatalf("P062 real user Cancel latency/resource budget failed: %s", output)
+		}
+		return
+	}
+
 	// P059 only: observe the original 100k COPY Worker without changing production.
 	// Unprofiled P056 remains byte-for-byte identical in behavior.
 	var copySQLProfile *p059CopySQLProfile

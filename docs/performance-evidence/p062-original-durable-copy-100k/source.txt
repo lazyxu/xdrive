@@ -1,0 +1,8 @@
+ORIGINAL_SOURCE_EXACT_HEAD=780355c2b4a96ab4cbb9d08bdacbd8837a1eccff
+ORIGINAL_GO_TEST_BLOB=e68a11cf93d423c71701c902bdbe754ceab248c0
+DEDICATED=https://github.com/lazyxu/xdrive/actions/runs/39204613765
+FULL_77_JOB_CI=https://github.com/lazyxu/xdrive/actions/runs/39204613948
+RAW_LOGS_RESOURCES_ARTIFACT=https://github.com/lazyxu/xdrive/actions/runs/39204613765/artifacts/12165566172
+sample-1 physical SHA256=5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03
+sample-2 physical SHA256=71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e
+sample-3 physical SHA256=fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996

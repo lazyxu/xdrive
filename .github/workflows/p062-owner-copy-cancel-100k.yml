@@ -1,0 +1,111 @@
+name: P062 True 100k Physical CAS Explicit Owner Copy Cancel
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  p062-real-owner-cancel:
+    if: github.head_ref == 'perf/p062-owner-copy-cancel-100k-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify source-exact Go fixture and opt-in semantics
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          gofmt -d internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go
+          test -z "$(gofmt -l internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go)"
+          env -u XD_P056_REAL_COPY_PERF -u XD_P062_REAL_CANCEL \
+            go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=90s
+      - name: Genuine physical 1000 CAS owner cancel smoke in both topologies
+        run: |
+          set -euo pipefail
+          for topology in local remote; do
+            env -u XD_P059_COPY_SQL_PROFILE XD_P056_REAL_COPY_PERF=1 XD_P062_REAL_CANCEL=1 \
+              XD_P062_TOPOLOGY="$topology" XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+              go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=18m -v
+          done
+      - name: Actual six 100k physical CAS owner HTTP cancellation tests
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/p062-100k-durable-copy-cancel"
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\n' "$(git rev-parse HEAD)" > "$out/source.txt"
+          for topology in local remote; do
+            for i in 1 2 3; do
+              sample="sample-$i"
+              /usr/bin/time -v -o "$out/$topology-$sample-resources.txt" \
+                env -u XD_P059_COPY_SQL_PROFILE -u XD_P056_SMOKE \
+                  XD_P056_REAL_COPY_PERF=1 XD_P062_REAL_CANCEL=1 \
+                  XD_P062_TOPOLOGY="$topology" XD_P056_SAMPLE="$sample" \
+                  go test -mod=readonly ./internal/api \
+                    -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=20m -v \
+                2>&1 | tee "$out/$topology-$sample.log"
+              python3 - "$out/$topology-$sample.log" "$out/$topology-$sample.json" "$topology" "$sample" <<'PY'
+          import json,sys
+          entries=[line for line in open(sys.argv[1]) if 'P062_REAL_100K_CANCEL {' in line]
+          assert len(entries)==1,'one real original 100k cancel machine JSON required'
+          row=json.loads(entries[0].split('P062_REAL_100K_CANCEL ',1)[1])
+          assert row['passed'] is True and row['smoke_only'] is False
+          assert row['physical_sources']==100000
+          assert row['topology']==sys.argv[3] and row['sample']==sys.argv[4]
+          assert row['cancel_start_to_worker_exit_ms']<=1000
+          assert row['cancel_http_ms']<=1000
+          assert row['remaining_target_nodes']==0 and row['original_one_ref_count']==100001
+          assert row['physical_CAS_object_count']==100001
+          assert row['physical_allocated_bytes_after']==row['physical_allocated_bytes_before']
+          with open(sys.argv[2],'w') as f:json.dump(row,f,sort_keys=True,indent=2)
+          PY
+            done
+          done
+          python3 - "$out" <<'PY'
+          import json,os,sys,statistics
+          directory=sys.argv[1]
+          group={}
+          for topology in ('local','remote'):
+              rows=[json.load(open(os.path.join(directory,f'{topology}-sample-{i}.json'))) for i in (1,2,3)]
+              assert len({row['source_aggregate_sha256'] for row in rows})==3
+              group[topology]={
+                  'p50_cancel_worker_ms':statistics.median(r['cancel_start_to_worker_exit_ms'] for r in rows),
+                  'worst_cancel_worker_ms':max(r['cancel_start_to_worker_exit_ms'] for r in rows),
+                  'p50_cancel_http_ms':statistics.median(r['cancel_http_ms'] for r in rows),
+                  'source_hashes':[r['source_aggregate_sha256'] for r in rows]}
+          assert group['local']['source_hashes']==group['remote']['source_hashes']
+          result={'workload':'P062-100k-distinct-physical-CAS-owner-cancel',
+                  'n_per_topology':3,'physical_sources_per_run':100000,
+                  'topologies':group,'production_changed':False,'after_speedup':'N/A'}
+          with open(os.path.join(directory,'summary.json'),'w') as f:json.dump(result,f,sort_keys=True,indent=2)
+          print('P062_ORIGINAL_100K_CANCEL_SUMMARY',json.dumps(result,sort_keys=True))
+          PY
+      - name: Preserve actual 100k source Go and OS resource evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p062-owner-100k-CAS-copy-cancel
+          path: p062-100k-durable-copy-cancel/
+          if-no-files-found: warn
+          retention-days: 30
