@@ -5,6 +5,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Button,
   Chip,
   Dialog,
   LinearProgress,
@@ -181,6 +182,9 @@ export default function StorageStatsPanel({
   const [cleanupRuns, setCleanupRuns] = useState<StagingCleanupRun[]>([])
   const [cleanupFailures, setCleanupFailures] = useState<Record<number, StagingCleanupFailure[]>>({})
   const [cleanupFailureLoading, setCleanupFailureLoading] = useState<number | null>(null)
+  const [cleanupFailureErrors, setCleanupFailureErrors] = useState<Record<number, string>>({})
+  const [legacyReadError, setLegacyReadError] = useState('')
+  const [unreferencedReadError, setUnreferencedReadError] = useState('')
   const [legacyPage, setLegacyPage] = useState<StorageLegacyObjectPage | null>(null)
   const [legacyPageNumber, setLegacyPageNumber] = useState(1)
   const [legacyCursors, setLegacyCursors] = useState<string[]>([''])
@@ -217,6 +221,9 @@ export default function StorageStatsPanel({
       setCleanupResultWarning('')
       setCleanupRuns([])
       setCleanupFailures({})
+      setCleanupFailureErrors({})
+      setLegacyReadError('')
+      setUnreferencedReadError('')
       setLegacyPage(null)
       setLegacyPageNumber(1)
       setLegacyCursors([''])
@@ -304,6 +311,7 @@ export default function StorageStatsPanel({
     const cursor = nextPage === 1 ? '' : legacyCursors[nextPage - 1]
     if (cursor === undefined) return
     setLegacyLoading(true)
+    setLegacyReadError('')
     try {
       const value = await api.adminStorageLegacyObjects(STORAGE_DIAGNOSTIC_PAGE_SIZE, cursor)
       setLegacyPage(value)
@@ -315,7 +323,9 @@ export default function StorageStatsPanel({
         return next.slice(0, value.next_cursor ? nextPage + 1 : nextPage)
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载 legacy 对象明细失败')
+      const message = err instanceof Error ? err.message : '加载 legacy 对象明细失败'
+      setLegacyReadError(message)
+      setError(message)
     } finally {
       setLegacyLoading(false)
     }
@@ -327,6 +337,7 @@ export default function StorageStatsPanel({
     const cursor = nextPage === 1 ? '' : unreferencedCursors[nextPage - 1]
     if (cursor === undefined) return
     setUnreferencedLoading(true)
+    setUnreferencedReadError('')
     try {
       const value = await api.adminStorageUnreferencedBlobs(STORAGE_DIAGNOSTIC_PAGE_SIZE, cursor)
       setUnreferencedPage(value)
@@ -338,7 +349,9 @@ export default function StorageStatsPanel({
         return next.slice(0, value.next_cursor ? nextPage + 1 : nextPage)
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载待 GC Blob 明细失败')
+      const message = err instanceof Error ? err.message : '加载待 GC Blob 明细失败'
+      setUnreferencedReadError(message)
+      setError(message)
     } finally {
       setUnreferencedLoading(false)
     }
@@ -347,11 +360,14 @@ export default function StorageStatsPanel({
   const loadCleanupFailures = async (run: StagingCleanupRun) => {
     if (run.failed_files <= 0 || cleanupFailures[run.id] !== undefined) return
     setCleanupFailureLoading(run.id)
+    setCleanupFailureErrors(current => { const next = { ...current }; delete next[run.id]; return next })
     try {
       const failures = await api.adminStagingCleanupFailures(run.id, 100, 0)
       setCleanupFailures((current) => ({ ...current, [run.id]: failures }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载 staging 清理失败明细失败')
+      const message = err instanceof Error ? err.message : '加载 staging 清理失败明细失败'
+      setCleanupFailureErrors(current => ({ ...current, [run.id]: message }))
+      setError(message)
     } finally {
       setCleanupFailureLoading((current) => current === run.id ? null : current)
     }
@@ -799,7 +815,7 @@ export default function StorageStatsPanel({
                             </Typography>
                           </Stack>
                         </AccordionSummary>
-                        <AccordionDetails>
+                        <AccordionDetails sx={{ minHeight: 192, py: 2 }}>
                           {run.error && (
                             <Typography variant="body2" color="error" sx={{ mb: 1 }}>
                               {run.error}
@@ -807,8 +823,18 @@ export default function StorageStatsPanel({
                           )}
                           {run.failed_files <= 0 ? (
                             <Typography variant="body2" color="text.secondary">本次没有文件级失败。</Typography>
-                          ) : cleanupFailureLoading === run.id && cleanupFailures[run.id] === undefined ? (
-                            <XDriveStatePanel variant="plain" loading message="正在加载失败文件…" />
+                          ) : cleanupFailures[run.id] === undefined ? (
+                            <Box data-xdrive-storage-cleanup-failures-first-read={run.id}
+                              aria-busy={!cleanupFailureErrors[run.id] || cleanupFailureLoading === run.id || undefined}
+                              sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                              {cleanupFailureErrors[run.id] ? (
+                                <Stack role="alert" spacing={1} alignItems="center" sx={{ px: 2 }}>
+                                  <Typography variant="body2" color="error.main">{cleanupFailureErrors[run.id]}</Typography>
+                                  <Button size="small" sx={{ minHeight: 44, minWidth: 44 }}
+                                    onClick={() => void loadCleanupFailures(run)}>重试</Button>
+                                </Stack>
+                              ) : null}
+                            </Box>
                           ) : (
                             <Stack spacing={1}>
                               {(cleanupFailures[run.id] ?? []).map((failure) => (
@@ -1081,12 +1107,21 @@ export default function StorageStatsPanel({
                           </Typography>
                         </Stack>
                       </AccordionSummary>
-                      <AccordionDetails>
-                        {unreferencedLoading && !unreferencedPage ? (
-                          <XDriveStatePanel variant="plain" loading message="正在加载待 GC Blob…" />
-                        ) : unreferencedPage ? (
-                          <Stack spacing={1}>
-                            {unreferencedLoading ? <LinearProgress /> : null}
+                      <AccordionDetails sx={{ minHeight: 192, py: 2 }}>
+                        {!unreferencedPage ? (
+                          <Box data-xdrive-storage-unreferenced-first-read
+                            aria-busy={!unreferencedReadError || unreferencedLoading || undefined}
+                            sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                            {unreferencedReadError ? (
+                              <Stack role="alert" spacing={1} alignItems="center" sx={{ px: 2 }}>
+                                <Typography variant="body2" color="error.main">{unreferencedReadError}</Typography>
+                                <Button size="small" sx={{ minHeight: 44, minWidth: 44 }}
+                                  onClick={() => void loadUnreferencedPage(1)}>重试</Button>
+                              </Stack>
+                            ) : null}
+                          </Box>
+                        ) : (
+                          <Stack spacing={1} aria-busy={unreferencedLoading || undefined}>
                             {compactViewport ? (
                               <Stack spacing={1} data-xdrive-unreferenced-mobile-list aria-label="待 GC Blob 明细">
                                 {unreferencedPage.items.map((blob) => {
@@ -1169,7 +1204,7 @@ export default function StorageStatsPanel({
                               onNext={() => void loadUnreferencedPage(unreferencedPageNumber + 1)}
                             />
                           </Stack>
-                        ) : null}
+                        )}
                       </AccordionDetails>
                     </Accordion>
                   )}
@@ -1190,12 +1225,21 @@ export default function StorageStatsPanel({
                           </Typography>
                         </Stack>
                       </AccordionSummary>
-                      <AccordionDetails>
-                        {legacyLoading && !legacyPage ? (
-                          <XDriveStatePanel variant="plain" loading message="正在加载 legacy 对象…" />
-                        ) : legacyPage ? (
-                          <Stack spacing={1}>
-                            {legacyLoading ? <LinearProgress /> : null}
+                      <AccordionDetails sx={{ minHeight: 192, py: 2 }}>
+                        {!legacyPage ? (
+                          <Box data-xdrive-storage-legacy-first-read
+                            aria-busy={!legacyReadError || legacyLoading || undefined}
+                            sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                            {legacyReadError ? (
+                              <Stack role="alert" spacing={1} alignItems="center" sx={{ px: 2 }}>
+                                <Typography variant="body2" color="error.main">{legacyReadError}</Typography>
+                                <Button size="small" sx={{ minHeight: 44, minWidth: 44 }}
+                                  onClick={() => void loadLegacyPage(1)}>重试</Button>
+                              </Stack>
+                            ) : null}
+                          </Box>
+                        ) : (
+                          <Stack spacing={1} aria-busy={legacyLoading || undefined}>
                             {compactViewport ? (
                               <Stack spacing={1} data-xdrive-legacy-mobile-list aria-label="Legacy 对象明细">
                                 {legacyPage.items.map((item) => (
@@ -1262,7 +1306,7 @@ export default function StorageStatsPanel({
                               onNext={() => void loadLegacyPage(legacyPageNumber + 1)}
                             />
                           </Stack>
-                        ) : null}
+                        )}
                       </AccordionDetails>
                     </Accordion>
                   )}
