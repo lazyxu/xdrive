@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCaddyReadFailureMessage } from '../caddy-read-error'
 import type {
   XDriveCaddyHTTPSConfig, XDriveCaddyHTTPSUpdate,
   XDriveCaddyHTTPSRevisionPage, XDriveCaddyHTTPSRollbackInput,
@@ -33,23 +34,6 @@ function validPrivateLANIP(value: string): boolean {
     (octets[0] === 192 && octets[1] === 168)
 }
 
-const tlsLabels: Record<XDriveCaddyHTTPSConfig['host_tls_state'], string> = {
-  verified: '本机 TLS 证书和域名已验证（非公网）',
-  failed: '本机 TLS 验证失败',
-  unavailable: '本机 TLS 验证不可用',
-  'invalid-config': '宿主机 HTTPS 配置不合法',
-  disabled: '宿主机未启用 HTTPS',
-  unknown: '宿主机 TLS 状态未知',
-}
-const lanTLSLabels: Record<NonNullable<XDriveCaddyHTTPSConfig['host_lan_tls_state']>, string> = {
-  verified: '当前 IP 证书链与 IP SAN 在本机核验通过（非外部可达证明）',
-  failed: '本机 IP HTTPS 握手或健康检测失败',
-  unavailable: '本机 IP TLS 检测不可用',
-  'invalid-config': '宿主机 IP/HTTPS 端口配置非法',
-  disabled: '宿主机未声明 IP HTTPS',
-  unknown: '尚无可信的本机 IP TLS 检测结果',
-}
-
 export function XDriveCaddyHTTPSDesiredPanel({
   source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange,
 }: {
@@ -62,6 +46,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyHTTPSConfig | null>(null)
   const [history, setHistory] = useState<XDriveCaddyHTTPSRevisionPage['items']>([])
+  const [historyError, setHistoryError] = useState('')
   const [enabled, setEnabled] = useState(false)
   const [domain, setDomain] = useState('')
   const [lanEnabled, setLANEnabled] = useState(false)
@@ -78,6 +63,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
     const epoch = ++epochRef.current
     setConfig(null)
     setHistory([])
+    setHistoryError('')
     setEnabled(false)
     setDomain('')
     setLANEnabled(false)
@@ -97,8 +83,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
         setDomain(next.desired_domain)
         setLANEnabled(next.desired_lan_enabled === true)
         setLANIP(next.desired_lan_ip ?? '')
-      }).catch(() => {
-        if (active && epoch === epochRef.current) setError('无法读取 Caddy HTTPS 期望配置；请检查 Server/Agent 版本。')
+      }).catch((err: unknown) => {
+        if (active && epoch === epochRef.current) setError(xDriveCaddyReadFailureMessage(err, 'https'))
       }).finally(() => {
         if (active && epoch === epochRef.current) setLoading(false)
       })
@@ -108,18 +94,32 @@ export function XDriveCaddyHTTPSDesiredPanel({
     if (section === 'history' && source.loadCaddyHTTPSRevisions) {
       void source.loadCaddyHTTPSRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
-      }).catch(() => {
-        if (active && epoch === epochRef.current) setError('无法读取 Caddy HTTPS 配置历史；请检查 Server/Agent 版本。')
+      }).catch((err: unknown) => {
+        if (active && epoch === epochRef.current) setHistoryError(xDriveCaddyReadFailureMessage(err, 'history'))
       })
     }
     return () => { active = false; ++epochRef.current }
   }, [source, refreshID, section])
 
+  const supportsLAN = typeof config?.desired_lan_enabled === 'boolean' &&
+    typeof config?.desired_lan_ip === 'string'
+  const valid = validDomain(domain) && (!enabled || domain.length > 0) &&
+    (!lanIP || validPrivateLANIP(lanIP)) && (!lanEnabled || validPrivateLANIP(lanIP)) &&
+    (lanEnabled || enabled)
+  const canEdit = !!config?.editable && !busy && !loading
+  const changed = !!config && (
+    enabled !== config.desired_enabled || domain.toLowerCase() !== config.desired_domain ||
+    (supportsLAN && (lanEnabled !== config.desired_lan_enabled || lanIP !== config.desired_lan_ip))
+  )
+  useEffect(() => { onDirtyChange?.(changed) }, [onDirtyChange, changed])
+
+
   const reload = async () => {
-    if (!source.loadCaddyHTTPSConfig || busy) return
+    if (!source.loadCaddyHTTPSConfig || busy || changed) return
     const epoch = ++epochRef.current
     setLoading(true)
     setError('')
+    if (section === 'history') setHistoryError('')
     try {
       const next = await source.loadCaddyHTTPSConfig()
       if (epoch !== epochRef.current) return
@@ -128,12 +128,15 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setDomain(next.desired_domain)
       setLANEnabled(next.desired_lan_enabled === true)
       setLANIP(next.desired_lan_ip ?? '')
-      if (source.loadCaddyHTTPSRevisions) {
-        const page = await source.loadCaddyHTTPSRevisions().catch(() => null)
+      if (section === 'history' && source.loadCaddyHTTPSRevisions) {
+        const page = await source.loadCaddyHTTPSRevisions().catch((err: unknown) => {
+          if (epoch === epochRef.current) setHistoryError(xDriveCaddyReadFailureMessage(err, 'history'))
+          return null
+        })
         if (page && epoch === epochRef.current) setHistory(page.items)
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '刷新 HTTPS 配置失败。')
+      if (epoch === epochRef.current) setError(xDriveCaddyReadFailureMessage(err, 'https'))
     } finally {
       if (epoch === epochRef.current) setLoading(false)
     }
@@ -159,9 +162,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setLANEnabled(next.desired_lan_enabled === true)
       setLANIP(next.desired_lan_ip ?? '')
       setNotice('期望配置已保存并审计；宿主机实际 HTTPS 未应用，需后续受限部署操作。')
-      onConfigurationChanged?.() // Invalidate preflight and any prior cloud read proof.
-      const page = await source.loadCaddyHTTPSRevisions?.().catch(() => null)
-      if (page && epoch === epochRef.current) setHistory(page.items)
+      onConfigurationChanged?.() // Invalidate prior evidence; history is fetched on opening it.
     } catch (err) {
       if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '保存 HTTPS 期望配置失败；请刷新检查版本。')
     } finally {
@@ -198,17 +199,6 @@ export function XDriveCaddyHTTPSDesiredPanel({
     }
   }
 
-  const supportsLAN = typeof config?.desired_lan_enabled === 'boolean' &&
-    typeof config?.desired_lan_ip === 'string'
-  const valid = validDomain(domain) && (!enabled || domain.length > 0) &&
-    (!lanIP || validPrivateLANIP(lanIP)) && (!lanEnabled || validPrivateLANIP(lanIP)) &&
-    (lanEnabled || enabled)
-  const canEdit = !!config?.editable && !busy && !loading
-  const changed = !!config && (
-    enabled !== config.desired_enabled || domain.toLowerCase() !== config.desired_domain ||
-    (supportsLAN && (lanEnabled !== config.desired_lan_enabled || lanIP !== config.desired_lan_ip))
-  )
-  useEffect(() => { onDirtyChange?.(changed) }, [onDirtyChange, changed])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
@@ -217,9 +207,12 @@ export function XDriveCaddyHTTPSDesiredPanel({
         {section === 'config' && (<>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>Caddy · HTTPS 期望配置</Typography>
-          <Button size="small" variant="outlined" disabled={busy || loading || !source.loadCaddyHTTPSConfig}
-            onClick={() => { void reload() }}>核查配置与实际状态</Button>
+          <Button size="small" variant="outlined" disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}
+            onClick={() => { void reload() }}>重新读取已保存配置</Button>
         </Stack>
+        {changed && <Typography variant="caption" color="warning.main" data-xdrive-caddy-draft-refresh-guard>
+          当前有未保存的修改，禁止重新读取覆盖草稿；请先保存或恢复原配置。
+        </Typography>}
         <Typography variant="body2" color="text.secondary">
           这里独立管理局域网 IP HTTPS 和公网域名 HTTPS 期望配置，允许同时启用，但不允许同时关闭。
           保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
@@ -236,17 +229,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
                 期望修订 #{config.revision} · {config.source === 'saved' ? '持久化期望配置' : '部署入口初始值（未保存，非生效证明）'}
               </Typography>
             </Stack>
-            <Typography variant="body2" color="text.secondary">
-              公网域名 HTTPS 期望：{config.desired_enabled ? '开启' : '关闭'}
-              {' · '}域名：{config.desired_domain || '未填写'}
-              {' · '}内网 IP 期望：{config.desired_lan_enabled ? '开启' : '关闭'}
-              {' · '}{config.desired_lan_ip || '未设置地址'}
-              {' · '}部署环境仅声明 LAN 地址：{config.host_lan_configured
-                ? config.host_lan_ip || '已配置' : '未声明或无法核对'}（不代表 IP TLS 已验证）
-              {' · '}私网 IP TLS：{lanTLSLabels[config.host_lan_tls_state ?? 'unknown']}
-              {' · '}域名入口：{!config.host_observed ? '无法观察' :
-                config.host_https_configured ? '已声明 HTTPS' : '未声明 HTTPS'}
-              {' · '}域名 TLS：{tlsLabels[config.host_tls_state] ?? '状态未知'}
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
+              运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
             </Typography>
             </>)}
             {section === 'config' && (<>
@@ -254,7 +238,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
               局域网 IP HTTPS · 默认部署入口
             </Typography>
             <FormControlLabel
-              control={<Switch checked={lanEnabled} disabled={!canEdit || !supportsLAN}
+              control={<Switch checked={lanEnabled} disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}
                 onChange={(event) => setLANEnabled(event.target.checked)} />}
               label="期望启用局域网 IP HTTPS（保存后仍需受限维护重启）"
             />
@@ -269,14 +253,17 @@ export function XDriveCaddyHTTPSDesiredPanel({
               公网域名 HTTPS · 可选入口
             </Typography>
             <FormControlLabel
-              control={<Switch checked={enabled} disabled={!canEdit}
+              control={<Switch checked={enabled} disabled={!canEdit || (enabled && !lanEnabled)}
                 onChange={(event) => setEnabled(event.target.checked)} />}
               label="启用公网域名 HTTPS（保存后不会改变当前网关）"
             />
+            <Typography variant="caption" color="text.secondary">
+              关闭当前唯一启用的入口前，请先开启另一入口；两种入口允许同时开启。
+            </Typography>
             <TextField fullWidth size="small" label="期望 HTTPS 域名 (FQDN)"
               value={domain} disabled={!canEdit}
               onChange={(event) => setDomain(event.target.value)}
-              error={!valid}
+              error={!validDomain(domain) || (enabled && !domain)}
               placeholder="photos.example.com"
               helperText="仅接受纯 DNS 域名，不含 https://、端口、路径、IP 或通配符。禁用时可清空。"
             />
@@ -332,10 +319,22 @@ export function XDriveCaddyHTTPSDesiredPanel({
               onConfirm={() => { void rollback() }} />
           </>
         ) : (
-          <Typography variant="body2" color="text.secondary">
-            {loading ? '正在读取配置…' : '当前 Server/Agent 不支持 Caddy HTTPS 期望配置；不会提供失效按钮。'}
-          </Typography>
+          loading ? <Typography variant="body2" color="text.secondary">正在读取配置…</Typography>
+          : source.loadCaddyHTTPSConfig ? (
+            <Stack spacing={1} data-xdrive-caddy-https-read-failed>
+              <Typography variant="body2" color="text.secondary">
+                本次未能取得当前 HTTPS 配置；编辑与历史回滚保持禁用。这不代表网关已停止或接口一定不受支持。
+              </Typography>
+              <Button size="small" variant="outlined" disabled={busy}
+                onClick={() => { void reload() }}>重试读取 HTTPS 配置</Button>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              此客户端尚未提供 HTTPS 配置接口；请更新匹配的客户端与 Server/Agent 版本。
+            </Typography>
+          )
         )}
+        {section === 'history' && historyError && <XDriveStatusAlert tone="bad">{historyError}</XDriveStatusAlert>}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
         {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
       </Stack>
