@@ -48,7 +48,11 @@ test('media request is lazy, cancellable and rejects stale Node/revision respons
   assert.match(explorer, /value\.node\.revision !== expectedRevision/)
   assert.match(explorer, /\[interactionScopeKey, propertiesDialogItem\.id, propertiesDialogItem\.revision/)
   assert.match(explorer, /loadMediaItem\(currentItem, controller\.signal\)/)
-  assert.match(inspector, /正在加载媒体属性/)
+  // A pending Inspector's metadata is real network work, but an ephemeral
+  // loading caption is not: keep the same 160px quiet pane with aria-busy.
+  assert.match(inspector, /data-xdrive-media-inspector-quiet-first-read/)
+  assert.ok(inspector.includes('aria-busy={!item || undefined}'))
+  assert.doesNotMatch(inspector, /正在加载媒体属性/)
 })
 
 test('Web and Desktop fetch the canonical single MediaItem without traversing the media wall', () => {

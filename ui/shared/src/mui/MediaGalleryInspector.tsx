@@ -77,11 +77,18 @@ export function XDriveMediaDetailsInspector({
   if (!item && !open) return null
   const name = item?.node.name ?? fallbackName ?? '媒体属性'
 
+  // A pending metadata read is not a new visual page. The same fixed pane
+  // owns its first frame, verified data and optional return to a pending item.
+  // Keep network media/thumbnail loading inside the real Details component.
   const content = (
-    <Box sx={{ minHeight: 0, flex: 1, overflowY: 'auto' }}>
-      {item
-        ? <XDriveMediaDetailsContent item={item} {...contentProps} />
-        : <Typography sx={{ p: 2 }} color="text.secondary" role="status">正在加载媒体属性…</Typography>}
+    <Box data-xdrive-media-inspector-content
+      aria-busy={!item || undefined}
+      sx={{ minHeight: 160, flex: 1, overflowY: 'auto' }}>
+      {item ? <XDriveMediaDetailsContent item={item} {...contentProps} /> : (
+        <Box data-xdrive-media-inspector-quiet-first-read
+          role="status" aria-label="媒体属性尚未确认"
+          sx={{ minHeight: 160 }} />
+      )}
     </Box>
   )
 

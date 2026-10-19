@@ -6674,6 +6674,9 @@ export function XDriveMediaGallery({
           maskSize: aspectMode === 'contain' ? 'contain' : 'cover',
           WebkitMaskSize: aspectMode === 'contain' ? 'contain' : 'cover',
         },
+        // Reserve space for the wide Inspector only in the committed layout.
+        // Never animate a virtual grid's width: a 160ms padding-right
+        // transition repeatedly recomputes columns, offsets and scroll anchors.
         pr: { lg: selected && !previewItem ? '380px' : 0 },
         // The Mobile Library has two Gallery-local floating dock tiers:
         // Years/Months/All above Library/Collections/Search. Leave real scroll
@@ -6684,7 +6687,6 @@ export function XDriveMediaGallery({
               ? 'calc(140px + env(safe-area-inset-bottom, 0px))'
               : '84px'
         ) : 0,
-        transition: 'padding-right 160ms ease',
       }}
     >
       {compactGallery ? (
