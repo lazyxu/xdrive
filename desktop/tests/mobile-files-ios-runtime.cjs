@@ -4537,3 +4537,73 @@ test('P75: unrelated file operation busy cannot certify that a cold directory GE
       requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }] },
   })
 })
+
+test('P89: Mobile Search folder row keeps old content and saved folder until a new counted Range commits', async () => {
+  let acknowledge
+  const activation = new Promise(resolve => { acknowledge = resolve })
+  const found = { id: 42, name: '搜索命中的目录', kind: 'dir', revision: 1 }
+  const searchRange = {
+    itemCount: 1, interactionKey: 'p89-search-visible',
+    loadedItems: new Map([[0, found]]),
+    itemAt: i => i === 0 ? found : undefined, onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    const titleBefore = textOf(find(h.view, 'data-mobile-files-compact-title', true).props.children)
+    assert.equal(count(h.view, 'data-mobile-files-folder-id'), 1)
+    await act(async () => { find(h.view, 'data-mobile-files-folder-id', '42').props.onClick() })
+    await h.update({ loading: true })
+    await act(async () => { acknowledge(undefined); await activation })
+    assert.equal(count(h.view, 'data-mobile-files-folder-id'), 1,
+      'an Open callback is not an authenticated directory Range')
+    assert.equal(textOf(find(h.view, 'data-mobile-files-compact-title', true).props.children), titleBefore)
+    assert.notEqual(saved().folderID, 42, 'Promise acknowledgement must not persist a requested folder')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 355)) })
+    assert.equal(count(h.view, 'data-mobile-files-folder-id'), 1, 'held navigation retains its existing file row')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await h.update({
+      loading: false, searchActive: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已确认的新目录' }],
+      items: [{ id: 421, name: '授权结果.txt', kind: 'file', revision: 1 }],
+      virtualCollection: p69CountedDirectory(42, '授权结果.txt'),
+    })
+    assert.equal(h.view.root.findAll(node =>
+      node.props?.['data-mobile-files-folder-id'] === '42').length, 0,
+    'the previous search folder is gone; ordinary file cells may still declare an undefined folder ID prop')
+    assert.equal(h.view.root.findAll(node => node.props?.['aria-label'] === '授权结果.txt').length, 1,
+      'the accepted file is now the visible result')
+    assert.equal(textOf(find(h.view, 'data-mobile-files-compact-title', true).props.children), '已确认的新目录')
+    assert.equal(saved().folderID, 42, 'only authoritative counted Range commits the new Browse folder')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    searchActive: true, searchSummary: { query: '目录', resultCount: 1, loading: false },
+    crumbs: [{ id: 1, name: '我的文件' }], items: [found],
+    virtualCollection: searchRange, onOpenItem: () => activation,
+  } })
+})
+
+test('P89: rejected Search row activation and later stale response cannot switch the Mobile rail', async () => {
+  let rejectActivation
+  const activation = new Promise(resolve => { rejectActivation = resolve })
+  const found = { id: 77, name: '旧目标', kind: 'dir', revision: 1 }
+  const searchRange = {
+    itemCount: 1, interactionKey: 'p89-stale-search',
+    loadedItems: new Map([[0, found]]),
+    itemAt: i => i === 0 ? found : undefined, onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-folder-id', '77').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    await h.update({ searchActive: false })
+    await act(async () => { rejectActivation(false); await activation })
+    assert.equal(find(h.view, 'data-mobile-files-section', 'favorites').props['aria-current'], 'page')
+    assert.notEqual(saved().folderID, 77)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    searchActive: true, searchSummary: { query: '旧目标', resultCount: 1, loading: false },
+    items: [found], virtualCollection: searchRange, onOpenItem: () => activation,
+  } })
+})

@@ -57,8 +57,11 @@ test('Places page changes never inject an in-flow progress caption, keep last ac
     'the existing camera/map viewport uses the generation-scoped hook independently')
   assert.ok(map.includes('viewportLoading, loadFeedbackGeneration,'),
     'camera/viewport must use its own true request generation')
-  assert.ok(hook.includes('visibleGeneration === requestGeneration'),
-    'generation-scoped pending must reject stale visual progress')
+  assert.ok(hook.includes('visibleCycle === cycle') &&
+    hook.includes('cycleRef.current.requestGeneration !== requestGeneration') &&
+    hook.includes('cycleRef.current.pending !== pending') &&
+    hook.includes('cycleRef.current.delayMs !== delayMs'),
+    'current pending, request ID and delay must fence old visual generations before paint')
   assert.ok(code.includes('XDriveMediaGalleryCoverThumbnail'),
     'original network thumbnails remain')
 })
