@@ -1928,6 +1928,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    verifyBaiduJSAPI4Loader: async (revision: number) => {
+      const result = await window.xdriveDesktop.agent.cloudVerifyAdminBaiduJSAPI4Loader(revision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadBaiduJSAPIConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBaiduJSAPIConfig()
       if (!result.ok) throw new Error(result.error.message)

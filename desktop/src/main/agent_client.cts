@@ -1208,6 +1208,15 @@ export type AgentAdminBaiduJSAPIUpdate = {
   clear_ak?: boolean
 }
 
+export type AgentAdminBaiduJSAPI4LoaderProbe = {
+  state: 'loader_accepted' | 'denied' | 'unavailable'
+  revision: number
+  checked_at: string
+  loader_accepted: boolean
+  runtime_enabled: false
+  detail: string
+}
+
 export type AgentAdminBaiduMapConfig = {
   enabled: boolean
   configured: boolean
@@ -3947,6 +3956,11 @@ export class AgentIPCClient {
   }
   cloudSetAdminBaiduJSAPIConfig(input: AgentAdminBaiduJSAPIUpdate) {
     return this.request<AgentAdminBaiduJSAPIConfig>('PUT', '/v1/cloud/admin-baidu-jsapi', input)
+  }
+  cloudVerifyAdminBaiduJSAPI4Loader(revision: number) {
+    return this.request<AgentAdminBaiduJSAPI4LoaderProbe>(
+      'POST', '/v1/cloud/admin-baidu-jsapi/verify-loader', { revision }, 15_000,
+    )
   }
   cloudAdminBaiduMapConfig() {
     return this.request<AgentAdminBaiduMapConfig>('GET', '/v1/cloud/admin-baidu-map')
