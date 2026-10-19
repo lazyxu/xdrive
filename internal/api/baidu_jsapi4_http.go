@@ -141,6 +141,17 @@ func (s *Server) baiduJSAPI4SessionHTTP(c *gin.Context) {
 	})
 }
 
+// Every JSAPI4 provider serviceHost request is dispatched to its independently
+// checked Loader or bounded child handler. The catch-all route itself grants
+// NO authority, no new provider Host and no unchecked response passthrough.
+func (s *Server) baiduJSAPI4RuntimeResourceHTTP(c *gin.Context) {
+	if c.Request.URL.Path == baidumapjsapi.LoaderPath {
+		s.baiduJSAPI4LoaderHTTP(c)
+		return
+	}
+	s.baiduJSAPI4ChildHTTP(c)
+}
+
 // Map JS/tiles cannot supply a Bearer header. This exact Loader GET uses
 // ONLY the encrypted, host-only HttpOnly map Cookie and rechecks the same
 // trusted signed release, current Owner/session/epoch/AK revision, quotas,
@@ -220,7 +231,8 @@ func (s *Server) baiduJSAPI4ChildHTTP(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return
 	}
-	if headers == nil || headers.Get("Content-Type") != review.MediaType {
+	if headers == nil || !baidumapjsapi.JSAPI4AllowedProviderMediaType(headers.Get("Content-Type")) ||
+		(review.MediaType != "" && headers.Get("Content-Type") != review.MediaType) {
 		c.String(http.StatusServiceUnavailable, "map resource unavailable")
 		return
 	}

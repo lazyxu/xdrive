@@ -122,12 +122,15 @@ func (s *Server) Router() *gin.Engine {
 	r := gin.New()
 	r.Use(s.requestID(), s.observeHTTP(), s.recovery(), s.cors())
 	r.MaxMultipartMemory = 8 << 20
-	// Only exact reviewed map Loader resources are routable; children fail closed.
-	r.GET("/_BMapService/api", s.baiduJSAPI4LoaderHTTP)
-	// Source-reviewed exact paths ONLY, never a wildcard or runtime/admin HAR
-	// input. The compiled child inventory is empty until licensed proof review.
-	for _, path := range baidumapjsapi.ApprovedJSAPI4ChildPaths() {
-		r.GET(path, s.baiduJSAPI4ChildHTTP)
+	// The single source-owned Baidu serviceHost family is dispatched INSIDE
+	// Go, with mandatory method/path/query/Owner Cookie/release/quota/MIME/AK
+	// validation. It is never a Caddy or arbitrary-upstream open proxy.
+	if paths := baidumapjsapi.ApprovedJSAPI4ChildPaths(); len(paths) != 0 {
+		for _, path := range paths {
+			r.GET(path, s.baiduJSAPI4RuntimeResourceHTTP)
+		}
+	} else {
+		r.GET(baidumapjsapi.LoaderPath, s.baiduJSAPI4LoaderHTTP)
 	}
 	r.GET("/metrics", s.metrics)
 

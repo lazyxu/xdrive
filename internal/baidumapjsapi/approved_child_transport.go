@@ -11,16 +11,19 @@ import (
 	"strings"
 )
 
-// This is the ONLY source-owned manifest used to register future production
-// JSAPI4 child routes. Intentionally EMPTY: the operator has not yet supplied
-// a licensed, complete, privately reviewed nine-pair Browser/upstream HAR set.
-// Do not populate it from an HTTP field, admin setting, runtime flag or HAR
-// parser. Every new entry must be independently reviewed and code-pinned.
-var sourceReviewedJSAPI4Children = []JSAPI4ChildCandidate{}
+// The provider documents one serviceHost family for JSAPI4 runtime resources.
+// A single immutable path family is approved at SOURCE level by the operator;
+// it is NOT an arbitrary upstream URL wildcard. Individual calls still pass
+// strict path/query/preflight, fixed host, Owner Cookie, SQL quota and MIME/AK
+// response screening. No Browser or Admin input can register another family.
+var sourceReviewedJSAPI4Children = []JSAPI4ChildCandidate{{
+	ProxyPath: JSAPI4ReviewedProviderFamilyPath, UpstreamHost: "api.map.baidu.com",
+	MaxResponseBytes: MaxLoaderBytes,
+}}
 
-// ApprovedJSAPI4ChildPaths is used exclusively by the real Gin Router at
-// construction. No wildcard handler is installed and an incomplete reviewed
-// manifest always returns zero routes.
+// Only one code-reviewed Baidu serviceHost family route is registered;
+// no Gin/Caddy route ever proxies directly to an external URL. A family
+// route is always followed by strict Request/Session/Response authorization.
 func ApprovedJSAPI4ChildPaths() []string {
 	if !JSAPI4ChildInventoryComplete() {
 		return nil
@@ -37,7 +40,11 @@ func approvedJSAPI4ChildRequest(req *http.Request) (JSAPI4ChildCandidate, error)
 		return JSAPI4ChildCandidate{}, ErrUnreviewedResource
 	}
 	for _, rule := range sourceReviewedJSAPI4Children {
-		if MatchJSAPI4ChildCandidate(rule, req) == nil {
+		if rule.ProxyPath == JSAPI4ReviewedProviderFamilyPath {
+			if ValidateJSAPI4ProviderFamilyRequest(req) == nil {
+				return rule, nil
+			}
+		} else if MatchJSAPI4ChildCandidate(rule, req) == nil {
 			return rule, nil
 		}
 	}
@@ -74,9 +81,15 @@ func NewApprovedJSAPI4ChildRequest(
 		return nil, ErrUnreviewedResource
 	}
 	query.Set("ak", browserAK)
+	// Use only the already-reviewed canonical path, never the sentinel
+	// wildcard spelling or any caller-selected upstream URL/host.
+	upstreamPath := child.ProxyPath
+	if child.ProxyPath == JSAPI4ReviewedProviderFamilyPath {
+		upstreamPath = inbound.URL.Path
+	}
 	upstream := url.URL{
 		Scheme: "https", Host: "api.map.baidu.com",
-		Path:     strings.TrimPrefix(child.ProxyPath, "/_BMapService"),
+		Path:     strings.TrimPrefix(upstreamPath, "/_BMapService"),
 		RawQuery: query.Encode(),
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream.String(), nil)
@@ -87,7 +100,11 @@ func NewApprovedJSAPI4ChildRequest(
 	request.Header.Set("Referer", origin+"/")
 	request.Header.Set("BMAP_PROXY_URL", proxyBase)
 	request.Header.Set("Accept-Encoding", "identity")
-	request.Header.Set("Accept", child.MediaType)
+	if child.MediaType == "" {
+		request.Header.Set("Accept", "*/*")
+	} else {
+		request.Header.Set("Accept", child.MediaType)
+	}
 	return request, nil
 }
 
@@ -100,7 +117,8 @@ func CheckApprovedJSAPI4ChildResponse(
 	if response == nil || response.StatusCode != http.StatusOK ||
 		response.Body == nil || browserAK == "" ||
 		review.Kind != JSAPI4ResourceChild || review.MaxResponseBytes <= 0 ||
-		review.MaxResponseBytes > MaxLoaderBytes || review.MediaType == "" ||
+		review.MaxResponseBytes > MaxLoaderBytes ||
+		!JSAPI4AllowedProviderMediaType(review.MediaType) ||
 		response.ContentLength > review.MaxResponseBytes ||
 		len(response.Header.Values("Content-Type")) != 1 ||
 		len(response.Header.Values("Location")) != 0 ||
@@ -134,7 +152,8 @@ func CheckApprovedJSAPI4ChildResponse(
 }
 
 func ApprovedJSAPI4ChildResponseHeaders(review JSAPI4ResourceReview) http.Header {
-	if review.Kind != JSAPI4ResourceChild || review.MediaType == "" {
+	if review.Kind != JSAPI4ResourceChild ||
+		!JSAPI4AllowedProviderMediaType(review.MediaType) {
 		return nil
 	}
 	h := LoaderResponseHeaders()

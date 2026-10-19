@@ -25,10 +25,11 @@ func TestJSAPI4LoaderShapeIsReviewedButNotReleased(t *testing.T) {
 	if err != nil || review.Kind != JSAPI4ResourceLoader || review.MaxResponseBytes != MaxLoaderBytes {
 		t.Fatalf("review=%#v err=%v", review, err)
 	}
-	if JSAPI4ChildInventoryComplete() {
-		t.Fatal("unreviewed child policy presented as complete")
+	if !JSAPI4ChildInventoryComplete() {
+		t.Fatal("approved bounded official serviceHost policy was not compiled")
 	}
-	// Even with synthetic all-true helper flags, runtime must not enable.
+	// Synthetic all-true helper flags cannot enable the live Server without a
+	// current managed signer, Owner Cookie, quota and revocation evidence.
 	g := ReleaseGates{true, true, true, true, true}
 	if err := JSAPI4ProductionResourceGate(context.Background(), req, g); !errors.Is(err, ErrGateClosed) {
 		t.Fatalf("unlicensed JSAPI4 policy activated: %v", err)
@@ -37,10 +38,6 @@ func TestJSAPI4LoaderShapeIsReviewedButNotReleased(t *testing.T) {
 
 func TestJSAPI4UnreviewedResourcesAlwaysDenied(t *testing.T) {
 	invalid := []string{
-		"/_BMapService/tiles/0.png?v=4.0",
-		"/_BMapService/assets/script.js?v=4.0",
-		"/_BMapService/assets/map.wasm?v=4.0",
-		"/_BMapService/font/map.woff2?v=4.0",
 		"/_BMapService/api?v=4.0&ak=client",
 		"/_BMapService/api?ak=client&v=4.0",
 		"/_BMapService/api?v=4.0&v=4.0",
@@ -178,5 +175,53 @@ func TestJSAPI4LoaderShapeRejectsAmbiguousOrBlankCredentialHeaders(t *testing.T)
 	got, err := ReviewJSAPI4ResourceRequest(req)
 	if err != nil || got.Kind != JSAPI4ResourceLoader {
 		t.Fatalf("missing credentials should preserve original shape review: %#v, %v", got, err)
+	}
+}
+
+// Source policy admits only canonical Baidu-owned GET resource shapes.
+// A passing request shape alone does not grant an Owner Session or network IO.
+func TestJSAPI4BaiduServiceHostFamilyShapeAndBoundedFields(t *testing.T) {
+	if !JSAPI4ChildInventoryComplete() ||
+		len(ApprovedJSAPI4ChildPaths()) != 1 ||
+		ApprovedJSAPI4ChildPaths()[0] != JSAPI4ReviewedProviderFamilyPath {
+		t.Fatal("bounded map child family not registered in reviewed code")
+	}
+	for _, target := range []string{
+		"/_BMapService/getscript?v=4.0",
+		"/_BMapService/tiles/sample.png?x=1&y=2&z=12",
+		"/_BMapService/assets/lib.js?v=4.0",
+		"/_BMapService/?qt=tiles",
+	} {
+		req := reviewedRequest(t, http.MethodGet, target)
+		result, err := ReviewJSAPI4ResourceRequest(req)
+		if err != nil || result.Kind != JSAPI4ResourceChild ||
+			result.MaxResponseBytes != MaxLoaderBytes {
+			t.Fatalf("rejected source family shape %q: %#v %v", target, result, err)
+		}
+	}
+	for _, target := range []string{
+		"/_BMapService/assets/code.js?callback=evil",
+		"/_BMapService/assets/code.js?ak=leak",
+		"/_BMapService/assets/code.js?AK=leak",
+		"/_BMapService/assets/code.js?url=https%3A%2F%2Fevil.invalid",
+		"/_BMapService/assets/code.js?x=1&x=2",
+		"/_BMapService/assets/%2e%2e/code.js",
+		"/_BMapService/assets/../code.js",
+		"/_BMapService/assets//code.js",
+		"/_BMapService/assets%2Fcode.js",
+		"/_BMapService/",
+	} {
+		req := reviewedRequest(t, http.MethodGet, target)
+		if _, err := ReviewJSAPI4ResourceRequest(req); !errors.Is(err, ErrUnreviewedResource) {
+			t.Errorf("accepted malicious resource family %q", target)
+		}
+	}
+	for _, typ := range []string{
+		"text/html", "image/svg+xml", "text/plain",
+		"application/octet-stream", "application/x-shockwave-flash",
+	} {
+		if JSAPI4AllowedProviderMediaType(typ) {
+			t.Fatalf("untrusted MIME approved: %s", typ)
+		}
 	}
 }

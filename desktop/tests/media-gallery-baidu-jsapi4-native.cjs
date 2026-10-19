@@ -99,7 +99,7 @@ test('A3 official adapter cannot serve as a licence, release proof, loader or se
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
   const bridge = fs.readFileSync(path.join(root,
     'ui/shared/src/media-gallery-baidu-jsapi4-viewport.ts'), 'utf8')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(sharedMap, /XDriveMediaGalleryBaiduStaticMap/)
   assert.doesNotMatch(sharedMap, /media-gallery-baidu-jsapi4-native/)

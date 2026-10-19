@@ -247,6 +247,6 @@ test('A3b3a3c implementation only uses one shared Owner transport; no map runtim
     /window\.BMap|BMAP_PROXY_URL|new BMap\.|document\.createElement|fetch\(|localStorage/)
   assert.doesNotMatch(code, /\.getBounds\(\)/,
     'Baidu BD09 bounds must not silently become WGS84 query bounds')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })

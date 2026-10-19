@@ -11,27 +11,56 @@ import (
 	"testing"
 )
 
-func TestApprovedJSAPI4ChildrenDoNotRegisterOrAuthorizeWithoutReview(t *testing.T) {
-	if JSAPI4ChildInventoryComplete() || len(ApprovedJSAPI4ChildPaths()) != 0 {
-		t.Fatal("an unreviewed child became a production route")
+func TestBaiduJSAPI4ReviewedFamilyRejectsMaliciousAndForwardsOnlyFixedProvider(t *testing.T) {
+	if !JSAPI4ChildInventoryComplete() || len(ApprovedJSAPI4ChildPaths()) != 1 ||
+		ApprovedJSAPI4ChildPaths()[0] != JSAPI4ReviewedProviderFamilyPath {
+		t.Fatal("bounded Baidu source family not registered")
 	}
+	const ak = "server-only-browser-ak-example"
+	gates := ReleaseGates{Licensed: true, ObservedResourceInventory: true,
+		RawLeakAudit: true, OwnerSessionAndFleetQuota: true, PlatformIsolation: true}
 	for _, target := range []string{
-		"/_BMapService/tile/a.png?x=1",
 		"/_BMapService/%2e%2e/api?v=4.0",
 		"/_BMapService/tiles/a.png?ak=fixture-secret",
+		"/_BMapService/tiles/a.png?url=https%3A%2F%2Fevil.invalid",
+		"/_BMapService/assets/../payload.js",
 	} {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
-		if result, err := ReviewJSAPI4ResourceRequest(req); err == nil ||
-			result.Kind == JSAPI4ResourceChild {
-			t.Fatalf("unreviewed route was accepted")
+		if review, err := ReviewJSAPI4ResourceRequest(req); err == nil ||
+			review.Kind == JSAPI4ResourceChild {
+			t.Fatalf("malicious child review succeeded: %q", target)
 		}
 		out, err := NewApprovedJSAPI4ChildRequest(context.Background(),
-			"https://gallery.example.invalid", "fixture-private-browser-ak", req,
-			ReleaseGates{Licensed: true, ObservedResourceInventory: true,
-				RawLeakAudit: true, OwnerSessionAndFleetQuota: true, PlatformIsolation: true})
-		if out != nil || err == nil ||
-			strings.Contains(err.Error(), "fixture-private-browser-ak") {
-			t.Fatal("unreviewed child created an upstream request or leaked AK")
+			"https://gallery.example.invalid", ak, req, gates)
+		if out != nil || err == nil || strings.Contains(err.Error(), ak) {
+			t.Fatalf("malicious path created a provider request: %q", target)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_BMapService/tiles/test.png?x=1&y=2", nil)
+	out, err := NewApprovedJSAPI4ChildRequest(context.Background(),
+		"https://gallery.example.invalid", ak, req, gates)
+	if err != nil || out.URL.Scheme != "https" ||
+		out.URL.Host != "api.map.baidu.com" || out.URL.Path != "/tiles/test.png" ||
+		out.URL.Query().Get("ak") != ak || out.URL.Query().Get("x") != "1" ||
+		out.Header.Get("BMAP_PROXY_URL") != "https://gallery.example.invalid/_BMapService/" ||
+		out.Header.Get("Referer") != "https://gallery.example.invalid/" ||
+		out.Header.Get("Authorization") != "" || out.Header.Get("Cookie") != "" {
+		t.Fatal("fixed Baidu upstream, AK or credential isolation failed")
+	}
+	req.Header.Set("Authorization", "Bearer forged")
+	if forwarded, err := NewApprovedJSAPI4ChildRequest(context.Background(),
+		"https://gallery.example.invalid", ak, req, gates); forwarded != nil ||
+		!errors.Is(err, ErrUnreviewedResource) {
+		t.Fatal("browser bearer was accepted by family request planner")
+	}
+	for _, unsafeMedia := range []string{"text/html", "image/svg+xml"} {
+		if ApprovedJSAPI4ChildResponseHeaders(JSAPI4ResourceReview{
+			Kind: JSAPI4ResourceChild, MediaType: unsafeMedia,
+			MaxResponseBytes: MaxLoaderBytes,
+		}) != nil {
+			t.Fatal("unsafe MIME entered fixed child response headers")
 		}
 	}
 }

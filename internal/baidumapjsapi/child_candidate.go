@@ -34,6 +34,13 @@ type JSAPI4ChildQueryCandidate struct {
 // network completeness, Browser AK secrecy or readiness for any HTTP route.
 func ValidateJSAPI4ChildCandidate(c JSAPI4ChildCandidate) error {
 	const allowedHost = "api.map.baidu.com"
+	if c.ProxyPath == JSAPI4ReviewedProviderFamilyPath {
+		if c.UpstreamHost == allowedHost && c.MediaType == "" &&
+			c.MaxResponseBytes == MaxLoaderBytes && len(c.Query) == 0 {
+			return nil
+		}
+		return ErrUnreviewedResource
+	}
 	if c.UpstreamHost != allowedHost || c.ProxyPath == LoaderPath ||
 		!strings.HasPrefix(c.ProxyPath, ProxyPrefix) ||
 		len(c.ProxyPath) > 256 || c.MaxResponseBytes <= 0 ||

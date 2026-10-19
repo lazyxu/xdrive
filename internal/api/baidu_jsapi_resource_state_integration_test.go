@@ -94,7 +94,7 @@ func TestBaiduJSAPIResourceSnapshotRequiresFreshOwnerConfigEpoch(t *testing.T) {
 	}{
 		{"duplicate cookie", func(r *http.Request) { r.AddCookie(cookie) }},
 		{"AK override", func(r *http.Request) { r.URL.RawQuery = "v=4.0&ak=attacker" }},
-		{"unreviewed child", func(r *http.Request) { r.URL.Path = "/_BMapService/tiles/0.png" }},
+		{"child traversal", func(r *http.Request) { r.URL.Path = "/_BMapService/tiles/../0.png" }},
 		{"absolute URL", func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = "example.invalid" }},
 		{"bearer", func(r *http.Request) { r.Header.Set("Authorization", "Bearer not-allowed") }},
 		{"foreign origin", func(r *http.Request) { r.Header.Set("Origin", "https://attacker.invalid") }},

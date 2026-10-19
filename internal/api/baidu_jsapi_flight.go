@@ -15,8 +15,8 @@ import (
 var errBaiduJSAPIFlightDenied = errors.New("map resource concurrency unavailable")
 
 const (
-	baiduJSAPIOwnerLoaderFlights int64 = 2
-	baiduJSAPIFleetLoaderFlights int64 = 16
+	baiduJSAPIOwnerLoaderFlights int64 = 8
+	baiduJSAPIFleetLoaderFlights int64 = 64
 	baiduJSAPILoaderFlightTTL          = 15 * time.Second
 	// An application-wide PostgreSQL transaction advisory lock. NEVER derive
 	// the lock key from the caller, schema, Owner ID, or an untrusted URL.
@@ -45,7 +45,9 @@ func acquireBaiduJSAPILoaderFlight(ctx context.Context, db *gorm.DB, ownerID uin
 	})
 }
 
-// Lower caps are only for isolated tests; the production ceilings are fixed.
+// Source-owned family uses the same fleet-wide 8-per-owner, 64-total
+// in-flight slots as the Loader. Every lease ends on response/cancel and no
+// unknown host or endpoint can bypass admission. Lower caps are test-only.
 func acquireBaiduJSAPILoaderFlightWithLimits(ctx context.Context, db *gorm.DB, ownerID uint64, caps baiduJSAPILoaderFlightLimits) (baiduJSAPILoaderLease, error) {
 	var zero baiduJSAPILoaderLease
 	if ctx == nil || db == nil || ctx.Err() != nil || ownerID == 0 || ownerID > baiduJSAPIQuotaMaxOwnerID ||

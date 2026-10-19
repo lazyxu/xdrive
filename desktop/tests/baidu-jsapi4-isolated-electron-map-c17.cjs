@@ -93,7 +93,7 @@ test('A3c17 Desktop segregates file Renderer and HTTPS Map with no token IPC', (
   assert.doesNotMatch(main, /BaiduBrowserAK|BMapSecurityConfig|allowRunningInsecureContent: true/)
   assert.doesNotMatch(preload, /mintBaiduJSAPI4Session/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })
 

@@ -133,7 +133,7 @@ test('C16 real Web and Mobile Web share the Owner status/Session/BD09/viewer bri
   assert.doesNotMatch(surface, /fetch\(|api\.map\.baidu\.com|BrowserAK|new BMap\./)
   assert.doesNotMatch(desktop, /mintBaiduJSAPI4Session:/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })
 

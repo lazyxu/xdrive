@@ -24,9 +24,10 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/healthz", suite: "observability"},
 		{method: "GET", path: "/api/v1/readyz", suite: "observability"},
 		{method: "GET", path: "/api/v1/version", suite: "version"},
-		// Map Loader is not Bearer-protected: it requires a separate revocable
+		// SDK Loader and source-reviewed child requests are NOT Bearer-protected:
+		// they require a separate revocable
 		// Server-signed map-only Cookie AND a source-pinned production release.
-		{method: "GET", path: "/_BMapService/api", suite: "baidu-jsapi4-map-cookie"},
+		{method: "GET", path: "/_BMapService/*resource", suite: "baidu-jsapi4-map-cookie"},
 		{method: "POST", path: "/api/v1/auth/login", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/refresh", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/logout", suite: "auth"},
@@ -415,7 +416,7 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		// *only* exempts the route from Bearer requirement; default 503, signed
 		// release, current map-only Cookie, quota and revocation are independently
 		// exercised in TestBaiduJSAPI4HTTPDenyByDefaultNoCredentialLeak.
-		"GET /_BMapService/api":                             {},
+		"GET /_BMapService/*resource":                       {},
 		"GET /metrics":                                      {},
 		"GET /api/v1/healthz":                               {},
 		"GET /api/v1/readyz":                                {},

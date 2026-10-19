@@ -197,7 +197,7 @@ test('A3 shared native composition has NO SDK loader, AK, second API or runtime 
   const web = read('web/src/mediaGalleryAdapter.ts')
   const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   const gallery = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(web, /api.mediaPlacesViewport/)
   assert.match(desktop, /getMediaPlacesViewport/)

@@ -31,8 +31,8 @@ func TestBaiduJSAPILoaderQuotaRejectsInvalidInputs(t *testing.T) {
 		{context.Background(), 0, baiduJSAPILoaderQuotaLimits{2, 3}},
 		{context.Background(), uint64(1) << 63, baiduJSAPILoaderQuotaLimits{2, 3}},
 		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{0, 3}},
-		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{13, 13}},
-		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{2, 241}},
+		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{121, 121}},
+		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{2, 2401}},
 		{context.Background(), 1, baiduJSAPILoaderQuotaLimits{3, 2}},
 	} {
 		if err := reserveBaiduJSAPILoaderQuotaWithLimits(item.ctx, nil, item.owner, item.caps); !errors.Is(err, errBaiduJSAPIQuotaDenied) {

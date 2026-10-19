@@ -12,8 +12,8 @@ import (
 var errBaiduJSAPIQuotaDenied = errors.New("map resource quota unavailable")
 
 const (
-	baiduJSAPIOwnerLoaderRequestsPerMinute int64 = 12
-	baiduJSAPIFleetLoaderRequestsPerMinute int64 = 240
+	baiduJSAPIOwnerLoaderRequestsPerMinute int64 = 120
+	baiduJSAPIFleetLoaderRequestsPerMinute int64 = 2400
 	baiduJSAPIQuotaMaxOwnerID                    = uint64(1<<63 - 1)
 )
 
@@ -32,8 +32,11 @@ func reserveBaiduJSAPILoaderQuota(ctx context.Context, db *gorm.DB, ownerID uint
 	})
 }
 
+// Cross-replica per-Owner and fleet caps now cover bounded JSAPI4 resource
+// families (tiles/scripts/fonts) rather than only one Loader. Admission
+// stays limited to 120/Owner/min and 2400/fleet/min, each reserving 2MiB.
 // The lower-limit variant is only for isolated tests; runtime ceilings are
-// hard-coded above. It reserves the strict maximum 2MiB loader response
+// hard-coded above. It reserves the strict maximum 2MiB response
 // per admission, even when a request aborts or returns fewer bytes.
 // A single SQL transaction rolls back the fleet charge if the owner rejects.
 func reserveBaiduJSAPILoaderQuotaWithLimits(ctx context.Context, db *gorm.DB, ownerID uint64, caps baiduJSAPILoaderQuotaLimits) error {

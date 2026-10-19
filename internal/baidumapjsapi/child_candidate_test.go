@@ -24,9 +24,10 @@ func TestCandidateIsNotInventoryApproval(t *testing.T) {
 	if err := ValidateJSAPI4ChildCandidate(c); err != nil {
 		t.Fatal(err)
 	}
-	if JSAPI4ChildInventoryComplete() {
-		t.Fatal("unreviewed candidates cannot complete source inventory")
+	if !JSAPI4ChildInventoryComplete() {
+		t.Fatal("bounded source-reviewed provider family unexpectedly missing")
 	}
+	// An offline candidate remains separate from the compiled provider family.
 	req, _ := http.NewRequest(http.MethodGet, "/_BMapService/api?v=4.0", nil)
 	if err := JSAPI4ProductionResourceGate(context.Background(), req, ReleaseGates{
 		Licensed: true, ObservedResourceInventory: true, RawLeakAudit: true,

@@ -154,8 +154,11 @@ func TestManagedJSAPI4InternalKeysTwoReplicaPersistenceAndRecovery(t *testing.T)
 	if err != nil || static.AK != "static-map-kept-private" || !static.Enabled {
 		t.Fatal("internal signing key initialization changed Static Map configuration")
 	}
-	if !serverA.baiduJSAPI4ManagedSignerReady() || baidumapjsapi.JSAPI4ChildInventoryComplete() {
-		t.Fatal("auto-managed signing identity is missing or unreviewed resources were admitted")
+	if !serverA.baiduJSAPI4ManagedSignerReady() || !baidumapjsapi.JSAPI4ChildInventoryComplete() {
+		t.Fatal("managed identity or source-reviewed fixed Baidu family missing")
+	}
+	if _, err := serverA.currentBaiduJSAPI4OperatorRelease(context.Background()); err == nil {
+		t.Fatal("internal keys and source policy alone armed an unsigned map runtime")
 	}
 
 	// The root encryption material is externally held. A mismatch MUST NOT

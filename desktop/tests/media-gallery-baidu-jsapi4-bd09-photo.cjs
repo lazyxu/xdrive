@@ -187,7 +187,7 @@ test('A3c14 BD09 map bounds are never mislabeled WGS84 and invalid bounds do not
 test('A3c14 no provider credential, second basemap, or unauthorized SDK load', () => {
   const policy = fs.readFileSync(path.join(root,
     'internal/baidumapjsapi/resource_policy.go'), 'utf8')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.doesNotMatch(code, /api\.map\.baidu\.com|BMAP_PROXY_URL|new BMap\.|fetch\(|localStorage/)
 })

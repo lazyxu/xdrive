@@ -20,7 +20,7 @@ test('A3c18 owner-safe Server release reasons cannot enable the map', () => {
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
     /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
-    /reviewedJSAPI4ChildResourceCount = 0/)
+    /reviewedJSAPI4ChildResourceCount = 1/)
   assert.doesNotMatch(report, /os\.Getenv|http\.Get|window\.|browser_ak\s*:/)
 })
 

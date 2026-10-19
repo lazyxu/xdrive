@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"mime"
 	"net/http"
 	"time"
 
@@ -106,6 +107,16 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 	}
 	var body []byte
 	if review.Kind == baidumapjsapi.JSAPI4ResourceChild {
+		// The provider returns different, strictly allowed JS/CSS/tile/font/
+		// binary media from the same serviceHost family. Normalize MIME in
+		// trusted Server memory; never forward the raw upstream Content-Type.
+		if review.MediaType == "" {
+			mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+			if parseErr != nil || !baidumapjsapi.JSAPI4AllowedProviderMediaType(mediaType) {
+				return nil, nil, denied
+			}
+			review.MediaType = mediaType
+		}
 		body, err = baidumapjsapi.CheckApprovedJSAPI4ChildResponse(response, ak, review)
 	} else {
 		body, err = baidumapjsapi.CheckLoaderResponse(response, ak)
