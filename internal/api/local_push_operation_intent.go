@@ -243,6 +243,11 @@ func (s *Server) abortBoundLocalPushOperationIntent(
 		if err := requireLocalPushOperationWithoutSQLCommitTx(tx, operationID); err != nil {
 			return denied
 		}
+		// Historical SQL COMMIT of another Source generation must also
+		// defeat this newer reservation's negative outcome or replay.
+		if err := requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx, sourceID); err != nil {
+			return denied
+		}
 		if latest.State == meta.LocalPushOperationIntentAborted && latest.AbortedAt != nil {
 			return nil // idempotent only for the same current owner-bound generation
 		}

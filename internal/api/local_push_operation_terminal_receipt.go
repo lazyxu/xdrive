@@ -42,6 +42,25 @@ func requireLocalPushOperationWithoutSQLCommitTx(tx *gorm.DB, operationID string
 	return nil
 }
 
+// requireLocalPushSourceWithoutFirstLeafSQLCommitTx is an additional
+// Source-WIDE durability veto, including committed older generations behind
+// a newer legacy pending/aborted reservation. The caller already holds the
+// owning Source UPDATE and latest Operation UPDATE locks through SQL COMMIT.
+// This DOES NOT prove native-file or physical CAS quiescence.
+func requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx *gorm.DB, sourceID uint64) error {
+	if tx == nil || tx.Error != nil || sourceID == 0 {
+		return errLocalPushOperationIntentDenied
+	}
+	var committed meta.LocalPushFirstLeafOperationCommit
+	probe := tx.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+		Select("operation_id").Where("source_id = ?", sourceID).
+		Limit(1).Find(&committed)
+	if probe.Error != nil || probe.RowsAffected != 0 {
+		return errLocalPushOperationIntentDenied
+	}
+	return nil
+}
+
 // recordBoundLocalPushReservationTerminal creates or reloads an immutable
 // reservation-terminal receipt for the exact latest UUID, generation and
 // previously minted native request key. It is deliberately UNROUTED; a later
@@ -103,6 +122,11 @@ func (s *Server) recordBoundLocalPushReservationTerminal(
 		// committed first, neither expiry nor abort may mint a contradictory
 		// reservation terminal receipt.
 		if err := requireLocalPushOperationWithoutSQLCommitTx(tx, operationID); err != nil {
+			return denied
+		}
+		// A prior generation may have committed before the source-wide
+		// admission embargo existed; no newer reservation can erase it.
+		if err := requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx, sourceID); err != nil {
 			return denied
 		}
 		var terminalState string
