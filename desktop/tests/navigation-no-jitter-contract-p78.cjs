@@ -101,7 +101,7 @@ test('P78 shared Files: cold/verified/error geometry and reusable virtualization
     'aria-busy={quickAccessLoading || quickAccessReadState === \'unverified\' || undefined}'],
     'sidebar first index must be quiet and semantic')
   mustOmit(columns, ['ColumnNetworkFeedback'], 'shared Files Column navigation')
-  mustContain(columns, ['aria-busy={state.loading || undefined}',
+  mustContain(columns, ['aria-busy={state.loading || pendingChild?.pending || undefined}',
     'controller.signal.aborted || generationRef.current.get(key) !== generation',
     'XDriveAutoLoadSentinel', 'data-xdrive-column-error'],
     'real column cancellation, pagination and retry survive')

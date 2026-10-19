@@ -8,8 +8,8 @@ const web = fs.readFileSync(path.join(__dirname, '..', '..', 'web/src/WebFileExp
 const desktop = fs.readFileSync(path.join(__dirname, '..', '..', 'desktop/src/renderer/DesktopFileExplorer.tsx'), 'utf8')
 
 test('FileExplorer columns never mount a momentary in-flow spinner on fast GET', () => {
-  assert.ok(source.includes('aria-busy={state.loading || undefined}'))
-  assert.ok(source.includes('data-xdrive-column-pending={state.loading || undefined}'))
+  assert.ok(source.includes('aria-busy={state.loading || pendingChild?.pending || undefined}'))
+  assert.ok(source.includes('data-xdrive-column-pending={state.loading || pendingChild?.pending || undefined}'))
   assert.equal(source.includes('ColumnNetworkFeedback'), false)
   assert.equal(source.includes('CircularProgress'), false)
   assert.equal(source.includes("py: 1.5, display: 'grid'"), false)
@@ -37,4 +37,15 @@ test('session changes cannot expose stale columns on their first render', () => 
   assert.ok(source.includes('controllersRef.current.clear()'))
   assert.ok(web.includes('interactionLifecycleKey={navigationSessionStorageKey ?? \'\'}'))
   assert.ok(desktop.includes('interactionLifecycleKey={navigationSessionStorageKey ?? \'\'}'))
+})
+
+test('P92 child-column navigation waits for current first page and never inserts empty destination', () => {
+  assert.ok(source.includes("const navigateToFolder = useCallback(("))
+  assert.ok(source.includes("loadPage(item.id, '', controller.signal)"))
+  assert.ok(source.includes("currentScope.lifecycleKey !== sourceScope.lifecycleKey"))
+  assert.ok(source.includes("ticket !== columnNavigationGenerationRef.current"))
+  assert.ok(source.includes("setColumnNavigation(null)\n      onSelect(item)\n      await onNavigate(nextCrumbs)"))
+  assert.ok(source.includes("data-xdrive-column-navigation-error"))
+  assert.ok(source.includes("columnNavigationControllerRef.current?.abort()"))
+  assert.equal(source.includes("void onNavigate([\n                          ...crumbs.slice"), false)
 })
