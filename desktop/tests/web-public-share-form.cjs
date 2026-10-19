@@ -275,7 +275,7 @@ test('Public Share first read has stable geometry and no 40ms loading flash', as
   assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
 })
 
-test('Public Share sustained first read reveals only overlay progress and preserves error', async (t) => {
+test('P90 sustained public-share first read retains a silent 180px slot and actionable error', async (t) => {
   // Keep the original resolve-only deferred() helper for existing download tests.
   let rejectPending
   const pending = { promise: new Promise((_resolve, reject) => { rejectPending = reject }) }
@@ -289,21 +289,26 @@ test('Public Share sustained first read reveals only overlay progress and preser
   let renderer
   await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
   t.after(() => act(() => renderer.unmount()))
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
-  const overlay = renderer.root.findAll(
-    node => typeof node.type === 'string' && node.props['data-xdrive-public-share-delayed-feedback'] === true
-  )
-  assert.equal(overlay.length, 1, 'sustained progress must occupy one permanent, non-flow position')
-  assert.equal(overlay[0].props.sx.position, 'absolute')
-  assert.equal(overlay[0].props.sx.pointerEvents, 'none')
-  assert.ok(textContent(renderer.toJSON()).includes('正在加载分享'))
+  const slot = renderer.root.findAll(node => typeof node.type === 'string' &&
+    node.props['data-xdrive-public-share-read-slot'] === true)[0]
+  assert.ok(slot)
+  const height = slot.props.sx.minHeight
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 360)) })
+  assert.equal(slot.props['aria-busy'], true)
+  assert.equal(slot.props.sx.minHeight, height)
+  assert.equal(renderer.root.findAll(node =>
+    node.props?.['data-xdrive-public-share-delayed-feedback']).length, 0)
+  assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
   await act(async () => {
     rejectPending(new TestApiError(404, 'not found'))
     await Promise.resolve()
   })
   assert.ok(textContent(renderer.toJSON()).includes('此分享链接不存在。'))
   assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
-  assert.equal(renderer.root.findAll(node => typeof node.type === 'string' && node.props['data-xdrive-public-share-delayed-feedback'] === true).length, 0)
+  assert.equal(slot.props['aria-busy'], false)
+  assert.equal(slot.props.sx.minHeight, height)
+  assert.equal(renderer.root.findAll(node =>
+    node.props?.['data-xdrive-public-share-delayed-feedback']).length, 0)
 })
 
 
@@ -445,4 +450,87 @@ test('SH-P002 original public metadata request unmount cancellation n3', async (
         'unmount to AbortSignal must be synchronous within 16ms')
     }
   }
+})
+
+test('P90 actual React public folder browse and nested folder retain geometry and rows through >350ms GET, failure and retry', async (t) => {
+  let resolveRoot, rejectChild, resolveRetry
+  const rootRead = new Promise(resolve => { resolveRoot = resolve })
+  const childRead = new Promise((_resolve, reject) => { rejectChild = reject })
+  const retryRead = new Promise(resolve => { resolveRetry = resolve })
+  const calls = []
+  let childAttempts = 0
+  class Api {
+    async publicShare(token) {
+      assert.equal(token, 'test-share-token')
+      return { type: 'dir', name: '公开相册', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    publicShareChildren(_token, _password, parentID, cursor, signal) {
+      calls.push({ parentID, cursor, signal })
+      if (parentID === 0) return rootRead
+      if (parentID === 42) return ++childAttempts === 1 ? childRead : retryRead
+      throw Error('unexpected folder ' + parentID)
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const text = () => textContent(renderer.toJSON())
+  const rows = () => renderer.root.findAll(node => node.type === 'div' && node.props.role === 'listitem')
+  const browser = () => renderer.root.findAll(node => node.type === 'div' &&
+    node.props['data-xdrive-public-share-folder-browser'] === true)[0]
+  const region = () => renderer.root.findAll(node => node.type === 'div' &&
+    node.props['aria-label'] === '分享文件夹内容')[0]
+  const button = label => renderer.root.findAllByType('button')
+    .find(n => textContent(n.children).trim() === label)
+  const click = async label => {
+    const b = button(label)
+    assert.ok(b, 'missing original Public Share button ' + label)
+    await act(async () => { b.props.onClick() })
+  }
+  await click('浏览文件夹')
+  assert.equal(calls.length, 1)
+  assert.equal(button('浏览文件夹').props.disabled, true)
+  assert.equal(browser().props['aria-busy'], true)
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 370)) })
+  assert.ok(button('浏览文件夹'), 'a sustained first folder read must keep the original button')
+  assert.equal(text().includes('正在读取文件夹'), false)
+  await act(async () => {
+    resolveRoot({ parent_id: 0, next_cursor: 0, items: [
+      { id: 42, name: '下一级', type: 'dir', size: 0 },
+      { id: 7, name: '旧文件.txt', type: 'file', size: 12 },
+    ] })
+    await rootRead
+  })
+  assert.equal(rows().length, 2)
+  assert.equal(region().props.sx.minHeight, 180)
+  assert.equal(region().props['aria-busy'], false)
+  await click('打开')
+  assert.equal(calls.length, 2)
+  assert.equal(region().props['aria-busy'], true)
+  assert.equal(rows().length, 2)
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 370)) })
+  assert.equal(region().props.sx.minHeight, 180)
+  assert.equal(rows().length, 2, 'accepted old rows remain mounted throughout slow folder navigation')
+  assert.ok(text().includes('旧文件.txt'))
+  assert.equal(text().includes('正在读取文件夹'), false)
+  await act(async () => { rejectChild(new TestApiError(503, '临时网络错误')); await Promise.resolve() })
+  assert.equal(region().props['aria-busy'], false)
+  assert.equal(rows().length, 2, 'a failed navigation must retain accepted rows and crumbs')
+  assert.ok(text().includes('临时网络错误'), 'real terminal errors remain visible')
+  await click('打开')
+  assert.equal(region().props['aria-busy'], true)
+  await act(async () => {
+    resolveRetry({ parent_id: 42, next_cursor: 0, items: [
+      { id: 100, name: '新文件.txt', type: 'file', size: 99 },
+    ] })
+    await retryRead
+  })
+  assert.equal(region().props['aria-busy'], false)
+  assert.equal(rows().length, 1)
+  assert.ok(text().includes('新文件.txt'))
+  assert.ok(!text().includes('旧文件.txt'))
+  assert.ok(!text().includes('临时网络错误'))
+  assert.equal(calls.length, 3, 'no decorative request or extra page read may be dispatched')
 })
