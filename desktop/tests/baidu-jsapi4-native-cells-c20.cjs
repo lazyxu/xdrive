@@ -144,7 +144,7 @@ test('C20 one real Server /cells and shared Gallery path, no separate desktop fi
   assert.match(gallery,/anchor_node_id: identity\.nodeID/)
   assert.doesNotMatch(desktop,/mintBaiduJSAPI4Session:/)
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
-    /reviewedJSAPI4ChildResourceCount = 0/)
+    /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
     /VerifyManagedJSAPI4ProductionRelease\(/)
 })

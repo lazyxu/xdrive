@@ -112,8 +112,8 @@ func TestBaiduJSAPI4ReleaseProvisionIsPinnedNotAdminBoolean(t *testing.T) {
 	}
 }
 
-// Verify the routes are registered in the actual Server.Router rather than
-// only in a fake Gin test engine. The GET route has NO generic child wildcard.
+// Verify the real Router dispatches the single bounded official provider
+// serviceHost family INSIDE Go; no Caddy-proxied arbitrary upstream.
 func TestBaiduJSAPI4RouterRestrictsOnlyExactLoaderAndAuthenticatedSession(t *testing.T) {
 	s := &Server{}
 	routes := s.Router().Routes()
@@ -122,7 +122,7 @@ func TestBaiduJSAPI4RouterRestrictsOnlyExactLoaderAndAuthenticatedSession(t *tes
 		paths[route.Method+" "+route.Path] = true
 	}
 	for _, name := range []string{
-		"GET /_BMapService/api",
+		"GET /_BMapService/*resource",
 		"POST /api/v1/media/places/baidu-jsapi/session",
 	} {
 		if !paths[name] {
@@ -131,8 +131,8 @@ func TestBaiduJSAPI4RouterRestrictsOnlyExactLoaderAndAuthenticatedSession(t *tes
 	}
 	for name := range paths {
 		if strings.HasPrefix(name, "GET /_BMapService/") &&
-			name != "GET /_BMapService/api" {
-			t.Fatalf("unreviewed map child route exposed: %s", name)
+			name != "GET /_BMapService/*resource" {
+			t.Fatalf("unexpected parallel map proxy route: %s", name)
 		}
 	}
 }
@@ -157,6 +157,28 @@ func TestBaiduJSAPI4ChildHandlerHardDeniesWithoutReviewedSourceRelease(t *testin
 			rec.Header().Get("Set-Cookie") != "" ||
 			strings.Contains(rec.Body.String(), "secret_canary") {
 			t.Fatal("unreviewed child exposed content or a private cookie")
+		}
+	}
+}
+
+// A source-reviewed provider family is ONLY a route shape. An unauthenticated
+// or forged map Cookie cannot fetch a single JS, tile or font byte from it.
+func TestBaiduJSAPI4BoundedProviderRouteHardDeniesWithoutSignedOwner(t *testing.T) {
+	s := &Server{AllowedOrigin: "https://gallery.example.invalid"}
+	router := s.Router()
+	for _, path := range []string{
+		"/_BMapService/api?v=4.0",
+		"/_BMapService/tiles/2.png?x=1&y=2",
+		"/_BMapService/assets/script.js?v=4.0",
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Cookie", "XD_BMAP_SESSION=forged")
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable ||
+			rec.Header().Get("Cache-Control") != "private, no-store" ||
+			rec.Header().Get("Set-Cookie") != "" {
+			t.Fatalf("unauthorized map resource exposed: %s status=%d", path, rec.Code)
 		}
 	}
 }

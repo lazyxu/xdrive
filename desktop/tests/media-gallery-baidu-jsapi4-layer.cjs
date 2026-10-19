@@ -263,7 +263,7 @@ test('A3b3a3b no unlicensed loader, unsafe BD09->WGS84 bbox or alternate Provide
   const shared = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const web = read('web/src/mediaGalleryAdapter.ts')
   const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(shared, /<XDriveMediaGalleryBaiduStaticMap/)
   assert.match(shared, /listPlacesViewport/)

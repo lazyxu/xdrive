@@ -30,8 +30,8 @@ func TestBaiduJSAPILoaderFlightRejectsInvalidInputs(t *testing.T) {
 		{context.Background(), 0, baiduJSAPILoaderFlightLimits{1, 2}},
 		{context.Background(), uint64(1) << 63, baiduJSAPILoaderFlightLimits{1, 2}},
 		{context.Background(), 1, baiduJSAPILoaderFlightLimits{0, 2}},
-		{context.Background(), 1, baiduJSAPILoaderFlightLimits{3, 3}},
-		{context.Background(), 1, baiduJSAPILoaderFlightLimits{2, 17}},
+		{context.Background(), 1, baiduJSAPILoaderFlightLimits{9, 9}},
+		{context.Background(), 1, baiduJSAPILoaderFlightLimits{2, 65}},
 		{context.Background(), 1, baiduJSAPILoaderFlightLimits{2, 1}},
 	} {
 		if lease, err := acquireBaiduJSAPILoaderFlightWithLimits(item.ctx, nil, item.owner, item.limits); !errors.Is(err, errBaiduJSAPIFlightDenied) || lease.digest != "" {

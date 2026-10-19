@@ -64,7 +64,7 @@ test('A3d2m1b2b2a independent authenticated Native Agent/Go path and strict ingr
 test('A3d2m1b2b2a does not activate JSAPI or leak provider authority', () => {
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   const dialog = read('ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.doesNotMatch(dialog, /BMAP_PROXY_URL|serviceHost|BrowserAK|window\.BMap/)
 })
@@ -88,6 +88,6 @@ test('A3 Geoconv bounded retry never auto-dispatches after failed third attempt 
   assert.match(dialog, /failed: '位置索引多次失败/)
   assert.match(models, /\| 'failed'/)
   assert.match(job, /DispatchEnabled bool/)
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })

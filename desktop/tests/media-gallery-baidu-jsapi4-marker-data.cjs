@@ -148,7 +148,7 @@ test('A3b3a3a no JSAPI runtime, alternate basemap, AK leak or unauthorized data 
   const pageSource = read('ui/shared/src/mui/MediaGallery.tsx')
   const mapSource = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   assert.match(policy, /return ErrGateClosed/)
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(pageSource, /listPlacesViewport=\{source\.listPlacesViewport\}/)
   assert.match(mapSource, /listPlacesViewport\(viewportBounds, 24, viewportOffset, controller\.signal\)/)
   assert.doesNotMatch(code, /BMAP_PROXY_URL|api\.map\.baidu\.com|new BMap\.|localStorage|fetch\(/)

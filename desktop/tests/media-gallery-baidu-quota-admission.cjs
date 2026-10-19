@@ -32,7 +32,7 @@ test('A3 quota is not a JSAPI4 release; preserve static map and same Gallery dat
   const mobile = read('web/src/App.tsx')
   const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   const roadmap = read('docs/gallery-places-ios27-roadmap.md')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(gallery, /getBaiduMapIndexJob/)
   assert.match(web, /getBaiduMapIndexJob/)
@@ -66,7 +66,7 @@ test('A3 Geoconv flight stays Server-only and is acquired before source-claim, w
   assert.doesNotMatch(routes, /acquireBaiduGeoconvFlight|releaseBaiduGeoconvFlight/)
   assert.doesNotMatch(web, /acquireBaiduGeoconvFlight|releaseBaiduGeoconvFlight/)
   assert.doesNotMatch(desktop, /acquireBaiduGeoconvFlight|releaseBaiduGeoconvFlight/)
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })
 
@@ -96,7 +96,7 @@ test('A3 official WGS84 forward bridge uses a private Server AK only after real 
   assert.doesNotMatch(web, /executeBaiduPhotoMapIndexOfficialForward|BMAP_PROXY_URL/)
   assert.doesNotMatch(desktop, /executeBaiduPhotoMapIndexOfficialForward|BMAP_PROXY_URL/)
   assert.doesNotMatch(entry, /http\.Get\(|http\.Post\(|BrowserAK|BMAP_PROXY_URL/)
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })
 
@@ -127,6 +127,6 @@ test('A3 private Owner one-shot demand selects only queued/retry-ready or expire
     assert.doesNotMatch(source, /executeOneBaiduPhotoMapIndexOwnerDemand|executeOneBaiduPhotoMapIndexWithTrustedForward/)
   }
   assert.match(gallery, /XDriveMediaGalleryBaiduStaticMap/)
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })

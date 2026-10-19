@@ -136,7 +136,7 @@ test('A3 strictly no new Browser AK, SDK/network injection or client-specific Ga
   assert.match(surface, /XDriveBaiduJSAPI4MountLifecycle/)
   assert.doesNotMatch(surface, /document\.createElement|BMapLoader|\bfetch\(/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
   for (const adapter of ['web/src/mediaGalleryAdapter.ts',
     'desktop/src/renderer/mediaGalleryAdapter.ts']) {

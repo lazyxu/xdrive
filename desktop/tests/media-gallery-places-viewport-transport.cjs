@@ -48,7 +48,7 @@ test('A3b3a2a authenticated Agent and cancellation reach Server Context', () => 
 test('A3b3a2a no unapproved dynamic JSAPI runtime or alternate map Provider', () => {
   const s = read('internal/baidumapjsapi/resource_policy.go')
   assert.match(s, /return ErrGateClosed/)
-  assert.match(s, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(s, /reviewedJSAPI4ChildResourceCount = 1/)
   const docs = read('docs/gallery-places-ios27-roadmap.md')
   assert.match(docs, /iOS 27/)
   assert.match(docs, /52px/)

@@ -38,9 +38,11 @@ func TestJSAPI4AttestationSignatureOnlyNotRuntimePermission(t *testing.T) {
 	if err := verifyJSAPI4ReleaseAttestation(a, public, expected, now); err != nil {
 		t.Fatalf("synthetic signature rejected: %v", err)
 	}
-	if err := VerifyManagedJSAPI4ProductionRelease(a, expected, public, now); !errors.Is(err, ErrGateClosed) {
-		t.Fatalf("fixture wrongly activated unreviewed JSAPI4 runtime: %v", err)
+	if err := VerifyManagedJSAPI4ProductionRelease(a, expected, public, now); err != nil {
+		t.Fatalf("valid scoped cryptographic proof rejected: %v", err)
 	}
+	// This pure signature check cannot grant a real Server Owner Cookie or
+	// authorize network IO; only the trusted Server can install a release.
 }
 
 func TestJSAPI4AttestationTamperingAndOldRevisionRejected(t *testing.T) {
@@ -138,13 +140,13 @@ func TestJSAPI4ManagedSignerIsScopedButCannotApproveUnknownChildren(t *testing.T
 		t.Fatal("managed instance signature failed to bind its scope")
 	}
 	if proof.ExpiresUnix-proof.IssuedUnix > 5*60 ||
-		VerifyManagedJSAPI4ProductionRelease(proof, scope, public, now) == nil {
-		t.Fatal("managed signature approved an incomplete resource graph")
+		VerifyManagedJSAPI4ProductionRelease(proof, scope, public, now) != nil {
+		t.Fatal("managed signature failed to verify approved bounded family")
 	}
 	if _, err := SignManagedJSAPI4Release(private[:32], scope, now); !errors.Is(err, ErrGateClosed) {
 		t.Fatal("short/malformed managed private key was accepted")
 	}
-	if hash, ok := JSAPI4ApprovedPolicySHA256(); ok || hash != ([32]byte{}) {
-		t.Fatal("empty child manifest produced an apparently-approved policy digest")
+	if hash, ok := JSAPI4ApprovedPolicySHA256(); !ok || hash == ([32]byte{}) {
+		t.Fatal("fixed source-reviewed Baidu family has no revision-bound digest")
 	}
 }

@@ -229,6 +229,39 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 	}
 	checkRows(1)
 
+	// A real PostgreSQL Owner/session/AK/quota path now accepts a bounded
+	// JSAPI4 serviceHost child with NO browser AK/authorization forwarded.
+	// Only approved upstream response MIME and canonical URL may return.
+	child := httptest.NewRequest(http.MethodGet,
+		"/_BMapService/tiles/synthetic.png?x=1&y=2", nil)
+	child.Header.Set("Origin", "https://gallery.invalid")
+	child.Header.Set("Referer", "https://attacker.invalid/stale")
+	child.Header.Set("Sec-Fetch-Site", "same-origin")
+	imageBody := "synthetic-private-provider-tile"
+	data, childHeaders, err := call(child, func(req *http.Request) (*http.Response, error) {
+		sends.Add(1)
+		if req.URL.Scheme != "https" || req.URL.Host != "api.map.baidu.com" ||
+			req.URL.Path != "/tiles/synthetic.png" ||
+			req.URL.Query().Get("ak") != "synthetic-browser-ak-one" ||
+			req.URL.Query().Get("x") != "1" ||
+			req.Header.Get("Referer") != "https://gallery.invalid/" ||
+			req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
+			t.Fatal("bounded child forwarded unsafe upstream transport")
+		}
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        http.Header{"Content-Type": {"image/png"}},
+			Body:          io.NopCloser(strings.NewReader(imageBody)),
+			ContentLength: int64(len(imageBody)),
+		}, nil
+	})
+	if err != nil || string(data) != imageBody ||
+		childHeaders.Get("Content-Type") != "image/png" ||
+		childHeaders.Get("Set-Cookie") != "" {
+		t.Fatal("bounded typed child was not authorized/sanitized")
+	}
+	checkRows(2)
+
 	// Raw AK in upstream JS must fail closed and never be returned, while
 	// the consumed request budget stays charged; in-flight lease is released.
 	if data, _, err := call(inbound(), func(*http.Request) (*http.Response, error) {
@@ -237,7 +270,7 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 	}); data != nil || !errors.Is(err, errBaiduJSAPIResourceDenied) {
 		t.Fatal("upstream browser key escaped raw response audit")
 	}
-	checkRows(2)
+	checkRows(3)
 
 	// Concurrent Server changes during mock upstream invalidate the final
 	// DB read. No JS response is returned from the stale Browser revision.
@@ -264,12 +297,12 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 		!errors.Is(err, errBaiduJSAPIResourceDenied) || forwarded.Load() != 1 {
 		t.Fatal("rotated Browser AK returned stale JS body")
 	}
-	checkRows(3)
+	checkRows(4)
 	if data, _, err := call(inbound(), sender); data != nil ||
 		!errors.Is(err, errBaiduJSAPIResourceDenied) {
 		t.Fatal("old map session revision permitted new Browser AK")
 	}
-	checkRows(3)
+	checkRows(4)
 	state.ConfigurationRevision = 2
 	if err := db.Model(&meta.BaiduJSAPIMapEpoch{}).
 		Where("owner_id = ?", owner.ID).Update("epoch", uint64(2)).Error; err != nil {
@@ -279,7 +312,7 @@ func TestBaiduJSAPI4OfflineLoaderCandidatePinnedPlanNoLeakAndQuota(t *testing.T)
 		!errors.Is(err, errBaiduJSAPIResourceDenied) {
 		t.Fatal("revoked map-only session reached outbound sender")
 	}
-	checkRows(3)
+	checkRows(4)
 
 	// Missing migration means no unmetered network and no durable flight.
 	state.RevocationEpoch = 2

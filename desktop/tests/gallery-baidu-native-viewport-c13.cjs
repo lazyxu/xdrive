@@ -50,7 +50,7 @@ test('A3c13 all three client paths share the same Server bound and cancellation'
 
 test('A3c13 release remains NO-GO without signed reviewed Baidu resources', () => {
   assert.match(read('internal/baidumapjsapi/resource_policy.go'),
-    /reviewedJSAPI4ChildResourceCount = 0/)
+    /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
     /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('ui/shared/src/models.ts'), /coordinate_space: 'bd09ll'/)

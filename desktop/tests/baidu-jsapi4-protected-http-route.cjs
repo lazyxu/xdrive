@@ -21,9 +21,11 @@ test('A3 Caddy routes JSAPI4 to Go, never to SPA or a wildcard Baidu proxy', () 
 
 test('A3 Go binds only one reviewed map resource and a Bearer-authenticated mint', () => {
   const router = read('internal/api/router.go')
-  assert.match(router, /r\.GET\("\/_BMapService\/api", s\.baiduJSAPI4LoaderHTTP\)/)
+  assert.match(router, /ApprovedJSAPI4ChildPaths\(\)/)
+  assert.match(router, /s\.baiduJSAPI4RuntimeResourceHTTP/)
   assert.match(router, /authed\.POST\("\/media\/places\/baidu-jsapi\/session", s\.baiduJSAPI4SessionHTTP\)/)
-  assert.doesNotMatch(router, /r\.(?:GET|Any)\("\/_BMapService\/\*[^"]*"/)
+  assert.match(read("internal/baidumapjsapi/provider_family.go"), /ValidateJSAPI4ProviderFamilyRequest/)
+  assert.doesNotMatch(router, /reverse_proxy\s+https?:\/\/api\.map\.baidu\.com/)
   const handlers = read('internal/api/baidu_jsapi4_http.go')
   for (const token of [
     'InstallBaiduJSAPI4OperatorRelease',
@@ -38,7 +40,7 @@ test('A3 Go binds only one reviewed map resource and a Bearer-authenticated mint
     /os\.Getenv|localhost|window|eval\(|\/\/api\.map\.baidu\.com/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   const signed = read('internal/baidumapjsapi/release_attestation.go')
-  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(read('internal/api/baidu_jsapi4_managed_runtime.go'), /verifyBaiduJSAPI4ManagedRelease\(/)
   assert.match(signed, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('internal/api/baidu_jsapi_config.go'),

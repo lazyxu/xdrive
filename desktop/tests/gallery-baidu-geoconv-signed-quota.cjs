@@ -37,13 +37,14 @@ test('signed Geoconv remains private when JSAPI4 has real but unapproved HTTP en
   const release = read('internal/baidumapjsapi/release_attestation.go')
   // A3c11 deliberately provides REAL protected entry points. Old A3c7
   // "no route exists" source assumptions must not hide a production gap.
-  assert.match(router, /r\.GET\("\/_BMapService\/api", s\.baiduJSAPI4LoaderHTTP\)/)
+  assert.match(router, /ApprovedJSAPI4ChildPaths\(\)/)
+  assert.match(router, /s\.baiduJSAPI4RuntimeResourceHTTP/)
   assert.match(router, /authed\.POST\("\/media\/places\/baidu-jsapi\/session", s\.baiduJSAPI4SessionHTTP\)/)
   assert.match(live, /currentBaiduJSAPI4OperatorRelease\(/)
   assert.match(live, /baiduJSAPI4SignedLiveLoader\(/)
   // Unlike Geoconv, JSAPI is still default NO-GO: no pinned release signer
   // or complete reviewed JS, tile, font, WASM child inventory.
-  assert.match(resources, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(resources, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(release, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.equal(bootstrap.includes('RuntimeAuthorized:     true'), false)
   assert.equal(candidate.includes('func (s *Server)'), false)

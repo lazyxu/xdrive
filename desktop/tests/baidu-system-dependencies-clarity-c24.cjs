@@ -45,6 +45,6 @@ test('JSAPI Browser AK configuration is separate from signed production release 
   assert.doesNotMatch(jsapi, /fetch\(|window\._BMapSecurityConfig|_BMapService\/api\?v=4\.0/)
   assert.match(read('internal/api/baidu_jsapi_config.go'),
     /ReleaseBlockers:\s+s\.baiduJSAPI4ReleaseBlockers\(cfg, approved\)/)
-  assert.match(read('internal/baidumapjsapi/resource_policy.go'), /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(read('internal/baidumapjsapi/resource_policy.go'), /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(read('internal/baidumapjsapi/release_attestation.go'), /VerifyManagedJSAPI4ProductionRelease\(/)
 })

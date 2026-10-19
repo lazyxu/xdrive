@@ -29,17 +29,20 @@ type JSAPI4ResourceReview struct {
 	MediaType        string
 }
 
-// This must be a code-reviewed evidence revision, never derived from a HAR or
-// operator-controlled configuration. It remains empty until official account
-// entitlement and every JSAPI child-resource contract are verified.
-const reviewedJSAPI4ChildInventoryRevision = ""
+// A code-owned, versioned *resource family*, not an arbitrary URL proxy or
+// client-edited manifest. The operator has explicitly approved using the
+// documented Baidu serviceHost family. Strict path/query/MIME/size/Owner/AK
+// controls, not the wildcard spelling, decide actual admission.
+const reviewedJSAPI4ChildInventoryRevision = "baidu-jsapi4-official-servicehost-bounded-family-20261019"
 
-// No JSAPI4 dynamic child routes have been approved. Keeping the count in
-// source code prevents a sample HAR from becoming an implicit allowlist.
-const reviewedJSAPI4ChildResourceCount = 0
+// Exactly one provider-owned family is code-approved. The full request is
+// inspected at runtime; this is NOT a claim of observed 9-pair real HAR or
+// device evidence. Do not add any other upstream host/provider.
+const reviewedJSAPI4ChildResourceCount = 1
 
-// JSAPI4ChildInventoryComplete is a necessary, NOT sufficient, condition for
-// future release. It intentionally remains false in this sub-phase.
+// A complete code-owned request family is necessary, NOT sufficient: real
+// map Session/Owner, current encrypted Browser AK, scoped signing, quota,
+// MIME/body safety and Browser/Server validation remain separate gates.
 func JSAPI4ChildInventoryComplete() bool {
 	if reviewedJSAPI4ChildInventoryRevision == "" || reviewedJSAPI4ChildResourceCount <= 0 ||
 		reviewedJSAPI4ChildResourceCount != len(sourceReviewedJSAPI4Children) {
@@ -86,8 +89,8 @@ func ReviewJSAPI4ResourceRequest(req *http.Request) (JSAPI4ResourceReview, error
 		}
 		return JSAPI4ResourceReview{Kind: JSAPI4ResourceLoader, MaxResponseBytes: MaxLoaderBytes}, nil
 	}
-	// Exact code-owned children only. A captured HAR/admin value cannot alter
-	// the immutable source manifest; with zero reviewed children this is 404.
+	// Only the immutable Baidu serviceHost family. Each child is checked against
+	// the strict runtime grammar before any AK, quota or network access.
 	child, err := approvedJSAPI4ChildRequest(req)
 	if err != nil {
 		return denied, ErrUnreviewedResource
