@@ -73,3 +73,47 @@ test('Web and Desktop share one validator before committing the continuation to 
   assert.ok(component.includes('if (seen.has(device.id)) continue'))
   assert.doesNotMatch(helper, /\b(?:fetch|ipcRenderer|window|RootFingerprint|createSource|triggerRun)\b/)
 })
+
+
+test('continuation rejects unknown private device, folder and latest-run fields at the renderer boundary', () => {
+  const anchor = uuid(0)
+  const goodRun = {
+    id: uuid(80), source_id: 2, run_number: 1,
+    mode: 'backup', trigger: 'manual', status: 'completed',
+    scanned_items: 1, scanned_bytes: 512, ignored_items: 0,
+    new_items: 1, changed_items: 0, moved_items: 0, unchanged_items: 0,
+    planned_transfer_bytes: 512, transferred_items: 1,
+    transferred_bytes: 512, failed_items: 0, active_transfer_bytes: 0,
+    active_transfer_total_bytes: 0,
+    started_at: '2026-10-19T03:00:00Z', finished_at: '2026-10-19T03:01:00Z',
+  }
+  const folder = { source_id: 2, name: 'Safe backup', status: 'paused',
+    sync_mode: 'backup', target_path: '/Cloud/Backup', latest_run: goodRun }
+  const safe = page([1])
+  safe.devices[0].folders = [folder]
+  safe.devices[0].last_seen_at = '2026-10-19T03:02:00Z'
+  assert.doesNotThrow(() => validate(safe, anchor, new Set()))
+  const bad = [
+    { ...safe, owner_id: 9001 },
+    { ...safe, devices: [{ ...safe.devices[0], root_fingerprint: 'secret' }] },
+    { ...safe, devices: [{ ...safe.devices[0], local_path: '/home/alice' }] },
+    { ...safe, devices: [{ ...safe.devices[0], last_seen_at: 'not-an-instant' }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder, ignore_rules: '*.private' }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder, local_root: '/secret' }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder,
+      latest_run: { ...goodRun, active_transfer_path: '/home/alice/private' } }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder,
+      latest_run: { ...goodRun, error: '/secret' } }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder,
+      latest_run: { ...goodRun, started_at: '/home/alice' } }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder,
+      latest_run: { ...goodRun, scanned_bytes: -1 } }] }] },
+    { ...safe, devices: [{ ...safe.devices[0], folders: [{ ...folder,
+      latest_run: { ...goodRun, transferred_items: Number.MAX_SAFE_INTEGER + 1 } }] }] },
+  ]
+  for (const response of bad) {
+    assert.throws(() => validate(response, anchor, new Set()),
+      /Invalid redacted backup device page/)
+  }
+  assert.doesNotMatch(helper, /\b(?:fetch|ipcRenderer|window|RootFingerprint|createSource|triggerRun)\b/)
+})
