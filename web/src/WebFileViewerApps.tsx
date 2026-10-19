@@ -40,7 +40,6 @@ import {
   xDriveMediaItemSupportsCreative,
   XDriveMediaViewerContent,
   XDriveShareDialog,
-  XDriveStatePanel,
   XDriveStatusAlert,
   useXDrivePreviewPresentation,
   useXDrivePreviewSlideshow,
@@ -72,6 +71,17 @@ import {
 import { useViewerNode } from './useWebViewerNode'
 import { xDriveWebTextSelection } from './webTextViewer'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
+
+// Navigation metadata is not media byte progress. Hold a full-height, silent
+// first-read canvas; the verified preview renderer still owns real thumbnails,
+// decoded media, Live Photo, PDF/audio and file-transfer progress.
+function WebViewerQuietFirstRead() {
+  return (
+    <Box data-xdrive-web-viewer-quiet-first-read role="region"
+      aria-label="查看器内容尚未确认" aria-busy={true}
+      sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center' }} />
+  )
+}
 
 function WebViewerFrame({
   title,
@@ -682,9 +692,7 @@ function WebPreviewApp({
         onClose={() => onClose(viewer.node)}
       >
         {viewer.loading ? (
-          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
-            <XDriveStatePanel variant="plain" loading message="正在打开预览…" />
-          </Box>
+          <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
           <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
             <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
@@ -1045,9 +1053,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         onClose={() => onClose(viewer.node)}
       >
         {viewer.loading ? (
-          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-            <XDriveStatePanel variant="plain" loading message="正在打开媒体…" />
-          </Box>
+          <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
           <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
             <XDriveStatusAlert tone="bad">{viewer.error || '媒体不存在或已无法访问。'}</XDriveStatusAlert>
@@ -1057,9 +1063,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
           </Box>
         ) : !mediaItem || mediaItem.node.id !== viewer.node.id ? (
-          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-            <XDriveStatePanel variant="plain" loading message="正在加载媒体信息…" />
-          </Box>
+          <WebViewerQuietFirstRead />
         ) : <XDriveMediaViewerContent
           item={mediaItem}
           loadThumbnail={gallerySource.loadThumbnail}
@@ -1238,23 +1242,31 @@ function WebTextViewerApp({
   onClose: (node: Node | null) => void
 }) {
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
-  const [node, setNode] = useState<Node | null>(null)
-  const [preview, setPreview] = useState<XDriveFileTextPreview | null>(null)
-  const [error, setError] = useState('')
+  // Node and preview become visible together, only for the owning API/route.
+  const [read, setRead] = useState<{
+    api: XDriveApi
+    nodeID: number
+    node: Node | null
+    preview: XDriveFileTextPreview | null
+    error: string
+  } | null>(null)
+  const current = read?.api === api && read.nodeID === route.params.node ? read : null
+  const node = current?.node ?? null
+  const preview = current?.preview ?? null
+  const error = current?.error ?? ''
   const [wrap, setWrap] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     let active = true
-    setError('')
-    void Promise.all([api.node(route.params.node), api.fileTextPreview(route.params.node)])
+    const nodeID = route.params.node
+    void Promise.all([api.node(nodeID), api.fileTextPreview(nodeID)])
       .then(([nextNode, nextPreview]) => {
-        if (!active) return
-        setNode(nextNode)
-        setPreview(nextPreview)
+        if (active) setRead({ api, nodeID, node: nextNode, preview: nextPreview, error: '' })
       })
       .catch((reason) => {
-        if (active) setError(reason instanceof Error ? reason.message : String(reason))
+        if (active) setRead({ api, nodeID, node: null, preview: null,
+          error: reason instanceof Error ? reason.message : String(reason) })
       })
     return () => { active = false }
   }, [api, route.params.node])
@@ -1295,9 +1307,7 @@ function WebTextViewerApp({
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
         </Box>
       ) : !node || !preview ? (
-        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-          <XDriveStatePanel variant="plain" loading message="正在加载文本…" />
-        </Box>
+        <WebViewerQuietFirstRead />
       ) : <Stack spacing={1} sx={{ flex: 1, minWidth: 0, minHeight: 0, p: compactTouch ? 0 : 1.5 }}>
         {preview.truncated ? (
           <XDriveStatusAlert tone="neutral">
@@ -1346,15 +1356,24 @@ function WebSinglePreviewApp({
   api: XDriveApi
   onClose: (node: Node | null) => void
 }) {
-  const [node, setNode] = useState<Node | null>(null)
-  const [error, setError] = useState('')
+  const [read, setRead] = useState<{
+    api: XDriveApi
+    nodeID: number
+    node: Node | null
+    error: string
+  } | null>(null)
+  const current = read?.api === api && read.nodeID === route.params.node ? read : null
+  const node = current?.node ?? null
+  const error = current?.error ?? ''
 
   useEffect(() => {
     let active = true
-    void api.node(route.params.node).then((value) => {
-      if (active) setNode(value)
+    const nodeID = route.params.node
+    void api.node(nodeID).then((value) => {
+      if (active) setRead({ api, nodeID, node: value, error: '' })
     }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason))
+      if (active) setRead({ api, nodeID, node: null,
+        error: reason instanceof Error ? reason.message : String(reason) })
     })
     return () => { active = false }
   }, [api, route.params.node])
@@ -1376,9 +1395,7 @@ function WebSinglePreviewApp({
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
         </Box>
       ) : !node ? (
-        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-          <XDriveStatePanel variant="plain" loading message="正在打开文件…" />
-        </Box>
+        <WebViewerQuietFirstRead />
       ) : <XDriveFilePreviewSurface
         target={{
           id: node.id,
