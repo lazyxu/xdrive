@@ -68,7 +68,10 @@ func TestBaiduJSAPIResourceSnapshotRequiresFreshOwnerConfigEpoch(t *testing.T) {
 		t.Fatal(err)
 	}
 	newRequest := func() *http.Request {
-		r := httptest.NewRequest("GET", "https://example.invalid/_BMapService/api?v=4.0", nil)
+		// Production Gin passes an origin-form request-target. The strict
+		// reviewed-resource guard must not accept an absolute upstream URL.
+		r := httptest.NewRequest("GET", "/_BMapService/api?v=4.0", nil)
+		r.Host = "example.invalid"
 		r.Header.Set("Sec-Fetch-Site", "same-origin")
 		r.AddCookie(cookie)
 		return r
@@ -92,6 +95,7 @@ func TestBaiduJSAPIResourceSnapshotRequiresFreshOwnerConfigEpoch(t *testing.T) {
 		{"duplicate cookie", func(r *http.Request) { r.AddCookie(cookie) }},
 		{"AK override", func(r *http.Request) { r.URL.RawQuery = "v=4.0&ak=attacker" }},
 		{"unreviewed child", func(r *http.Request) { r.URL.Path = "/_BMapService/tiles/0.png" }},
+		{"absolute URL", func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = "example.invalid" }},
 		{"bearer", func(r *http.Request) { r.Header.Set("Authorization", "Bearer not-allowed") }},
 		{"foreign origin", func(r *http.Request) { r.Header.Set("Origin", "https://attacker.invalid") }},
 		{"cross-site", func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }},

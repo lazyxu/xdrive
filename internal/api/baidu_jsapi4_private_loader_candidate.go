@@ -42,7 +42,8 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 		!baidumapjsapi.SessionResourceRequest(inbound, s.AllowedOrigin) {
 		return nil, nil, denied
 	}
-	if _, err := baidumapjsapi.ReviewJSAPI4ResourceRequest(inbound); err != nil {
+	review, err := baidumapjsapi.ReviewJSAPI4ResourceRequest(inbound)
+	if err != nil {
 		return nil, nil, denied
 	}
 	// The Server-configured HTTPS origin is the only source for the provider
@@ -79,9 +80,16 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 	if reserveBaiduJSAPILoaderQuota(runCtx, privateDB, state.OwnerID) != nil {
 		return nil, nil, denied
 	}
-	outbound, err := baidumapjsapi.NewLoaderRequest(
-		runCtx, s.AllowedOrigin, ak, gates,
-	)
+	var outbound *http.Request
+	if review.Kind == baidumapjsapi.JSAPI4ResourceChild {
+		outbound, err = baidumapjsapi.NewApprovedJSAPI4ChildRequest(
+			runCtx, s.AllowedOrigin, ak, inbound, gates)
+	} else if review.Kind == baidumapjsapi.JSAPI4ResourceLoader {
+		outbound, err = baidumapjsapi.NewLoaderRequest(
+			runCtx, s.AllowedOrigin, ak, gates)
+	} else {
+		return nil, nil, denied
+	}
 	if err != nil || runCtx.Err() != nil || inbound.Context().Err() != nil {
 		return nil, nil, denied
 	}
@@ -96,7 +104,12 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 		inbound.Context().Err() != nil {
 		return nil, nil, denied
 	}
-	body, err := baidumapjsapi.CheckLoaderResponse(response, ak)
+	var body []byte
+	if review.Kind == baidumapjsapi.JSAPI4ResourceChild {
+		body, err = baidumapjsapi.CheckApprovedJSAPI4ChildResponse(response, ak, review)
+	} else {
+		body, err = baidumapjsapi.CheckLoaderResponse(response, ak)
+	}
 	if err != nil {
 		return nil, nil, denied
 	}
@@ -109,5 +122,13 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 		clear(body)
 		return nil, nil, denied
 	}
-	return body, baidumapjsapi.LoaderResponseHeaders(), nil
+	headers := baidumapjsapi.LoaderResponseHeaders()
+	if review.Kind == baidumapjsapi.JSAPI4ResourceChild {
+		headers = baidumapjsapi.ApprovedJSAPI4ChildResponseHeaders(review)
+	}
+	if headers == nil {
+		clear(body)
+		return nil, nil, denied
+	}
+	return body, headers, nil
 }

@@ -18,11 +18,13 @@ type JSAPI4ReviewedKind uint8
 const (
 	JSAPI4ResourceUnreviewed JSAPI4ReviewedKind = iota
 	JSAPI4ResourceLoader
+	JSAPI4ResourceChild
 )
 
 type JSAPI4ResourceReview struct {
 	Kind             JSAPI4ReviewedKind
 	MaxResponseBytes int64
+	MediaType        string
 }
 
 // This must be a code-reviewed evidence revision, never derived from a HAR or
@@ -37,7 +39,20 @@ const reviewedJSAPI4ChildResourceCount = 0
 // JSAPI4ChildInventoryComplete is a necessary, NOT sufficient, condition for
 // future release. It intentionally remains false in this sub-phase.
 func JSAPI4ChildInventoryComplete() bool {
-	return reviewedJSAPI4ChildInventoryRevision != "" && reviewedJSAPI4ChildResourceCount > 0
+	if reviewedJSAPI4ChildInventoryRevision == "" || reviewedJSAPI4ChildResourceCount <= 0 ||
+		reviewedJSAPI4ChildResourceCount != len(sourceReviewedJSAPI4Children) {
+		return false
+	}
+	// A release must not register two competing contracts for one Gin path
+	// or an unreviewed percent-encoded/wildcard/unsupported upstream shape.
+	seen := make(map[string]bool, len(sourceReviewedJSAPI4Children))
+	for _, child := range sourceReviewedJSAPI4Children {
+		if ValidateJSAPI4ChildCandidate(child) != nil || seen[child.ProxyPath] {
+			return false
+		}
+		seen[child.ProxyPath] = true
+	}
+	return true
 }
 
 // ReviewJSAPI4ResourceRequest considers only the resource's canonical HTTP
@@ -60,14 +75,25 @@ func ReviewJSAPI4ResourceRequest(req *http.Request) (JSAPI4ResourceReview, error
 	}
 	u := req.URL
 	if u.IsAbs() || u.Host != "" || u.User != nil || u.Opaque != "" ||
-		u.RawPath != "" || u.Path != LoaderPath || u.EscapedPath() != LoaderPath ||
-		u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
+		u.RawPath != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
 		return denied, ErrUnreviewedResource
 	}
-	if err := ValidateLoaderRoute(req.Method, u.EscapedPath(), u.RawQuery); err != nil {
+	if u.Path == LoaderPath {
+		if err := ValidateLoaderRoute(req.Method, u.EscapedPath(), u.RawQuery); err != nil {
+			return denied, ErrUnreviewedResource
+		}
+		return JSAPI4ResourceReview{Kind: JSAPI4ResourceLoader, MaxResponseBytes: MaxLoaderBytes}, nil
+	}
+	// Exact code-owned children only. A captured HAR/admin value cannot alter
+	// the immutable source manifest; with zero reviewed children this is 404.
+	child, err := approvedJSAPI4ChildRequest(req)
+	if err != nil {
 		return denied, ErrUnreviewedResource
 	}
-	return JSAPI4ResourceReview{Kind: JSAPI4ResourceLoader, MaxResponseBytes: MaxLoaderBytes}, nil
+	return JSAPI4ResourceReview{
+		Kind: JSAPI4ResourceChild, MaxResponseBytes: child.MaxResponseBytes,
+		MediaType: child.MediaType,
+	}, nil
 }
 
 // JSAPI4ProductionResourceGate is the extra code-owned release fence for

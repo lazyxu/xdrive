@@ -22,8 +22,12 @@ var errBaiduJSAPIResourceDenied = errors.New("map resource unavailable")
 func (s *Server) baiduJSAPIResourceSnapshot(ctx context.Context, req *http.Request, origin string, cookieKey []byte, now time.Time) (baidumapjsapi.MapSessionState, error) {
 	denied := errBaiduJSAPIResourceDenied
 	if s == nil || s.DB == nil || ctx == nil || req == nil || now.IsZero() ||
-		!baidumapjsapi.SessionResourceRequest(req, origin) ||
-		baidumapjsapi.ValidateLoaderRoute(req.Method, req.URL.EscapedPath(), req.URL.RawQuery) != nil {
+		!baidumapjsapi.SessionResourceRequest(req, origin) {
+		return baidumapjsapi.MapSessionState{}, denied
+	}
+	// A future source-reviewed child uses the SAME Owner Cookie and revision
+	// fence as the Loader, never a route-specific bypass.
+	if _, reviewErr := baidumapjsapi.ReviewJSAPI4ResourceRequest(req); reviewErr != nil {
 		return baidumapjsapi.MapSessionState{}, denied
 	}
 	// Reject ambiguous Cookie headers; never select a "first" valid identity
