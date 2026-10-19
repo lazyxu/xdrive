@@ -1,5 +1,10 @@
 # FileExplorer performance roadmap
 
+## P060 new real original current baseline ACCEPTED n3 (2026-10-19)
+
+Specialized [source-exact CI #39188489310](https://github.com/lazyxu/xdrive/actions/runs/39188489310) and full [77-job #39188489077](https://github.com/lazyxu/xdrive/actions/runs/39188489077) succeeded on 7b76ba948464fbbf6d8ecc5860d00db11062ed94. Three actual 100k separate SHA-256 LocalCAS physical Copy workers: **501385.156 / 624620.633 / 511978.747ms**, P50 **511978.747ms**. Undo P50 1664.771ms, authorized purge P50 9710.953ms; source/original per-file SHA, Owner/foreign restrictions, RefCount1→2→2→1 and physical 409604096B/100001 inodes unchanged. New 120s aspirational target exceeded; old 900s gate passes. No production tuning, AFTER N/A. Committed [original data](performance-evidence/p060-unprofiled-copy-100k/README.md) and link to exact original raw artifact. This new evidence HEAD needs entirely new exact source dedicated 3x100k and full 77+ CI/Final Gate before merge. P056/P059 old timing is not paired same-runner A/B.
+
+
 ## P059 · source-exact real 100k physical CAS Copy SQL profiling ACCEPTED n3 (2026-10-19)
 
 **Latest stage (supersedes older P059 n=0 planning paragraphs below):** frozen source `6019f5eff26eb80a37d3012744f58ab2ba9a0d84`, [actual 3×100k PostgreSQL17 native #39143149021](https://github.com/lazyxu/xdrive/actions/runs/39143149021) **SUCCESS**, [77-job full #39143148917](https://github.com/lazyxu/xdrive/actions/runs/39143148917) **SUCCESS** (25 succeeded/52 conditional skips, genuine API Race gate unchanged, Final Gate green). Three independent true 100000 SHA-distinct 1KiB Local CAS originals + one outside sentinel per source; all Owner/foreign/Undo/Trash/RefCount1→2→2→1/full original SHA intact, physical allocated 409604096B never changed; Go PID measured write_bytes 0B.
