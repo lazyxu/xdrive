@@ -107,7 +107,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	if observed {
 		add("host-manager", "pass", "最近存在受信任的宿主机只读状态心跳；不代表支持部署控制")
 	} else {
-		add("host-manager", "unknown", "宿主机状态缺失或过期，无法核验安全部署前置条件")
+		add("host-manager", "unknown", s.caddyHostUnobservedDetail())
 	}
 	ingressReady := observed && host.State == "healthy"
 	if ingressReady {
