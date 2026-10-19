@@ -55,7 +55,7 @@ const item={source:{
 function base(overrides={}){
   return {
     rows:[],loading:true,hasLoaded:false,loadError:false,
-    showDelayedLoading:false,failedItemsLoading:false,
+    failedItemsLoading:false,
     triggeringSourceID:null,cancellingRunID:null,
     onRefresh:()=>{},onAdd:()=>{},onOpenError:()=>{},
     onOpenDetails:()=>{},onOpenSynologyGuide:()=>{},
@@ -118,12 +118,16 @@ test('P66: accepted Source cards survive an ongoing refresh and a genuine refres
     await act(async()=>{v=Renderer.create(React.createElement(Page,props))})
     assert.equal(types(v,'source-card').length,1)
     await act(async()=>{v.update(React.createElement(Page,{
-      ...props,loading:true,showDelayedLoading:true,
+      ...props,loading:true,
     }))})
     assert.equal(types(v,'source-card').length,1)
     assert.equal(marks(v,'data-xdrive-source-overview-loading-slot').length,0)
-    assert.equal(refreshAction(v).props.loading,true,
-      'real refresh action in the WorkspaceSurface header is independent from content')
+    assert.equal(refreshAction(v).props.loading,undefined,
+      'the real Refresh action may not swap its icon for a timer spinner')
+    assert.equal(refreshAction(v).props.disabled,true,
+      'duplicate source refresh remains disabled during GET')
+    assert.ok(refreshAction(v).props.startIcon,
+      'the original Refresh icon remains stable')
     await act(async()=>{v.update(React.createElement(Page,{
       ...props,loadError:true,
     }))})
@@ -146,11 +150,12 @@ test('P66: shared Browser/Desktop Source manager preserves same Source adapter a
     'minHeight: 180',
     'message={\x60尚未添加${sourceNoun}\x60}',
     '无法读取{sourceNoun}，请点击刷新重试。',
-    'loading={showDelayedLoading}',
-    'loadingLabel="刷新"',
+    'startIcon={<RefreshRoundedIcon />}',
+    'disabled={loading}',
     'rows.map((row)',
   ])assert.ok(view.includes(v),v)
   assert.equal(view.includes('正在加载${sourceNoun}…'),false)
+  assert.equal(view.includes('showDelayedLoading'),false)
   assert.ok(manager.includes('<XDriveSourceManagerListPage'))
   assert.ok(manager.includes('adapter.sourceOverview()'))
   assert.ok(web.includes('<XDriveSourceManager'))

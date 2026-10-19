@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
 import { XDriveSourceManagerListPage } from './SourceManagerListPage'
 import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
@@ -200,8 +199,6 @@ export function XDriveSourceManager({
   const [loading, setLoading] = useState(true)
   const [hasLoaded, setHasLoaded] = useState(false)
   const [loadError, setLoadError] = useState(false)
-  const [loadRequestGeneration, setLoadRequestGeneration] = useState(0)
-  const showDelayedLoading = useXDriveDeferredLoading(loading, loadRequestGeneration)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
   const [failedItems, setFailedItems] = useState<ExternalSourceItem[]>([])
   const [failedItemsLoading, setFailedItemsLoading] = useState(false)
@@ -281,7 +278,6 @@ export function XDriveSourceManager({
 
   const load = useCallback(async (silent = false) => {
     if (!silent) {
-      setLoadRequestGeneration((n) => n + 1)
       setLoading(true)
     }
     try {
@@ -1307,7 +1303,6 @@ export function XDriveSourceManager({
         loading={loading}
         hasLoaded={hasLoaded}
         loadError={loadError}
-        showDelayedLoading={showDelayedLoading}
         failedItemsLoading={failedItemsLoading}
         triggeringSourceID={triggeringSourceID}
         cancellingRunID={cancellingRunID}

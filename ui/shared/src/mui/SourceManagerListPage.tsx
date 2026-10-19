@@ -30,7 +30,6 @@ export function XDriveSourceManagerListPage({
   loading,
   hasLoaded,
   loadError,
-  showDelayedLoading,
   failedItemsLoading,
   triggeringSourceID,
   cancellingRunID,
@@ -50,7 +49,6 @@ export function XDriveSourceManagerListPage({
   loading: boolean
   hasLoaded: boolean
   loadError: boolean
-  showDelayedLoading: boolean
   failedItemsLoading: boolean
   triggeringSourceID: number | null
   cancellingRunID: string | null
@@ -73,9 +71,7 @@ export function XDriveSourceManagerListPage({
         <>
           <XDriveActionButton
             startIcon={<RefreshRoundedIcon />}
-            loading={showDelayedLoading}
             disabled={loading}
-            loadingLabel="刷新"
             onClick={() => void onRefresh()}
           >
             刷新

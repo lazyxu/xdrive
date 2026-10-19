@@ -8,7 +8,7 @@ const controller = read('ui','shared','src','mui','TaskCenterController.ts')
 const page = read('ui','shared','src','mui','TaskCenterPage.tsx')
 const ui = read('ui','shared','src','mui','BackgroundTaskCenter.tsx')
 
-test('background first read is quiet until real owner data or a slow request', () => {
+test('background first read remains silent even beyond a slow 300ms request', () => {
   for (const s of ['hasLoaded: false','failed: false','hasLoaded: true',
     'mineHasLoaded: ownerCurrent && scopedMine.hasLoaded',
     'globalHasLoaded: ownerCurrent && scopedGlobal.hasLoaded',
@@ -16,7 +16,12 @@ test('background first read is quiet until real owner data or a slow request', (
     'setGlobalLoadEpoch((epoch) => epoch + 1)']) {
     assert.ok(controller.includes(s), s)
   }
-  assert.ok(ui.includes('useXDriveDeferredLoading(loading && !loaded, loadEpoch)'))
+  assert.equal(ui.includes('useXDriveDeferredLoading'), false)
+  assert.equal(ui.includes('正在加载任务…'), false)
+  assert.equal(ui.includes('正在加载全局后台任务…'), false)
+  assert.ok(ui.includes('aria-busy={loading || !failed || undefined}'))
+  assert.ok(ui.includes('data-xdrive-background-tasks-verified-empty'))
+  assert.ok(ui.includes('data-xdrive-global-background-tasks-verified-empty'))
   assert.ok(ui.includes('data-xdrive-background-tasks-first-read'))
   assert.ok(ui.includes('data-xdrive-global-background-tasks-first-read'))
   assert.ok(ui.includes('minHeight: 120'))
