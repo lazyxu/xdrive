@@ -56,6 +56,30 @@ func (d *localPushFirstLeafDriver) Check(ctx context.Context, s localpushrunner.
 		!validBoundFirstDirectorySource(d.source, d.proof, s.SourceID) {
 		return errLocalPushDriverDenied
 	}
+	// Fail closed before any Server read, native scan or Stage reservation if
+	// another Agent lifetime left an ambiguous or committed request behind.
+	// The request slot intentionally survives session/revision/Root changes.
+	expectedRequestScope := localPushRequestKeyScope{
+		server: s.Server, account: s.Account, sessionID: s.SessionID,
+		deviceID: s.DeviceID, rootID: s.RootID, rootFingerprint: s.RootFingerprint,
+		sourceID: s.SourceID, revision: s.Revision, targetNodeID: s.TargetNodeID,
+	}
+	if d.requestScope != expectedRequestScope {
+		return errLocalPushDriverDenied
+	}
+	if d.key.bytes == [32]byte{} {
+		if requireFreshLocalPushOperationSlot(d.configDir, d.requestScope) != nil {
+			return errLocalPushDriverDenied
+		}
+	} else {
+		// Once THIS instance has minted its one key, the exact original OS
+		// secret+claim must survive every recheck, including after COMMIT.
+		// A missing/mismatched key cannot authorize a new generation.
+		stored, loadErr := loadLocalPushOperationRequestKey(d.configDir, d.requestScope)
+		if loadErr != nil || stored != d.key {
+			return errLocalPushDriverDenied
+		}
+	}
 	currentSession, err := d.currentSession()
 	if err != nil || currentSession.SessionInvalid ||
 		currentSession.Server != d.account.Server || currentSession.Username != d.account.Username ||
