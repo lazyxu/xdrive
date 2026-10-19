@@ -473,7 +473,11 @@ export function XDriveTransferCenter({
   const failed = roots.filter(({ task }) => task.state === 'failed')
   const handedOff = roots.filter(({ task }) => task.state === 'handed_off')
 
-  if (loading && roots.length === 0) return <XDriveStatePanel loading message="正在加载传输记录…" />
+  // The unverified first page stays silent; accepted byte/ETA/transfer work
+  // keeps its own real progress and cancellation controls.
+  if (loading && roots.length === 0) return (
+    <Box data-xdrive-transfer-first-read aria-busy="true" sx={{ minHeight: 120 }} />
+  )
 
   const groups: Array<[string, XDriveTransferTreeNode[]]> = [
     ['进行中', active],

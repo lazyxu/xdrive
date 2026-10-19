@@ -11,8 +11,9 @@ test('source overview must not claim no sources before its first authorized read
   assert.ok(manager.includes('const [loading, setLoading] = useState(true)'))
   assert.ok(manager.includes('const [hasLoaded, setHasLoaded] = useState(false)'))
   assert.ok(manager.includes('const [loadError, setLoadError] = useState(false)'))
-  assert.ok(manager.includes('useXDriveDeferredLoading(loading, loadRequestGeneration)'))
-  assert.ok(manager.includes('setLoadRequestGeneration((n) => n + 1)'))
+  assert.equal(manager.includes('useXDriveDeferredLoading'), false,
+    'Source overview does not schedule a decorative 300ms spinner')
+  assert.equal(manager.includes('setLoadRequestGeneration'), false)
   assert.ok(manager.includes('setRows(next)') && manager.includes('setHasLoaded(true)'))
   assert.ok(list.includes('!hasLoaded && loading ? ('))
   assert.ok(list.includes('data-xdrive-source-overview-loading-slot'))
@@ -26,7 +27,7 @@ test('source overview must not claim no sources before its first authorized read
   assert.ok(list.includes('data-xdrive-source-overview-first-read-error'))
   assert.ok(list.includes('rows.length === 0 ? ('))
   assert.ok(list.includes('message={`尚未添加${sourceNoun}`}'))
-  assert.ok(manager.includes('showDelayedLoading={showDelayedLoading}'))
+  assert.equal(manager.includes('showDelayedLoading'), false)
 })
 
 test('source refresh preserves confirmed rows and publishes failures without fake emptiness', () => {
@@ -44,8 +45,10 @@ test('source refresh preserves confirmed rows and publishes failures without fak
     'first fetch failure must not claim an empty collection')
   assert.ok(list.includes('无法读取{sourceNoun}，请点击刷新重试。'))
   assert.ok(list.includes('disabled={loading}'))
-  assert.ok(list.includes('loading={showDelayedLoading}'))
-  assert.ok(list.includes('loadingLabel="刷新"'), 'no variable-width fast badge')
+  assert.equal(list.includes('loading={showDelayedLoading}'), false)
+  assert.equal(list.includes('loadingLabel="刷新"'), false)
+  assert.ok(list.includes('startIcon={<RefreshRoundedIcon />}'),
+    'keep a fixed Refresh icon even on a slow Source overview refresh')
   assert.ok(!list.includes('loading && rows.length === 0 ? ('),
     'unverified zero rows cannot be shown as a transient spinner surface')
   assert.ok(!manager.includes('setRows([])'),

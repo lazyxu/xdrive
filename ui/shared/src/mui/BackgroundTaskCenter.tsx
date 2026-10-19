@@ -31,7 +31,6 @@ import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
 import { XDriveTableSurface } from './TableSurface'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { XDriveTaskCardSurface } from './TaskPresentation'
 
 function taskTone(state: string) {
@@ -296,7 +295,6 @@ export function XDriveBackgroundTaskList({
   loading = false,
   loaded = true,
   failed = false,
-  loadEpoch = 0,
   emptyMessage = '暂无任务',
   controlKey = '',
   focusedTaskID = '',
@@ -317,22 +315,24 @@ export function XDriveBackgroundTaskList({
     action: XDriveBackgroundTaskControlAction,
   ) => void
 }) {
-  const showDelayedLoad = useXDriveDeferredLoading(loading && !loaded, loadEpoch)
   if (!loaded && tasks.length === 0) {
     return (
-      <Box data-xdrive-background-tasks-first-read sx={{
-        minHeight: 120, display: 'grid', placeItems: 'center',
-      }}>
+      <Box data-xdrive-background-tasks-first-read
+        aria-busy={loading || !failed || undefined}
+        sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
         {failed && !loading ? (
           <XDriveStatePanel variant="plain" message="后台任务读取失败，请重新进入或刷新。" />
-        ) : showDelayedLoad ? (
-          <XDriveStatePanel variant="plain" loading message="正在加载任务…" />
         ) : null}
       </Box>
     )
   }
   if (tasks.length === 0) {
-    return <XDriveStatePanel variant="plain" message={emptyMessage} />
+    return (
+      <Box data-xdrive-background-tasks-verified-empty
+        sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
+        <XDriveStatePanel variant="plain" message={emptyMessage} />
+      </Box>
+    )
   }
   return (
     <Stack spacing={1.25}>
@@ -358,7 +358,6 @@ export function XDriveBackgroundTaskTable({
   loading = false,
   loaded = true,
   failed = false,
-  loadEpoch = 0,
   controlKey = '',
   focusedTaskID = '',
   onControl,
@@ -377,22 +376,24 @@ export function XDriveBackgroundTaskTable({
 }) {
   const compactViewport = useMediaQuery('(max-width:899.95px)')
 
-  const showDelayedLoad = useXDriveDeferredLoading(loading && !loaded, loadEpoch)
   if (!loaded && tasks.length === 0) {
     return (
-      <Box data-xdrive-global-background-tasks-first-read sx={{
-        minHeight: 120, display: 'grid', placeItems: 'center',
-      }}>
+      <Box data-xdrive-global-background-tasks-first-read
+        aria-busy={loading || !failed || undefined}
+        sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
         {failed && !loading ? (
           <XDriveStatePanel variant="plain" message="全局后台任务读取失败，请重新进入或刷新。" />
-        ) : showDelayedLoad ? (
-          <XDriveStatePanel variant="plain" loading message="正在加载全局后台任务…" />
         ) : null}
       </Box>
     )
   }
   if (tasks.length === 0) {
-    return <XDriveStatePanel variant="plain" message="暂无全局后台任务" />
+    return (
+      <Box data-xdrive-global-background-tasks-verified-empty
+        sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
+        <XDriveStatePanel variant="plain" message="暂无全局后台任务" />
+      </Box>
+    )
   }
 
   if (compactViewport) {

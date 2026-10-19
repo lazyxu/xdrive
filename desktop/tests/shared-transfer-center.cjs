@@ -79,6 +79,13 @@ test('shared transfer center renders hierarchical group progress and child tasks
   assert.ok(shared.includes("item.scan_complete === false"), 'group UI must distinguish discovered totals from final totals')
 })
 
+test('unverified Transfer Center is silent but true active transfer progress survives', () => {
+  assert.ok(shared.includes('data-xdrive-transfer-first-read aria-busy="true"'))
+  assert.equal(shared.includes('正在加载传输记录…'), false)
+  assert.ok(shared.includes('const display = useXDriveTransferDisplayedRates(transfers)'))
+  assert.ok(shared.includes('LinearProgress'), 'real byte progress must remain')
+})
+
 test('Web and Desktop both render the shared task center workspace', () => {
   assert.ok(taskCenter.includes('XDriveFileOperationCenter'), 'shared task center must render file operations')
   assert.ok(taskCenter.includes('XDriveTransferCenter'), 'shared task center must render transfers')
