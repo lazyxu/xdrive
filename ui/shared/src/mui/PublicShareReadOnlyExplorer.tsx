@@ -7,10 +7,12 @@ import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { Box, Button, Breadcrumbs, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import type { PublicShareChild } from '../models'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import {
   XDriveFileExplorerItemIcon,
   xDriveFileTypeLabel,
@@ -34,6 +36,7 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
   onCrumbClick?: (index: number) => void
   onOpenFolder?: (entry: PublicShareChild) => void
   onDownloadItem?: (entry: PublicShareChild) => void
+  loadImagePreview?: (entry: PublicShareChild, signal?: AbortSignal) => Promise<string | null | undefined>
   onPreviousPage?: () => void
   onNextPage?: () => void
   onRefresh?: () => void
@@ -44,7 +47,7 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
 export function XDrivePublicShareReadOnlyExplorer({
   kind, items, path = [], folderOpened = false, pending = false,
   canDownload = false, hasPreviousPage = false, hasNextPage = false,
-  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem,
+  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, loadImagePreview,
   onPreviousPage, onNextPage, onRefresh,
 }: XDrivePublicShareReadOnlyExplorerProps) {
   const [view, setView] = useState<'details' | 'grid'>('details')
@@ -56,6 +59,9 @@ export function XDrivePublicShareReadOnlyExplorer({
     mouseY: number
   } | null>(null)
   const [propertiesEntry, setPropertiesEntry] = useState<PublicShareChild | null>(null)
+  const [previewEntry, setPreviewEntry] = useState<PublicShareChild | null>(null)
+  const supportsPublicImagePreview = (entry: PublicShareChild) => entry.type === 'file' &&
+    Boolean(loadImagePreview) && /\.(?:jpe?g|png|webp|gif)$/i.test(entry.name)
   const folder = kind === 'dir'
   const currentFolderID = path.at(-1)?.id ?? 0
 
@@ -71,11 +77,13 @@ export function XDrivePublicShareReadOnlyExplorer({
     setPageFilter('')
     setContextMenu(null)
     setPropertiesEntry(null)
+    setPreviewEntry(null)
   }, [acceptedPageIdentity])
 
   const openEntry = (entry: PublicShareChild) => {
     if (!canDownload) return
     if (entry.type === 'dir') onOpenFolder?.(entry)
+    else if (supportsPublicImagePreview(entry)) setPreviewEntry(entry)
     else onDownloadItem?.(entry)
   }
   const onEntryKeyDown = (event: KeyboardEvent<HTMLDivElement>, entry: PublicShareChild) => {
@@ -208,8 +216,18 @@ export function XDrivePublicShareReadOnlyExplorer({
               <Button type="button" size="small" disabled={!canDownload}
                 onClick={() => onOpenFolder?.(entry)}>打开</Button>
             ) : (
-              <Button type="button" size="small" disabled={!canDownload}
-                startIcon={<DownloadRoundedIcon />} onClick={() => onDownloadItem?.(entry)}>下载</Button>
+              <Stack direction="row" alignItems="center" spacing={0}>
+                {supportsPublicImagePreview(entry) && (
+                  <Button type="button" size="small" disabled={!canDownload}
+                    aria-label="预览图片" sx={{ minWidth: 28, px: 0 }}
+                    onClick={() => setPreviewEntry(entry)}>
+                    <VisibilityRoundedIcon fontSize="small" />
+                  </Button>
+                )}
+                <Button type="button" size="small" disabled={!canDownload}
+                  sx={{ minWidth: 54, px: 0.5 }}
+                  startIcon={<DownloadRoundedIcon />} onClick={() => onDownloadItem?.(entry)}>下载</Button>
+              </Stack>
             )}
           </Box>
         </Box>
@@ -334,10 +352,19 @@ export function XDrivePublicShareReadOnlyExplorer({
         <MenuItem disabled={!canDownload} onClick={() => {
           const entry = contextMenu?.entry
           setContextMenu(null)
-          if (entry) openEntry(entry)
+          // Context-menu Download must retain its original meaning even when
+          // a safe inline image Preview is available on double-click/Enter.
+          if (entry?.type === 'dir') onOpenFolder?.(entry)
+          else if (entry) onDownloadItem?.(entry)
         }}>
           {contextMenu?.entry.type === 'dir' ? '打开文件夹' : '下载文件'}
         </MenuItem>
+        {contextMenu?.entry && supportsPublicImagePreview(contextMenu.entry) && (
+          <MenuItem disabled={!canDownload} onClick={() => {
+            setPreviewEntry(contextMenu.entry)
+            setContextMenu(null)
+          }}>预览图片</MenuItem>
+        )}
         <MenuItem onClick={() => {
           setPropertiesEntry(contextMenu?.entry ?? null)
           setContextMenu(null)
@@ -357,6 +384,30 @@ export function XDrivePublicShareReadOnlyExplorer({
         </DialogContent>
         <DialogActions>
           <Button type="button" onClick={() => setPropertiesEntry(null)}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={previewEntry !== null} onClose={() => setPreviewEntry(null)}
+        aria-labelledby="xdrive-public-share-preview-title" maxWidth="lg" fullWidth>
+        <DialogTitle id="xdrive-public-share-preview-title">
+          {previewEntry?.name || '预览'} · 只读
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 1, minHeight: 320 }}>
+          {previewEntry && (
+            <XDriveFilePreviewSurface
+              target={{ id: previewEntry.id, name: previewEntry.name, kind: 'file', size: previewEntry.size }}
+              loadImagePreview={(_target, signal) => loadImagePreview
+                ? loadImagePreview(previewEntry, signal)
+                : Promise.resolve(null)}
+              imageFit="contain" interactiveImage minHeight={300}
+              maxHeight="min(74dvh, 840px)"
+              fallback={<Typography color="text.secondary">当前媒体不能安全预览，请下载原文件。</Typography>}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button type="button" disabled={!canDownload || previewEntry === null}
+            onClick={() => { if (previewEntry) onDownloadItem?.(previewEntry) }}>下载原文件</Button>
+          <Button type="button" onClick={() => setPreviewEntry(null)}>关闭预览</Button>
         </DialogActions>
       </Dialog>
     </>
