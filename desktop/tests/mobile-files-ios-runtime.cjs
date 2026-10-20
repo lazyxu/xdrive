@@ -1877,6 +1877,10 @@ test('F-PARITY-07F: 100k Mobile Select All cancel fences an in-flight page and s
     assert.deepEqual(requests, [[0, 199]], '100k selection cannot eagerly request the complete collection')
     const progress = find(h.view, 'data-mobile-files-select-progress', true)
     assert.match(textOf(progress.props.children), /0\s*\/\s*100000/)
+    const overlay = find(h.view, 'data-mobile-files-feedback-overlay', true)
+    assert.equal(overlay.props.sx.position, 'absolute')
+    assert.equal(progress.parent, overlay,
+      'real 100k selection progress must not change the virtual scroll host geometry')
     await act(async () => { find(h.view, 'data-mobile-files-select-cancel', true).props.onClick() })
     assert.equal(selectSignal?.aborted, true, 'Mobile cancel must reach the shared request signal immediately')
     assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0)
@@ -1943,7 +1947,10 @@ test('F-PARITY-07F-B: Mobile selected-action disabled states use the same Wide W
     assert.equal(find(h.view, 'aria-label', '删除已选').props.disabled, true)
     assert.equal(find(h.view, 'aria-label', '下载已选').props.disabled, false,
       '257 files are below the shared 1000-item download cap')
-    assert.match(textOf(find(h.view, 'data-mobile-files-selection-limits', true).props.children), /200/)
+    const limits = find(h.view, 'data-mobile-files-selection-limits', true)
+    assert.match(textOf(limits.props.children), /200/)
+    assert.equal(limits.parent.props['data-mobile-files-feedback-overlay'], true,
+      'mutation limits retain their reason without resizing the list viewport')
     await act(async () => { find(h.view, 'aria-label', '复制已选').props.onClick() })
     assert.deepEqual(performed, [], 'even an invoked disabled handler cannot bypass shared validation')
 
@@ -5275,4 +5282,54 @@ test('P108: actual Web guard suppresses only provisional root and currently aban
   ]) assert.ok(mobile.includes(marker), marker)
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
   assert.equal(agents.split('## P108 · Mobile saved-folder route mirrors only committed Owner').length, 2)
+})
+
+
+test('P109: transient Mobile Files action feedback never reflows or remounts the scroll host', async () => {
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    const overlay = find(h.view, 'data-mobile-files-feedback-overlay', true)
+    assert.equal(overlay.props.sx.position, 'absolute')
+    assert.equal(overlay.props.sx.pointerEvents, 'none')
+    assert.equal(count(h.view, 'data-mobile-files-operation-feedback'), 0)
+    await h.update({ actionFeedback: '后台上传已排队' })
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host,
+      'showing a genuine background operation cannot replace the current scroll owner')
+    const action = find(h.view, 'data-mobile-files-operation-feedback', true)
+    assert.equal(action.parent, find(h.view, 'data-mobile-files-feedback-overlay', true))
+    assert.equal(action.props.sx.pointerEvents, 'auto',
+      'real action feedback remains interactive when it has controls')
+    assert.match(textOf(action.props.children), /后台上传已排队/)
+    await h.update({ actionFeedback: undefined })
+    assert.equal(count(h.view, 'data-mobile-files-operation-feedback'), 0)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host,
+      'dismissing the feedback must not unmount the virtual scroll container')
+  }, {
+    props: {
+      requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+      actionFeedback: undefined,
+    },
+  })
+})
+
+test('P109: permanent no-in-flow-feedback contract preserves real progress and accessibility', () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const begin = source.indexOf('        <Box data-mobile-files-feedback-overlay')
+  const end = source.indexOf('        {selectionActive ? (', begin)
+  assert.ok(begin > 0 && end > begin, 'one overlay owns all transient bottom feedback')
+  const block = source.slice(begin, end)
+  for (const marker of [
+    "position: 'absolute'", "pointerEvents: 'none'",
+    'data-mobile-files-operation-feedback', "pointerEvents: 'auto'",
+    'data-mobile-files-select-progress', 'data-mobile-files-selection-limits',
+    'selectionFeedback', '正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项',
+  ]) assert.ok(block.includes(marker), 'must preserve genuine feedback: ' + marker)
+  assert.equal(block.includes('flexShrink: 0'), false,
+    'a feedback row must never enter the App flex layout and move its scroll host')
+  assert.ok(source.includes('ref={scrollHostRef} data-xdrive-mobile-files-scroll'))
+  assert.ok(source.includes('XDriveFileExplorerThumbnailProvider'))
+  assert.ok(source.includes('data-mobile-files-arrangement-status'),
+    'Search/Trash genuine feedback stays independent')
+  assert.equal(agents.split('## P109 · Transient Mobile Files feedback must not resize scroll owner').length, 2)
 })
