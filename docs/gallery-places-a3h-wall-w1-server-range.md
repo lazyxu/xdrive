@@ -1,0 +1,16 @@
+# P0-Places-A3h-Wall W1 · Signed Owner BD09 cell → original Gallery Range
+
+**2026-10-20 · source-only W1.** The A3h map cover pins in #2194 are already merged but their click still invokes `focusCell` (zoom), not an authorized complete photo wall. This stage builds the Server-enforced one-cell source-of-truth, with no UI action enabled yet. Follow-up W2 adds shared Web/Mobile Web/PWA/Desktop transport and a real virtual wall.
+
+## API and authorization
+
+- New **authenticated Owner-only** `GET /api/v1/media/places/baidu-jsapi/cell-items`. It MUST NOT be a public share route; the ordinary account Bearer is independently revalidated as the current Owner JWT issued-at, SessionVersion and durable map revocation epoch. The current signed JSAPI4 release is checked before parsing/DB access and after producing page data. Unreleased systems always fail closed, while Static Map v2 remains separate.
+- Required exact parameters: `west,south,east,north,cell_x,cell_y,asset_id,node_id,node_revision,photo_count,range=true,limit,offset`. Optional: `sort_by,sort_dir,anchor_node_id`. No other names, duplicates, AK or coordinate-space tag are allowed. Bounds are **BD09LL** and matched to the original 8×8 /cells projection; IDs and counts are *untrusted assertions* revalidated against the current authorized summary. Old representative/count/consent returns 409 `map_cell_changed`; invalid fields return 400 without redirect/egress.
+- Reuse **exact** existing `baiduPhotoMapOwnerEligibleQuery` to build an SQL `IN (SELECT p.primary_node_id ...)` subquery with the same world and antimeridian cell floor arithmetic as `/cells`. No raw 100k Asset/GPS fan-out or client grid-center arithmetic. Reuse original `queryMediaItemRange` for account/Node/PhotoAsset checks, sparse `items,total_count,offset,limit,anchor_index,timeline_groups`, Gallery permissions and media presentation; this route does not serve raw video/original bytes and adds no new public media URL.
+- Before returning, re-read the current 8×8 summary and signed Owner and release; if permission/revision/representative/count changed mid-flight, reject stale selection. Request/DB work derives from `c.Request.Context()` and abort propagates through Go context. The query never trusts Browser AK, BMap SDK UI event data, an arbitrary client Owner, or a reverse-BD09-to-WGS84 cast.
+
+## Scope and evidence
+
+One scoped Go Server W1 change, original PostgreSQL integration and actual Gin negative tests, plus source contract, docs and additive AGENTS. Test real logical image/video Owner membership, sparse count/paging, same-cell selection, cross-owner denial of stale representative, revision/GPS/consent revocation and wrapped geometry. Tests run against `XD_TEST_DATABASE_URL` when available; a CI fixture is not a real 100k performance experiment.
+
+**Not yet done**: Web/Mobile Web/Desktop Agent transport, clicking a cover to switch Gallery VirtualCollection/Viewer, camera/scroll-anchor return, physical iOS27/Android/Electron, current Baidu provider security/HAR, and real 100k latency/Go cancellation measurements. `#2207` must remain open; do not describe W1 as user-visible W2/C1 acceptance. Never break Static Baidu or expand JSAPI release authority.

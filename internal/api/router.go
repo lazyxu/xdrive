@@ -295,6 +295,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-jsapi/viewport", s.listBaiduNativeMapViewport)
 	// A3c19: exact Owner BD09 8x8 aggregate, never 100k raw photo coordinates.
 	authed.GET("/media/places/baidu-jsapi/cells", s.listBaiduNativeMapCells)
+	// A3h-W1: map-cell-scoped version/consent-fenced authenticated sparse Gallery Range.
+	authed.GET("/media/places/baidu-jsapi/cell-items", s.listBaiduNativeMapCellItems)
 	// A signed release is required before the authenticated Owner can mint a map Cookie.
 	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)

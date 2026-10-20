@@ -561,6 +561,15 @@ func (s *Server) mediaItemsBaseQuery(
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		)
 	query = applyMediaQueryFilters(query, options, uid)
+	if options.BaiduCell != nil {
+		// This membership is server-created after signed Owner/epoch checks.
+		// Do not convert native BD09 map geometry into WGS84 nearby filters.
+		memberNodes, err := baiduPhotoMapCellMemberNodes(ctx, s.DB, uid, *options.BaiduCell)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where("n.id IN (?)", memberNodes)
+	}
 
 	if albumKey == "" {
 		return s.applyVerifiedMediaFolding(ctx, query, options), nil
