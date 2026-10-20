@@ -342,7 +342,13 @@ export function XDriveFileOperationCenter({
   const stopped = operations.filter((item) => item.status === 'failed' || item.status === 'cancelled')
   const continuationParentIDs = xDriveFileOperationContinuationParentIDs(operations)
 
-  if (loading && operations.length === 0) return <XDriveStatePanel loading message="正在加载文件操作…" />
+  // The first Owner operation-history read is not an additional page:
+  // keep a quiet, bounded region until a real empty result or tasks arrive.
+  // Individual genuine operations retain their progress/ETA/cancel controls.
+  if (loading && operations.length === 0) {
+    return <Box data-xdrive-file-operation-first-read aria-busy="true"
+      sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
+  }
 
   const groups: Array<[string, XDriveFileOperation[]]> = [
     ['进行中', active],

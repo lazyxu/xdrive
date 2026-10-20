@@ -382,6 +382,22 @@ export default function AdminAuditPanel({
         title="审计日志"
         subtitle="记录登录、账户管理、文件与系统操作；可按操作、结果和操作者筛选。"
       >
+        {/* Late sparse Range failures are genuine, but may not become a
+            new row ahead of an already-mounted virtual audit table. */}
+        {error && totalCount !== null ? (
+          <Box data-xdrive-admin-audit-refresh-error role="alert" sx={{
+            position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+            bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+            width: 'min(calc(100vw - 24px), 560px)',
+            maxHeight: 'min(34dvh, 220px)', overflowY: 'auto',
+            zIndex: (theme) => theme.zIndex.snackbar,
+            pointerEvents: 'none',
+          }}>
+            <Box sx={{ pointerEvents: 'auto' }}>
+              <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+            </Box>
+          </Box>
+        ) : null}
         <Stack spacing={2}>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
             <Autocomplete
@@ -450,8 +466,6 @@ export default function AdminAuditPanel({
             ) : null}
           </Stack>
 
-          {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
-
           <Box data-xdrive-admin-audit-content sx={{
             position: 'relative', minWidth: 0, minHeight: totalCount === null || totalCount === 0 ? 180 : undefined,
           }}>
@@ -460,7 +474,12 @@ export default function AdminAuditPanel({
               aria-busy={loading || !error || undefined}
               sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
               {!loading && error ? (
-                <XDriveStatePanel variant="plain" message="审计日志读取失败，请重试。" />
+                <Stack data-xdrive-admin-audit-first-read-error role="alert" spacing={1} sx={{
+                  width: '100%', maxWidth: 560, maxHeight: 180, overflowY: 'auto', p: 1,
+                }}>
+                  <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+                  <XDriveStatePanel variant="plain" message="审计日志读取失败，请重试。" />
+                </Stack>
               ) : null}
             </Box>
           ) : totalCount === 0 ? (

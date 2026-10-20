@@ -1,3 +1,9 @@
+## P121 · Audit and FileOperation asynchronous navigation has no transient reflow (2026-10-20)
+
+- In the original shared Web/Desktop/Mobile Web admin audit page, accepted sparse virtualized rows and their scroll host MUST retain geometry when a late Range, filter or pagination read fails. Never insert an asynchronous `XDriveStatusAlert` as a child of a spaced `Stack` above accepted data; show the truthful error in a fixed, bounded, safe-area-aware owner that does not intercept unrelated touches. A cold terminal error stays inside the original 180px first-read slot and preserves the real diagnostic text; no false zero/empty state or suppression of retry.
+- Shared Task Center FileOperation first unread history MUST NOT briefly show a visible “正在加载文件操作…” intermediate page. Maintain a silent 180px `aria-busy` slot, then actual verified empty / real queued, running or failed tasks with the original speed, bytes, ETA and Cancel/Retry/Undo/Redo remain intact. Never delay or suppress the underlying Owner transport/cancellation.
+- The original JSX/source regression test must check the actual sibling/ancestor relationship. Source-only assertions and CI are not physical iOS Safari/Android/PWA 100k CLS/FPS evidence. Preserve all older full `AGENTS.md` execution rules and the independent P112/P116/P118/P119/P120 owners.
+
 ## P118 · Mobile Files Owner-scope and pre-paint navigation (permanent, 2026-10-20)
 
 - For a same-directory activation from Recent/Favorites/Quick Access, distinguish the **CloudFiles directory Owner's** `directoryLoading` from the composite `loading` (which includes uploads, copy/delete, Search and other durable work). Never block an already verified same-directory transition on unrelated work; still require the actual successful activation acknowledgement. For a different directory, wait for matched crumbs and the genuine counted first Range; never synthesize rows or provisional empty states.
