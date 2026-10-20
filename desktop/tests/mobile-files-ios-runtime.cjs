@@ -5358,3 +5358,105 @@ test('P111: Browse Home organization read failures float without resizing the mo
       'dismissing an async error must not remount or resize the scroll owner')
   }, { props: { onRetryOrganization: () => { retries += 1 } } })
 })
+
+
+test('P118: current folder from Recent reopens while unrelated background work is busy, without a new loading frame', async () => {
+  const range = {
+    itemCount: 2, interactionKey: 'p118-accepted-current-root',
+    loadedItems: new Map(), itemAt: () => undefined, groups: [],
+    onRangeChange() {},
+  }
+  let opens = 0
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    const row = find(h.view, 'data-mobile-files-collection-row', 'recent')
+    await act(async () => { row.props.onClick(); await Promise.resolve() })
+    assert.equal(opens, 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'browse').props['aria-current'], 'page',
+      'the verified same folder must reopen after the successful activation even when transfers are busy')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host,
+      'the same virtual scroll host must survive the transition')
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none',
+      'unrelated upload/copy/delete work cannot create a directory loading caption')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 325)) })
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: range, directoryLoading: false, loading: true,
+    recentItems: [{ id: 1, kind: 'dir', name: '我的文件' }],
+    onOpenRecent: async () => { opens++; return true },
+  } })
+})
+
+test('P118: externally activated Search switches Mobile rail before paint, preserving the scroll owner', async () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const start = source.indexOf('  useLayoutEffect(() => {\n    if (!props.searchActive) {\n      searchClearPendingRef.current = false')
+  const end = source.indexOf('  const mediaEligible =', start)
+  assert.ok(start > 0 && end > start,
+    'external Search rail presentation must be useLayoutEffect, not a post-paint useEffect')
+  const block = source.slice(start, end)
+  for (const marker of [
+    "globalSearchPresentationRef.current", "section === 'browse'",
+    "setSection('browse')", "setBrowseHome(false)", "setScrollTop(0)",
+    'searchReturnSectionRef.current = section',
+  ]) assert.ok(block.includes(marker), marker)
+  assert.ok(source.includes('Number.isSafeInteger(props.searchSummary?.resultCount)'),
+    'locally launched Search still needs a verified first Range')
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await h.update({
+      searchActive: true, searchSummary: { query: 'photo', resultCount: 0, loading: false },
+      virtualCollection: { itemCount: 0, interactionKey: 'p118-search-range-zero',
+        loadedItems: new Map(), itemAt: () => undefined, groups: [], onRangeChange() {} },
+      items: [],
+    })
+    assert.equal(find(h.view, 'data-mobile-files-section', 'browse').props['aria-current'], 'page')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
+  }, { props: { requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
+
+test('P118: failed global Search uses stable Mobile feedback overlay instead of inserting a row above Files', async () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const begin = source.indexOf('<Box data-mobile-files-search-region')
+  const end = source.indexOf('<Box data-xdrive-mobile-files-home', begin)
+  assert.ok(begin > 0 && end > begin)
+  assert.equal(source.slice(begin, end).includes('role="alert"'), false,
+    'a late Search error must not insert a new scroll-content row')
+  let searches = 0, retries = 0
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    const overlay = find(h.view, 'data-mobile-files-feedback-overlay', true)
+    assert.equal(count(h.view, 'data-mobile-files-search-error'), 0)
+    const input = h.view.root.findAll(n => n.props?.['aria-label'] === '搜索全部文件')[0]
+    await act(async () => { input.props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
+    assert.equal(searches, 1)
+    await h.update({ searchActive: true, searchSummary: {
+      query: '照片', resultCount: null, loading: false, error: '搜索网络失败',
+      onRetry: () => { retries++ },
+    }, virtualCollection: undefined, items: [] })
+    const notice = find(h.view, 'data-mobile-files-search-error', true)
+    assert.equal(notice.parent, overlay)
+    assert.equal(notice.props.role, 'alert')
+    assert.equal(notice.props.sx.pointerEvents, 'auto')
+    assert.match(textOf(notice.props.children), /搜索网络失败/)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'failed unverified Search must retain the original Browse Home')
+    const retry = notice.findAll(n => n.props?.onClick && n.props?.children === '重试')[0]
+    assert.ok(retry)
+    await act(async () => { retry.props.onClick() })
+    assert.equal(retries, 1)
+    await h.update({ searchSummary: { query: '照片', resultCount: null, loading: true } })
+    assert.equal(count(h.view, 'data-mobile-files-search-error'), 0)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+  }, { props: { searchValue: '照片', onSearch: () => { searches++ } } })
+})
