@@ -1,3 +1,33 @@
+## SH-P008 · 100k SHA-distinct physical JPEG public full-width Explorer clients, original CURRENT measured (2026-10-20)
+
+| Client | New public workspace real n3 first/next P50 | Invariants | Exclusions |
+| --- | ---: | --- | --- |
+| Wide Chromium Web 1440px | **84.723 / 123.348ms** | 3 sessions/6 distinct 100-item keyset page views, 6 native signed SHA-exact originals, 0 stale rows/overflow, 52px titlebar and full-width Details | real OS phone/installed PWA, WAN |
+| Mobile Chromium CDP 390px | **78.530 / 133.812ms** | 3 sessions/6 actual 100-item page views, 6 original native SHA correct, 0 overflow/stale; true mobile CSS breakpoint | not iOS/Android hardware, not installed PWA |
+| Desktop Agent / Desktop installed PWA / Android/iOS installed PWA | **Not measured** | No complete Owner FileExplorer/private API imported into share URL | actual OS/browser installation and transfer |
+
+Original physical JPEG source one SHA-distinct 100k JPEG real LocalCAS corpus across six fresh browsers (not 6 independent physical populations); max first/next 88.227/146.890ms, all <=2s, native file download worst 209.332ms <=5s. Source ba712da1b0b4b675faeb241aa22fae2869930910, [native #39370867453](https://github.com/lazyxu/xdrive/actions/runs/39370867453) and [full 77-job CI #39370867680](https://github.com/lazyxu/xdrive/actions/runs/39370867680) SUCCESS, 25 jobs success/52 skipped, Final Gate green. Resource provenance main Electron whole-process max RSS 198728KiB, user/sys CPU 653883/494247µs, [exact machine rows](performance-evidence/public-share-explorer-workspace/ci-run-39370867453.json). Different-runner prior historical narrow UI BEFORE not matched A/B so no speedup claim; UI-only capability read/ZIP presentation, not new Go/SQL/ctx behavior. New evidence archive SHA requires fresh own 100k physical and 77-job full CI, clean mergeability before Ready/Merge.
+
+---
+## SH-P008 · new public read-only Explorer workspace first true 100k physical browser result (2026-10-20)
+
+| Platform | Prior original narrow presentation (historical P50 first/next) | Candidate full-width FileExplorer-like read-only UI (real n3) | Limits |
+| --- | --- | --- | --- |
+| Wide Web Chromium 1440px | 90.820 / 127.456ms | **121.575 / 164.597ms**, 3 source-exact sessions; worst 126.513/170.420ms | All 100-row pages/6 signed native downloads full SHA; within predeclared <=2s/5s; first native green #39369285510, final CI pending |
+| Mobile Web Chromium CDP390px | 88.650 / 120.194ms | **112.251 / 204.667ms**, 3 source-exact sessions; worst 123.009/207.747ms | CSS/mobile emulation, NOT real installed iOS/Android PWA or phone; 100-row page/6 signed actual downloads full SHA, 0 overflow |
+| Desktop Agent, installed Desktop PWA, iOS/Android installed PWA, WAN | Not measured | **Not measured** | No equivalent physical platform claim; public folder ZIP Server 100k has a separate workload |
+
+Real original 100000 individually SHA-distinct physical JPEG LocalCAS corpus (one shared population across six fresh browsers), [native #39369285510](https://github.com/lazyxu/xdrive/actions/runs/39369285510) SUCCESS; slowest of twelve original downloads **111.382ms**. Source `28fb85e17713c96ad285fe80e99b5299fe67e960`, previous original historical n3 [#39236742264](https://github.com/lazyxu/xdrive/actions/runs/39236742264) is NOT matched same runner, so no numerical speedup claim. First full CI #39369285506 RED only for outdated UI text/selector/static contracts; corrected HEAD must rerun. User-requested UI parity alone does not grant Account FileExplorer access or trigger unbounded 100k rows/thumbnail fetch. [machine JSON](docs/performance-evidence/public-share-explorer-workspace/ci-run-39369285510.json).
+
+---
+## SH-P008 · public capability full-width FileExplorer-like read-only workspace (2026-10-20)
+
+| Workload | Linux real Wide Web Chromium 1440px | Linux CDP Mobile Web 390px | Native Desktop Agent | Installed Desktop PWA | Real Android/iOS installed PWA |
+| --- | --- | --- | --- | --- | --- |
+| Original public 100k SHA-distinct physical JPEG folder first/next page + native signed file download | SH-P006 first/next P50 **90.820/127.456ms**, 3 sessions; new full-width UI candidate **not yet measured** | SH-P006 first/next P50 **88.650/120.194ms**, 3 sessions; new UI **not yet measured**, CDP is not a real phone | Not measured for public share UI | Not measured | Not measured |
+
+Public standalone share token remains limited to <=100-item keyset PublicShareChildren POST, signed original file GET and dedicated ZIP preparation only, never Owner FileExplorer/SMB. New full-width/52px toolbar, Details/Grid, local-page filter and context actions are presentational; their true P95/fps/CPU/RSS benefit is **NOT measured**, so AFTER/speedup N/A. Revalidate using [SH-P005 native 100k](../.github/workflows/sh-p005-browser-physical-jpeg-share-100k.yml) 3+3 browser sessions, <=2s pages/<=5s actual signed saves, <=100 DOM rows, 0 overlap/overflow/unauthorized API, resource evidence. No new backend, thumbnail decode or user-owned cancel change; 4GiB Web/Desktop and 100k primary Gallery/Files remain separately accepted workloads.
+
 ## P066 · original true physical 100k post-Copy lifecycle second Owner admission measured n3 (2026-10-20)
 
 | Scope | Linux Go Server / PG17 / LocalCAS | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android/iOS installed PWA |

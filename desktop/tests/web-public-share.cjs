@@ -16,13 +16,22 @@ test('Web public share uses the shared auth and brand surfaces', () => {
     'XDriveAuthPanel',
     'XDriveBrandLockup',
     'iconSrc={xDriveBrandIcon}',
-    'variant="large"',
+    'variant="titlebar"',
     'subtitle="安全文件分享"',
-    '<XDriveAuthShell viewport decorated spacing="compact">',
-    '<XDriveAuthPanel size="compact" maxWidth={920} form onSubmit=',
+    '<XDriveAuthShell viewport spacing="compact"',
+    '<XDriveAuthPanel size="compact" maxWidth="100%" form onSubmit=',
   ]) {
     assert.ok(publicShare.includes(token), `Public Share shared surface missing: ${token}`)
   }
+
+  for (const cap of [
+    'data-xdrive-public-share-titlebar',
+    'data-xdrive-public-share-workspace',
+    "maxWidth: 1500",
+    "minHeight: '100dvh'",
+  ]) assert.ok(publicShare.includes(cap), 'public share full-width workspace contract missing: ' + cap)
+  assert.equal(publicShare.includes('maxWidth={920}'), false,
+    'do not restore the old narrow login card')
 
   for (const legacy of [
     'className="auth-shell"',
@@ -76,7 +85,11 @@ test('Web folder share stays bounded, read-only and cancels stale page requests'
     assert.ok(publicShare.includes(token), `Shared folder pagination missing: ${token}`)
   }
   for (const token of [
-    'items.slice(0, 100).map((entry)',
+    'const pageItems = items.slice(0, 100)',
+    'visibleItems.map(entry => (',
+    'data-xdrive-public-share-explorer-workspace',
+    'data-xdrive-public-share-details-header',
+    'anchorPosition={contextMenu',
     'data-xdrive-public-share-folder-browser',
     'data-xdrive-public-share-explorer-view',
     'onOpenFolder?.(entry)',

@@ -1,9 +1,13 @@
-import { useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Box, Button, Breadcrumbs, IconButton, Menu, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import type { PublicShareChild } from '../models'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
@@ -19,139 +23,307 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
   canDownload?: boolean
   hasPreviousPage?: boolean
   hasNextPage?: boolean
+  toolbarActions?: ReactNode
   onBrowse?: () => void
   onCrumbClick?: (index: number) => void
   onOpenFolder?: (entry: PublicShareChild) => void
   onDownloadItem?: (entry: PublicShareChild) => void
   onPreviousPage?: () => void
   onNextPage?: () => void
+  onRefresh?: () => void
 }
 
-// Public-capability-only presentation. It has NO authenticated Owner API,
-// private Node datasource, credential access, mutation, clipboard or drag-out.
+// Only capability-scoped DTOs and callbacks are accepted. This presentation
+// never imports the account FileExplorer, Owner API, session or private actions.
 export function XDrivePublicShareReadOnlyExplorer({
   kind, items, path = [], folderOpened = false, pending = false,
   canDownload = false, hasPreviousPage = false, hasNextPage = false,
-  onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, onPreviousPage, onNextPage,
+  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem,
+  onPreviousPage, onNextPage, onRefresh,
 }: XDrivePublicShareReadOnlyExplorerProps) {
   const [view, setView] = useState<'details' | 'grid'>('details')
+  const [selectedID, setSelectedID] = useState<number | null>(null)
+  const [pageFilter, setPageFilter] = useState('')
+  const [contextMenu, setContextMenu] = useState<{
+    entry: PublicShareChild
+    mouseX: number
+    mouseY: number
+  } | null>(null)
   const folder = kind === 'dir'
+  const currentFolderID = path.at(-1)?.id ?? 0
+
+  // A new accepted server page replaces the prior selection and local filter.
+  // No old 100k pages or independent thumbnails are retained in this UI.
+  useEffect(() => {
+    setSelectedID(null)
+    setPageFilter('')
+    setContextMenu(null)
+  }, [items, currentFolderID])
+
   const openEntry = (entry: PublicShareChild) => {
+    if (!canDownload) return
     if (entry.type === 'dir') onOpenFolder?.(entry)
-    else if (canDownload) onDownloadItem?.(entry)
+    else onDownloadItem?.(entry)
   }
   const onEntryKeyDown = (event: KeyboardEvent<HTMLDivElement>, entry: PublicShareChild) => {
-    if (event.target === event.currentTarget && event.key === 'Enter') {
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'Enter') {
       event.preventDefault()
       openEntry(entry)
+    } else if (event.key === 'Backspace' && folder && path.length > 1) {
+      event.preventDefault()
+      onCrumbClick?.(path.length - 2)
     }
   }
-
-  // The Server returns one <=100 item keyset page, never the entire directory.
-  // Do not sort or augment it with unauthorized account/FileExplorer requests.
+  const openContextMenu = (event: MouseEvent<HTMLDivElement>, entry: PublicShareChild) => {
+    event.preventDefault()
+    setSelectedID(entry.id)
+    setContextMenu({ entry, mouseX: event.clientX + 2, mouseY: event.clientY + 2 })
+  }
+  // Filter only the bounded 100-item server page. It is intentionally NOT
+  // presented as a search of all children or an extra private API request.
+  const pageItems = items.slice(0, 100)
+  const filter = pageFilter.trim().toLocaleLowerCase()
+  const visibleItems = filter
+    ? pageItems.filter(entry => entry.name.toLocaleLowerCase().includes(filter))
+    : pageItems
+  const directoryControlsEnabled = folder && folderOpened && canDownload
+  const viewButtons = (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Button type="button" size="small" aria-pressed={view === 'details'}
+        variant={view === 'details' ? 'contained' : 'text'}
+        startIcon={<ViewListRoundedIcon />} onClick={() => setView('details')}>列表</Button>
+      <Button type="button" size="small" aria-pressed={view === 'grid'}
+        variant={view === 'grid' ? 'contained' : 'text'}
+        startIcon={<GridViewRoundedIcon />} onClick={() => setView('grid')}>网格</Button>
+    </Stack>
+  )
   const rows = (
     <Box role="list" aria-label={folder ? '分享文件夹中的文件' : '已分享文件'}
       data-xdrive-public-share-explorer-view={view}
-      sx={{ maxHeight: 400, overflowY: 'auto',
+      sx={{
+        flex: '1 1 auto', minHeight: 0, overflowY: 'auto', minWidth: 0,
         display: view === 'grid' ? 'grid' : 'block',
-        gridTemplateColumns: view === 'grid' ? 'repeat(auto-fill, minmax(140px, 1fr))' : undefined,
-        gap: view === 'grid' ? 1 : 0 }}>
-      {items.slice(0, 100).map((entry) => (
+        gridTemplateColumns: view === 'grid' ? 'repeat(auto-fill, minmax(146px, 1fr))' : undefined,
+        alignContent: 'start', gap: view === 'grid' ? 1.5 : 0,
+        px: view === 'grid' ? 2 : 0, py: view === 'grid' ? 1.5 : 0,
+        '@media (max-width: 620px)': view === 'grid'
+          ? { px: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))' }
+          : {},
+      }}>
+      {view === 'details' && (
+        <Box data-xdrive-public-share-details-header
+          sx={{
+            display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(110px,160px) 118px 106px',
+            alignItems: 'center', px: 2, minHeight: 40, borderBottom: 1,
+            borderColor: 'divider', bgcolor: 'action.hover',
+            '@media (max-width: 620px)': {
+              gridTemplateColumns: 'minmax(0,1fr) 92px',
+              '& .xdrive-shared-file-type': { display: 'none' },
+              '& .xdrive-shared-file-size': { display: 'none' },
+            },
+          }}>
+          <Typography variant="caption" color="text.secondary">名称</Typography>
+          <Typography className="xdrive-shared-file-type" variant="caption" color="text.secondary">类型</Typography>
+          <Typography className="xdrive-shared-file-size" variant="caption" color="text.secondary" textAlign="right">大小</Typography>
+          <Typography variant="caption" color="text.secondary" textAlign="center">操作</Typography>
+        </Box>
+      )}
+      {visibleItems.map(entry => (
         <Box key={entry.id} role="listitem" tabIndex={0}
+          aria-selected={selectedID === entry.id}
           data-xdrive-public-share-item-id={entry.id}
-          aria-label={`${entry.type === 'dir' ? '文件夹' : '文件'} ${entry.name}`}
+          aria-label={(entry.type === 'dir' ? '文件夹 ' : '文件 ') + entry.name}
+          onClick={() => setSelectedID(entry.id)}
+          onContextMenu={(event) => openContextMenu(event, entry)}
           onKeyDown={(event) => onEntryKeyDown(event, entry)}
           onDoubleClick={() => openEntry(entry)}
           sx={{
             display: view === 'grid' ? 'flex' : 'grid',
             flexDirection: view === 'grid' ? 'column' : undefined,
-            alignItems: 'center', gap: 1, minWidth: 0,
-            minHeight: view === 'grid' ? 148 : 48, px: 1, py: view === 'grid' ? 1.5 : 0.75,
+            alignItems: 'center', minWidth: 0,
+            minHeight: view === 'grid' ? 154 : 52, px: view === 'grid' ? 1.5 : 2,
+            py: view === 'grid' ? 1.5 : 0.75, gap: view === 'grid' ? 1 : 0,
             borderBottom: view === 'details' ? 1 : undefined,
             border: view === 'grid' ? 1 : undefined,
-            borderColor: 'divider', borderRadius: view === 'grid' ? 1.5 : 0,
-            gridTemplateColumns: view === 'details' ? 'minmax(0, 1fr) minmax(100px, 150px) 92px' : undefined,
-            '@media (max-width: 620px)': view === 'details' ? {
-              gridTemplateColumns: 'minmax(0, 1fr) 78px',
-              '& .xdrive-shared-file-type': { display: 'none' },
-            } : undefined,
+            borderColor: 'divider', borderRadius: view === 'grid' ? 2 : 0,
+            gridTemplateColumns: view === 'details'
+              ? 'minmax(0,1fr) minmax(110px,160px) 118px 106px' : undefined,
+            bgcolor: selectedID === entry.id ? 'action.selected' : 'transparent',
+            cursor: 'default',
+            '&:hover': { bgcolor: 'action.hover' },
             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+            '@media (max-width: 620px)': view === 'details' ? {
+              gridTemplateColumns: 'minmax(0,1fr) 92px',
+              '& .xdrive-shared-file-type': { display: 'none' },
+              '& .xdrive-shared-file-size': { display: 'none' },
+            } : {},
           }}>
-          <Stack direction={view === 'grid' ? 'column' : 'row'} spacing={1}
-            alignItems="center" sx={{ minWidth: 0, width: view === 'grid' ? '100%' : undefined, flex: view === 'grid' ? 1 : undefined }}>
+          <Stack direction={view === 'grid' ? 'column' : 'row'} spacing={1.25}
+            alignItems="center" sx={{
+              minWidth: 0, width: '100%', flex: view === 'grid' ? 1 : undefined,
+            }}>
             <XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }}
-              size={view === 'grid' ? 38 : 22} />
-            <Box sx={{ minWidth: 0, width: view === 'grid' ? '100%' : undefined }}>
-              <Typography variant="body2" title={entry.name}
+              size={view === 'grid' ? 42 : 23} />
+            <Box sx={{ minWidth: 0, width: '100%' }}>
+              <Typography variant="body2" fontWeight={selectedID === entry.id ? 600 : 400}
+                title={entry.name}
                 sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   textAlign: view === 'grid' ? 'center' : 'left' }}>{entry.name}</Typography>
-              {view === 'grid' && <Typography variant="caption" color="text.secondary"
-                sx={{ display: 'block', textAlign: 'center' }}>
-                {entry.type === 'dir' ? '文件夹' : formatBytes(entry.size)}
-              </Typography>}
+              {view === 'grid' && (
+                <Typography variant="caption" color="text.secondary"
+                  sx={{ display: 'block', textAlign: 'center' }}>
+                  {entry.type === 'dir' ? '文件夹' : formatBytes(entry.size)}
+                </Typography>
+              )}
             </Box>
           </Stack>
-          {view === 'details' && <Typography className="xdrive-shared-file-type"
-            variant="caption" color="text.secondary"
-            sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {xDriveFileTypeLabel(entry.name, entry.type)}
-          </Typography>}
-          {folder ? (entry.type === 'dir' ? (
-            <Button type="button" size="small" onDoubleClick={(event) => event.stopPropagation()} onClick={() => onOpenFolder?.(entry)}>打开</Button>
-          ) : (
-            <Button type="button" size="small" disabled={!canDownload}
-              startIcon={<DownloadRoundedIcon />} onDoubleClick={(event) => event.stopPropagation()} onClick={() => onDownloadItem?.(entry)}>下载</Button>
-          )) : view === 'details' ? (
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right' }}>
-              {formatBytes(entry.size)}
-            </Typography>
-          ) : null}
+          {view === 'details' && (
+            <>
+              <Typography className="xdrive-shared-file-type" variant="caption" color="text.secondary"
+                sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {xDriveFileTypeLabel(entry.name, entry.type)}
+              </Typography>
+              <Typography className="xdrive-shared-file-size" variant="caption" color="text.secondary"
+                textAlign="right">{entry.type === 'dir' ? '—' : formatBytes(entry.size)}</Typography>
+            </>
+          )}
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: view === 'grid' ? 'auto' : 0 }}>
+            {entry.type === 'dir' ? (
+              <Button type="button" size="small" disabled={!canDownload}
+                onClick={() => onOpenFolder?.(entry)}>打开</Button>
+            ) : (
+              <Button type="button" size="small" disabled={!canDownload}
+                startIcon={<DownloadRoundedIcon />} onClick={() => onDownloadItem?.(entry)}>下载</Button>
+            )}
+          </Box>
         </Box>
       ))}
+      {!pending && folderOpened && pageItems.length === 0 && (
+        <Typography variant="body2" color="text.secondary" textAlign="center"
+          sx={{ py: 5 }}>此文件夹为空</Typography>
+      )}
+      {pageItems.length > 0 && visibleItems.length === 0 && (
+        <Typography variant="body2" color="text.secondary" textAlign="center"
+          sx={{ py: 5 }}>当前页没有匹配的文件</Typography>
+      )}
     </Box>
   )
 
-  if (!folder) return <Box data-xdrive-public-share-file-browser role="region"
-    aria-label="分享文件只读浏览" sx={{ minHeight: 82, minWidth: 0 }}>{rows}</Box>
-
   return (
-    <Stack data-xdrive-public-share-folder-browser aria-busy={pending || undefined} spacing={1.25}>
-      {folderOpened ? (
-        <Box role="region" aria-label="分享文件夹内容" aria-busy={pending}
-          sx={{ minHeight: 180, minWidth: 0, position: 'relative' }}>
-          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.5} sx={{ mb: 1 }}>
-            {path.map((crumb, index) => (
-              <Button key={crumb.id} type="button" size="small"
-                disabled={index === path.length - 1}
-                onClick={() => onCrumbClick?.(index)}>{crumb.name}</Button>
-            ))}
-          </Stack>
-          <Stack direction="row" alignItems="center" justifyContent="space-between"
-            flexWrap="wrap" useFlexGap spacing={1} sx={{ minHeight: 42, mb: 1 }}>
-            <Typography variant="caption" color="text.secondary">只读文件管理器 · 每页最多 100 项</Typography>
-            <Stack direction="row" spacing={0.5}>
-              <Button type="button" size="small" aria-pressed={view === 'details'}
-                variant={view === 'details' ? 'contained' : 'text'}
-                startIcon={<ViewListRoundedIcon />} onClick={() => setView('details')}>列表</Button>
-              <Button type="button" size="small" aria-pressed={view === 'grid'}
-                variant={view === 'grid' ? 'contained' : 'text'}
-                startIcon={<GridViewRoundedIcon />} onClick={() => setView('grid')}>网格</Button>
-            </Stack>
-          </Stack>
-          {rows}
-          {!pending && items.length === 0 && <Typography variant="body2"
-            color="text.secondary" sx={{ py: 2 }}>此文件夹为空</Typography>}
-          {(hasPreviousPage || hasNextPage) && <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-            {hasPreviousPage && <Button type="button" fullWidth size="small"
-              disabled={pending} onClick={onPreviousPage}>上一页</Button>}
-            {hasNextPage && <Button type="button" fullWidth size="small"
-              disabled={pending} onClick={onNextPage}>下一页</Button>}
-          </Stack>}
-        </Box>
-      ) : (
-        <XDriveActionButton intent="primary" type="button" fullWidth
-          disabled={!canDownload || pending} onClick={onBrowse}>浏览文件夹</XDriveActionButton>
-      )}
-    </Stack>
+    <>
+      <Box data-xdrive-public-share-explorer-workspace
+        sx={{
+          display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%',
+          minHeight: folder ? 520 : 275,
+          height: folder ? 'clamp(520px, calc(100dvh - 290px), 900px)' : 'auto',
+          border: 1, borderColor: 'divider',
+          borderRadius: 2, overflow: 'hidden', bgcolor: 'background.paper',
+          '@media (max-width: 620px)': {
+            borderRadius: 1.5, minHeight: folder ? 445 : 250,
+            height: folder ? 'clamp(445px, calc(100dvh - 310px), 760px)' : 'auto',
+          },
+        }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center"
+          flexWrap="wrap" useFlexGap spacing={1}
+          sx={{ px: 2, py: 1.25, minHeight: 62, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={650}>
+              {folder ? '文件夹内容' : '共享文件'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              只读访问 · 浏览与下载
+            </Typography>
+          </Box>
+          {toolbarActions}
+        </Stack>
+        <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}
+          sx={{ px: 1.5, py: 1, minWidth: 0, minHeight: 54, borderBottom: 1, borderColor: 'divider' }}>
+          {folder && folderOpened && (
+            <>
+              <IconButton size="small" aria-label="返回上级文件夹"
+                disabled={!directoryControlsEnabled || path.length < 2}
+                onClick={() => onCrumbClick?.(path.length - 2)}>
+                <ArrowBackRoundedIcon fontSize="small" />
+              </IconButton>
+              <Breadcrumbs separator={<ChevronRightRoundedIcon fontSize="small" />}
+                aria-label="文件夹路径"
+                sx={{ flex: '1 1 230px', minWidth: 0, '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' },
+                  '& .MuiBreadcrumbs-li': { minWidth: 0 } }}>
+                {path.map((crumb, index) => (
+                  <Button key={crumb.id} type="button" size="small"
+                    disabled={pending || !canDownload || index === path.length - 1}
+                    onClick={() => onCrumbClick?.(index)}
+                    sx={{ textTransform: 'none', maxWidth: 230, minWidth: 0, overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{crumb.name}</Button>
+                ))}
+              </Breadcrumbs>
+              <IconButton size="small" aria-label="刷新文件夹" disabled={!directoryControlsEnabled || pending}
+                onClick={onRefresh}><RefreshRoundedIcon fontSize="small" /></IconButton>
+              <TextField size="small" value={pageFilter} onChange={(event) => setPageFilter(event.target.value)}
+                placeholder="筛选当前页" inputProps={{ 'aria-label': '筛选当前页文件' }}
+                onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }}
+                sx={{ width: 164, maxWidth: '100%' }} />
+            </>
+          )}
+          <Box sx={{ ml: folder && folderOpened ? 'auto' : 0 }}>{viewButtons}</Box>
+        </Stack>
+        {folder ? (
+          <Box data-xdrive-public-share-folder-browser aria-busy={pending}
+            sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 180 }}>
+            {folderOpened ? (
+              <Box role="region" aria-label="分享文件夹内容" aria-busy={pending}
+                sx={{ minHeight: 180, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                {rows}
+                {(hasPreviousPage || hasNextPage) && (
+                  <Stack direction="row" justifyContent="flex-end" spacing={1}
+                    sx={{ px: 2, py: 1.25, borderTop: 1, borderColor: 'divider' }}>
+                    <Button type="button" size="small" disabled={pending || !hasPreviousPage}
+                      onClick={onPreviousPage}>上一页</Button>
+                    <Button type="button" size="small" disabled={pending || !hasNextPage}
+                      onClick={onNextPage}>下一页</Button>
+                  </Stack>
+                )}
+              </Box>
+            ) : (
+              <Stack alignItems="center" justifyContent="center" spacing={1.5}
+                sx={{ flex: 1, minHeight: 260, px: 3, py: 4, textAlign: 'center' }}>
+                <FolderOpenRoundedIcon sx={{ fontSize: 44, color: 'text.secondary' }} />
+                <Typography variant="subtitle1" fontWeight={650}>浏览共享文件夹</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  使用只读文件管理器查看目录及文件，不会修改原始内容。
+                </Typography>
+                <XDriveActionButton intent="primary" type="button"
+                  disabled={!canDownload || pending} onClick={onBrowse}>浏览文件夹</XDriveActionButton>
+              </Stack>
+            )}
+          </Box>
+        ) : (
+          <Box data-xdrive-public-share-file-browser role="region"
+            aria-label="分享文件只读浏览"
+            sx={{ display: 'flex', flex: 1, minHeight: 82, minWidth: 0 }}>{rows}</Box>
+        )}
+        <Stack direction="row" justifyContent="space-between" alignItems="center"
+          flexWrap="wrap" spacing={1}
+          sx={{ px: 2, py: 1.1, minHeight: 40, borderTop: 1, borderColor: 'divider' }}>
+          <Typography variant="caption" color="text.secondary">
+            {folder && !folderOpened ? '只读共享目录'
+              : '当前页 ' + pageItems.length + ' 项' + (filter ? ' · 匹配 ' + visibleItems.length + ' 项' : '')}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">每页最多 100 项 · 仅分享范围</Typography>
+        </Stack>
+      </Box>
+      <Menu open={contextMenu !== null} onClose={() => setContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}>
+        <MenuItem disabled={!canDownload} onClick={() => {
+          const entry = contextMenu?.entry
+          setContextMenu(null)
+          if (entry) openEntry(entry)
+        }}>
+          {contextMenu?.entry.type === 'dir' ? '打开文件夹' : '下载文件'}
+        </MenuItem>
+      </Menu>
+    </>
   )
 }
