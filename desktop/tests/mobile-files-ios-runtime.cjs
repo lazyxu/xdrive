@@ -5333,3 +5333,28 @@ test('P109: permanent no-in-flow-feedback contract preserves real progress and a
     'Search/Trash genuine feedback stays independent')
   assert.equal(agents.split('## P109 · Transient Mobile Files feedback must not resize scroll owner').length, 2)
 })
+
+test('P111: Browse Home organization read failures float without resizing the mounted scroll owner', async () => {
+  let retries = 0
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    const overlay = find(h.view, 'data-mobile-files-feedback-overlay', true)
+    assert.equal(count(h.view, 'data-mobile-files-organization-error'), 0)
+    await h.update({ organizationError: '智能文件夹读取失败' })
+    const notice = find(h.view, 'data-mobile-files-organization-error', true)
+    assert.equal(notice.props.role, 'alert')
+    assert.equal(notice.parent, overlay)
+    assert.equal(notice.props.sx.pointerEvents, 'auto')
+    assert.match(textOf(notice.props.children), /智能文件夹读取失败/)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host,
+      'an async Browse Home error must not remount the original virtual scroll host')
+    const retry = h.view.root.findAll(node => node.props?.children === '重试' && node.props?.onClick)[0]
+    assert.ok(retry, 'real error must keep the original retry control')
+    await act(async () => { retry.props.onClick() })
+    assert.equal(retries, 1)
+    await h.update({ organizationError: undefined })
+    assert.equal(count(h.view, 'data-mobile-files-organization-error'), 0)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host,
+      'dismissing an async error must not remount or resize the scroll owner')
+  }, { props: { onRetryOrganization: () => { retries += 1 } } })
+})

@@ -7236,12 +7236,7 @@ export function XDriveMediaGallery({
                   : '尚无可定位日期')}
               </Typography>
             ) : null}
-            {showCollectionTimeScale && effectiveTimeScale === 'day' && dayJumpFeedback ? (
-              <Typography role="status" variant="caption" color="text.secondary"
-                sx={{ overflowWrap: 'anywhere' }}>
-                {dayJumpFeedback}
-              </Typography>
-            ) : null}
+            {/* Day-jump feedback is rendered in the fixed Gallery feedback owner. */}
             {showCollectionTimeScale && timelineReturnAnchor !== null ? (
               <Button
                 size="small"
@@ -7304,6 +7299,7 @@ export function XDriveMediaGallery({
           data-xdrive-gallery-search-feedback
           aria-live="polite"
           sx={{ display: compactGallery ? 'none' : 'flex' }}
+          style={{ position: 'relative' }}
         >
           <Box data-xdrive-gallery-query-quiet-feedback
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, maxWidth: '100%' }}>
@@ -7369,6 +7365,16 @@ export function XDriveMediaGallery({
               </Box>
             </Button>
           ) : null}
+          <Box data-xdrive-gallery-index-feedback sx={{
+            position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 2,
+            display: 'flex', flexDirection: 'column', gap: 0.25,
+            maxWidth: 'min(90vw, 620px)', maxHeight: 'min(36dvh, 240px)',
+            overflowY: 'auto', pointerEvents: 'none',
+            p: indexStatus || indexStatusError || searchActive ? 0.75 : 0,
+            bgcolor: indexStatus || indexStatusError || searchActive ? 'background.paper' : 'transparent',
+            boxShadow: indexStatus || indexStatusError || searchActive ? 2 : 'none',
+            borderRadius: 1,
+          }}>
           {indexStatus ? (
             <Typography variant="caption" color="text.secondary" data-xdrive-gallery-index-status>
               {'已识别资产索引：' + indexStatus.ready_assets.toLocaleString('zh-CN') +
@@ -7387,10 +7393,11 @@ export function XDriveMediaGallery({
             </Typography>
           ) : null}
           {indexStatusError ? (
-            <Typography variant="caption" color="error" data-xdrive-gallery-index-status-error>
+            <Typography role="alert" variant="caption" color="error" data-xdrive-gallery-index-status-error>
               {'索引检查失败：' + indexStatusError}
             </Typography>
           ) : null}
+          </Box>
           {appliedChips.some((chip) => chip.removable) && onClearFilters ? (
             <Button size="small" variant="text" onClick={onClearFilters}>
               清除已生效条件
@@ -7479,10 +7486,6 @@ export function XDriveMediaGallery({
         onClose={() => setSelectedReviewOpen(false)}
       />
 
-      {error ? (
-        <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
-      ) : null}
-
       {showMemoriesIndex ? (
         <XDriveMediaGalleryMemories
           memories={memories}
@@ -7509,10 +7512,6 @@ export function XDriveMediaGallery({
           indexStatusError={indexStatusError}
           onRequestIndexStatus={onRequestIndexStatus}
         />
-      ) : null}
-
-      {showAlbumIndex && syncFoldersError ? (
-        <XDriveStatusAlert tone="bad">{syncFoldersError}</XDriveStatusAlert>
       ) : null}
 
       {showAlbumIndex && syncFolders.length > 0 ? (
@@ -7723,7 +7722,12 @@ export function XDriveMediaGallery({
                   : null}
               </Box>
               {placesPageError ? (
-                <Typography role="alert" variant="caption" color="error">
+                <Typography data-xdrive-places-pagination-error role="alert"
+                  variant="caption" color="error" sx={{
+                    position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 2,
+                    pointerEvents: 'none', maxWidth: 'min(90vw, 520px)',
+                    p: 0.75, bgcolor: 'background.paper', borderRadius: 1, boxShadow: 2,
+                  }}>
                   {placesPageError}
                 </Typography>
               ) : null}
@@ -8973,6 +8977,39 @@ export function XDriveMediaGallery({
       </Dialog>
         </>
       )}
+
+      {/* Persistent owner, zero layout height: error/status transitions never
+          change the App frame, Gallery toolbar or mounted sparse photo wall. */}
+      <Box data-xdrive-gallery-floating-feedback sx={{
+        position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+        bottom: compactGallery
+          ? 'calc(156px + env(safe-area-inset-bottom, 0px))'
+          : 'calc(20px + env(safe-area-inset-bottom, 0px))',
+        width: 'min(calc(100vw - 24px), 560px)',
+        maxHeight: 'min(35dvh, 240px)', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 0.75,
+        pointerEvents: 'none', zIndex: theme => theme.zIndex.appBar + 2,
+      }}>
+        {error ? (
+          <Box data-xdrive-gallery-global-error role="alert">
+            <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+          </Box>
+        ) : null}
+        {showAlbumIndex && syncFoldersError ? (
+          <Box data-xdrive-gallery-sync-folders-error role="alert">
+            <XDriveStatusAlert tone="bad">{syncFoldersError}</XDriveStatusAlert>
+          </Box>
+        ) : null}
+        {!compactGallery && showCollectionTimeScale && effectiveTimeScale === 'day' && dayJumpFeedback ? (
+          <Typography data-xdrive-gallery-day-jump-feedback role="status"
+            variant="caption" sx={{
+              borderRadius: 1, bgcolor: 'background.paper', boxShadow: 2,
+              p: 1, overflowWrap: 'anywhere',
+            }}>
+            {dayJumpFeedback}
+          </Typography>
+        ) : null}
+      </Box>
 
     </Stack>
   )
