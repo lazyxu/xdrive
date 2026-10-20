@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
@@ -59,14 +59,19 @@ export function XDrivePublicShareReadOnlyExplorer({
   const folder = kind === 'dir'
   const currentFolderID = path.at(-1)?.id ?? 0
 
-  // A new accepted server page replaces the prior selection and local filter.
-  // No old 100k pages or independent thumbnails are retained in this UI.
-  useEffect(() => {
+  // Reset only when the server-accepted bounded page or owning folder changes.
+  // Repeated refreshes may return new arrays for the same authorized page:
+  // do not clear the current filter, selected row, or Properties dialog.
+  const acceptedPageIdentity = useMemo(
+    () => `${currentFolderID}:${items.length}:${items.slice(0, 100).map((item) => item.id).join(',')}`,
+    [currentFolderID, items],
+  )
+  useLayoutEffect(() => {
     setSelectedID(null)
     setPageFilter('')
     setContextMenu(null)
     setPropertiesEntry(null)
-  }, [items, currentFolderID])
+  }, [acceptedPageIdentity])
 
   const openEntry = (entry: PublicShareChild) => {
     if (!canDownload) return
