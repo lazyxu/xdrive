@@ -16,6 +16,8 @@ import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import {
   XDriveFileExplorerItemIcon,
   XDriveFileExplorerDetailsNameCell,
+  XDriveFileExplorerDetailsRowCell,
+  xDriveFileExplorerDetailsHeaderGeometry,
   XDriveFileExplorerGridTileContent,
   XDriveFileExplorerItemName,
   xDriveFileTypeLabel,
@@ -139,10 +141,7 @@ export function XDrivePublicShareReadOnlyExplorer({
       {view === 'details' && (
         <Box data-xdrive-public-share-details-header
           sx={{
-            display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 168px minmax(110px,160px) 118px 106px',
-            alignItems: 'center', px: 1.5, minHeight: xDriveFileExplorerDetailsHeaderHeight,
-            position: 'sticky', top: 0, zIndex: 1, borderBottom: 1,
-            borderColor: 'divider', bgcolor: 'background.default',
+            ...xDriveFileExplorerDetailsHeaderGeometry('minmax(0,1fr) 168px minmax(110px,160px) 118px 106px'),
             '@media (max-width: 620px)': {
               gridTemplateColumns: 'minmax(0,1fr) 92px',
               '& .xdrive-shared-file-updated': { display: 'none' },
@@ -201,11 +200,13 @@ export function XDrivePublicShareReadOnlyExplorer({
             } : {},
           }}>
           {view === 'details' ? (
-            <XDriveFileExplorerDetailsNameCell
-              compact={compactShareViewport}
-              visual={<XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={21} folderSize={22} />}
-              label={<XDriveFileExplorerItemName name={entry.name} grid={false} />}
-            />
+            <XDriveFileExplorerDetailsRowCell columnKey="name">
+              <XDriveFileExplorerDetailsNameCell
+                compact={compactShareViewport}
+                visual={<XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={21} folderSize={22} />}
+                label={<XDriveFileExplorerItemName name={entry.name} grid={false} />}
+              />
+            </XDriveFileExplorerDetailsRowCell>
           ) : (
             <XDriveFileExplorerGridTileContent
               thumbnailWidth={72}
@@ -216,15 +217,21 @@ export function XDrivePublicShareReadOnlyExplorer({
           )}
           {view === 'details' && (
             <>
-              <Typography className="xdrive-shared-file-updated" variant="body2" color="text.secondary" noWrap>
-                {entry.updated_at ? new Date(entry.updated_at).toLocaleString() : '—'}
-              </Typography>
-              <Typography className="xdrive-shared-file-type" variant="caption" color="text.secondary"
-                sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {xDriveFileTypeLabel(entry.name, entry.type)}
-              </Typography>
-              <Typography className="xdrive-shared-file-size" variant="caption" color="text.secondary"
-                textAlign="right">{entry.type === 'dir' ? '—' : formatBytes(entry.size)}</Typography>
+              <XDriveFileExplorerDetailsRowCell columnKey="updated">
+                <Typography className="xdrive-shared-file-updated" variant="body2" color="text.secondary" noWrap>
+                  {entry.updated_at ? new Date(entry.updated_at).toLocaleString() : '—'}
+                </Typography>
+              </XDriveFileExplorerDetailsRowCell>
+              <XDriveFileExplorerDetailsRowCell columnKey="type">
+                <Typography className="xdrive-shared-file-type" variant="caption" color="text.secondary"
+                  sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {xDriveFileTypeLabel(entry.name, entry.type)}
+                </Typography>
+              </XDriveFileExplorerDetailsRowCell>
+              <XDriveFileExplorerDetailsRowCell columnKey="size" rightAligned>
+                <Typography className="xdrive-shared-file-size" variant="caption" color="text.secondary"
+                  textAlign="right">{entry.type === 'dir' ? '—' : formatBytes(entry.size)}</Typography>
+              </XDriveFileExplorerDetailsRowCell>
             </>
           )}
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: view === 'grid' ? 'auto' : 0 }}>

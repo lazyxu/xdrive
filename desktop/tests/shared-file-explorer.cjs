@@ -53,7 +53,7 @@ test('shared FileExplorer uses configurable system-style density without breakin
   assert.ok(explorer.includes("viewPreferences.detailsDensity === 'compact'"), 'desktop details virtualization row height must still follow the persisted density')
   assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsHeaderHeight = 32'), 'shared header height should remain compact')
   assert.ok(explorer.includes('const detailsHeaderHeight = xDriveFileExplorerDetailsHeaderHeight'), 'Owner header must use same presentation token')
-  assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
+  assert.ok(explorer.includes('xDriveFileExplorerDetailsHeaderGeometry(detailsGridTemplate, detailsHeaderHeight)') && iconPresentation.includes('minHeight: headerHeight'), 'Details header geometry must be shared with the public read-only Explorer')
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
   assert.ok(explorer.includes("'& .MuiIconButton-root': { width: compactViewport ? 44 : 32, height: compactViewport ? 44 : 32"), 'navigation buttons should use 44px touch targets while preserving 32px desktop controls')
@@ -88,7 +88,10 @@ test('shared FileExplorer uses Windows-style compact navigation and command chro
 
 test('shared FileExplorer details view avoids admin-table chrome', () => {
   assert.ok(
-    explorer.includes("minHeight: detailsHeaderHeight,\n                alignItems: 'center',\n                px: 1.5,\n                bgcolor: 'background.default'"),
+    explorer.includes('xDriveFileExplorerDetailsHeaderGeometry(detailsGridTemplate, detailsHeaderHeight)') &&
+      iconPresentation.includes("alignItems: 'center' as const,") &&
+      iconPresentation.includes("bgcolor: 'background.default'") &&
+      iconPresentation.includes("borderBottom: 1"),
     'details header should use the quiet workspace surface',
   )
   assert.ok(explorer.includes("borderRadius: '4px'"), 'details rows should retain Explorer-style rounded surfaces')

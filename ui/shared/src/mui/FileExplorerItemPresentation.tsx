@@ -84,6 +84,46 @@ export function XDriveFileExplorerDetailsNameCell({
   )
 }
 
+// Neutral, layout-only Details cells shared by Owner and Share.
+// Mutations, session state and data loading are deliberately outside this leaf.
+export function XDriveFileExplorerDetailsRowCell({
+  columnKey, rightAligned = false, children,
+}: {
+  columnKey: string
+  rightAligned?: boolean
+  children: ReactNode
+}) {
+  return (
+    <Box role="cell" sx={{
+      minWidth: 0,
+      overflow: 'hidden',
+      position: columnKey === 'name' ? 'relative' : undefined,
+      textAlign: rightAligned ? 'right' : 'left',
+    }}>
+      {children}
+    </Box>
+  )
+}
+
+export function xDriveFileExplorerDetailsHeaderGeometry(gridTemplateColumns: string, headerHeight = xDriveFileExplorerDetailsHeaderHeight) {
+  return {
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 1,
+    display: 'grid' as const,
+    gridTemplateColumns,
+    minHeight: headerHeight,
+    alignItems: 'center' as const,
+    px: 1.5,
+    bgcolor: 'background.default',
+    borderBottom: 1,
+    borderColor: 'divider',
+    color: 'text.secondary',
+    fontSize: 12,
+    fontWeight: 500,
+  }
+}
+
 // Owner and public Share use one neutral Grid visual/title layout.
 // No authenticated API, mutation or capability is imported into this component.
 export function XDriveFileExplorerGridTileContent({
