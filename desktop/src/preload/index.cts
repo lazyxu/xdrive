@@ -575,6 +575,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cancel-device-backup-local-preview', requestID),
   saveDeviceBackupLocalSnapshot: (sourceID: number, requestID: string) =>
     ipcRenderer.invoke('agent:save-device-backup-local-snapshot', sourceID, requestID),
+  startDeviceBackupLocalFirstFile: (sourceID: number) =>
+    ipcRenderer.invoke('agent:start-device-backup-local-first-file', sourceID),
   cancelDeviceBackupLocalSnapshot: (requestID: string) =>
     ipcRenderer.invoke('agent:cancel-device-backup-local-snapshot', requestID),
   getDeviceBackupLocalDelta: (sourceID: number, requestID: string) =>

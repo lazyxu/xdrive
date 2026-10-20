@@ -233,6 +233,7 @@ import {
   type AgentLocalBoundBackupSchedule,
   type AgentLocalBackupPreview,
   type AgentLocalBackupSnapshot,
+  type AgentLocalBackupFirstFile,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
@@ -2388,6 +2389,18 @@ function registerIPCHandlers() {
       const found = localSnapshotRequests.has(key)
       localSnapshotRequests.get(key)?.abort()
       return { cancelled: found }
+    }, false))
+  // Only a credentialed owning Agent can run the one-shot real first-file
+  // transport. The renderer supplies the Source ID alone: never a path,
+  // digest, Root ID or operation key. No generic Source trigger fallback.
+  ipcMain.handle('agent:start-device-backup-local-first-file', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBackupFirstFile>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local first-file Source.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-first-file')
+      return requireAgentClient().localBoundBackupFirstFile(sourceID)
     }, false))
   // An advisory read-only local delta uses its own request registry.
   // Closing its dialog or changing account aborts Electron HTTP and Go.
