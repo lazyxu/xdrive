@@ -92,7 +92,8 @@ func TestCaddyUnobservedDiagnosticFlowsToInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	item = caddyStatusFromAdmin(t, s)
-	if item.Status != "unknown" || !strings.Contains(item.Detail, "状态快照缺失") {
+	if item.Status != "unknown" || !strings.Contains(item.Detail, "状态快照缺失") ||
+		!strings.Contains(item.Detail, "不代表网关未安装") {
 		t.Fatalf("missing Caddy snapshot must be visible without false readiness: %+v", item)
 	}
 }

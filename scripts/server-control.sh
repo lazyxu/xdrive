@@ -1478,13 +1478,58 @@ caddy_host_control_mark_runner() {
   fi
 }
 
-# This separate observer is needed ONLY when an older Host Control runner
+# A source-matched Host Control runner is NOT proof of a usable Caddy snapshot.
+# A long-running updater can keep the code marker current while not sampling.
+# This hint is scoped to a fixed sanitized file; it grants no Host control.
+caddy_host_snapshot_fresh() {
+  local dir="$1" snapshot modified now
+  snapshot="$dir/caddy-runtime-status.json"
+  [[ -f "$snapshot" && ! -L "$snapshot" ]] || return 1
+  modified="$(stat -c %Y -- "$snapshot" 2>/dev/null)" || return 1
+  now="$(date +%s)" || return 1
+  [[ "$modified" =~ ^[0-9]{1,12}$ && "$now" =~ ^[0-9]{1,12}$ ]] || return 1
+  # Match the Server's 45s freshness and 15s future-clock tolerance.
+  (( modified >= now - 45 && modified <= now + 15 ))
+}
+
+# The main runner, not the compatibility observer, writes this source-bound
+# pulse ONLY after its own fixed Caddy snapshot sampler has returned.
+# No pulse authorizes gateway actions or marks an admin revision applied.
+caddy_host_control_mark_main_sample() {
+  local dir="$1" sha marker tmp
+  sha="$(caddy_host_control_script_sha)" || return 1
+  marker="$(cat "$dir/caddy-runner-source.sha" 2>/dev/null)" || return 1
+  [[ "$marker" == "$BASHPID|$sha" ]] || return 1
+  tmp="$(mktemp "$dir/.caddy-main-sample.XXXXXX")" || return 1
+  if ! printf '%s|%s|%s\n' "$BASHPID" "$sha" "$(date +%s%N)" > "$tmp" ||
+      ! chmod 0660 "$tmp" || ! mv -f "$tmp" "$dir/caddy-main-sample.sha"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+# A new/fresh snapshot written by the observer is NOT evidence that the main
+# runner has resumed polling. Require a NEW pulse since observer ownership.
+caddy_host_control_main_sample_since() {
+  local dir="$1" pid="$2" baseline="$3" sha pulse
+  caddy_host_control_current_runner "$dir" "$pid" || return 1
+  sha="$(caddy_host_control_script_sha)" || return 1
+  pulse="$(cat "$dir/caddy-main-sample.sha" 2>/dev/null)" || return 1
+  local expected="$pid|$sha|" stamp
+  [[ "$pulse" != "$baseline" && "$pulse" == "$expected"* ]] || return 1
+  stamp="${pulse#"$expected"}"
+  [[ "$stamp" =~ ^[0-9]{16,20}$ ]]
+}
+
+# The read-only observer also restores missing/stale snapshots from a
+# same-source runner which is temporarily unable to sample the gateway.
+# This separate observer was originally needed when an older Host Control runner
 # is still alive after a script upgrade. It never calls Compose up/down,
 # restarts Caddy, edits .env, reveals credentials or consumes Host Pending.
 # flock guarantees at most one supplemental Caddy-only observer.
 caddy_compat_observe_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh caddy-observe" >&2; return 2; }
-  local dir sha current pid i
+  local dir sha current pid i main_pulse_at_entry
   command -v flock >/dev/null 2>&1 || return 1
   dir="$(prepare_dir)"
   sha="$(caddy_host_control_script_sha)" || return 1
@@ -1497,6 +1542,7 @@ caddy_compat_observe_cmd() {
   CADDY_OBSERVER_PID_FILE="$dir/caddy-observer.pid"
   trap 'if [[ -n "${CADDY_OBSERVER_PID_FILE:-}" && "$(cat "$CADDY_OBSERVER_PID_FILE" 2>/dev/null || true)" == "$BASHPID" ]]; then rm -f -- "$CADDY_OBSERVER_PID_FILE"; fi' EXIT
   trap 'exit 0' INT TERM
+  main_pulse_at_entry="$(cat "$dir/caddy-main-sample.sha" 2>/dev/null || true)"
   while true; do
     [[ ! -e "$dir/caddy-observer-stop" ]] || return 0
     current="$(caddy_host_control_script_sha)" || current=""
@@ -1508,7 +1554,8 @@ caddy_compat_observe_cmd() {
     fi
     pid="$(cat "$dir/runner.pid" 2>/dev/null || true)"
     if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null &&
-        caddy_host_control_current_runner "$dir" "$pid"; then
+        caddy_host_control_main_sample_since "$dir" "$pid" "$main_pulse_at_entry" &&
+        caddy_host_snapshot_fresh "$dir"; then
       return 0
     fi
     if ! caddy_host_refresh; then
@@ -1535,7 +1582,7 @@ start_caddy_compat_observer() {
   # sanitized Caddy observations; neither can terminate the other.
   nohup env XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" caddy-observe \
     >>"$LOG_DIR/caddy-observer.log" 2>&1 </dev/null 9>&- &
-  echo "Caddy read-only observer launched for the older Host Control runtime."
+  echo "Caddy read-only observer launched for missing/stale Caddy evidence or older Host Control runtime."
 }
 
 serve_cmd() {
@@ -1635,7 +1682,9 @@ serve_cmd() {
   (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
   refresh_storage_host_inventory || true
   media_worker_control_refresh
-  caddy_host_refresh || true
+  if caddy_host_refresh; then
+    caddy_host_control_mark_main_sample "$dir" || true
+  fi
   photo_intelligence_host_refresh || true
   photo_host_control_refresh || true
   last_storage_inventory_at="$(date +%s)"
@@ -1650,7 +1699,9 @@ serve_cmd() {
     photo_host_control_refresh || true
     now="$(date +%s)"
     if (( now - last_caddy_observation_at >= 15 )); then
-      caddy_host_refresh || true
+      if caddy_host_refresh; then
+        caddy_host_control_mark_main_sample "$dir" || true
+      fi
       photo_intelligence_host_refresh || true
       last_caddy_observation_at="$now"
     fi
@@ -1673,7 +1724,10 @@ start_cmd() {
     # A previously installed Caddy may be healthy while an older Bash runner
     # still emits heartbeat but has NO caddy-runtime-status.json producer.
     # Never interrupt that process (it could be in a live server update).
-    if ! caddy_host_control_current_runner "$dir" "$pid"; then
+    # Even a current-source Runner needs a read-only repair when the fixed
+    # Caddy snapshot is absent or stale; its code marker is not health proof.
+    if ! caddy_host_control_current_runner "$dir" "$pid" ||
+        ! caddy_host_snapshot_fresh "$dir"; then
       start_caddy_compat_observer "$dir" || true
     fi
     echo "Host control already running (pid $pid)."

@@ -418,12 +418,85 @@ done
 test ! -e "$dir/caddy-observer.pid"
 test -f "$dir/runner.pid"
 test -f "$dir/active.json"
-# A current-source Host Control daemon needs no duplicate Caddy observer.
+# A current-source Runner's PID+SHA is NOT evidence of live Caddy sampling.
+# A missing snapshot must trigger one bounded read-only recovery sample even
+# if that Runner is busy with an unrelated update (which must stay untouched).
 printf '%s|%s\n' "$BASHPID" "$(caddy_host_control_script_sha)" > "$dir/caddy-runner-source.sha"
 caddy_host_control_current_runner "$dir" "$BASHPID"
+export XD_CADDY_OBSERVER_ONCE=1
 rm -f -- "$status"
 start_cmd
+for _ in {1..100}; do
+  [[ -s "$status" ]] && break
+  sleep 0.1
+done
+[[ -s "$status" ]] || { echo "current Runner left missing Caddy snapshot unrepaired" >&2; exit 1; }
+test "$(json_value "$status" state)" = healthy
+test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
+for _ in {1..80}; do
+  [[ ! -e "$dir/caddy-observer.pid" ]] && break
+  sleep 0.1
+done
 test ! -e "$dir/caddy-observer.pid"
-test ! -e "$status"
+
+# An expired otherwise-valid snapshot is also recovered, with the same
+# fixed Caddy and no control operation, regardless of Runner source marker.
+touch -d '2 minutes ago' "$status"
+! caddy_host_snapshot_fresh "$dir"
+start_cmd
+for _ in {1..100}; do
+  caddy_host_snapshot_fresh "$dir" && break
+  sleep 0.1
+done
+caddy_host_snapshot_fresh "$dir"
+test "$(json_value "$status" state)" = healthy
+for _ in {1..80}; do
+  [[ ! -e "$dir/caddy-observer.pid" ]] && break
+  sleep 0.1
+done
+test ! -e "$dir/caddy-observer.pid"
+
+# A same-version Runner can keep updating heartbeat throughout a long
+# upgrade without itself polling Caddy. The supplemental observer must NOT
+# exit just because its OWN first write produced a fresh snapshot.
+unset XD_CADDY_OBSERVER_ONCE
+rm -f -- "$status" "$dir/caddy-main-sample.sha"
+start_cmd
+for _ in {1..100}; do
+  [[ -s "$status" && -f "$dir/caddy-observer.pid" ]] && break
+  sleep 0.1
+done
+test -f "$dir/caddy-observer.pid"
+test "$(json_value "$status" state)" = healthy
+! caddy_host_control_main_sample_since "$dir" "$BASHPID" ""
+# Let the observer pass one normal 15-second renewal interval.
+for _ in {1..170}; do
+  [[ -f "$dir/caddy-observer.pid" ]] || { echo "observer exited on its own snapshot before main resumed" >&2; exit 1; }
+  sleep 0.1
+done
+test -f "$dir/caddy-observer.pid"
+test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
+test -f "$dir/runner.pid"
+# Once THIS main Runner actually emits a source-bound sample, the separate
+# observer must hand off cooperatively without touching the active update.
+caddy_host_control_mark_main_sample "$dir"
+caddy_host_control_main_sample_since "$dir" "$BASHPID" ""
+for _ in {1..180}; do
+  [[ ! -e "$dir/caddy-observer.pid" ]] && break
+  sleep 0.1
+done
+test ! -e "$dir/caddy-observer.pid"
+test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
+
+# When the source is current AND the snapshot is fresh, do not launch a
+# redundant probe or churn the snapshot file.
+original_snapshot_mtime="$(stat -c %y -- "$status")"
+start_cmd
+sleep 0.2
+test ! -e "$dir/caddy-observer.pid"
+test "$(stat -c %y -- "$status")" = "$original_snapshot_mtime"
+test -f "$dir/runner.pid"
+test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
+unset XD_CADDY_OBSERVER_ONCE
 rm -f -- "$dir/active.json" "$dir/runner.pid" "$dir/caddy-runner-source.sha"
-echo "Caddy fixed runtime health, process-generation and double config-sample fences, TLS, startup Env, read-only legacy runner compatibility, fail-closed privacy: OK"
+echo "Caddy fixed runtime health, process-generation and double config-sample fences, TLS, startup Env, read-only legacy/current-runner sustained snapshot recovery + main-sampler handoff, fail-closed privacy: OK"
