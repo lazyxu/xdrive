@@ -108,6 +108,12 @@ func (d *localPushFirstLeafDriver) Stage(ctx context.Context, s localpushrunner.
 	if err := d.Check(ctx, s); err != nil {
 		return empty, err
 	}
+	// A newly constructed owning Agent must durably claim this Source's
+	// first Stage slot BEFORE opening or transmitting original bytes.
+	// Crash, lost HTTP ACK and ambiguous Stage remain quarantined.
+	if err := reserveFreshLocalPushStageAdmission(ctx, d.configDir, d.requestScope, d.grant); err != nil {
+		return empty, errLocalPushDriverDenied
+	}
 	staged, err := localpushstage.StageVerifiedNativeOriginalBytes(d.api, ctx, d.configDir, d.grant,
 		s.Revision, d.proof, s.RelativePath, s.ContentSHA256)
 	if err != nil || staged.SourceID != s.SourceID || staged.Revision != s.Revision ||
