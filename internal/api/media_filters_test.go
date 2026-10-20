@@ -301,3 +301,37 @@ func TestMediaGallerySortClausesStable(t *testing.T) {
 		}
 	}
 }
+
+// A4: present-but-empty filters are not an omission. The Server must reject
+// ambiguities before the existing authenticated Media Range SQL begins.
+func TestMediaGeoModesRejectPresenceAmbiguity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		query string
+		valid bool
+	}{
+		{query: "nearby=0,0,1", valid: true},
+		{query: "bbox=179,-1,-179,1", valid: true},
+		{query: "nearby=0,0,1&bbox=0,0,1,1"},
+		{query: "nearby=&bbox=0,0,1,1"},
+		{query: "nearby=0,0,1&bbox="},
+		{query: "nearby="},
+		{query: "bbox="},
+		{query: "nearby=0,0,1&nearby=0,0,2"},
+		{query: "bbox=0,0,1,1&bbox=0,0,1,1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest("GET", "/api/v1/media/items?"+tc.query, nil)
+			query, ok := mediaQueryFromRequest(c)
+			if ok != tc.valid || (ok && query.Geo == nil) {
+				t.Fatalf("parsed=%v expected=%v geo=%+v status=%d", ok, tc.valid, query.Geo, rec.Code)
+			}
+			if !tc.valid && rec.Code != http.StatusBadRequest {
+				t.Fatalf("invalid mode status=%d", rec.Code)
+			}
+		})
+	}
+}

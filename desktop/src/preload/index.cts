@@ -87,6 +87,8 @@ const agent = Object.freeze({
     person?: string
     person_identity?: string
     place?: string
+    nearby?: string
+    bbox?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaItemRange: (
@@ -111,6 +113,8 @@ const agent = Object.freeze({
     person?: string
     person_identity?: string
     place?: string
+    nearby?: string
+    bbox?: string
   } = {},
     requestID?: string,
   ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query, requestID),
@@ -133,6 +137,8 @@ const agent = Object.freeze({
       person?: string
       person_identity?: string
       place?: string
+      nearby?: string
+      bbox?: string
     } = {},
     albumID = '',
   ) => ipcRenderer.invoke('agent:get-media-facets', query, albumID),

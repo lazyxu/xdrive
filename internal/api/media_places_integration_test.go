@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/geoquery"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/driver/postgres"
@@ -174,7 +175,35 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("invalid returned place id %q", singapore.ID)
 	}
+
 	server := &Server{DB: db}
+	nearSelection, err := geoquery.Parse("1.3521,103.8198,5", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nearRange, err := server.queryMediaItemRange(
+		context.Background(), owner.ID, mediaQueryOptions{Geo: nearSelection}, "", 10, 0)
+	if err != nil || nearRange.TotalCount != 2 || len(nearRange.Items) != 2 {
+		t.Fatalf("nearby WGS84 ranged count=%+v err=%v", nearRange, err)
+	}
+	bboxSelection, err := geoquery.Parse("", "103.8,1.3,103.9,1.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bboxRange, err := server.queryMediaItemRange(
+		context.Background(), owner.ID, mediaQueryOptions{Geo: bboxSelection}, "", 1, 0)
+	if err != nil || bboxRange.TotalCount != 2 || len(bboxRange.Items) != 1 {
+		t.Fatalf("bounded bbox ranged count=%+v err=%v", bboxRange, err)
+	}
+	emptySelection, err := geoquery.Parse("0,0,1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyRange, err := server.queryMediaItemRange(
+		context.Background(), owner.ID, mediaQueryOptions{Geo: emptySelection}, "", 10, 0)
+	if err != nil || emptyRange.TotalCount != 0 || len(emptyRange.Items) != 0 {
+		t.Fatalf("empty nearby range=%+v err=%v", emptyRange, err)
+	}
 	items, err := server.queryMediaItems(
 		context.Background(),
 		owner.ID,

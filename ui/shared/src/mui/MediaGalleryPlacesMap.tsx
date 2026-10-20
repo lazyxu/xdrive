@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Autocomplete, Box, Button, Chip, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import type {
   MediaPlaceFacet,
   MediaPlacesViewportBounds,
@@ -40,6 +40,8 @@ export function XDriveMediaGalleryPlacesMap({
   activePlaceID,
   focusPlaceID,
   onOpenPlace,
+  onOpenNearby,
+  onOpenViewportPhotos,
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -61,8 +63,11 @@ export function XDriveMediaGalleryPlacesMap({
   activePlaceID?: string
   focusPlaceID?: string
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
+  onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
+  const [nearbyRadiusKM, setNearbyRadiusKM] = useState(5)
   const [nativeMapReady, setNativeMapReady] = useState(false)
   const [serverNativeAuthorized, setServerNativeAuthorized] = useState(false)
   useEffect(() => {
@@ -105,6 +110,15 @@ export function XDriveMediaGalleryPlacesMap({
   const showingNative = (canMountNativePhoto || canMountLegacy) && nativeMapReady
 
   const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
+  const viewportLongitudeSpan = viewportBounds ? (viewportBounds.east > viewportBounds.west
+    ? viewportBounds.east - viewportBounds.west
+    : 360 - (viewportBounds.west - viewportBounds.east)) : Infinity
+  // Native JSAPI4 bounds are BD-09, not the static WGS84 camera.
+  // The last static viewport can remain cached after native mount: never
+  // silently query that stale range as if it matched the live native map.
+  const boundedWGS84Viewport = Boolean(!showingNative && viewportBounds && viewportLongitudeSpan > 0 &&
+    viewportLongitudeSpan <= 20 && viewportBounds.north - viewportBounds.south > 0 &&
+    viewportBounds.north - viewportBounds.south <= 20)
   const [viewportOffset, setViewportOffset] = useState(
     () => xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.viewportOffset : 0,
   )
@@ -255,6 +269,40 @@ export function XDriveMediaGalleryPlacesMap({
           </Button>
         ) : null}
       </Stack>
+      {(onOpenNearby || onOpenViewportPhotos) ? (
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
+          alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ px: 1.5, pb: 1.5 }}
+          data-xdrive-gallery-nearby-a4>
+          {onOpenNearby ? (
+            <>
+              <TextField select size="small" label="附近半径" value={nearbyRadiusKM}
+                onChange={(event) => setNearbyRadiusKM(Number(event.target.value))}
+                sx={{ minWidth: 132 }}>
+                {[1, 5, 25, 100].map(km => <MenuItem key={km} value={km}>{km} 公里</MenuItem>)}
+              </TextField>
+              <Button size="small" variant="contained" sx={{ minHeight: 44 }}
+                disabled={!selectedPlace || !Number.isFinite(selectedPlace.sample_latitude) ||
+                  !Number.isFinite(selectedPlace.sample_longitude) ||
+                  Math.abs(selectedPlace.sample_latitude!) > 90 ||
+                  Math.abs(selectedPlace.sample_longitude!) > 180}
+                onClick={() => { if (selectedPlace) onOpenNearby(selectedPlace, nearbyRadiusKM) }}
+                data-xdrive-gallery-nearby-photos>
+                查看附近照片
+              </Button>
+            </>
+          ) : null}
+          {onOpenViewportPhotos ? (
+            <Button size="small" variant="outlined" sx={{ minHeight: 44 }}
+              disabled={!boundedWGS84Viewport} data-xdrive-gallery-bbox-photos
+              onClick={() => { if (viewportBounds && boundedWGS84Viewport) onOpenViewportPhotos(viewportBounds) }}>
+              当前地图范围照片
+            </Button>
+          ) : null}
+          <Typography variant="caption" color="text.secondary">
+            仅筛选自己的真实 GPS 媒体；精确数量及 Viewer 使用同一 Server Range。范围太大时请放大地图。
+          </Typography>
+        </Stack>
+      ) : null}
       {onOpenSecureDesktopMap ? (
         <Box sx={{ px: 1.5, pb: 1.25 }}>
           <Button variant="outlined" size="small" onClick={onOpenSecureDesktopMap}
