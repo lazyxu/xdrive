@@ -125,6 +125,8 @@ type Props = {
   pathValue?: string
   onPathSubmit?: (path: string) => boolean | void | Promise<boolean | void>
   onRestoreFolder: (id: number) => Promise<boolean | void>
+  /** Notify the original Web navigation owner if the user abandons an unverified saved restore. */
+  onAbandonSavedFolderRestore?: () => void
   onOpenItem: (item: XDriveFileExplorerItem, parentID?: number) => boolean | void | Promise<boolean | void>
   onQuickLookItem?: (item: XDriveFileExplorerItem, parentID?: number) => void
   onOpenError: (error: unknown) => void
@@ -512,7 +514,10 @@ export default function MobileFiles(props: Props) {
   const restoreTaskRef = useRef<{
     id: number; storageKey: string; intent: number; promise: Promise<boolean | void>
   } | null>(null)
-  const acceptedResumeRef = useRef<string | null>(null)
+  const acceptedResumeRef = useRef<string | null>(
+    initial.folderID !== null && committedFolderID === initial.folderID &&
+    Boolean(props.virtualCollection) && !(props.directoryLoading ?? props.loading)
+      ? storageKey + ':' + initial.folderID : null)
   const holdRef = useRef<{
     id: number; item: XDriveFileExplorerItem; x: number; y: number; timer: number; held: boolean; moved: boolean
   } | null>(null)
@@ -876,6 +881,13 @@ export default function MobileFiles(props: Props) {
     const requestedID = props.requestedDirectoryID
     if (!requestedID || requestedID === lastRequestedDirectoryRef.current) return
     lastRequestedDirectoryRef.current = requestedID
+    // App mirroring a *just-accepted* saved resume to ?dir= is an
+    // acknowledgement, not a second user navigation: never scroll it to 0.
+    if (directoryID === requestedID &&
+        acceptedResumeRef.current === storageKey + ':' + requestedID) {
+      acceptedResumeRef.current = null
+      return
+    }
     navigationIntentRef.current += 1
     // The URL is an intent, NOT an authorized directory commit. While the
     // shared Web workspace awaits its first counted range, keep the old
@@ -896,7 +908,7 @@ export default function MobileFiles(props: Props) {
     setScrollTop(0)
     if (scrollHostRef.current) scrollHostRef.current.scrollTop = 0
     persist({ section: 'browse', folderID: requestedID, scrollTop: 0 })
-  }, [props.requestedDirectoryID, directoryID, section, browseHome, ready, scrollTop, persist])
+  }, [props.requestedDirectoryID, directoryID, section, browseHome, ready, scrollTop, storageKey, persist])
 
   useLayoutEffect(() => {
     // CloudFiles GET is the receipt owner. "props.loading" also includes
@@ -1417,7 +1429,13 @@ export default function MobileFiles(props: Props) {
     props.onClearSearch()
     return true
   }
+  const abandonSavedFolderResumeIfPending = () => {
+    if (!ready && initial.folderID !== null && !props.requestedDirectoryID) {
+      props.onAbandonSavedFolderRestore?.()
+    }
+  }
   const beginBrowse = (id: number | null = null) => {
+    abandonSavedFolderResumeIfPending()
     abandonPendingGlobalSearch()
     pendingPathOriginRef.current = null
     pendingBrowseRootRef.current = null
@@ -1558,6 +1576,7 @@ export default function MobileFiles(props: Props) {
     }
     navigationIntentRef.current += 1
     if (!ready && initial.folderID !== null) {
+      abandonSavedFolderResumeIfPending()
       // Explicit rail selection abandons a cold saved-folder resume. Never
       // strand Browse on the old pending ticket or show its stale root data.
       // Keep the saved folder ID/anchor for the next genuine app opening.
@@ -1603,6 +1622,7 @@ export default function MobileFiles(props: Props) {
     persist({ section: returnSection })
   }
   const launchGlobalSearch = (action: () => void) => {
+    abandonSavedFolderResumeIfPending()
     flushBrowseScroll()
     if (!props.searchActive) {
       searchReturnHomeRef.current = browseHome
