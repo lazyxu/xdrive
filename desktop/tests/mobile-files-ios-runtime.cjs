@@ -4877,3 +4877,86 @@ test('P89: rejected Search row activation and later stale response cannot switch
     items: [found], virtualCollection: searchRange, onOpenItem: () => activation,
   } })
 })
+
+
+test('P104 real Mobile Quick Access navigation commits on current CloudFiles Range despite an unrelated long FileOperation', async () => {
+  let activations = 0
+  const target = { id: 42, name: '后台操作期间的文件夹', kind: 'dir' }
+  const rangeItems = [{ id: 421, name: '文件.jpg', kind: 'file', revision: 1 }]
+  const directory = {
+    itemCount: 1,
+    interactionKey: 'current-owner:directory-42:counted-first-range',
+    loadedItems: new Map([[0, rangeItems[0]]]),
+    itemAt: index => rangeItems[index],
+    onRangeChange() {},
+    groups: [],
+  }
+  await withView(async h => {
+    const title = h.view.root.findAll(node => node.props?.['data-mobile-files-collection-title'] &&
+      node.props?.title === target.name)
+    assert.equal(title.length, 1)
+    const row = title[0].parent?.parent
+    assert.equal(row?.props.role, 'button')
+    await act(async () => { row.props.onClick() })
+    assert.equal(activations, 1)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'Quick Access click is only intent, not permission to navigate')
+
+    // Before the authenticated GET settles, even a tentative new crumb and
+    // virtual slot must not clear the old Home.
+    await h.update({
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: target.name }],
+      items: rangeItems, virtualCollection: directory,
+      loading: true, directoryLoading: true,
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'pending real directory GET preserves the prior accepted presentation')
+
+    // CloudFiles first counted Range arrives, but an independent Copy/Upload
+    // operation stays busy. The old composite busy is *not* a navigation lock.
+    await h.update({ loading: true, directoryLoading: false })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0,
+      'verified directory commits before unrelated long operation completes')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    const persisted = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(persisted.folderID, 42)
+    assert.equal(persisted.scrollTop, 0)
+    const statuses = h.view.root.findAll(node => Object.hasOwn(
+      node.props ?? {}, 'data-mobile-files-arrangement-status'))
+    assert.equal(statuses.length, 1)
+    const status = statuses[0]
+    assert.equal(status.props.sx.display, 'none',
+      'normal directory navigation must have no transient Loading caption')
+
+    await h.update({ loading: false, directoryLoading: false })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0,
+      'background operation completion cannot trigger another navigation')
+  }, { props: {
+    quickAccess: [target],
+    directoryLoading: false,
+    onOpenQuickAccess: async () => { activations += 1; return true },
+  } })
+})
+
+test('P104 source-exact Web/Mobile Owner-only navigation gates retain independent real progress', () => {
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const commit = mobile.slice(
+    mobile.indexOf('  useLayoutEffect(() => {\n    // CloudFiles GET is the receipt owner.'),
+    mobile.indexOf('  useLayoutEffect(() => {\n    // An identical ResizeObserver'),
+  )
+  assert.ok(commit.length > 800)
+  assert.equal((commit.match(/props\.virtualCollection && !ownerDirectoryLoading/g) || []).length, 3)
+  assert.ok(commit.includes('!props.trashActive && !props.searchActive && !ownerDirectoryLoading &&'))
+  assert.ok(commit.includes('props.requestedDirectoryID, props.virtualCollection, ownerDirectoryLoading,'))
+  assert.equal(commit.includes('!props.loading'), false,
+    'composite busy can never be the authorized directory receipt boundary')
+  assert.ok(mobile.includes('const ownerDirectoryLoading = props.directoryLoading ?? props.loading'))
+  assert.ok(web.includes('directoryLoading={loading}'))
+  assert.ok(web.includes('loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}'))
+  assert.ok(mobile.includes('XDriveFileExplorerThumbnail'))
+  assert.ok(mobile.includes('showRangeLoading'))
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  assert.equal(agents.split('## P104 · Mobile Files directory receipt independent from background operations').length, 2)
+})

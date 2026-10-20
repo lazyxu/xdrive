@@ -10,20 +10,57 @@ const { act } = Renderer
 const root = path.resolve(__dirname, '../..')
 const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 
-function realDeferredHook() {
+function realDeferredHook(clock) {
   const transpiled = ts.transpileModule(read('ui/shared/src/mui/useDeferredLoading.ts'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const mod = { exports: {} }
-  new Function('module', 'exports', 'require', transpiled)(mod, mod.exports, name => {
+  new Function('module', 'exports', 'require', 'globalThis', transpiled)(mod, mod.exports, name => {
     if (name === 'react') return React
     throw Error('Unexpected deferred-hook dependency ' + name)
-  })
+  }, clock)
   return mod.exports.useXDriveDeferredLoading
 }
 
+// Drive the real hook's timers through a local lexical globalThis, never
+// mock Node timers used by other concurrently scheduled desktop tests. A 5ms
+// wall-clock assertion after React act() can legitimately fire before the
+// first assertion on a busy runner and incorrectly fail a correct first frame.
+function controlledDeferredClock() {
+  let now = 0
+  let id = 0
+  const tasks = new Map()
+  return {
+    setTimeout(callback, ms) {
+      const ticket = ++id
+      tasks.set(ticket, { at: now + ms, callback })
+      return ticket
+    },
+    clearTimeout(ticket) { tasks.delete(ticket) },
+    advance(ms) {
+      const until = now + ms
+      while (true) {
+        let dueTicket = null
+        let due = null
+        for (const [ticket, task] of tasks) {
+          if (task.at <= until && (!due || task.at < due.at)) {
+            dueTicket = ticket
+            due = task
+          }
+        }
+        if (!due) break
+        tasks.delete(dueTicket)
+        now = due.at
+        due.callback()
+      }
+      now = until
+    },
+  }
+}
+
 test('P89 original delayed hook never reuses a visual spinner across same-ID retries, changed delays or generations', async () => {
-  const useDeferred = realDeferredHook()
+  const clock = controlledDeferredClock()
+  const useDeferred = realDeferredHook(clock)
   const paints = []
   function Probe({ pending, generation, delay }) {
     const visible = useDeferred(pending, generation, delay)
@@ -44,17 +81,21 @@ test('P89 original delayed hook never reuses a visual spinner across same-ID ret
       renderer = Renderer.create(React.createElement(Probe, first))
     })
     assert.equal(renderer.root.findByType('output').children[0], 'quiet')
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    await act(async () => { clock.advance(5) })
     assert.equal(renderer.root.findByType('output').children[0], 'shown')
     await updateQuiet({ pending: false, generation: 7, delay: 5 }, 'completed read')
     await updateQuiet({ pending: true, generation: 7, delay: 5 }, 'same-ID retry')
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    await act(async () => { clock.advance(5) })
     assert.equal(renderer.root.findByType('output').children[0], 'shown')
     await updateQuiet({ pending: true, generation: 7, delay: 5000 }, 'same-ID changed delay')
     await updateQuiet({ pending: true, generation: 8, delay: 5000 }, 'changed request generation')
     await updateQuiet({ pending: true, generation: 8, delay: 5 }, 'shorter delay after switch')
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    await act(async () => { clock.advance(5) })
     assert.equal(renderer.root.findByType('output').children[0], 'shown')
+    await updateQuiet({ pending: false, generation: 8, delay: 5 }, 'terminal completion')
+    await act(async () => { clock.advance(10_000) })
+    assert.equal(renderer.root.findByType('output').children[0], 'quiet',
+      'cancelled old 5000ms timer cannot revive a completed request')
   } finally {
     if (renderer) await act(async () => renderer.unmount())
   }

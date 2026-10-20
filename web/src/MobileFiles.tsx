@@ -859,24 +859,27 @@ export default function MobileFiles(props: Props) {
   }, [props.requestedDirectoryID, directoryID, section, browseHome, ready, scrollTop, persist])
 
   useLayoutEffect(() => {
+    // CloudFiles GET is the receipt owner. "props.loading" also includes
+    // Search and durable FileOperation busy: upload/copy/delete/sync progress
+    // must NOT postpone a folder whose first counted Range already committed.
     const pendingRoot = pendingBrowseRootRef.current
     const homeRootCommit = Boolean(pendingRoot &&
       pendingRoot.intent === navigationIntentRef.current &&
       pendingRoot.rootID === directoryID &&
-      props.virtualCollection && !props.loading)
+      props.virtualCollection && !ownerDirectoryLoading)
     const pendingExternal = pendingExternalDirectoryRef.current
     const externalDirectoryCommit = Boolean(pendingExternal &&
       pendingExternal.intent === navigationIntentRef.current &&
       pendingExternal.directoryID === directoryID &&
       !pendingExternal.alreadyCommitted &&
       !props.trashActive && !props.searchActive &&
-      props.virtualCollection && !props.loading)
+      props.virtualCollection && !ownerDirectoryLoading)
     const pendingRow = pendingRowDirectoryRef.current
     const rowDirectoryCommit = Boolean(pendingRow &&
       pendingRow.intent === navigationIntentRef.current &&
       pendingRow.directoryID === directoryID &&
       !props.trashActive && !props.searchActive &&
-      props.virtualCollection && !props.loading &&
+      props.virtualCollection && !ownerDirectoryLoading &&
       props.virtualCollection.interactionKey !== pendingRow.previousRangeKey)
     // The new different-folder crumb commits only after the accepted first
     // Range. Same-directory paths cannot use interactionKey as a generation:
@@ -884,7 +887,7 @@ export default function MobileFiles(props: Props) {
     const pendingPath = pendingPathOriginRef.current
     const pathCommit = Boolean(pendingPath &&
       pendingPath.intent === navigationIntentRef.current &&
-      !props.trashActive && !props.searchActive && !props.loading &&
+      !props.trashActive && !props.searchActive && !ownerDirectoryLoading &&
       (pendingPath.directoryID !== directoryID ||
        acceptedPathIntent === pendingPath.intent))
     // A Home/Recent/Quick Access/Search/path ticket must not reset the scroll
@@ -930,7 +933,7 @@ export default function MobileFiles(props: Props) {
     setScrollTop(0)
     if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
   }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
-    props.requestedDirectoryID, props.virtualCollection, props.loading,
+    props.requestedDirectoryID, props.virtualCollection, ownerDirectoryLoading,
     acceptedPathIntent, initial.folderID, persist])
 
   useLayoutEffect(() => {

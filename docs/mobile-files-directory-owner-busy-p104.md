@@ -1,0 +1,12 @@
+# P104 · Independent CloudFiles navigation receipt under durable operations
+
+## Diagnosis
+The real `WebFileExplorer` adapter passes two distinct signals to the same Mobile Files presentation: `directoryLoading` from the authenticated CloudFiles first-Range GET, and composite `loading` which also includes Search and `fileOperationBusy`. Existing cold-directory error detection already uses `directoryLoading`, but **Home/Recent/Quick Access/row/path visual commit** still required `!props.loading`. Therefore a long-running Copy, Upload or Delete can prevent a genuinely verified destination from appearing until unrelated operation work ends. The user sees the old screen and then a delayed jump; this is not legitimate directory loading.
+
+## Correction
+The original Mobile Files `useLayoutEffect` now uses `!ownerDirectoryLoading` for root, external, row and typed-path commits. The boolean is derived from the original real CloudFiles `props.directoryLoading ?? props.loading`; the latter remains compatible with callers without a dedicated owner signal. Real first Range, crumbs, same-session request/intent, and (for row) changed virtual interactionKey are still required. Composite busy continues to regulate genuine operation commands and show actual Search / populated Trash feedback, and thumbnail/video/Live/transfer progress remain independent. The existing one 52px App header, single virtual list/scroll host and prepaint scroll reanchor are unchanged.
+
+## Validation
+Mount ORIGINAL `MobileFiles` from `desktop/tests/mobile-files-ios-runtime.cjs`: tap a Quick Access directory, hold current owner GET while mock parent already supplies destination crumbs, verify Home remains. Commit an authenticated nonempty counted first Range with `directoryLoading=false` while composite `loading=true` (unrelated durable operation) and assert destination, saved directory, one scroll host, no temporary Loading. Finish unrelated operation and assert no second transition. Source-exact guard checks all four commit routes and actual Web adapter separate props; keep P69, P78 and P88 oracles. Reuse current Web/Desktop/Server API and 100k virtualization; no Go cancellation or throughput changes.
+
+Built Chromium 375/390/899px, physical iOS/Android/installed PWA, weak WAN and actual 100k CLS/FPS must be marked NOT RUN until measured. A full accurate-head CI and fresh clean mergeability are required to merge.
