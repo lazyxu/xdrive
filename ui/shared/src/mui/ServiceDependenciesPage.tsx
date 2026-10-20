@@ -213,6 +213,7 @@ const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
 }
 
 function ServiceRow({ service }: { service: XDriveServiceDependency }) {
+  const [showLifecycleEvidence, setShowLifecycleEvidence] = useState(false)
   // Baidu's static-map health is manual/quota-consuming. An unrun probe is
   // NOT a broken detection capability, and saved credentials are not proof.
   const state = service.id === 'baidu-map' && service.status === 'unknown' &&
@@ -265,8 +266,7 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
             <Typography variant="caption" color="text.secondary"
               data-xdrive-baidu-static-unverified-hint
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
-              已配置只表示 Server 有凭据。静态图需在本页手动执行一次在线验证
-              （消耗一次百度 API 配额）；JSAPI 4.0 动态发布授权另行判定。
+              静态地图在线检测尚未执行（需人工触发并消耗 API 配额），与 JSAPI 4.0 发布授权独立。
             </Typography>
           )}
           {(service.version || service.model) && (
@@ -299,27 +299,34 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
             </Stack>
           )}
           <Box data-xdrive-service-lifecycle aria-label="配置、部署、健康、生效独立证据" sx={{
-            mt: 2, display: 'grid', gap: 1,
-            gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2, minmax(0,1fr))',
+            mt: 1.25, display: 'grid', gap: 0.75,
+            gridTemplateColumns: { xs: 'repeat(2, minmax(0,1fr))',
               lg: 'repeat(4, minmax(0,1fr))' },
           }}>
             {xDriveSystemDependencyOverviewSignals(service).map((axis, index) => (
-              <Box key={axis.label} sx={{ p: 1.25, minWidth: 0, border: 1,
-                borderColor: 'divider', borderRadius: 1.5, bgcolor: 'action.hover' }}>
+              <Box key={axis.label} sx={{ p: 1, minWidth: 0, border: 1,
+                borderColor: 'divider', borderRadius: 1.5 }}>
                 <Typography variant="caption" color="text.secondary">{axis.label}</Typography>
-                <Typography variant="subtitle2" fontWeight={700} sx={{ my: 0.5,
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 0.25,
                   color: axis.tone === 'positive' ? 'success.main'
                     : axis.tone === 'negative' ? 'error.main'
                       : axis.tone === 'attention' ? 'warning.main' : 'text.primary' }}>
                   {axis.value}
                 </Typography>
-                <Typography variant="caption" color="text.secondary"
-                  sx={{ display: 'block', overflowWrap: 'anywhere' }}>
-                  {evidenceDetails[index]}
-                </Typography>
+                {showLifecycleEvidence && (
+                  <Typography variant="caption" color="text.secondary"
+                    sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
+                    {evidenceDetails[index]}
+                  </Typography>
+                )}
               </Box>
             ))}
           </Box>
+          <Button size="small" variant="text" color="inherit" sx={{ mt: 0.25, px: 0.5 }}
+            data-xdrive-service-evidence-toggle aria-expanded={showLifecycleEvidence}
+            onClick={() => setShowLifecycleEvidence((visible) => !visible)}>
+            {showLifecycleEvidence ? '收起状态依据' : '查看状态依据'}
+          </Button>
           {service.group === 'intelligence' && (
             <Stack spacing={0.25} sx={{ mt: 1 }} data-xdrive-photo-host-observation>
               <Typography variant="caption" color="text.secondary">
@@ -1711,14 +1718,12 @@ export function XDriveServiceDependenciesPage({
                   </Typography>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
-                    状态和检测在同一区块内按需展示；配置与审计历史独立管理，历史按需读取。
-                    展开区块不会保存配置或执行宿主操作。
+                    按需查看状态、配置和检测；展开不执行保存或宿主操作，历史仅在打开时读取。
                   </Typography>
                   {selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {
                     const sectionKey = `${selectedPage}:${sectionTab}`
                     const expanded = expandedSections[sectionKey] ??
-                      (sectionTab === 'status' || sectionTab === 'config' ||
-                       visibleLocation.tab === sectionTab)
+                      (sectionTab === (currentTab === 'verify' ? 'status' : currentTab))
                     return (
                       <Accordion key={sectionKey} expanded={expanded}
                         onChange={(_event, next) => {
@@ -2007,13 +2012,11 @@ export function XDriveServiceDependenciesPage({
                     </Typography>
                     {currentTab === 'config' ? (
                       <Typography variant="body2" color="text.secondary">
-                        仅用于百度地图服务端静态图。AK 在 Server 安全保存；只有主动点击“显示”才会临时读取，30 秒后自动隐藏。
-                        保存后立即生效，不会重启 Server，也不会中断上传、下载或同步。
+                        静态地图独立使用 Server AK，修改后立即生效；仅主动显示时临时解密，30 秒后自动隐藏。
                       </Typography>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        检查当前 Server 是否能使用已保存的 Server AK 获取真实 Static Map v2 图片；
-                        检测需明确点击并消耗一次 API 配额，不会验证或开启 JSAPI 4.0 动态地图。
+                        手动请求一张固定的 Static Map v2 图像（消耗一次 API 配额），不验证动态 JSAPI 4.0。
                       </Typography>
                     )}
                     {currentTab === 'config' && baiduConfig && (
@@ -2092,8 +2095,7 @@ export function XDriveServiceDependenciesPage({
                         {baiduVerifyBusy ? '正在向百度验证…' : '验证当前 AK 在线生效'}
                       </Button>
                       <Typography variant="caption" color="text.secondary">
-                        管理员手动触发一次固定 128×128 百度地图请求，消耗一次 API 配额；不发送用户 GPS，
-                        不自动轮询，不修改 AK 或启停服务。
+                        固定 128×128 · 不传用户 GPS · 不自动轮询或修改配置。
                       </Typography>
                     </Stack>
                     )}

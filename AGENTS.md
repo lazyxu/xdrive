@@ -1,3 +1,28 @@
+## P0-Places-A3h · correct exact iOS 27 Photos thumbnail-marker baseline (2026-10-20)
+
+- Verified current Apple iOS 27 Photos Maps documentation and screenshot: the usual visible geo cluster is **ONE genuine photo-cover thumbnail with its TRUE photo count badge**, repeated at multiple locations. Do not mistakenly require 1–3 offset-stacked covers as default; add such a layout only when actual iOS 27 same-state physical reference proves it. A3h remains not yet implemented; no changes to A3 signed runtime or Provider.
+- Preserve all existing SD-UX UI code/AGENTS history. Update only roadmap photo-marker acceptance and the focused original source-contract check; one scoped reconstructed work commit on same frozen baseline requires brand-new complete exact-head CI and Final Gate before clean Rebase Merge.
+
+## SD-UX-V1 · restore original 30-second credential reveal safety copy (2026-10-20)
+
+- Original one-work HEAD `cd9f8af6e792287d0dde17b50661ee545537cc34` launched new full CI #39365819633. The exact `desktop-tests` original test `admin-service-dependencies.cjs` failed **one source contract** because the condensed static Server AK helper text said `30 秒自动隐藏` instead of existing protected `30 秒后自动隐藏`; all other 3341 reported desktop assertions passed (one skipped). This is a source/test agreement defect, not proof of credential runtime leakage; old RED CI cannot authorize merge.
+- Restore precisely the original safety disclosure `30 秒后自动隐藏` in the already updated shared ServiceDependenciesPage. Do not change the actual 30-second reveal timer, keys, Server APIs, unrelated Caddy/LocalPush files, or weaken the existing test. Preserve every other SD-UX-V1 blob and full additive AGENTS history. Reconstruct ONE scoped work commit with the SAME frozen full accepted `master@543ecfc2c18ade506c16a30c293c0cd65d0dc045` parent and move only own ref under the expected old HEAD lease; require all-new full exact-head CI including genuine PostgreSQL Go API Race, Web/Desktop Windows/Linux, Rootless/packages, single-commit and Final Gate, fresh clean before Ready/Rebase Merge.
+
+## SD-UX-V1 · 系统依赖统一去重与按需证据规则（2026-10-20）
+
+- **强制适用于全部现有与以后新增的系统依赖**（目前固定的 11 项和独立全局策略）：每个服务的详情仅保留一个可信状态概要，分别承载「状态/检测」「可编辑配置」「审计历史」。同一 API 响应的完整运行字段不得在配置、状态和检测重复三次；状态汇总只能有一个主视觉事实，不要在后面堆叠语义等价的成功提示。
+- **默认只展开当前导航/URL 所选区块**；状态、配置和历史不要同时自动展开。通用配置/部署/健康/生效四轴始终真实可见，但冗长依据只通过可访问的「查看状态依据」显示。切换区块保留草稿并防止误丢失；历史只在明确打开时读取。状态/诊断界面优先简明语句和必要细节，禁止重复铺陈协议、安全免责声明。
+- **对所有服务遵守操作边界**：展开、导航、刷新只读证据不可隐式保存、重启、卸载、修改宿主或消费配额；涉及外网收费、密钥/凭据明文、宿主操作必须单独明确操作按钮、权限和审计。只读 unknown / not-checked 不得冒充 healthy；目标配置/密钥已存不等于实际服务可用。Web/Mobile Web/Desktop 仅用一套 ui/shared MUI 组件与现有 Server/Agent 接口，不再复制实现。
+- **百度专项实施**：Server AK Static Map 手动在线验证与 Browser AK JSAPI4 signed runtime 分离。编辑区只展示可写 desired_enabled、安全密码替换、保存/清除；六个 Server 原始字段 configured / desired_enabled / runtime_enabled / activation_state / release_blockers / requires_restart 只在检测区的「六项技术字段」按需展开一次，Server 授权只读不可伪造。避免 Browser AK / Server AK 说明重复、第二块状态快照与冗余成功 Alert；静态检测一次消耗的 API 配额仍须手动点击。已有 AK 不显示原文、只有 Static AK 的主动临时显示最多 30 秒，所有写入保持 revision-CAS。
+- **以后每项系统依赖重构都必须检查**：初始状态尺寸稳定、手机最小触摸区、键盘/屏幕阅读器、窄屏 2×2 生命周期指标、横屏/明暗色、草稿脏态/刷新竞态、Provider 未验证与真正生效的区分；源契约 + React 挂载测试 + Web/Desktop 同一组件 + 真机证据。不能因单纯文本缩短声称 11 项均已验收。严禁写回引起抖动的临时加载框架。
+- 本次改动为此设计准则的首个共享架构实施：更新 ServiceDependenciesPage 的区块默认策略与公共生命周期显示、百度动态配置/检测的去重和六字段按需技术查看、对应测试与文档。保留旧有非相关源码与所有 AGENTS 历史。冻结完整 master@c2656c401b7353bb7d1d6ab0d57d6981e70b7539，唯一专项工作提交，必须通过当前 HEAD 的完整 CI（含 Go PostgreSQL Race / Web / Desktop / installer / rootless / Final Gate）及 clean 才 Ready+Rebase Merge。
+
+## P0-Places-A3h · iOS 27「照片」地图缩略图聚合（2026-10-20 追加）
+
+- 现有原生百度 ClusterLayer 与最多 64 个精确数字 Label 为已合入基础，但**多位置真实代表照片封面 + 聚合真实总数 + 数量角标**尚未实现。作为 A4 后的明确高优先级 A3h，不能标记完成，最终需与 B1-B3 一起进入 C1 的 1:1 真机验收，详见 docs/gallery-places-ios27-roadmap.md。
+- 必须继续百度唯一 Provider，复用当前 Owner 授权的 PhotoAsset/真实 BD09 派生点/聚合计数/缩略图和媒体 Range/VirtualCollection/Viewer；服务端返回有界集群和每簇一张真实代表封面身份，禁止 100k 全量下发、样本数充当总数或人工 GPS 网格中心。照片/视频/Live Photo 封面延迟鉴权加载、限制并发、Abort→Go Context 取消、撤销敏感缩略图。
+- Web/Mobile Web/PWA/Desktop 独立 HTTPS 窗口共享一个 Map/marker/controller；放大/缩小、聚合点击、单图 Viewer、返回地图和虚拟列表锚点必须等价，不破坏 52px App Frame；不将 JWT、Browser AK 或原图 URL 授予百度可执行脚本。以真实 iOS 27「照片」截图、手势和 100k 实测验收，未做真机证明前不得称 1:1。
+
 ## L03-G2c2b · exact-head green and conflict-only master reconstruction (2026-10-20)
 
 - Exact G2c2b one-work HEAD `a48030105d63e7075573194faf0911dea2e9e337` successfully completed its entire [77-job CI #39360099538](https://github.com/lazyxu/xdrive/actions/runs/39360099538) — 25 success, 52 conditional skip, zero failures, Final Gate GREEN — including Go Linux/Windows, real PostgreSQL Race, Web/Desktop, images, installed artifact and rootless checks. This GREEN belongs ONLY to that SHA, not a rewritten child.
