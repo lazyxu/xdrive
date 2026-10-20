@@ -33,6 +33,7 @@ type serviceDependency struct {
 	LocalTLSState                    string `json:"local_tls_state,omitempty"`
 	CaddyInternalHTTPState           string `json:"caddy_internal_http_state,omitempty"`
 	CaddyHostWitnessReason           string `json:"caddy_host_witness_reason,omitempty"`
+	CaddyLocalDomainHTTPSState       string `json:"caddy_local_domain_https_state,omitempty"`
 	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
@@ -318,6 +319,17 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		services[10].CaddyHostWitnessReason = reason
 		annotateCaddyMissingHostWitness(&services[10], caddyHostUnobservedDetailForReason(reason),
 			checkInternalRoute, checkInternalRoute && caddyInternalRouteObserved(ctx))
+		// Independent authenticated HTTPS over the fixed Compose caddy:443 route.
+		// Public CA + matching deployment-domain SNI + Ready only. This cannot
+		// upgrade Host installation, Docker health, local private-IP TLS,
+		// WAN reachability or the administrator's applied-revision state.
+		domain := os.Getenv("XD_DOMAIN")
+		if checkInternalRoute && validCaddyHTTPSDomain(domain) {
+			services[10].CaddyLocalDomainHTTPSState = "unavailable"
+			if caddyLocalDomainHTTPSObserved(ctx, domain) {
+				services[10].CaddyLocalDomainHTTPSState = "verified"
+			}
+		}
 	}
 
 	if s.DB != nil {

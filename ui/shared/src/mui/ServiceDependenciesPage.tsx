@@ -268,6 +268,14 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                 : '内部 HTTP 转发未得到可信成功响应；不代表原有 Caddy 已停止或未部署。'}
             </Typography>
           )}
+          {service.id === 'caddy' && service.caddy_local_domain_https_state && (
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-domain-https-evidence
+              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+              {service.caddy_local_domain_https_state === 'verified'
+                ? '独立 HTTPS 证据：Server 经固定内部 Caddy:443 通道，使用系统可信公有 CA 验证域名证书及 Ready 响应成功；仍需独立确认 Caddy 容器身份、私网 IP HTTPS、公网访问和配置修订是否生效。'
+                : '独立域名 HTTPS 检查未取得可信结果；可能是网络、证书或旧部署配置差异，不代表原网关已停止。'}
+            </Typography>
+          )}
           {service.id === 'caddy' && service.installation_state !== 'observed' && (
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-host-witness-help
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
