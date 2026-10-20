@@ -32,6 +32,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   const [keyID, setKeyID] = useState('')
   const [keySecret, setKeySecret] = useState('')
   const [shown, setShown] = useState<XDriveCaddyAliDNSReveal | null>(null)
+  const [manageOpen, setManageOpen] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [error, setError] = useState('')
@@ -69,6 +70,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     setKeySecret('')
     setShown(null)
     setRevealing(false)
+    setManageOpen(false)
     setBusy(false)
     setConfirmSave(false)
     setConfirmClear(false)
@@ -113,6 +115,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
       setNotice(clear
         ? '已清除服务器保存的 AliDNS 凭据并记入审计；宿主机现有配置未改变。'
         : 'AliDNS AK/SK 已加密保存并审计；仅为待应用的期望配置，未部署或验证。')
+      setManageOpen(false)
       onConfigurationChanged?.() // A rotated or cleared key invalidates old proof.
     } catch (err) {
       if (epoch === requestEpochRef.current) setError(err instanceof Error ? err.message : 'AliDNS 凭据保存失败。')
@@ -149,11 +152,22 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
       data-xdrive-admin-caddy-alidns>
       <Stack spacing={1.5}>
-        <Typography variant="subtitle2" fontWeight={700}>Caddy · AliDNS DNS-01 凭据</Typography>
-        <Typography variant="body2" color="text.secondary">
-          实例级阿里云 AccessKey ID / AccessKey Secret，仅加密保存在 Server 数据库。
-          保存不会更新宿主机 .env、签发证书、查询 DNS 或启停 Caddy。
-        </Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+          <Typography variant="subtitle2" fontWeight={700}>Caddy · AliDNS DNS-01 凭据</Typography>
+          {config && (
+            <Button size="small" variant="outlined" data-xdrive-caddy-alidns-manage
+              disabled={busy || revealing || (manageOpen && (keyID.length > 0 || keySecret.length > 0))}
+              onClick={() => { hide(); setManageOpen((opened) => !opened) }}>
+              {manageOpen ? '收起管理' : '管理'}
+            </Button>
+          )}
+        </Stack>
+        {manageOpen && (
+          <Typography variant="body2" color="text.secondary">
+            实例级阿里云 AccessKey ID / AccessKey Secret，仅加密保存在 Server 数据库。
+            保存不会更新宿主机 .env、签发证书、查询 DNS 或启停 Caddy。
+          </Typography>
+        )}
         {config ? (
           <>
             {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-alidns-host-pending>
@@ -169,6 +183,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
                   config.configured ? '已加密保存 · 待应用' : '服务器未保存凭据'} />
               <Chip size="small" variant="outlined" label={`凭据修订 #${config.revision}`} />
             </Stack>
+            {manageOpen && (<>
             <TextField fullWidth size="small" label="AccessKey ID（新值）"
               type="password" autoComplete="new-password" value={keyID}
               onChange={(event) => setKeyID(event.target.value)} disabled={!canEdit}
@@ -196,15 +211,18 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
                 <Button size="small" onClick={hide}>立即隐藏凭据</Button>
               </Box>
             )}
-            {config.source === 'host-import' && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-alidns-host-import>
+            {config.source === 'host-import' && manageOpen && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-alidns-host-import>
               AliDNS 凭据来自旧宿主并已加密入库；运行中的 Caddy 未因此重启或轮换密钥。
               后续编辑仍需独立的安全应用流程及 DNS／证书验证。
             </Typography>}
-            <Typography variant="caption" color="warning.main">{config.requirement}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              实际生效检测：尚不支持。当前凭据状态仅说明加密存储，不代表 AliDNS 权限有效、
-              DNS-01 验证成功或 HTTPS 公网可达；受限 Host Manager 预检与应用在后续阶段实施。
-            </Typography>
+            {manageOpen && (<>
+              <Typography variant="caption" color="warning.main">{config.requirement}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                实际生效检测：尚不支持。当前凭据状态仅说明加密存储，不代表 AliDNS 权限有效、
+                DNS-01 验证成功或 HTTPS 公网可达；受限 Host Manager 预检与应用在后续阶段实施。
+              </Typography>
+            </>)}
+            </>)}
             <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="加密保存 AliDNS 凭据"
               description="保存新 ID/Secret 将创建审计修订，但不替换宿主机凭据，也不会操作 Caddy。"

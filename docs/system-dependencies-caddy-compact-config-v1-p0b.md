@@ -1,0 +1,11 @@
+# SD-UI-V1-P0B · Caddy compact desired configuration and AliDNS management
+
+2026-10-20. Implementation of the operator-approved `docs/system-dependencies-ui-v1-https-8443.md` config subsection only, without Host Apply.
+
+- The Caddy HTTPS desired editor defaults to a **read-only summary** of database target LAN/domain state plus revision/import provenance; only a real click on **编辑** reveals the original source-validated two HTTPS switches, IP/domain inputs and save action. Input CAS, required at-least-one-enabled safety, dirty-draft refresh prevention, history and confirmation are unchanged. Closing an editor with unsaved changes is blocked. After a successful DB-only save it returns to summary.
+- This scope leaves every Host TLS field out of the desired editor. Actual trusted Host LAN/desired drift belongs to a separately reviewed read-only status/evidence component (and existing Caddy preflight), not the administrator's desired-only editor; future implementation must not silently set database switches.
+- The AliDNS panel defaults to a status/revision summary; optional **管理** reveals the existing guarded replacement, temporary show, and clear actions. A dirty key draft cannot be silently collapsed, changing config does not send plaintext to any host, and existing 30-second temporary display, active/blur hiding, permissions and audit continue unchanged. No actual key is exposed by default.
+- Reuses the existing shared MUI Web/Mobile Web/PWA/Desktop component and authenticated backend. No new REST/Agent IPC, dynamic browser requests, Docker/Caddy action, DNS TXT write, certificate, port or Origin change. This does not yet implement the top-level Overview / Config / History navigation, which remains a separate UI milestone.
+- Require all original Caddy source/behavior checks, new regressions, full accurate-head 77+ CI incl real PostgreSQL Go API Race, Windows/Linux Go/Web/Desktop, Rootless/packages and final-gate, and fresh clean Ready/Rebase merge. Physical 8443/WAN/LAN/iOS/Android acceptance is NOT RUN. `apply_supported=false` persists.
+
+Older Server/Agent may omit the optional `desired_lan_enabled`. Summary MUST render that as 'unknown' rather than falsely displaying 'disabled'; update UI contract test and preserve fail-closed editing fence.

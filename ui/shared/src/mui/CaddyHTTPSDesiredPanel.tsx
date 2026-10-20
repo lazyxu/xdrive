@@ -55,6 +55,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirmSave, setConfirmSave] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [confirmRollback, setConfirmRollback] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -75,6 +76,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
     setNotice('')
     setConfirmSave(false)
     setConfirmRollback(false)
+    setEditing(false)
     if (source.loadCaddyHTTPSConfig) {
       void source.loadCaddyHTTPSConfig().then((next) => {
         if (!active || epoch !== epochRef.current) return
@@ -162,6 +164,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setLANEnabled(next.desired_lan_enabled === true)
       setLANIP(next.desired_lan_ip ?? '')
       setNotice('期望配置已保存并审计；宿主机实际 HTTPS 未应用，需后续受限部署操作。')
+      setEditing(false)
       onConfigurationChanged?.() // Invalidate prior evidence; history is fetched on opening it.
     } catch (err) {
       if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '保存 HTTPS 期望配置失败；请刷新检查版本。')
@@ -207,17 +210,26 @@ export function XDriveCaddyHTTPSDesiredPanel({
         {section === 'config' && (<>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>Caddy · HTTPS 期望配置</Typography>
-          <Button size="small" variant="outlined" disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}
-            onClick={() => { void reload() }}>重新读取已保存配置</Button>
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+            <Button size="small" variant="outlined" data-xdrive-caddy-https-edit-toggle
+              disabled={!canEdit || (editing && changed)}
+              onClick={() => setEditing((old) => !old)}>
+              {editing ? '完成' : '编辑'}
+            </Button>
+            <Button size="small" variant="text" disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}
+              onClick={() => { void reload() }}>重新读取已保存配置</Button>
+          </Stack>
         </Stack>
         {changed && <Typography variant="caption" color="warning.main" data-xdrive-caddy-draft-refresh-guard>
           当前有未保存的修改，禁止重新读取覆盖草稿；请先保存或恢复原配置。
         </Typography>}
-        <Typography variant="body2" color="text.secondary">
-          这里独立管理局域网 IP HTTPS 和公网域名 HTTPS 期望配置，允许同时启用，但不允许同时关闭。
-          保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
-          的受限 Host Manager 验证和受控重启，不能将“保存成功”误当成运行入口已变化。
-        </Typography>
+        {editing && (
+          <Typography variant="body2" color="text.secondary">
+            这里独立管理局域网 IP HTTPS 和公网域名 HTTPS 期望配置，允许同时启用，但不允许同时关闭。
+            保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
+            的受限 Host Manager 验证和受控重启，不能将“保存成功”误当成运行入口已变化。
+          </Typography>
+        )}
         </>)}
         {config ? (
           <>
@@ -235,15 +247,34 @@ export function XDriveCaddyHTTPSDesiredPanel({
             {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-host-pending-fence>
               存在待协调的宿主配置申请，IP/域名修改和历史回滚已锁定；这不是已部署或已重启的证明。
             </Typography>}
-            {config.source === 'host-import' && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
+            {config.source === 'host-import' && editing && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
               已导入旧 Caddy 的 IP／域名管理记录。原证书和网关配置继续保留；请在「状态与检测」确认实际连接，
               不要把导入的修订号当成后续修改已生效。
             </Typography>}
-            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
-              运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
-            </Typography>
+            {editing && (
+              <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
+                运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
+              </Typography>
+            )}
+            {!editing && (
+              <Stack spacing={1} data-xdrive-caddy-https-readonly-summary>
+                <Typography variant="body2">
+                  局域网 IP HTTPS 目标：{typeof config.desired_lan_enabled === 'boolean'
+                    ? (config.desired_lan_enabled ? '开启' : '关闭')
+                    : '未知（当前客户端未报告 LAN 目标）'}
+                  {config.desired_lan_ip ? ' · ' + config.desired_lan_ip : ''}
+                </Typography>
+                <Typography variant="body2">
+                  公网域名 HTTPS 目标：{config.desired_enabled ? '开启' : '关闭'}
+                  {config.desired_domain ? ' · ' + config.desired_domain : ''}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  已保存目标、实际网关状态与应用回执独立；此处不执行 Caddy 应用。
+                </Typography>
+              </Stack>
+            )}
             </>)}
-            {section === 'config' && (<>
+            {section === 'config' && editing && (<>
             <Typography variant="subtitle2" fontWeight={700}>
               局域网 IP HTTPS · 默认部署入口
             </Typography>
