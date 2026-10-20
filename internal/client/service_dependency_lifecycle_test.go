@@ -45,3 +45,21 @@ func TestAdminServiceDependencyCaddyMissingHostReasonSurvivesClientSerialization
 		t.Fatalf("Desktop client dropped read-only diagnostic: %s", out)
 	}
 }
+
+func TestAdminServiceDependencyIndependentDomainHTTPSStateSurvivesClientSerialization(t *testing.T) {
+	const raw = `{"id":"caddy","status":"unknown","installation_state":"unknown","health_state":"unknown","activation_state":"deployment-only","caddy_local_domain_https_state":"verified"}`
+	var result ServiceDependency
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.CaddyLocalDomainHTTPSState != "verified" || result.InstallationState != "unknown" {
+		t.Fatalf("Desktop Agent promoted trusted Host state or dropped local TLS: %+v", result)
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"caddy_local_domain_https_state":"verified"`) {
+		t.Fatalf("Desktop Agent dropped independent local HTTPS: %s", out)
+	}
+}

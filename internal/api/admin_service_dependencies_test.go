@@ -167,6 +167,7 @@ func TestAdminServiceDependenciesCaddyDeclaredIngressWithoutHostWitness(t *testi
 			item.HealthState != "unknown" || item.ActivationState != "deployment-only" ||
 			item.Status != "unknown" || item.CaddyInternalHTTPState != "" ||
 			item.CaddyHostWitnessReason != "heartbeat-missing" ||
+			item.CaddyLocalDomainHTTPSState != "" ||
 			item.HTTPSConfigured != nil || item.LocalTLSState != "" {
 			t.Fatalf("declared ingress may not fabricate installed Caddy or TLS: %+v", item)
 		}

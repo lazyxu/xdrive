@@ -39,6 +39,9 @@ export type XDriveServiceDependency = {
   // Weak fixed caddy:80 reverse-proxy GET when trusted Host Control is missing.
   // Never upgrades installation, Docker health, TLS or desired-revision evidence.
   caddy_internal_http_state?: 'reachable' | 'unavailable'
+  // Separate fixed caddy:443 Server-to-Caddy public-CA / domain-SNI HTTPS+Ready probe
+  // ONLY when trusted Host snapshot is missing. Never Host/Applied/WAN/LAN CA proof.
+  caddy_local_domain_https_state?: 'verified' | 'unavailable'
   // Fixed, nonsecret Host Control observation blocker when no trusted Caddy snapshot exists.
   // Never interpret a reason as evidence of installation, TLS, or applied revisions.
   caddy_host_witness_reason?:
