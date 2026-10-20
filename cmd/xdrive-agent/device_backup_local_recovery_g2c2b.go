@@ -100,14 +100,24 @@ func selectLocalPushRecoveredFirstLeaf(
 	return h, true
 }
 
-// recoverPreviousFirstLeafReadOnly runs NO Stage, Prepare, Bind or COMMIT.
-// It never creates a key, clears an existing claim or changes Source state.
-// The only positive result is an exact, authenticated historical SQL/CAS
-// physical observation while the native original is held and post-hashed.
-func (d *localPushFirstLeafDriver) recoverPreviousFirstLeafReadOnly(
+// localPushPrivateOriginalRecoveryEvidence contains a single persisted
+// previous attempt. None of its fields may enter Agent IPC or Web JSON.
+// The marker and hint are evidence to inspect, never an upload license.
+type localPushPrivateOriginalRecoveryEvidence struct {
+	claim    string
+	key      localPushPrivateRequestKey
+	prepared localPushPrivatePreparedReceipt
+	hint     localpushstage.LocalOriginalRecoveryHint
+}
+
+// readPriorFirstLeafOriginalEvidence is the shared, strictly local read
+// admission for BOTH historical physical COMMIT and reservation-terminal
+// observation. Never choose the newest hint, mint a new key, or treat an
+// absent Stage hint as a safe restart after an interrupted HTTP request.
+func (d *localPushFirstLeafDriver) readPriorFirstLeafOriginalEvidence(
 	ctx context.Context, s localpushrunner.Scope,
-) (localpushrunner.FirstLeafResult, error) {
-	var empty localpushrunner.FirstLeafResult
+) (localPushPrivateOriginalRecoveryEvidence, error) {
+	var empty localPushPrivateOriginalRecoveryEvidence
 	if d == nil || ctx == nil || ctx.Err() != nil || s != d.scope ||
 		!localPushFirstLeafNameValid(s.RelativePath) || d.bound ||
 		d.key.bytes != [32]byte{} || d.stage.StageID != "" {
@@ -117,14 +127,13 @@ func (d *localPushFirstLeafDriver) recoverPreviousFirstLeafReadOnly(
 	if err != nil || !localPushStageAdmissionClaimValidForRecovery(claim) {
 		return empty, errLocalPushDriverDenied
 	}
-	// The same OS key + immutable MAC-bound operation identity must survive
-	// restart. A local Stage hint, HTTP ACK or key alone never suffices.
 	key, err := loadLocalPushOperationRequestKey(d.configDir, d.requestScope)
 	if err != nil {
 		return empty, errLocalPushDriverDenied
 	}
 	prepared, err := loadLocalPushPreparedReceipt(d.configDir, d.requestScope, key)
-	if err != nil {
+	if err != nil || !validLocalPushRequestUUID(prepared.operationID) ||
+		prepared.generation == 0 {
 		return empty, errLocalPushDriverDenied
 	}
 	hints, err := localpushstage.ListLocalOriginalRecoveryHints(ctx, d.configDir, d.grant)
@@ -132,9 +141,27 @@ func (d *localPushFirstLeafDriver) recoverPreviousFirstLeafReadOnly(
 		return empty, errLocalPushDriverDenied
 	}
 	hint, ok := selectLocalPushRecoveredFirstLeaf(hints, s)
-	if !ok {
+	if !ok || ctx.Err() != nil {
 		return empty, errLocalPushDriverDenied
 	}
+	return localPushPrivateOriginalRecoveryEvidence{
+		claim: claim, key: key, prepared: prepared, hint: hint,
+	}, nil
+}
+
+// recoverPreviousFirstLeafReadOnly runs NO Stage, Prepare, Bind or COMMIT.
+// It never creates a key, clears an existing claim or changes Source state.
+// The only positive result is an exact, authenticated historical SQL/CAS
+// physical observation while the native original is held and post-hashed.
+func (d *localPushFirstLeafDriver) recoverPreviousFirstLeafReadOnly(
+	ctx context.Context, s localpushrunner.Scope,
+) (localpushrunner.FirstLeafResult, error) {
+	var empty localpushrunner.FirstLeafResult
+	evidence, err := d.readPriorFirstLeafOriginalEvidence(ctx, s)
+	if err != nil {
+		return empty, errLocalPushDriverDenied
+	}
+	claim, key, prepared, hint := evidence.claim, evidence.key, evidence.prepared, evidence.hint
 	// Rehydrate the EXACT original, never a new operation/generation.
 	d.key, d.prepared, d.stage, d.bound = key, prepared, hint.Stage, true
 	defer func() { d.key = localPushPrivateRequestKey{} }()
@@ -160,7 +187,8 @@ func (d *localPushFirstLeafDriver) recoverPreviousFirstLeafReadOnly(
 	after, readErr := localpushstage.ReadLocalOriginalRecoveryHint(ctx, d.configDir, d.grant, st.StageID)
 	if readErr != nil || after.Stage != hint.Stage || after.RelativePath != hint.RelativePath ||
 		ctx.Err() != nil || !localPushStageAdmissionClaimValidForRecovery(claim) ||
-		d.Check(ctx, s) != nil {
+		d.Check(ctx, s) != nil ||
+		d.localPushPriorEvidenceUnchanged(ctx, evidence) != nil {
 		return localpushrunner.FirstLeafResult{Uncertain: true}, localpushrunner.ErrUncertain
 	}
 	return localpushrunner.FirstLeafResult{Confirmed: true}, nil
