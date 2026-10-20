@@ -75,7 +75,10 @@ test('P77 Web and Desktop still use original Owner-scoped Trash state, retry, an
     assert.ok(adapter.includes("emptyReadState={trashActive ? trash.readState : 'ready'}"),name)
     assert.ok(adapter.includes("onRefresh={trashActive ? () => { void trash.refresh() } : refresh}"),name)
     assert.ok(adapter.includes('virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}'),name)
-    assert.ok(adapter.includes('trashActive ? trash.loading : loading'),name)
+    assert.ok(adapter.includes('loading={trashActive ? trash.loading : searchState.results !== null ? searchLoading : loading}'),name,
+      name + ': the current Trash/Search/Directory read must own visual loading')
+    assert.ok(!adapter.includes('\n        loading={trashActive ? trash.loading : loading || searchLoading'),name,
+      name + ': durable actions must not masquerade as content reads')
   }
   for (const token of [
     "state: 'unverified' | 'ready' | 'error'",
