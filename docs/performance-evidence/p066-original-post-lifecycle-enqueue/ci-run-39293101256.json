@@ -1,0 +1,598 @@
+{
+  "title": "P066 source-exact authentic 100k physical CAS original Copy-Undo-Trash-second POST",
+  "measurement_result": "ACCEPTED ORIGINAL (not a performance optimization)",
+  "source_head": "c37a891a3bb51734dcb730a0e1127002852d57e0",
+  "specialty_run": "https://github.com/lazyxu/xdrive/actions/runs/39293101256",
+  "full_ci_run": "https://github.com/lazyxu/xdrive/actions/runs/39293100806",
+  "artifact": "https://github.com/lazyxu/xdrive/actions/runs/39293101256/artifacts/12208765042",
+  "artifact_digest_sha256": "a33c1430641e24d29e733f862d46608ab9716bd29699b163ee77d8afac290493",
+  "go_version": "go1.25.14 linux/amd64",
+  "provenance": "Three independent SHA-distinct physically allocated 100k + 1 sentinel CAS; JWT authenticated Go Server/Pg17 real HTTP, Copy Worker, Undo Worker, Owner Trash purge, full original SHA verification, second authenticated owner HTTP POST, explicit queued cancel. True physical source 409604096 allocated bytes per independent sample.",
+  "summary": {
+    "workload": "P066 true original physical 100k Copy->Undo->Trash->new JWT Owner HTTP enqueue",
+    "source": "SOURCE_HEAD=c37a891a3bb51734dcb730a0e1127002852d57e0\nRUN_ID=39293101256\ngo version go1.25.14 linux/amd64",
+    "valid_n": 3,
+    "first_enqueue_p50_ms": 133.703,
+    "second_enqueue_p50_ms": 173.938,
+    "frozen_original_each_http_enqueue_ms": 120000,
+    "invalid": [],
+    "samples": [
+      {
+        "sample": "sample-1",
+        "source_aggregate_sha256": "5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03",
+        "first_original_http_enqueue_ms": 133,
+        "original_copy_worker_ms": 351704.056,
+        "original_undo_worker_ms": 1677.809,
+        "original_trash_purge_ms": 9127.672,
+        "second_original_http_enqueue_ms": 162.514,
+        "sql_families": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.71,
+            "worst_trace_wall_ms": 0.71
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.377,
+            "worst_trace_wall_ms": 0.377
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 0.784,
+            "worst_trace_wall_ms": 0.784
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 1.005,
+            "worst_trace_wall_ms": 1.005
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.816,
+            "worst_trace_wall_ms": 0.816
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 4.841,
+            "worst_trace_wall_ms": 4.841
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 153.128,
+            "worst_trace_wall_ms": 153.128
+          }
+        },
+        "postgres_wait_sampling": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_go_cpu_ticks": 0,
+        "original_full_lifecycle_passed": true,
+        "passed": true
+      },
+      {
+        "sample": "sample-2",
+        "source_aggregate_sha256": "71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e",
+        "first_original_http_enqueue_ms": 141.246,
+        "original_copy_worker_ms": 352330.019,
+        "original_undo_worker_ms": 1607.848,
+        "original_trash_purge_ms": 9162.157,
+        "second_original_http_enqueue_ms": 173.938,
+        "sql_families": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.781,
+            "worst_trace_wall_ms": 0.781
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.94,
+            "worst_trace_wall_ms": 0.94
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 1.422,
+            "worst_trace_wall_ms": 1.422
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 0.638,
+            "worst_trace_wall_ms": 0.638
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.733,
+            "worst_trace_wall_ms": 0.733
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 5.121,
+            "worst_trace_wall_ms": 5.121
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 164.113,
+            "worst_trace_wall_ms": 164.113
+          }
+        },
+        "postgres_wait_sampling": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_go_cpu_ticks": 0,
+        "original_full_lifecycle_passed": true,
+        "passed": true
+      },
+      {
+        "sample": "sample-3",
+        "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+        "first_original_http_enqueue_ms": 133.703,
+        "original_copy_worker_ms": 356569.854,
+        "original_undo_worker_ms": 1664.544,
+        "original_trash_purge_ms": 9188.592,
+        "second_original_http_enqueue_ms": 188.498,
+        "sql_families": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.808,
+            "worst_trace_wall_ms": 0.808
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.398,
+            "worst_trace_wall_ms": 0.398
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 0.857,
+            "worst_trace_wall_ms": 0.857
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 0.455,
+            "worst_trace_wall_ms": 0.455
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.827,
+            "worst_trace_wall_ms": 0.827
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 4.338,
+            "worst_trace_wall_ms": 4.338
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 156.872,
+            "worst_trace_wall_ms": 156.872
+          }
+        },
+        "postgres_wait_sampling": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_go_cpu_ticks": 0,
+        "original_full_lifecycle_passed": true,
+        "passed": true
+      }
+    ],
+    "all_frozen_gates_pass": true,
+    "product_after": null,
+    "speedup": null
+  },
+  "original_and_second_raw_rows": [
+    {
+      "original_full_lifecycle": {
+        "authenticated_purge_100k_copy_trash_ms": 9127.672,
+        "complete_physical_original_sha_verify_ms": 2813.647,
+        "copy_actual_durable_worker_ms": 351704.056,
+        "copy_http_enqueue_ms": 133,
+        "go_process_25ms_peak_rss_growth_bytes": 108544000,
+        "go_process_cpu_ticks_for_copy_and_undo": 12156,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "original_content_blob_ref_count_after_purge": 100001,
+        "original_physical_CAS_inodes": 100001,
+        "passed": true,
+        "physical_allocated_bytes_after_copy": 409604096,
+        "physical_allocated_bytes_after_purge": 409604096,
+        "physical_allocated_bytes_after_undo": 409604096,
+        "physical_allocated_bytes_before": 409604096,
+        "physical_content_bytes": 102401024,
+        "physical_sources": 100000,
+        "sample": "sample-1",
+        "scope": "Authentic HTTP enqueue and Go PostgreSQL17 durable worker, physical SHA-distinct Local CAS; not OS-installed client/browser GUI, WAN or true durable upload/sync.",
+        "seed_local_cas_and_metadata_ms": 65031.152,
+        "sentinel_content_blob_ref_count_1_after_undo": 1,
+        "smoke_only": false,
+        "source_aggregate_sha256": "5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03",
+        "source_copy_content_blob_ref_count_2": 100000,
+        "trash_retained_content_blob_ref_count_2_after_undo": 100000,
+        "trashed_copied_file_count_after_undo": 100000,
+        "undo_actual_durable_worker_ms": 1677.809,
+        "undo_http_enqueue_ms": 119.511,
+        "verified_copied_file_metadata_count": 100000,
+        "workload": "P056-authenticated-100k-unique-physical-CAS-folder-copy-undo"
+      },
+      "original_post_lifecycle_second_enqueue": {
+        "first_full_lifecycle_passed": true,
+        "first_original_http_enqueue_ms": 133,
+        "frozen_120s_both_admissions_passed": true,
+        "original_copy_worker_ms": 351704.056,
+        "original_physical_allocated_bytes": 409604096,
+        "original_physical_cas_inodes": 100001,
+        "original_trash_purge_ms": 9127.672,
+        "original_undo_worker_ms": 1677.809,
+        "passed": true,
+        "physical_sources": 100000,
+        "postflight_original_recursive_query_explain": {
+          "actual_root_rows": 1,
+          "estimated_root_rows": 1,
+          "execution_ms": 195.331,
+          "planning_ms": 0.278,
+          "root_plan_type": "Subquery Scan",
+          "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+          "shared_hit_blocks": 10932,
+          "shared_read_blocks": 2670,
+          "temp_read_blocks": 612,
+          "temp_written_blocks": 831
+        },
+        "postflight_pg_relation_statistics": [
+          {
+            "table": "xd_file_operations",
+            "live_estimate": 3,
+            "dead_estimate": 3179,
+            "last_autoanalyze": "2026-10-19T17:27:08.505288Z"
+          },
+          {
+            "table": "xd_files",
+            "live_estimate": 100001,
+            "dead_estimate": 100000,
+            "last_autoanalyze": "2026-10-19T17:22:08.574923Z"
+          },
+          {
+            "table": "xd_nodes",
+            "live_estimate": 100005,
+            "dead_estimate": 200003,
+            "last_autoanalyze": "2026-10-19T17:21:08.370045Z"
+          }
+        ],
+        "postflight_pg_stats_query_failed": false,
+        "sample": "sample-1",
+        "scope": "test-only second real authenticated POST after fully verified physical Copy+Undo+Trash; canceled pending repeat, no production change",
+        "second_original_http_enqueue_ms": 162.514,
+        "second_post_go_cpu_ticks": 0,
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_gorm_trace_by_sql_family": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.71,
+            "worst_trace_wall_ms": 0.71
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.377,
+            "worst_trace_wall_ms": 0.377
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 0.784,
+            "worst_trace_wall_ms": 0.784
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 1.005,
+            "worst_trace_wall_ms": 1.005
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.816,
+            "worst_trace_wall_ms": 0.816
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 4.841,
+            "worst_trace_wall_ms": 4.841
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 153.128,
+            "worst_trace_wall_ms": 153.128
+          }
+        },
+        "second_post_pg_wait_type_samples": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_physical_allocated_bytes": 409604096,
+        "second_post_physical_cas_inodes": 100001,
+        "second_queued_operation_cancelled": true,
+        "smoke_only": false,
+        "source_aggregate_sha256": "5f702379566dddfae8baed8fc0c49dcc8d4b3919f92c612c35131d7c28525e03",
+        "workload": "P066-original-100k-physical-Copy-Undo-Trash-second-Owner-POST"
+      }
+    },
+    {
+      "original_full_lifecycle": {
+        "authenticated_purge_100k_copy_trash_ms": 9162.157,
+        "complete_physical_original_sha_verify_ms": 2789.301,
+        "copy_actual_durable_worker_ms": 352330.019,
+        "copy_http_enqueue_ms": 141.246,
+        "go_process_25ms_peak_rss_growth_bytes": 109424640,
+        "go_process_cpu_ticks_for_copy_and_undo": 12160,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "original_content_blob_ref_count_after_purge": 100001,
+        "original_physical_CAS_inodes": 100001,
+        "passed": true,
+        "physical_allocated_bytes_after_copy": 409604096,
+        "physical_allocated_bytes_after_purge": 409604096,
+        "physical_allocated_bytes_after_undo": 409604096,
+        "physical_allocated_bytes_before": 409604096,
+        "physical_content_bytes": 102401024,
+        "physical_sources": 100000,
+        "sample": "sample-2",
+        "scope": "Authentic HTTP enqueue and Go PostgreSQL17 durable worker, physical SHA-distinct Local CAS; not OS-installed client/browser GUI, WAN or true durable upload/sync.",
+        "seed_local_cas_and_metadata_ms": 61486.494,
+        "sentinel_content_blob_ref_count_1_after_undo": 1,
+        "smoke_only": false,
+        "source_aggregate_sha256": "71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e",
+        "source_copy_content_blob_ref_count_2": 100000,
+        "trash_retained_content_blob_ref_count_2_after_undo": 100000,
+        "trashed_copied_file_count_after_undo": 100000,
+        "undo_actual_durable_worker_ms": 1607.848,
+        "undo_http_enqueue_ms": 116.151,
+        "verified_copied_file_metadata_count": 100000,
+        "workload": "P056-authenticated-100k-unique-physical-CAS-folder-copy-undo"
+      },
+      "original_post_lifecycle_second_enqueue": {
+        "first_full_lifecycle_passed": true,
+        "first_original_http_enqueue_ms": 141.246,
+        "frozen_120s_both_admissions_passed": true,
+        "original_copy_worker_ms": 352330.019,
+        "original_physical_allocated_bytes": 409604096,
+        "original_physical_cas_inodes": 100001,
+        "original_trash_purge_ms": 9162.157,
+        "original_undo_worker_ms": 1607.848,
+        "passed": true,
+        "physical_sources": 100000,
+        "postflight_original_recursive_query_explain": {
+          "actual_root_rows": 1,
+          "estimated_root_rows": 1,
+          "execution_ms": 200.944,
+          "planning_ms": 0.275,
+          "root_plan_type": "Subquery Scan",
+          "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+          "shared_hit_blocks": 5570,
+          "shared_read_blocks": 2670,
+          "temp_read_blocks": 612,
+          "temp_written_blocks": 831
+        },
+        "postflight_pg_relation_statistics": [
+          {
+            "table": "xd_file_operations",
+            "live_estimate": 2,
+            "dead_estimate": 1,
+            "last_autoanalyze": "2026-10-19T17:35:12.31229Z"
+          },
+          {
+            "table": "xd_files",
+            "live_estimate": 100001,
+            "dead_estimate": 100000,
+            "last_autoanalyze": "2026-10-19T17:35:09.87722Z"
+          },
+          {
+            "table": "xd_nodes",
+            "live_estimate": 100005,
+            "dead_estimate": 100001,
+            "last_autoanalyze": "2026-10-19T17:35:09.535874Z"
+          }
+        ],
+        "postflight_pg_stats_query_failed": false,
+        "sample": "sample-2",
+        "scope": "test-only second real authenticated POST after fully verified physical Copy+Undo+Trash; canceled pending repeat, no production change",
+        "second_original_http_enqueue_ms": 173.938,
+        "second_post_go_cpu_ticks": 0,
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_gorm_trace_by_sql_family": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.781,
+            "worst_trace_wall_ms": 0.781
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.94,
+            "worst_trace_wall_ms": 0.94
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 1.422,
+            "worst_trace_wall_ms": 1.422
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 0.638,
+            "worst_trace_wall_ms": 0.638
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.733,
+            "worst_trace_wall_ms": 0.733
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 5.121,
+            "worst_trace_wall_ms": 5.121
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 164.113,
+            "worst_trace_wall_ms": 164.113
+          }
+        },
+        "second_post_pg_wait_type_samples": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_physical_allocated_bytes": 409604096,
+        "second_post_physical_cas_inodes": 100001,
+        "second_queued_operation_cancelled": true,
+        "smoke_only": false,
+        "source_aggregate_sha256": "71e288b91305144cbfaf7b40b37a468f03a9ebb13de296b2e5463d492734915e",
+        "workload": "P066-original-100k-physical-Copy-Undo-Trash-second-Owner-POST"
+      }
+    },
+    {
+      "original_full_lifecycle": {
+        "authenticated_purge_100k_copy_trash_ms": 9188.592,
+        "complete_physical_original_sha_verify_ms": 2827.971,
+        "copy_actual_durable_worker_ms": 356569.854,
+        "copy_http_enqueue_ms": 133.703,
+        "go_process_25ms_peak_rss_growth_bytes": 121159680,
+        "go_process_cpu_ticks_for_copy_and_undo": 12189,
+        "go_process_kernel_write_bytes_for_all_stages": 0,
+        "original_content_blob_ref_count_after_purge": 100001,
+        "original_physical_CAS_inodes": 100001,
+        "passed": true,
+        "physical_allocated_bytes_after_copy": 409604096,
+        "physical_allocated_bytes_after_purge": 409604096,
+        "physical_allocated_bytes_after_undo": 409604096,
+        "physical_allocated_bytes_before": 409604096,
+        "physical_content_bytes": 102401024,
+        "physical_sources": 100000,
+        "sample": "sample-3",
+        "scope": "Authentic HTTP enqueue and Go PostgreSQL17 durable worker, physical SHA-distinct Local CAS; not OS-installed client/browser GUI, WAN or true durable upload/sync.",
+        "seed_local_cas_and_metadata_ms": 60705.193,
+        "sentinel_content_blob_ref_count_1_after_undo": 1,
+        "smoke_only": false,
+        "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+        "source_copy_content_blob_ref_count_2": 100000,
+        "trash_retained_content_blob_ref_count_2_after_undo": 100000,
+        "trashed_copied_file_count_after_undo": 100000,
+        "undo_actual_durable_worker_ms": 1664.544,
+        "undo_http_enqueue_ms": 115.898,
+        "verified_copied_file_metadata_count": 100000,
+        "workload": "P056-authenticated-100k-unique-physical-CAS-folder-copy-undo"
+      },
+      "original_post_lifecycle_second_enqueue": {
+        "first_full_lifecycle_passed": true,
+        "first_original_http_enqueue_ms": 133.703,
+        "frozen_120s_both_admissions_passed": true,
+        "original_copy_worker_ms": 356569.854,
+        "original_physical_allocated_bytes": 409604096,
+        "original_physical_cas_inodes": 100001,
+        "original_trash_purge_ms": 9188.592,
+        "original_undo_worker_ms": 1664.544,
+        "passed": true,
+        "physical_sources": 100000,
+        "postflight_original_recursive_query_explain": {
+          "actual_root_rows": 1,
+          "estimated_root_rows": 1,
+          "execution_ms": 215.115,
+          "planning_ms": 0.271,
+          "root_plan_type": "Subquery Scan",
+          "scope": "same original recursive size SQL, EXPLAIN after HTTP response; no raw plan or bind values persisted",
+          "shared_hit_blocks": 10932,
+          "shared_read_blocks": 2670,
+          "temp_read_blocks": 612,
+          "temp_written_blocks": 831
+        },
+        "postflight_pg_relation_statistics": [
+          {
+            "table": "xd_file_operations",
+            "live_estimate": 3,
+            "dead_estimate": 3249,
+            "last_autoanalyze": "2026-10-19T17:42:08.712177Z"
+          },
+          {
+            "table": "xd_files",
+            "live_estimate": 100252,
+            "dead_estimate": 100000,
+            "last_autoanalyze": "2026-10-19T17:37:08.756268Z"
+          },
+          {
+            "table": "xd_nodes",
+            "live_estimate": 100005,
+            "dead_estimate": 200003,
+            "last_autoanalyze": "2026-10-19T17:36:08.638695Z"
+          }
+        ],
+        "postflight_pg_stats_query_failed": false,
+        "sample": "sample-3",
+        "scope": "test-only second real authenticated POST after fully verified physical Copy+Undo+Trash; canceled pending repeat, no production change",
+        "second_original_http_enqueue_ms": 188.498,
+        "second_post_go_cpu_ticks": 0,
+        "second_post_go_rss_growth_bytes": 0,
+        "second_post_gorm_trace_by_sql_family": {
+          "ancestor_scope_CTE": {
+            "count": 1,
+            "trace_wall_ms": 0.808,
+            "worst_trace_wall_ms": 0.808
+          },
+          "file_metadata": {
+            "count": 1,
+            "trace_wall_ms": 0.398,
+            "worst_trace_wall_ms": 0.398
+          },
+          "node_lock": {
+            "count": 1,
+            "trace_wall_ms": 0.857,
+            "worst_trace_wall_ms": 0.857
+          },
+          "node_validation": {
+            "count": 1,
+            "trace_wall_ms": 0.455,
+            "worst_trace_wall_ms": 0.455
+          },
+          "owner_auth": {
+            "count": 1,
+            "trace_wall_ms": 0.827,
+            "worst_trace_wall_ms": 0.827
+          },
+          "queued_operation_insert": {
+            "count": 1,
+            "trace_wall_ms": 4.338,
+            "worst_trace_wall_ms": 4.338
+          },
+          "recursive_size_CTE": {
+            "count": 1,
+            "trace_wall_ms": 156.872,
+            "worst_trace_wall_ms": 156.872
+          }
+        },
+        "second_post_pg_wait_type_samples": {
+          "active_wait_type_observations": {},
+          "peak_active_client_backends": 0,
+          "poll_query_errors": 0,
+          "sample_polls": 0,
+          "scope": "250ms bounded test-only pg_stat_activity wait-type counts, not a PID-exact SQL trace; no raw query/credentials captured"
+        },
+        "second_post_physical_allocated_bytes": 409604096,
+        "second_post_physical_cas_inodes": 100001,
+        "second_queued_operation_cancelled": true,
+        "smoke_only": false,
+        "source_aggregate_sha256": "fafd4c9111830bc5acdae8fd9b9fa8239fcb2d7dcad05e670764709ddeff3996",
+        "workload": "P066-original-100k-physical-Copy-Undo-Trash-second-Owner-POST"
+      }
+    }
+  ],
+  "note": "This is a test-only source-exact original measurement. The 250ms PG wait sampler observed no polls in three sub-250ms admissions. No backend-exact SQL wait explanation and no same-runner product BEFORE/AFTER speedup are established. Historical 344-642s original admissions remain unresolved. Any evidence-amended commit requires its own new exact-head CI and specialty result before merge."
+}

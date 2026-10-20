@@ -704,6 +704,106 @@ func TestP056Real100KPhysicalCASCopyUndo(t *testing.T) {
 		t.Fatal(marshalErr)
 	}
 	t.Logf("P056_REAL_PHYSICAL_COPY_UNDO %s", jsonRow)
+
+	// P066 original-only second admission AFTER genuine physical 100k Copy,
+	// Undo, authenticated Trash purge and exhaustive original SHA readback.
+	if os.Getenv("XD_P066_POST_LIFECYCLE_REENQUEUE") == "1" {
+		rssBeforePost, err := p046RSS()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cpuBeforePost, err := p046CPUTicks()
+		if err != nil {
+			t.Fatal(err)
+		}
+		trace := &p065AdmissionSQLTrace{Interface: logger.Default.LogMode(logger.Silent)}
+		server.DB = db.Session(&gorm.Session{Logger: trace})
+		activity := p065StartAdmissionPGActivity(db)
+		defer activity.snapshotAndStop()
+		secondStart := time.Now()
+		secondRaw := request(token, http.MethodPost, "/api/v1/file-operations", bytes.NewReader(raw), http.StatusAccepted)
+		secondMS := float64(time.Since(secondStart).Microseconds()) / 1000
+		server.DB = db
+		waits := activity.snapshotAndStop()
+		rssAfterPost, err := p046RSS()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cpuAfterPost, err := p046CPUTicks()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var secondJob fileOperationDTO
+		if err := json.Unmarshal(secondRaw, &secondJob); err != nil ||
+			secondJob.Status != meta.FileOperationStatusQueued {
+			t.Fatalf("P066 original repeat Copy not queued: %+v %v", secondJob, err)
+		}
+		request(foreignToken, http.MethodGet, "/api/v1/file-operations/"+secondJob.ID, nil, http.StatusNotFound)
+		cancelRaw := request(token, http.MethodPost, "/api/v1/file-operations/"+secondJob.ID+"/cancel", nil, http.StatusOK)
+		var canceled fileOperationDTO
+		if err := json.Unmarshal(cancelRaw, &canceled); err != nil ||
+			canceled.Status != meta.FileOperationStatusCancelled {
+			t.Fatalf("P066 queued repeat Copy cancellation failed: %+v %v", canceled, err)
+		}
+		var op meta.FileOperation
+		if err := db.Where("id = ? AND owner_id = ?", secondJob.ID, user.ID).
+			First(&op).Error; err != nil || op.Status != meta.FileOperationStatusCancelled {
+			t.Fatalf("P066 queued repeat Copy not durably canceled: %+v %v", op, err)
+		}
+		var remaining int64
+		if err := db.Model(&meta.Node{}).
+			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", user.ID, target.ID).
+			Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Fatalf("P066 queued request mutated target: %d %v", remaining, err)
+		}
+		casCount, casAllocated, err := p055RealCASAllocated(ctx, store)
+		if err != nil || casCount != preCount || casAllocated != preAllocated {
+			t.Fatalf("P066 physical originals changed: count=%d/%d allocated=%d/%d err=%v",
+				casCount, preCount, casAllocated, preAllocated, err)
+		}
+		statistics, statsErr := p065PostseedStats(ctx, db)
+		var explain map[string]any
+		if os.Getenv("XD_P066_POSTFLIGHT_EXPLAIN") == "1" {
+			explain = p065PostflightExplain(ctx, db, source.ID, user.ID)
+		}
+		ok := passed && enqueueMS <= 120000 && secondMS <= 120000
+		proof := map[string]any{}
+		proof["workload"] = "P066-original-100k-physical-Copy-Undo-Trash-second-Owner-POST"
+		proof["sample"] = sample
+		proof["smoke_only"] = smoke
+		proof["physical_sources"] = count
+		proof["source_aggregate_sha256"] = sourceHash
+		proof["original_physical_cas_inodes"] = preCount
+		proof["original_physical_allocated_bytes"] = preAllocated
+		proof["first_original_http_enqueue_ms"] = enqueueMS
+		proof["original_copy_worker_ms"] = copyMS
+		proof["original_undo_worker_ms"] = undoMS
+		proof["original_trash_purge_ms"] = purgeMS
+		proof["second_original_http_enqueue_ms"] = secondMS
+		proof["second_post_gorm_trace_by_sql_family"] = trace.snapshot()
+		proof["second_post_pg_wait_type_samples"] = waits
+		proof["postflight_pg_relation_statistics"] = statistics
+		proof["postflight_pg_stats_query_failed"] = statsErr != nil
+		proof["postflight_original_recursive_query_explain"] = explain
+		proof["second_post_go_rss_growth_bytes"] = max(int64(0), rssAfterPost-rssBeforePost)
+		proof["second_post_go_cpu_ticks"] = cpuAfterPost - cpuBeforePost
+		proof["second_queued_operation_cancelled"] = true
+		proof["second_post_physical_cas_inodes"] = casCount
+		proof["second_post_physical_allocated_bytes"] = casAllocated
+		proof["first_full_lifecycle_passed"] = passed
+		proof["frozen_120s_both_admissions_passed"] = enqueueMS <= 120000 && secondMS <= 120000
+		proof["passed"] = ok
+		proof["scope"] = "test-only second real authenticated POST after fully verified physical Copy+Undo+Trash; canceled pending repeat, no production change"
+		encoded, err := json.Marshal(proof)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("P066_ORIGINAL_POST_LIFECYCLE_REENQUEUE %s", encoded)
+		if !ok {
+			t.Fatalf("P066 frozen original admission RED: %s", encoded)
+		}
+	}
+
 	if !passed {
 		t.Fatalf("P056 original immutable Copy+Undo frozen performance budget failed: %s", jsonRow)
 	}

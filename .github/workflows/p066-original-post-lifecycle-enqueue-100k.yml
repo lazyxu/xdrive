@@ -1,0 +1,150 @@
+name: P066 Original 100k Copy-Undo-Trash second Owner HTTP enqueue
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  p066-source-format:
+    if: github.head_ref == 'perf/p066-original-post-lifecycle-enqueue-20261020'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Source-exact Go formatting, no waiver
+        run: |
+          set -euo pipefail
+          file=internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go
+          if [ -n "$(gofmt -l "$file")" ]; then
+            gofmt -d "$file"
+            exit 1
+          fi
+          echo P066_GO_SOURCE_EXACT_FORMAT_OK
+
+  p066-real-full-lifecycle-100k:
+    if: github.head_ref == 'perf/p066-original-post-lifecycle-enqueue-20261020'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_P056_REAL_COPY_PERF: '1'
+      XD_P066_POST_LIFECYCLE_REENQUEUE: '1'
+      XD_P066_POSTFLIGHT_EXPLAIN: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Original source three independent physical 100k Copy Undo Trash then Owner HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p p066-original-results
+          printf 'SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > p066-original-results/source.txt
+          go version >> p066-original-results/source.txt
+          failed=0
+          for i in 1 2 3; do
+            export XD_P056_SAMPLE="sample-$i"
+            if go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' \
+              -count=1 -timeout=40m -v 2>&1 | tee "p066-original-results/sample-$i.log"; then
+              printf 'PASS\n' > "p066-original-results/sample-$i.exit"
+            else
+              failed=1
+              printf 'FAIL\n' > "p066-original-results/sample-$i.exit"
+            fi
+          done
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import statistics
+          root=pathlib.Path("p066-original-results")
+          rows=[]
+          invalid=[]
+          for i in range(1,4):
+              sample=f"sample-{i}"
+              lines=(root/f"{sample}.log").read_text().splitlines()
+              def records(prefix):
+                  return [json.loads(line.split(prefix,1)[1]) for line in lines if prefix in line]
+              original=records("P056_REAL_PHYSICAL_COPY_UNDO ")
+              repeated=records("P066_ORIGINAL_POST_LIFECYCLE_REENQUEUE ")
+              if len(original)!=1 or len(repeated)!=1:
+                  invalid.append(f"{sample}: missing full cycle or second original POST")
+                  continue
+              before,now=original[0],repeated[0]
+              if (before["sample"]!=sample or now["sample"]!=sample or
+                  before["physical_sources"]!=100000 or now["physical_sources"]!=100000 or
+                  now["original_physical_cas_inodes"]!=100001 or now["smoke_only"] or
+                  before["source_aggregate_sha256"]!=now["source_aggregate_sha256"] or
+                  not now["second_post_gorm_trace_by_sql_family"] or
+                  not now["second_queued_operation_cancelled"] or
+                  now["second_post_physical_cas_inodes"]!=100001 or
+                  now["second_post_physical_allocated_bytes"]!=now["original_physical_allocated_bytes"]):
+                  invalid.append(f"{sample}: invalid original identity, CAS integrity or cancelled replay")
+              rows.append({
+                  "sample":sample,
+                  "source_aggregate_sha256":now["source_aggregate_sha256"],
+                  "first_original_http_enqueue_ms":now["first_original_http_enqueue_ms"],
+                  "original_copy_worker_ms":now["original_copy_worker_ms"],
+                  "original_undo_worker_ms":now["original_undo_worker_ms"],
+                  "original_trash_purge_ms":now["original_trash_purge_ms"],
+                  "second_original_http_enqueue_ms":now["second_original_http_enqueue_ms"],
+                  "sql_families":now["second_post_gorm_trace_by_sql_family"],
+                  "postgres_wait_sampling":now["second_post_pg_wait_type_samples"],
+                  "second_post_go_rss_growth_bytes":now["second_post_go_rss_growth_bytes"],
+                  "second_post_go_cpu_ticks":now["second_post_go_cpu_ticks"],
+                  "original_full_lifecycle_passed":now["first_full_lifecycle_passed"],
+                  "passed":now["passed"]
+              })
+          if len(rows)==3 and len({x["source_aggregate_sha256"] for x in rows})!=3:
+              invalid.append("source SHA corpus reused across independent samples")
+          valid=len(rows)==3 and not invalid
+          summary={
+              "workload":"P066 true original physical 100k Copy->Undo->Trash->new JWT Owner HTTP enqueue",
+              "source":(root/"source.txt").read_text().strip(),
+              "valid_n":len(rows) if valid else 0,
+              "first_enqueue_p50_ms":statistics.median(x["first_original_http_enqueue_ms"] for x in rows) if valid else None,
+              "second_enqueue_p50_ms":statistics.median(x["second_original_http_enqueue_ms"] for x in rows) if valid else None,
+              "frozen_original_each_http_enqueue_ms":120000,
+              "invalid":invalid,
+              "samples":rows,
+              "all_frozen_gates_pass":valid and all(x["passed"] for x in rows),
+              "product_after":None,
+              "speedup":None
+          }
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("P066_MACHINE_SUMMARY",json.dumps(summary,separators=(",",":")))
+          if not summary["all_frozen_gates_pass"]:
+              raise SystemExit("Original RED or invalid: preserve raw n3, do not claim acceptance")
+          PY
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Preserve all source-exact raw samples including RED
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p066-original-full-lifecycle-100k
+          path: p066-original-results/
+          if-no-files-found: warn
