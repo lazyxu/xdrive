@@ -263,7 +263,7 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     private readonly listViewport: XDriveBaiduNativePhotoViewportRequest,
     private readonly callbacks: XDriveBaiduNativePhotoCallbacks & {
       onResult?(result: XDriveBaiduIndexedViewportResult): void
-      onCells?(page: MediaBaiduNativeCellsPage | null): void
+      onCells?(page: MediaBaiduNativeCellsPage | null, bounds?: XDriveBaiduNativePhotoBounds): void
     },
     private readonly listCells?: XDriveBaiduNativePhotoCellsRequest,
     nativeNamespace?: unknown,
@@ -337,14 +337,14 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
               (cell.node_revision ?? 0) > 0)) {
           if (!this.overlays.applyCovers(summary, bounds, abort.signal))
             return this.deliver({kind:'query-unavailable'},generation)
-          try {this.callbacks.onCells?.(summary)} catch {}
+          try {this.callbacks.onCells?.(summary, bounds)} catch {}
           return this.deliver({kind:'aggregated',totalPhotos:priorCount,
             cells:summary.cells.length},generation)
         }
         if(priorCount>XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX) {
           if(!this.overlays.apply(summary,bounds,abort.signal))
             return this.deliver({kind:'query-unavailable'},generation)
-          try {this.callbacks.onCells?.(summary)} catch {}
+          try {this.callbacks.onCells?.(summary, bounds)} catch {}
           return this.deliver({kind:'aggregated',totalPhotos:priorCount,
             cells:summary.cells.length},generation)
         }
