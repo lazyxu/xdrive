@@ -883,3 +883,108 @@ test('Refreshing a later public keyset page does not add a spurious Back cursor'
     'Back after refresh must return to actual previous keyset cursor')
   assert.ok(textContent(renderer.toJSON()).includes('file-1.jpg'))
 })
+
+
+test('P115: same accepted public page refresh retains filter and selected row, new folder resets before paint', async (t) => {
+  let reads = 0
+  class Api {
+    async publicShare() {
+      return { name: 'Shared Photos', type: 'dir', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren(_token, _password, parentID) {
+      reads++
+      return { parent_id: parentID, next_cursor: 0,
+        items: parentID === 0
+          ? [{ id: 12, name: 'Nested', type: 'dir', size: 0 },
+             { id: 20, name: 'Frame.jpeg', type: 'file', size: 10 }]
+          : [{ id: 21, name: 'Nested.jpeg', type: 'file', size: 11 }] }
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let view
+  await act(async () => { view = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => view.unmount()))
+  const button = label => view.root.findAllByType('button')
+    .find(x => textContent(x.children).trim() === label)
+  const rows = () => view.root.findAll(x => x.type === 'div' && x.props.role === 'listitem')
+  const filter = () => view.root.findAllByType('input')
+    .find(x => x.props.placeholder === '筛选当前页')
+  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(reads, 1)
+  await act(async () => { filter().props.onChange({ target: { value: 'Frame' } }) })
+  assert.equal(rows().length, 1)
+  const original = rows()[0]
+  assert.equal(original.props['data-xdrive-public-share-item-id'], 20)
+  await act(async () => { original.props.onClick() })
+  assert.equal(rows()[0].props['aria-selected'], true)
+  const refresh = view.root.findAllByType('button')
+    .find(x => x.props['aria-label'] === '刷新文件夹')
+  assert.ok(refresh, 'the existing icon-only Refresh action is still present')
+  await act(async () => { refresh.props.onClick() })
+  assert.equal(reads, 2)
+  assert.equal(filter().props.value, 'Frame',
+    'a new array containing the SAME accepted page must not clear user filtering')
+  assert.equal(rows().length, 1)
+  assert.equal(rows()[0].props['aria-selected'], true)
+  await act(async () => { filter().props.onChange({ target: { value: '' } }) })
+  const directory = rows().find(x => x.props['data-xdrive-public-share-item-id'] === 12)
+  assert.ok(directory)
+  await act(async () => { directory.props.onDoubleClick() })
+  assert.equal(reads, 3)
+  assert.equal(filter().props.value, '', 'new accepted nested scope starts with an empty local filter')
+  assert.equal(rows().length, 1)
+  assert.equal(rows()[0].props['data-xdrive-public-share-item-id'], 21)
+})
+
+test('P115: original public folder failure and ZIP notices never resize Explorer Stack', async (t) => {
+  let attempts = 0
+  class Api {
+    async publicShare() {
+      return { name: 'Shared Photos', type: 'dir', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren() {
+      attempts++
+      if (attempts > 1) throw new Error('GET was rejected')
+      return { parent_id: 0, next_cursor: 0,
+        items: [{ id: 20, name: 'Frame.jpeg', type: 'file', size: 10 }] }
+    }
+    async preparePublicShareArchive() {
+      throw new Error('ZIP remote failed')
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let view
+  await act(async () => { view = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => view.unmount()))
+  const button = label => view.root.findAllByType('button')
+    .find(x => textContent(x.children).trim() === label)
+  const find = marker => view.root.findAll(x => x.type === 'div' && x.props[marker] === true)
+  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(find('data-xdrive-public-share-folder-browser').length, 1)
+  const browser = find('data-xdrive-public-share-folder-browser')[0]
+  const owner = find('data-xdrive-public-share-floating-feedback')[0]
+  assert.ok(owner)
+  assert.equal(owner.props.sx.position, 'fixed')
+  assert.equal(owner.props.sx.pointerEvents, 'none')
+  const ancestors = []
+  for (let parent = owner.parent; parent; parent = parent.parent) ancestors.push(parent.props || {})
+  assert.ok(ancestors.some(props => props['data-xdrive-public-share-read-slot'] === true),
+    'feedback owner remains inside the original read slot')
+  assert.ok(!ancestors.some(props => props.spacing === 2.25),
+    'feedback owner is OUTSIDE the spaced share Stack')
+  const refreshAction = view.root.findAllByType('button')
+    .find(node => node.props['aria-label'] === '刷新文件夹')
+  assert.ok(refreshAction, 'original Refresh icon button is reachable by its accessible label')
+  await act(async () => { refreshAction.props.onClick() })
+  assert.equal(find('data-xdrive-public-share-folder-browser')[0], browser)
+  assert.equal(find('data-xdrive-public-share-floating-feedback')[0], owner)
+  assert.ok(textContent(owner.children).includes('GET was rejected'), 'real failure remains readable')
+  await act(async () => { button('下载整个文件夹 ZIP').props.onClick() })
+  assert.equal(find('data-xdrive-public-share-folder-browser')[0], browser)
+  assert.ok(textContent(owner.children).includes('ZIP remote failed'))
+  const slot=find('data-xdrive-public-share-zip-status-slot')[0]
+  assert.equal(slot.props.sx.height, 24)
+  assert.equal(slot.props.sx.minHeight, 24)
+})

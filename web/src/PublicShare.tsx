@@ -257,8 +257,9 @@ export default function PublicShareView({ token }: { token: string }) {
           aria-busy={loading}
           sx={{ minHeight: 180, minWidth: 0, position: 'relative' }}
         >
-          {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
-          {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
+          {/* A failed first metadata read has no mounted Explorer to displace.
+              Once authenticated content exists, all async receipts float outside its Stack. */}
+          {!share && error ? <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert> : null}
 
           {share && (
             <Stack spacing={2.25} sx={{ width: '100%', minWidth: 0 }}>
@@ -312,18 +313,20 @@ export default function PublicShareView({ token }: { token: string }) {
                 />
               )}
 
-              {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
+              {/* Eligibility changes are announced in the persistent floating owner below. */}
 
               {share.type === 'dir' ? (
                 <>
-                  <Box sx={{ minHeight: 24, px: 0.5 }} aria-live="polite">
-                    {zipPreparing && (
-                      <Typography variant="caption" color="text.secondary">
+                  <Box data-xdrive-public-share-zip-status-slot
+                    aria-live="polite" aria-busy={zipPreparing || undefined}
+                    sx={{ height: 24, minHeight: 24, px: 0.5, minWidth: 0 }}>
+                    {zipPreparing ? (
+                      <Typography variant="caption" color="text.secondary" noWrap
+                        title="正在准备文件夹 ZIP，准备任务可在页面离开后继续。"
+                        sx={{ display: 'block', lineHeight: '24px' }}>
                         正在准备文件夹 ZIP，准备任务可在页面离开后继续。
                       </Typography>
-                    )}
-                    {zipNotice && <Typography variant="caption" color="success.main">{zipNotice}</Typography>}
-                    {zipError && <XDriveStatusAlert tone="bad">{zipError}</XDriveStatusAlert>}
+                    ) : null}
                   </Box>
                   <XDrivePublicShareReadOnlyExplorer
                     kind="dir"
@@ -372,7 +375,8 @@ export default function PublicShareView({ token }: { token: string }) {
                       if (folder) void loadFolder(folder.path, folder.cursor, false, true)
                     }}
                   />
-                  {folderError && <XDriveStatusAlert tone="bad">{folderError}</XDriveStatusAlert>}
+                  {/* A failed folder GET retains the existing Explorer and is reported
+                      by the fixed feedback owner outside the layout Stack. */}
                 </>
               ) : (
                 <XDrivePublicShareReadOnlyExplorer
@@ -391,6 +395,36 @@ export default function PublicShareView({ token }: { token: string }) {
               )}
             </Stack>
           )}
+          {/* Never inject asynchronous share/ZIP/folder feedback among the
+              already-mounted shared Explorer siblings. MUI Stack spacing
+              can shift list rows even for an absolute-positioned child. */}
+          <Box data-xdrive-public-share-floating-feedback
+            sx={{
+              position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+              bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+              width: 'min(calc(100vw - 24px), 560px)',
+              maxHeight: 'min(35dvh, 240px)', overflowY: 'auto',
+              zIndex: (theme) => theme.zIndex.snackbar,
+              pointerEvents: 'none', display: 'flex',
+              flexDirection: 'column', gap: 0.5,
+            }}>
+            {share && error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
+            {share && notice ? (
+              <Typography role="status" variant="caption"
+                sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
+                {notice}
+              </Typography>
+            ) : null}
+            {exhausted ? <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert> : null}
+            {share?.type === 'dir' && zipNotice ? (
+              <Typography role="status" variant="caption"
+                sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
+                {zipNotice}
+              </Typography>
+            ) : null}
+            {share?.type === 'dir' && zipError ? <XDriveStatusAlert tone="bad">{zipError}</XDriveStatusAlert> : null}
+            {share?.type === 'dir' && folderError ? <XDriveStatusAlert tone="bad">{folderError}</XDriveStatusAlert> : null}
+          </Box>
         </Box>
         </Box>
       </XDriveAuthPanel>
