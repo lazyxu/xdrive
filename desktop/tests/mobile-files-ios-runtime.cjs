@@ -4960,3 +4960,97 @@ test('P104 source-exact Web/Mobile Owner-only navigation gates retain independen
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
   assert.equal(agents.split('## P104 · Mobile Files directory receipt independent from background operations').length, 2)
 })
+
+
+test('P105 Mobile Files shows verified-zero directory immediately despite ongoing independent FileOperation', async () => {
+  const emptyRange = {
+    itemCount: 0,
+    interactionKey: 'p105-owner-root-counted-zero',
+    loadedItems: new Map(),
+    itemAt: () => undefined,
+    onRangeChange() {},
+    groups: [],
+  }
+  await withView(async h => {
+    const zero = () => find(h.view, 'data-mobile-files-zero-state', true)
+    const panels = () => h.view.root.findAll(n => n.type === 'state-panel')
+    const hostCount = () => count(h.view, 'data-xdrive-file-explorer-scroll-host')
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], true)
+    assert.equal(panels().length, 0, 'an unconfirmed first Range is truly silent')
+    assert.equal(hostCount(), 1)
+
+    // Server's current counted zero is now authorized. FileOperation busy
+    // remains true: this is not an unverified folder, a fake empty result or
+    // permission to show another transient loading screen.
+    await h.update({
+      virtualCollection: emptyRange,
+      directoryLoading: false,
+      loading: true,
+    })
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], undefined)
+    assert.equal(panels().length, 1,
+      'confirmed empty folder cannot disappear behind unrelated task busy')
+    assert.equal(panels()[0].props.message, '此文件夹为空')
+    assert.equal(panels()[0].props.loading, false)
+    assert.equal(hostCount(), 1)
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
+
+    // An independent new directory refresh is real: the already accepted
+    // empty state remains mounted with the identical 180px footprint.
+    await h.update({ directoryLoading: true, loading: true })
+    assert.equal(panels().length, 1)
+    assert.equal(panels()[0].props.message, '此文件夹为空')
+    assert.equal(panels()[0].props.loading, false)
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(hostCount(), 1)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 355)) })
+    assert.equal(panels().length, 1, 'slow refresh never inserts a new Loading panel')
+    assert.equal(panels()[0].props.message, '此文件夹为空')
+
+    // Accepted refresh and then task completion cannot cause a second
+    // empty/blank/empty visual cycle.
+    await h.update({ directoryLoading: false, loading: true })
+    assert.equal(panels()[0].props.message, '此文件夹为空')
+    await h.update({ directoryLoading: false, loading: false })
+    assert.equal(panels().length, 1)
+    assert.equal(panels()[0].props.loading, false)
+    assert.equal(panels()[0].props.message, '此文件夹为空')
+    assert.equal(hostCount(), 1)
+  }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: {
+      items: [], loading: true, directoryLoading: true,
+      virtualCollection: null,
+      requestedDirectoryID: 1,
+      crumbs: [{ id: 1, name: '我的文件' }],
+    } })
+})
+
+test('P105 source gates empty/cold Browse states on Owner GET and retains independent Search/Trash/thumbnail loading', () => {
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const starting = mobile.slice(
+    mobile.indexOf('  // The real CloudFiles first-Range receipt owns ordinary folder loading.'),
+    mobile.indexOf('  const inlineEnabled ='),
+  )
+  assert.ok(starting.length > 1800)
+  for (const marker of [
+    'const ownerDirectoryLoading = props.directoryLoading ?? props.loading',
+    '!ownerDirectoryLoading && totalCount === 0 && props.virtualCollection',
+    'emptyDirectoryKey, ownerDirectoryLoading, props.virtualCollection, totalCount',
+    'const zeroStateOwnerLoading = props.searchActive || props.trashActive',
+    '? props.loading : ownerDirectoryLoading',
+    'const zeroStatePending = (zeroStateOwnerLoading && !keepAcceptedEmptyDirectory &&',
+    'const coldDirectoryFirstRead = coldUnconfirmedBrowse && ownerDirectoryLoading',
+    'const showRangeLoading = (props.loading || searchCountPending) &&',
+    'const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !coldDirectoryReadFailed',
+  ]) assert.ok(starting.includes(marker), marker)
+  assert.equal(starting.includes('else if (!props.loading && totalCount === 0 && props.virtualCollection)'), false)
+  assert.ok(web.includes('directoryLoading={loading}'))
+  assert.ok(web.includes('loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}'))
+  assert.ok(mobile.includes('XDriveFileExplorerThumbnail'))
+  assert.ok(mobile.includes('showRangeLoading'))
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  assert.equal(agents.split('## P105 · Verified-zero Mobile directory independent from operation busy').length, 2)
+})
