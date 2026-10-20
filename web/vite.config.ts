@@ -13,6 +13,7 @@ const performanceFileBuild =
 export default defineConfig({
   base: performanceFileBuild ? './' : '/',
   plugins: [react()],
+  build: { manifest: true },
   publicDir: '../assets/icon/web',
   resolve: {
     preserveSymlinks: true,

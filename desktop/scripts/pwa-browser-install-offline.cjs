@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const http = require('node:http')
 const { createHash } = require('node:crypto')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
@@ -351,8 +352,7 @@ async function validateCase(browser, origin, spec) {
       }
       return { names, resources }
     })
-    assert.deepEqual(cache.names, ['xdrive-pwa-public-offline-v1'])
-    assert.deepEqual(cache.resources, ['/offline.html'])
+    assertXDrivePublicShellCache(cache)
     result.cachedPublicOnly = true
 
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -360,7 +360,8 @@ async function validateCase(browser, origin, spec) {
     assert.equal(new URL(page.url()).hash, expectedHash)
     networkTransportDown = true
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.getByRole('heading', { name: '暂时无法连接 xDrive' }).waitFor()
+    await page.locator('[data-xdrive-pwa-login-entry]').waitFor()
+    // Offline public shell works; private Files still require server authorization.
     assert.equal(new URL(page.url()).hash, expectedHash)
     result.offlineNavigation = true
 
@@ -427,8 +428,7 @@ async function validateCase(browser, origin, spec) {
         }
         return { names, paths }
       })
-      assert.deepEqual(cacheAfterLogin.names, ['xdrive-pwa-public-offline-v1'])
-      assert.deepEqual(cacheAfterLogin.paths, ['/offline.html'])
+      assertXDrivePublicShellCache(cacheAfterLogin)
       assert.equal(observed.authUnknown, 0,
         'authorized Files must use the documented API: ' + observed.authUnknownRoutes.join(', '))
       result.authenticatedColdReload = true
@@ -477,7 +477,7 @@ async function main() {
       assert.equal(observed.authUnknown, 0)
       assert.equal(observed.unauthorized, 0)
     }
-    assert(observed.transportDrops >= 4, 'both contexts must attempt offline root and private navigation')
+    assert(observed.privateTransportDrops >= 2, 'both contexts must bypass SW for private navigation')
     assert.equal(evidence.failures.length, 0)
     evidence.passed = true
   } catch (error) {

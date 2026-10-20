@@ -47,7 +47,7 @@ test('S4B2-A: native Chrome uses actual Files picker, hard reload and original-f
     'again.setFiles(filepath)',
     "response.request().method() === 'POST'",
     'final.result?.sha256, expectedHash',
-    "cache.resources, ['/offline.html']",
+    "assertXDrivePublicShellCache(cache)",
   ]) assert.ok(chrome.includes(token), token)
   assert.ok(chrome.includes('inputBytes: ready.upload_size_bytes'))
   assert.ok(chrome.includes('physicalDevice: false, systemInstalled: false'))

@@ -38,7 +38,7 @@ test('S4C3-B2c1 Chrome user cancel and independent signed retry verify real disk
     'summary.nativeDownloadCancelled = true',
     'summary.freshTicketAfterCancel = true',
     'await download.saveAs(saved)', 'digest.sha256, ready.native_download_sha256',
-    "cached.every(p => p === '/offline.html')",
+    "assertXDrivePublicShellCache(cached)",
   ]) assert(browser.includes(s), s)
   assert(!browser.includes('page.route('))
   assert(!browser.includes('route.fulfill('))

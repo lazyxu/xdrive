@@ -6,6 +6,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const args = Object.fromEntries(process.argv.slice(2).map(text => {
@@ -336,7 +337,7 @@ async function verifyCase(browser, mobile) {
         }
         return paths.sort()
       })
-      assert.deepEqual(cachePaths, ['/offline.html'])
+      assertXDrivePublicShellCache(cachePaths)
       sample.publicSharePublicOnlyCache = true
 
       // Switching from a previously authenticated Viewer to a share and
@@ -391,8 +392,7 @@ async function verifyCase(browser, mobile) {
       }
       return { names, files }
     })
-    assert.deepEqual(cache.names, ['xdrive-pwa-public-offline-v1'])
-    assert.deepEqual(cache.files, ['/offline.html'])
+    assertXDrivePublicShellCache(cache)
     sample.publicOnlyWorkerCache = true
     assert.deepEqual(errors, [], 'production Chrome JavaScript errors are not allowed')
     summary.cases.push(sample)

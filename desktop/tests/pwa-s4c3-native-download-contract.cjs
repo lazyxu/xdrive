@@ -49,7 +49,7 @@ test('S4C3-B1 real signed 206/416, no-ticket 401 and SW privacy are independentl
   for (const fragment of [
     "headers: {'Range': 'bytes='", 'response.status(), 206',
     'beyond.status(), 416', 'missing.status(), 401',
-    "cached.every(p => p === '/offline.html')",
+    "assertXDrivePublicShellCache(cached)",
     'onlyPublicOfflineCache = true',
   ]) assert(chrome.includes(fragment), fragment)
   assert(!chrome.includes('skipWaiting'), 'SW must never auto-activate')

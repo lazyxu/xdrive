@@ -8,6 +8,7 @@ const fs = require('node:fs')
 const crypto = require('node:crypto')
 const os = require('node:os')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 const args = Object.fromEntries(process.argv.slice(2).map(value => {
   const match = /^--(ready|output-dir|mode)=(.+)$/.exec(value)
@@ -259,8 +260,7 @@ async function run() {
       }
       return {names,paths}
     })
-    assert.deepEqual(cache.names,['xdrive-pwa-public-offline-v1'])
-    assert.deepEqual(cache.paths,['/offline.html'])
+    assertXDrivePublicShellCache(cache)
     summary.onlyPublicOfflineCache=true
     assert.deepEqual(errors,[])
     const stop=await fetch(ready.url+'/__test/pwa-s2b3/finish',{method:'POST'})

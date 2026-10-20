@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const crypto = require('node:crypto')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
@@ -212,7 +213,7 @@ async function run() {
       }
       return paths
     })
-    assert(cached.every(p => p === '/offline.html'), 'PWA SW retained a private payload')
+    assertXDrivePublicShellCache(cached)
     summary.onlyPublicOfflineCache = true
     assert.deepEqual(errors, [])
     summary.stage = 'go-postflight'

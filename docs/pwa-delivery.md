@@ -621,3 +621,12 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 在 S5-A2b1a #1750 完整准确 HEAD CI/Final Gate 绿后线性合并并核对 PWA 旧分支删除的基础上，新增**专用真实 Chromium（非 OS 安装）**测试：从 Web 生产构建 / 真实 loopback HTTP 安全上下文注册原版 SW，并为测试专用响应追加有限的版本查询 message hook（绝不部署到正式 sw.js），两个已受控窗口保持旧 worker 时显式执行浏览器原生 \`registration.update()\`，确认 v2 仅处于 waiting；同时保持一个受控合成慢 POST 不被页面刷新/控制器变更打断，并验证匿名私有 \`/api\` 仍被 Server 拒绝且 CacheStorage 仅有公开 \`offline.html\`。旧窗口主动关闭后再新开，证明 v2 才成为 active。独立覆盖桌面 Chrome 和 Android UA/Touch 390px **模拟**，只上传匿名 JSON 测试结果，准确 HEAD 的专项及完整 GitHub CI/Final Gate 都须绿，严格一工作提交。
 
 **证据边界：** 长 POST 是隔离 fixture 的少量合成字节，不是真实文件上传、下载、Viewer 活动，也不证明已安装 PWA、iOS 27 Safari/Home Screen、Android OS Installed、物理锁屏或真实 HTTPS 证书。此自动化只能证明 S5-04 的安全更新基础在 Chromium 表现正确，不能把 S5-02/S5-03/S5-04 真机矩阵从 NOT RUN 改 PASS；发布仍 \`NO_GO_PHYSICAL_INSTALL_NOT_RUN\`。下一步由真实七平台设备操作者与独立审核者提供 S5-01～S5-03 证据，之后执行真实 S5-04～S5-11 验收。
+
+## PWA-P0A · iOS 优先的静态 App Shell 本地化（2026-10-20）
+
+- **范围：** 使用 Vite `build.manifest` 提取主入口及其 *静态* imports/CSS/资源；生产构建在 `vite build` 后生成带 20 位内容修订号的 `/sw.js`。只预缓存公开 `index.html` 与构建哈希 `/assets/...` 的启动依赖，排除所有 dynamic imports（Viewer/大组件不会在首次安装被全量预取）；单次最多 120 个文件、24 MiB，超过限额构建失败而非放宽隐私规则。实现采用无新增 npm 依赖的 Vite 构建产物清单注入与原生 SW；后续若引入 Workbox，不得改变固定缓存白名单和 waiting 语义。
+- **双缓存与权限：** `xdrive-pwa-public-offline-v1` 只含 `/offline.html`；版本化 `xdrive-pwa-public-shell-<revision>` 只含 `/index.html` 和精确清单静态 URL。安装时每个资源 `credentials:omit`、禁止重定向、校验 HTTP/MIME，最多 4 并发，全部成功才安装。离线根 SPA 导航用已缓存的公开 App Shell；所有 `/api/*`、登录、原件、缩略图、Live、下载票据、公开分享、Range、POST/PUT 仍然 Network-only，不进入 SW 公共缓存。
+- **无中断更新：** 构建产物任意变动会改变 SW 字节并可由原有 `registration.update()` 检测；保留 `waiting`，**不** `skipWaiting`/强制页面刷新/取消浏览器前台任务或 Server durable tasks。新 SW 完整安装失败时旧版本不切换；激活时只清理本应用前代公开 shell 缓存，保留无关 CacheStorage。
+- **HTTP 与回滚：** Caddy 根 HTML 每次可重新验证，`/assets/*` 为不可变构建哈希资源且文件缺失返回真实 404，不允许伪造 index.html MIME。仍需进一步建设旧构建资源保留与 API 协议兼容窗口；本阶段只解决新已安装 PWA 的启动静态图缓存，不承诺旧页面在 Server 发布后的所有延迟动态模块都能在线加载。
+- **验证范围：** Node 合成 Vite 图构建、错误/越权资源拒绝、版本变化、真实 JS SW 沙箱缓存与私有请求 bypass；专项真实 Chromium desktop/Android UA 390（不是 iOS 真机）验证生产构建离线根导航、授权深链接及 CacheStorage 精确白名单。启动耗时 p50/p95、iOS 27 系统图标冷启动及 100k 性能尚无真实基线，不得捏造提速；独立物理/生产环境安全验收按用户永久决定跳过（未验收），不阻断源码 CI 与 PR 合并。
+- **后续阶段：** P0B 保留旧哈希构建资源、真实版本间更新/回退，以及 Files/Gallery 页面不抖动（遵循既有稳定导航规则）；P1 明确授权的 IndexedDB 只读元数据；P2 有容量上限的可清理缩略图缓存。任何私人数据缓存都不与 P0A 公共 SW CacheStorage 混用。

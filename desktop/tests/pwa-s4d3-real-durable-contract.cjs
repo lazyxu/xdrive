@@ -50,7 +50,7 @@ test('S4D3 kills an OS Chrome process and restores Server authority after fresh 
     'summary.serverSummaryRead = true', 'summary.serverTaskPageRead = true',
     'summary.serverFileOperationsRead = true', "new URL(r.url()).pathname === '/api/v1/file-operations'",
     'summary.coldReloadConsistent = true',
-    'assert.deepEqual(mutations, []', "cached.every(x => x === '/offline.html')",
+    'assert.deepEqual(mutations, []', "assertXDrivePublicShellCache(cached)",
   ]) assert(browser.includes(value), value)
   assert(browser.includes("for (const button of await p.$$('button'))"),
     'real login must iterate all buttons using Puppeteer $$ selector')
