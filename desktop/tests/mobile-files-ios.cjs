@@ -279,7 +279,7 @@ test('P69: Recent, pinned and menu-open folders await the authorized counted Ran
     'pendingExternalDirectoryRef.current = { directoryID: id, intent, alreadyCommitted }',
     'externalDirectoryCommit = Boolean(',
     'pendingExternal.directoryID === directoryID',
-    'props.virtualCollection && !props.loading',
+    'props.virtualCollection && !ownerDirectoryLoading',
     'openExternalDirectory(entry.id, open)',
     'openExternalDirectory(entry.id, () => props.onOpenQuickAccess(entry.id))',
     'openExternalDirectory(selectedEntry.id, open)',
