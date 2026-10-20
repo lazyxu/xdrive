@@ -58,7 +58,12 @@ test('older Host Control is reconciled read-only, never by restarting Caddy', ()
     assert.ok(source.includes(name), 'missing upgrade bridge: ' + name)
   }
   assert.match(source, /caddy-observe\) caddy_compat_observe_cmd/)
-  assert.match(source, /caddy_host_refresh \|\| true/)
+  // Verify the actual primary-runner sampler handshake, not the obsolete
+  // unconditional syntax. A failed refresh cannot publish a main pulse.
+  const primarySampler = /if caddy_host_refresh; then\s+caddy_host_control_mark_main_sample "\$dir" \|\| true\s+fi/g
+  assert.equal([...source.matchAll(primarySampler)].length, 2)
+  assert.match(source, /caddy_host_control_main_sample_since/)
+  assert.match(source, /caddy_host_snapshot_fresh/)
   assert.match(source, /flock -n 7/)
   assert.match(source, /caddy-runner-source\.sha/)
   const observer = source.slice(source.indexOf('caddy_compat_observe_cmd() {'),

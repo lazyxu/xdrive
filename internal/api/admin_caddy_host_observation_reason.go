@@ -58,7 +58,7 @@ func (s *Server) caddyHostUnobservedDetail() string {
 	case "heartbeat-stale":
 		return "Host Control 心跳超过有效期或时间异常；请检查宿主控制进程是否持续运行"
 	case "snapshot-missing":
-		return "Caddy 宿主状态快照缺失；检查宿主进程采样及 Server 共享挂载"
+		return "Caddy 宿主状态快照缺失；不代表网关未安装。新版 Host Control 会尝试只读补采样；若持续缺失，请检查宿主观察器及 Server 共享挂载"
 	case "snapshot-unreadable":
 		return "Caddy 宿主状态快照元数据不可访问；检查只读挂载和文件权限"
 	case "snapshot-invalid":
