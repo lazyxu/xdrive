@@ -7,14 +7,14 @@ import (
 )
 
 func TestAdminServiceDependencyCaddyFieldsSurviveClientSerialization(t *testing.T) {
-	const raw = `{"id":"caddy","configuration_state":"configured","installation_state":"observed","health_state":"ready","activation_state":"deployment-only","https_configured":false,"local_tls_state":"disabled"}`
+	const raw = `{"id":"caddy","configuration_state":"configured","installation_state":"observed","health_state":"ready","activation_state":"deployment-only","https_configured":false,"local_tls_state":"disabled","caddy_internal_http_state":"reachable"}`
 	var result ServiceDependency
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatal(err)
 	}
 	if result.HTTPSConfigured == nil || *result.HTTPSConfigured ||
 		result.LocalTLSState != "disabled" || result.InstallationState != "observed" ||
-		result.ActivationState != "deployment-only" {
+		result.ActivationState != "deployment-only" || result.CaddyInternalHTTPState != "reachable" {
 		t.Fatalf("Go Client lost Caddy or lifecycle observation: %+v", result)
 	}
 	data, err := json.Marshal(result)
@@ -23,7 +23,8 @@ func TestAdminServiceDependencyCaddyFieldsSurviveClientSerialization(t *testing.
 	}
 	if !strings.Contains(string(data), `"https_configured":false`) ||
 		!strings.Contains(string(data), `"local_tls_state":"disabled"`) ||
-		!strings.Contains(string(data), `"activation_state":"deployment-only"`) {
+		!strings.Contains(string(data), `"activation_state":"deployment-only"`) ||
+		!strings.Contains(string(data), `"caddy_internal_http_state":"reachable"`) {
 		t.Fatalf("Desktop Agent forward would lose observed fields: %s", data)
 	}
 }

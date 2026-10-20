@@ -36,6 +36,9 @@ export type XDriveServiceDependency = {
   // Only Caddy reports these trusted host observations, never the domain itself.
   https_configured?: boolean
   local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  // Weak fixed caddy:80 reverse-proxy GET when trusted Host Control is missing.
+  // Never upgrades installation, Docker health, TLS or desired-revision evidence.
+  caddy_internal_http_state?: 'reachable' | 'unavailable'
   // Trusted Host Manager observation of one fixed photo-face container;
   // NEVER a saved/effective model revision or a model Info health response.
   photo_host_runtime_state?: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'

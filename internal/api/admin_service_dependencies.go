@@ -31,6 +31,7 @@ type serviceDependency struct {
 	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
 	LocalTLSState                    string `json:"local_tls_state,omitempty"`
+	CaddyInternalHTTPState           string `json:"caddy_internal_http_state,omitempty"`
 	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
@@ -307,9 +308,13 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			services[10].Detail = "Host Manager 无法获取可信 Caddy 容器健康状态；" + mode
 		}
 	} else {
-		// Preserve unverified status; explain which fixed Host Control witness
-		// is missing, stale or invalid without reading credential-bearing data.
-		services[10].Detail = s.caddyHostUnobservedDetail()
+		// A separate, weaker fixed internal HTTP path may work even when
+		// the official Host Control mount is missing; never promote it into
+		// Caddy Docker health, installation or HTTPS proof.
+		// Only the official Compose Server's fixed /host-control path opts in.
+		checkInternalRoute := s.HostControlDir == "/host-control"
+		annotateCaddyMissingHostWitness(&services[10], s.caddyHostUnobservedDetail(),
+			checkInternalRoute, checkInternalRoute && caddyInternalRouteObserved(ctx))
 	}
 
 	if s.DB != nil {
@@ -337,6 +342,13 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 	// Preserve legacy status. Each new axis uses only its own proof.
 	s.setServiceLifecycleStates(ctx, services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
+	// A validated Server deployment-entry declaration is *configuration*
+	// evidence only; it does not imply the original Host Caddy is installed,
+	// reachable, enabled or that administrator intent has been applied.
+	if !caddyContainerObserved &&
+		(validCaddyHTTPSDomain(os.Getenv("XD_DOMAIN")) || validCaddyLANIP(os.Getenv("XD_LAN_HTTPS_IP"))) {
+		services[10].ConfigurationState = "configured"
+	}
 	c.JSON(http.StatusOK, serviceDependenciesSnapshot{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Services:  services,

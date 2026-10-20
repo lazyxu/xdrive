@@ -333,6 +333,7 @@ type ServiceDependency struct {
 	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
 	LocalTLSState                    string `json:"local_tls_state,omitempty"`
+	CaddyInternalHTTPState           string `json:"caddy_internal_http_state,omitempty"`
 	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
