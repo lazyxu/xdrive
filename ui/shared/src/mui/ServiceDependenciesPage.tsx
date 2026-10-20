@@ -63,6 +63,7 @@ import { XDrivePhotoHostDesiredPanel, type XDrivePhotoHostPort } from './PhotoHo
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort } from './CaddyAliDNSPanel'
 import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
+import { XDriveCaddyDetailV1 } from './CaddyDetailV1'
 
 export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDrivePhotoHostPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
@@ -1750,6 +1751,19 @@ export function XDriveServiceDependenciesPage({
                       {group.description}
                     </Typography>
                   )}
+                  {selectedPage === 'caddy' && selectedItem ? (
+                    <XDriveCaddyDetailV1
+                      source={source} service={selectedItem} checkedAt={checkedAt}
+                      activeTab={currentTab} refreshing={refreshing}
+                      hasUnsavedEdits={hasUnsavedEdits}
+                      onTabChange={(tab) => navigateTo({ service: 'caddy', tab })}
+                      onRefreshStatus={() => setRefreshID((value) => value + 1)}
+                      onHTTPSDirtyChange={setCaddyHTTPSDirty}
+                      onAliDNSDirtyChange={setCaddyAliDirty}
+                      onConfigurationChanged={invalidateCaddyEvidence}
+                      evidenceRevision={caddyEvidenceRevision}
+                    />
+                  ) : (<>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
                     展开只查看；配置保存和在线检测均需明确操作。
@@ -2474,6 +2488,7 @@ export function XDriveServiceDependenciesPage({
                       </Accordion>
                     )
                   })}
+                  </>)}
             </Box>
           )
             })}
