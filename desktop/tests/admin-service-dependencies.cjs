@@ -1174,3 +1174,21 @@ test('Caddy Host bridge access and running binary diagnostic remain shared and r
   assert.ok(page.includes('运行中 Server 版本、/host-control 挂载、UID/GID 或 ACL'))
   assert.equal(doctor.includes('docker restart'), false)
 });
+
+test('Caddy Host witness reason stays read-only across Server, Desktop and shared Web', () => {
+  const backend = read('internal', 'api', 'admin_service_dependencies.go')
+  const reason = read('internal', 'api', 'admin_caddy_host_observation_reason.go')
+  const client = read('internal', 'client', 'client.go')
+  const shared = read('ui', 'shared', 'src', 'service-dependencies.ts')
+  assert.ok(backend.includes('CaddyHostWitnessReason'))
+  assert.ok(backend.includes('reason := s.caddyHostUnobservedReason()'))
+  assert.ok(backend.includes('caddyHostUnobservedDetailForReason(reason)'))
+  assert.ok(reason.includes('func caddyHostUnobservedDetailForReason(reason string)'))
+  assert.ok(client.includes('json:"caddy_host_witness_reason,omitempty"'))
+  assert.ok(shared.includes('caddy_host_witness_reason?:'))
+  assert.ok(page.includes('data-xdrive-caddy-host-witness-reason'))
+  assert.ok(page.includes('snapshot-missing'))
+  assert.ok(page.includes('xdrive-server doctor'))
+  assert.ok(page.includes('无需重装或重启 Caddy'))
+  assert.equal(page.includes('docker restart'), false)
+})

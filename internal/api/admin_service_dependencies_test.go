@@ -56,6 +56,9 @@ func TestAdminServiceDependenciesFailClosed(t *testing.T) {
 		if item.Detail == "" {
 			t.Fatalf("missing detail for %q", item.ID)
 		}
+		if item.ID == "caddy" && item.CaddyHostWitnessReason != "control-not-configured" {
+			t.Fatalf("missing read-only Caddy witness reason: %+v", item)
+		}
 		if item.ConfigMode == "" || item.ApplyMode == "" || item.ConfigHint == "" {
 			t.Fatalf("missing safe service configuration contract for %q", item.ID)
 		}
@@ -124,7 +127,8 @@ func TestAdminServiceDependencyLifecycleBaiduAndCaddyNoFalseApplied(t *testing.T
 	if gateway.Status != "ready" || gateway.ConfigurationState != "configured" ||
 		gateway.InstallationState != "observed" || gateway.HealthState != "ready" ||
 		gateway.ActivationState != "deployment-only" ||
-		gateway.LocalTLSState != "verified" || gateway.HTTPSConfigured == nil || !*gateway.HTTPSConfigured {
+		gateway.LocalTLSState != "verified" || gateway.HTTPSConfigured == nil || !*gateway.HTTPSConfigured ||
+		gateway.CaddyHostWitnessReason != "" {
 		t.Fatalf("local HTTPS cannot promote unbound desired revision: %+v", gateway)
 	}
 }
@@ -162,10 +166,60 @@ func TestAdminServiceDependenciesCaddyDeclaredIngressWithoutHostWitness(t *testi
 		if item.ConfigurationState != "configured" || item.InstallationState != "unknown" ||
 			item.HealthState != "unknown" || item.ActivationState != "deployment-only" ||
 			item.Status != "unknown" || item.CaddyInternalHTTPState != "" ||
+			item.CaddyHostWitnessReason != "heartbeat-missing" ||
 			item.HTTPSConfigured != nil || item.LocalTLSState != "" {
 			t.Fatalf("declared ingress may not fabricate installed Caddy or TLS: %+v", item)
 		}
 		return
 	}
 	t.Fatal("missing Caddy service")
+}
+
+func TestAdminServiceDependenciesCaddyReasonDistinguishesHostSnapshotFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{HostControlDir: t.TempDir()}
+	check := func() serviceDependency {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services", nil)
+		s.adminServiceDependencies(ctx)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("services HTTP %d", recorder.Code)
+		}
+		var response serviceDependenciesSnapshot
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range response.Services {
+			if item.ID == "caddy" {
+				if item.Status != "unknown" || item.InstallationState != "unknown" ||
+					item.HealthState != "unknown" || item.HTTPSConfigured != nil ||
+					item.LocalTLSState != "" {
+					t.Fatalf("diagnostic must never fabricate a healthy gateway: %+v", item)
+				}
+				return item
+			}
+		}
+		t.Fatal("Caddy missing from service snapshot")
+		return serviceDependency{}
+	}
+	if got := check().CaddyHostWitnessReason; got != "heartbeat-missing" {
+		t.Fatalf("missing host heartbeat reason = %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, "heartbeat"), []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := check().CaddyHostWitnessReason; got != "snapshot-missing" {
+		t.Fatalf("missing host snapshot reason = %q", got)
+	}
+	const poison = "private-AliDNS-secret-should-not-appear"
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, caddyHostStatusName), []byte(poison), 0600); err != nil {
+		t.Fatal(err)
+	}
+	item := check()
+	if item.CaddyHostWitnessReason != "snapshot-invalid-or-changing" ||
+		strings.Contains(item.Detail, poison) {
+		t.Fatalf("untrusted snapshot must be rejected and redacted: %+v", item)
+	}
 }

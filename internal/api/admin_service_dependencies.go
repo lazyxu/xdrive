@@ -32,6 +32,7 @@ type serviceDependency struct {
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
 	LocalTLSState                    string `json:"local_tls_state,omitempty"`
 	CaddyInternalHTTPState           string `json:"caddy_internal_http_state,omitempty"`
+	CaddyHostWitnessReason           string `json:"caddy_host_witness_reason,omitempty"`
 	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
@@ -313,7 +314,9 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		// Caddy Docker health, installation or HTTPS proof.
 		// Only the official Compose Server's fixed /host-control path opts in.
 		checkInternalRoute := s.HostControlDir == "/host-control"
-		annotateCaddyMissingHostWitness(&services[10], s.caddyHostUnobservedDetail(),
+		reason := s.caddyHostUnobservedReason()
+		services[10].CaddyHostWitnessReason = reason
+		annotateCaddyMissingHostWitness(&services[10], caddyHostUnobservedDetailForReason(reason),
 			checkInternalRoute, checkInternalRoute && caddyInternalRouteObserved(ctx))
 	}
 
