@@ -5108,6 +5108,10 @@ test('P107: saved Mobile folder resume keeps bootstrap root completely silent un
     assert.ok(h.view.root.findAll(n => n.type === 'state-panel'
       && n.props?.message === '此文件夹为空').length > 0,
     'a verified counted zero is content, not a delayed spinner or unverified error')
+    await h.update({ requestedDirectoryID: 42 })
+    assert.equal(stateNow().folderID, 42)
+    assert.equal(stateNow().scrollTop, 688,
+      'App URL mirroring a confirmed saved folder must not reset its scroll anchor')
     assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
   }, {
     saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
@@ -5123,10 +5127,13 @@ test('P107: abandoned restore cannot override Recent or strand Browse, whether o
   for (const accepted of [false, true]) {
     let finishRestore
     const navigation = new Promise(resolve => { finishRestore = resolve })
+    const abandoned = []
     await withView(async h => {
       const persisted = () => state.mobileFilesDecodeState(
         h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
       await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+      assert.deepEqual(abandoned, ['cancel'],
+        'the real Web Owner must invalidate an abandoned saved restore, not just hide its spinner')
       assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
       await act(async () => { finishRestore(accepted); await navigation })
       assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
@@ -5144,6 +5151,7 @@ test('P107: abandoned restore cannot override Recent or strand Browse, whether o
     }, {
       saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
       props: { onRestoreFolder: () => navigation,
+        onAbandonSavedFolderRestore: () => { abandoned.push('cancel') },
         crumbs: [{ id: 1, name: '我的文件' }], directoryLoading: true },
     })
   }
@@ -5173,6 +5181,12 @@ test('P107: original Web restore reports the actual accepted owner GET; permanen
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
   assert.ok(web.includes('await navigateTo(chain, true, navigationIntentID, currentAccepted => {'))
   assert.ok(web.includes('return accepted && isNavigationIntentCurrent(navigationIntentID)'))
+  assert.ok(web.includes('const initialSavedMobileFolderID = useMemo'))
+  assert.ok(web.includes('current.id === bootstrapRootID'))
+  assert.ok(web.includes('savedGuard.pending &&'))
+  assert.ok(web.includes('routeGuard.folderID === directoryID) routeGuard.pending = false'))
+  assert.ok(web.includes('savedResumeRouteGuardRef.current.pending = false'))
+  assert.ok(source.includes("acceptedResumeRef.current === storageKey + ':' + requestedID"))
   assert.ok(source.includes('const totalCount = props.virtualCollection?.itemCount ?? props.items.length'))
   assert.ok(source.includes('const displayedCount = savedResumePending ? 0'))
   assert.ok(source.includes('acceptedResumeRef.current = storageKey +'))
@@ -5180,4 +5194,85 @@ test('P107: original Web restore reports the actual accepted owner GET; permanen
   assert.ok(source.includes('XDriveFileExplorerThumbnailProvider'))
   assert.ok(source.includes('xDriveFileExplorerInlineLayout'))
   assert.equal(agents.split('## P107 · Mobile Files saved-folder resume is a verified visual commit').length, 2)
+})
+
+
+test('P107: already verified saved folder ignores one App URL mirror and keeps its 688px anchor', async () => {
+  const file = { id: 108, name: 'verified.jpg', kind: 'file', revision: 7 }
+  const actualRange = {
+    itemCount: 100000, interactionKey: 'p107-existing-accepted-saved-folder',
+    loadedItems: new Map([[0, file]]),
+    itemAt: index => index === 0 ? file : undefined,
+    onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved().folderID, 42)
+    assert.equal(saved().scrollTop, 688)
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true)
+      .props['aria-hidden'], false,
+    'an already accepted current Owner Range must not be needlessly blanked')
+    await h.update({ requestedDirectoryID: 42 })
+    assert.equal(saved().folderID, 42)
+    assert.equal(saved().scrollTop, 688)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已确认文件夹' }],
+      virtualCollection: actualRange, items: [file], loading: false,
+      directoryLoading: false, onRestoreFolder: async () => true,
+    },
+  })
+})
+
+
+test('P108: actual Web guard suppresses only provisional root and currently abandoned saved target', () => {
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const pending = web.match(/if \((compactMobile && !initialDirectoryID &&\s*savedGuard\.pending &&[\s\S]*?current\.id !== savedGuard\.folderID)\) return/)
+  const abandoned = web.match(/if \((compactMobile && !initialDirectoryID &&\s*savedGuard\.abandonedIntentID !== null &&[\s\S]*?current\.id === savedGuard\.folderID)\) return/)
+  assert.ok(pending && abandoned,
+    'execute the original two production Web route predicates, not reimplementations')
+  const first = new Function(
+    'compactMobile','initialDirectoryID','savedGuard','current','bootstrapRootID',
+    'return (' + pending[1] + ')',
+  )
+  const stale = new Function(
+    'compactMobile','initialDirectoryID','savedGuard','current','isNavigationIntentCurrent',
+    'return (' + abandoned[1] + ')',
+  )
+  const saved = { pending: true, folderID: 42, abandonedIntentID: null }
+  assert.equal(first(true, undefined, saved, {id:1}, 1), true,
+    'a saved-folder pending first Range cannot mirror the temporary root')
+  assert.equal(first(true, undefined, { ...saved, pending:false }, {id:1}, 1), false,
+    'finished/explicit root must no longer be blocked')
+  assert.equal(first(true, undefined, saved, {id:42}, 1), false,
+    'matching accepted saved directory may mirror its own URL')
+  assert.equal(first(true, 77, saved, {id:1}, 1), false,
+    'an external deep link has its own authority')
+  assert.equal(first(false, undefined, saved, {id:1}, 1), false,
+    'wide Web cannot inherit the Mobile-only guard')
+  const abandonedGuard = { pending:false, folderID:42, abandonedIntentID:7 }
+  assert.equal(stale(true, undefined, abandonedGuard, {id:42}, id => id===7), true,
+    'obsolete saved GET after switching to Recent must not steal the address bar')
+  assert.equal(stale(true, undefined, abandonedGuard, {id:42}, id => id===8), false,
+    'the next real Web navigation must release stale-result suppression')
+  assert.equal(stale(true, undefined, abandonedGuard, {id:1}, id => id===7), false,
+    'old saved target cannot block an unrelated current directory')
+  assert.ok(web.includes('if (trashActive || !current?.id || loading) return'),
+    'in-flight directory GET must not mirror a provisional prior directory')
+  assert.ok(web.includes('onAbandonSavedFolderRestore={abandonSavedMobileRestore}'))
+  assert.ok(web.includes('guard.abandonedIntentID = beginNavigationIntent()'))
+  assert.ok(web.includes('savedResumeRouteGuardRef.current.abandonedIntentID = null'))
+  assert.ok(mobile.includes('onAbandonSavedFolderRestore?: () => void'))
+  assert.ok(mobile.includes('props.onAbandonSavedFolderRestore?.()'))
+  for(const marker of [
+    'const totalCount = props.virtualCollection?.itemCount ?? props.items.length',
+    'const displayedCount = savedResumePending ? 0',
+    'XDriveFileExplorerThumbnailProvider',
+  ]) assert.ok(mobile.includes(marker), marker)
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  assert.equal(agents.split('## P108 · Mobile saved-folder route mirrors only committed Owner').length, 2)
 })

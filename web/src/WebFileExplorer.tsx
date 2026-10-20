@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress, useMediaQuery } from '@mui/material'
 import MobileFiles from './MobileFiles'
+import { mobileFilesDecodeState } from './mobileFilesState'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
@@ -176,6 +177,37 @@ export default function WebFileExplorer({
   onError: (error: unknown) => void
 }) {
   const compactMobile = useMediaQuery('(max-width:899.95px)')
+  // A no-?dir Mobile Files opening may have a persisted last folder. Its
+  // bootstrap Cloud root is not a confirmed navigation and must never be
+  // mirrored into ?dir=root before that saved folder finishes restoring.
+  const initialSavedMobileFolderID = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      return mobileFilesDecodeState(window.localStorage.getItem(
+        'xdrive.mobile.files.v1:' + (navigationSessionStorageKey ?? ''),
+      )).folderID
+    } catch { return null }
+  }, [navigationSessionStorageKey])
+  // Source-scoped route ownership. A bootstrap root remains provisional only
+  // while THIS saved-folder restore is active. Explicit Browse-root navigation
+  // or a finished restore releases the guard; no permanent URL suppression.
+  const savedResumeRouteGuardRef = useRef<{
+    lifecycleKey: string; folderID: number | null; pending: boolean
+    abandonedIntentID: number | null
+  }>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    folderID: initialSavedMobileFolderID,
+    pending: initialSavedMobileFolderID !== null && !initialDirectoryID,
+    abandonedIntentID: null,
+  })
+  if (savedResumeRouteGuardRef.current.lifecycleKey !== (navigationSessionStorageKey ?? '')) {
+    savedResumeRouteGuardRef.current = {
+      lifecycleKey: navigationSessionStorageKey ?? '',
+      folderID: initialSavedMobileFolderID,
+      pending: initialSavedMobileFolderID !== null && !initialDirectoryID,
+      abandonedIntentID: null,
+    }
+  }
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
@@ -400,7 +432,24 @@ export default function WebFileExplorer({
   ])
 
   useEffect(() => {
-    if (trashActive || !current?.id) return
+    if (trashActive || !current?.id || loading) return
+    // A real saved-folder resume, not the root bootstrap, owns this URL. The
+    // guard is restricted to the provisional root: later explicitly opened
+    // directories still mirror their accepted ID normally.
+    const bootstrapRootID = Number(explorerCrumbs[0]?.id ?? 0)
+    const savedGuard = savedResumeRouteGuardRef.current
+    if (compactMobile && !initialDirectoryID &&
+        savedGuard.pending && savedGuard.folderID !== null &&
+        current.id === bootstrapRootID && current.id !== savedGuard.folderID) return
+    // A user moved to Recent/Favorites while a saved directory was loading.
+    // Even if the previous shared CloudFiles GET later commits, it does NOT
+    // own the current visible Mobile rail or the address bar. A subsequent
+    // actual navigation advances the original workspace intent and releases
+    // this very narrow suppression.
+    if (compactMobile && !initialDirectoryID &&
+        savedGuard.abandonedIntentID !== null &&
+        isNavigationIntentCurrent(savedGuard.abandonedIntentID) &&
+        current.id === savedGuard.folderID) return
     const pendingRoute = routedDirectoryRef.current
     // Root bootstrap is not a navigation intent. Do not rewrite a requested
     // files?dir=... deep link to the temporary root while its authorized
@@ -422,7 +471,9 @@ export default function WebFileExplorer({
     }
     onDirectoryChange?.(current.id)
   }, [current?.id, initialDirectoryID, isNavigationIntentCurrent,
-    navigationSessionStorageKey, onDirectoryChange, trashActive])
+    navigationSessionStorageKey, onDirectoryChange, trashActive,
+    compactMobile, initialSavedMobileFolderID, explorerCrumbs[0]?.id,
+    loading])
 
   const refreshCurrentDirectory = onRefreshCurrentDirectoryIfIdle
 
@@ -1193,26 +1244,44 @@ export default function WebFileExplorer({
 
   // The Mobile Files surface owns only presentation. REST, Server ranges,
   // operations, favorites, recent, search and Viewer remain this Web adapter's.
+  const abandonSavedMobileRestore = useCallback(() => {
+    const guard = savedResumeRouteGuardRef.current
+    if (guard.folderID === null) return
+    if (guard.abandonedIntentID !== null &&
+        isNavigationIntentCurrent(guard.abandonedIntentID)) return
+    guard.pending = false
+    // Invalidates the old navigation receipt without inventing an extra GET.
+    // The current rail is still owned by Mobile Files.
+    guard.abandonedIntentID = beginNavigationIntent()
+  }, [beginNavigationIntent, isNavigationIntentCurrent])
   const restoreMobileDirectory = useCallback(async (directoryID: number) => {
-    const navigationIntentID = beginNavigationIntent()
-    const chain: Crumb[] = []
-    let nodeID = directoryID
-    for (let depth = 0; depth < 256; depth += 1) {
-      const node = await api.node(nodeID)
-      if (node.type !== 'dir') throw new Error('目标不是文件夹。')
-      chain.push({ id: node.id, name: node.name })
-      if (!node.parent_id) break
-      nodeID = node.parent_id
+    const routeGuard = savedResumeRouteGuardRef.current
+    try {
+      const navigationIntentID = beginNavigationIntent()
+      const chain: Crumb[] = []
+      let nodeID = directoryID
+      for (let depth = 0; depth < 256; depth += 1) {
+        const node = await api.node(nodeID)
+        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
+        chain.push({ id: node.id, name: node.name })
+        if (!node.parent_id) break
+        nodeID = node.parent_id
+      }
+      if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return false
+      chain.reverse()
+      let accepted = false
+      await navigateTo(chain, true, navigationIntentID, currentAccepted => {
+        accepted = currentAccepted
+      })
+      // Unlike void Promise completion, this proves the original workspace
+      // accepted its own counted first page, not a failed/superseded lookup.
+      return accepted && isNavigationIntentCurrent(navigationIntentID)
+    } finally {
+      // A completed/denied/superseded saved resume can no longer make the
+      // bootstrap root provisional. Do not alter a newer account's guard.
+      if (savedResumeRouteGuardRef.current === routeGuard &&
+          routeGuard.folderID === directoryID) routeGuard.pending = false
     }
-    if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return false
-    chain.reverse()
-    let accepted = false
-    await navigateTo(chain, true, navigationIntentID, currentAccepted => {
-      accepted = currentAccepted
-    })
-    // Unlike void Promise completion, this proves the original workspace
-    // accepted its own counted first page, not a failed/superseded lookup.
-    return accepted && isNavigationIntentCurrent(navigationIntentID)
   }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
 
   return (
@@ -1287,11 +1356,16 @@ export default function WebFileExplorer({
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
           directoryLoading={loading}
+          onAbandonSavedFolderRestore={abandonSavedMobileRestore}
           trashActive={trashActive}
           trashReadState={trash.readState}
           onOpenTrash={() => { beginNavigationIntent(); onOpenTrash() }}
           onCloseTrash={onCloseTrash}
           onBrowseRoot={() => {
+            // User explicitly requested the root; this is not a bootstrap
+            // route mirroring and must never remain blocked by old saved state.
+            savedResumeRouteGuardRef.current.pending = false
+            savedResumeRouteGuardRef.current.abandonedIntentID = null
             onCloseTrash()
             void navigateTo(explorerCrumbs.slice(0, 1).map(crumb => ({ id: Number(crumb.id), name: crumb.name })))
           }}
