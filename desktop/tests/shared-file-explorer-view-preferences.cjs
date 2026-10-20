@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const iconPresentation = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
@@ -34,8 +35,14 @@ test('shared FileExplorer owns persisted view-density and grid-size preferences'
 })
 
 test('shared FileExplorer uses dynamic Details and Grid metrics', () => {
+  assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsNormalRowHeight = 36'),
+    'normal row density must be owned by reusable pure presentation layer')
+  assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsHeaderHeight = 32'),
+    'header geometry must stay shared with public read-only Explorer')
+  assert.ok(explorer.includes('const detailsHeaderHeight = xDriveFileExplorerDetailsHeaderHeight'),
+    'Owner Explorer must use shared header geometry, not a duplicate')
   for (const token of [
-    'const detailsNormalRowHeight = 36',
+    'const detailsNormalRowHeight = xDriveFileExplorerDetailsNormalRowHeight',
     'const detailsCompactRowHeight = 28',
     "viewPreferences.detailsDensity === 'compact'",
     "const effectiveGridSize: XDriveFileExplorerGridSize = compactViewport ? 'medium' : viewPreferences.gridSize",

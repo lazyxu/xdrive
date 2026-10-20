@@ -39,6 +39,12 @@ function explorerExtension(name: string) {
   return name.slice(dot + 1).toLowerCase()
 }
 
+// Keep the Owner and public read-only Explorer's details geometry in one
+// presentation-only module; no authenticated FileExplorer state is imported.
+export const xDriveFileExplorerDetailsNormalRowHeight = 36
+export const xDriveFileExplorerDetailsHeaderHeight = 32
+export const xDriveFileExplorerDetailsMobileRowHeight = 52
+
 export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
   if (kind === 'dir') return 'folder'
   const extension = explorerExtension(name)

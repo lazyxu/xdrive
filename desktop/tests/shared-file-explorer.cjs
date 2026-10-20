@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const explorer = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
+const iconPresentation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx'), 'utf8')
 const searchFilters = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearchFilters.tsx'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const propertiesDialog = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx'), 'utf8')
@@ -45,11 +46,13 @@ test('shared FileExplorer provides command bar, details/grid/column views, and s
 })
 
 test('shared FileExplorer uses configurable system-style density without breaking virtualization math', () => {
-  assert.ok(explorer.includes('const detailsNormalRowHeight = 36'), 'normal details density token is missing')
+  assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsNormalRowHeight = 36'), 'shared normal row density token is missing')
+  assert.ok(explorer.includes('const detailsNormalRowHeight = xDriveFileExplorerDetailsNormalRowHeight'), 'Owner Explorer must use shared density')
   assert.ok(explorer.includes('const detailsCompactRowHeight = 28'), 'compact details density token is missing')
   assert.ok(explorer.includes('const detailsRowHeight = compactViewport'), 'details virtualization row height must include the compact-viewport projection')
   assert.ok(explorer.includes("viewPreferences.detailsDensity === 'compact'"), 'desktop details virtualization row height must still follow the persisted density')
-  assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should remain compact')
+  assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsHeaderHeight = 32'), 'shared header height should remain compact')
+  assert.ok(explorer.includes('const detailsHeaderHeight = xDriveFileExplorerDetailsHeaderHeight'), 'Owner header must use same presentation token')
   assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
@@ -368,7 +371,8 @@ test('folder downloads stay capability-aware across Web and Desktop', () => {
 
 
 test('standard Details rows stay single-line at native file-manager density', () => {
-  assert.ok(explorer.includes('const detailsNormalRowHeight = 36'))
+  assert.ok(iconPresentation.includes('export const xDriveFileExplorerDetailsNormalRowHeight = 36'))
+  assert.ok(explorer.includes('const detailsNormalRowHeight = xDriveFileExplorerDetailsNormalRowHeight'))
   assert.ok(explorer.includes('const detailsCompactRowHeight = 28'))
   assert.equal(
     explorer.includes("viewPreferences.detailsDensity === 'normal' && item.secondaryLabel"),

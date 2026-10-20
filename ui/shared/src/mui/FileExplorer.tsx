@@ -4,6 +4,9 @@ import {
   xDriveFileKind,
   xDriveFileTypeLabel,
   xDriveFileSupportsThumbnail,
+  xDriveFileExplorerDetailsNormalRowHeight,
+  xDriveFileExplorerDetailsHeaderHeight,
+  xDriveFileExplorerDetailsMobileRowHeight,
 } from './FileExplorerItemPresentation'
 export {
   XDriveFileExplorerItemIcon,
@@ -729,9 +732,9 @@ export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
   )
 }
 
-const detailsNormalRowHeight = 36
+const detailsNormalRowHeight = xDriveFileExplorerDetailsNormalRowHeight
 const detailsCompactRowHeight = 28
-const detailsHeaderHeight = 32
+const detailsHeaderHeight = xDriveFileExplorerDetailsHeaderHeight
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
 const gridVirtualizationThreshold = 400
@@ -1182,7 +1185,7 @@ export function XDriveFileExplorer({
   const grouping = controlledGrouping ?? internalGrouping
   const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
   const detailsRowHeight = compactViewport
-    ? 52
+    ? xDriveFileExplorerDetailsMobileRowHeight
     : viewPreferences.detailsDensity === 'compact'
       ? detailsCompactRowHeight
       : detailsNormalRowHeight

@@ -29,6 +29,10 @@ const mui = {
   IconButton: host('button'),
   Menu: host('div'),
   MenuItem: host('div'),
+  Dialog: ({ open, children, ...props }) => open ? React.createElement('dialog', { open, ...props }, children) : null,
+  DialogTitle: host('h2'),
+  DialogContent: host('section'),
+  DialogActions: host('footer'),
   useMediaQuery: () => false,
 }
 
@@ -794,6 +798,32 @@ test('Public folder workspace supports bounded local page filtering, refresh and
   assert.ok(downloadEntry, 'read-only menu should offer the existing signed file download')
   await act(async () => { downloadEntry.props.onClick() })
   assert.deepEqual(downloads, [{ filename: 'Frame.jpeg', id: 11 }])
+  // The same public DTO powers read-only properties; no Owner/extra HTTP read.
+  const propertiesMenu = () => renderer.root.findAll(node =>
+    typeof node.type === 'string' && textContent(node.children).trim() === '属性'
+    && typeof node.props.onClick === 'function')[0]
+  const dialogs = () => renderer.root.findAll(node => node.type === 'dialog' && node.props.open)
+  const openProperties = async id => {
+    const target = rows().find(node => node.props['data-xdrive-public-share-item-id'] === id)
+    await act(async () => { target.props.onContextMenu({ preventDefault() {}, clientX: 80, clientY: 90 }) })
+    assert.ok(propertiesMenu(), 'share-only context should expose read-only metadata')
+    await act(async () => { propertiesMenu().props.onClick() })
+    assert.equal(dialogs().length, 1)
+    const details = textContent(dialogs()[0].children)
+    const close = renderer.root.findAllByType('button').find(node => textContent(node.children).trim() === '关闭')
+    assert.ok(close)
+    await act(async () => { close.props.onClick() })
+    assert.equal(dialogs().length, 0)
+    return details
+  }
+  const fileProperties = await openProperties(11)
+  assert.match(fileProperties, /名称：Frame.jpeg/)
+  assert.match(fileProperties, /类型：JPEG 图像/)
+  assert.match(fileProperties, /大小：/)
+  const folderProperties = await openProperties(10)
+  assert.match(folderProperties, /名称：Album/)
+  assert.match(folderProperties, /类型：文件夹/)
+  assert.equal(calls.length, 2, 'read-only properties require zero extra Server requests')
   assert.equal(rows().length, 2)
   for (const forbidden of ['上传', '删除', '重命名', '移动', '粘贴', '复制', '剪切']) {
     assert.equal(renderer.root.findAllByType('button')

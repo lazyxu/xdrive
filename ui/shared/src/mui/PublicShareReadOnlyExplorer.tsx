@@ -7,11 +7,17 @@ import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
-import { Box, Button, Breadcrumbs, IconButton, Menu, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Breadcrumbs, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import type { PublicShareChild } from '../models'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
-import { XDriveFileExplorerItemIcon, xDriveFileTypeLabel } from './FileExplorerItemPresentation'
+import {
+  XDriveFileExplorerItemIcon,
+  xDriveFileTypeLabel,
+  xDriveFileExplorerDetailsNormalRowHeight,
+  xDriveFileExplorerDetailsHeaderHeight,
+  xDriveFileExplorerDetailsMobileRowHeight,
+} from './FileExplorerItemPresentation'
 
 export type XDrivePublicShareExplorerCrumb = { id: number; name: string }
 export type XDrivePublicShareReadOnlyExplorerProps = {
@@ -49,6 +55,7 @@ export function XDrivePublicShareReadOnlyExplorer({
     mouseX: number
     mouseY: number
   } | null>(null)
+  const [propertiesEntry, setPropertiesEntry] = useState<PublicShareChild | null>(null)
   const folder = kind === 'dir'
   const currentFolderID = path.at(-1)?.id ?? 0
 
@@ -58,6 +65,7 @@ export function XDrivePublicShareReadOnlyExplorer({
     setSelectedID(null)
     setPageFilter('')
     setContextMenu(null)
+    setPropertiesEntry(null)
   }, [items, currentFolderID])
 
   const openEntry = (entry: PublicShareChild) => {
@@ -115,8 +123,9 @@ export function XDrivePublicShareReadOnlyExplorer({
         <Box data-xdrive-public-share-details-header
           sx={{
             display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(110px,160px) 118px 106px',
-            alignItems: 'center', px: 2, minHeight: 40, borderBottom: 1,
-            borderColor: 'divider', bgcolor: 'action.hover',
+            alignItems: 'center', px: 1.5, minHeight: xDriveFileExplorerDetailsHeaderHeight,
+            position: 'sticky', top: 0, zIndex: 1, borderBottom: 1,
+            borderColor: 'divider', bgcolor: 'background.default',
             '@media (max-width: 620px)': {
               gridTemplateColumns: 'minmax(0,1fr) 92px',
               '& .xdrive-shared-file-type': { display: 'none' },
@@ -142,11 +151,11 @@ export function XDrivePublicShareReadOnlyExplorer({
             display: view === 'grid' ? 'flex' : 'grid',
             flexDirection: view === 'grid' ? 'column' : undefined,
             alignItems: 'center', minWidth: 0,
-            minHeight: view === 'grid' ? 154 : 52, px: view === 'grid' ? 1.5 : 2,
-            py: view === 'grid' ? 1.5 : 0.75, gap: view === 'grid' ? 1 : 0,
-            borderBottom: view === 'details' ? 1 : undefined,
+            minHeight: view === 'grid' ? 154 : xDriveFileExplorerDetailsNormalRowHeight,
+            px: 1.5, py: view === 'grid' ? 1.5 : 0,
+            gap: view === 'grid' ? 1 : 0,
             border: view === 'grid' ? 1 : undefined,
-            borderColor: 'divider', borderRadius: view === 'grid' ? 2 : 0,
+            borderColor: 'divider', borderRadius: view === 'grid' ? 2 : '4px',
             gridTemplateColumns: view === 'details'
               ? 'minmax(0,1fr) minmax(110px,160px) 118px 106px' : undefined,
             bgcolor: selectedID === entry.id ? 'action.selected' : 'transparent',
@@ -154,6 +163,7 @@ export function XDrivePublicShareReadOnlyExplorer({
             '&:hover': { bgcolor: 'action.hover' },
             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
             '@media (max-width: 620px)': view === 'details' ? {
+              minHeight: xDriveFileExplorerDetailsMobileRowHeight,
               gridTemplateColumns: 'minmax(0,1fr) 92px',
               '& .xdrive-shared-file-type': { display: 'none' },
               '& .xdrive-shared-file-size': { display: 'none' },
@@ -164,7 +174,7 @@ export function XDrivePublicShareReadOnlyExplorer({
               minWidth: 0, width: '100%', flex: view === 'grid' ? 1 : undefined,
             }}>
             <XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }}
-              size={view === 'grid' ? 42 : 23} />
+              size={view === 'grid' ? 42 : 21} />
             <Box sx={{ minWidth: 0, width: '100%' }}>
               <Typography variant="body2" fontWeight={selectedID === entry.id ? 600 : 400}
                 title={entry.name}
@@ -323,7 +333,27 @@ export function XDrivePublicShareReadOnlyExplorer({
         }}>
           {contextMenu?.entry.type === 'dir' ? '打开文件夹' : '下载文件'}
         </MenuItem>
+        <MenuItem onClick={() => {
+          setPropertiesEntry(contextMenu?.entry ?? null)
+          setContextMenu(null)
+        }}>属性</MenuItem>
       </Menu>
+      <Dialog open={propertiesEntry !== null} onClose={() => setPropertiesEntry(null)}
+        aria-labelledby="xdrive-public-share-properties-title" maxWidth="xs" fullWidth>
+        <DialogTitle id="xdrive-public-share-properties-title">属性 · 只读</DialogTitle>
+        <DialogContent dividers>
+          {propertiesEntry && (
+            <Stack spacing={1.25} sx={{ overflowWrap: 'anywhere' }}>
+              <Typography variant="body2">名称：{propertiesEntry.name}</Typography>
+              <Typography variant="body2">类型：{xDriveFileTypeLabel(propertiesEntry.name, propertiesEntry.type)}</Typography>
+              <Typography variant="body2">大小：{propertiesEntry.type === 'dir' ? '—' : formatBytes(propertiesEntry.size)}</Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button type="button" onClick={() => setPropertiesEntry(null)}>关闭</Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
