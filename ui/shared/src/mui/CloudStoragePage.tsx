@@ -64,12 +64,23 @@ export function XDriveCloudStoragePage({
         </XDriveActionButton>
       )}
     >
-      {error ? !snapshot ? (
+      {error && !snapshot ? (
         <Box data-xdrive-cloud-storage-first-read-error
           sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
         </Box>
-      ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
+      ) : null}
+      {snapshot && error ? (
+        <Box data-xdrive-cloud-storage-refresh-error role="alert" sx={{
+          position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+          bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+          width: 'min(calc(100vw - 24px), 560px)',
+          maxHeight: 'min(34dvh, 220px)', overflowY: 'auto',
+          zIndex: (theme) => theme.zIndex.snackbar, pointerEvents: 'none',
+        }}>
+          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+        </Box>
+      ) : null}
 
       {!snapshot && !error ? (
         <Box data-xdrive-cloud-storage-loading-slot
