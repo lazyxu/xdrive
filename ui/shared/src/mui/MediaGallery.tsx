@@ -661,6 +661,13 @@ export function XDriveMediaGalleryPage({
     setLastOpenedPlaceID(restored?.focusPlaceID ?? null)
   }, [preferenceScope])
   const [memories, setMemories] = useState<MediaMemory[]>([])
+  // Mobile Collections needs an authenticated *8-card preview*, not a full
+  // Memories index receipt. Keep the two trust levels separate: a preview must
+  // never certify the 48-item dedicated Memory index. Owner/source-scoped so
+  // an account or Agent switch cannot paint another owner's memory cards.
+  const [collectionsMemoryPreviewReceipt, setCollectionsMemoryPreviewReceipt] = useState<{
+    owner: string; dataSource: MediaGalleryDataSource
+  } | null>(null)
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
   // An empty [] or null is not an authenticated zero before the Owner index
@@ -1449,6 +1456,7 @@ export function XDriveMediaGalleryPage({
     setMobileCollectionsOverview(false)
     setMemories([])
     setBurstReviews(null)
+    setCollectionsMemoryPreviewReceipt(null)
     setMemoryIndexReceipt(null)
     setCleanupIndexReceipt(null)
     setSyncFolders([])
@@ -1464,7 +1472,10 @@ export function XDriveMediaGalleryPage({
       const request = ++collectionsPreviewRef.current.request
       void source.listMemories(day, 8, timeZone)
         .then((result) => {
-          if (request === collectionsPreviewRef.current.request) setMemories(result)
+          if (request === collectionsPreviewRef.current.request) {
+            setMemories(result)
+            setCollectionsMemoryPreviewReceipt({ owner: preferenceScope, dataSource: source })
+          }
         })
         .catch(() => {
           // Retain the visible Memories entry so it can retry using the
@@ -3243,7 +3254,11 @@ export function XDriveMediaGalleryPage({
         placesPagePending={placesPagePending}
         placesPageError={placesPageError}
         onPlacesPageChange={source.listPlacesPage ? changePlacesPage : undefined}
-        memories={memoriesReadState === 'ready' ? memories : []}
+        memories={memoriesReadState === 'ready' ||
+          (mobileGalleryViewport && mobileCollectionsOverview &&
+            collectionsMemoryPreviewReceipt?.owner === preferenceScope &&
+            collectionsMemoryPreviewReceipt.dataSource === source)
+          ? memories : []}
         memoriesReadState={memoriesReadState}
         burstReviews={cleanupReadState === 'ready' ? burstReviews : null}
         cleanupReadState={cleanupReadState}
