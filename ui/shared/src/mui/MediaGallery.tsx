@@ -2357,8 +2357,18 @@ export function XDriveMediaGalleryPage({
       return
     }
     if (currentPet) {
-      setCurrentPet(null)
-      void loadFirstPage(null, {})
+      // Returning from a compact Pet photo wall is navigation, not an
+      // acknowledgement that a new Gallery Range has arrived. The previous
+      // accepted photo tiles/title/scroll remain until this Owner's first
+      // counted Range (including real zero) commits in loadFirstPage.
+      if (mobileGalleryViewport) {
+        void loadFirstPage(null, {}, null, null, 'default', null, null, null, () => {
+          setCurrentPet(null)
+        })
+      } else {
+        setCurrentPet(null)
+        void loadFirstPage(null, {})
+      }
       return
     }
     if (currentCleanupReview) {
@@ -2374,20 +2384,32 @@ export function XDriveMediaGalleryPage({
       void loadMemories(mobileGalleryViewport ? () => {} : undefined)
       return
     }
-    if (section === 'media-types' && activeMediaType) {
-      setActiveMediaType('')
-    }
-    if (section === 'places' && query.place && placeOpenedFromCollectionsRef.current) {
-      // An iOS 27 Collections -> Place drill-down returns to Collections,
-      // not an unrelated root Places index or an empty Library screen.
-      placeOpenedFromCollectionsRef.current = false
-      setMobileCollectionsOverview(true)
-    }
     const nextDraft = mediaGallerySectionDraft(section)
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
-    setDraftFilters(nextDraft)
-    setQuery(nextQuery)
-    void loadFirstPage(null, nextQuery)
+    const commitReturn = () => {
+      if (section === 'media-types' && activeMediaType) {
+        setActiveMediaType('')
+      }
+      if (section === 'places' && query.place && placeOpenedFromCollectionsRef.current) {
+        // Collections -> Place return also has one Owner-verified receipt.
+        // Neither the old visible wall nor its Viewer return anchor should
+        // be replaced by an interim Collections/empty photo screen.
+        placeOpenedFromCollectionsRef.current = false
+        setMobileCollectionsOverview(true)
+      }
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+    }
+    if (mobileGalleryViewport) {
+      // Album/Person/Media-type/Places detail Back must not reset the 100k
+      // virtual wall or switch title/filters before the first authenticated
+      // destination Range. Wide Web/Desktop retain their existing behavior.
+      void loadFirstPage(null, nextQuery, null, null, 'default',
+        null, null, null, commitReturn)
+    } else {
+      commitReturn()
+      void loadFirstPage(null, nextQuery)
+    }
   }, [
     activeMediaType,
     currentCleanupReview,
