@@ -1,3 +1,18 @@
+## SH-P009 · TRUE native source-exact public share 100k JPEG n3 ACCEPTED (2026-10-20)
+
+**Measured source** `68a3b7652daf917491cdae92af28c881d233d27e`: real [SH-P005 Chromium source-specific #39396239737](https://github.com/lazyxu/xdrive/actions/runs/39396239737) **SUCCESS**, 3 fresh Wide 1440px + 3 Chromium CDP Mobile 390px sessions on ONE genuine PostgreSQL17/Gin/LocalCAS corpus of 100000 separately SHA-distinct, decodable original JPEGs, plus protected outside sentinel. Raw six samples, source and resources [permanent](performance-evidence/public-share-explorer-workspace/ci-run-39396239737/summary.json); [raw original GitHub artifact #12251099554](https://github.com/lazyxu/xdrive/actions/runs/39396239737/artifacts/12251099554) ZIP SHA256 `34f5f88c4ec3259f9879bcc0a3789ab24b2ff5746d34072e0fbcb0f99951459d` (GitHub artifact expires). Machine `summary.json` original SHA256 `346e7733f52e09b1105a65195eae26448f9625091d6726cd38f63cdf5a936863`.
+
+| Actual physical public read-only Explorer | First 100 P50 | Next 100 P50 | Worst first / next |
+| --- | ---: | ---: | ---: |
+| Wide Web Chromium 1440px, n3 | **123.823ms** | **190.434ms** | 128.242 / 206.985ms |
+| Mobile Web Chromium CDP 390px, n3 | **112.027ms** | **178.558ms** | 114.425 / 201.006ms |
+
+12 genuine signed original native browser downloads have exact name/size/original SHA, slowest **123.915ms**. Original bytes **70,893,376**, physical CAS st_blocks **409,604,096B**, seed 82,004.574ms **excluded** from UI latency. Actual production HTTP: 12 public page POST + 12 ticket POST + 12 original GET, 100 current-page rows each, **zero previous-page stale rows/overflow**. Instrumented Electron Main max RSS 185,516KiB (not Server/Renderer RSS), source run `resources.txt` records combined measured OS process user/sys CPU 32.01/22.27s. All predeclared per-page <=2000ms and native download <=5000ms **PASS**. Historical SH-P008 original Wide first/next 84.723/123.348ms and Mobile 78.530/133.812ms from **different CI runner cohort**, **not same-runner matched A/B**; do not claim any speedup or percentage regression. Production perf optimization AFTER=N/A: presentation-only correction within budget.
+
+**Archive changed SHA**: this is a new ONE work commit on current full master, preserving all other AGENTS/GUI/Gallery/Perf modifications. It requires another exact-archive-head six-session true physical 100k CI and full 77-job CI including real PostgreSQL API Race/Win/Linux Web+Desktop/Final Gate, current GitHub clean mergeability before Ready/Rebase Merge. Original source-exact 77-job #39396237349 was pending at archive checkpoint and does NOT authorize archive HEAD. No physical iOS/Android/PWA, WAN, HEVC/H264/RAW/LIVP 100k thumbnail decode, 4GiB shared ZIP or OS network drive measured. Capability-scoped preview remains [#2205](https://github.com/lazyxu/xdrive/issues/2205); no Owner token or private API added. Concurrent P115 no-reflow #2218 remains independent.
+
+---
+
 ## P0-C2 #1185 · 源码准确真实 Desktop 100k IPC 进度终态 n3 PASS（2026-10-20，归档 HEAD 待复验）
 
 - **测试源 SHA（精确到字节）**：`bc34f6818be045ce9114271ff97f6b3f9a62242d`；[完整 77-job CI #39384924837](https://github.com/lazyxu/xdrive/actions/runs/39384924837) **SUCCESS**；真实 Electron/Agent 专项 [job #118503153509](https://github.com/lazyxu/xdrive/actions/runs/39384924837/job/118503153509) **SUCCESS**；[原始机器报告 JSON](performance-evidence/gallery-desktop-media-progress-100k/ci-run-39384924837.json)（Actions artifact #12248020495，保留更早故障样本和原始红色 CI）。

@@ -1,0 +1,4 @@
+EXACT_HEAD=68a3b7652daf917491cdae92af28c881d233d27e
+CI_RUN_ID=39396239737
+go version go1.25.14 linux/amd64
+v22.23.3
