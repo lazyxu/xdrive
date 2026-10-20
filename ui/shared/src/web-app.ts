@@ -1,4 +1,4 @@
-import type { MediaGalleryQuery } from './models'
+import type { MediaGalleryQuery, MediaBaiduNativeCellSelection } from './models'
 import { xDriveNormalizeSystemDependenciesLocation } from './system-dependencies-navigation'
 import type { XDriveSystemDependenciesLocation } from './system-dependencies-navigation'
 import type { XDriveFileExplorerGrouping } from './file-explorer-grouping'
@@ -55,7 +55,10 @@ export type XDriveWebAppGalleryTarget = {
     | 'burst-review'
     | 'pet'
     | 'trash'
+    | 'baidu-cell'
   id?: string
+  /** Only an Owner-verified /cells selection, never arbitrary provider GPS. */
+  baiduCell?: MediaBaiduNativeCellSelection
   query: MediaGalleryQuery
 }
 

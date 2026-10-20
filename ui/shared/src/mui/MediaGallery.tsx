@@ -88,6 +88,7 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduNativeCellSelection,
   MediaBaiduMapIndexJob,
   MediaBaiduMapIndexJobInput,
   MediaSuggestedPerson,
@@ -465,6 +466,7 @@ function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) 
     'media-gallery',
     target.kind,
     target.id ?? '',
+    target.baiduCell ? JSON.stringify(target.baiduCell) : '',
     mediaGalleryQuerySignature(target.query),
     target.requestID,
   ].join(':')
@@ -775,6 +777,11 @@ export function XDriveMediaGalleryPage({
   const [smartDialogError, setSmartDialogError] = useState('')
   const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
+  const nativeCellOpenAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    nativeCellOpenAbort.current?.abort()
+    nativeCellOpenAbort.current = null
+  }, [source, preferenceScope])
   const placesExpandedRef = useRef(false)
   const collectionTargetRef = useRef<MediaGalleryCollectionTarget | null>(null)
   const [collectionTarget, setCollectionTarget] = useState<MediaGalleryCollectionTarget | null>(null)
@@ -798,6 +805,14 @@ export function XDriveMediaGalleryPage({
       ? { ...target.query, initial_position: initialPosition }
       : target.query
     switch (target.kind) {
+      case 'baidu-cell':
+        if (!target.baiduCell || !source.listBaiduNativeCellItems) {
+          throw new Error('当前客户端不支持地图区域范围加载')
+        }
+        return source.listBaiduNativeCellItems(target.baiduCell, limit, offset, {
+          by: target.query.sort_by === 'added' ? 'added' : 'captured',
+          dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc',
+        }, signal ?? new AbortController().signal)
       case 'trash':
         if (!source.listTrashItemRange) {
           throw new Error('当前客户端不支持图库回收站')
@@ -948,6 +963,7 @@ export function XDriveMediaGalleryPage({
     timeZoneOverride?: string,
   ) => {
     const request = ++requestID.current
+    nativeCellOpenAbort.current?.abort()
     // A selected Mobile Album is only an intent until its first authorized
     // counted Server range succeeds; keep the previous committed page visible.
     const stagedNavigation = Boolean(onCommitted)
@@ -1672,6 +1688,8 @@ export function XDriveMediaGalleryPage({
   }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    // Changing the owning tab must immediately cancel any pending cell Range.
+    nativeCellOpenAbort.current?.abort()
     // A direct compact Cleanup tab is no different from its Collections
     // card: only a genuinely accepted first list can change the visible UI.
     if (mobileGalleryViewport && nextSection === 'cleanup') {
@@ -2181,6 +2199,75 @@ export function XDriveMediaGalleryPage({
       null, null, 'default', null, null, null, commitAfterFirstRange)
   }, [currentAlbum, currentFolderView, loadFirstPage, mobileGalleryViewport, query, section])
 
+  // A cover click becomes a navigation intent. The old Places map is retained
+  // until the FIRST authenticated Server cell Range succeeds. Never use a
+  // grid center or an untrusted BMap event to infer collection membership.
+  const openBaiduNativeCell = useCallback((selection: MediaBaiduNativeCellSelection) => {
+    if (!source.listBaiduNativeCellItems || pageSize < 1 || pageSize > 100) return
+    nativeCellOpenAbort.current?.abort()
+    const controller = new AbortController()
+    nativeCellOpenAbort.current = controller
+    const request = ++requestID.current
+    const sort = gallerySortRef.current
+    const cell: MediaBaiduNativeCellSelection = {
+      ...selection, bounds: { ...selection.bounds },
+    }
+    const cellQuery: MediaGalleryQuery = {
+      sort_by: sort.by, sort_dir: sort.dir, fold_duplicates: false,
+    }
+    const target: MediaGalleryCollectionTarget = {
+      kind: 'baidu-cell', baiduCell: cell, query: cellQuery, requestID: request,
+    }
+    void source.listBaiduNativeCellItems(
+      cell, pageSize, 0, { by: sort.by, dir: sort.dir }, controller.signal,
+    ).then((range) => {
+      if (controller.signal.aborted || request !== requestID.current) return
+      if (range.offset !== 0 || range.limit !== pageSize ||
+          !Number.isSafeInteger(range.total_count) || range.total_count < 0 ||
+          !Array.isArray(range.items) || range.items.length > pageSize) return
+      if (section === 'places' && !query.place && !query.nearby && !query.bbox &&
+          placesTotalCount !== null && places.length <= 48) {
+        placesReturnPageRef.current = {
+          items: [...places], offset: placesPageOffset, totalCount: placesTotalCount,
+        }
+      }
+      // In one React commit, publish the authenticated Range with its title,
+      // filters and virtual query. Pending network fetch never blanks the map.
+      collectionTargetRef.current = target
+      setCollectionTarget(target)
+      virtualCollection.reset(mediaGalleryCollectionKey(target))
+      setItems([...range.items])
+      setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
+      setSearchOrder(range.search_order ?? '')
+      setSortAnchorRestoration(null)
+      virtualCollection.primePage({
+        items: range.items, totalCount: range.total_count,
+        offset: range.offset, limit: range.limit,
+      })
+      setCurrentAlbum(null)
+      setCurrentSuggestedPerson(null)
+      setCurrentPerson(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      setActiveMediaType('')
+      setQuery(cellQuery)
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setMobileCollectionsOverview(false)
+      setSection('places')
+      placesExpandedRef.current = true
+    }).catch(() => {
+      // Auth errors/Server 409 must not reveal private item or source data;
+      // retain the old map for a retry after current Owner /cells refresh.
+      if (!controller.signal.aborted && request === requestID.current) {
+        setError('该区域照片列表暂不可用，请刷新地图后重试')
+      }
+    }).finally(() => {
+      if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
+    })
+  }, [pageSize, places, placesPageOffset, placesTotalCount, query, section, source,
+    virtualCollection.primePage, virtualCollection.reset])
+
   const nativePhotoOpenAbort = useRef<AbortController | null>(null)
   useEffect(() => () => {
     nativePhotoOpenAbort.current?.abort()
@@ -2403,7 +2490,29 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [activeMediaType, loadFirstPage, mobileGalleryViewport, section])
 
+  // A cell wall is not the general /media/items collection. Back and
+  // Refresh return to the authorised map for a fresh consent-checked choice.
+  const leaveBaiduCellWall = useCallback(() => {
+    nativeCellOpenAbort.current?.abort()
+    const request = ++requestID.current
+    collectionTargetRef.current = null
+    setCollectionTarget(null)
+    virtualCollection.reset('media-gallery:places:index:' + request)
+    setItems([])
+    setTimelineGroupSets(emptyMediaTimelineGroupSets())
+    setSearchOrder('')
+    setSortAnchorRestoration(null)
+    setSection('places')
+    setQuery({})
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setMobileCollectionsOverview(false)
+  }, [virtualCollection.reset])
+
   const leaveCollection = useCallback(() => {
+    if (collectionTargetRef.current?.kind === 'baidu-cell') {
+      leaveBaiduCellWall()
+      return
+    }
     if (currentFolderView) {
       const breadcrumbs = currentFolderView.breadcrumbs
       if (breadcrumbs.length > 1) {
@@ -2478,6 +2587,7 @@ export function XDriveMediaGalleryPage({
     loadCleanup,
     loadFirstPage,
     loadMemories,
+    leaveBaiduCellWall,
     mobileGalleryViewport,
     openCleanupFromCollections,
     openSyncFolderDirectory,
@@ -3107,6 +3217,12 @@ export function XDriveMediaGalleryPage({
   }, [currentAlbum, currentFolderView, reloadFilteredPhotoWall, query])
 
   const refreshGallery = () => {
+    if (collectionTargetRef.current?.kind === 'baidu-cell') {
+      // Do not refresh a bounded, consented cell as unscoped Gallery "all".
+      // Discard old media and re-enter the map for a fresh signed selection.
+      leaveBaiduCellWall()
+      return
+    }
     if (currentFolderView) {
       void openSyncFolderDirectory(
         currentFolderView.source.source_id,
@@ -3210,6 +3326,7 @@ export function XDriveMediaGalleryPage({
         virtualCollection={galleryVirtualCollection}
         hasRequestedPhotoRange={collectionTarget !== null}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
+        isBaiduCellWall={collectionTarget?.kind === 'baidu-cell'}
         selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
         albums={acceptedFacetOwner === preferenceScope ? albums : []}
         indexFacetsVerified={acceptedFacetOwner === preferenceScope}
@@ -3243,6 +3360,8 @@ export function XDriveMediaGalleryPage({
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
+        onOpenBaiduNativeCell={source.listBaiduNativeCellItems ? openBaiduNativeCell : undefined}
+        onBaiduNativeCellInvalidated={() => nativeCellOpenAbort.current?.abort()}
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         placesCameraSnapshot={placesCameraSnapshot}
         onPlacesCameraChange={rememberPlacesCamera}
@@ -3700,6 +3819,8 @@ export interface XDriveMediaGalleryProps {
   /** False only before the first authenticated photo Range has even been requested. */
   hasRequestedPhotoRange?: boolean
   collectionKey?: string
+  /** Explicit Owner-scoped Cell wall presentation, never derived from an opaque key. */
+  isBaiduCellWall?: boolean
   /** Stable logical selection scope, distinct from a sort/range request generation. */
   selectionScopeKey?: string
   albums?: MediaAlbum[]
@@ -3721,6 +3842,8 @@ export interface XDriveMediaGalleryProps {
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
+  onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
+  onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
@@ -5409,6 +5532,7 @@ export function XDriveMediaGallery({
   virtualCollection,
   hasRequestedPhotoRange = true,
   collectionKey = '',
+  isBaiduCellWall = false,
   selectionScopeKey = collectionKey,
   albums = [],
   indexFacetsVerified = true,
@@ -5426,6 +5550,8 @@ export function XDriveMediaGallery({
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
+  onOpenBaiduNativeCell,
+  onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
   placesCameraSnapshot,
   onPlacesCameraChange,
@@ -6456,7 +6582,8 @@ export function XDriveMediaGallery({
         }
       : undefined
   const showAlbumIndex = isRootSection && section === 'albums'
-  const showPlacesIndex = isRootSection && section === 'places'
+  const nativeCellWall = isBaiduCellWall
+  const showPlacesIndex = isRootSection && section === 'places' && !nativeCellWall
   // These are presentational delays only; real Source/Server/Agent GETs and
   // the previously accepted albums/places lists are never delayed or cleared.
   const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
@@ -6476,6 +6603,7 @@ export function XDriveMediaGallery({
   const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
   const isTrashSection = isRootSection && section === 'trash'
   const showPhotoCollection =
+    nativeCellWall ||
     !isRootSection ||
     section === 'library' ||
     section === 'favorites' ||
@@ -6499,6 +6627,7 @@ export function XDriveMediaGallery({
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
   const showCollectionFilters =
     showPhotoCollection &&
+    !nativeCellWall &&
     !isTrashSection &&
     !currentMemory &&
     !currentPet &&
@@ -6513,6 +6642,7 @@ export function XDriveMediaGallery({
   // Gallery-local menu. Do not expose a no-op sort where the owner is absent.
   const canSortPhotoCollection =
     showPhotoCollection &&
+    !nativeCellWall &&
     !isTrashSection &&
     !searchActive &&
     !currentMemory &&
@@ -6606,7 +6736,9 @@ export function XDriveMediaGallery({
       people.find((person) => person.id === appliedQuery.person_identity)?.name,
   })
 
-  const galleryTitle = currentFolderView
+  const galleryTitle = nativeCellWall
+    ? '区域照片'
+    : currentFolderView
     ? currentFolderView.current.name
     : currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
@@ -6640,7 +6772,9 @@ export function XDriveMediaGallery({
                     : section === 'media-types'
                     ? mediaTypeLabel || '媒体类型'
                     : '图库')
-  const gallerySubtitle = currentFolderView
+  const gallerySubtitle = nativeCellWall
+    ? '当前地图已授权的照片与视频 · 精确范围和总数由 Server 返回'
+    : currentFolderView
     ? `${currentFolderView.source.source_name} · ${currentFolderView.current.path} · 当前目录 ${currentFolderView.current.direct_media_count.toLocaleString('zh-CN')} 个媒体 · ${currentFolderView.current.child_folder_count.toLocaleString('zh-CN')} 个子目录`
     : currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
@@ -6686,6 +6820,7 @@ export function XDriveMediaGallery({
                         ? '照片与视频'
                         : `${logicalItemCount.toLocaleString('zh-CN')} 个项目 · 所有 xDrive 图片和视频，包括普通上传和同步文件夹文件`
   const canBack = Boolean(
+    nativeCellWall ||
     currentFolderView ||
     currentCleanupReview ||
     currentPet ||
@@ -7639,6 +7774,8 @@ export function XDriveMediaGallery({
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
+            onOpenBaiduNativeCell={onOpenBaiduNativeCell}
+            onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             initialCamera={placesCameraSnapshot}
             onCameraChange={onPlacesCameraChange}

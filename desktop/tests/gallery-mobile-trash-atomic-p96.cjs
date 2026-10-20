@@ -69,6 +69,8 @@ function owner(compact) {
   let generation = 0
   let publishSection = () => {}
   const env = {
+    // A3h Cell isolation: no Cell request is active in this legacy fixture.
+    nativeCellOpenAbort: { current: null },
     useCallback: fn => fn,
     mobileGalleryViewport: compact,
     placesReturnPageRef: { current: null },
