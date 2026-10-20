@@ -49,7 +49,7 @@ func eligibleLocalBackupFirstLeaf(item localpush.InventoryItem) bool {
 // CloudStartLocalBoundBackupFirstFile is explicitly manual, owning-Agent-only
 // and currently ONE-SHOT per Source. A stale Stage or request-key claim blocks
 // another upload even after a successful first-file observation.
-func (c *agentController) CloudStartLocalBoundBackupFirstFile(
+func (c *agentController) cloudStartLocalBoundBackupFirstFileOnce(
 	ctx context.Context, sourceID uint64,
 ) (localBackupFirstFileSummary, error) {
 	var empty localBackupFirstFileSummary
