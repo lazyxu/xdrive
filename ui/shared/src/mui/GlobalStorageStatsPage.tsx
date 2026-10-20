@@ -484,12 +484,34 @@ export default function StorageStatsPanel({
           </XDriveActionButton>
         }
       >
-          {error ? !stats ? (
+          {error && !stats ? (
             <Box data-xdrive-storage-first-read-error
               sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
               <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
             </Box>
-          ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
+          ) : null}
+          {/* Late refresh/cleanup receipts cannot resize mounted storage metrics. */}
+          {stats && (error || (scope === 'global' && stagingNotice)) ? (
+            <Box data-xdrive-global-storage-floating-feedback sx={{
+              position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+              bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+              width: 'min(calc(100vw - 24px), 560px)',
+              maxHeight: 'min(35dvh, 240px)', overflowY: 'auto',
+              display: 'flex', flexDirection: 'column', gap: 0.75,
+              zIndex: (theme) => theme.zIndex.snackbar, pointerEvents: 'none',
+            }}>
+              {error ? (
+                <Box data-xdrive-global-storage-refresh-error role="alert">
+                  <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+              {scope === 'global' && stagingNotice ? (
+                <Box data-xdrive-global-storage-staging-notice role="status" aria-live="polite">
+                  <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
 
           {scope === 'global' && (
             <XDriveStatusAlert tone="neutral" title="范围：全实例" sx={{ mb: 2 }}>
@@ -671,7 +693,7 @@ export default function StorageStatsPanel({
               {scope === 'global' && stagingStats && (
                 <Stack spacing={1.5} data-xdrive-storage-section="staging">
                   <XDriveSectionHeader level="h3" title="上传临时空间" />
-                  {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
+                  {/* Staging success is displayed in the existing zero-flow status owner. */}
                   {!stagingStats.supported && (
                     <XDriveStatusAlert tone="neutral">当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。</XDriveStatusAlert>
                   )}
