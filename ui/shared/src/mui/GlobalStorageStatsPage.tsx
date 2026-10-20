@@ -885,6 +885,10 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && history && (
                 <Stack spacing={1.5} data-xdrive-storage-section="history">
+                  {/* The selection/progress owner is always mounted. A late history
+                      read must not insert a new Stack sibling above accepted charts. */}
+                  <Box data-xdrive-storage-history-control-owner
+                    sx={{ position: 'relative', minWidth: 0 }}>
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
@@ -908,7 +912,15 @@ export default function StorageStatsPanel({
                       <ToggleButton value={180}>180 天</ToggleButton>
                     </ToggleButtonGroup>
                   </Stack>
-                  {historyLoading ? <LinearProgress aria-label="正在加载存储历史" /> : null}
+                  <Box data-xdrive-storage-history-progress-slot
+                    aria-busy={historyLoading || undefined}
+                    sx={{
+                      position: 'absolute', top: 'calc(100% + 2px)',
+                      left: 0, right: 0, height: 4, pointerEvents: 'none', zIndex: 1,
+                    }}>
+                    {historyLoading ? <LinearProgress aria-label="正在加载存储历史" /> : null}
+                  </Box>
+                  </Box>
                   <Stack spacing={1}>
                     <XDriveSectionHeader
                       level="h3"
