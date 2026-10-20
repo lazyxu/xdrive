@@ -16,11 +16,12 @@ function validSecret(value: string, min: number, max: number) {
 }
 
 // Global credentials are staged only. This panel never controls Caddy or DNS.
-export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged, onDirtyChange }: {
+export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged, onDirtyChange, active = true }: {
   source: XDriveCaddyAliDNSPort
   refreshID: number
   onConfigurationChanged?: () => void
   onDirtyChange?: (dirty: boolean) => void
+  active?: boolean // Hide temporary plaintext when Caddy config tab is no longer visible.
 }) {
   const requestEpochRef = useRef(0)
   const revealEpochRef = useRef(0)
@@ -45,6 +46,10 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   }, [])
 
   useEffect(() => {
+    if (!active) hide()
+  }, [active, hide])
+
+  useEffect(() => {
     const conceal = () => { if (document.visibilityState !== 'visible') hide() }
     document.addEventListener('visibilitychange', conceal)
     window.addEventListener('blur', hide)
@@ -58,7 +63,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     if (!shown) return
     // A revealed credential is short-lived in the renderer even if the
     // operator leaves the page open. Switching accounts also clears it.
-    const timer = window.setTimeout(() => setShown(null), Math.min(60, shown.expires_in_seconds) * 1000)
+    const timer = window.setTimeout(() => setShown(null), Math.min(30, shown.expires_in_seconds) * 1000)
     return () => window.clearTimeout(timer)
   }, [shown])
 

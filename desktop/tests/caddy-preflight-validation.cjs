@@ -84,10 +84,18 @@ test('Both Web and Desktop invalidate sibling Caddy proof on all persisted revis
   const https = load('ui', 'shared', 'src', 'mui', 'CaddyHTTPSDesiredPanel.tsx')
   const dns = load('ui', 'shared', 'src', 'mui', 'CaddyAliDNSPanel.tsx')
   const probe = load('ui', 'shared', 'src', 'mui', 'CaddyPreflightPanel.tsx')
+  const workspace = load('ui', 'shared', 'src', 'mui', 'CaddyDetailV1.tsx')
   assert.ok(page.includes('caddyEvidenceRevision'))
-  assert.equal((page.match(/onConfigurationChanged=\{invalidateCaddyEvidence\}/g) || []).length, 2)
-  assert.ok(page.includes('refreshID={caddyEvidenceRevision}'),
-    'Caddy evidence must be invalidated by HTTPS/AliDNS revisions only')
+  // The active Caddy branch delegates to one shared workspace; legacy
+  // Accordion JSX is preserved only for other dependency service types.
+  const activeCaddy = page.slice(page.indexOf("selectedPage === 'caddy' && selectedItem ? ("),
+    page.indexOf(') : (<>', page.indexOf("selectedPage === 'caddy' && selectedItem ? (")))
+  assert.ok(activeCaddy.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
+  assert.equal((workspace.match(/onConfigurationChanged=\{changed\}/g) || []).length, 3,
+    'HTTPS save, AliDNS credential save, and history rollback all invalidate evidence')
+  assert.ok(workspace.includes('onConfigurationChanged()'))
+  assert.ok(workspace.includes('refreshID={evidenceRevision}'),
+    'only persisted Caddy changes refresh sibling preflight, not inventory checks')
   assert.equal(page.includes('refreshID={refreshID + caddyEvidenceRevision}'), false,
     'an inventory-only status refresh must not reissue credential or preflight checks')
   assert.equal((https.match(/onConfigurationChanged\?\.\(\)/g) || []).length, 2)
