@@ -49,8 +49,13 @@ func WithHeldCurrentOriginalReadCheckpoint(
 // strongly identified native fd is still held and independently post-hashed.
 // This operation does NOT supply remote atomic COMMIT/cancel exclusion, grant
 // Server mutation authority, prove a finished SourceRun, or authorize key
-// retirement. Keep ALL product entrypoints disabled until G2c has durable
-// terminal outcome/cancellation proof and installed-device acceptance.
+// retirement. The already-enabled owning Windows/Linux Desktop manual
+// Backup-only first-file may use this window ONLY under the independent
+// Device/Root/Source/Stage/key/physical-CAS proof fences. It never authorizes
+// retries, a second file, scheduled SourceRuns, a physical CANCEL assertion,
+// Mirror deletion or key/Stage retirement. Production-environment safety
+// acceptance is skipped by operator decision (not verified); code-level
+// authorization, original-native and SQL/CAS integrity checks remain mandatory.
 func WithHeldCurrentOriginalFirstLeafCommitWindow(
 	ctx context.Context, configDir string, grant RootGrant,
 	expectedSnapshotSHA256, relativePath, expectedContentSHA256 string,
