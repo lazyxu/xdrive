@@ -208,11 +208,11 @@ export function XDriveBaiduJSAPIDesiredPanel({
         </Typography>
         {mode === 'config' ? (
           <Typography variant="body2" color="text.secondary">
-            与静态地图 Server AK 独立。设置期望开关或更换 Browser AK 后由 Server 自动核验授权。
+            动态地图专用 AK。修改期望开关或密钥后由 Server 独立核验发布授权。
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.secondary">
-            运行状态来自 Server 的签名发布；Loader 检测与静态地图验证均为独立的手动操作。
+          <Typography variant="caption" color="text.secondary">
+            以下只读状态来自当前 Server；在线 Loader 检测需要管理员主动执行。
           </Typography>
         )}
         {reading ? <Box sx={{ minHeight: 32 }} aria-busy="true" /> : null}
