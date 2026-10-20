@@ -62,7 +62,7 @@ export function XDriveDeviceBackupLocalFirstFileDialog({ sourceID, actions, onCl
           <Typography variant="body2">
             请先执行“保存本机扫描清单（不上传）”。Agent 会自行验证本机授权 Root、忽略规则、当前文件身份和内容，不接受网页传来的路径或哈希。
           </Typography>
-          {running ? <Typography variant="body2" role="status">正在真实上传并核验 SQL、CAS 和本机原文件；请勿关闭应用…</Typography> : null}
+          {running ? <Typography variant="body2" role="status">本机 Agent 正在上传并核验 SQL、CAS 和原文件；窗口断开不会主动取消此操作</Typography> : null}
           {result ? (
             <Alert severity="success">
               已观察到一个文件写入云端及原文件核验，大小 {formatBytes(result.observed_bytes)}。

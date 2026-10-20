@@ -52,19 +52,21 @@ type agentController struct {
 	wake     chan struct{}
 	recovery chan agentRecoveryRequest
 
-	localFolderGrantMu sync.Mutex
-	historyMu          sync.Mutex
-	historyPath        string
-	historyKey         string
-	historyWriterDone  chan struct{}
-	mu                 sync.RWMutex
-	snap               agentSnapshot
-	snapshotRevision   uint64
-	snapshotChanged    chan struct{}
-	transfers          *transfer.Manager
-	updates            *clientUpdateManager
-	thumbnailCache     *agentMediaThumbnailCache
-	availabilitySearch *agentAvailabilitySearchCache
+	localFolderGrantMu  sync.Mutex
+	localFirstFileJobMu sync.Mutex
+	localFirstFileJobs  map[localPushFirstFileJobKey]*localPushFirstFileJob
+	historyMu           sync.Mutex
+	historyPath         string
+	historyKey          string
+	historyWriterDone   chan struct{}
+	mu                  sync.RWMutex
+	snap                agentSnapshot
+	snapshotRevision    uint64
+	snapshotChanged     chan struct{}
+	transfers           *transfer.Manager
+	updates             *clientUpdateManager
+	thumbnailCache      *agentMediaThumbnailCache
+	availabilitySearch  *agentAvailabilitySearchCache
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
