@@ -254,12 +254,12 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
     >
       <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={1}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography variant="subtitle2" component="h3" sx={{ overflowWrap: 'anywhere' }}>
-            {service.label}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-            {service.detail}
-          </Typography>
+          {/* The selected service title belongs to the detail page header, never twice. */}
+          {service.id !== 'baidu-map' && (
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              {service.detail}
+            </Typography>
+          )}
           {service.id === 'caddy' && service.caddy_internal_http_state && (
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-internal-http-evidence
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
@@ -280,14 +280,14 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               核对运行中 Server 版本、/host-control 挂载、UID/GID 或 ACL 与采样文件；无需重装或重启 Caddy。
             </Typography>
           )}
-          {service.id === 'baidu-map' && service.health_state === 'not-checked' && (
+          {showLifecycleEvidence && service.id === 'baidu-map' && service.health_state === 'not-checked' && (
             <Typography variant="caption" color="text.secondary"
               data-xdrive-baidu-static-unverified-hint
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
               静态地图在线检测尚未执行（需人工触发并消耗 API 配额），与 JSAPI 4.0 发布授权独立。
             </Typography>
           )}
-          {(service.version || service.model) && (
+          {showLifecycleEvidence && (service.version || service.model) && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
               {service.version ? '版本：' + service.version : ''}
               {service.version && service.model ? ' · ' : ''}
@@ -372,29 +372,35 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               </Typography>
             </Stack>
           )}
-          <Typography variant="caption" color="text.secondary"
-            data-xdrive-service-config-mode
-            sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
-            配置方式：{configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
-          </Typography>
-          {service.config_mode !== 'in-app' && (
-            <Typography variant="caption" color="text.secondary"
-              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
-              {service.group === 'intelligence'
-                ? '此模型没有独立启停；可在共享宿主详情保存期望、按预检安全启用，尚不能停用或重启。'
-                : service.config_mode === 'deployment'
-                  ? '此项需受控部署管理，本页不会提供尚未实现的在线操作。'
-                  : '当前没有经过后端验证的应用内配置或启停能力，本页不会显示无效操作。'}
-            </Typography>
-          )}
-          {service.config_hint && (
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
-              {service.config_hint}
-            </Typography>
-          )}
-          {service.apply_mode && (
-            <Chip size="small" variant="outlined" sx={{ mt: 1 }}
-              label={applyModeLabels[service.apply_mode] ?? '配置生效模式待确认'} />
+          {/* Default view: one status summary and four independent lifecycle facts.
+              Configuration boilerplate is evidence, not a second primary status. */}
+          {showLifecycleEvidence && (
+            <Box data-xdrive-service-extra-evidence sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary"
+                data-xdrive-service-config-mode
+                sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                配置方式：{configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
+              </Typography>
+              {service.config_mode !== 'in-app' && (
+                <Typography variant="caption" color="text.secondary"
+                  sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+                  {service.group === 'intelligence'
+                    ? '此模型没有独立启停；可在共享宿主详情保存期望、按预检安全启用，尚不能停用或重启。'
+                    : service.config_mode === 'deployment'
+                      ? '此项需受控部署管理，本页不会提供尚未实现的在线操作。'
+                      : '当前没有经过后端验证的应用内配置或启停能力，本页不会显示无效操作。'}
+                </Typography>
+              )}
+              {service.config_hint && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+                  {service.config_hint}
+                </Typography>
+              )}
+              {service.apply_mode && (
+                <Chip size="small" variant="outlined" sx={{ mt: 1 }}
+                  label={applyModeLabels[service.apply_mode] ?? '配置生效模式待确认'} />
+              )}
+            </Box>
           )}
         </Box>
         <Chip size="small" color={state.color} variant="outlined" label={state.label} />
@@ -1731,12 +1737,14 @@ export function XDriveServiceDependenciesPage({
                   <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
                     {selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                    {group.description}
-                  </Typography>
+                  {selectedPage === 'photo-auto' && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      {group.description}
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
-                    按需查看状态、配置和检测；展开不执行保存或宿主操作，历史仅在打开时读取。
+                    展开只查看；配置保存和在线检测均需明确操作。
                   </Typography>
                   {selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {
                     const sectionKey = `${selectedPage}:${sectionTab}`
@@ -2030,7 +2038,7 @@ export function XDriveServiceDependenciesPage({
                     </Typography>
                     {currentTab === 'config' ? (
                       <Typography variant="body2" color="text.secondary">
-                        静态地图独立使用 Server AK，修改后立即生效；仅主动显示时临时解密，30 秒后自动隐藏。
+                        静态地图专用。保存后立即生效；管理员主动点击“显示”时才临时解密，30 秒后自动隐藏。
                       </Typography>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
@@ -2039,12 +2047,9 @@ export function XDriveServiceDependenciesPage({
                     )}
                     {currentTab === 'config' && baiduConfig && (
                       <Typography variant="caption" color="text.secondary">
-                        {baiduConfig.configured ? '已配置 AK' : '尚未配置 AK'}
-                        {' · '}
-                        {baiduConfig.source === 'environment' ? '当前来源：部署环境变量' : '当前来源：管理员持久化设置'}
-                        {' · '}
-                        {baiduConfig.requires_restart ? '需要重启' : '修改后无需重启'}
+                        {baiduConfig.source === 'environment' ? '部署环境变量' : '管理员持久化设置'}
                         {' · '}修订 #{baiduConfig.revision}
+                        {' · '}{baiduConfig.requires_restart ? '需重启' : '无需重启'}
                       </Typography>
                     )}
                     {currentTab === 'config' && baiduConfig && (
@@ -2056,8 +2061,8 @@ export function XDriveServiceDependenciesPage({
                         expiresInSeconds={Math.min(30, Math.max(1, baiduReveal?.expires_in_seconds ?? 30))}
                         updatedAtLabel={baiduConfig.updated_at ? new Date(baiduConfig.updated_at).toLocaleString('zh-CN') : undefined}
                         configuredDescription={baiduConfig.source === 'environment'
-                          ? 'AK 来自部署环境变量；只有管理员主动点击“显示”才会临时读取。'
-                          : 'AK 已加密保存；只有管理员主动点击“显示”才会临时读取。'}
+                          ? 'AK 由部署环境提供；按权限审计读取。'
+                          : 'AK 已加密保存；按权限审计读取。'}
                         onReveal={() => { void revealBaiduAK() }}
                         onHide={hideBaiduAK}
                       />

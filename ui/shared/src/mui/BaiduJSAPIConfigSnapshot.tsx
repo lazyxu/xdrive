@@ -33,7 +33,7 @@ export function XDriveBaiduJSAPIConfigSnapshot({
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
         alignItems={{ sm: 'center' }} justifyContent="space-between">
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="subtitle2" fontWeight={700}>发布证据</Typography>
+          <Typography variant="subtitle2" fontWeight={700}>当前修订与技术详情</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
             修订 #{config.revision}
             {' · '}{lastReadAt ? '读取于 ' + new Date(lastReadAt).toLocaleString('zh-CN') : '尚无有效读取时间'}

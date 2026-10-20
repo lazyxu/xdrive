@@ -1,3 +1,9 @@
+## SD-UX-V2 · 所有系统依赖详情必须单标题、轻量四轴、证据按需显示（2026-10-20）
+
+- SD-UX-V1 #2186 已合入，但详情页仍有**页面标题 + 状态卡再次显示同名**以及在「配置/部署/健康/生效」四轴下无条件堆叠配置来源、config_hint、版本、生效 Chip、反复的提示文本。本次修复明确是全部 11 项系统依赖（及全局策略共享入口）的永久规则：**每项详情主标题仅一次，默认只有一次可信状态与四个独立证据轴**；详细配置能力、版本、来源、生效模式和长说明移入可访问的「查看状态依据」，且不能以“精简”为由隐藏重大故障或 Caddy actionable blocker。四轴不能把“未检测”冒充成功。
+- 「状态/检测」按需合并，具体「编辑配置」「配置历史」独立打开；浏览、切换和手动只读刷新均不得保存草稿、重启容器或消耗百度计费配额。所有涉及 AK 明文显示/密钥替换/受控 Host 操作/在线探针必须明确管理员权限、确认及审计。百度 Server AK Static Map v2 与 Browser AK JSAPI4 独立，各仅显示一处运行权威事实，签名 runtime 永远只读；static 128×128 手动验证、JSAPI4 Loader 手动 probe 与真实三端地图交互必须分开。
+- 原有 Web/Mobile Web/Desktop 使用同一 ui/shared MUI 模块；窄屏 2×2、稳定滚动高度、最长文本换行与焦点、暗色/VoiceOver/触摸 >=44px、异步响应/草稿保留/隐藏敏感内容、不得抖动的微小中间加载等为默认新代码约束。提交需要原 UI 源契约、Web/Desktop 编译与 CI、真实三端/100k 证据另行标记为未测；不以合入或 Server 授权代替客户部署与真机验收。完整历史保留；详见 docs/system-dependencies-compact-details-sdv2.md。
+
 ## NET-M5-C2-S · preserve precise read-only Caddy Host witness blockers (2026-10-20)
 
 - Frozen complete master `fb2af148c1265ad1e2981bb9d76e2b0d39edd166`; scope only the existing fixed Host witness reason/result mapping, admin services JSON, Go Desktop client, shared Web/Mobile Web/PWA/Desktop Caddy row, source-exact Go/Node tests and `docs/caddy-host-witness-reasons-netm5c2s.md`. Full historical AGENTS content below is retained verbatim. One work commit, no unrelated Gallery/Files/LocalPush/Performance/Race edits.
