@@ -172,3 +172,55 @@ test('P68: real Organizer first folder-index read stays quiet even past 300ms', 
       'only confirmed true empty index can show the empty message')
   }finally{if(view)await act(async()=>view.unmount())}
 })
+
+test('P111: original Gallery folder write error stays out of card/grid flow', async () => {
+  let listCalls=0
+  const actions={
+    list:async()=>{listCalls++;return deepFolders},
+    create:async()=>{throw new Error('服务端拒绝创建')},
+  }
+  let view
+  const props={
+    albums:[],accountScope:'p111-error-floating-gallery',
+    folderActions:actions,loadThumbnail:async()=>null,
+  }
+  try{
+    await act(async()=>{
+      view=Renderer.create(React.createElement(Organizer,props))
+      await flush()
+    })
+    const owner=byAttribute(view,'data-xdrive-gallery-album-folders',true)
+    const crumb=byAttribute(view,'data-xdrive-gallery-album-folder-nav-row',true)
+    const card=byAttribute(view,'data-xdrive-gallery-album-folder',10)
+    const grid=card.parent
+    assert.equal(owner.props.sx.position,'relative')
+    assert.equal(view.root.findAll(n=>n.props?.['data-xdrive-gallery-album-folder-error']).length,0)
+    const create=view.root.findAll(n=>n.type==='button' && n.props.children==='新建相册文件夹')[0]
+    assert.ok(create && create.props.onClick)
+    await act(async()=>{create.props.onClick();await flush()})
+    const nameInput=view.root.findAll(n=>n.type==='textfield' && n.props.label==='文件夹名称')[0]
+    assert.ok(nameInput && nameInput.props.onChange)
+    await act(async()=>{nameInput.props.onChange({target:{value:'失败的相册文件夹'}});await flush()})
+    const confirm=view.root.findAll(n=>n.type==='button' && n.props.children==='确认')[0]
+    assert.ok(confirm && !confirm.props.disabled)
+    await act(async()=>{confirm.props.onClick();await flush()})
+    // A genuine failed write must stay visible after the modal is dismissed.
+    const cancel=view.root.findAll(n=>n.type==='button' && n.props.children==='取消')[0]
+    await act(async()=>{cancel.props.onClick();await flush()})
+    const alert=byAttribute(view,'data-xdrive-gallery-album-folder-error',true)
+    assert.equal(alert.parent,owner,'real alert stays in the original owner')
+    assert.equal(alert.props.role,'alert')
+    assert.equal(alert.props.sx.position,'absolute')
+    assert.equal(alert.props.sx.top,52)
+    assert.ok(alert.props.children.includes('服务端拒绝创建'))
+    assert.equal(byAttribute(view,'data-xdrive-gallery-album-folder-nav-row',true),crumb)
+    assert.equal(byAttribute(view,'data-xdrive-gallery-album-folder',10),card)
+    assert.equal(byAttribute(view,'data-xdrive-gallery-album-folder',10).parent,grid)
+    assert.equal(listCalls,2,'failed write still refreshes canonical revisions without navigating')
+    await act(async()=>{alert.props.onClose();await flush()})
+    assert.equal(view.root.findAll(n=>n.props?.['data-xdrive-gallery-album-folder-error']).length,0)
+    assert.equal(byAttribute(view,'data-xdrive-gallery-album-folder',10),card)
+  }finally{
+    if(view)await act(async()=>view.unmount())
+  }
+})

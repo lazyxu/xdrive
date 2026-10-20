@@ -483,7 +483,13 @@ export function XDriveMediaGalleryAlbumOrganizer({
               </Button>
             )}
           </Stack>
-          {visibleFolderError && <Alert severity="error" role="alert">{visibleFolderError}</Alert>}
+          {visibleFolderError && <Alert data-xdrive-gallery-album-folder-error
+            severity="error" role="alert" onClose={() => setFolderError('')}
+            sx={{
+              position: 'absolute', top: 52, left: 8, right: 8, zIndex: 5,
+              maxWidth: 680, mx: 'auto', maxHeight: 'min(32dvh, 180px)',
+              overflowY: 'auto', boxShadow: 2, pointerEvents: 'auto',
+            }}>{visibleFolderError}</Alert>}
           {visibleFolders.length > 0 && (
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1 }}>
               {visibleFolders.map(folder => (
