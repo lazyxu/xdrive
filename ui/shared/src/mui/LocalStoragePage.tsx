@@ -323,13 +323,37 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
         </XDriveActionButton>
       )}
     >
-      {error ? !snapshot ? (
+      {error && !snapshot ? (
         <Box data-xdrive-local-storage-first-read-error
           sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
         </Box>
-      ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
-      {notice ? <XDriveStatusAlert tone="good" sx={{ mb: 2 }}>{notice}</XDriveStatusAlert> : null}
+      ) : null}
+      {/* Once a trustworthy snapshot exists, late refresh/error/action
+          receipts may not add in-flow rows above its metric cards/tree. */}
+      {snapshot && (error || notice) ? (
+        <Box data-xdrive-local-storage-floating-feedback sx={{
+          position: 'fixed',
+          left: '50%', transform: 'translateX(-50%)',
+          bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+          width: 'min(calc(100vw - 24px), 560px)',
+          maxHeight: 'min(34dvh, 220px)', overflowY: 'auto',
+          zIndex: (theme) => theme.zIndex.snackbar,
+          display: 'flex', flexDirection: 'column', gap: 0.75,
+          pointerEvents: 'none',
+        }}>
+          {error ? (
+            <Box data-xdrive-local-storage-refresh-error role="alert">
+              <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+            </Box>
+          ) : null}
+          {notice ? (
+            <Box data-xdrive-local-storage-operation-notice role="status" aria-live="polite">
+              <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>
+            </Box>
+          ) : null}
+        </Box>
+      ) : null}
       {!snapshot && !error ? (
         <Box data-xdrive-local-storage-loading-slot
           aria-busy={loading || undefined}
