@@ -2220,11 +2220,26 @@ fi
 if [[ -n "$(env_value XD_DOMAIN)" || -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
   caddy_witness_observed=0
   caddy_witness_output=""
+  caddy_witness_one_shot_attempted=0
   for _ in {1..15}; do
     if caddy_witness_output="$(compose exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" &&
         [[ "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
       caddy_witness_observed=1
       break
+    fi
+    # The Server reported an exact, safe missing/stale snapshot reason,
+    # despite the installer's previously verified Caddy HTTPS. Attempt ONE
+    # existing locked read-only host sampler, then re-read through the actual
+    # Server mount. Never touch running Caddy, .env, DNS, certificates, or
+    # mutate a live Host Control update. Other reasons must not trigger it.
+    if [[ "$caddy_witness_one_shot_attempted" == 0 &&
+          ( "$caddy_witness_output" == "Caddy local observation: snapshot-missing" ||
+            "$caddy_witness_output" == "Caddy local observation: snapshot-stale" ) ]]; then
+      caddy_witness_one_shot_attempted=1
+      if [[ -x "$BIN_DIR/server-control.sh" ]] && command -v timeout >/dev/null 2>&1; then
+        XD_CADDY_OBSERVER_ONCE=1 XD_CONFIG_DIR="$XDRIVE_HOME" \
+          timeout 30s "$BIN_DIR/server-control.sh" caddy-observe >/dev/null 2>&1 || true
+      fi
     fi
     sleep 1
   done

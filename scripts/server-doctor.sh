@@ -97,6 +97,30 @@ env_value() {
   printf '%s\n' "$value"
 }
 
+# Fixed host file *metadata only*. Never read potentially credential-bearing
+# snapshot contents or print operator-defined paths, domains, PIDs or hashes.
+# All output belongs to a small nonsecret status vocabulary.
+caddy_host_meta_state() {
+  local dir="$1" filename="$2" file modified now
+  [[ -d "$dir" && ! -L "$dir" ]] || { printf 'directory-unavailable\n'; return; }
+  file="$dir/$filename"
+  [[ ! -L "$file" ]] || { printf 'invalid-file\n'; return; }
+  if [[ ! -e "$file" ]]; then
+    printf 'missing\n'
+    return
+  fi
+  [[ -f "$file" ]] || { printf 'invalid-file\n'; return; }
+  modified="$(stat -c %Y -- "$file" 2>/dev/null)" || { printf 'unreadable\n'; return; }
+  now="$(date +%s)" || { printf 'unreadable\n'; return; }
+  [[ "$modified" =~ ^[0-9]{1,12}$ && "$now" =~ ^[0-9]{1,12}$ ]] ||
+    { printf 'invalid-time\n'; return; }
+  if (( modified < now - 45 || modified > now + 15 )); then
+    printf 'stale\n'
+  else
+    printf 'fresh\n'
+  fi
+}
+
 compose() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
@@ -264,6 +288,18 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   volume_report caddy /data
   volume_report caddy /config
 
+  # Distinguish host producer failure from a running Server mount mismatch.
+  # Presence/freshness alone does NOT verify contents, Docker health or TLS.
+  caddy_host_dir="$(env_value XD_HOST_CONTROL_HOST_DIR)"
+  [[ -n "$caddy_host_dir" ]] || caddy_host_dir="$STATE_DIR/control"
+  caddy_host_heartbeat_state="$(caddy_host_meta_state "$caddy_host_dir" heartbeat)"
+  caddy_host_snapshot_state="$(caddy_host_meta_state "$caddy_host_dir" caddy-runtime-status.json)"
+  if [[ "$caddy_host_heartbeat_state" == fresh && "$caddy_host_snapshot_state" == fresh ]]; then
+    record PASS "Caddy Host producer" "host heartbeat=fresh snapshot=fresh (metadata only; Server and TLS separately checked)"
+  else
+    record WARN "Caddy Host producer" "host heartbeat=$caddy_host_heartbeat_state snapshot=$caddy_host_snapshot_state (metadata only)"
+  fi
+
   # Same actual Server mount and reader as the Admin UI; never infer
   # observability from a healthy Caddy alone. Avoid printing untrusted CLI
   # output, which an older or misrouted binary might fill with secrets.
@@ -279,6 +315,22 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
       *) caddy_witness_reason="unsupported-or-unavailable-server-witness" ;;
     esac
     record WARN "Caddy Host witness" "reason=$caddy_witness_reason; verify Host Control producer and running Server /host-control mount; does NOT mean Caddy is uninstalled"
+    # The two observers are independent: only correlate fixed reason codes.
+    # Neither a fresh host file nor its name proves live Caddy or HTTPS.
+    case "$caddy_witness_reason:$caddy_host_snapshot_state" in
+      snapshot-missing:fresh|snapshot-unreadable:fresh|snapshot-invalid-or-changing:fresh)
+        record WARN "Caddy Host correlation" "host-snapshot-present-server-unreadable; verify the running Server /host-control bind mount and GID"
+        ;;
+      snapshot-missing:missing|snapshot-missing:directory-unavailable)
+        record WARN "Caddy Host correlation" "host-snapshot-not-produced; check Host Control sampler without restarting Caddy"
+        ;;
+      snapshot-stale:stale)
+        record WARN "Caddy Host correlation" "host-snapshot-stale; check Host Control sampler cadence"
+        ;;
+      unsupported-or-unavailable-server-witness:*)
+        record WARN "Caddy Host correlation" "running-server-witness-cli-unavailable; verify deployed Server image version"
+        ;;
+    esac
   fi
 fi
 

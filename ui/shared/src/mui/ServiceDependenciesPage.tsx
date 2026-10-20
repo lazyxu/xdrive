@@ -254,6 +254,13 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                 : '内部 HTTP 转发未得到可信成功响应；不代表原有 Caddy 已停止或未部署。'}
             </Typography>
           )}
+          {service.id === 'caddy' && service.installation_state !== 'observed' && (
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-host-witness-help
+              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+              如果原 Caddy 已能正常访问，请在实际宿主机执行 xdrive-server doctor，
+              核对 Host Control 采样文件与 Server 共享挂载；无需重装或重启 Caddy。
+            </Typography>
+          )}
           {service.id === 'baidu-map' && service.health_state === 'not-checked' && (
             <Typography variant="caption" color="text.secondary"
               data-xdrive-baidu-static-unverified-hint

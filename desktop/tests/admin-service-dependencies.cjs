@@ -1154,3 +1154,11 @@ test('P0 Caddy internal HTTP fallback is fixed, bounded and never a host or TLS 
   assert.equal(helper.includes('docker.sock'), false)
   assert.equal(helper.includes('StopCaddy'), false)
 });
+
+test('Caddy snapshot-missing instructions stay in shared Web and Desktop UI without granting host action', () => {
+  assert.ok(page.includes('data-xdrive-caddy-host-witness-help'))
+  assert.ok(page.includes('xdrive-server doctor'))
+  assert.ok(page.includes('无需重装或重启 Caddy'))
+  assert.ok(page.includes("service.installation_state !== 'observed'"))
+  assert.equal(page.includes('docker restart'), false)
+})
