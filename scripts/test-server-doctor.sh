@@ -120,6 +120,23 @@ grep -q '\[PASS\] host layout' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
 grep -q '\[PASS\] CAS metadata health' "$TMP/report"
 grep -q 'Caddy Host witness.*reason=snapshot-missing' "$TMP/report"
+grep -q 'Caddy Host producer.*snapshot=directory-unavailable' "$TMP/report"
+grep -q 'Caddy Host correlation.*host-snapshot-not-produced' "$TMP/report"
+
+# Host snapshot freshness is metadata-only: file bytes may contain a poison
+# credential, and must never be read into or echoed by the diagnostic report.
+mkdir -p "$TMP/home/state/control"
+printf 'alive\n' > "$TMP/home/state/control/heartbeat"
+printf 'ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak\n' > "$TMP/home/state/control/caddy-runtime-status.json"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-host-snapshot" 2>"$TMP/err-host-snapshot"
+grep -q 'Caddy Host producer.*heartbeat=fresh snapshot=fresh' "$TMP/report-host-snapshot"
+grep -q 'Caddy Host correlation.*host-snapshot-present-server-unreadable' "$TMP/report-host-snapshot"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-host-snapshot" "$TMP/err-host-snapshot"
+touch -d '2 minutes ago' "$TMP/home/state/control/caddy-runtime-status.json"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-host-stale" 2>"$TMP/err-host-stale"
+grep -q 'Caddy Host producer.*snapshot=stale' "$TMP/report-host-stale"
 
 XD_TEST_CADDY_WITNESS=observed TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report-caddy-observed" 2>"$TMP/err-caddy-observed"
