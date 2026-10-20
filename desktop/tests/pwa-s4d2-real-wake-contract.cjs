@@ -41,7 +41,7 @@ test('S4D2 production Web genuine Chrome foreground event causes read-only Serve
     "waitForTaskState(page, ready.wake_task_id, '已完成')",
     'summary.coldReloadConsistent = true',
     'assert.deepEqual(mutations, []',
-    "cached.every(x => x === '/offline.html')",
+    "assertXDrivePublicShellCache(cached)",
   ]) assert(browser.includes(code), code)
   assert(!browser.includes('page.route('), 'no API mocks permitted')
   assert(!browser.includes('route.fulfill('), 'no fabricated Server result')

@@ -42,7 +42,7 @@ test('S2B3 Chrome actual login, route recovery and foreign JWT cannot read anoth
     "foreignLogin.status(), 200",
     "forbidden.status(), 404",
     "unauthorized.status(), 401",
-    "cache.files, ['/offline.html']",
+    "assertXDrivePublicShellCache(cache)",
     'summary.physicalDevice',
   ]) assert.ok(chrome.includes(token) || (token === 'summary.physicalDevice' && chrome.includes('physicalDevice: false')), token)
   assert.ok(chrome.includes('interceptedApi: false'))
@@ -133,7 +133,7 @@ test('S2B7: real Chrome Gin public share, denial, history, isolation and revocat
     'publicShareAnonymous', 'publicShareWrongPassword',
     'publicShareHistoryIsolation', 'publicShareRevoked',
     'publicShareViewerReturn', 'publicSharePublicOnlyCache',
-    "assert.deepEqual(cachePaths, ['/offline.html'])",
+    "assertXDrivePublicShellCache(cachePaths)",
   ]) assert.ok(chrome.includes(evidence), 'missing exact S2B7 acceptance: ' + evidence)
   assert.ok(!chrome.includes('context.route(') && !chrome.includes('route.fulfill('))
   assert.ok(workflow.includes("github.head_ref == 'fix/pwa-public-share-hash-history-s2b7-20261012'"))

@@ -40,7 +40,7 @@ test('S4B2-B2: original 17 MiB negative-file tests retained, 1 GiB source physic
     'summary.serverRequestCounters.last_chunk_puts, 1',
     'ready.expected_chunks + summary.serverRequestCounters.tcp_drops',
     'summary.lastChunkVerified = true',
-    "cache.resources, ['/offline.html']",
+    "assertXDrivePublicShellCache(cache)",
   ]) assert.ok(js.includes(token), token)
   assert.doesNotMatch(js, /readFileSync\(filepath\)/)
   assert.doesNotMatch(js, /(?:page|context)\.route\(|route\.fulfill\(/)

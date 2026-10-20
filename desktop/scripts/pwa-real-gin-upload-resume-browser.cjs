@@ -8,6 +8,7 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const args = Object.fromEntries(process.argv.slice(2).map(text => {
@@ -311,8 +312,7 @@ async function run() {
       }
       return { names, resources }
     })
-    assert.deepEqual(cache.names, ['xdrive-pwa-public-offline-v1'])
-    assert.deepEqual(cache.resources, ['/offline.html'])
+    assertXDrivePublicShellCache(cache)
     summary.onlyPublicOfflineCache = true
     assert.deepEqual(pageErrors, [])
     // Test-only scalar counters: capture before Go validates and shuts down.

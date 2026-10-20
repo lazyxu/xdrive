@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pwa-s2b1-browser:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012' || github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012' || github.head_ref == 'fix/pwa-install-diagnostics-cancel-s2b8-20261012' || github.head_ref == 'fix/pwa-update-check-timeout-s3d1-20261013'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012' || github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012' || github.head_ref == 'fix/pwa-install-diagnostics-cancel-s2b8-20261012' || github.head_ref == 'fix/pwa-update-check-timeout-s3d1-20261013' || github.head_ref == 'feat/pwa-ios-shell-precache-p0a-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

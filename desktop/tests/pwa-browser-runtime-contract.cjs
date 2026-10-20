@@ -39,7 +39,7 @@ test('S2B1: real browser uses only public offline CacheStorage and never interce
   assert.ok(manifest.icons.some(x => x.sizes === '512x512'))
   assert.ok(sw.includes("const OFFLINE_URL = '/offline.html'"))
   assert.ok(sw.includes("url.pathname !== '/'"))
-  assert.ok(sw.includes("request.mode !== 'navigate'"))
+  assert.ok(sw.includes("request.mode === 'navigate'"))
   assert.ok(script.includes("context.newPage()"))
   assert.ok(script.includes('observed.privateTransportDrops > 0'))
   assert.ok(script.includes("assert.equal(restoredResponse.status(), 200"))
@@ -47,9 +47,9 @@ test('S2B1: real browser uses only public offline CacheStorage and never interce
   assert.equal(script.includes('context.setOffline(true)'), false,
     'Worker-owned fetch must be tested with a real socket failure, not a CDP network emulation')
   assert.ok(script.includes("/api/v1/files/1/download-ticket"))
-  assert.ok(script.includes("cache.resources, ['/offline.html']"))
+  assert.ok(script.includes("assertXDrivePublicShellCache(cache)"))
   assert.equal(sw.includes('skipWaiting('), false)
-  assert.equal(sw.includes('cache.put('), false)
+  assert.ok(sw.includes('cache.put(pathname, response)'))
 })
 
 test('S2B1: exact-head CI builds real dist, and does not publish credentials or claim actual installation', () => {

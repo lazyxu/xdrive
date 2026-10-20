@@ -89,7 +89,7 @@ test('S4C3-B2a 4 GiB refuses insufficient real disk and preserves full-file and 
     "response.status(), 206",
     "beyond.status(), 416",
     "missing.status(), 401",
-    "cached.every(p => p === '/offline.html')",
+    "assertXDrivePublicShellCache(cached)",
     'summary.onlyPublicOfflineCache = true',
   ]) assert(browser.includes(fragment), fragment)
   assert(!workflow.includes('cat "$RUNNER_TEMP/pwa-s4c3-private-gin-'))

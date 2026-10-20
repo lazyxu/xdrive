@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { assertXDrivePublicShellCache } = require('./pwa-public-shell-cache.cjs')
 const puppeteer = require(process.env.XDRIVE_PUPPETEER_MODULE || 'puppeteer-core')
 
 const args = Object.fromEntries(process.argv.slice(2).map(arg => {
@@ -162,7 +163,7 @@ async function main() {
       }
       return paths
     })
-    assert(cached.every(x => x === '/offline.html'), 'PWA SW cached non-public content')
+    assertXDrivePublicShellCache(cached)
     summary.onlyPublicOfflineCache = true
 
     summary.stage = 'independent-go-postflight'

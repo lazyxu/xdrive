@@ -48,7 +48,7 @@ test('B3B: actual directory FileChooser + hierarchical failed/resumable/cancelle
     "summary.counters.chunk0_puts,2",
     "summary.counters.chunk2_puts,2",
     "summary.counters.tcp_drops,summary.counters.chunk1_puts-2",
-    "cache.paths,['/offline.html']",
+    "assertXDrivePublicShellCache(cache)",
     "summary.nestedPathPresent",
     "summary.unstartedSiblingNotUploaded",
   ]) assert.ok(js.includes(token),token)

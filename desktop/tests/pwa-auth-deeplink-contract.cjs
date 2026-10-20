@@ -32,7 +32,7 @@ test('S2B2: authenticated cold reload uses the same Files route without caching 
   assert.ok(script.includes("assert.equal(new URL(page.url()).hash, expectedHash)"))
   assert.ok(script.includes("result.authenticatedDeepLink = true"))
   assert.ok(script.includes("result.authenticatedColdReload = true"))
-  assert.ok(script.includes("assert.deepEqual(cacheAfterLogin.paths, ['/offline.html'])"))
+  assert.ok(script.includes("assertXDrivePublicShellCache(cacheAfterLogin)"))
   assert.ok(script.includes("observed.authUnknown, 0"))
   assert.ok(script.includes('observed.authUnknownRoutes.push(key)'))
   assert.ok(script.includes('observed.authRecentTouches.push(id)'))

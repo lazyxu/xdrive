@@ -7,6 +7,8 @@
 	}
 	@pwa_static path /sw.js /site.webmanifest /offline.html
 	header @pwa_static Cache-Control "no-cache, must-revalidate"
+	@pwa_document path / /index.html
+	header @pwa_document Cache-Control "no-cache, must-revalidate"
 	# Never forward JSAPI requests directly to Baidu or the SPA fallback.
 	# Go enforces signed release, Cookie, Owner, fixed upstream and resource policy.
 	handle /_BMapService/* {
@@ -17,6 +19,12 @@
 	}
 	handle /api/* {
 		reverse_proxy server:8080
+	}
+	# Missing hashed bundles must return real 404, never SPA HTML.
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
 	}
 	handle {
 		root * /srv
