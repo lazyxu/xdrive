@@ -9,6 +9,8 @@ import {
   xDriveFileExplorerDetailsMobileRowHeight,
   XDriveFileExplorerItemName,
   XDriveFileExplorerDetailsNameCell,
+  XDriveFileExplorerDetailsRowCell,
+  xDriveFileExplorerDetailsHeaderGeometry,
   XDriveFileExplorerGridTileContent,
 } from './FileExplorerItemPresentation'
 export {
@@ -4518,15 +4520,10 @@ export function XDriveFileExplorer({
         }}
       >
         {visibleDetailsColumns.map((key) => (
-          <Box
+          <XDriveFileExplorerDetailsRowCell
             key={key}
-            role="cell"
-            sx={{
-              minWidth: 0,
-              overflow: 'hidden',
-              position: key === 'name' ? 'relative' : undefined,
-              textAlign: detailsRightAlignedColumnKeys.has(key) ? 'right' : 'left',
-            }}
+            columnKey={key}
+            rightAligned={detailsRightAlignedColumnKeys.has(key)}
           >
             {key === 'name' ? (
               <>
@@ -4553,7 +4550,7 @@ export function XDriveFileExplorer({
                 {detailsColumnText(item, key)}
               </Typography>
             )}
-          </Box>
+          </XDriveFileExplorerDetailsRowCell>
         ))}
       </ButtonBase>
     )
@@ -6546,22 +6543,7 @@ export function XDriveFileExplorer({
             <Box
               role="row"
               aria-rowindex={1}
-              sx={{
-                position: 'sticky',
-                top: 0,
-                zIndex: 1,
-                display: 'grid',
-                gridTemplateColumns: detailsGridTemplate,
-                minHeight: detailsHeaderHeight,
-                alignItems: 'center',
-                px: 1.5,
-                bgcolor: 'background.default',
-                borderBottom: 1,
-                borderColor: 'divider',
-                color: 'text.secondary',
-                fontSize: 12,
-                fontWeight: 500,
-              }}
+              sx={xDriveFileExplorerDetailsHeaderGeometry(detailsGridTemplate, detailsHeaderHeight)}
             >
               {visibleDetailsColumns.map((key) => (
                 <Box

@@ -761,3 +761,7 @@ On **shared Linux Go HTTP Gin/PostgreSQL17/Local CAS ONLY**, first valid [native
 | Exact P056 authenticated 100k physical CAS Copy/Undo/Purge GUI workflow | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
 | --- | --- | --- | --- | --- | --- | --- |
 | Truly installed app/client visual Copy→Undo→Purge, 100k distinct SHA | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+## SH-P014 · public scoped read-only Details cell/header on exact Owner visual primitives (2026-10-21)
+
+- Source change confined to shared pure Details JSX cells & header sx helper and both real callers. Original public 100k real physical JPEG Chromium Wide1440/CDP390 P50 first/next 394.417/244.673ms and 328.015/251.205ms from separately executed accepted #2243 n3; not matched before/after, no product speedup claim. New exact-head n3 real PG17 100k metadata, real SHA-distinct JPEG/share browser and full CI pending. No physical iOS/Android or installed PWA/WAN, Native Desktop authenticated mixed 100k not measured by this public-link scenario; Owner FileExplorer P067 has a separate independent physical media test. Share data may browse/download but not mutate, signed original requests and 100 per page unchanged. Future real H264 poster/Live still/whole subtree search+sort/subfolder ZIP in #2205. Source details: [SH-P014](public-share-details-row-parity-shp014.md).
