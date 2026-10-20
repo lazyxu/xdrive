@@ -554,6 +554,16 @@ function fixtureFor(request, role) {
       queryOnly(url, mobilePanelsScenario ? ['tag'] : []);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       return { cameras: [], formats: [{ value: 'png', label: 'PNG', item_count: mediaItems.length }] };
+    case 'GET /api/v1/media/places/baidu-jsapi/status': {
+      // P33's real Gallery map probes this optional Server gate. The fixture
+      // must answer a genuine *disabled/unsigned* Server capability: never
+      // claim an approved Browser AK or silently turn on the native SDK.
+      assert(galleryPlaceIndexNavigationScenario,
+        'only the signed-gate audit scenario may request JSAPI status here');
+      queryOnly(url, []);
+      return { provider: 'baidu-jsapi-4.0', enabled: false,
+        activation_state: 'not_authorized' };
+    }
     case 'GET /api/v1/media/memories': {
       assert(galleryIos27Fixture, 'Memories preview belongs to iOS27 Gallery fixture');
       queryOnly(url, ['limit', 'time_zone', 'anchor_date']);
@@ -565,8 +575,7 @@ function fixtureFor(request, role) {
       assert.match(url.searchParams.get('anchor_date') || '', /^\d{4}-\d{2}-\d{2}$/);
       return galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario ? [{
         id: 'qa-memory-1', title: '验收回忆 B', subtitle: '首次范围延迟',
-        ...(galleryMemoryIndexNavigationScenario ? {kind:'recent_day'} : {}),
-        item_count: 120, cover_node_id: 1120,
+        kind: 'recent_day', item_count: 120, cover_node_id: 1120,
       }] : [];
     }
     case 'GET /api/v1/media/bursts': {

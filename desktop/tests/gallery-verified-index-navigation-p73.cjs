@@ -130,7 +130,14 @@ test('P73 original Gallery Page binds Owner+source accepted receipts, never a fa
     'cleanupIndexReceipt.dataSource === source',
     "state: 'ready' })",
     "state: 'error' })",
-    "memories={memoriesReadState === 'ready' ? memories : []}",
+    // An authorized 8-item Mobile preview does not certify the 48-item index.
+    "memories={memoriesReadState === 'ready' ||",
+    'mobileGalleryViewport && mobileCollectionsOverview &&',
+    'collectionsMemoryPreviewReceipt?.owner === preferenceScope',
+    'collectionsMemoryPreviewReceipt.dataSource === source',
+    '? memories : []}',
+    'setCollectionsMemoryPreviewReceipt(null)',
+    'setCollectionsMemoryPreviewReceipt({ owner: preferenceScope, dataSource: source })',
     "burstReviews={cleanupReadState === 'ready' ? burstReviews : null}",
     'setMemoryIndexReceipt(null)',
     'setCleanupIndexReceipt(null)',
@@ -145,6 +152,19 @@ test('P73 original Gallery Page binds Owner+source accepted receipts, never a fa
     'XDriveMediaAsyncThumbnail',
     'XDriveMediaAsyncVideoPoster',
   ])assert.ok(gallery.includes(token),token)
+  const previewStart=gallery.indexOf("memories={memoriesReadState === 'ready' ||")
+  const previewEnd=gallery.indexOf('memoriesReadState={memoriesReadState}',previewStart)
+  assert.ok(previewStart>=0 && previewEnd>previewStart)
+  const preview=gallery.slice(previewStart,previewEnd)
+  assert.ok(preview.includes('mobileGalleryViewport && mobileCollectionsOverview &&'),
+    'only Mobile Collections may display an Owner-verified eight-card preview')
+  assert.ok(preview.includes('collectionsMemoryPreviewReceipt?.owner === preferenceScope'))
+  assert.ok(preview.includes('collectionsMemoryPreviewReceipt.dataSource === source'))
+  assert.ok(preview.includes('? memories : []}'))
+  assert.equal(gallery.includes("memories={memoriesReadState === 'ready' ? memories : []}"),false,
+    'the old full-index-only gate hid a successfully fetched Mobile preview')
+  assert.ok(gallery.includes('readState={memoriesReadState}'),
+    'the full 48-item Memory index still requires its own authorized receipt')
   assert.equal(gallery.includes('showDelayedPlacesInitial'),false)
   assert.equal(gallery.includes('showDelayedColdFacetRead'),false)
   assert.equal(gallery.includes('正在读取人物…'),false)
