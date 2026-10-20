@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   file-explorer-desktop-mixed-100k:
-    if: github.head_ref == 'perf/file-explorer-desktop-mixed-100k-p038-20261012'
+    if: >-
+      github.head_ref == 'perf/file-explorer-desktop-mixed-100k-p038-20261012' ||
+      github.head_ref == 'perf/p067-post-share-grid-owner-mixed-100k-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:

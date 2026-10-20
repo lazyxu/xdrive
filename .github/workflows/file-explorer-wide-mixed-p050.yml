@@ -6,7 +6,9 @@ permissions:
   contents: read
 jobs:
   file-explorer-wide-mixed-p050:
-    if: github.head_ref == 'perf/file-explorer-wide-mixed-100k-p050-20261015'
+    if: >-
+      github.head_ref == 'perf/file-explorer-wide-mixed-100k-p050-20261015' ||
+      github.head_ref == 'perf/p067-post-share-grid-owner-mixed-100k-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 95
     services:

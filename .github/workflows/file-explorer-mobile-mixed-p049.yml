@@ -6,7 +6,9 @@ permissions:
   contents: read
 jobs:
   file-explorer-mobile-mixed-p049:
-    if: github.head_ref == 'perf/file-explorer-mobile-mixed-100k-p049-20261015'
+    if: >-
+      github.head_ref == 'perf/file-explorer-mobile-mixed-100k-p049-20261015' ||
+      github.head_ref == 'perf/p067-post-share-grid-owner-mixed-100k-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 95
     services:
