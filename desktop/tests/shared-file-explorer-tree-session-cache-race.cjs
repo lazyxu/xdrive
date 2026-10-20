@@ -259,6 +259,15 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
   account = 'B'
   lifecycleKey = 'server-b:user-b'
   tree = render()
+  // The effect-based reset hasn't repainted yet. An OLD expanded Set from
+  // account A must never reach the first B render or change its tree height.
+  assert.equal(walk(tree).filter(node => node.props?.role === 'group').length, 0,
+    'new account first frame cannot contain a stale empty child group')
+  const firstBRoot = walk(tree).find(node => node.props?.role === 'treeitem')
+  assert.equal(firstBRoot.props['aria-expanded'], false,
+    'new account first frame cannot keep an expanded chevron')
+  assert.equal(firstBRoot.props['aria-busy'], undefined,
+    'new account first frame cannot show the previous owner busy flag')
   await flushAsync()
   tree = render()
 
@@ -276,5 +285,56 @@ test('navigation tree cache cannot cross account lifecycle when root ids are reu
   tree = render()
 
   assert.ok(findByAriaLabel(tree, 'B-child'), 'account B should load its own tree children')
+  assert.equal(callsB, 1)
+})
+
+test('P102 replacing the Server/Agent loader with reused root id never paints stale tree disclosure', async () => {
+  const runtime = createHookRuntime()
+  const NavigationPane = loadNavigationPane(runtime)
+  let callsA = 0
+  let callsB = 0
+  let activeLoader = async () => {
+    callsA += 1
+    return { items: [{ id: 2, name: 'A-child', type: 'dir' }],
+      nextCursor: '', hasMore: false }
+  }
+  const render = () => runtime.render(() => NavigationPane({
+    lifecycleKey: 'same-account',
+    currentCrumbs: [{ id: 1, name: '我的文件' }],
+    loadDirectoryPage: activeLoader,
+    onNavigate: () => {},
+  }))
+  let tree = render()
+  findByAriaLabel(tree, '展开 我的文件').props.onClick({ stopPropagation() {} })
+  await flushAsync()
+  tree = render()
+  tree = render()
+  assert.ok(findByAriaLabel(tree, 'A-child'))
+  assert.equal(callsA, 1)
+
+  // A transport replacement is a distinct loader generation even when the
+  // account label and numeric directory ID happen to be identical.
+  activeLoader = async () => {
+    callsB += 1
+    return { items: [{ id: 3, name: 'B-child', type: 'dir' }],
+      nextCursor: '', hasMore: false }
+  }
+  tree = render()
+  assert.equal(Boolean(findByAriaLabel(tree, 'A-child')), false)
+  assert.equal(walk(tree).filter(node => node.props?.role === 'group').length, 0,
+    'new loader first frame must have no old/empty group')
+  const firstNewLoaderRoot = walk(tree).find(node => node.props?.role === 'treeitem')
+  assert.equal(firstNewLoaderRoot.props['aria-expanded'], false)
+  assert.equal(firstNewLoaderRoot.props['aria-busy'], undefined)
+
+  // Only a new accepted first page may reopen the tree.
+  tree = render()
+  findByAriaLabel(tree, '展开 我的文件').props.onClick({ stopPropagation() {} })
+  await flushAsync()
+  tree = render()
+  tree = render()
+  assert.ok(findByAriaLabel(tree, 'B-child'))
+  assert.equal(Boolean(findByAriaLabel(tree, 'A-child')), false)
+  assert.equal(callsA, 1)
   assert.equal(callsB, 1)
 })
