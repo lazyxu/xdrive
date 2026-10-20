@@ -2213,6 +2213,30 @@ if [[ -x "$BIN_DIR/server-control.sh" ]]; then
     echo "[xDrive] warning: host update control could not be started; Web/Desktop server update will remain unavailable." >&2
 fi
 
+
+# Do not confuse a successful Caddy HTTPS installer probe with the
+# running Server being able to read fresh Host Control evidence. This check
+# only runs in the already verified Server; it never controls Caddy.
+if [[ -n "$(env_value XD_DOMAIN)" || -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
+  caddy_witness_observed=0
+  caddy_witness_output=""
+  for _ in {1..15}; do
+    if caddy_witness_output="$(compose exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" &&
+        [[ "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
+      caddy_witness_observed=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$caddy_witness_observed" == 1 ]]; then
+    echo "[xDrive] Caddy Host Control: running Server verified a fresh local HTTPS witness (not WAN or admin applied-revision evidence)."
+  else
+    # Never echo arbitrary Server output, credentials, inner paths or raw
+    # Docker diagnostics. A precise redacted status is in server doctor.
+    echo "[xDrive] WARNING: Caddy HTTPS is working, but the running Server has NOT verified a fresh Host Control witness. System Dependencies may show unknown; run 'xdrive-server doctor'. Caddy has not been restarted." >&2
+  fi
+fi
+
 echo
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   public_url="$(https_url "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)")"

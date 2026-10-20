@@ -263,6 +263,23 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   volume_report server /data
   volume_report caddy /data
   volume_report caddy /config
+
+  # Same actual Server mount and reader as the Admin UI; never infer
+  # observability from a healthy Caddy alone. Avoid printing untrusted CLI
+  # output, which an older or misrouted binary might fill with secrets.
+  caddy_witness_output=""
+  if caddy_witness_output="$(compose exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" &&
+      [[ "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
+    record PASS "Caddy Host witness" "running Server sees fresh local HTTPS evidence (not WAN or applied-revision proof)"
+  else
+    caddy_witness_reason="$(printf '%s' "$caddy_witness_output" | sed -n 's/^Caddy local observation: //p')"
+    case "$caddy_witness_reason" in
+      control-not-configured|heartbeat-missing|heartbeat-unreadable|heartbeat-invalid|heartbeat-stale|snapshot-missing|snapshot-unreadable|snapshot-invalid|snapshot-stale|snapshot-invalid-or-changing|gateway-healthy|gateway-unhealthy|gateway-starting|gateway-running-unverified|gateway-stopped|gateway-unknown|https-not-configured|domain-tls-unverified|lan-tls-unverified)
+        ;;
+      *) caddy_witness_reason="unsupported-or-unavailable-server-witness" ;;
+    esac
+    record WARN "Caddy Host witness" "reason=$caddy_witness_reason; verify Host Control producer and running Server /host-control mount; does NOT mean Caddy is uninstalled"
+  fi
 fi
 
 files_dir="$(env_value XD_FILES_DATA_DIR)"

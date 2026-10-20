@@ -36,8 +36,20 @@ func parseCaddyHostAdoptStdin(raw []byte) (api.CaddyHostDeploymentImport, error)
 }
 
 func runCaddyHostCommand(args []string) error {
-	if len(args) != 1 || args[0] != "adopt-stdin" {
-		return errors.New("usage: xdrive-server caddy-host adopt-stdin (trusted installer stdin only)")
+	if len(args) != 1 {
+		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check>")
+	}
+	if args[0] == "witness-check" {
+		// No database, encryption keyring, provider credentials or Docker API.
+		reason, ok := api.CaddyHostReadOnlyWitness(os.Getenv("XD_HOST_CONTROL_DIR"))
+		fmt.Printf("Caddy local observation: %s\n", reason)
+		if !ok {
+			return errors.New("trusted Caddy local HTTPS observation unavailable")
+		}
+		return nil
+	}
+	if args[0] != "adopt-stdin" {
+		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check>")
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(os.Stdin, caddyHostAdoptMaxBytes+1))
 	if readErr != nil {

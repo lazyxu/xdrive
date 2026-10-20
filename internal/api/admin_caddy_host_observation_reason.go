@@ -69,3 +69,31 @@ func (s *Server) caddyHostUnobservedDetail() string {
 		return "Caddy 宿主状态快照内容不符合安全合同或采样期间发生变化；请手动重新检测"
 	}
 }
+
+// CaddyHostReadOnlyWitness is strictly a read-only observation made from
+// the running Server's own Host Control mount. No TLS/WAN or applied-revision
+// claim follows merely from a configured or running container.
+func CaddyHostReadOnlyWitness(hostControlDir string) (string, bool) {
+	s := &Server{HostControlDir: hostControlDir}
+	host, observed := s.readCaddyHostStatus()
+	if !observed {
+		return s.caddyHostUnobservedReason(), false
+	}
+	if host.State != "healthy" {
+		return "gateway-" + host.State, false
+	}
+	if !host.HTTPSConfigured && !host.LANHTTPSConfigured {
+		return "https-not-configured", false
+	}
+	if host.HTTPSConfigured &&
+		(!host.TLSCheckSupported || host.TLSState != "verified" ||
+			!validCaddyTLSVerifiedDomainDigest(host.TLSVerifiedDomainSHA256)) {
+		return "domain-tls-unverified", false
+	}
+	if host.LANHTTPSConfigured &&
+		(host.LANTLSState != "verified" ||
+			!validCaddyTLSVerifiedDomainDigest(host.LANVerifiedIPSHA256)) {
+		return "lan-tls-unverified", false
+	}
+	return "local-https-observed", true
+}

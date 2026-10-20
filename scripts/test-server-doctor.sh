@@ -59,6 +59,13 @@ if [[ "$1" == "compose" ]]; then
       exit 0
       ;;
     exec)
+      if [[ "$*" == *"caddy-host witness-check"* ]]; then
+        case "${XD_TEST_CADDY_WITNESS:-missing}" in
+          observed) echo 'Caddy local observation: local-https-observed'; exit 0 ;;
+          leaked) echo 'Caddy local observation: ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak'; exit 1 ;;
+          *) echo 'Caddy local observation: snapshot-missing'; exit 1 ;;
+        esac
+      fi
       echo 'cas metadata health: status=ok ready=3 deleting=0 stale_deleting=0 missing_metadata=0 refcount_mismatch=0 state_mismatch=0 size_mismatch=0 key_hash_mismatch=0 invalid_state=0'
       exit 0
       ;;
@@ -112,6 +119,17 @@ grep -q 'mode=rootful; usable without sudo' "$TMP/report"
 grep -q '\[PASS\] host layout' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
 grep -q '\[PASS\] CAS metadata health' "$TMP/report"
+grep -q 'Caddy Host witness.*reason=snapshot-missing' "$TMP/report"
+
+XD_TEST_CADDY_WITNESS=observed TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-caddy-observed" 2>"$TMP/err-caddy-observed"
+grep -q '\[PASS\] Caddy Host witness' "$TMP/report-caddy-observed"
+grep -q 'fresh local HTTPS evidence' "$TMP/report-caddy-observed"
+
+XD_TEST_CADDY_WITNESS=leaked TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-caddy-leak" 2>"$TMP/err-caddy-leak"
+grep -q 'unsupported-or-unavailable-server-witness' "$TMP/report-caddy-leak"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-caddy-leak" "$TMP/err-caddy-leak"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
 grep -q '/api/v1/readyz' "$TMP/state/curl-args"
 grep -q 'https://api.github.com/' "$TMP/state/curl-args"
