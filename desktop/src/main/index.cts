@@ -4367,17 +4367,32 @@ function registerIPCHandlers() {
           throw new AgentIPCError('invalid_input', 0, 'Thumbnail source revision is invalid.')
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
+        type Packet = { request_id: string; loaded_bytes: number; total_bytes?: number; alpha_mask?: string | null }
+        // At most two genuine Agent-observed packets, not a synthesized completion.
+        const evidence: { first?: Packet; last?: Packet } = {}
         const notify = reportProgress === true && typeof requestID === 'string'
           ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
               if (signal?.aborted || event.sender.isDestroyed()) return
-              event.sender.send('agent:media-binary-progress', {
-                request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
-                alpha_mask: alphaMask,
-              })
+              const packet: Packet = {
+                request_id: requestID, loaded_bytes: loadedBytes,
+                total_bytes: totalBytes, alpha_mask: alphaMask,
+              }
+              if (!evidence.first) evidence.first = packet
+              evidence.last = packet
+              event.sender.send('agent:media-binary-progress', packet)
             }
           : undefined
-        return requireAgentClient().mediaThumbnail(nodeID, signal,
+        const result = await requireAgentClient().mediaThumbnail(nodeID, signal,
           typeof revision === 'number' && revision > 0 ? revision : undefined, notify)
+        // webContents.send can lag the invoke reply; record ONLY actual final
+        // progress observed upstream, never fabricate from ArrayBuffer size.
+        if (evidence.first?.loaded_bytes === 0 &&
+            evidence.last?.loaded_bytes === result.data.byteLength) {
+          return { ...result, ipc_progress_receipt: {
+            first: evidence.first, last: evidence.last,
+          } }
+        }
+        return result
       }),
       false,
     ),
@@ -4396,16 +4411,31 @@ function registerIPCHandlers() {
           throw new AgentIPCError('invalid_input', 0, 'RAW preview node id is required.')
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'RAW preview was cancelled.')
+        type Packet = { request_id: string; loaded_bytes: number; total_bytes?: number; alpha_mask?: string | null }
+        // At most two genuine Agent-observed packets, not a synthesized completion.
+        const evidence: { first?: Packet; last?: Packet } = {}
         const notify = reportProgress === true && typeof requestID === 'string'
           ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
               if (signal?.aborted || event.sender.isDestroyed()) return
-              event.sender.send('agent:media-binary-progress', {
-                request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
-                alpha_mask: alphaMask,
-              })
+              const packet: Packet = {
+                request_id: requestID, loaded_bytes: loadedBytes,
+                total_bytes: totalBytes, alpha_mask: alphaMask,
+              }
+              if (!evidence.first) evidence.first = packet
+              evidence.last = packet
+              event.sender.send('agent:media-binary-progress', packet)
             }
           : undefined
-        return requireAgentClient().mediaAnalysisPreview(nodeID, signal, notify)
+        const result = await requireAgentClient().mediaAnalysisPreview(nodeID, signal, notify)
+        // webContents.send can lag the invoke reply; record ONLY actual final
+        // progress observed upstream, never fabricate from ArrayBuffer size.
+        if (evidence.first?.loaded_bytes === 0 &&
+            evidence.last?.loaded_bytes === result.data.byteLength) {
+          return { ...result, ipc_progress_receipt: {
+            first: evidence.first, last: evidence.last,
+          } }
+        }
+        return result
       }),
       false,
     ),

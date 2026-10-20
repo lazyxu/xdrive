@@ -141,6 +141,9 @@ async function oneSample(sample, ready, dir) {
     assert(status.configured && !status.must_change_password, 'Agent Gin login not configured')
     await client.setPaused(true)
     const agentRssBeforeBytes = rssBytes(proc.child.pid)
+    // Actual source-agent PID lets the Electron benchmark sample renderer and
+    // Agent resource ownership separately around post-first-paint progress.
+    env.XD_GALLERY_DESKTOP_REAL_AGENT_PID = String(proc.child.pid)
     const result = await electronSample(sample, env)
     const agentRssAfterBytes = rssBytes(proc.child.pid)
     return {
@@ -176,6 +179,29 @@ async function main() {
         assert(result.logicalItems === 100000 && result.physicalNodes === 115000 &&
           result.renderer.decodedImages >= 12 &&
           result.renderer.mountedTiles < 1000, 'real Desktop 100k result incorrect')
+        if (process.env.XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE === '1') {
+          const probe = result.sourceExactMediaProgress
+          assert(probe && probe.sourceCount === 100000 &&
+            probe.observedTransfers === 3 && probe.noObserverTransfers === 3 &&
+            probe.realObserverEvents >= 6 && probe.totalVerifiedObservedBytes > 0 &&
+            probe.rows.length === 6 && probe.pairs.length === 3,
+            'real Desktop progress probe failed to traverse Renderer/Preload/Main/Agent')
+          assert(probe.rows.every(row => row.bodyBytes > 0 && (
+            row.mode === 'on'
+              ? row.callbackCount >= 2 && row.firstReportedBytes === 0 &&
+                row.lastReportedBytes === row.bodyBytes &&
+                (row.lastReportedTotal === null || row.lastReportedTotal === row.bodyBytes)
+              : row.callbackCount === 0 && row.lastReportedBytes === null)),
+            'false, missing or incompatible Desktop progress byte callbacks')
+          assert(probe.pairs.every(pair => pair.bodyBytes > 0 &&
+            Number.isFinite(pair.offMs) && Number.isFinite(pair.onMs)),
+            'Desktop ON/OFF do not refer to the same actual source bytes')
+          assert(result.sourceProgressResources?.before?.renderer &&
+            result.sourceProgressResources?.after?.renderer &&
+            result.sourceProgressResources?.before?.agent &&
+            result.sourceProgressResources?.after?.agent,
+            'actual Desktop renderer/Agent CPU and RSS boundary was not measured')
+        }
         samples.push(result)
         console.log('GALLERY_REAL_DESKTOP_COLD_100K_SAMPLE ' + JSON.stringify(result))
       } finally {
@@ -190,15 +216,34 @@ async function main() {
         }
       }
     }
+    const probeEnabled = process.env.XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE === '1'
+    const desktopProgressRows = probeEnabled
+      ? samples.flatMap(row => row.sourceExactMediaProgress.rows) : []
+    const progressMedians = probeEnabled
+      ? Object.fromEntries(['off', 'on'].map(mode => [mode, {
+          count: desktopProgressRows.filter(row => row.mode === mode).length,
+          elapsedP50Ms: [...desktopProgressRows.filter(row => row.mode === mode)
+            .map(row => row.elapsedMs)].sort((a, b) => a - b)[4],
+          actualBodyBytes: desktopProgressRows.filter(row => row.mode === mode)
+            .reduce((total, row) => total + row.bodyBytes, 0),
+          callbackEvents: desktopProgressRows.filter(row => row.mode === mode)
+            .reduce((total, row) => total + row.callbackCount, 0),
+        }])) : null
     const report = {
       name: 'gallery-desktop-real-main-renderer-100k',
-      status: 'measured-baseline-only-no-production-optimization',
+      status: probeEnabled
+        ? 'measured-real-Desktop-Renderer-Main-Agent-progress-post-first-paint'
+        : 'measured-baseline-only-no-production-optimization',
       samples, n: samples.length,
+      progressProbeEnabled: probeEnabled,
+      progressMedians,
+      progressPairCount: probeEnabled ? samples.reduce(
+        (sum, row) => sum + row.sourceExactMediaProgress.pairs.length, 0) : 0,
       medianClickToFirstDecodedPaintMs: median(samples.map(x => x.renderer.firstImageTwoRAFMs)),
       medianClickToFirst12DecodedMs: median(samples.map(x => x.renderer.first12DecodedTwoRAFMs)),
       worstLongTaskMs: Math.max(...samples.map(x => x.renderer.longestLongTaskMs)),
       scope: 'Real Electron Desktop App (Main/preload/Renderer) to Agent IPC, Gin/PostgreSQL/CAS and HTMLImageElement.decode. Browser activation, not complete process cold launch.',
-      exclusions: 'Fixture seeding, process boot, cross-network, real 4K video codec, physical Windows, peak RSS and actual GPU present timestamp',
+      exclusions: 'Fixture seeding, process boot, cross-network, real 4K video codec, physical Windows, peak RSS and actual GPU present timestamp. Progress probe tests real source-exact 3 JPEG thumbnail IPC ON/OFF pairs per 100k session AFTER decoded Gallery, not rapid viewport scroll cancellation or RAW-HD.',
     }
     assert(report.n === 3, 'three fresh real Desktop samples required')
     fs.writeFileSync(path.join(output, 'summary.json'), JSON.stringify(report, null, 2) + '\n')
