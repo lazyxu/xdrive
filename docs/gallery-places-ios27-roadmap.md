@@ -115,6 +115,18 @@ A4 才交付 Owner-scoped 附近照片 bbox/半径 Range，B1–B3 和 C1 独立
 
 ## P0-Places-A3h · iOS 27「照片」多照片缩略图聚合地图（A4 后新增）
 
+**A3h source candidate 2026-10-20（合入/真机前不得宣称完成）**：在现有签名 Owner `/media/places/baidu-jsapi/cells` 的 8×8 真实数量返回上增加当前 `node_revision`，
+用官方 `BMap.Map.pointToPixel` 将经过授权的真实 BD-09 样本投影到地图容器 CSS 像素，React 覆盖层绘制单张代表照片与数量角标，最多 24 个互不遮挡可见封面。
+缩略图经过 Gallery 共享鉴权加载池/Blob 生命周期，不把图片 URL 或 HTML 传给百度 Label/Layer，其他被碰撞抑制的格子仍在有界区域列表。
+小于等于 100 张也使用同一个有界 `/cells` 标记；旧 Server 不含 `node_revision` 或不支持像素投影时恢复原生数字 Label/ClusterLayer。
+移动/缩放即时取消旧 Controller、图片卸载释放，Desktop 使用现有隔离 HTTPS Web Gallery 而非 file: 直接执行第三方 JS。
+这是代码候选，不等于真实 iOS 27 1:1、实际生产百度流量、100k 实物性能或第三方可执行脚本绝对隔离证明。
+
+**后续仍需完成的验收与功能**：多张聚合到当前视窗的照片墙（不只是放大）、地图/Viewer 返回相机锚点、视频未生成 Poster 的安全生成策略、
+真实跨账户撤销/缩略图缓存和百度资源隔离威胁模型；真实 100k 大库、iOS27 Safari/PWA/Android/Electron 截图、交互及低网速和 VoiceOver/键盘测试。
+尚未完成这些不得关闭 Issue #2188 或视为 C1 通过。
+
+
 **明确未完成，不得以数字圆点或普通 ClusterLayer 冒充实现。**
 当前 A3 在 100 张以内使用百度原生 ClusterLayer；超过 100 张使用最多 64 个带真实总数的 BD-09 网格标记。
 Apple iOS 27 官方操作及截图参考：https://support.apple.com/ja-jp/guide/iphone/iph390138909/27/ios/27 。

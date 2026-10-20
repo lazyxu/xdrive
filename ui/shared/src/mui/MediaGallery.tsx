@@ -7614,6 +7614,7 @@ export function XDriveMediaGallery({
             listPlacesViewport={listPlacesViewport}
             listBaiduNativeViewport={listBaiduNativeViewport}
             listBaiduNativeCells={listBaiduNativeCells}
+            loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}

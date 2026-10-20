@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Box, Typography } from '@mui/material'
+import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import { Box, Button, Typography } from '@mui/material'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import type { MediaThumbnailLoader } from './MediaGallery'
+import { xDriveProjectBaiduPhotoCoverPins } from '../media-gallery-baidu-jsapi4-cover-pins'
+import type { XDriveBaiduPhotoCoverPin } from '../media-gallery-baidu-jsapi4-cover-pins'
 import { xDriveKeepBaiduJSAPI4MapSessionAlive } from '../media-gallery-baidu-jsapi4-session-lifecycle'
 import {
   xDriveCreateBaiduJSAPI4IndexedBD09Mount,
@@ -31,6 +36,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   mintMapOnlySession,
   listOwnerViewport,
   listOwnerCells,
+  loadThumbnail,
   camera,
   onOpenPhoto,
   onReady,
@@ -38,6 +44,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
   listOwnerViewport: XDriveBaiduNativePhotoViewportRequest
   listOwnerCells?: XDriveBaiduNativePhotoCellsRequest
+  loadThumbnail?: MediaThumbnailLoader
   camera: XDriveBaiduJSAPI4InitialPhotoCamera
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
   onReady: (ready: boolean) => void
@@ -47,6 +54,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   latestOpenPhoto.current = onOpenPhoto
   const [result, setResult] = useState('')
   const [cellSummary, setCellSummary] = useState<MediaBaiduNativeCellsPage | null>(null)
+  const [coverPins, setCoverPins] = useState<XDriveBaiduPhotoCoverPin[]>([])
+  const [showCellList, setShowCellList] = useState(false)
   const latestBridge = useRef<XDriveBaiduJSAPI4IndexedViewportBridge | null>(null)
 
   useEffect(() => {
@@ -59,8 +68,12 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let bridge: XDriveBaiduJSAPI4IndexedViewportBridge | null = null
     let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => pending.abort(), 8000)
     let stopRenewal: (() => void) | null = null
+    let resize: ResizeObserver | null = null
+    let currentCells: MediaBaiduNativeCellsPage | null = null
     setResult('')
     setCellSummary(null)
+    setCoverPins([])
+    setShowCellList(false)
     onReady(false)
     const opened = async () => {
       native = await mount.acquire(container, pending.signal, camera)
@@ -76,8 +89,20 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         return
       }
       const bound = xDriveBindBaiduJSAPI4NativeMap(native.map, native.namespace)
-      const map = bound.map as XDriveBaiduNativeMapWithBounds
+      const map = bound.map as XDriveBaiduNativeMapWithBounds & {
+        pointToPixel?: (point: { lng: number; lat: number }) => { x: number; y: number }
+      }
       if (typeof map.getBounds !== 'function') throw new Error('map_unavailable')
+      // Third-party provider gets ONLY BD09 Point coordinates. Its Label/Layer
+      // never receives a thumbnail URL, HTML, secret or photo pixels.
+      const supportsCovers = Boolean(loadThumbnail && listOwnerCells &&
+        typeof map.pointToPixel === 'function')
+      const projectCovers = (page: MediaBaiduNativeCellsPage): XDriveBaiduPhotoCoverPin[] =>
+        supportsCovers && map.pointToPixel
+          ? xDriveProjectBaiduPhotoCoverPins(
+              page, map as typeof map & { pointToPixel: NonNullable<typeof map.pointToPixel> },
+              native!.namespace, container.clientWidth, container.clientHeight) ?? []
+          : []
       bridge = new XDriveBaiduJSAPI4IndexedViewportBridge({
         ...bound, map,
       }, listOwnerViewport, {
@@ -85,7 +110,13 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           if (active && !pending.signal.aborted) latestOpenPhoto.current(identity)
         },
         onViewportInvalidated: () => {},
-        onCells: page => { if (active && !pending.signal.aborted) setCellSummary(page) },
+        onCells: page => {
+          if (!active || pending.signal.aborted) return
+          currentCells = page
+          setCellSummary(page)
+          setCoverPins(page ? projectCovers(page) : [])
+          if (!page) setShowCellList(false)
+        },
         onResult: response => {
           if (!active || pending.signal.aborted) return
           setResult(response.kind)
@@ -93,8 +124,15 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           onReady(response.kind === 'rendered' || response.kind === 'aggregated' ||
             response.kind === 'incomplete')
         },
-      }, listOwnerCells, native.namespace)
+      }, listOwnerCells, native.namespace, supportsCovers)
       latestBridge.current = bridge
+      if (supportsCovers && typeof ResizeObserver !== 'undefined') {
+        resize = new ResizeObserver(() => {
+          if (active && !pending.signal.aborted && currentCells)
+            setCoverPins(projectCovers(currentCells))
+        })
+        resize.observe(container)
+      }
       const first = await bridge.refresh()
       if (!active || pending.signal.aborted) return
       setResult(first.kind)
@@ -113,6 +151,10 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             latestBridge.current = null
             native?.dispose()
             native = null
+            currentCells = null
+            resize?.disconnect()
+            setCellSummary(null)
+            setCoverPins([])
             setResult('unavailable')
             onReady(false)
           })
@@ -133,6 +175,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     })
     return () => {
       stopRenewal?.()
+      resize?.disconnect()
       active = false
       pending.abort()
       if (clock !== null) clearTimeout(clock)
@@ -141,16 +184,54 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       native?.dispose()
       onReady(false)
     }
-  }, [mintMapOnlySession, listOwnerViewport, listOwnerCells, onReady,
+  }, [mintMapOnlySession, listOwnerViewport, listOwnerCells, loadThumbnail, onReady,
     camera.latitude, camera.longitude, camera.zoom])
 
   return (
     <Box component="section" data-xdrive-baidu-jsapi4-bd09-photo-surface
       sx={{ px: { xs: 1.25, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
-      <Box ref={host} role="region" aria-label="百度动态照片地图"
-        data-xdrive-baidu-jsapi4-bd09-photo-canvas
-        sx={{ width: '100%', height: { xs: 320, sm: 400 },
-          minHeight: 280, borderRadius: 1.5 }} />
+      <Box sx={{ position: 'relative', width: '100%', minWidth: 0 }}>
+        <Box ref={host} role="region" aria-label="百度动态照片地图"
+          data-xdrive-baidu-jsapi4-bd09-photo-canvas
+          sx={{ width: '100%', height: { xs: 320, sm: 400 },
+            minHeight: 280, borderRadius: 1.5, overflow: 'hidden' }} />
+        {coverPins.length > 0 && loadThumbnail ? (
+          <Box data-xdrive-baidu-photo-cover-pins aria-label="地图照片缩略图标记"
+            sx={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 4,
+              pointerEvents: 'none', borderRadius: 1.5 }}>
+            {coverPins.map(({ key, cell, x, y }) => (
+              <Box component="button" type="button" key={key}
+                data-xdrive-baidu-photo-cover-pin={cell.cell_x + ':' + cell.cell_y}
+                aria-label={cell.photo_count.toLocaleString('zh-CN') + ' 张照片，打开或放大此处'}
+                onClick={() => latestBridge.current?.focusCell(cell)}
+                sx={{ position: 'absolute', left: x, top: y,
+                  transform: 'translate(-50%, -100%)', width: 60, height: 64,
+                  border: 0, bgcolor: 'transparent', p: 0, cursor: 'pointer',
+                  pointerEvents: 'auto', touchAction: 'manipulation',
+                  '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.main',
+                    outlineOffset: 2, borderRadius: 1 } }}>
+                <Box sx={{ width: 54, height: 54, borderRadius: 1.5,
+                  border: '3px solid #fff', bgcolor: 'background.paper',
+                  overflow: 'hidden', boxShadow: 3 }}>
+                  <XDriveMediaGalleryCoverThumbnail nodeID={cell.node_id}
+                    revision={cell.node_revision} loadThumbnail={loadThumbnail}
+                    alt="当前位置代表照片"
+                    fallback={<Box sx={{ width: '100%', height: '100%',
+                      display: 'grid', placeItems: 'center', color: 'text.secondary',
+                      bgcolor: 'action.hover' }}><PhotoLibraryOutlinedIcon fontSize="small" /></Box>} />
+                </Box>
+                <Box component="span" sx={{ position: 'absolute', top: -5, right: -6,
+                  minWidth: 24, height: 23, px: 0.5, borderRadius: 10,
+                  bgcolor: 'primary.main', color: 'primary.contrastText',
+                  border: '2px solid #fff', display: 'grid', placeItems: 'center',
+                  fontSize: 11, fontWeight: 800, lineHeight: 1, boxShadow: 2 }}>
+                  {cell.photo_count.toLocaleString('zh-CN')}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
       {result === 'aggregated' && cellSummary ? (
         <Box data-xdrive-baidu-true-cell-aggregation sx={{mt: 1, px: 0.5}}>
           <Typography role="status" variant="caption" color="text.secondary">
@@ -159,6 +240,14 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             数字标记使用真实照片位置；选择多张区域将放大地图；
             查看单张照片需经图库重新鉴权。
           </Typography>
+          {coverPins.length > 0 ? (
+            <Button size="small" variant="text" color="inherit"
+              aria-expanded={showCellList}
+              onClick={() => setShowCellList(value => !value)}>
+              {showCellList ? '收起区域列表' : '查看全部区域（含重叠位置）'}
+            </Button>
+          ) : null}
+          {(coverPins.length === 0 || showCellList) && (
           <Box sx={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(112px, 1fr))',
             gap:0.75,maxHeight:158,overflowY:'auto',mt:1}}
             aria-label="当前地图照片聚合区域">
@@ -173,6 +262,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
               </Box>
             ))}
           </Box>
+          )}
         </Box>
       ) : null}
       {result === 'incomplete' ? (

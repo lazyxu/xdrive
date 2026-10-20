@@ -1007,6 +1007,8 @@ export interface MediaBaiduNativeCellsPage {
     photo_count: number
     asset_id: number
     node_id: number
+    /** New Server: paired primary Node revision; older Server omits it. */
+    node_revision?: number
     latitude: number
     longitude: number
   }>
