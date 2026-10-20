@@ -194,17 +194,25 @@ export function XDriveHomePage({
         title="主页"
         subtitle="继续最近工作，查看同步状态与需要处理的事项。"
       >
+        {/* Keep status/error receipts outside the already-mounted metric Stack. */}
+        <Box data-xdrive-home-floating-alerts
+          role={alerts.length ? 'region' : undefined}
+          aria-label={alerts.length ? '需要处理的通知' : undefined}
+          sx={{
+            position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+            bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+            width: 'min(calc(100vw - 24px), 540px)',
+            maxHeight: 'min(38dvh, 280px)', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 1,
+            pointerEvents: 'none', zIndex: (theme) => theme.zIndex.snackbar,
+          }}>
+          {alerts.map((alert) => (
+            <Box key={alert.key} sx={{ pointerEvents: 'auto' }}>
+              <XDriveStatusAlert tone={alert.tone} title={alert.title}>{alert.message}</XDriveStatusAlert>
+            </Box>
+          ))}
+        </Box>
         <Stack spacing={2.25}>
-          {alerts.length > 0 ? (
-            <Stack spacing={1}>
-              {alerts.map((alert) => (
-                <XDriveStatusAlert key={alert.key} tone={alert.tone} title={alert.title}>
-                  {alert.message}
-                </XDriveStatusAlert>
-              ))}
-            </Stack>
-          ) : null}
-
           <XDriveMetricGrid>
             <XDriveMetricCard
               title="云端存储"

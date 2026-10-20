@@ -36,7 +36,13 @@ test('shared Home owns content-first sections and shared thumbnails', () => {
     'XDriveFileExplorerAvailabilityBadge',
   ]) {
     if (token === '需要处理') {
-      assert.ok(home.includes('alerts.length > 0'), 'Home must surface actionable alerts')
+      assert.ok(home.includes('data-xdrive-home-floating-alerts') &&
+        home.includes('alerts.map((alert) => (') &&
+        home.includes('tone={alert.tone} title={alert.title}') &&
+        home.includes('alert.message'),
+        'Home must retain genuine alert title, tone and message outside the MetricCard layout')
+      assert.ok(home.includes("position: 'fixed'") && home.includes("pointerEvents: 'auto'"),
+        'real Home status stays interactive without an in-flow Stack sibling')
       continue
     }
     assert.ok(home.includes(token), 'shared Home missing: ' + token)

@@ -151,3 +151,27 @@ test('P80 accepted original Home rows persist through an unrelated same-owner re
     recentItems: [row],
   })
 })
+
+test('P119: actual Home notifications cannot remount original MetricCards', async () => {
+  await withHome(async ({ view, update }) => {
+    const grid=view.root.findAll(node=>node.type==='MetricGrid')[0]
+    const card=view.root.findAll(node=>node.type==='MetricCard')[0]
+    const owner=marked(view,'data-xdrive-home-floating-alerts')[0]
+    assert.ok(grid && card && owner)
+    assert.equal(owner.props.sx.position,'fixed')
+    assert.equal(owner.props.sx.pointerEvents,'none')
+    await update({alerts:[{key:'late-task-warning',tone:'warning',title:'需处理的同步任务',message:'请检查同步任务'}]})
+    const alert=view.root.findAll(node=>node.type==='StatusAlert')[0]
+    assert.ok(alert)
+    assert.equal(alert.props.title,'需处理的同步任务')
+    assert.equal(alert.props.children,'请检查同步任务')
+    assert.equal(alert.parent.props.sx.pointerEvents,'auto')
+    assert.equal(view.root.findAll(node=>node.type==='MetricGrid')[0],grid)
+    assert.equal(view.root.findAll(node=>node.type==='MetricCard')[0],card)
+    assert.equal(marked(view,'data-xdrive-home-floating-alerts')[0],owner)
+    await update({alerts:[]})
+    assert.equal(view.root.findAll(node=>node.type==='MetricGrid')[0],grid)
+    assert.equal(view.root.findAll(node=>node.type==='MetricCard')[0],card)
+    assert.equal(marked(view,'data-xdrive-home-floating-alerts')[0],owner)
+  })
+})

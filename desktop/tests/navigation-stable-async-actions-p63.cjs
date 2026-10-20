@@ -108,7 +108,11 @@ test('P63 history pagination preserves accepted rows and current page while Serv
   assert.ok(source.includes('verified: prev.pages[id]?.verified ?? false'))
   assert.ok(source.includes('data-xdrive-device-backup-history-list={folder.source_id}'))
   assert.ok(source.includes('aria-busy={Boolean(history?.loading) || undefined}'))
-  assert.ok(source.includes('sx={{ minHeight: 72 }}'))
+  assert.ok(source.includes("sx={{ minHeight: 72, position: 'relative' }}"),
+    'existing history retains its 72px floor and a stable scoped error anchor')
+  assert.ok(source.includes('data-xdrive-device-backup-history-error={folder.source_id}'))
+  assert.ok(source.includes('无法加载历史，请重试。'),
+    'real retryable terminal error remains visible without adding a new row')
   assert.ok(source.includes('history && history.items.length > 0 ? history.items.map((run) => ('))
   assert.ok(source.includes(': history?.verified'))
   assert.ok(!source.includes('读取历史中…'),

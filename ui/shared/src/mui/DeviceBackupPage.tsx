@@ -462,7 +462,33 @@ export function XDriveDeviceBackupPage({
         </Stack>
       ) : undefined}
     >
-      {localMessage ? <XDriveStatusAlert tone="neutral">{localMessage}</XDriveStatusAlert> : null}
+      {/* Real operation and read-only refresh receipts are NOT layout rows. */}
+      <Box data-xdrive-device-backup-feedback-overlay sx={{
+        position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+        width: 'min(calc(100vw - 24px), 560px)',
+        maxHeight: 'min(38dvh, 280px)', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 0.75,
+        pointerEvents: 'none', zIndex: (theme) => theme.zIndex.snackbar,
+      }}>
+        {localMessage ? (
+          <Box data-xdrive-device-backup-local-feedback role="status" sx={{ pointerEvents: 'auto' }}>
+            <XDriveStatusAlert tone="neutral">{localMessage}</XDriveStatusAlert>
+          </Box>
+        ) : null}
+        {failed && overview ? (
+          <Box data-xdrive-device-backup-refresh-error role="alert" sx={{ pointerEvents: 'auto' }}>
+            <XDriveStatusAlert tone="neutral">
+              设备备份刷新失败；已保留上次成功读取的设备信息，请重试。
+            </XDriveStatusAlert>
+          </Box>
+        ) : null}
+        {pageFailed && overview?.has_more ? (
+          <Box data-xdrive-device-backup-more-page-error role="alert" sx={{ pointerEvents: 'auto' }}>
+            <XDriveStatusAlert tone="neutral">后续设备读取失败；已加载设备保持不变，可重试。</XDriveStatusAlert>
+          </Box>
+        ) : null}
+      </Box>
       {source && verifiedLocalDeviceID && localCreate && localDrafts ? (
         <XDriveDeviceBackupLocalDrafts
           key={verifiedLocalDeviceID}
@@ -480,11 +506,6 @@ export function XDriveDeviceBackupPage({
         position: 'relative', minWidth: 0,
         minHeight: source && (!overview || overview.devices.length === 0) ? 180 : undefined,
       }}>
-      {failed && overview ? (
-        <XDriveStatusAlert tone="neutral">
-          设备备份刷新失败；已保留上次成功读取的设备信息，请重试。
-        </XDriveStatusAlert>
-      ) : null}
       {!source ? (
         <XDriveStatusAlert tone="neutral">
           当前 Desktop Agent 暂不支持读取脱敏设备备份数据。请更新 Agent；不能从普通 Source 接口读取异机私有路径。
@@ -519,7 +540,8 @@ export function XDriveDeviceBackupPage({
               </Stack>
               <Divider sx={{ my: 1.5 }} />
               {overview.has_more_folders ? (
-                <Stack spacing={1} sx={{ mb: 1.5 }} alignItems="flex-start">
+                <Stack spacing={1} data-xdrive-device-backup-folder-page-status={device.id}
+                  sx={{ mb: 1.5, position: 'relative' }} alignItems="flex-start">
                   <Typography variant="caption" color="text.secondary">
                     {folderPages[device.id]?.complete
                       ? `本轮已逐页读取此设备的 ${folderPages[device.id].items.length.toLocaleString('zh-CN')} 个同步文件夹`
@@ -540,7 +562,13 @@ export function XDriveDeviceBackupPage({
                     当前 Server 或 Agent 不支持文件夹连续分页，请升级后重试。
                   </Typography>}
                   {folderPages[device.id]?.failed ? (
-                    <Typography variant="caption" color="error">文件夹读取失败，已保留当前内容；可重试。</Typography>
+                    <Typography data-xdrive-device-backup-folder-error={device.id} role="alert"
+                      variant="caption" color="error" sx={{
+                        position: 'absolute', top: 0, right: 0,
+                        maxWidth: 'min(65%, 300px)', pointerEvents: 'none',
+                        bgcolor: 'background.paper', borderRadius: 1, px: 0.5,
+                        overflowWrap: 'anywhere',
+                      }}>文件夹读取失败，已保留当前内容；可重试。</Typography>
                   ) : null}
                 </Stack>
               ) : null}
@@ -666,7 +694,7 @@ export function XDriveDeviceBackupPage({
                         <Typography variant="subtitle2">同步历史（只读）</Typography>
                         <Box data-xdrive-device-backup-history-list={folder.source_id}
                           aria-busy={Boolean(history?.loading) || undefined}
-                          sx={{ minHeight: 72 }}>
+                          sx={{ minHeight: 72, position: 'relative' }}>
                           {history && history.items.length > 0 ? history.items.map((run) => (
                             <Box key={run.id} sx={{ py: 1, borderBottom: 1, borderColor: 'divider' }}>
                               <Typography variant="body2">{runLabel(run.status)} · {timeLabel(run.started_at)}</Typography>
@@ -679,10 +707,16 @@ export function XDriveDeviceBackupPage({
                           )) : history?.verified
                             ? <Typography variant="body2" color="text.secondary">暂无历史记录。</Typography>
                             : null}
+                          {historyError?.source === source && historyError.id === folder.source_id ? (
+                            <Typography data-xdrive-device-backup-history-error={folder.source_id}
+                              role="alert" variant="caption" color="error" sx={{
+                                position: 'absolute', top: 0, right: 0,
+                                maxWidth: 'min(70%, 260px)', pointerEvents: 'none',
+                                bgcolor: 'background.paper', borderRadius: 1, px: 0.5,
+                                overflowWrap: 'anywhere',
+                              }}>无法加载历史，请重试。</Typography>
+                          ) : null}
                         </Box>
-                        {historyError?.source === source && historyError.id === folder.source_id ? (
-                          <Typography variant="caption" color="error">无法加载历史，请重试。</Typography>
-                        ) : null}
                         {history && (history.page > 1 || history.hasMore) ? (
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Button size="small" disabled={history.loading || history.page <= 1}
@@ -716,9 +750,6 @@ export function XDriveDeviceBackupPage({
               ) : (
                 <XDriveStatusAlert tone="neutral">当前 Server 或 Agent 不支持后续设备分页，请升级后查看完整设备列表。</XDriveStatusAlert>
               )}
-              {pageFailed ? (
-                <XDriveStatusAlert tone="neutral">后续设备读取失败；已加载设备保持不变，可重试。</XDriveStatusAlert>
-              ) : null}
             </Stack>
           ) : null}
           {overview.has_more_folders ? (

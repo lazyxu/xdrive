@@ -271,9 +271,12 @@ function TransferPopoverSession({
           sx={{ minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', p: 1.5 }}
         >
           {loading && roots.length === 0 ? (
-            <XDriveStatePanel loading compact variant="plain" message="正在加载传输记录…" />
+            <Box data-xdrive-transfer-popover-first-read aria-busy="true"
+              sx={{ minHeight: 64 }} />
           ) : items.length === 0 ? (
-            <XDriveStatePanel compact variant="plain" message={section === 'active' ? '暂无进行中的上传或下载。' : '暂无上传或下载历史。'} />
+            <Box data-xdrive-transfer-popover-verified-empty sx={{ minHeight: 64 }}>
+              <XDriveStatePanel compact variant="plain" message={section === 'active' ? '暂无进行中的上传或下载。' : '暂无上传或下载历史。'} />
+            </Box>
           ) : (
             <Stack spacing={1}>
               {items.map((node) => (
