@@ -1,0 +1,147 @@
+{
+  "workload": "SH-P008 full-width public read-only FileExplorer workspace physical JPEG 100k",
+  "source_sha": "28fb85e17713c96ad285fe80e99b5299fe67e960",
+  "source_workflow_run": "https://github.com/lazyxu/xdrive/actions/runs/39369285510",
+  "native_artifact_id": 12240419510,
+  "source_exact": true,
+  "production_changed": [
+    "web/src/PublicShare.tsx",
+    "ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx"
+  ],
+  "true_100k_distinct_physical_cas_JPEG": true,
+  "physical_fixture_population_count": 1,
+  "browser_sessions": 6,
+  "wide_viewport_sessions": 3,
+  "CDP_mobile_390_sessions": 3,
+  "form_factor_limits": "390px CDP mobile Chromium emulation, NOT real mobile phone or installed PWA",
+  "previous_historical_before": {
+    "wide_first_p50_ms": 90.82,
+    "wide_next_p50_ms": 127.456,
+    "mobile_first_p50_ms": 88.65,
+    "mobile_next_p50_ms": 120.194,
+    "source": "https://github.com/lazyxu/xdrive/actions/runs/39236742264",
+    "not_paired_runner": true
+  },
+  "current_UI": [
+    {
+      "width": 1440,
+      "first_page_p50_ms": 121.57533700000204,
+      "next_page_p50_ms": 164.59667600000103,
+      "first_page_max_ms": 126.51334900000074,
+      "next_page_max_ms": 170.42026100000658,
+      "real_signed_download_count": 6,
+      "rows_each_page": 100
+    },
+    {
+      "width": 390,
+      "first_page_p50_ms": 112.25055499999144,
+      "next_page_p50_ms": 204.66692400000466,
+      "first_page_max_ms": 123.00855100000626,
+      "next_page_max_ms": 207.7471990000049,
+      "real_signed_download_count": 6,
+      "rows_each_page": 100
+    }
+  ],
+  "per_session": [
+    {
+      "width": 1440,
+      "sample": 1,
+      "first_page_ms": 126.51334900000074,
+      "next_page_ms": 170.42026100000658,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 86.8106059999991,
+      "next_download_ms": 99.47225500000059,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 2,
+      "first_page_ms": 101.69918700000562,
+      "next_page_ms": 150.06454900000244,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 87.69835599999351,
+      "next_download_ms": 103.00890299999446,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "sample": 3,
+      "first_page_ms": 121.57533700000204,
+      "next_page_ms": 164.59667600000103,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 78.28266599999915,
+      "next_download_ms": 99.35570599998755,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 1,
+      "first_page_ms": 91.94208000000799,
+      "next_page_ms": 186.11196799999743,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 76.8387870000006,
+      "next_download_ms": 94.14332800000557,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 2,
+      "first_page_ms": 123.00855100000626,
+      "next_page_ms": 204.66692400000466,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 88.97410500000115,
+      "next_download_ms": 111.38191599999845,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "sample": 3,
+      "first_page_ms": 112.25055499999144,
+      "next_page_ms": 207.7471990000049,
+      "first_rows": 100,
+      "next_rows": 100,
+      "first_download_ms": 90.38452700000198,
+      "next_download_ms": 96.40360700000019,
+      "actual_original_bytes": 1374,
+      "original_sha_verified": true,
+      "no_stale_rows": true,
+      "horizontal_overflow": false
+    }
+  ],
+  "checks": {
+    "first_page_max_budget_ms": 2000,
+    "next_page_max_budget_ms": 2000,
+    "native_sha_download_max_budget_ms": 5000,
+    "all_12_downloads_sha_exact": true,
+    "all_12_names_and_original_bytes_checked": true,
+    "rows_per_page_at_most": 100,
+    "no_previous_page_stale_rows": true,
+    "zero_horizontal_overflow": true,
+    "public_workspace_titlebar_and_details_header_checked": true,
+    "source_job_result": "success",
+    "unmodified_Go_Server": true
+  },
+  "speedup": "N/A: historic BEFORE and candidate source CURRENT on different runners; UI feature, not throughput optimization",
+  "CPU_RSS": "Raw process resource metrics in GitHub Actions artifact #12240419510; no independently computed allocation/peak claim",
+  "validation": "First source-exact 100k browser specialty green; original full CI red for GUI literal/static contracts and test helper; corrected same-scope final HEAD requires new specialty and full CI"
+}

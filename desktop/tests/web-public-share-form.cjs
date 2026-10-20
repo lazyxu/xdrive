@@ -25,6 +25,10 @@ const mui = {
   Button: host('button'),
   CircularProgress: host('span'),
   TextField: host('input'),
+  Breadcrumbs: host('nav'),
+  IconButton: host('button'),
+  Menu: host('div'),
+  MenuItem: host('div'),
   useMediaQuery: () => false,
 }
 
@@ -125,7 +129,12 @@ async function mountShare(t, { share: overrides = {}, download = async () => {} 
     downloads,
     renderer,
     text: () => textContent(renderer.toJSON()),
-    button: () => renderer.root.findByType('button'),
+    button: () => {
+      const submitButtons = renderer.root.findAllByType('button')
+        .filter(node => node.props.type === 'submit')
+      assert.equal(submitButtons.length, 1, 'public share has exactly one native download submit action')
+      return submitButtons[0]
+    },
     async password(value) {
       await act(async () => {
         renderer.root.findByType('input').props.onChange({ target: { value } })
@@ -696,4 +705,151 @@ test('Public ZIP explicit cancel is independent from tab-unmount polling, leaves
   await click('取消准备')
   assert.deepEqual(actions,[['test-share-token','','one-queued-id']])
   assert.ok(textContent(renderer.toJSON()).includes('已请求取消 ZIP 准备'))
+})
+
+
+test('Public Share mounts a full-width read-only FileExplorer workspace, not a narrow login card', async (t) => {
+  const view = await mountShare(t, {
+    share: { name: 'photo.heic', type: 'file', requires_password: false, size: 8192 },
+  })
+  const named = key => view.renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props[key] === true)
+  assert.equal(named('data-xdrive-public-share-titlebar').length, 1,
+    'shared link must have its own lightweight xDrive title bar')
+  assert.equal(named('data-xdrive-public-share-workspace').length, 1,
+    'shared link must use a full-page workspace')
+  assert.equal(named('data-xdrive-public-share-explorer-workspace').length, 1,
+    'file capability must mount Explorer-style toolbar, list and status')
+  assert.ok(view.text().includes('只读访问'))
+  assert.ok(view.text().includes('photo.heic'))
+  assert.ok(view.text().includes('HEIC 图像'))
+  assert.equal(view.renderer.root.findAllByType('form').length, 1)
+  assert.equal(view.button().props.type, 'submit', 'native download form remains functional')
+  assert.equal(named('data-xdrive-public-share-details-header').length, 1)
+  const source = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'), 'utf8')
+  for (const forbidden of ['XDriveApi', 'ownerToken', 'onUpload', 'onDelete', 'onMove', 'onPaste']) {
+    assert.equal(source.includes(forbidden), false, 'public presentation must not import Owner capability ' + forbidden)
+  }
+})
+
+test('Public folder workspace supports bounded local page filtering, refresh and read-only context menu', async (t) => {
+  const calls = []
+  const downloads = []
+  class Api {
+    async publicShare() {
+      return { name: 'Photos', type: 'dir', requires_password: false,
+        size: 0, max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren(token, password, folder, cursor, signal) {
+      calls.push({ token, password, folder, cursor, signal })
+      return { parent_id: folder, next_cursor: 0, items: [
+        { id: 10, name: 'Album', type: 'dir', size: 0 },
+        { id: 11, name: 'Frame.jpeg', type: 'file', size: 512 },
+      ] }
+    }
+    async downloadPublicShare(_token, _password, filename, id) {
+      downloads.push({ filename, id })
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const button = label => renderer.root.findAllByType('button')
+    .find(node => textContent(node.children).trim() === label)
+  const rows = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.role === 'listitem')
+  assert.ok(button('浏览文件夹'))
+  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(calls.length, 1)
+  assert.equal(rows().length, 2)
+  const filter = renderer.root.findAllByType('input')
+    .find(node => node.props.placeholder === '筛选当前页')
+  assert.ok(filter, 'local filter must be explicitly limited to the current keyset page')
+  await act(async () => { filter.props.onChange({ target: { value: 'Frame' } }) })
+  assert.equal(rows().length, 1)
+  assert.equal(rows()[0].props['data-xdrive-public-share-item-id'], 11)
+  assert.equal(calls.length, 1, 'local page filter must never query private/search APIs')
+  await act(async () => { filter.props.onChange({ target: { value: '' } }) })
+  assert.equal(rows().length, 2)
+  const refresh = renderer.root.findAllByType('button').find(x => x.props['aria-label'] === '刷新文件夹')
+  assert.ok(refresh)
+  await act(async () => { refresh.props.onClick() })
+  assert.equal(calls.length, 2, 'refresh reuses only the public scoped folder endpoint')
+  const row = rows().find(node => node.props['data-xdrive-public-share-item-id'] === 11)
+  const prevented = { called: false }
+  await act(async () => {
+    row.props.onContextMenu({
+      preventDefault() { prevented.called = true },
+      clientX: 60, clientY: 70,
+    })
+  })
+  assert.equal(prevented.called, true)
+  const menus = renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props.anchorReference === 'anchorPosition')
+  assert.equal(menus.length, 1)
+  assert.equal(menus[0].props.open, true)
+  const downloadEntry = renderer.root.findAll(node =>
+    typeof node.type === 'string' && textContent(node.children).trim() === '下载文件')
+    .find(node => typeof node.props.onClick === 'function')
+  assert.ok(downloadEntry, 'read-only menu should offer the existing signed file download')
+  await act(async () => { downloadEntry.props.onClick() })
+  assert.deepEqual(downloads, [{ filename: 'Frame.jpeg', id: 11 }])
+  assert.equal(rows().length, 2)
+  for (const forbidden of ['上传', '删除', '重命名', '移动', '粘贴', '复制', '剪切']) {
+    assert.equal(renderer.root.findAllByType('button')
+      .some(b => textContent(b.children).trim() === forbidden), false)
+  }
+})
+
+
+test('Public shared single-file selection is stable across render without losing the native download form', async (t) => {
+  const view = await mountShare(t, {
+    share: { name: 'keep-selection.jpg', type: 'file', requires_password: false, size: 2048 },
+  })
+  const item = () => view.renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props.role === 'listitem')[0]
+  assert.equal(item().props['aria-selected'], false)
+  await act(async () => { item().props.onClick() })
+  assert.equal(item().props['aria-selected'], true, 'new shared workspace must not reset file selection every render')
+  assert.equal(view.button().props.type, 'submit')
+  await view.submit()
+  assert.equal(view.downloads.length, 1)
+})
+
+test('Refreshing a later public keyset page does not add a spurious Back cursor', async (t) => {
+  const cursors = []
+  class Api {
+    async publicShare() {
+      return { name: 'Folder', type: 'dir', requires_password: false,
+        size: 0, max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren(_token, _password, _parentID, cursor) {
+      cursors.push(cursor)
+      return { parent_id: 42, next_cursor: cursor === 0 ? 100 : 0, items: [
+        { id: cursor + 1, name: 'file-' + (cursor + 1) + '.jpg', type: 'file', size: 1024 },
+      ] }
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const click = async label => {
+    const btn = renderer.root.findAllByType('button')
+      .find(node => textContent(node.children).trim() === label)
+    assert.ok(btn, 'expected public-only navigation action ' + label)
+    await act(async () => { btn.props.onClick() })
+  }
+  await click('浏览文件夹')
+  await click('下一页')
+  assert.deepEqual(cursors, [0, 100])
+  const refresh = renderer.root.findAllByType('button')
+    .find(x => x.props['aria-label'] === '刷新文件夹')
+  assert.ok(refresh)
+  await act(async () => { refresh.props.onClick() })
+  assert.deepEqual(cursors, [0, 100, 100], 'refresh must not request previous page')
+  await click('上一页')
+  assert.deepEqual(cursors, [0, 100, 100, 0],
+    'Back after refresh must return to actual previous keyset cursor')
+  assert.ok(textContent(renderer.toJSON()).includes('file-1.jpg'))
 })

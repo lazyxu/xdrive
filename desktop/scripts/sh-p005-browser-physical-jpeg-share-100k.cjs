@@ -106,8 +106,15 @@ async function dom(win, fn) {
 function buttonsAndRows() {
   const labels = [...document.querySelectorAll('button')].map(x => x.textContent.trim())
   const rows = [...document.querySelectorAll('[role="listitem"]')].map(x => x.textContent.trim())
+  const explorer = document.querySelector('[data-xdrive-public-share-explorer-workspace]')
   return { labels, rows, body: document.body.innerText.slice(0, 500),
     publicSlot: !!document.querySelector('[data-xdrive-public-share-read-slot]'),
+    publicTitlebar: !!document.querySelector('[data-xdrive-public-share-titlebar]'),
+    publicWorkspace: !!document.querySelector('[data-xdrive-public-share-workspace]'),
+    publicExplorer: !!explorer,
+    explorerWidth: explorer?.getBoundingClientRect().width || 0,
+    detailsHeader: !!document.querySelector('[data-xdrive-public-share-details-header]'),
+    pageFilter: !!document.querySelector('input[placeholder="筛选当前页"]'),
     width: innerWidth, touch: matchMedia('(pointer: coarse)').matches,
     horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 }
 }
@@ -207,6 +214,11 @@ async function main() {
         assert.equal(meta.touch,width===390)
         assert.equal(meta.horizontalOverflow,false)
         assert.equal(meta.publicSlot,true)
+        assert.equal(meta.publicTitlebar,true,'real full-width share titlebar missing')
+        assert.equal(meta.publicWorkspace,true,'real public share workspace missing')
+        assert.equal(meta.publicExplorer,true,'bounded shared Explorer missing')
+        assert(meta.explorerWidth >= (width === 1440 ? 1000 : 300),
+          'public share is still a narrow login card')
         const firstStart=performance.now()
         await click(win,'浏览文件夹')
         const first=await until(async()=>{
@@ -215,6 +227,10 @@ async function main() {
         },12000,'actual first 100 physical file list rows')
         const firstMs=performance.now()-firstStart
         assert(firstMs<=2000)
+        assert.equal(first.detailsHeader,true,'shared Details columns not mounted')
+        assert.equal(first.pageFilter,true,'local page filter not available')
+        assert.equal(first.publicExplorer,true,'shared Explorer remounted away during initial page')
+        assert(first.explorerWidth >= (width === 1440 ? 1000 : 300))
         const downloadA=await clickFirstDownload(win,cfg.downloads[0],width,sample,'first')
         const nextStart=performance.now()
         await click(win,'下一页')

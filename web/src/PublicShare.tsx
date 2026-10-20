@@ -80,8 +80,16 @@ export default function PublicShareView({ token }: { token: string }) {
 
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
   const canDownload = !!share && !downloading && !exhausted && (!share.requires_password || Boolean(password))
+  // Keep the single-file DTO stable across selection/toolbar state changes;
+  // the shared Explorer's accepted-page effect must not reset highlighting.
+  const sharedFileItems = useMemo<PublicShareChild[]>(
+    () => share?.type === 'file'
+      ? [{ id: 0, name: share.name, type: 'file', size: share.size }]
+      : [],
+    [share?.type, share?.name, share?.size],
+  )
 
-  const loadFolder = async (path: FolderPath[], cursor = 0, back = false) => {
+  const loadFolder = async (path: FolderPath[], cursor = 0, back = false, refresh = false) => {
     if (!share || share.type !== 'dir' || !canDownload) return
     pendingPage.current?.abort()
     const controller = new AbortController()
@@ -98,7 +106,8 @@ export default function PublicShareView({ token }: { token: string }) {
       setFolder((old) => {
         let history: number[] = []
         if (old && old.path.at(-1)?.id === path.at(-1)?.id) {
-          if (back) history = old.history.slice(0, -1)
+          if (refresh) history = old.history
+          else if (back) history = old.history.slice(0, -1)
           else if (cursor > 0) history = [...old.history, old.cursor]
         }
         return { path, items: page.items, cursor, next: page.next_cursor, history }
@@ -217,17 +226,31 @@ export default function PublicShareView({ token }: { token: string }) {
   }
 
   return (
-    <XDriveAuthShell viewport decorated spacing="compact">
-      <XDriveAuthPanel size="compact" maxWidth={920} form onSubmit={(event) => {
+    <XDriveAuthShell viewport spacing="compact"
+      sx={{ p: 0, minHeight: '100dvh', bgcolor: 'background.default', overflowX: 'hidden' }}>
+      <XDriveAuthPanel size="compact" maxWidth="100%" form onSubmit={(event) => {
         event.preventDefault()
         if (share?.type === 'dir') void loadFolder([{ id: 0, name: share.name }])
         else void download()
+      }} sx={{
+        maxWidth: 'none', width: '100%', minHeight: '100dvh',
+        m: 0, p: 0, border: 0, borderRadius: 0, boxShadow: 'none',
+        bgcolor: 'background.default',
       }}>
-        <XDriveBrandLockup
-          iconSrc={xDriveBrandIcon}
-          variant="large"
-          subtitle="安全文件分享"
-        />
+        <Box component="header" data-xdrive-public-share-titlebar
+          sx={{
+            height: 52, minHeight: 52, width: '100%', px: { xs: 2, md: 3 },
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper',
+          }}>
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" subtitle="安全文件分享" />
+          <Typography variant="caption" color="text.secondary">只读 · 授权访问</Typography>
+        </Box>
+        <Box component="main" data-xdrive-public-share-workspace
+          sx={{
+            width: '100%', maxWidth: 1500, mx: 'auto', minWidth: 0,
+            minHeight: 'calc(100dvh - 52px)', p: { xs: 1.5, sm: 2.5, lg: 3 },
+          }}>
 
         <Box
           data-xdrive-public-share-read-slot
@@ -238,8 +261,13 @@ export default function PublicShareView({ token }: { token: string }) {
           {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
 
           {share && (
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Stack spacing={2.25} sx={{ width: '100%', minWidth: 0 }}>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start"
+                sx={{
+                  px: { xs: 1.5, sm: 2.5 }, py: 2, minWidth: 0, alignItems: 'center',
+                  border: 1, borderColor: 'divider', borderRadius: 2,
+                  bgcolor: 'background.paper',
+                }}>
                 {share.type === 'dir'
                   ? <FolderRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
                   : <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />}
@@ -253,7 +281,7 @@ export default function PublicShareView({ token }: { token: string }) {
                 </Box>
               </Stack>
 
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ px: 0.5 }}>
                 {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
                 {' · '}
                 {share.max_downloads > 0
@@ -271,6 +299,7 @@ export default function PublicShareView({ token }: { token: string }) {
                   label="分享密码"
                   placeholder="分享密码"
                   autoComplete="current-password"
+                  sx={{ maxWidth: 440 }}
                   slotProps={{
                     input: {
                       startAdornment: (
@@ -287,23 +316,7 @@ export default function PublicShareView({ token }: { token: string }) {
 
               {share.type === 'dir' ? (
                 <>
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                    <XDriveActionButton type="button" intent="primary"
-                      disabled={!canDownload || zipPreparing}
-                      loading={zipPreparing}
-                      loadingLabel="正在准备 ZIP…"
-                      startIcon={<FolderZipRoundedIcon />}
-                      onClick={() => void startSharedFolderZIP()}>
-                      下载整个文件夹 ZIP
-                    </XDriveActionButton>
-                    {zipTaskID && zipPreparing && (
-                      <XDriveActionButton type="button" intent="secondary"
-                        onClick={() => void cancelSharedFolderZIP()}>
-                        取消准备
-                      </XDriveActionButton>
-                    )}
-                  </Stack>
-                  <Box sx={{ minHeight: 24 }} aria-live="polite">
+                  <Box sx={{ minHeight: 24, px: 0.5 }} aria-live="polite">
                     {zipPreparing && (
                       <Typography variant="caption" color="text.secondary">
                         正在准备文件夹 ZIP，准备任务可在页面离开后继续。
@@ -321,6 +334,24 @@ export default function PublicShareView({ token }: { token: string }) {
                     canDownload={canDownload}
                     hasPreviousPage={Boolean(folder?.history.length)}
                     hasNextPage={Boolean(folder && folder.next > 0)}
+                    toolbarActions={
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        <XDriveActionButton type="button" intent="primary"
+                          disabled={!canDownload || zipPreparing}
+                          loading={zipPreparing}
+                          loadingLabel="正在准备 ZIP…"
+                          startIcon={<FolderZipRoundedIcon />}
+                          onClick={() => void startSharedFolderZIP()}>
+                          下载整个文件夹 ZIP
+                        </XDriveActionButton>
+                        {zipTaskID && zipPreparing && (
+                          <XDriveActionButton type="button" intent="secondary"
+                            onClick={() => void cancelSharedFolderZIP()}>
+                            取消准备
+                          </XDriveActionButton>
+                        )}
+                      </Stack>
+                    }
                     onBrowse={() => void loadFolder([{ id: 0, name: share.name }])}
                     onCrumbClick={(index) => {
                       if (folder) void loadFolder(folder.path.slice(0, index + 1))
@@ -337,26 +368,30 @@ export default function PublicShareView({ token }: { token: string }) {
                     onNextPage={() => {
                       if (folder?.next) void loadFolder(folder.path, folder.next)
                     }}
+                    onRefresh={() => {
+                      if (folder) void loadFolder(folder.path, folder.cursor, false, true)
+                    }}
                   />
                   {folderError && <XDriveStatusAlert tone="bad">{folderError}</XDriveStatusAlert>}
                 </>
               ) : (
-                <>
-                  <XDrivePublicShareReadOnlyExplorer
-                    kind="file"
-                    items={[{ id: 0, name: share.name, type: 'file', size: share.size }]}
-                    canDownload={canDownload}
-                    onDownloadItem={() => void download()}
-                  />
-                  <XDriveActionButton intent="primary" type="submit" fullWidth
-                    startIcon={<DownloadRoundedIcon />} loading={downloading}
-                    loadingLabel="正在下载…" disabled={!canDownload}>
-                    下载
-                  </XDriveActionButton>
-                </>
+                <XDrivePublicShareReadOnlyExplorer
+                  kind="file"
+                  items={sharedFileItems}
+                  canDownload={canDownload}
+                  onDownloadItem={() => void download()}
+                  toolbarActions={
+                    <XDriveActionButton intent="primary" type="submit"
+                      startIcon={<DownloadRoundedIcon />} loading={downloading}
+                      loadingLabel="正在下载…" disabled={!canDownload}>
+                      下载文件
+                    </XDriveActionButton>
+                  }
+                />
               )}
             </Stack>
           )}
+        </Box>
         </Box>
       </XDriveAuthPanel>
     </XDriveAuthShell>
