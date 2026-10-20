@@ -206,10 +206,13 @@ async function main() {
     for(const width of [1440,390]){
       for(let sample=1;sample<=3;sample++){
         win=await createWindow(width,sample)
+        // SH-P011: link navigation -> first bounded 100 rows is a NEW
+        // workload, not comparable to prior browse-button -> 100 timings.
+        const firstStart=performance.now()
         await win.loadURL(shareURL)
         const meta=await until(async()=>{
           const v=await dom(win,buttonsAndRows)
-          return v.labels.includes('浏览文件夹')?v:null
+          return v.publicSlot&&v.publicExplorer?v:null
         },12000,'production public share folder metadata')
         assert.equal(meta.touch,width===390)
         assert.equal(meta.horizontalOverflow,false)
@@ -219,8 +222,8 @@ async function main() {
         assert.equal(meta.publicExplorer,true,'bounded shared Explorer missing')
         assert(meta.explorerWidth >= (width === 1440 ? 1000 : 300),
           'public share is still a narrow login card')
-        const firstStart=performance.now()
-        await click(win,'浏览文件夹')
+        assert.equal(meta.labels.includes('浏览文件夹'),false,
+          'unrestricted link must not require an extra Browse click')
         const first=await until(async()=>{
           const v=await dom(win,buttonsAndRows)
           return v.rows.length===100&&v.rows.some(x=>x.includes('photo-000000.jpg'))?v:null

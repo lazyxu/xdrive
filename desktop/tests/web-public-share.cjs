@@ -136,7 +136,13 @@ test('SH-P002 first public metadata GET owns an abortable request, not a durable
   assert.ok(first.includes('const controller = new AbortController()'))
   assert.ok(first.includes('api.publicShare(token, controller.signal)'))
   assert.ok(first.includes('if (!active || controller.signal.aborted) return'))
-  assert.ok(first.includes('return () => { active = false; controller.abort() }'))
+  const cleanup = first.slice(first.lastIndexOf('    return () => {'))
+  assert.ok(cleanup.includes('active = false'), 'metadata effect must fence stale completion')
+  assert.ok(cleanup.includes('controller.abort()'), 'metadata request must abort on teardown')
+  assert.ok(cleanup.includes('pendingPage.current?.abort()'), 'first folder page must abort on teardown')
+  assert.ok(cleanup.includes('pendingPage.current = null'), 'an aborted page cannot retain request ownership')
+  assert.equal(cleanup.includes('zipPollRef.current?.abort()'), false,
+    'share-token teardown must not cancel the user-owned durable ZIP preparation')
   assert.ok(publicShare.includes('api.downloadPublicShare(token, password, entry?.name ?? share.name, entry?.id)'),
     'do not cancel a user-started native download from metadata teardown')
 })

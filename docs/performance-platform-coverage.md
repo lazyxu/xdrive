@@ -1,3 +1,23 @@
+## SH-P011 · 100k真实JPEG分享链接直接进入首100项 · 2026-10-20
+
+准确测试源码 72f5fc4b911f3b2992d16a78c98e6ca63ab39657：Chromium Wide1440 n3 与模拟 Mobile390 n3，PG17/Gin/LocalCAS 100000 SHA各异JPEG原件。独立 [专项CI](https://github.com/lazyxu/xdrive/actions/runs/39413566021) **SUCCESS**，[77-job全量CI](https://github.com/lazyxu/xdrive/actions/runs/39413565919) **SUCCESS**（25成功/52条件跳过，Final Gate成功）。
+
+| Client | first100 P50 | next100 P50 |
+|---|---:|---:|
+| Wide Web 1440px | 360.090ms | 313.064ms |
+| Mobile Web CDP390 | 304.828ms | 280.389ms |
+
+全部100行限定、6会话12/12真实签名下载SHA/大小/文件名准确，没有旧行和横向溢出。最慢首/下一页 379.999/322.632ms，原件下载 110.410ms，冻结≤2000/5000ms预算内。原件字节 70893376B，物理CAS 409604096B；播种耗时 76728.987ms排除。完整六样本和CPU/RSS/HTTP次数: [机器JSON](performance-evidence/public-share-folder-auto-open-shp011/ci-run-39413566021.json)。
+
+判定：原版生产查询/ZIP/权限不变（没有性能热路径优化），BEFORE/AFTER速度增益 N/A；旧版点击 Browse→首100行与新链接→首100行不是同起点、同运行器的匹配 A/B。归档后的新 SHA 必须重新通过自身六会话100k和完整CI后才能合入。真正iOS/Android/PWA/WAN/Desktop Agent/视频Live/4GiB未测；首轮失败CI保留。
+
+---
+## SH-P011 · anonymous shared folder opens actual read-only Explorer immediately (2026-10-20)
+
+**New native CI candidate / NOT YET MEASURED**: Web Chromium 1440 ×3 and CDP emulated Mobile Web 390 ×3 with actual PG17/Gin/LocalCAS 100k distinct-SHA JPEG, first100 on link navigation, next100, 12 signed native original downloads with full SHA. Old original Browse click→first P50 [#39396239737](https://github.com/lazyxu/xdrive/actions/runs/39396239737) is accepted but **not** a matched workload; new link-to-first n0 and speedup N/A, no production performance optimization. Frozen candidate budget <=2000ms first/next, <=5000ms download, <=100 current authenticated rows. [SH-P011](public-share-folder-auto-open-shp011.md). Desktop installed/native file operations, actual iOS/Android/PWA, WAN, 100k H264/Live decode, and large 1/4GiB transfers **Not measured**.
+
+---
+
 ## SH-P009 · TRUE native source-exact public share 100k JPEG n3 ACCEPTED (2026-10-20)
 
 **Measured source** `68a3b7652daf917491cdae92af28c881d233d27e`: real [SH-P005 Chromium source-specific #39396239737](https://github.com/lazyxu/xdrive/actions/runs/39396239737) **SUCCESS**, 3 fresh Wide 1440px + 3 Chromium CDP Mobile 390px sessions on ONE genuine PostgreSQL17/Gin/LocalCAS corpus of 100000 separately SHA-distinct, decodable original JPEGs, plus protected outside sentinel. Raw six samples, source and resources [permanent](performance-evidence/public-share-explorer-workspace/ci-run-39396239737/summary.json); [raw original GitHub artifact #12251099554](https://github.com/lazyxu/xdrive/actions/runs/39396239737/artifacts/12251099554) ZIP SHA256 `34f5f88c4ec3259f9879bcc0a3789ab24b2ff5746d34072e0fbcb0f99951459d` (GitHub artifact expires). Machine `summary.json` original SHA256 `346e7733f52e09b1105a65195eae26448f9625091d6726cd38f63cdf5a936863`.
