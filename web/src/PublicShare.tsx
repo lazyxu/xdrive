@@ -363,6 +363,7 @@ export default function PublicShareView({ token }: { token: string }) {
                       if (folder) void loadFolder([...folder.path, { id: entry.id, name: entry.name }])
                     }}
                     onDownloadItem={(entry) => void download(entry)}
+                    loadImagePreview={(entry, signal) => api.publicShareImagePreviewURL(token, password, entry.id, signal)}
                     onPreviousPage={() => {
                       if (folder?.history.length) {
                         void loadFolder(folder.path, folder.history[folder.history.length - 1], true)
@@ -384,6 +385,7 @@ export default function PublicShareView({ token }: { token: string }) {
                   items={sharedFileItems}
                   canDownload={canDownload}
                   onDownloadItem={() => void download()}
+                  loadImagePreview={(_entry, signal) => api.publicShareImagePreviewURL(token, password, 0, signal)}
                   toolbarActions={
                     <XDriveActionButton intent="primary" type="submit"
                       startIcon={<DownloadRoundedIcon />} loading={downloading}

@@ -73,6 +73,13 @@ function loadPublicShare(api) {
       if (name === '../../ui/shared/src') return load('ui/shared/src/format.ts')
       if (name === '../../ui/shared/src/mui/useDeferredLoading') return load('ui/shared/src/mui/useDeferredLoading.ts')
       if (name === './FileExplorerItemPresentation') return load('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+      if (name === './FilePreviewSurface') return {
+        XDriveFilePreviewSurface: ({ target, loadImagePreview }) =>
+          React.createElement('div', {
+            'data-xdrive-public-preview-target': target?.id ?? null,
+            loadImagePreview,
+          }),
+      }
       if (name === './ActionButton') return load('ui/shared/src/mui/ActionButton.tsx')
       if (name === '../format') return load('ui/shared/src/format.ts')
       if (name === '@xdrive/ui/mui') {
@@ -987,4 +994,42 @@ test('P115: original public folder failure and ZIP notices never resize Explorer
   const slot=find('data-xdrive-public-share-zip-status-slot')[0]
   assert.equal(slot.props.sx.height, 24)
   assert.equal(slot.props.sx.minHeight, 24)
+})
+
+test('Public JPEG image Quick Look requests one Share-only preview URL on explicit tap, not on page load', async (t) => {
+  const tickets = []
+  class Api {
+    async publicShare() {
+      return { name: 'photo.jpg', type: 'file', requires_password: false,
+        size: 4096, max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareImagePreviewURL(token, password, id, signal) {
+      tickets.push({ token, password, id, signal })
+      return '/api/v1/public-share-preview/1?ticket=short-lived'
+    }
+    async downloadPublicShare() {}
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => {
+    renderer = create(React.createElement(PublicShare, { token: 'test-share-token' }))
+  })
+  t.after(() => act(() => renderer.unmount()))
+  assert.equal(tickets.length, 0, 'no eager public preview for 100k list or shared file')
+  const preview = renderer.root.findAllByType('button')
+    .find(b => b.props['aria-label'] === '预览图片')
+  assert.ok(preview, 'raster still must have a one-tap read-only preview')
+  await act(async () => { preview.props.onClick() })
+  const viewer = renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] === 0)
+  assert.equal(viewer.length, 1, 'public preview surface must be mounted only when explicitly opened')
+  const url = await viewer[0].props.loadImagePreview({ id: 0, name: 'photo.jpg', kind: 'file' })
+  assert.ok(url.includes('/api/v1/public-share-preview/1?ticket=short-lived'))
+  assert.deepEqual(tickets.map(({ token, password, id }) => ({ token, password, id })),
+    [{ token: 'test-share-token', password: '', id: 0 }])
+  const close = renderer.root.findAllByType('button').find(b => textContent(b.children).trim() === '关闭预览')
+  assert.ok(close)
+  await act(async () => { close.props.onClick() })
+  assert.equal(renderer.root.findAll(node =>
+    typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] !== undefined).length, 0)
 })

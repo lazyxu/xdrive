@@ -3295,6 +3295,40 @@ export class XDriveApi {
     }, false)
   }
 
+  // Public-only, short-lived image preview purpose: never use Owner JWT or download ticket.
+  async publicShareImagePreviewURL(token: string, password: string, nodeID = 0, signal?: AbortSignal) {
+    const ticket = await this.request<{ url: string; expires_at: string; mime_type: string }>(
+      '/api/v1/public/share/preview-ticket', {
+        method: 'POST',
+        headers: { 'X-XDrive-Share-Token': token },
+        body: JSON.stringify({ password, node_id: nodeID }),
+        signal,
+      }, false,
+    )
+    signal?.throwIfAborted()
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(ticket.mime_type)) {
+      throw new ApiError(415, 'Unsupported public image preview type')
+    }
+    // This is a bounded explicit raster preview only, not the durable
+    // download/ZIP path. The same AbortSignal now owns ticket POST and
+    // actual image GET, so closing a Viewer cancels Go request work.
+    const response = await fetch(this.nativeDownloadURL(ticket.url), {
+      signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    })
+    if (!response.ok) throw new ApiError(response.status, 'Shared image preview unavailable')
+    const mime = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase()
+    if (mime !== ticket.mime_type) throw new ApiError(415, 'Public image preview MIME mismatch')
+    const declaredSize = Number(response.headers.get('Content-Length') || 0)
+    if (declaredSize > 32 * 1024 * 1024) throw new ApiError(413, 'Public image preview is too large')
+    const image = await response.blob()
+    signal?.throwIfAborted()
+    if (image.size > 32 * 1024 * 1024) throw new ApiError(413, 'Public image preview is too large')
+    return URL.createObjectURL(image)
+  }
+
   async downloadPublicShare(token: string, password: string, filename: string, nodeID?: number) {
     const response = await fetch(
       `${API_BASE}/api/v1/public/share/download-ticket`,
