@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Box, Button, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material'
 import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig } from '../service-dependencies'
 import type { XDriveSystemDependencyTab } from '../system-dependencies-navigation'
+import { hasPersistedCaddyIntent, caddyLANLocalMatch } from '../caddy-reconciliation'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort } from './CaddyAliDNSPanel'
 import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
@@ -61,27 +62,31 @@ export function XDriveCaddyDetailV1({
     onConfigurationChanged() // Invalidate previously read HTTPS preflight evidence.
   }
 
+  // A revision #0 GET contains unsaved deployment hints. Only a persisted
+  // positive revision can be compared with independently verified Host TLS.
+  const hasSavedDesired = hasPersistedCaddyIntent(config)
   const hostObserved = config?.host_observed === true
-  const domainVerified = (hostObserved && config.host_tls_state === 'verified') ||
-    service.caddy_local_domain_https_state === 'verified'
+  const hostDomainVerified = hostObserved && config?.host_https_configured === true &&
+    config.host_tls_state === 'verified'
+  const independentDomainVerified = service.caddy_local_domain_https_state === 'verified'
+  const domainVerified = hostDomainVerified || independentDomainVerified
   const lanVerified = hostObserved && config?.host_lan_configured === true &&
     config.host_lan_tls_state === 'verified'
-  // Older Server/Agent DTOs may not report LAN desired fields at all.
-  // Missing target evidence is UNKNOWN, not a confirmed runtime drift.
-  const hasKnownLANTarget = typeof config?.desired_lan_enabled === 'boolean' &&
+  const lanMatch = caddyLANLocalMatch(config)
+  const lanMismatch = lanMatch === 'mismatch-local'
+  const hasSavedLAN = hasSavedDesired && typeof config?.desired_lan_enabled === 'boolean' &&
     typeof config?.desired_lan_ip === 'string'
-  const lanMismatch = lanVerified && hasKnownLANTarget && Boolean(config?.host_lan_ip) && (
-    config?.desired_lan_enabled === false || config?.desired_lan_ip !== config?.host_lan_ip
-  )
   const healthy = service.installation_state === 'observed' &&
     service.health_state === 'ready' && service.local_tls_state === 'verified'
   // A legacy inventory "unavailable" may mean missing trusted Host evidence,
   // not an observed gateway failure. Only explicit health failure is negative.
   const bad = service.health_state === 'failed'
   const primary = healthy ? '网关运行正常' : bad ? '网关检查异常' : '网关状态尚未完整确认'
-  const summary = domainVerified && lanVerified
-    ? '本机公网域名及局域网 IP HTTPS 分别验证通过'
-    : '运行状态与 HTTPS 证书验证需分别核对'
+  const summary = hostDomainVerified && lanVerified
+    ? '可信 Host 已分别验证域名与局域网 IP 的本机 TLS'
+    : independentDomainVerified
+      ? '内部域名 HTTPS 已验证，不代表宿主健康或公网可达'
+      : '运行状态与 HTTPS 证书验证需分别核对'
 
   return (
     <Box data-xdrive-caddy-v1-detail sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
@@ -118,8 +123,13 @@ export function XDriveCaddyDetailV1({
                   {checkedAt ? '服务状态检查：' + checkedAt : '服务状态尚未采样'}
                 </Typography>
               </Box>
-              <Button size="small" variant="outlined" onClick={onRefreshStatus}
-                disabled={refreshing} aria-busy={refreshing || undefined}>
+              <Button size="small" variant="outlined"
+                onClick={() => {
+                  if (hasUnsavedEdits) return
+                  setConfigRevision((value) => value + 1)
+                  onRefreshStatus()
+                }}
+                disabled={refreshing || hasUnsavedEdits} aria-busy={refreshing || undefined}>
                 重新检测
               </Button>
             </Stack>
@@ -131,13 +141,21 @@ export function XDriveCaddyDetailV1({
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
               <Typography variant="subtitle2" fontWeight={700}>公网域名 HTTPS</Typography>
               <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-                {config?.desired_domain ? config.desired_domain : '未取得已保存目标域名'}
+                {!config ? '管理目标尚未取得，不能推断关闭'
+                  : hasSavedDesired
+                    ? (config.desired_enabled ? config.desired_domain : '已保存目标：域名入口关闭')
+                    : '没有数据库管理修订；宿主部署提示尚未保存'}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 上述域名为数据库管理目标；实际容器配置和目标修订需独立核验
               </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }} color={domainVerified ? 'success.main' : 'text.secondary'}>
-                {domainVerified ? 'Server 本机 TLS 验证通过' : '本机 TLS 尚无可靠成功证据'}
+              <Typography variant="body2" sx={{ mt: 1 }} data-xdrive-caddy-v1-domain-evidence-source
+                color={domainVerified ? 'success.main' : 'text.secondary'}>
+                {hostDomainVerified
+                  ? '可信 Host 本机域名 TLS 验证通过'
+                  : independentDomainVerified
+                    ? '仅固定 caddy:443 域名 HTTPS/Ready 已验证（不是 Host 证明）'
+                    : '本机域名 TLS 尚无可靠成功证据'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 外网及内网实际连接分别验收；此处未证明公网可达
@@ -147,10 +165,19 @@ export function XDriveCaddyDetailV1({
               <Typography variant="subtitle2" fontWeight={700}>局域网 IP HTTPS</Typography>
               <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
                 {config?.host_lan_configured && config.host_lan_ip
-                  ? config.host_lan_ip : '未取得可信局域网部署身份'}
+                  ? config.host_lan_ip + '（部署声明；是否运行须另证）'
+                  : '未取得有效局域网部署声明'}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 私网 IP 为备用入口；服务器本机验证不代表当前设备信任 Caddy Local CA
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}
+                data-xdrive-caddy-v1-saved-lan-target>
+                {hasSavedLAN
+                  ? (config?.desired_lan_enabled
+                    ? '已保存目标：局域网 HTTPS 开启 · ' + config?.desired_lan_ip
+                    : '已保存目标：局域网 HTTPS 关闭')
+                  : '局域网管理目标：未保存或旧版字段不完整（未知）'}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }} color={lanVerified ? 'success.main' : 'text.secondary'}>
                 {lanVerified ? '本机 Local CA 与 IP TLS 已验证' : '本机局域网 TLS 尚未验证'}
@@ -240,6 +267,37 @@ export function XDriveCaddyDetailV1({
             <Typography variant="body2" color="text.secondary">
               此页保存的是管理员目标配置，和运行中的 Caddy、证书及实际生效回执独立。
             </Typography>
+            <Paper variant="outlined" data-xdrive-caddy-v1-reconciliation
+              sx={{ p: 1.5, minHeight: 142, borderRadius: 2 }}>
+              {snapshot?.source === source && (
+                <Stack spacing={0.75}>
+                  <Typography variant="subtitle2" fontWeight={700}>运行／目标／实际生效（只读）</Typography>
+                  <Typography variant="body2" data-xdrive-caddy-v1-runtime-axis>
+                    运行：{hostObserved
+                      ? (hostDomainVerified || lanVerified
+                        ? '可信 Host 有本机 TLS 证据；外网与客户端信任未验证'
+                        : '已有 Host 观测，HTTPS 仍无成功验证')
+                      : '宿主未确认；内部 HTTPS 探针不能证明 Host 运行'}
+                  </Typography>
+                  <Typography variant="body2" data-xdrive-caddy-v1-desired-axis>
+                    管理目标：{!config ? '读取失败，当前修订未知'
+                      : hasSavedDesired
+                        ? '已有 PostgreSQL 目标修订，具体字段见下方'
+                        : '修订 #0 只是未保存的部署提示'}
+                  </Typography>
+                  <Typography variant="body2" data-xdrive-caddy-v1-applied-axis>
+                    实际生效：未取得与当前管理修订绑定的可信 Applied Receipt。
+                    本机 TLS、字段相等或旧宿主导入都不能证明已应用。
+                  </Typography>
+                  {config?.host_apply_pending && (
+                    <Typography variant="caption" color="warning.main"
+                      data-xdrive-caddy-v1-host-pending>
+                      Host 申请待独立协调，不等于应用成功，也不能解除编辑围栏。
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+            </Paper>
             <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
               onDirtyChange={onHTTPSDirtyChange} onConfigurationChanged={changed} />
             <XDriveCaddyAliDNSPanel source={source} refreshID={0}
