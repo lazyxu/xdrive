@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   real-folder-share-100k-metadata:
-    if: github.head_ref == 'feat/folder-share-bounded-readonly-20261018'
+    if: >-
+      github.head_ref == 'feat/folder-share-bounded-readonly-20261018' ||
+      github.head_ref == 'feat/public-share-visual-parity-shp012-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:

@@ -46,6 +46,8 @@ type publicShareDTO struct {
 	Name             string     `json:"name"`
 	Size             int64      `json:"size"`
 	RequiresPassword bool       `json:"requires_password"`
+	Revision         *uint64    `json:"revision,omitempty"`
+	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 	MaxDownloads     int64      `json:"max_downloads"`
 	DownloadCount    int64      `json:"download_count"`
@@ -226,10 +228,21 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 	if node.File != nil {
 		size = node.File.Size
 	}
+	// Public metadata is visible with possession of the capability token alone.
+	// A password-protected share must not reveal NEW revision/timestamp metadata
+	// before its separate password-checked child/preview/download request.
+	var revision *uint64
+	var updatedAt *time.Time
+	if share.PasswordHash == "" {
+		revision = &node.Revision
+		updatedAt = &node.UpdatedAt
+	}
 	c.JSON(http.StatusOK, publicShareDTO{
 		Type:             node.Type,
 		Name:             node.Name,
 		Size:             size,
+		Revision:         revision,
+		UpdatedAt:        updatedAt,
 		RequiresPassword: share.PasswordHash != "",
 		ExpiresAt:        share.ExpiresAt,
 		MaxDownloads:     share.MaxDownloads,

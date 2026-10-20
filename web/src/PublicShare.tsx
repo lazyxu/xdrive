@@ -126,9 +126,10 @@ export default function PublicShareView({ token }: { token: string }) {
   // the shared Explorer's accepted-page effect must not reset highlighting.
   const sharedFileItems = useMemo<PublicShareChild[]>(
     () => share?.type === 'file'
-      ? [{ id: 0, name: share.name, type: 'file', size: share.size }]
+      ? [{ id: 0, name: share.name, type: 'file', size: share.size,
+        revision: share.revision, updated_at: share.updated_at }]
       : [],
-    [share?.type, share?.name, share?.size],
+    [share?.type, share?.name, share?.size, share?.revision, share?.updated_at],
   )
 
   const loadFolder = async (path: FolderPath[], cursor = 0, back = false, refresh = false) => {

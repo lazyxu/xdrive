@@ -7,6 +7,8 @@ import {
   xDriveFileExplorerDetailsNormalRowHeight,
   xDriveFileExplorerDetailsHeaderHeight,
   xDriveFileExplorerDetailsMobileRowHeight,
+  XDriveFileExplorerItemName,
+  XDriveFileExplorerDetailsNameCell,
 } from './FileExplorerItemPresentation'
 export {
   XDriveFileExplorerItemIcon,
@@ -2263,28 +2265,7 @@ export function XDriveFileExplorer({
         />
       )
     }
-    return grid ? (
-      <Typography
-        variant="body2"
-        dir="auto"
-        title={item.name}
-        sx={{
-          unicodeBidi: 'plaintext',
-          width: '100%',
-          overflowWrap: 'anywhere',
-          display: '-webkit-box',
-          WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: 2,
-          overflow: 'hidden',
-          lineHeight: 1.25,
-        }}
-      >
-        {item.name}
-      </Typography>
-    ) : (
-      <Typography variant="body2" noWrap dir="auto" title={item.name}
-        sx={{ unicodeBidi: 'plaintext' }}>{item.name}</Typography>
-    )
+    return <XDriveFileExplorerItemName name={item.name} grid={grid} />
   }
 
   const selectItem = (
@@ -4548,28 +4529,17 @@ export function XDriveFileExplorer({
           >
             {key === 'name' ? (
               <>
-                <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
-                  {compactViewport && touchSelectionMode ? (
+                <XDriveFileExplorerDetailsNameCell
+                  compact={compactViewport}
+                  visual={thumbnailForItem(item, false)}
+                  label={renderItemName(item, false)}
+                  suffix={availabilityIndicator(item)}
+                  prefix={compactViewport && touchSelectionMode ? (
                     <Box component="span" aria-hidden sx={{ width: 24, height: 24, flex: '0 0 24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: selected ? 'primary.main' : 'text.disabled' }}>
                       {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
                     </Box>
                   ) : null}
-                  <Box
-                    sx={{
-                      width: 24,
-                      height: 24,
-                      flex: '0 0 24px',
-                      overflow: 'hidden',
-                      borderRadius: 0,
-                    }}
-                  >
-                    {thumbnailForItem(item, false)}
-                  </Box>
-                  <Box sx={{ minWidth: 0, flex: compactViewport ? 1 : undefined }}>
-                    {renderItemName(item, false)}
-                  </Box>
-                  {availabilityIndicator(item)}
-                </Stack>
+                />
                 {!compactTouch && !renaming ? nativeDragOutHandle(item, 'details') : null}
               </>
             ) : (

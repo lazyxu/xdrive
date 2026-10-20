@@ -117,6 +117,9 @@ func TestDownloadShareLifecycle(t *testing.T) {
 		public.MaxDownloads != 2 || public.DownloadCount != 0 {
 		t.Fatalf("unexpected public metadata: %+v", public)
 	}
+	if public.Revision != nil || public.UpdatedAt != nil {
+		t.Fatalf("passworded share metadata must not expose revision/time before password validation: %+v", public)
+	}
 
 	publicShareRequest(t, router, http.MethodPost, created.Token,
 		strings.NewReader(`{"password":"wrong-password"}`), http.StatusUnauthorized)
@@ -151,6 +154,15 @@ func TestDownloadShareLifecycle(t *testing.T) {
 	var unlimited createdShareDTO
 	if err := json.Unmarshal(unlimitedRes.Body.Bytes(), &unlimited); err != nil {
 		t.Fatal(err)
+	}
+	var unprotected publicShareDTO
+	if err := json.Unmarshal(publicShareRequest(t, router, http.MethodGet, unlimited.Token, nil,
+		http.StatusOK).Body.Bytes(), &unprotected); err != nil {
+		t.Fatal(err)
+	}
+	if unprotected.Revision == nil || *unprotected.Revision == 0 ||
+		unprotected.UpdatedAt == nil || unprotected.UpdatedAt.IsZero() {
+		t.Fatalf("unpassworded share should expose only its own node's revision and time: %+v", unprotected)
 	}
 	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/shares/%d", unlimited.ID),
 		otherToken, nil, http.StatusNotFound)
