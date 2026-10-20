@@ -5368,6 +5368,7 @@ export function XDriveFileExplorer({
       sx={{
         minHeight: 0,
         height: '100%',
+        position: 'relative',
         flex: presentation === 'workspace' ? 1 : undefined,
         display: 'flex',
         flexDirection: 'column',
@@ -6292,21 +6293,7 @@ export function XDriveFileExplorer({
               清除选择
             </Button>
           </Stack>
-          {unavailableSelectedCount > 0 ? (
-            <Typography role="status" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{unavailableSelectedCount} 项暂不可用</Typography>
-          ) : null}
-          {selectionLoadFeedback ? <Typography role="status" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectionLoadFeedback}</Typography> : null}
         </Box>
-      ) : null}
-      {selectionDisabledReasons.length > 0 ? (
-        <Box data-xdrive-file-explorer-selection-action-reasons sx={{ flexShrink: 0, px: 1.25, py: 0.5, maxHeight: 96, overflowY: 'auto' }}>
-          <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-            部分操作暂不可用：{selectionDisabledReasons.join(' ')}
-          </Typography>
-        </Box>
-      ) : null}
-      {actionFeedback ? (
-        <Box data-xdrive-file-explorer-action-feedback-slot sx={{ minWidth: 0, flexShrink: 0 }}>{actionFeedback}</Box>
       ) : null}
       {searchSummary ? (
         <Box data-xdrive-file-explorer-search-summary
@@ -6333,28 +6320,85 @@ export function XDriveFileExplorer({
               <Typography variant="body2" color="text.secondary">{searchSummary.conditions.join(' · ')}</Typography>
             ) : null}
           </Box>
-          {searchSummary.error ? (
-            <Stack direction="row" alignItems="center" gap={1}>
-              <Typography role="alert" variant="body2" color="error" sx={{ flex: 1, minWidth: 0, maxHeight: 56, overflow: 'auto', overflowWrap: 'anywhere' }}>
-                {searchSummary.error}
-              </Typography>
-              {searchSummary.onRetry ? <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }} onClick={searchSummary.onRetry}>重试搜索</Button> : null}
-            </Stack>
-          ) : null}
         </Box>
       ) : null}
       {compactViewport ? <><Divider />{statusBar}</> : null}
-      {viewRestoreFeedback ? (
-        <Stack direction="row" alignItems="center" gap={1} sx={{ px: 1.25, flexShrink: 0 }}>
-          <Typography role="status" variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{viewRestoreFeedback}</Typography>
-          {pendingViewRestoreRef.current ? (
-            <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }} onClick={() => {
-              if (searchSummary?.error && searchSummary.onRetry) searchSummary.onRetry()
-              else setViewRestoreVersion((value) => value + 1)
-            }}>重试恢复位置</Button>
-          ) : null}
-        </Stack>
-      ) : null}
+      </Box>
+
+      {/* Status receipts and errors must not change the sole virtual scroll
+          owner's flex height. Durable Search and selection controls remain
+          in the context panel; only their asynchronous feedback floats. */}
+      <Box data-xdrive-file-explorer-floating-feedback sx={{
+        position: 'absolute',
+        left: 12, right: 12,
+        bottom: compactViewport
+          ? 'calc(env(safe-area-inset-bottom) + 44px)'
+          : 'calc(env(safe-area-inset-bottom) + 34px)',
+        display: 'flex', flexDirection: 'column', gap: 0.5,
+        maxHeight: 'min(40dvh, 300px)', overflowY: 'auto',
+        overscrollBehavior: 'contain', zIndex: 5, pointerEvents: 'none',
+      }}>
+        {selectionDisabledReasons.length > 0 ? (
+          <Box data-xdrive-file-explorer-selection-action-reasons role="status"
+            sx={{
+              pointerEvents: 'auto', px: 1.25, py: 0.5,
+              maxHeight: 96, overflowY: 'auto', borderRadius: 1.5,
+              bgcolor: 'background.paper', boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            }}>
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              部分操作暂不可用：{selectionDisabledReasons.join(' ')}
+            </Typography>
+          </Box>
+        ) : null}
+        {unavailableSelectedCount > 0 ? (
+          <Typography data-xdrive-file-explorer-unavailable-selection role="status" variant="body2"
+            sx={{ pointerEvents: 'auto', px: 1.25, py: 0.5, borderRadius: 1.5, bgcolor: 'background.paper' }}>
+            {unavailableSelectedCount} 项暂不可用
+          </Typography>
+        ) : null}
+        {selectionLoadFeedback ? (
+          <Typography data-xdrive-file-explorer-selection-load-feedback role="status" variant="body2"
+            sx={{ pointerEvents: 'auto', px: 1.25, py: 0.5, borderRadius: 1.5, bgcolor: 'background.paper' }}>
+            {selectionLoadFeedback}
+          </Typography>
+        ) : null}
+        {actionFeedback ? (
+          <Box data-xdrive-file-explorer-action-feedback-slot
+            sx={{ pointerEvents: 'auto', minWidth: 0, borderRadius: 1.5, bgcolor: 'background.paper',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
+            {actionFeedback}
+          </Box>
+        ) : null}
+        {viewRestoreFeedback ? (
+          <Stack data-xdrive-file-explorer-restore-feedback role="status"
+            direction="row" alignItems="center" gap={1}
+            sx={{ pointerEvents: 'auto', minWidth: 0, px: 1.25, py: 0.5,
+              borderRadius: 1.5, bgcolor: 'background.paper' }}>
+            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+              {viewRestoreFeedback}
+            </Typography>
+            {pendingViewRestoreRef.current ? (
+              <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }} onClick={() => {
+                if (searchSummary?.error && searchSummary.onRetry) searchSummary.onRetry()
+                else setViewRestoreVersion((value) => value + 1)
+              }}>重试恢复位置</Button>
+            ) : null}
+          </Stack>
+        ) : null}
+        {searchSummary?.error ? (
+          <Stack data-xdrive-file-explorer-search-error-feedback direction="row" alignItems="center" gap={1}
+            sx={{ pointerEvents: 'auto', minWidth: 0, px: 1.25, py: 0.5,
+              borderRadius: 1.5, bgcolor: 'background.paper' }}>
+            <Typography role="alert" variant="body2" color="error"
+              sx={{ flex: 1, minWidth: 0, maxHeight: 56, overflow: 'auto', overflowWrap: 'anywhere' }}>
+              {searchSummary.error}
+            </Typography>
+            {searchSummary.onRetry ? (
+              <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }}
+                onClick={searchSummary.onRetry}>重试搜索</Button>
+            ) : null}
+          </Stack>
+        ) : null}
       </Box>
 
       <Drawer
