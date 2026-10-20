@@ -51,8 +51,10 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	}
 	desktopFileExplorerMixed := os.Getenv("XD_GALLERY_DESKTOP_FILES_MIXED_PHYSICAL_100K_PERF") == "1"
 	if desktopFileExplorerMixed {
-		// Reuse only P035's Desktop bootstrap schema; no product route or task change.
-		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.FileRecentAccess{},
+		// The production owner /me/quota path now reads active local Push quota holds.
+		// Include its model in this opt-in fixture; an absent test schema is not
+		// a 100k Grid/Details rendering or transfer performance failure.
+		if err := db.AutoMigrate(&meta.LocalPushQuotaHold{}, &meta.FileVersion{}, &meta.FileRecentAccess{},
 			&meta.FileFavorite{}, &meta.FileQuickAccess{}, &meta.FileSavedSearch{},
 			&meta.FileTag{}, &meta.FileNodeTag{}, &meta.NodeChange{},
 			&meta.FileOperation{}, &meta.PhotoIntelligenceReanalyzeIntent{},

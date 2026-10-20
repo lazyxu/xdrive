@@ -1,3 +1,18 @@
+## P067 · Source-exact real three-client Owner 100k mixed-media success (2026-10-20)
+
+- P038 **Native Desktop Electron→Agent IPC** on true 100k/115k physical CAS post Grid share: n3×Grid/Details×five positions PASS, Grid/Details P50 **598.202/478.690ms** [CI #39441398961](https://github.com/lazyxu/xdrive/actions/runs/39441398961).
+- P050 **Wide Web Chromium1440** same source-shape workload independently PASS, **657.146/475.939ms** [#39441399426](https://github.com/lazyxu/xdrive/actions/runs/39441399426).
+- P049 **Mobile Web Chromium CDP390** independently PASS **362.438/312.795ms** [#39441398444](https://github.com/lazyxu/xdrive/actions/runs/39441398444).
+- Each source: `5ad9914d7248317b6d436a67bcaad265724d7211`, original unchanged production, 115,000 different real physical SHA CAS per independent fixture, 100k logical PhotoAssets, 15k Live groups, JPEG H264 Live static/Poster five position decode, bounded DOM/HTTP concurrency/Go resource checks, 90 source-valid viewports combined. Three full per-view machine summaries in [P067 canonical](p067-owner-file-explorer-mixed-grid-regression.md), physical original budgets accepted; no paired code speedup, no iOS/Android actual physical phone, OS-installed PWA, true Windows/macOS hardware, full HEVC/RAW/LIVP/Live-motion video playback, WAN or true 100k GUI persistent operation. Evidence amended HEAD rerun required, not yet product release validation. Existing 4GiB non-sparse Web/Desktop P044/P045 unchanged and within original budgets. No Race work.
+
+## P067 source-exact first workload INVALID, not platform product measurements (2026-10-20)
+
+- At original source `f0f8b72ab872f1cbfbffdd4b8386b5b91cba0fc9` three real PG17 mixed workloads P038 Native Desktop, P049 CDP390 Mobile Web, P050 Wide1440 all failed in test bootstrap (real missing `xd_local_push_quota_holds` relation from newly required owner `/me/quota` query) *before any 100k media corpus seeded*. All new physical/post-Grid performance remains **Not measured**, n=0. New test-only migration and exact-head rerun needed; no production SQL, React, Agent, Worker, user quota or Race edits. Canonical [P067](p067-owner-file-explorer-mixed-grid-regression.md).
+
+## P067 · Owner FileExplorer 100k/115k mixed SHA after SH-P013 (2026-10-20)
+
+- Scope frozen: real production **Native Desktop** Electron→Main→Agent IPC, **Wide Web** Chromium1440, **Mobile Web** CDP390 each real PG17/Gin/LocalCAS 100k logical/115k SHA distinct JPEG/H264/Live still/motion pairs, n=3×Grid/Details×five visible range positions. Real benchmark not yet executed for this post-share Grid code (n=0, CURRENT/AFTER Not measured); historical P038/P049/P050 distinct runners cannot be treated as A/B. No change to upload/download/Go service or durable Cancel; prior Web/Desktop 4GiB high-entropy P044/P045 in original budget remain valid independent evidence, but actual iOS/Android/installed Desktop/phone PWA, Windows physical desktop and WAN/restart/large-file interruption are NOT measured by P067. Contract: [P067](p067-owner-file-explorer-mixed-grid-regression.md).
+
 ## SH-P013 · 当前准确 100k Share 视觉浏览器实测（2026-10-20）
 
 `cca9875451e60cc991d18b698a55efec7bfc9b65` PG17 真100k元数据3组 [#39433239426](https://github.com/lazyxu/xdrive/actions/runs/39433239426) PASS（walk P50 11.230s），真实100k SHA不同 JPEG 物理 Local CAS、Wide1440 和 CDP390 Web 浏览器各n3 [#39433237016](https://github.com/lazyxu/xdrive/actions/runs/39433237016) PASS（Web首/后100 P50 318.885/228.164ms，Mobile模拟273.335/231.665ms；12/12 signed original SHA）。这是新 Grid 结构的源准确 CURRENT 而非 matched 产品加速。Desktop Agent / Desktop installed PWA / iOS Android installed PWA / WAN / 原生真机、H264/Live动态派生均 Not measured。本次证据修改会令新 HEAD 改变，Final Gate 和新 HEAD 专项必须再核验。
