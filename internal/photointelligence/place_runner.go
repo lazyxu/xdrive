@@ -204,6 +204,7 @@ func (r *PlaceRunner) placeCandidateQuery(
 				"ppl.asset_id IS NULL OR "+
 				"(ppl.asset_id IS NOT NULL AND ("+
 				"ppl.resolver <> ? OR ppl.resolver_version <> ? OR "+
+				"COALESCE(ppl.input_fingerprint, '') = '' OR "+
 				"ppl.latitude <> pm.latitude OR ppl.longitude <> pm.longitude))",
 			analyzerVersion,
 			meta.PhotoAnalysisStatePending,
@@ -262,21 +263,33 @@ func (r *PlaceRunner) finishPlaceAnalysis(
 		label = PlaceLabel{}
 		formatted = ""
 	}
+	var distanceKM *float64
+	if found {
+		if math.IsNaN(label.DistanceKM) || math.IsInf(label.DistanceKM, 0) || label.DistanceKM < 0 {
+			return fmt.Errorf("photo place resolver returned invalid distance")
+		}
+		value := label.DistanceKM
+		distanceKM = &value
+	}
 	place := meta.PhotoPlaceLabel{
-		AssetID:         candidate.AssetID,
-		Resolver:        r.Resolver.Name(),
-		ResolverVersion: r.Resolver.Version(),
-		Latitude:        candidate.Latitude,
-		Longitude:       candidate.Longitude,
-		CountryCode:     strings.TrimSpace(label.CountryCode),
-		Country:         strings.TrimSpace(label.Country),
-		Region:          strings.TrimSpace(label.Region),
-		City:            strings.TrimSpace(label.City),
-		District:        strings.TrimSpace(label.District),
-		Locality:        strings.TrimSpace(label.Locality),
-		Formatted:       formatted,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		AssetID:          candidate.AssetID,
+		Resolver:         r.Resolver.Name(),
+		ResolverVersion:  r.Resolver.Version(),
+		InputFingerprint: fingerprint,
+		Latitude:         candidate.Latitude,
+		Longitude:        candidate.Longitude,
+		CountryCode:      strings.TrimSpace(label.CountryCode),
+		Country:          strings.TrimSpace(label.Country),
+		RegionCode:       strings.TrimSpace(label.RegionCode),
+		Region:           strings.TrimSpace(label.Region),
+		CityGeoNameID:    label.CityGeoNameID,
+		City:             strings.TrimSpace(label.City),
+		District:         strings.TrimSpace(label.District),
+		Locality:         strings.TrimSpace(label.Locality),
+		Formatted:        formatted,
+		DistanceKM:       distanceKM,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
@@ -284,15 +297,19 @@ func (r *PlaceRunner) finishPlaceAnalysis(
 			DoUpdates: clause.AssignmentColumns([]string{
 				"resolver",
 				"resolver_version",
+				"input_fingerprint",
 				"latitude",
 				"longitude",
 				"country_code",
 				"country",
+				"region_code",
 				"region",
+				"city_geo_name_id",
 				"city",
 				"district",
 				"locality",
 				"formatted",
+				"distance_km",
 				"updated_at",
 			}),
 		}).Create(&place).Error; err != nil {

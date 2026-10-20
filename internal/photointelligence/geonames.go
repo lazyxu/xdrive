@@ -19,14 +19,16 @@ const geoNamesAlgorithmVersion = "v1"
 const defaultGeoNamesMaxDistance = 100.0
 
 type PlaceLabel struct {
-	CountryCode string
-	Country     string
-	Region      string
-	City        string
-	District    string
-	Locality    string
-	Formatted   string
-	DistanceKM  float64
+	CountryCode   string
+	Country       string
+	RegionCode    string
+	Region        string
+	CityGeoNameID int64
+	City          string
+	District      string
+	Locality      string
+	Formatted     string
+	DistanceKM    float64
 }
 
 type PlaceResolver interface {
@@ -264,13 +266,15 @@ func (r *GeoNamesResolver) Resolve(
 		country = best.CountryCode
 	}
 	return PlaceLabel{
-		CountryCode: best.CountryCode,
-		Country:     country,
-		Region:      region,
-		City:        best.Name,
-		Locality:    best.Name,
-		Formatted:   formatPlaceLabel(best.Name, region, country),
-		DistanceKM:  bestDistance,
+		CountryCode:   best.CountryCode,
+		Country:       country,
+		RegionCode:    best.Admin1Code,
+		Region:        region,
+		CityGeoNameID: best.ID,
+		City:          best.Name,
+		Locality:      best.Name,
+		Formatted:     formatPlaceLabel(best.Name, region, country),
+		DistanceKM:    bestDistance,
 	}, true, nil
 }
 

@@ -190,20 +190,24 @@ func ValidPhotoPersonSuggestionReviewState(state string) bool {
 }
 
 type PhotoPlaceLabel struct {
-	AssetID         uint64  `gorm:"primaryKey;autoIncrement:false"`
-	Resolver        string  `gorm:"size:64;not null;index"`
-	ResolverVersion string  `gorm:"size:128;not null"`
-	Latitude        float64 `gorm:"not null;index"`
-	Longitude       float64 `gorm:"not null;index"`
-	CountryCode     string  `gorm:"size:8;index"`
-	Country         string  `gorm:"size:128;index"`
-	Region          string  `gorm:"size:128;index"`
-	City            string  `gorm:"size:128;index"`
-	District        string  `gorm:"size:128;index"`
-	Locality        string  `gorm:"size:256;index"`
-	Formatted       string  `gorm:"size:512;not null"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	AssetID          uint64  `gorm:"primaryKey;autoIncrement:false"`
+	Resolver         string  `gorm:"size:64;not null;index"`
+	ResolverVersion  string  `gorm:"size:128;not null"`
+	InputFingerprint string  `gorm:"size:128;not null;default:''"`
+	Latitude         float64 `gorm:"not null;index"`
+	Longitude        float64 `gorm:"not null;index"`
+	CountryCode      string  `gorm:"size:8;index"`
+	Country          string  `gorm:"size:128;index"`
+	RegionCode       string  `gorm:"size:16;index"`
+	Region           string  `gorm:"size:128;index"`
+	CityGeoNameID    int64   `gorm:"not null;default:0;index"`
+	City             string  `gorm:"size:128;index"`
+	District         string  `gorm:"size:128;index"`
+	Locality         string  `gorm:"size:256;index"`
+	Formatted        string  `gorm:"size:512;not null"`
+	DistanceKM       *float64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 
 	Asset PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }

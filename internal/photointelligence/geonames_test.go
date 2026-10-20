@@ -36,6 +36,9 @@ func TestGeoNamesResolverLoadsAndResolvesNearestPlace(t *testing.T) {
 	if label.DistanceKM <= 0 || label.DistanceKM > 20 {
 		t.Fatalf("distance=%f", label.DistanceKM)
 	}
+	if label.CityGeoNameID != 1880252 || label.RegionCode != "00" {
+		t.Fatalf("stable GeoNames identity=%+v", label)
+	}
 
 	label, found, err = resolver.Resolve(31.2304, 121.4737)
 	if err != nil {

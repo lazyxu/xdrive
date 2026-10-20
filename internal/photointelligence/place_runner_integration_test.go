@@ -36,15 +36,23 @@ func (r *fakePlaceResolver) Resolve(
 		return PlaceLabel{}, false, nil
 	}
 	name := "First City"
+	cityID := int64(1880252)
+	distanceKM := 1.25
 	if longitude >= 104 {
 		name = "Second City"
+		cityID = 1796236
+		distanceKM = 3.75
 	}
 	return PlaceLabel{
-		CountryCode: "SG",
-		Country:     "Singapore",
-		City:        name,
-		Locality:    name,
-		Formatted:   name,
+		CountryCode:   "SG",
+		Country:       "Singapore",
+		RegionCode:    "00",
+		Region:        "Singapore",
+		CityGeoNameID: cityID,
+		City:          name,
+		Locality:      name,
+		Formatted:     name,
+		DistanceKM:    distanceKM,
 	}, true, nil
 }
 
@@ -161,7 +169,10 @@ func TestPlaceRunnerPersistsAndInvalidatesDerivedLabels(t *testing.T) {
 	}
 	if label.Formatted != "First City" ||
 		label.Resolver != resolver.Name() ||
-		label.ResolverVersion != "v1" {
+		label.ResolverVersion != "v1" ||
+		label.RegionCode != "00" || label.CityGeoNameID != 1880252 ||
+		label.DistanceKM == nil || *label.DistanceKM != 1.25 ||
+		label.InputFingerprint != placeInputFingerprint(latitude, longitude) {
 		t.Fatalf("label=%+v", label)
 	}
 	var state meta.PhotoAnalysisState
@@ -225,5 +236,24 @@ func TestPlaceRunnerPersistsAndInvalidatesDerivedLabels(t *testing.T) {
 	}
 	if state.AnalyzerVersion != "fake-place@v2" || state.Attempt != 3 {
 		t.Fatalf("upgraded state=%+v", state)
+	}
+	if err := db.Model(&meta.PhotoPlaceLabel{}).
+		Where("asset_id = ?", asset.ID).
+		Update("input_fingerprint", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	processed, err = runner.RunBatch(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || resolver.calls != 4 {
+		t.Fatalf("legacy backfill processed=%d calls=%d", processed, resolver.calls)
+	}
+	if err := db.First(&label, "asset_id = ?", asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if label.InputFingerprint != placeInputFingerprint(latitude, longitude) ||
+		label.CityGeoNameID != 1796236 || label.DistanceKM == nil || *label.DistanceKM != 3.75 {
+		t.Fatalf("backfilled label=%+v", label)
 	}
 }
