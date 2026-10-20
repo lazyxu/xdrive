@@ -129,6 +129,11 @@ func (s *Server) reserveBoundLocalPushOperationIntentInternal(
 		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
 			return denied
 		}
+		// A prior physical terminal vetoes same-key replay as well as new
+		// generations. A reservation ACK cannot resurrect a terminal file.
+		if err := requireLocalPushFileTerminalVacantTx(tx, sourceID); err != nil {
+			return denied
+		}
 		if requestKeyDigest != nil {
 			var prior meta.LocalPushOperationIntent
 			keyLookup := tx.Where("source_id = ? AND request_key_digest = ?", sourceID, *requestKeyDigest).
@@ -242,6 +247,9 @@ func (s *Server) abortBoundLocalPushOperationIntent(
 		// Historical SQL COMMIT of another Source generation must also
 		// defeat this newer reservation's negative outcome or replay.
 		if err := requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx, sourceID); err != nil {
+			return denied
+		}
+		if err := requireLocalPushFileTerminalVacantTx(tx, sourceID); err != nil {
 			return denied
 		}
 		if latest.State == meta.LocalPushOperationIntentAborted && latest.AbortedAt != nil {

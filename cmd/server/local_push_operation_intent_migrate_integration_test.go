@@ -64,6 +64,16 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 			!db.Migrator().HasIndex(&meta.LocalPushFirstLeafOperationCommit{}, "idx_xd_local_push_first_leaf_commit_generation") {
 			t.Fatal("private first-leaf operation SQL commit indexes missing")
 		}
+		if !db.Migrator().HasTable(&meta.LocalPushFileTerminal{}) ||
+			!db.Migrator().HasIndex(&meta.LocalPushFileTerminal{}, "idx_xd_local_push_file_terminal_stage") ||
+			!db.Migrator().HasIndex(&meta.LocalPushFileTerminal{}, "idx_xd_local_push_file_terminal_generation") {
+			t.Fatal("private file-terminal SQL schema/unique indexes missing")
+		}
+		var fileTerminals int64
+		if err := db.Model(&meta.LocalPushFileTerminal{}).
+			Count(&fileTerminals).Error; err != nil || fileTerminals != 0 {
+			t.Fatalf("migration invented a physical file terminal: %d %v", fileTerminals, err)
+		}
 		var commitCount int64
 		if err := db.Model(&meta.LocalPushFirstLeafOperationCommit{}).
 			Count(&commitCount).Error; err != nil || commitCount != 0 {

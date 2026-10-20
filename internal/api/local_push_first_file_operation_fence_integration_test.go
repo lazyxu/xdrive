@@ -17,7 +17,7 @@ func makeLocalPushFencedFirstLeafFixture(
 	f := makeLocalPushFirstFileCommitFixture(t)
 	if err := f.server.DB.AutoMigrate(
 		&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{},
-		&meta.LocalPushFirstLeafOperationCommit{},
+		&meta.LocalPushFirstLeafOperationCommit{}, &meta.LocalPushFileTerminal{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func makeLocalPushBoundFirstLeafFixture(
 	f, key, operation := makeLocalPushFencedFirstLeafFixture(t)
 	if err := f.server.DB.AutoMigrate(
 		&meta.LocalPushOperationStageBinding{},
-		&meta.LocalPushFirstLeafOperationCommit{},
+		&meta.LocalPushFirstLeafOperationCommit{}, &meta.LocalPushFileTerminal{},
 	); err != nil {
 		t.Fatal(err)
 	}

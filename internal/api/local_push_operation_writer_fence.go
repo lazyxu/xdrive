@@ -87,5 +87,10 @@ func (s *Server) validateCurrentLocalPushWriterFenceTx(
 		c.Request.Context().Err() != nil {
 		return denied
 	}
+	// Do not admit a second physical write across a durable file-level
+	// terminal, even when an earlier SQL reservation appears live.
+	if err := requireLocalPushFileTerminalVacantTx(tx, sourceID); err != nil {
+		return denied
+	}
 	return nil
 }

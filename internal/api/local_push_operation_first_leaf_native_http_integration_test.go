@@ -30,7 +30,7 @@ func TestLocalPushRealNativeHeldAgentHTTPFirstLeafCanonicalCommit(t *testing.T) 
 		&meta.LocalPushOperationIntent{},
 		&meta.LocalPushOperationTerminalReceipt{},
 		&meta.LocalPushOperationStageBinding{},
-		&meta.LocalPushFirstLeafOperationCommit{},
+		&meta.LocalPushFirstLeafOperationCommit{}, &meta.LocalPushFileTerminal{},
 	); err != nil {
 		t.Fatal(err)
 	}
