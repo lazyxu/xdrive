@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/geoquery"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -48,6 +49,7 @@ type mediaQueryOptions struct {
 	Cameras            []string
 	Formats            []string
 	Place              *mediaPlaceCell
+	Geo                *geoquery.Selection
 	PersonCluster      string
 	PersonIdentity     string
 }
@@ -227,6 +229,30 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.Place = &value
+	}
+
+	params := c.Request.URL.Query()
+	nearValues, hasNear := params["nearby"]
+	bboxValues, hasBBox := params["bbox"]
+	if hasNear || hasBBox {
+		if hasNear && hasBBox ||
+			(hasNear && len(nearValues) != 1) ||
+			(hasBBox && len(bboxValues) != 1) {
+			fail(c, http.StatusBadRequest, "duplicate geographic filter")
+			return mediaQueryOptions{}, false
+		}
+		nearRaw, bboxRaw := "", ""
+		if hasNear {
+			nearRaw = nearValues[0]
+		}
+		if hasBBox {
+			bboxRaw = bboxValues[0]
+		}
+		out.Geo, err = geoquery.Parse(nearRaw, bboxRaw)
+		if err != nil || out.Geo == nil {
+			fail(c, http.StatusBadRequest, "invalid geographic filter")
+			return mediaQueryOptions{}, false
+		}
 	}
 	return out, true
 }
@@ -424,6 +450,9 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 			lonMin,
 			lonMax,
 		)
+	}
+	if options.Geo != nil {
+		query = applyMediaGeoSelection(query, options.Geo)
 	}
 	if options.PersonCluster != "" {
 		query = query.Where(

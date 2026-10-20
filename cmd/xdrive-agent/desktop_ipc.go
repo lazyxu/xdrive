@@ -27,6 +27,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/diagnostics"
+	"github.com/lazyxu/xdrive/internal/geoquery"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
@@ -6180,6 +6181,28 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.Place = raw
+	}
+
+	nearValues, hasNear := r.URL.Query()["nearby"]
+	bboxValues, hasBBox := r.URL.Query()["bbox"]
+	if hasNear || hasBBox {
+		if hasNear && hasBBox ||
+			(hasNear && len(nearValues) != 1) ||
+			(hasBBox && len(bboxValues) != 1) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_geo", "duplicate geographic filter")
+			return client.MediaQuery{}, false
+		}
+		if hasNear {
+			out.Nearby = nearValues[0]
+		}
+		if hasBBox {
+			out.BBox = bboxValues[0]
+		}
+		selection, err := geoquery.Parse(out.Nearby, out.BBox)
+		if err != nil || selection == nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_geo", "invalid geographic filter")
+			return client.MediaQuery{}, false
+		}
 	}
 	return out, true
 }

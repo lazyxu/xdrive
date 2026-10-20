@@ -1687,6 +1687,46 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.place = input.place.trim()
   }
+  // A4: main-process validation MUST preserve the selected original WGS84
+  // scope. Silently dropping nearby/bbox would expose an unrestricted Gallery
+  // Range in Desktop while Web/Mobile correctly filter by distance.
+  const hasNearby = Object.prototype.hasOwnProperty.call(input, 'nearby')
+  const hasBBox = Object.prototype.hasOwnProperty.call(input, 'bbox')
+  if (hasNearby || hasBBox) {
+    if (hasNearby && hasBBox) {
+      throw new AgentIPCError('invalid_input', 0, 'Only one geographic mode is allowed.')
+    }
+    const mode = hasNearby ? 'nearby' : 'bbox'
+    const raw = input[mode]
+    if (typeof raw !== 'string' || raw.length === 0 || raw.length > 160 ||
+        raw.trim() !== raw) {
+      throw new AgentIPCError('invalid_input', 0, 'Media geographic filter is invalid.')
+    }
+    const parts = raw.split(',')
+    const numberPattern = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/
+    if (parts.length !== (hasNearby ? 3 : 4) ||
+        parts.some(value => !numberPattern.test(value) || !Number.isFinite(Number(value)))) {
+      throw new AgentIPCError('invalid_input', 0, 'Media geographic coordinates are invalid.')
+    }
+    const values = parts.map(Number)
+    if (hasNearby) {
+      if (values[0] < -90 || values[0] > 90 ||
+          values[1] < -180 || values[1] > 180 ||
+          values[2] < 0.1 || values[2] > 200) {
+        throw new AgentIPCError('invalid_input', 0, 'Nearby radius is out of bounds.')
+      }
+    } else {
+      const [west, south, east, north] = values
+      const span = west < east ? east - west : 360 - (west - east)
+      if (west < -180 || west > 180 || east < -180 || east > 180 ||
+          south < -90 || north > 90 || south >= north || west === east ||
+          (west === 180 && east === -180) ||
+          span <= 0 || span > 20 || north - south > 20) {
+        throw new AgentIPCError('invalid_input', 0, 'Geographic viewport is out of bounds.')
+      }
+    }
+    out[mode] = raw
+  }
   return out
 }
 

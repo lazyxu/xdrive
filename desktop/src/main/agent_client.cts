@@ -1659,6 +1659,8 @@ export type AgentMediaQuery = {
   person?: string
   person_identity?: string
   place?: string
+  nearby?: string
+  bbox?: string
 }
 
 function appendAgentMediaQuery(
@@ -1702,6 +1704,8 @@ function appendAgentMediaQuery(
     query.set('person_identity', filters.person_identity.trim())
   }
   if (filters.place?.trim()) query.set('place', filters.place.trim())
+  if (filters.nearby?.trim()) query.set('nearby', filters.nearby.trim())
+  if (filters.bbox?.trim()) query.set('bbox', filters.bbox.trim())
 }
 
 export type AgentMediaFacetOption = {

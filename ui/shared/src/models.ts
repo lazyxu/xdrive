@@ -788,6 +788,10 @@ export interface MediaGalleryQuery {
   person?: string
   person_identity?: string
   place?: string
+  /** Original WGS84 latitude,longitude,radiusKm. */
+  nearby?: string
+  /** Original WGS84 west,south,east,north. */
+  bbox?: string
 }
 
 export interface MediaFacetOption {

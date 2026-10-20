@@ -2246,6 +2246,47 @@ export function XDriveMediaGalleryPage({
     }
   }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
+  // A4 shares the existing Owner Media Range, Gallery VirtualCollection
+  // and Viewer; no parallel nearby media list, no map-derived GPS identities.
+  const openNearbyGeoRange = useCallback((geo: { nearby?: string; bbox?: string }, focusPlace?: string) => {
+    if (Boolean(geo.nearby) === Boolean(geo.bbox)) return
+    const nextDraft: MediaGalleryFilterDraft = {
+      ...draftFilters, place: '', location: 'with',
+    }
+    const nextQuery: MediaGalleryQuery = {
+      ...mediaGalleryQueryFromDraft(nextDraft), ...geo,
+    }
+    const commitGeoRange = () => {
+      placeOpenedFromCollectionsRef.current = false
+      if (section === 'places' && !query.place && !query.nearby && !query.bbox &&
+          placesTotalCount !== null && places.length <= 48) {
+        placesReturnPageRef.current = {
+          items: [...places], offset: placesPageOffset, totalCount: placesTotalCount,
+        }
+      }
+      setLastOpenedPlaceID(focusPlace ?? null)
+      if (placesCameraRef.current) {
+        persistPlacesCamera({
+          ...placesCameraRef.current, focusPlaceID: focusPlace ?? undefined, placesPageOffset,
+        })
+      }
+      placesExpandedRef.current = true
+      setSection('places')
+      setActiveMediaType('')
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+      setMobileCollectionsOverview(false)
+    }
+    if (mobileGalleryViewport && section === 'places' &&
+        !query.place && !query.nearby && !query.bbox && placesExpandedRef.current) {
+      void loadFirstPage(null, nextQuery, null, null, 'default', null, null, null, commitGeoRange)
+    } else {
+      commitGeoRange()
+      void loadFirstPage(null, nextQuery)
+    }
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places,
+    placesPageOffset, placesTotalCount, query.bbox, query.nearby, query.place, section])
+
   const openPet = useCallback((pet: MediaPetFacet, fromCollections = false) => {
     // P15 already protected Collections -> Pet. An accepted compact People
     // index is likewise the owner of its card and real scroll until the
@@ -2390,7 +2431,7 @@ export function XDriveMediaGalleryPage({
       if (section === 'media-types' && activeMediaType) {
         setActiveMediaType('')
       }
-      if (section === 'places' && query.place && placeOpenedFromCollectionsRef.current) {
+      if (section === 'places' && (query.place || query.nearby || query.bbox) && placeOpenedFromCollectionsRef.current) {
         // Collections -> Place return also has one Owner-verified receipt.
         // Neither the old visible wall nor its Viewer return anchor should
         // be replaced by an interim Collections/empty photo screen.
@@ -3209,7 +3250,7 @@ export function XDriveMediaGalleryPage({
         pets={acceptedFacetOwner === preferenceScope ? pets : []}
         suggestedPeople={acceptedFacetOwner === preferenceScope ? suggestedPeople : []}
         people={acceptedFacetOwner === preferenceScope ? people : []}
-        activePlaceID={query.place}
+        activePlaceID={query.place || (query.nearby ? 'nearby' : query.bbox ? 'bbox' : undefined)}
         currentAlbum={currentAlbum}
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
@@ -3418,6 +3459,17 @@ export function XDriveMediaGalleryPage({
             }
           : undefined}
         onOpenPlace={(place) => openPlace(place, mobileCollectionsOverview)}
+        onOpenNearby={(place, radiusKM) => {
+          const lat = place.sample_latitude, lng = place.sample_longitude
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+              lat === undefined || lng === undefined ||
+              Math.abs(lat) > 90 || Math.abs(lng) > 180 ||
+              ![1, 5, 25, 100].includes(radiusKM)) return
+          openNearbyGeoRange({ nearby: `${lat},${lng},${radiusKM}` }, place.id)
+        }}
+        onOpenViewportPhotos={(bounds) => openNearbyGeoRange({
+          bbox: `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
+        })}
         onOpenMemory={(memory) => openMemory(memory, mobileCollectionsOverview)}
         onOpenBurstReview={openBurstReview}
         onLoadMoreBurst={() => void loadMoreCleanupGroups()}
@@ -3764,6 +3816,8 @@ export interface XDriveMediaGalleryProps {
   onOpenFolder?: (folder: MediaFolderEntry) => void
   onOpenFolderBreadcrumb?: (breadcrumb: MediaFolderBreadcrumb) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
+  onOpenViewportPhotos?: (bounds: import('../models').MediaPlacesViewportBounds) => void
   onOpenMemory?: (memory: MediaMemory) => void
   onOpenBurstReview?: (group: MediaBurstReview) => void
   onLoadMoreBurst?: () => void
@@ -5454,6 +5508,8 @@ export function XDriveMediaGallery({
   onOpenFolder,
   onOpenFolderBreadcrumb,
   onOpenPlace,
+  onOpenNearby,
+  onOpenViewportPhotos,
   onOpenMemory,
   onOpenBurstReview,
   onLoadMoreBurst,
@@ -6539,7 +6595,11 @@ export function XDriveMediaGallery({
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
         ? '人物建议'
-        : activePlace
+        : activePlaceID === 'nearby'
+          ? '附近照片'
+          : activePlaceID === 'bbox'
+          ? '地图范围照片'
+          : activePlace
           ? activePlace.name
           : section === 'memories'
             ? '回忆'
@@ -6574,7 +6634,11 @@ export function XDriveMediaGallery({
       ? `${currentPerson.item_count.toLocaleString('zh-CN')} 张照片 · 长期人物${currentPerson.hidden ? ' · 已隐藏' : ''}`
       : currentSuggestedPerson
         ? `${currentSuggestedPerson.item_count.toLocaleString('zh-CN')} 张照片 · 自动聚类建议`
-        : activePlace
+        : activePlaceID === 'nearby'
+          ? '按原始 GPS 的真实球面距离筛选 · Server 精确计数'
+          : activePlaceID === 'bbox'
+          ? '当前有界 WGS84 范围 · Server 精确计数'
+          : activePlace
           ? `${activePlace.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS`
           : section === 'memories'
             ? '近期、往年今日与行程回忆'
@@ -7561,6 +7625,8 @@ export function XDriveMediaGallery({
             activePlaceID={activePlaceID}
             focusPlaceID={focusPlaceID}
             onOpenPlace={onOpenPlace}
+            onOpenNearby={onOpenNearby}
+            onOpenViewportPhotos={onOpenViewportPhotos}
           />
 
           <Box>

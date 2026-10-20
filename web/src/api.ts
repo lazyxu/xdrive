@@ -407,6 +407,8 @@ function appendMediaGalleryQuery(
     values.set('person_identity', query.person_identity.trim())
   }
   if (query.place?.trim()) values.set('place', query.place.trim())
+  if (query.nearby?.trim()) values.set('nearby', query.nearby.trim())
+  if (query.bbox?.trim()) values.set('bbox', query.bbox.trim())
 }
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
