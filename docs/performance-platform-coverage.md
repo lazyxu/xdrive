@@ -1,3 +1,11 @@
+## SH-P015 · real scoped Share browser current 100k evidence, pending new exact CI (2026-10-21)
+
+- Source `feee12492608865faa13acb234c0cacb7b868ee2` from valid [PG17 n3 #39456878987](https://github.com/lazyxu/xdrive/actions/runs/39456878987) 100k real metadata per population, complete 1000-page walk P50 **15.815s**, and actual [Chromium 100k SHA-distinct JPEG #39456878992](https://github.com/lazyxu/xdrive/actions/runs/39456878992) Wide Web first/next P50 **356.446/193.260ms**, Mobile Web CDP390 **292.201/204.973ms**, 12/12 real signed Share context menu native originals correct. Source full data [SH-P015](performance-evidence/public-share-four-column-shp015/ci-run-39456878992-39456878987.json). New four-column UI P50 within old frozen budget, but same-runner before/after and speedup N/A; complete first-head CI RED on obsolete JSX/Quick Look inline button tests, must fix & get new exact-head 77-job and both specialties. Actual native iOS/Android phones, installed PWA, WAN, account Desktop Agent, 4GiB shared ZIP, H264/Live still Share-scoped thumbnail, true Live Motion Not measured. No Race changes.
+
+## SH-P015 · Share FileExplorer 4 columns, scoped read-only commands (2026-10-21)
+
+- Only Chromium1440 Wide Web and CDP390 simulated Mobile Web real Share media/Download baselines applicable. Latest original merged #2248 PG17 100k metadata walk P50 9.906s and physical 100k SHA-distinct JPEG actual Share browser Wide first/next P50 226.768/139.088ms, CDP390 187.142/155.680ms; six real browser sessions/12 signed files, but no installed OS PWA. New four-column display and actual context-menu download **not yet measured**, no same-runner A/B improvement claim; Native Desktop Agent, iOS/Android real device/installed PWA, WAN, H264/Live secure Share preview and true 4GiB public share ZIP remain Not measured. All 77-job CI/Final Gate + true n3 required before accepting new HEAD. Reference [SH-P015](public-share-four-column-shp015.md).
+
 ## P067 · Source-exact real three-client Owner 100k mixed-media success (2026-10-20)
 
 - P038 **Native Desktop Electron→Agent IPC** on true 100k/115k physical CAS post Grid share: n3×Grid/Details×five positions PASS, Grid/Details P50 **598.202/478.690ms** [CI #39441398961](https://github.com/lazyxu/xdrive/actions/runs/39441398961).

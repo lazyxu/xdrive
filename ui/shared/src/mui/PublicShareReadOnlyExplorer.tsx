@@ -114,6 +114,10 @@ export function XDrivePublicShareReadOnlyExplorer({
   const visibleItems = filter
     ? pageItems.filter(entry => entry.name.toLocaleLowerCase().includes(filter))
     : pageItems
+  // Only the currently authorized, bounded page may supply a selection action.
+  // The fixed-size selection slot stays mounted, preventing toolbar reflow.
+  const selectedEntry = visibleItems.find(entry => entry.id === selectedID) ?? null
+  const shareDetailsColumns = 'minmax(0,1fr) 190px 150px 120px'
   const directoryControlsEnabled = folder && folderOpened && canDownload
   const viewButtons = (
     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -141,9 +145,9 @@ export function XDrivePublicShareReadOnlyExplorer({
       {view === 'details' && (
         <Box data-xdrive-public-share-details-header
           sx={{
-            ...xDriveFileExplorerDetailsHeaderGeometry('minmax(0,1fr) 168px minmax(110px,160px) 118px 106px'),
+            ...xDriveFileExplorerDetailsHeaderGeometry(shareDetailsColumns),
             '@media (max-width: 620px)': {
-              gridTemplateColumns: 'minmax(0,1fr) 92px',
+              gridTemplateColumns: 'minmax(0,1fr)',
               '& .xdrive-shared-file-updated': { display: 'none' },
               '& .xdrive-shared-file-type': { display: 'none' },
               '& .xdrive-shared-file-size': { display: 'none' },
@@ -153,7 +157,6 @@ export function XDrivePublicShareReadOnlyExplorer({
           <Typography className="xdrive-shared-file-updated" variant="caption" color="text.secondary">修改时间</Typography>
           <Typography className="xdrive-shared-file-type" variant="caption" color="text.secondary">类型</Typography>
           <Typography className="xdrive-shared-file-size" variant="caption" color="text.secondary" textAlign="right">大小</Typography>
-          <Typography variant="caption" color="text.secondary" textAlign="center">操作</Typography>
         </Box>
       )}
       {visibleItems.map(entry => (
@@ -162,8 +165,8 @@ export function XDrivePublicShareReadOnlyExplorer({
           data-xdrive-public-share-item-id={entry.id}
           aria-label={(entry.type === 'dir' ? '文件夹 ' : '文件 ') + entry.name}
           onClick={(event) => {
-            // A compact row opens like iOS Files, but its explicit Download/Preview
-            // controls must NOT bubble into a second open/second Share ticket.
+            // Compact Files opens the target on tap; any future inline controls
+            // must never bubble into a second open or Share ticket.
             if ((event.target as Element | null)?.closest?.('button, a, input, [role="button"]')) return
             if (compactShareViewport) openEntry(entry)
             else setSelectedID(entry.id)
@@ -186,14 +189,16 @@ export function XDrivePublicShareReadOnlyExplorer({
             border: view === 'grid' ? 0 : undefined,
             borderColor: 'divider', borderRadius: view === 'grid' ? 1 : '4px',
             gridTemplateColumns: view === 'details'
-              ? 'minmax(0,1fr) 168px minmax(110px,160px) 118px 106px' : undefined,
+              ? shareDetailsColumns : undefined,
             bgcolor: selectedID === entry.id ? 'action.selected' : 'transparent',
             cursor: 'default',
             '&:hover': { bgcolor: 'action.hover' },
             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
             '@media (max-width: 620px)': view === 'details' ? {
               minHeight: xDriveFileExplorerDetailsMobileRowHeight,
-              gridTemplateColumns: 'minmax(0,1fr) 92px',
+              gridTemplateColumns: 'minmax(0,1fr)',
+              // An empty cell host must not create another implicit mobile row.
+              '& > [role="cell"]:not(:first-child)': { display: 'none' },
               '& .xdrive-shared-file-updated': { display: 'none' },
               '& .xdrive-shared-file-type': { display: 'none' },
               '& .xdrive-shared-file-size': { display: 'none' },
@@ -234,25 +239,6 @@ export function XDrivePublicShareReadOnlyExplorer({
               </XDriveFileExplorerDetailsRowCell>
             </>
           )}
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: view === 'grid' ? 'auto' : 0 }}>
-            {entry.type === 'dir' ? (
-              <Button type="button" size="small" disabled={!canDownload}
-                onClick={() => onOpenFolder?.(entry)}>打开</Button>
-            ) : (
-              <Stack direction="row" alignItems="center" spacing={0}>
-                {supportsPublicImagePreview(entry) && (
-                  <Button type="button" size="small" disabled={!canDownload}
-                    aria-label="预览图片" sx={{ minWidth: 28, px: 0 }}
-                    onClick={() => setPreviewEntry(entry)}>
-                    <VisibilityRoundedIcon fontSize="small" />
-                  </Button>
-                )}
-                <Button type="button" size="small" disabled={!canDownload}
-                  sx={{ minWidth: 54, px: 0.5 }}
-                  startIcon={<DownloadRoundedIcon />} onClick={() => onDownloadItem?.(entry)}>下载</Button>
-              </Stack>
-            )}
-          </Box>
         </Box>
       ))}
       {!pending && folderOpened && pageItems.length === 0 && (
@@ -322,6 +308,38 @@ export function XDrivePublicShareReadOnlyExplorer({
                 sx={{ width: 164, maxWidth: '100%' }} />
             </>
           )}
+          <Box data-xdrive-public-share-selection-slot
+            sx={{
+              display: compactShareViewport ? 'none' : 'flex',
+              flex: '0 0 238px', minWidth: 238, height: 36,
+              alignItems: 'center', overflow: 'hidden',
+            }}>
+            {selectedEntry && (
+              <Stack data-xdrive-public-share-selection-actions
+                direction="row" alignItems="center" spacing={0.5} sx={{ whiteSpace: 'nowrap' }}>
+                {selectedEntry.type === 'dir' ? (
+                  <Button type="button" size="small" disabled={!canDownload || pending}
+                    data-xdrive-public-share-selected-open
+                    onClick={() => onOpenFolder?.(selectedEntry)}>打开</Button>
+                ) : (
+                  <>
+                    {supportsPublicImagePreview(selectedEntry) && (
+                      <Button type="button" size="small" disabled={!canDownload || pending}
+                        data-xdrive-public-share-selected-preview
+                        onClick={() => setPreviewEntry(selectedEntry)}>预览</Button>
+                    )}
+                    <Button type="button" size="small" disabled={!canDownload || pending}
+                      data-xdrive-public-share-selected-download
+                      startIcon={<DownloadRoundedIcon />}
+                      onClick={() => onDownloadItem?.(selectedEntry)}>下载</Button>
+                  </>
+                )}
+                <Button type="button" size="small"
+                  data-xdrive-public-share-selected-properties
+                  onClick={() => setPropertiesEntry(selectedEntry)}>属性</Button>
+              </Stack>
+            )}
+          </Box>
           <Box sx={{ ml: folder && folderOpened ? 'auto' : 0 }}>{viewButtons}</Box>
         </Stack>
         {folder ? (

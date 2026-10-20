@@ -387,6 +387,14 @@ test('Shared folder browser keeps at most one 100-item mounted page and download
   assert.ok(!textContent(renderer.toJSON()).includes('item-1.txt'))
   assert.ok(textContent(renderer.toJSON()).includes('item-101.txt'))
 
+  // Public Details no longer inserts a fifth "操作" column. Select the file
+  // and use the reserved read-only command toolbar (same signed Share API).
+  await act(async () => {
+    visibleRows()[0].props.onClick({ target: { closest: () => null } })
+  })
+  const selectedDownload = renderer.root.findAllByType('button')
+    .find(b => b.props['data-xdrive-public-share-selected-download'] === true)
+  assert.ok(selectedDownload && !selectedDownload.props.disabled, 'selected file must remain downloadable')
   await click('下载')
   assert.deepEqual(downloads, [{
     token: 'test-share-token', password: '', name: 'item-101.txt', nodeID: 101,
@@ -529,6 +537,11 @@ test('P90 actual React public folder browse and nested folder retain geometry an
   assert.equal(rows().length, 2)
   assert.equal(region().props.sx.minHeight, 180)
   assert.equal(region().props['aria-busy'], false)
+  await act(async () => {
+    const child = rows().find(row => row.props['data-xdrive-public-share-item-id'] === 42)
+    assert.ok(child)
+    child.props.onClick({ target: { closest: () => null } })
+  })
   await click('打开')
   assert.equal(calls.length, 2)
   assert.equal(region().props['aria-busy'], true)
@@ -636,6 +649,10 @@ test('Folder capability switches real shared Explorer Details/Grid without chang
   })
   assert.equal(prevented, true)
   assert.deepEqual(downloads, [{ name: 'frame.heic', id: 32 }])
+  await act(async () => {
+    rows().find(row => row.props['data-xdrive-public-share-item-id'] === 31)
+      .props.onClick({ target: { closest: () => null } })
+  })
   await click('打开')
   assert.equal(rows().length, 1)
   assert.ok(textContent(renderer.toJSON()).includes('child.txt'))
@@ -1019,9 +1036,17 @@ test('Public JPEG image Quick Look requests one Share-only preview URL on explic
   })
   t.after(() => act(() => renderer.unmount()))
   assert.equal(tickets.length, 0, 'no eager public preview for 100k list or shared file')
+  // The preview action is available in the reserved read-only toolbar once
+  // the recipient selects the FileExplorer row. Selection alone cannot mint
+  // a Share preview ticket or add an inline fifth operation column.
+  const sharedFile = renderer.root.findAll(node => typeof node.type === 'string' &&
+    node.props.role === 'listitem' && node.props['data-xdrive-public-share-item-id'] === 0)[0]
+  assert.ok(sharedFile)
+  await act(async () => { sharedFile.props.onClick({ target: { closest: () => null } }) })
+  assert.equal(tickets.length, 0, 'row selection must not prefetch or issue an image preview ticket')
   const preview = renderer.root.findAllByType('button')
-    .find(b => b.props['aria-label'] === '预览图片')
-  assert.ok(preview, 'raster still must have a one-tap read-only preview')
+    .find(b => b.props['data-xdrive-public-share-selected-preview'] === true)
+  assert.ok(preview && !preview.props.disabled, 'raster still must retain explicit read-only selection Preview')
   await act(async () => { preview.props.onClick() })
   const viewer = renderer.root.findAll(node =>
     typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] === 0)

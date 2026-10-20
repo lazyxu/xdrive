@@ -1,0 +1,178 @@
+{
+  "work_item": "SH-P015",
+  "recorded_at": "2026-10-21",
+  "original_source_sha": "feee12492608865faa13acb234c0cacb7b868ee2",
+  "scope": "share UI four-column; real PostgreSQL17 100k metadata and 100k unique-SHA physical JPEG Chromium 1440/390",
+  "original_native_CI": {
+    "pg_url": "https://github.com/lazyxu/xdrive/actions/runs/39456878987",
+    "jpeg_url": "https://github.com/lazyxu/xdrive/actions/runs/39456878992",
+    "full_ci_red_url": "https://github.com/lazyxu/xdrive/actions/runs/39456881952"
+  },
+  "performance_decision": "original current is within frozen budgets; no Go/SQL/render hot-path optimization; AFTER/speedup N/A; changed user action/Runner so no matched A/B",
+  "known_non_acceptance": "Full CI desktop-tests has two outdated source/presentation assertions at this exact head; repaired subsequent head must rerun all tests",
+  "series": {
+    "pg": {
+      "workload": "SH-P001/real-postgresql17-100k-keyset-public-folder-metadata",
+      "source": "EXACT_SOURCE_HEAD=feee12492608865faa13acb234c0cacb7b868ee2",
+      "n": 3,
+      "physical_CAS_originals": 0,
+      "status": "original CURRENT measurement (not BEFORE/AFTER optimization)",
+      "samples": [
+        {
+          "entries": 100000,
+          "http_body_bytes": 11327793,
+          "page_p50_ms": 15.497,
+          "page_p95_ms": 18.026,
+          "page_walk_ms": 15815,
+          "page_worst_ms": 29.084,
+          "pages": 1000,
+          "sample": "1",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 1517
+        },
+        {
+          "entries": 100000,
+          "http_body_bytes": 11322793,
+          "page_p50_ms": 15.502,
+          "page_p95_ms": 17.65,
+          "page_walk_ms": 15826,
+          "page_worst_ms": 29.148,
+          "pages": 1000,
+          "sample": "2",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 1484
+        },
+        {
+          "entries": 100000,
+          "http_body_bytes": 11322793,
+          "page_p50_ms": 15.423,
+          "page_p95_ms": 17.8,
+          "page_walk_ms": 15745,
+          "page_worst_ms": 30.03,
+          "pages": 1000,
+          "sample": "3",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 1473
+        }
+      ],
+      "page_walk_p50_ms": 15815,
+      "page_p95_max_ms": 18.026,
+      "page_worst_max_ms": 30.03,
+      "pass_budget": true,
+      "after": null,
+      "speedup": null
+    },
+    "jpeg": {
+      "workload": "SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb",
+      "exact_source_head": "feee12492608865faa13acb234c0cacb7b868ee2",
+      "original_jpeg_cas": 100000,
+      "browser_sessions": 6,
+      "page_budget_ms": 2000,
+      "original_download_budget_ms": 5000,
+      "scope": "Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails",
+      "excluded": "Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion, 100k thumbnail decode and user-owned transfer cancellation",
+      "sessions": [
+        {
+          "width": 1440,
+          "sample": 1,
+          "first_page_ms": 404.26468100000056,
+          "next_page_ms": 192.73905599999125,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 154.17195800000627,
+          "next_download_ms": 98.47379399999045,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 1440,
+          "sample": 2,
+          "first_page_ms": 356.4456579999969,
+          "next_page_ms": 200.8143379999965,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 132.17633200000273,
+          "next_download_ms": 111.33898899999622,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 1440,
+          "sample": 3,
+          "first_page_ms": 353.23989299999084,
+          "next_page_ms": 193.25980500000878,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 128.69647799999802,
+          "next_download_ms": 102.07104199999594,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 1,
+          "first_page_ms": 282.80262099999527,
+          "next_page_ms": 203.757672000007,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 127.04176999999618,
+          "next_download_ms": 103.39804400000139,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 2,
+          "first_page_ms": 292.76771300000837,
+          "next_page_ms": 208.34857300001022,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 123.35602399999334,
+          "next_download_ms": 103.18286499999522,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 3,
+          "first_page_ms": 292.2013969999971,
+          "next_page_ms": 204.97281700000167,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 126.87637900000846,
+          "next_download_ms": 121.93736699999135,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        }
+      ],
+      "original_bytes": 70893376,
+      "allocated_cas_bytes": 409604096,
+      "seed_excluded_ms": 64952.001,
+      "source_aggregate_sha256": "1e94e01ef63cd256e4da685115785ac99dc115079ea9d770d67384b15cb6352b",
+      "http_counts": {
+        "original_download_calls": 12,
+        "public_page_calls": 12,
+        "signed_ticket_calls": 12
+      },
+      "first_page_max_ms": 404.26468100000056,
+      "next_page_max_ms": 208.34857300001022,
+      "native_download_max_ms": 154.17195800000627,
+      "electron_main_maxrss_kib": 196180,
+      "electron_main_cpu_user_us": 1099354,
+      "electron_main_cpu_system_us": 785361,
+      "all_passed": true
+    }
+  }
+}
