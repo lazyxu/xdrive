@@ -6,6 +6,7 @@ import { hasPersistedCaddyIntent, caddyLANLocalMatch } from '../caddy-reconcilia
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort } from './CaddyAliDNSPanel'
 import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
+import { XDriveCaddyHostBaselinePreviewPanel } from './CaddyHostBaselinePreviewPanel'
 
 // Only layout and verified read-only evidence; no Host/Docker/ACME/DNS Apply.
 type CaddyPort = XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort
@@ -298,6 +299,9 @@ export function XDriveCaddyDetailV1({
                 </Stack>
               )}
             </Paper>
+            <XDriveCaddyHostBaselinePreviewPanel source={source} config={config}
+              active={screen === 'config'} evidenceRevision={evidenceRevision}
+              hasUnsavedEdits={hasUnsavedEdits} />
             <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
               onDirtyChange={onHTTPSDirtyChange} onConfigurationChanged={changed} />
             <XDriveCaddyAliDNSPanel source={source} refreshID={0}
