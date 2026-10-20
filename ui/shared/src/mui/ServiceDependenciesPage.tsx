@@ -1438,6 +1438,23 @@ export function XDriveServiceDependenciesPage({
         </Button>
       )}
     >
+      {/* Keep a real late refresh error visible, but never insert it as a new
+          MUI spacing child ahead of the already-accepted service workspace. */}
+      <Box data-xdrive-system-dependencies-feedback-owner sx={{
+        position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+        width: 'min(calc(100vw - 24px), 560px)',
+        maxHeight: 'min(34dvh, 220px)', overflowY: 'auto',
+        pointerEvents: 'none', zIndex: theme => theme.zIndex.snackbar,
+      }}>
+        {snapshot && visibleError ? (
+          <Box data-xdrive-system-dependencies-refresh-error role="alert" sx={{ pointerEvents: 'auto' }}>
+            <XDriveStatusAlert tone="bad">
+              刷新失败，当前显示上次成功检测的快照，状态可能已过期：{visibleError}
+            </XDriveStatusAlert>
+          </Box>
+        ) : null}
+      </Box>
       <Stack spacing={2.5} data-xdrive-admin-service-dependencies>
         <Typography variant="body2" color="text.secondary" role="status"
           data-xdrive-system-dependencies-quiet-status
@@ -1445,9 +1462,6 @@ export function XDriveServiceDependenciesPage({
           {snapshot ? '最近检测：' + checkedAt + ' · 服务状态快照'
             : coldReadPending ? '' : '尚未取得服务检测结果'}
         </Typography>
-        {visibleError && <XDriveStatusAlert tone="bad">
-          {snapshot ? '刷新失败，当前显示上次成功检测的快照，状态可能已过期：' : ''}{visibleError}
-        </XDriveStatusAlert>}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
           <Box component="nav" aria-label="系统依赖页内导航" sx={{
             width: 198, flexShrink: 0, position: { md: 'sticky' }, top: 12,
@@ -1508,7 +1522,14 @@ export function XDriveServiceDependenciesPage({
             {!snapshot && (
               <Box data-xdrive-system-dependencies-cold-slot
                 aria-busy={coldReadPending || undefined}
-                sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
+                sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+                {visibleError ? (
+                  <Box data-xdrive-system-dependencies-first-read-error role="alert"
+                    sx={{ width: '100%', maxHeight: 180, overflowY: 'auto', p: 1 }}>
+                    <XDriveStatusAlert tone="bad">{visibleError}</XDriveStatusAlert>
+                  </Box>
+                ) : null}
+              </Box>
             )}
             {!loading && snapshot && selectedPage === 'overview' && (
               <Box component="section" aria-label="系统依赖总览" data-xdrive-system-dependencies-overview>
