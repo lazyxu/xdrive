@@ -50,8 +50,10 @@ type mediaQueryOptions struct {
 	Formats            []string
 	Place              *mediaPlaceCell
 	Geo                *geoquery.Selection
-	PersonCluster      string
-	PersonIdentity     string
+	// Only the signed Owner cell-media endpoint constructs this server-private selection.
+	BaiduCell      *baiduPhotoMapCellSelection
+	PersonCluster  string
+	PersonIdentity string
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
