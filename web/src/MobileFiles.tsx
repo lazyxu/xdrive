@@ -565,6 +565,10 @@ export default function MobileFiles(props: Props) {
     props.searchSummary?.resultCount === null && !props.searchSummary?.error)
   // An accepted empty directory is real content. Never overwrite its message
   // or show a new spinner while a later first Range is still pending.
+  // The real CloudFiles first-Range receipt owns ordinary folder loading.
+  // Composite busy also includes unrelated Copy/Upload/Delete/Search work and
+  // must never hide an already verified empty directory.
+  const ownerDirectoryLoading = props.directoryLoading ?? props.loading
   const acceptedEmptyDirectoryRef = useRef<string | null>(null)
   const emptyDirectoryKey = section === 'browse' && !browseHome &&
     !props.searchActive && !props.trashActive && directoryID !== null
@@ -572,12 +576,12 @@ export default function MobileFiles(props: Props) {
   useEffect(() => {
     if (emptyDirectoryKey === null || totalCount > 0) {
       acceptedEmptyDirectoryRef.current = null
-    } else if (!props.loading && totalCount === 0 && props.virtualCollection) {
+    } else if (!ownerDirectoryLoading && totalCount === 0 && props.virtualCollection) {
       // A failed cold first read also ends loading but cannot confirm zero.
       // Only an accepted counted Server range certifies an empty directory.
       acceptedEmptyDirectoryRef.current = emptyDirectoryKey
     }
-  }, [emptyDirectoryKey, props.loading, props.virtualCollection, totalCount])
+  }, [emptyDirectoryKey, ownerDirectoryLoading, props.virtualCollection, totalCount])
   const keepAcceptedEmptyDirectory = totalCount === 0 &&
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
@@ -604,7 +608,6 @@ export default function MobileFiles(props: Props) {
   }
   // Composite Files busy may include Search/Operations. Only the CloudFiles
   // controller's directory GET can confirm this exact cold-read lifecycle.
-  const ownerDirectoryLoading = props.directoryLoading ?? props.loading
   if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true
   const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&
     coldReadAttemptRef.current.began
@@ -642,7 +645,13 @@ export default function MobileFiles(props: Props) {
     (trashReadState === 'unverified' || (trashReadState === 'error' && props.loading))
   const failedTrashEmpty = props.trashActive && totalCount === 0 &&
     trashReadState === 'error' && !props.loading
-  const zeroStatePending = (props.loading && !keepAcceptedEmptyDirectory && !verifiedTrashEmpty) || searchCountPending
+  // Search/Trash still own their genuine progress. A normal Browse folder
+  // uses only CloudFiles busy: a concurrent durable operation must not blank
+  // a verified-zero directory or defer its truthful empty state.
+  const zeroStateOwnerLoading = props.searchActive || props.trashActive
+    ? props.loading : ownerDirectoryLoading
+  const zeroStatePending = (zeroStateOwnerLoading && !keepAcceptedEmptyDirectory &&
+    !verifiedTrashEmpty) || searchCountPending
   const zeroStateLoading = props.searchActive && zeroStatePending && showArrangementLoading
   // Do not insert a padded zero-state loading panel for a request that
   // finishes before the next meaningful frame. An accepted empty directory
@@ -651,7 +660,7 @@ export default function MobileFiles(props: Props) {
   // Keep an identical silent slot from the first paint through an arbitrarily
   // slow Directory GET. Only a real counted result or terminal error changes
   // its content; no delayed network spinner is inserted during navigation.
-  const coldDirectoryFirstRead = coldUnconfirmedBrowse && props.loading
+  const coldDirectoryFirstRead = coldUnconfirmedBrowse && ownerDirectoryLoading
   // A cold Search COUNT is also an unresolved first Range. Reserve the same
   // empty-slot geometry before its 300ms *visual-only* delay instead of
   // inserting a new in-flow search panel when the timer fires.
