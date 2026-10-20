@@ -16,6 +16,7 @@ import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import {
   XDriveFileExplorerItemIcon,
   XDriveFileExplorerDetailsNameCell,
+  XDriveFileExplorerGridTileContent,
   XDriveFileExplorerItemName,
   xDriveFileTypeLabel,
   xDriveFileExplorerDetailsNormalRowHeight,
@@ -183,8 +184,8 @@ export function XDrivePublicShareReadOnlyExplorer({
             containIntrinsicSize: view === 'grid' ? '180px 140px' : undefined,
             px: view === 'grid' ? 1 : 1.5, py: view === 'grid' ? 1 : 0,
             gap: view === 'grid' ? 0.75 : 0,
-            border: view === 'grid' ? 1 : undefined,
-            borderColor: 'divider', borderRadius: view === 'grid' ? 2 : '4px',
+            border: view === 'grid' ? 0 : undefined,
+            borderColor: 'divider', borderRadius: view === 'grid' ? 1 : '4px',
             gridTemplateColumns: view === 'details'
               ? 'minmax(0,1fr) 168px minmax(110px,160px) 118px 106px' : undefined,
             bgcolor: selectedID === entry.id ? 'action.selected' : 'transparent',
@@ -206,15 +207,12 @@ export function XDrivePublicShareReadOnlyExplorer({
               label={<XDriveFileExplorerItemName name={entry.name} grid={false} />}
             />
           ) : (
-            <Stack direction="column" spacing={0.75} alignItems="center" sx={{ minWidth: 0, width: '100%', flex: 1 }}>
-              <Box sx={{ width: 72, height: 72, flex: '0 0 72px', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: 0 }}>
-                <XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={52} folderSize={52} />
-              </Box>
-              <Box data-xdrive-file-explorer-grid-name sx={{ width: '100%', minHeight: 32, textAlign: 'center' }}>
-                <XDriveFileExplorerItemName name={entry.name} grid />
-              </Box>
-            </Stack>
+            <XDriveFileExplorerGridTileContent
+              thumbnailWidth={72}
+              thumbnailHeight={72}
+              visual={<XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={52} folderSize={52} />}
+              label={<XDriveFileExplorerItemName name={entry.name} grid />}
+            />
           )}
           {view === 'details' && (
             <>

@@ -1,3 +1,11 @@
+## SH-P013 · 当前准确 100k Share 视觉浏览器实测（2026-10-20）
+
+`cca9875451e60cc991d18b698a55efec7bfc9b65` PG17 真100k元数据3组 [#39433239426](https://github.com/lazyxu/xdrive/actions/runs/39433239426) PASS（walk P50 11.230s），真实100k SHA不同 JPEG 物理 Local CAS、Wide1440 和 CDP390 Web 浏览器各n3 [#39433237016](https://github.com/lazyxu/xdrive/actions/runs/39433237016) PASS（Web首/后100 P50 318.885/228.164ms，Mobile模拟273.335/231.665ms；12/12 signed original SHA）。这是新 Grid 结构的源准确 CURRENT 而非 matched 产品加速。Desktop Agent / Desktop installed PWA / iOS Android installed PWA / WAN / 原生真机、H264/Live动态派生均 Not measured。本次证据修改会令新 HEAD 改变，Final Gate 和新 HEAD 专项必须再核验。
+
+## SH-P013 · Share/Owner 共用 Grid Tile 可视层（2026-10-20）
+
+- 已合入 SH-P012 原版符合冻结预算，SH-P013 仅 JSX 视觉结构抽取（无权限/API 共享、无吞吐优化）。新 HEAD PG17 100k Share 元数据、Chromium1440 与 CDP Mobile390 真实 100k JPEG n3 在本次专用 CI 待测，不能从代码推导新耗时或速度百分比。Native Electron/Go Agent、Windows/macOS 实机、已安装 PWA、真 iOS/Android、真实 WAN 和 Live 动态媒体仍 Not measured。图片/视频/Live thumbnail 派生授权与真实缩略图请求属于 #2205 后续独立切片。
+
 ## SH-P012 · 第一轮真实100k基线及完整 CI RED（2026-10-20）
 
 - **准确测试源** `1c4f91a5bbd7b9cd03b05d1f1794bc61388c7add`。独立 [100k PG17 元数据分页 SH-P001 #39421704471](https://github.com/lazyxu/xdrive/actions/runs/39421704471) **SUCCESS**，三组真实 100000 个 Node / 1000 pages；完整遍历 P50 **16.894s**，最大 page P95 **19.283ms**，最慢分页 **30.670ms**，每组 HTTP JSON bytes `11327793/11316793/11325793`。原始 [机器样本](performance-evidence/public-share-visual-parity-shp012/ci-run-39421704471.json)。冻结 60s walk、P95≤500ms、worst≤2000ms 均通过。

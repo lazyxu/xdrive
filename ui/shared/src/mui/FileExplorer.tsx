@@ -9,6 +9,7 @@ import {
   xDriveFileExplorerDetailsMobileRowHeight,
   XDriveFileExplorerItemName,
   XDriveFileExplorerDetailsNameCell,
+  XDriveFileExplorerGridTileContent,
 } from './FileExplorerItemPresentation'
 export {
   XDriveFileExplorerItemIcon,
@@ -4683,35 +4684,16 @@ export function XDriveFileExplorer({
             {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
           </Box>
         ) : null}
-        <Box
-          sx={{
-            width: gridMetrics.thumbnailWidth,
-            height: gridMetrics.thumbnailHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            borderRadius: 0,
-            position: 'relative',
-            flex: '0 0 auto',
-          }}
-        >
-          {thumbnailForItem(item)}
-          {availabilityIndicator(item, true)}
-          {!compactTouch && !renaming ? nativeDragOutHandle(item, 'grid') : null}
-        </Box>
-        <Box
-          data-xdrive-file-explorer-grid-name
-          sx={{
-            width: '100%',
-            minHeight: 32,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-          }}
-        >
-          {renderItemName(item, true)}
-        </Box>
+        <XDriveFileExplorerGridTileContent
+          thumbnailWidth={gridMetrics.thumbnailWidth}
+          thumbnailHeight={gridMetrics.thumbnailHeight}
+          visual={thumbnailForItem(item)}
+          overlay={<>
+            {availabilityIndicator(item, true)}
+            {!compactTouch && !renaming ? nativeDragOutHandle(item, 'grid') : null}
+          </>}
+          label={renderItemName(item, true)}
+        />
       </ButtonBase>
     )
   }

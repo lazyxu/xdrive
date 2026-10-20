@@ -1,0 +1,199 @@
+{
+  "work_item": "SH-P013",
+  "work_source_sha": "cca9875451e60cc991d18b698a55efec7bfc9b65",
+  "recorded_at": "2026-10-20",
+  "source_scoped_status": "SUCCESS source-exact physical regression, no production throughput optimization",
+  "optimization_before_after": "N/A (visual refactor; not matched original/candidate A/B)",
+  "scopes": "PG17 100k metadata-only, distinct physical JPEG browser 100k; NOT H264/Live/installed PWA/WAN",
+  "sources": {
+    "pg": "https://github.com/lazyxu/xdrive/actions/runs/39433239426",
+    "jpeg": "https://github.com/lazyxu/xdrive/actions/runs/39433237016"
+  },
+  "measured": {
+    "pg": {
+      "workload": "SH-P001/real-postgresql17-100k-keyset-public-folder-metadata",
+      "source": "EXACT_SOURCE_HEAD=cca9875451e60cc991d18b698a55efec7bfc9b65",
+      "n": 3,
+      "physical_CAS_originals": 0,
+      "status": "original CURRENT measurement (not BEFORE/AFTER optimization)",
+      "samples": [
+        {
+          "entries": 100000,
+          "http_body_bytes": 11321793,
+          "page_p50_ms": 10.991,
+          "page_p95_ms": 13.033,
+          "page_walk_ms": 11314,
+          "page_worst_ms": 20.021,
+          "pages": 1000,
+          "sample": "1",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 1695
+        },
+        {
+          "entries": 100000,
+          "http_body_bytes": 11319793,
+          "page_p50_ms": 10.993,
+          "page_p95_ms": 12.811,
+          "page_walk_ms": 11230,
+          "page_worst_ms": 19.883,
+          "pages": 1000,
+          "sample": "2",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 2048
+        },
+        {
+          "entries": 100000,
+          "http_body_bytes": 11324793,
+          "page_p50_ms": 10.978,
+          "page_p95_ms": 12.783,
+          "page_walk_ms": 11191,
+          "page_worst_ms": 21.085,
+          "pages": 1000,
+          "sample": "3",
+          "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+          "seed_ms": 1614
+        }
+      ],
+      "page_walk_p50_ms": 11230,
+      "page_p95_max_ms": 13.033,
+      "page_worst_max_ms": 21.085,
+      "pass_budget": true,
+      "after": null,
+      "speedup": null
+    },
+    "jpeg": {
+      "workload": "SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb",
+      "exact_source_head": "cca9875451e60cc991d18b698a55efec7bfc9b65",
+      "original_jpeg_cas": 100000,
+      "browser_sessions": 6,
+      "page_budget_ms": 2000,
+      "original_download_budget_ms": 5000,
+      "scope": "Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails",
+      "excluded": "Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion, 100k thumbnail decode and user-owned transfer cancellation",
+      "sessions": [
+        {
+          "width": 1440,
+          "sample": 1,
+          "first_page_ms": 318.88513499998953,
+          "next_page_ms": 226.72204999999667,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 81.58791200000269,
+          "next_download_ms": 64.63752200000454,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 1440,
+          "sample": 2,
+          "first_page_ms": 308.36435200000415,
+          "next_page_ms": 234.5982010000007,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 101.49425799999153,
+          "next_download_ms": 78.67443100000673,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 1440,
+          "sample": 3,
+          "first_page_ms": 323.71212399999786,
+          "next_page_ms": 228.16378699999768,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 79.89485300000524,
+          "next_download_ms": 70.52244200000132,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 1,
+          "first_page_ms": 273.3348960000003,
+          "next_page_ms": 190.9102489999932,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 77.96230999998807,
+          "next_download_ms": 66.73714799998561,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 2,
+          "first_page_ms": 276.61596499998996,
+          "next_page_ms": 234.96806800000195,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 76.66818200000853,
+          "next_download_ms": 66.24694400001317,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        },
+        {
+          "width": 390,
+          "sample": 3,
+          "first_page_ms": 269.71689699999115,
+          "next_page_ms": 231.66519100000733,
+          "first_rows": 100,
+          "next_rows": 100,
+          "first_download_ms": 73.2095990000089,
+          "next_download_ms": 62.35671100000036,
+          "actual_original_bytes": 1374,
+          "original_sha_verified": true,
+          "no_stale_rows": true,
+          "horizontal_overflow": false
+        }
+      ],
+      "original_bytes": 70893376,
+      "allocated_cas_bytes": 409604096,
+      "seed_excluded_ms": 93549.956,
+      "source_aggregate_sha256": "1e94e01ef63cd256e4da685115785ac99dc115079ea9d770d67384b15cb6352b",
+      "http_counts": {
+        "original_download_calls": 12,
+        "public_page_calls": 12,
+        "signed_ticket_calls": 12
+      },
+      "first_page_max_ms": 323.71212399999786,
+      "next_page_max_ms": 234.96806800000195,
+      "native_download_max_ms": 101.49425799999153,
+      "electron_main_maxrss_kib": 198140,
+      "electron_main_cpu_user_us": 972900,
+      "electron_main_cpu_system_us": 709289,
+      "all_passed": true
+    }
+  },
+  "derived": {
+    "pg_page_walk_p50_ms": 11230,
+    "pg_page_p95_max_ms": 13.033,
+    "pg_page_worst_max_ms": 21.085,
+    "jpeg_by_viewport": [
+      {
+        "width": 1440,
+        "first_page_p50_ms": 318.88513499998953,
+        "next_page_p50_ms": 228.16378699999768,
+        "first_page_max_ms": 323.71212399999786,
+        "next_page_max_ms": 234.5982010000007
+      },
+      {
+        "width": 390,
+        "first_page_p50_ms": 273.3348960000003,
+        "next_page_p50_ms": 231.66519100000733,
+        "first_page_max_ms": 276.61596499998996,
+        "next_page_max_ms": 234.96806800000195
+      }
+    ]
+  },
+  "accepted": true
+}

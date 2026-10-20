@@ -1,3 +1,7 @@
+## 后续 SH-P013 · Grid Tile 共用纯展示层（2026-10-20）
+
+SH-P012 #2240 已经完成准确 HEAD 100k 物理/元数据专项、77-job 全量 CI/Final Gate，并以一个工作提交合入。后续 Owner/Share 中号 Grid 视觉容器合并见 [SH-P013](public-share-grid-parity-shp013.md)。原来 SH-P012 的基线不是 SH-P013 的优化前后比较，未测新 HEAD 不写新速度。
+
 ## SH-P012 · 已完成 CI 失败归因与源准确修复（2026-10-20）
 
 - 当前测试提交 `3c3fca909acc47eef0852c14d7ca4f8d6734452c` 的 [77-job 全量 CI #39424822307](https://github.com/lazyxu/xdrive/actions/runs/39424822307) **RED**：`desktop-tests` 真实 3415 tests / 3413 passed / 1 failed / 1 skipped，随后 `final-gate` 失败。唯一 RED 用例 U07 Unicode 的原静态检查误把 `title={name}` 中的两次属性传值，算入两次实际 JSX 文字节点，故断言期望 2、实际 4。Owner/Public 正式展示叶子各含 Grid/Details 两次**文字**节点是正确行为。

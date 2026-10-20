@@ -84,6 +84,37 @@ export function XDriveFileExplorerDetailsNameCell({
   )
 }
 
+// Owner and public Share use one neutral Grid visual/title layout.
+// No authenticated API, mutation or capability is imported into this component.
+export function XDriveFileExplorerGridTileContent({
+  thumbnailWidth, thumbnailHeight, visual, overlay, label,
+}: {
+  thumbnailWidth: number
+  thumbnailHeight: number
+  visual: ReactNode
+  overlay?: ReactNode
+  label: ReactNode
+}) {
+  return (
+    <>
+      <Box sx={{
+        width: thumbnailWidth, height: thumbnailHeight,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden', borderRadius: 0, position: 'relative', flex: '0 0 auto',
+      }}>
+        {visual}
+        {overlay}
+      </Box>
+      <Box data-xdrive-file-explorer-grid-name sx={{
+        width: '100%', minHeight: 32, display: 'flex',
+        alignItems: 'flex-start', justifyContent: 'center',
+      }}>
+        {label}
+      </Box>
+    </>
+  )
+}
+
 export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
   if (kind === 'dir') return 'folder'
   const extension = explorerExtension(name)
