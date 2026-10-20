@@ -1,3 +1,19 @@
+## P066 · original true physical 100k post-Copy lifecycle second Owner admission measured n3 (2026-10-20)
+
+| Scope | Linux Go Server / PG17 / LocalCAS | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android/iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| Actual 100k SHA-distinct physical originals, full authenticated Copy→Undo→Trash, then second real HTTP enqueue and queued Cancel | Previous exact source n3 passed, first P50 **133.703ms**, second **173.938ms**, Copy Worker **352330.019ms**; source-exact [native #39293101256](https://github.com/lazyxu/xdrive/actions/runs/39293101256); evidence HEAD revalidation needed | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+Original unchanged full-cycle second POST <=120000ms in all samples; no product AFTER/speedup; historic 344–642s long-tail P064 #2136 not explained. The measured source's full 77-job CI passed; the evidence-amended head must rerun all acceptance. [Permanent 3 real sample rows and original safety counters](performance-evidence/p066-original-post-lifecycle-enqueue/ci-run-39293101256.json). Do not treat this server-only test as OS-installed PWA, actual WAN/4GiB, true Live/HEVC, or desktop/media IPC.
+
+## P066 · 原版100k物理Copy完整生命周期后再次入队（2026-10-20）
+
+| 本次新负载 | Linux Go Server/PG17 | Desktop Electron/Agent | Wide Web | Mobile Web | Desktop installed PWA | Android/iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 三份100k SHA不同实际物理CAS，认证Copy→Undo→Trash完成后再次Original Owner HTTP POST并采样SQL与PG等待 | **Not measured n=0**，专用新CI首次执行；原版两个POST都≤120s，AFTER=N/A | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+已有P065首次HTTP POST P50=116.201ms，P064后续历史344–642秒RED，不能当作这个新场景的同源A/B，不能宣布性能改进。详细[P066合同](p066-original-copy-post-lifecycle-enqueue.md)；P064 #2136/图库IPC #1185仍Draft阻塞，Race及现有File/Folder Share+ZIP不变。
+
 ## P065 diagnostic platform scope — actual PostgreSQL17 100k Copy original enqueue (2026-10-20)
 
 [P065 original diagnostic #39274757051](https://github.com/lazyxu/xdrive/actions/runs/39274757051) source `a9ffbd60b71e403eab475636aac53fd43e139142`: genuine Server Gin/PG17/LocalCAS authenticated 100k distinct physical SHA Copy *HTTP admission only*, n3 original 111.889/114.464/109.733ms P50 111.889ms; one original recursive-size SQL trace ~100ms each, zero 250ms PG activity polls, no Worker/copy execution. Previous 344–642s original long-tail still NOT explained; no product optimization/AFTER. Status **original measured, diagnostic job success; formatting/full CI RED, rebuilt HEAD pending**. Machine JSON [here](performance-evidence/p065-original-copy-admission/ci-run-39274757051.json).
