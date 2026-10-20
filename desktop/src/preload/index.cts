@@ -1,9 +1,14 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
 type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => void
+type XDriveIPCProgressPacket = {
+  request_id?: unknown; loaded_bytes?: unknown; total_bytes?: unknown; alpha_mask?: unknown
+}
 let mediaBinaryProgressSequence = 0
 
-/** Progress is tied to the sender-owned viewport request and removed at settlement. */
+/** Source-observed first/final progress rides with the completed binary IPC
+ * reply, preventing separately queued Main progress from being lost at cleanup.
+ */
 function invokeMediaBinaryWithProgress(
   channel: string,
   args: unknown[],
@@ -12,27 +17,52 @@ function invokeMediaBinaryWithProgress(
   if (!onProgress) return ipcRenderer.invoke(channel, ...args, false)
   const requestID = typeof args[1] === 'string' && args[1].length > 0
     ? args[1]
-    : `binary-${Date.now()}-${++mediaBinaryProgressSequence}`
+    : 'binary-' + Date.now() + '-' + (++mediaBinaryProgressSequence)
   args[1] = requestID
   const progressChannel = 'agent:media-binary-progress'
-  const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, payload: unknown) => {
+  let delivered = false
+  let maxLoaded = -1
+  const notify = (payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
-    const value = payload as {
-      request_id?: unknown; loaded_bytes?: unknown; total_bytes?: unknown; alpha_mask?: unknown
-    }
+    const value = payload as XDriveIPCProgressPacket
     if (value.request_id !== requestID ||
-        typeof value.loaded_bytes !== 'number' || !Number.isFinite(value.loaded_bytes)) return
-    const total = typeof value.total_bytes === 'number' && Number.isFinite(value.total_bytes) &&
+        typeof value.loaded_bytes !== 'number' || !Number.isSafeInteger(value.loaded_bytes) ||
+        value.loaded_bytes < 0 || value.loaded_bytes < maxLoaded ||
+        (delivered && value.loaded_bytes === maxLoaded)) return
+    const total = typeof value.total_bytes === 'number' && Number.isSafeInteger(value.total_bytes) &&
       value.total_bytes > 0 ? value.total_bytes : undefined
     const alphaMask = value.alpha_mask === null ? null
       : value.alpha_mask === '' ? ''
         : typeof value.alpha_mask === 'string' && value.alpha_mask.length <= 4120 &&
           /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value.alpha_mask)
           ? value.alpha_mask : undefined
-    try { onProgress(value.loaded_bytes, total, alphaMask) } catch { /* UI subscriber cannot break IPC */ }
+    delivered = true
+    maxLoaded = value.loaded_bytes
+    try { onProgress(value.loaded_bytes, total, alphaMask) } catch { /* observer never controls Agent I/O */ }
   }
+  const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, payload: unknown) => notify(payload)
   ipcRenderer.on(progressChannel, listener)
-  return ipcRenderer.invoke(channel, ...args, true).finally(() => {
+  return ipcRenderer.invoke(channel, ...args, true).then((response: unknown) => {
+    const value = response as {
+      ok?: unknown
+      data?: { data?: unknown; ipc_progress_receipt?: {
+        first?: XDriveIPCProgressPacket; last?: XDriveIPCProgressPacket
+      } }
+    } | null
+    const body = value?.data?.data
+    const first = value?.data?.ipc_progress_receipt?.first
+    const last = value?.data?.ipc_progress_receipt?.last
+    // Only sender-matched actual upstream packets can complete progress:
+    // no invented completion on error, stale ID, or truncated response.
+    if (value?.ok === true && body instanceof ArrayBuffer &&
+        first?.request_id === requestID && first.loaded_bytes === 0 &&
+        last?.request_id === requestID && typeof last.loaded_bytes === 'number' &&
+        Number.isSafeInteger(last.loaded_bytes) && last.loaded_bytes === body.byteLength) {
+      if (!delivered) notify(first)
+      if (maxLoaded < last.loaded_bytes) notify(last)
+    }
+    return response
+  }).finally(() => {
     ipcRenderer.removeListener(progressChannel, listener)
   })
 }

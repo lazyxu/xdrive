@@ -1,0 +1,884 @@
+{
+  "workload": "P0-C2 genuine Desktop 100k media IPC binary progress (source-exact)",
+  "measured_source_sha": "bc34f6818be045ce9114271ff97f6b3f9a62242d",
+  "measured_ci_run_id": 39384924837,
+  "measured_ci_run_url": "https://github.com/lazyxu/xdrive/actions/runs/39384924837",
+  "measured_ci_job_id": 118503153509,
+  "artifact_id": 12248020495,
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/39384924837/artifacts/12248020495",
+  "measured_ci_conclusion": "success",
+  "measured_job_conclusion": "success",
+  "fixture": {
+    "logical_assets": 100000,
+    "physical_nodes": 115000,
+    "paired_live_assets": 15000,
+    "runner": "Ubuntu 24.04 Linux Electron Xvfb; true Gin PostgreSQL17 CAS Agent binary IPC"
+  },
+  "verification": {
+    "sessions": 3,
+    "progress_on_requests": 9,
+    "progress_off_requests": 9,
+    "progress_on_last_byte_valid": 9,
+    "progress_off_zero_callbacks": 9,
+    "total_progress_on_callback_events": 19,
+    "original_body_bytes_each_mode": 229848
+  },
+  "decision": {
+    "runtime_perf_change": false,
+    "matched_original_candidate_ab": false,
+    "after_speedup": null,
+    "accepted_current_functional_progress_terminal": true,
+    "current_pr_remains_draft": true,
+    "requires_new_final_sha_native_and_full_ci": true
+  },
+  "source_log_report": {
+    "name": "gallery-desktop-real-main-renderer-100k",
+    "status": "measured-real-Desktop-Renderer-Main-Agent-progress-post-first-paint",
+    "samples": [
+      {
+        "sample": 1,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 7526.900000000023,
+          "firstImageElementMs": 7838.700000000012,
+          "firstImageDecodedMs": 7878.600000000035,
+          "firstImageTwoRAFMs": 7914.400000000023,
+          "first12DecodedTwoRAFMs": 8177.5,
+          "decodedImages": 12,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 26000000,
+          "longestLongTaskMs": 118,
+          "longTasks": [
+            {
+              "startMs": 7460.799999999988,
+              "durationMs": 67,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 7588.700000000012,
+              "durationMs": 100,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 7698.200000000012,
+              "durationMs": 112,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 7944.799999999988,
+              "durationMs": 118,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 24,
+          "DerivativeOpenSuccess": 36,
+          "DerivativePutSuccess": 18
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "off",
+            "on"
+          ],
+          "rows": [
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.2000000000116415,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 2,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.5
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.7999999999883585,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.400000000023283
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.5
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.900000000023283,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.900000000023283,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.7000000000116415
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 2.2000000000116415,
+              "onMs": 2,
+              "onMinusOffMs": -0.20000000001164153
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.5,
+              "onMs": 1.7999999999883585,
+              "onMinusOffMs": 0.29999999998835847
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.900000000023283,
+              "onMs": 1.900000000023283,
+              "onMinusOffMs": 0
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 6,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 8579,
+              "rssKiB": 245412,
+              "cpuTicks": 158
+            },
+            "agent": {
+              "pid": 8530,
+              "rssKiB": 18832,
+              "cpuTicks": 9
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 8579,
+              "rssKiB": 251580,
+              "cpuTicks": 178
+            },
+            "agent": {
+              "pid": 8530,
+              "rssKiB": 20300,
+              "cpuTicks": 11
+            }
+          },
+          "maxSampledRendererRssKiB": 252372,
+          "maxSampledAgentRssKiB": 20300,
+          "rendererCpuTicksDelta": 20,
+          "agentCpuTicksDelta": 2,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 245412,
+        "rendererWorkingSetKiBAfterProbe": 251580,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 40616.3,
+        "agentRssBeforeBytes": 14352384,
+        "agentRssAfterBytes": 20795392,
+        "agentRssDeltaBytes": 6443008
+      },
+      {
+        "sample": 2,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1582,
+          "firstImageElementMs": 1785.4000000000233,
+          "firstImageDecodedMs": 1852.8000000000466,
+          "firstImageTwoRAFMs": 1888.5,
+          "first12DecodedTwoRAFMs": 2065.9000000000233,
+          "decodedImages": 16,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 24500000,
+          "longestLongTaskMs": 82,
+          "longTasks": [
+            {
+              "startMs": 1520.600000000035,
+              "durationMs": 61,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1603.100000000035,
+              "durationMs": 82,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 26,
+          "DerivativeOpenSuccess": 36,
+          "DerivativePutSuccess": 19
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "on",
+            "off"
+          ],
+          "rows": [
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.099999999976717,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.7000000000116415
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.7000000000116415
+                }
+              ],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.7999999999883585,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.2999999999883585
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.400000000023283
+                }
+              ],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.5,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 1.1999999999534339
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.1999999999534339
+                }
+              ],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 24500000,
+              "heapEndBytes": 24500000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 1.5,
+              "onMs": 2.099999999976717,
+              "onMinusOffMs": 0.5999999999767169
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.5,
+              "onMs": 1.7999999999883585,
+              "onMinusOffMs": 0.29999999998835847
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.5,
+              "onMs": 1.5,
+              "onMinusOffMs": 0
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 6,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 9030,
+              "rssKiB": 228444,
+              "cpuTicks": 131
+            },
+            "agent": {
+              "pid": 8982,
+              "rssKiB": 18420,
+              "cpuTicks": 8
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 9030,
+              "rssKiB": 241172,
+              "cpuTicks": 168
+            },
+            "agent": {
+              "pid": 8982,
+              "rssKiB": 20764,
+              "cpuTicks": 11
+            }
+          },
+          "maxSampledRendererRssKiB": 241312,
+          "maxSampledAgentRssKiB": 20760,
+          "rendererCpuTicksDelta": 37,
+          "agentCpuTicksDelta": 3,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 228444,
+        "rendererWorkingSetKiBAfterProbe": 241172,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 40637.733,
+        "agentRssBeforeBytes": 14319616,
+        "agentRssAfterBytes": 21266432,
+        "agentRssDeltaBytes": 6946816
+      },
+      {
+        "sample": 3,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1552.3999999999069,
+          "firstImageElementMs": 1796.6999999999534,
+          "firstImageDecodedMs": 1881,
+          "firstImageTwoRAFMs": 1908.0999999999767,
+          "first12DecodedTwoRAFMs": 2095,
+          "decodedImages": 16,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 26000000,
+          "longestLongTaskMs": 98,
+          "longTasks": [
+            {
+              "startMs": 1492.6999999999534,
+              "durationMs": 60,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1613.7999999999302,
+              "durationMs": 98,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 23,
+          "DerivativeOpenSuccess": 32,
+          "DerivativePutSuccess": 16
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "off",
+            "on"
+          ],
+          "rows": [
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.400000000023283,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.099999999976717,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.7000000000698492
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.8000000000465661
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.7999999999301508,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 2,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 3893,
+                  "total": 24979,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.7000000000698492
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.900000000023283,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 2.800000000046566,
+              "callbackCount": 2,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 2.5
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 2.599999999976717
+                }
+              ],
+              "heapStartBytes": 26000000,
+              "heapEndBytes": 26000000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 2.400000000023283,
+              "onMs": 2.099999999976717,
+              "onMinusOffMs": -0.30000000004656613
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.7999999999301508,
+              "onMs": 2,
+              "onMinusOffMs": 0.2000000000698492
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.900000000023283,
+              "onMs": 2.800000000046566,
+              "onMinusOffMs": 0.9000000000232831
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 7,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 9450,
+              "rssKiB": 226544,
+              "cpuTicks": 132
+            },
+            "agent": {
+              "pid": 9404,
+              "rssKiB": 18536,
+              "cpuTicks": 7
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 9450,
+              "rssKiB": 246396,
+              "cpuTicks": 174
+            },
+            "agent": {
+              "pid": 9404,
+              "rssKiB": 20712,
+              "cpuTicks": 12
+            }
+          },
+          "maxSampledRendererRssKiB": 247020,
+          "maxSampledAgentRssKiB": 20712,
+          "rendererCpuTicksDelta": 42,
+          "agentCpuTicksDelta": 5,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 226528,
+        "rendererWorkingSetKiBAfterProbe": 246396,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 40436.561,
+        "agentRssBeforeBytes": 14331904,
+        "agentRssAfterBytes": 21209088,
+        "agentRssDeltaBytes": 6877184
+      }
+    ],
+    "n": 3,
+    "progressProbeEnabled": true,
+    "progressMedians": {
+      "off": {
+        "count": 9,
+        "elapsedP50Ms": 1.7999999999301508,
+        "actualBodyBytes": 229848,
+        "callbackEvents": 0
+      },
+      "on": {
+        "count": 9,
+        "elapsedP50Ms": 2,
+        "actualBodyBytes": 229848,
+        "callbackEvents": 19
+      }
+    },
+    "progressPairCount": 9,
+    "medianClickToFirstDecodedPaintMs": 1908.0999999999767,
+    "medianClickToFirst12DecodedMs": 2095,
+    "worstLongTaskMs": 118,
+    "scope": "Real Electron Desktop App (Main/preload/Renderer) to Agent IPC, Gin/PostgreSQL/CAS and HTMLImageElement.decode. Browser activation, not complete process cold launch.",
+    "exclusions": "Fixture seeding, process boot, cross-network, real 4K video codec, physical Windows, peak RSS and actual GPU present timestamp. Progress probe tests real source-exact 3 JPEG thumbnail IPC ON/OFF pairs per 100k session AFTER decoded Gallery, not rapid viewport scroll cancellation or RAW-HD."
+  }
+}

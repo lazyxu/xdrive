@@ -1,0 +1,939 @@
+{
+  "title": "Real production Desktop Renderer→Preload→Main→Go Agent 100k Gallery media loading progress",
+  "source_run": "https://github.com/lazyxu/xdrive/actions/runs/37950975821",
+  "source_job": "https://github.com/lazyxu/xdrive/actions/runs/37950975821/job/113889354943",
+  "measured_commit": "8cf570d32f9bb096822a906f870fd101d69a5fc6",
+  "data_scope": "Production Electron Main/Preload/Renderer, local Go Agent authenticated against PostgreSQL17/Gin/CAS, 100k logical media and 115k physical nodes incl 15k Live pairs, three fresh Desktop runs. After first 12 decoded Gallery images measure three same-node/revision ON/OFF IPC thumbnails per run.",
+  "computed_summary": {
+    "sessions": 3,
+    "off_requests": 9,
+    "on_requests": 9,
+    "actual_progress_callback_events": 27,
+    "actual_progress_bytes": 229848,
+    "off_p50_ms": 1.6000000000349246,
+    "on_p50_ms": 1.7000000000116415,
+    "paired_delta_p50_ms": 0.1000000000349246,
+    "first_image_two_raf_p50_ms": 1863.5999999999767,
+    "first12_two_raf_p50_ms": 2261.100000000006,
+    "renderer_sampled_rss_extra_kib_per_session": [
+      6932,
+      13820,
+      20024
+    ],
+    "agent_sampled_rss_extra_kib_per_session": [
+      956,
+      2540,
+      1364
+    ],
+    "renderer_cpu_tick_delta_per_session": [
+      24,
+      29,
+      40
+    ],
+    "agent_cpu_tick_delta_per_session": [
+      3,
+      4,
+      4
+    ]
+  },
+  "acceptance": {
+    "exact_three_independent_100k_sessions": true,
+    "nine_on_and_nine_off": true,
+    "all_on_callbacks_byte_exact": true,
+    "off_has_no_callbacks": true,
+    "first_image_p50_under_2s": true,
+    "sparse_virtual_tiles": true,
+    "all_source_real_renderer_agent_metrics_present": true
+  },
+  "interpretation": "Accepted real request-scoped progress delivery and bounded first decoded paint in this 100k Desktop session. ON/OFF on the same node are sequential and warm-cache/order affected; ±sub-ms differences are noise, no material speedup claim. Sampling captures CPU/renderer/Agent RSS across all six post-Gallery requests, not mode-specific peaks. Gallery Tile UI progress callback itself is not separately counted; direct real preload API path is tested. Full PR CI after evidence amendment still required.",
+  "report": {
+    "name": "gallery-desktop-real-main-renderer-100k",
+    "status": "measured-real-Desktop-Renderer-Main-Agent-progress-post-first-paint",
+    "samples": [
+      {
+        "sample": 1,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1562.3999999999942,
+          "firstImageElementMs": 1751.1999999999825,
+          "firstImageDecodedMs": 1783.2999999999884,
+          "firstImageTwoRAFMs": 1810.1000000000058,
+          "first12DecodedTwoRAFMs": 2261.100000000006,
+          "decodedImages": 18,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 23100000,
+          "longestLongTaskMs": 111,
+          "longTasks": [
+            {
+              "startMs": 1502.6000000000058,
+              "durationMs": 60,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1631.1000000000058,
+              "durationMs": 99,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 2024.7999999999884,
+              "durationMs": 111,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 27,
+          "DerivativeOpenSuccess": 38,
+          "DerivativePutSuccess": 19
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "off",
+            "on"
+          ],
+          "rows": [
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.1999999999825377,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 1.7000000000116415,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.3000000000174623
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.3000000000174623
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.3999999999941792
+                }
+              ],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.6000000000058208,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.8999999999941792,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.599999999976717
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.6999999999825377
+                }
+              ],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.6000000000058208,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-1-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.6999999999825377,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 1.3999999999941792
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.5
+                }
+              ],
+              "heapStartBytes": 23100000,
+              "heapEndBytes": 23100000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 2.1999999999825377,
+              "onMs": 1.7000000000116415,
+              "onMinusOffMs": -0.49999999997089617
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.6000000000058208,
+              "onMs": 1.8999999999941792,
+              "onMinusOffMs": 0.29999999998835847
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.6000000000058208,
+              "onMs": 1.6999999999825377,
+              "onMinusOffMs": 0.09999999997671694
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 9,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 8218,
+              "rssKiB": 236220,
+              "cpuTicks": 158
+            },
+            "agent": {
+              "pid": 8170,
+              "rssKiB": 19260,
+              "cpuTicks": 8
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 8218,
+              "rssKiB": 242092,
+              "cpuTicks": 182
+            },
+            "agent": {
+              "pid": 8170,
+              "rssKiB": 20216,
+              "cpuTicks": 11
+            }
+          },
+          "maxSampledRendererRssKiB": 243152,
+          "maxSampledAgentRssKiB": 20216,
+          "rendererCpuTicksDelta": 24,
+          "agentCpuTicksDelta": 3,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 236220,
+        "rendererWorkingSetKiBAfterProbe": 242092,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 39989.31,
+        "agentRssBeforeBytes": 15118336,
+        "agentRssAfterBytes": 20705280,
+        "agentRssDeltaBytes": 5586944
+      },
+      {
+        "sample": 2,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1603.899999999965,
+          "firstImageElementMs": 1863.6999999999534,
+          "firstImageDecodedMs": 1934.2999999999884,
+          "firstImageTwoRAFMs": 1963.5999999999767,
+          "first12DecodedTwoRAFMs": 2368.5,
+          "decodedImages": 19,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 29400000,
+          "longestLongTaskMs": 102,
+          "longTasks": [
+            {
+              "startMs": 1551.399999999965,
+              "durationMs": 52,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 2210.5,
+              "durationMs": 102,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 28,
+          "DerivativeOpenSuccess": 36,
+          "DerivativePutSuccess": 19
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "on",
+            "off"
+          ],
+          "rows": [
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.199999999953434,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.6999999999534339
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.6999999999534339
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.8999999999650754
+                }
+              ],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 1.8000000000465661,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.6999999999534339,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.3999999999650754
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.3999999999650754
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.3999999999650754
+                }
+              ],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.6000000000349246,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.8999999999650754,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 1.599999999976717
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.7000000000116415
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.7999999999883585
+                }
+              ],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-2-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.7000000000116415,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 29400000,
+              "heapEndBytes": 29400000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 1.8000000000465661,
+              "onMs": 2.199999999953434,
+              "onMinusOffMs": 0.39999999990686774
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.6000000000349246,
+              "onMs": 1.6999999999534339,
+              "onMinusOffMs": 0.09999999991850927
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.7000000000116415,
+              "onMs": 1.8999999999650754,
+              "onMinusOffMs": 0.19999999995343387
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 9,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 8628,
+              "rssKiB": 232304,
+              "cpuTicks": 153
+            },
+            "agent": {
+              "pid": 8575,
+              "rssKiB": 19968,
+              "cpuTicks": 9
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 8628,
+              "rssKiB": 245440,
+              "cpuTicks": 182
+            },
+            "agent": {
+              "pid": 8575,
+              "rssKiB": 22508,
+              "cpuTicks": 13
+            }
+          },
+          "maxSampledRendererRssKiB": 246124,
+          "maxSampledAgentRssKiB": 22508,
+          "rendererCpuTicksDelta": 29,
+          "agentCpuTicksDelta": 4,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 232304,
+        "rendererWorkingSetKiBAfterProbe": 245440,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 39489.401,
+        "agentRssBeforeBytes": 15110144,
+        "agentRssAfterBytes": 23048192,
+        "agentRssDeltaBytes": 7938048
+      },
+      {
+        "sample": 3,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1505.5999999999767,
+          "firstImageElementMs": 1794.5,
+          "firstImageDecodedMs": 1847.7999999999884,
+          "firstImageTwoRAFMs": 1863.5999999999767,
+          "first12DecodedTwoRAFMs": 2103.2999999999884,
+          "decodedImages": 12,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 27600000,
+          "longestLongTaskMs": 117,
+          "longTasks": [
+            {
+              "startMs": 129.89999999996508,
+              "durationMs": 56,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1440.5,
+              "durationMs": 65,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1607.399999999965,
+              "durationMs": 117,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 23,
+          "DerivativeOpenSuccess": 30,
+          "DerivativePutSuccess": 16
+        },
+        "sourceExactMediaProgress": {
+          "kind": "actual-production-Electron-preload-Main-Agent-binary-byte-progress",
+          "sourceCount": 100000,
+          "modes": [
+            "off",
+            "on"
+          ],
+          "rows": [
+            {
+              "mode": "off",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-0-off",
+              "bodyBytes": 26549,
+              "elapsedMs": 2.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-0-on",
+              "bodyBytes": 26549,
+              "elapsedMs": 1.7000000000116415,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 26549,
+              "lastReportedTotal": 26549,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 26549,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.5
+                },
+                {
+                  "loaded": 26549,
+                  "total": 26549,
+                  "atMs": 1.5
+                }
+              ],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-1-off",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-1-on",
+              "bodyBytes": 24979,
+              "elapsedMs": 1.6000000000349246,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 24979,
+              "lastReportedTotal": 24979,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 24979,
+                  "atMs": 1.400000000023283
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.400000000023283
+                },
+                {
+                  "loaded": 24979,
+                  "total": 24979,
+                  "atMs": 1.400000000023283
+                }
+              ],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            },
+            {
+              "mode": "off",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-2-off",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.5,
+              "callbackCount": 0,
+              "firstReportedBytes": null,
+              "lastReportedBytes": null,
+              "lastReportedTotal": null,
+              "callbackRows": [],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            },
+            {
+              "mode": "on",
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "revision": 1,
+              "requestID": "bench-media-progress-3-2-on",
+              "bodyBytes": 25088,
+              "elapsedMs": 1.8999999999650754,
+              "callbackCount": 3,
+              "firstReportedBytes": 0,
+              "lastReportedBytes": 25088,
+              "lastReportedTotal": 25088,
+              "callbackRows": [
+                {
+                  "loaded": 0,
+                  "total": 25088,
+                  "atMs": 1.599999999976717
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.599999999976717
+                },
+                {
+                  "loaded": 25088,
+                  "total": 25088,
+                  "atMs": 1.7999999999883585
+                }
+              ],
+              "heapStartBytes": 27600000,
+              "heapEndBytes": 27600000
+            }
+          ],
+          "pairs": [
+            {
+              "itemIndex": 0,
+              "nodeID": 99602,
+              "bodyBytes": 26549,
+              "offMs": 2.5,
+              "onMs": 1.7000000000116415,
+              "onMinusOffMs": -0.7999999999883585
+            },
+            {
+              "itemIndex": 1,
+              "nodeID": 95952,
+              "bodyBytes": 24979,
+              "offMs": 1.5,
+              "onMs": 1.6000000000349246,
+              "onMinusOffMs": 0.1000000000349246
+            },
+            {
+              "itemIndex": 2,
+              "nodeID": 92302,
+              "bodyBytes": 25088,
+              "offMs": 1.5,
+              "onMs": 1.8999999999650754,
+              "onMinusOffMs": 0.3999999999650754
+            }
+          ],
+          "noObserverTransfers": 3,
+          "observedTransfers": 3,
+          "realObserverEvents": 9,
+          "totalVerifiedObservedBytes": 76616,
+          "limits": "3 real JPEG-backed thumbnail assets per 100k fixture, exact revision and per-request ID. Warm-cache/ordering may affect timing. No production code modification, real viewport cancellation not measured here."
+        },
+        "sourceProgressResources": {
+          "before": {
+            "renderer": {
+              "pid": 9034,
+              "rssKiB": 223084,
+              "cpuTicks": 140
+            },
+            "agent": {
+              "pid": 8992,
+              "rssKiB": 19024,
+              "cpuTicks": 7
+            }
+          },
+          "after": {
+            "renderer": {
+              "pid": 9034,
+              "rssKiB": 242472,
+              "cpuTicks": 180
+            },
+            "agent": {
+              "pid": 8992,
+              "rssKiB": 20388,
+              "cpuTicks": 11
+            }
+          },
+          "maxSampledRendererRssKiB": 243108,
+          "maxSampledAgentRssKiB": 20388,
+          "rendererCpuTicksDelta": 40,
+          "agentCpuTicksDelta": 4,
+          "sampling": "Linux /proc 5ms sampled VmRSS (not exact peak), CPU in scheduler ticks, across all six paired binary IPC requests"
+        },
+        "rendererWorkingSetKiBSnapshot": 222972,
+        "rendererWorkingSetKiBAfterProbe": 242472,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 39060.142,
+        "agentRssBeforeBytes": 15114240,
+        "agentRssAfterBytes": 20877312,
+        "agentRssDeltaBytes": 5763072
+      }
+    ],
+    "n": 3,
+    "progressProbeEnabled": true,
+    "progressMedians": {
+      "off": {
+        "count": 9,
+        "elapsedP50Ms": 1.6000000000349246,
+        "actualBodyBytes": 229848,
+        "callbackEvents": 0
+      },
+      "on": {
+        "count": 9,
+        "elapsedP50Ms": 1.7000000000116415,
+        "actualBodyBytes": 229848,
+        "callbackEvents": 27
+      }
+    },
+    "progressPairCount": 9,
+    "medianClickToFirstDecodedPaintMs": 1863.5999999999767,
+    "medianClickToFirst12DecodedMs": 2261.100000000006,
+    "worstLongTaskMs": 117,
+    "scope": "Real Electron Desktop App (Main/preload/Renderer) to Agent IPC, Gin/PostgreSQL/CAS and HTMLImageElement.decode. Browser activation, not complete process cold launch.",
+    "exclusions": "Fixture seeding, process boot, cross-network, real 4K video codec, physical Windows, peak RSS and actual GPU present timestamp. Progress probe tests real source-exact 3 JPEG thumbnail IPC ON/OFF pairs per 100k session AFTER decoded Gallery, not rapid viewport scroll cancellation or RAW-HD."
+  }
+}
