@@ -39,6 +39,13 @@ export type XDriveServiceDependency = {
   // Weak fixed caddy:80 reverse-proxy GET when trusted Host Control is missing.
   // Never upgrades installation, Docker health, TLS or desired-revision evidence.
   caddy_internal_http_state?: 'reachable' | 'unavailable'
+  // Fixed, nonsecret Host Control observation blocker when no trusted Caddy snapshot exists.
+  // Never interpret a reason as evidence of installation, TLS, or applied revisions.
+  caddy_host_witness_reason?:
+    | 'control-not-configured'
+    | 'heartbeat-missing' | 'heartbeat-unreadable' | 'heartbeat-invalid' | 'heartbeat-stale'
+    | 'snapshot-missing' | 'snapshot-unreadable' | 'snapshot-invalid' | 'snapshot-stale'
+    | 'snapshot-invalid-or-changing'
   // Trusted Host Manager observation of one fixed photo-face container;
   // NEVER a saved/effective model revision or a model Info health response.
   photo_host_runtime_state?: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'

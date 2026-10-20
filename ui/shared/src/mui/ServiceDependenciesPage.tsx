@@ -212,6 +212,19 @@ const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   'not-available': '尚无安全配置执行接口',
 }
 
+const caddyHostWitnessHints: Record<NonNullable<XDriveServiceDependency['caddy_host_witness_reason']>, string> = {
+  'control-not-configured': '运行中 Server 没有配置可信 Host Control 目录；核对版本和只读挂载。',
+  'heartbeat-missing': '宿主心跳在 Server 视角缺失；核对 Host Control 采样器和 /host-control 挂载。',
+  'heartbeat-unreadable': 'Server 无法读取心跳元数据；核对运行用户、目录权限及 UID/GID/ACL。',
+  'heartbeat-invalid': '心跳不是可信普通文件；不能据此推断容器或 TLS 状态。',
+  'heartbeat-stale': '宿主心跳过期或时钟异常；检查 Host Control Runner 是否持续采样。',
+  'snapshot-missing': 'Caddy 快照在 Server 视角缺失；检查只读观察器是否生成快照，再核对挂载与 UID/GID/ACL。',
+  'snapshot-unreadable': 'Server 无法读取快照元数据；检查 /host-control 绑定挂载及权限。',
+  'snapshot-invalid': 'Caddy 快照不是可信普通文件；不能采信运行状态。',
+  'snapshot-stale': 'Caddy 快照过期或时钟异常；检查观察器采样周期和实际 Server 版本。',
+  'snapshot-invalid-or-changing': '快照不符合可信格式，或采样期间发生变化；检查采样器与宿主/Server 版本。',
+}
+
 function ServiceRow({ service }: { service: XDriveServiceDependency }) {
   const [showLifecycleEvidence, setShowLifecycleEvidence] = useState(false)
   // Baidu's static-map health is manual/quota-consuming. An unrun probe is
@@ -258,7 +271,12 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
           {service.id === 'caddy' && service.installation_state !== 'observed' && (
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-host-witness-help
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
-              如果原 Caddy 已能正常访问，请在实际宿主机执行 xdrive-server doctor，
+              {service.caddy_host_witness_reason ? (
+                <span data-xdrive-caddy-host-witness-reason>
+                  观测受阻（{service.caddy_host_witness_reason}）：{caddyHostWitnessHints[service.caddy_host_witness_reason]}
+                </span>
+              ) : '当前 Server/Agent 未返回细分观测原因；先核对实际运行版本。'}
+              {' '}如果原 Caddy 已能正常访问，请在实际宿主机执行 xdrive-server doctor，
               核对运行中 Server 版本、/host-control 挂载、UID/GID 或 ACL 与采样文件；无需重装或重启 Caddy。
             </Typography>
           )}

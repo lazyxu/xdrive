@@ -46,7 +46,13 @@ func (s *Server) caddyHostUnobservedReason() string {
 // response and its shared Web/Mobile Web/PWA/Desktop UI. Missing witness
 // evidence is NEVER proof that Caddy has stopped or that Apply is safe.
 func (s *Server) caddyHostUnobservedDetail() string {
-	switch s.caddyHostUnobservedReason() {
+	return caddyHostUnobservedDetailForReason(s.caddyHostUnobservedReason())
+}
+
+// Keep the reason and the display detail from one observation decision.
+// A changed or missing witness is never evidence that HTTPS is down.
+func caddyHostUnobservedDetailForReason(reason string) string {
+	switch reason {
 	case "control-not-configured":
 		return "Server 未设置可信 Host Control 目录；核对宿主控制服务与只读挂载，不代表 Caddy 已停止"
 	case "heartbeat-missing":

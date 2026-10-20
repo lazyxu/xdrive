@@ -28,3 +28,20 @@ func TestAdminServiceDependencyCaddyFieldsSurviveClientSerialization(t *testing.
 		t.Fatalf("Desktop Agent forward would lose observed fields: %s", data)
 	}
 }
+
+func TestAdminServiceDependencyCaddyMissingHostReasonSurvivesClientSerialization(t *testing.T) {
+	var result ServiceDependency
+	if err := json.Unmarshal([]byte("{\"id\":\"caddy\",\"status\":\"unknown\",\"caddy_host_witness_reason\":\"snapshot-missing\"}"), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.CaddyHostWitnessReason != "snapshot-missing" {
+		t.Fatalf("Desktop client lost Caddy diagnosis: %+v", result)
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "\"caddy_host_witness_reason\":\"snapshot-missing\"") {
+		t.Fatalf("Desktop client dropped read-only diagnostic: %s", out)
+	}
+}
