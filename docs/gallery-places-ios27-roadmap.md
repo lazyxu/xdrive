@@ -113,6 +113,29 @@ concurrent media edits, or that a full 100k-item native browser benchmark ran.
 
 A4 才交付 Owner-scoped 附近照片 bbox/半径 Range，B1–B3 和 C1 独立完成；真机 iOS 27 视觉 1:1、Android/Desktop 功能、GPS 隐私/分享与性能不得由源码断言代替。
 
+## P0-Places-A3h · iOS 27「照片」多照片缩略图聚合地图（A4 后新增）
+
+**明确未完成，不得以数字圆点或普通 ClusterLayer 冒充实现。**
+当前 A3 在 100 张以内使用百度原生 ClusterLayer；超过 100 张使用最多 64 个带真实总数的 BD-09 网格标记。
+Apple iOS 27 官方操作及截图参考：https://support.apple.com/ja-jp/guide/iphone/iph390138909/27/ios/27 。
+官方典型形式是**每个聚合位置一个真实照片封面及其数量角标**；正式像素与手势仍须用 iOS 27 真机核查。
+它们还不是 iOS 27「照片」地图上的多位置可见照片缩略图聚合与对应数量角标。本子阶段需在 B1/B2/B3/C1 最终验收前完成。
+
+- **真实聚合数据与权限**：继续使用当前 Owner、PhotoAsset、原始有效 WGS84 / 经授权正向派生 BD-09、单张地理同意、真实总数和 current media revision；
+  服务端返回有界可见集群与一张真实代表封面的 Asset/Node 身份、总数和权限版本；禁止将代表样本条数冒充集群真实总数，
+  不用网格中心伪造照片 GPS，不能将全部 100k PhotoAssets/GPS 传给浏览器。
+- **图片式标记**：地图上的多个位置分别绘制一张真实代表封面，并叠加完整照片数量角标；不默认使用多图错层堆叠，只有真实 iOS 27 对照证明有此状态时才允许增加。
+  缩略图取自现有认证媒体缩略图/CAS 传输（HEIC、视频 Poster、Live Photo 静态封面），严格限制尺寸、并发、视窗预取和取消；
+  不在 Provider SDK URL、HTML 标记、浏览器日志或缓存中暴露账户 Bearer、Browser AK、原图地址或其他 Owner 私有资源。
+- **触摸与导航**：地图 pan/pinch/zoom 时基于 Server 有界当前 BD-09LL 视窗重新查询，并立即 Abort 前一代请求。
+  点击多张聚合应展开/放大该区域或通过现有有界 Media Range 进入照片墙；点击单张仍由 Server 重新验证 Asset/Node 身份后打开原 Viewer。
+  返回必须恢复原地图 camera、选中聚合、Gallery/Viewer 排序和虚拟滚动锚点，不能闪过空白/错误中间态。
+- **三端严格等价**：Web、Mobile Web/PWA、Desktop 独立安全 HTTPS 地图窗口共享 ONE Server 查询、Client controller、MUI Marker、Range/VirtualCollection/Viewer。
+  不新增地图 Provider，不用另一份全量照片索引，不破坏 xDrive 全屏 App Frame、52px 全局标题栏与权限模型。
+- **验收**：逐张对照真实 iOS 27「照片」地点地图的单张代表缩略图大小、白色边框、数量 badge 与位置、不同 zoom 的聚合切换、点击/返回、
+  深浅色、横屏、安全区域、VoiceOver/键盘、持续缩放无跳动；使用真实 100k mixed photo/video/Live Photo 库、慢网及 Desktop Agent 取消链路测量。
+  区分模拟/源码 CI、真实百度 SDK/账号授权和实体设备证据。签名发布正常不等于图库视觉和操作已验收。
+
 ## A4 · nearby photos
 
 Authenticated `bbox`/radius and optional temporal/album scope on the same

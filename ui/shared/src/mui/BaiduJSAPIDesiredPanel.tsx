@@ -208,29 +208,31 @@ export function XDriveBaiduJSAPIDesiredPanel({
         </Typography>
         {mode === 'config' ? (
           <Typography variant="body2" color="text.secondary">
-            独立于静态地图 Server AK。此处仅加密保存 Browser AK 和期望开关，
-            保存后 Server 会立即尝试签发运行权限；实际结果以当前授权状态为准。
+            与静态地图 Server AK 独立。设置期望开关或更换 Browser AK 后由 Server 自动核验授权。
           </Typography>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            此处检查当前 Server 对真实 JSAPI 4.0 的发布授权，和上方静态地图在线检测完全独立。
-            Browser AK 和 HTTPS 即使已配置，也不能替代已审核资源清单和有效签名发布。
+            运行状态来自 Server 的签名发布；Loader 检测与静态地图验证均为独立的手动操作。
           </Typography>
         )}
         {reading ? <Box sx={{ minHeight: 32 }} aria-busy="true" /> : null}
-        {config && (
+        {config && mode === 'verify' && (
+          <Typography variant="body2" role="status"
+            color={verified ? 'success.main' : 'warning.main'}
+            data-xdrive-baidu-jsapi4-release-state>
+            {verified ? 'Server 已签名授权动态地图' : '动态地图尚未获得 Server 签名放行'}
+          </Typography>
+        )}
+        {config && mode === 'verify' && (
           <XDriveBaiduJSAPIConfigSnapshot config={config} lastReadAt={lastReadAt}
             refreshing={refreshing} canRefresh={Boolean(source.loadBaiduJSAPIConfig) && !busy && !dirty}
             dirty={dirty} onRefresh={() => { void refreshConfig() }} />
         )}
         {config && mode === 'config' ? (
-          <Typography variant="caption" color={verified ? 'success.main' : 'text.secondary'}
+          <Typography variant="caption" color="text.secondary"
             data-xdrive-baidu-jsapi4-status>
-            {config.configured ? 'Browser AK 已加密配置' : '未配置 Browser AK'}
-            {' · '}期望{config.desired_enabled ? '启用' : '停用'}
-            {' · '}运行{verified ? '已通过受信签名放行' : '未授权放行'}
-            {' · '}修订 #{config.revision}
-            {' · '}{config.requires_restart ? '配置需重启' : '保存设置无需重启'}
+            {config.configured ? 'Browser AK 已安全保存' : 'Browser AK 尚未配置'}
+            {' · '}修订 #{config.revision} · {config.requires_restart ? '需重启生效' : '保存即时生效'}
           </Typography>
         ) : null}
         {mode === 'config' && config?.editable && (
@@ -255,14 +257,6 @@ export function XDriveBaiduJSAPIDesiredPanel({
         {mode === 'verify' && (
           <>
             {config && (
-              <Typography variant="caption" color="text.secondary"
-                data-xdrive-baidu-jsapi4-release-state>
-                当前运行：{verified ? 'Server 已授权动态地图' : 'Server 尚未放行动态地图'}
-                {' · '}Browser AK {config.configured ? '已保存' : '未配置'}
-                {' · '}期望{config.desired_enabled ? '开启' : '关闭'}
-              </Typography>
-            )}
-            {config && (
               <Stack spacing={1} data-xdrive-baidu-jsapi4-live-probe>
                 <Button size="small" variant="outlined" disabled={probeBusy || busy ||
                   !source.verifyBaiduJSAPI4Loader || !config.configured ||
@@ -271,15 +265,14 @@ export function XDriveBaiduJSAPIDesiredPanel({
                   {probeBusy ? '正在检测真实 Loader…' : '检测真实百度 JSAPI 4.0 Loader'}
                 </Button>
                 <Typography variant="caption" color="text.secondary">
-                  管理员手动发起一次 Server→百度 HTTPS 请求，可能消耗 API 配额；
-                  不发送 AK 到浏览器，不执行地图脚本，不代表动态地图已开启。
+                  手动验证固定 Loader（可能消耗配额）；不会运行地图脚本，也不代表瓦片或三端交互通过。
                   {config.configured && !config.desired_enabled ?
                     ' 当前期望开关未开启，请先在配置页启用并保存。' : ''}
                 </Typography>
                 {probeResult && (
                   <XDriveStatusAlert tone={probeResult.loader_accepted ? 'good' : 'bad'}>
                     {probeResult.state === 'loader_accepted'
-                      ? '百度 Loader 真实响应校验通过；子资源、地图交互及签名发布仍需独立验证。'
+                      ? 'Loader 响应校验通过；动态子资源与三端交互仍需验证。'
                       : probeResult.state === 'denied'
                         ? '百度拒绝了 Loader 请求，请检查所配置权限和域名限制。'
                         : 'Loader 本次不可用，请查看 Server 网络与审计状态。'}
@@ -288,11 +281,6 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 )}
                 {probeError && <XDriveStatusAlert tone="bad">{probeError}</XDriveStatusAlert>}
               </Stack>
-            )}
-            {verified ? (
-              <XDriveStatusAlert tone="good">当前 Server 返回已签名放行；仍须以真实三端地图交互和资源审计作为验收依据。</XDriveStatusAlert>
-            ) : (
-              <XDriveStatusAlert tone="bad">动态地图仍受 Server 安全门禁限制；现有百度静态地图可继续使用。</XDriveStatusAlert>
             )}
             {!verified && config && (
               <Box data-xdrive-baidu-jsapi4-release-blockers>
