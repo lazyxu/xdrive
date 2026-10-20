@@ -1,3 +1,17 @@
+## SH-P012 · 第一轮真实100k基线及完整 CI RED（2026-10-20）
+
+- **准确测试源** `1c4f91a5bbd7b9cd03b05d1f1794bc61388c7add`。独立 [100k PG17 元数据分页 SH-P001 #39421704471](https://github.com/lazyxu/xdrive/actions/runs/39421704471) **SUCCESS**，三组真实 100000 个 Node / 1000 pages；完整遍历 P50 **16.894s**，最大 page P95 **19.283ms**，最慢分页 **30.670ms**，每组 HTTP JSON bytes `11327793/11316793/11325793`。原始 [机器样本](performance-evidence/public-share-visual-parity-shp012/ci-run-39421704471.json)。冻结 60s walk、P95≤500ms、worst≤2000ms 均通过。
+- 独立 [真实100k SHA各异 JPEG 浏览器 SH-P005 #39421704436](https://github.com/lazyxu/xdrive/actions/runs/39421704436) **SUCCESS**。Web1440 ×3 首/后100 P50 **365.112/221.251ms**；CDP Mobile390 ×3 首/后100 P50 **306.547/239.054ms**。12/12原件文件名、字节、SHA正确、100授权项/页、无陈旧行/横向溢出，页面≤2000ms、下载≤5000ms，全 PASS。[原始机器JSON](performance-evidence/public-share-visual-parity-shp012/ci-run-39421704436.json)，源播种不计时。真实iOS/Android/安装PWA/WAN/视频/Live仍 Not measured。
+- 同 HEAD [77-job CI #39421702968](https://github.com/lazyxu/xdrive/actions/runs/39421702968) **RED**：23 succeeded / 52 conditional skipped / desktop-tests RED（原 U07 静态 Unicode 文件名函数仍假定所有 JSX 在 `FileExplorer.tsx`、两项原始 React mount 测试省略了合规事件的 `target`），Final Gate 因此失败。**必须保留 RED，不能只凭两组真 100k 通过而合并。** 现修订原测试去验证已提取的纯展示组件真实文字/tooltip/Unicode、按真实点击事件发给原分享行，并检查内嵌按钮不会冒出二次下载。此前的用户可见功能/权限及冻结预算均不降低。
+- **判定：保留原有生产 Server/SQL/ZIP 热点实现**；新增的是 Share-only 元数据和 Owner/Public 同用视觉代码。历史 `#2233` Web/Mobile 100k 首/后不同 Runner，不构成 same-runner A/B；生产性能收益 `N/A`。修订并归档之后提交的新 SHA 必须重新跑 SH-P001、SH-P005、77-job CI/Final Gate；未通过不合入。
+
+---
+## SH-P012 · Shared Owner/Public presentation parity first slice (2026-10-20)
+
+Web1440真实浏览器×3、Mobile390 Chromium CDP模拟视口×3 将重跑**真实PG17/CAS 100k SHA不同JPEG** SH-P005；同时重跑**100k元数据/1000页×3** SH-P001，冻结≤2000ms分页/≤5000ms原件下载，以及≤60s全目录遍历/P95≤500ms/worst≤2000ms。BEFORE：当前合入#2233真实SH-P005专项 #39417535234 Wide首/后 365.958/284.821ms，CDP Mobile303.350/261.265ms；该更改为 Owner+Share 共享只读行名视觉、授权时间/版本、Grid排布与窄屏点击行为，非生产热路径调优，新 AFTER/speedup 暂为 N/A。100k移动模拟≠真实手机/iOS/Android安装态PWA；Desktop Agent/WAN/HEVC/H264/Live/4GiB 分享下载尚未测量。继续已登记真实场景，不重做已通过且实现未改变的 Owner100k和4GiB测试。[SH-P012合同](public-share-visual-parity-shp012.md)。
+
+---
+
 ## SH-P011 · 100k真实JPEG分享链接直接进入首100项 · 2026-10-20
 
 准确测试源码 72f5fc4b911f3b2992d16a78c98e6ca63ab39657：Chromium Wide1440 n3 与模拟 Mobile390 n3，PG17/Gin/LocalCAS 100000 SHA各异JPEG原件。独立 [专项CI](https://github.com/lazyxu/xdrive/actions/runs/39413566021) **SUCCESS**，[77-job全量CI](https://github.com/lazyxu/xdrive/actions/runs/39413565919) **SUCCESS**（25成功/52条件跳过，Final Gate成功）。

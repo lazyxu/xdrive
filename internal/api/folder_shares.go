@@ -15,10 +15,12 @@ import (
 const publicFolderSharePageLimit = 100
 
 type publicFolderShareItem struct {
-	ID   uint64 `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Size int64  `json:"size"`
+	ID        uint64    `json:"id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	Size      int64     `json:"size"`
+	Revision  uint64    `json:"revision"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type publicFolderSharePage struct {
@@ -122,7 +124,10 @@ func (s *Server) publicFolderShareChildren(c *gin.Context) {
 		if item.Type != meta.NodeTypeDir && item.Type != meta.NodeTypeFile {
 			continue
 		}
-		entry := publicFolderShareItem{ID: item.ID, Name: item.Name, Type: item.Type}
+		entry := publicFolderShareItem{
+			ID: item.ID, Name: item.Name, Type: item.Type,
+			Revision: item.Revision, UpdatedAt: item.UpdatedAt,
+		}
 		if item.Type == meta.NodeTypeFile && item.File != nil {
 			entry.Size = item.File.Size
 		}

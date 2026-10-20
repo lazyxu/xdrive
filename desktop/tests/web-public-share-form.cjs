@@ -844,8 +844,13 @@ test('Public shared single-file selection is stable across render without losing
   const item = () => view.renderer.root.findAll(node =>
     typeof node.type === 'string' && node.props.role === 'listitem')[0]
   assert.equal(item().props['aria-selected'], false)
-  await act(async () => { item().props.onClick() })
+  await act(async () => { item().props.onClick({ target: { closest: () => null } }) })
   assert.equal(item().props['aria-selected'], true, 'new shared workspace must not reset file selection every render')
+  await act(async () => {
+    item().props.onClick({ target: { closest: () => ({ tagName: 'BUTTON' }) } })
+  })
+  assert.equal(item().props['aria-selected'], true, 'nested button must not toggle the row')
+  assert.equal(view.downloads.length, 0, 'nested button must not issue an unintended native download')
   assert.equal(view.button().props.type, 'submit')
   await view.submit()
   assert.equal(view.downloads.length, 1)
@@ -921,7 +926,7 @@ test('P115: same accepted public page refresh retains filter and selected row, n
   assert.equal(rows().length, 1)
   const original = rows()[0]
   assert.equal(original.props['data-xdrive-public-share-item-id'], 20)
-  await act(async () => { original.props.onClick() })
+  await act(async () => { original.props.onClick({ target: { closest: () => null } }) })
   assert.equal(rows()[0].props['aria-selected'], true)
   const refresh = view.root.findAllByType('button')
     .find(x => x.props['aria-label'] === '刷新文件夹')

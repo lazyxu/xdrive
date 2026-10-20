@@ -1,0 +1,59 @@
+{
+  "workload": "SH-P001-original-100k-public-folder-metadata-P012",
+  "source_sha": "1c4f91a5bbd7b9cd03b05d1f1794bc61388c7add",
+  "workflow_run": "https://github.com/lazyxu/xdrive/actions/runs/39421704471",
+  "job_id": 118624001586,
+  "measurement": {
+    "workload": "SH-P001/real-postgresql17-100k-keyset-public-folder-metadata",
+    "source": "EXACT_SOURCE_HEAD=1c4f91a5bbd7b9cd03b05d1f1794bc61388c7add",
+    "n": 3,
+    "physical_CAS_originals": 0,
+    "status": "original CURRENT measurement (not BEFORE/AFTER optimization)",
+    "samples": [
+      {
+        "entries": 100000,
+        "http_body_bytes": 11327793,
+        "page_p50_ms": 16.921,
+        "page_p95_ms": 19.283,
+        "page_walk_ms": 17253,
+        "page_worst_ms": 26.607,
+        "pages": 1000,
+        "sample": "1",
+        "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+        "seed_ms": 1681
+      },
+      {
+        "entries": 100000,
+        "http_body_bytes": 11316793,
+        "page_p50_ms": 16.563,
+        "page_p95_ms": 18.99,
+        "page_walk_ms": 16894,
+        "page_worst_ms": 30.67,
+        "pages": 1000,
+        "sample": "2",
+        "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+        "seed_ms": 1652
+      },
+      {
+        "entries": 100000,
+        "http_body_bytes": 11325793,
+        "page_p50_ms": 16.502,
+        "page_p95_ms": 18.912,
+        "page_walk_ms": 16860,
+        "page_worst_ms": 26.654,
+        "pages": 1000,
+        "sample": "3",
+        "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+        "seed_ms": 1639
+      }
+    ],
+    "page_walk_p50_ms": 16894,
+    "page_p95_max_ms": 19.283,
+    "page_worst_max_ms": 30.67,
+    "pass_budget": true,
+    "after": null,
+    "speedup": null
+  },
+  "notes": "Physical CAS originals=0; three true 100k PostgreSQL metadata walks; no cross-runner speedup",
+  "full_ci_status_at_measurement": "failure: three old/stale desktop React/static test expectations on same source"
+}

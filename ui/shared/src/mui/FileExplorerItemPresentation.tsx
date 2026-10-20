@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import { Box, Stack, Typography } from '@mui/material'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
@@ -44,6 +46,43 @@ function explorerExtension(name: string) {
 export const xDriveFileExplorerDetailsNormalRowHeight = 36
 export const xDriveFileExplorerDetailsHeaderHeight = 32
 export const xDriveFileExplorerDetailsMobileRowHeight = 52
+
+// Read-only presentation is shared by the authenticated Owner Explorer and
+// the capability-scoped public Explorer. Never import Owner actions or API.
+export function XDriveFileExplorerItemName({ name, grid }: { name: string; grid: boolean }) {
+  return grid ? (
+    <Typography variant="body2" dir="auto" title={name}
+      sx={{ unicodeBidi: 'plaintext', width: '100%', overflowWrap: 'anywhere',
+        display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+        overflow: 'hidden', lineHeight: 1.25 }}>
+      {name}
+    </Typography>
+  ) : (
+    <Typography variant="body2" noWrap dir="auto" title={name}
+      sx={{ unicodeBidi: 'plaintext' }}>{name}</Typography>
+  )
+}
+
+export function XDriveFileExplorerDetailsNameCell({
+  visual, label, prefix, suffix, compact = false,
+}: {
+  visual: ReactNode
+  label: ReactNode
+  prefix?: ReactNode
+  suffix?: ReactNode
+  compact?: boolean
+}) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
+      {prefix}
+      <Box sx={{ width: 24, height: 24, flex: '0 0 24px', overflow: 'hidden', borderRadius: 0 }}>
+        {visual}
+      </Box>
+      <Box sx={{ minWidth: 0, flex: compact ? 1 : undefined }}>{label}</Box>
+      {suffix}
+    </Stack>
+  )
+}
 
 export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
   if (kind === 'dir') return 'folder'

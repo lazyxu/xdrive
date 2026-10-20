@@ -155,6 +155,9 @@ func TestFolderShareBoundedPrivateNavigationAndFileTicket(t *testing.T) {
 	if first.ParentID != shared.ID || len(first.Items) != 100 || first.NextCursor == 0 {
 		t.Fatalf("bad first bounded page: parent=%d len=%d next=%d", first.ParentID, len(first.Items), first.NextCursor)
 	}
+	if first.Items[0].Revision != 1 || first.Items[0].UpdatedAt.IsZero() {
+		t.Fatalf("shared folder page must include authorized revision and modified time: %+v", first.Items[0])
+	}
 	second := publicFolderChildrenTestRequest(t, router, created.Token, "folder-password",
 		shared.ID, first.NextCursor, http.StatusOK)
 	if len(second.Items) != 100 || second.NextCursor == 0 {

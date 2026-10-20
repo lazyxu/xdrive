@@ -46,6 +46,9 @@ export interface PublicShareChild {
   name: string
   type: NodeType
   size: number
+  // Only metadata of the authorized Share subtree; no Owner endpoint or CAS identifier.
+  revision?: number
+  updated_at?: string
 }
 
 export interface PublicShareChildren {
@@ -58,6 +61,8 @@ export interface PublicShare {
   type?: NodeType
   name: string
   size: number
+  revision?: number
+  updated_at?: string
   requires_password: boolean
   expires_at?: string
   max_downloads: number
