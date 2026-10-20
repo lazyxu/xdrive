@@ -154,15 +154,26 @@ async function clickFirstDownload(win, expected, width, n, page) {
     }
     session.on('will-download', onDownload)
   })
-  const clicked = await win.webContents.executeJavaScript(
+  // Exercise the real read-only FileExplorer context menu instead of a
+  // legacy per-row fifth "操作" column. Context menu works in both desktop
+  // pointer and 390px emulated touch viewports; no Owner API is used.
+  const targeted = await win.webContents.executeJavaScript(
     '(() => {' +
     'const row=document.querySelectorAll("[role=listitem]")[0];' +
     'if(!row || !row.textContent.includes(' + JSON.stringify(expected.name) + ')) return false;' +
-    'const button=[...row.querySelectorAll("button")].find(b=>b.textContent.trim()==="下载");' +
-    'if(!button || button.disabled) return false;' +
-    'button.click();return true;' +
+    'row.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:80,clientY:80}));' +
+    'return true;' +
     '})()', true)
-  assert.equal(clicked, true, 'real public share row download button absent')
+  assert.equal(targeted, true, 'native public row context action missing')
+  const clicked = await until(async () => win.webContents.executeJavaScript(
+    '(() => {' +
+    'const item=[...document.querySelectorAll("[role=menuitem]")].find(el=>' +
+    'el.textContent.trim()==="下载文件" && el.getAttribute("aria-disabled")!=="true");' +
+    'if(!item) return false;' +
+    'item.click();return true;' +
+    '})()', true),
+    3000, 'real public Share read-only context Download item')
+  assert.equal(clicked, true, 'real Share-only context download unavailable')
   const response = await received
   assert(response.ms <= 5000, 'actual native original download exceeded 5s budget')
   return response
