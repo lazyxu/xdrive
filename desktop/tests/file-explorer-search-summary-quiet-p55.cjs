@@ -25,7 +25,19 @@ test('FileExplorer Search result status never adds a fast in-flow progress capti
     'sub-second search should not flash an ephemeral status label in the rail')
   assert.ok(pane.includes('aria-busy={Boolean(searchSummary.loading && searchSummary.resultCount === null) || undefined}'))
   assert.ok(pane.includes('searchSummary.onClear'))
-  assert.ok(pane.includes('searchSummary.onRetry'))
+  // P110 keeps real error/retry, but moves it out of the ordinary-flow
+  // Search summary so a late failed request cannot resize the virtual list.
+  const feedbackStart=shared.indexOf('data-xdrive-file-explorer-floating-feedback',end)
+  const feedbackEnd=shared.indexOf('      <Drawer',feedbackStart)
+  assert.ok(feedbackStart>end && feedbackEnd>feedbackStart,
+    'shared absolute feedback owner must follow the durable Search summary')
+  const feedback=shared.slice(feedbackStart,feedbackEnd)
+  assert.equal(pane.includes('searchSummary.onRetry'),false,
+    'an in-flow Search error would resize the FileExplorer viewport')
+  assert.ok(feedback.includes('searchSummary.onRetry'),
+    'the original real Search retry must remain available outside flex layout')
+  assert.ok(feedback.includes('data-xdrive-file-explorer-search-error-feedback'))
+  assert.ok(feedback.includes("pointerEvents: 'auto'"))
   assert.ok(pane.includes('searchSummary.conditions.join'))
   assert.ok(pane.includes('minHeight: 44'))
 })
