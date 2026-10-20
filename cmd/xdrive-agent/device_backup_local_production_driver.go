@@ -297,42 +297,9 @@ func (c *agentController) runLocalPushFirstLeafPrivate(ctx context.Context, sour
 		return empty, errLocalPushDriverDenied
 	}
 	defer c.localFolderGrantMu.Unlock()
-	account, err := userconfig.Load()
-	if err != nil || account.Server == "" || account.Username == "" || account.SessionID == "" ||
-		account.SessionInvalid {
-		return empty, errLocalPushDriverDenied
-	}
-	configDir, err := userconfig.Dir()
+	d, err := c.newLocalPushFirstLeafDriverPrivate(ctx, sourceID, relativeLeaf, contentSHA256, size)
 	if err != nil {
 		return empty, errLocalPushDriverDenied
 	}
-	source, proof, api, err := c.localBoundBackupConfig(ctx, sourceID)
-	if err != nil || !validBoundFirstDirectorySource(source, proof, sourceID) ||
-		source.SyncMode != meta.SourceSyncModeBackup || source.TargetNodeID == nil ||
-		api == nil {
-		return empty, errLocalPushDriverDenied
-	}
-	grant, err := localpush.LoadRootGrant(configDir, account.Server, account.Username, proof.RootID)
-	if err != nil || !grant.StrongIdentity || grant.SourceID != sourceID ||
-		grant.DeviceID != proof.DeviceID || grant.RootID != proof.RootID ||
-		grant.Fingerprint != proof.RootFingerprint {
-		return empty, errLocalPushDriverDenied
-	}
-	scope := localpushrunner.Scope{Server: account.Server, Account: account.Username, SessionID: account.SessionID,
-		DeviceID: proof.DeviceID, RootID: proof.RootID, RootFingerprint: proof.RootFingerprint,
-		SourceID: sourceID, Revision: source.Revision, TargetNodeID: *source.TargetNodeID,
-		RelativePath: relativeLeaf, ContentSHA256: contentSHA256, Size: size}
-	request := localPushRequestKeyScope{server: account.Server, account: account.Username,
-		sessionID: account.SessionID, deviceID: proof.DeviceID, rootID: proof.RootID,
-		rootFingerprint: proof.RootFingerprint, sourceID: sourceID, revision: source.Revision,
-		targetNodeID: *source.TargetNodeID}
-	d := &localPushFirstLeafDriver{configDir: configDir, account: account, api: api, grant: grant,
-		source: source, proof: proof, scope: scope, requestScope: request,
-		currentSession: userconfig.Load,
-		readBound: func(readCtx context.Context, id uint64) (client.Source, client.LocalBoundSourceProof, error) {
-			observed, gotProof, _, readErr := c.localBoundBackupConfig(readCtx, id)
-			return observed, gotProof, readErr
-		},
-	}
-	return (&localpushrunner.Runner{}).RunFirstLeaf(ctx, scope, d)
+	return (&localpushrunner.Runner{}).RunFirstLeaf(ctx, d.scope, d)
 }
