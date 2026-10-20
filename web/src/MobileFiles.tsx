@@ -2889,22 +2889,49 @@ export default function MobileFiles(props: Props) {
             </Box>
           )}
         </Box>
-        {props.actionFeedback ? <Box data-mobile-files-operation-feedback sx={{ flexShrink: 0 }}>{props.actionFeedback}</Box> : null}
-        {selectionLoad ? <Typography data-mobile-files-select-progress role="status"
-          variant="caption" sx={{ px: 2, py: 0.5, flexShrink: 0 }}>
-          正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项
-        </Typography> : null}
-        {selectionFeedback ? <Typography role="status" variant="caption" color="warning.main"
-          sx={{ px: 2, py: 0.5, flexShrink: 0 }}>{selectionFeedback}</Typography> : null}
-        {selectionActive && !selectionLoad && selection.length > 0 &&
-          (selectedMutationReason || selectedDownloadReason) ? (
-          <Typography data-mobile-files-selection-limits role="status" variant="caption"
-            color="text.secondary" sx={{ px: 2, py: 0.5, flexShrink: 0 }}>
-            {selectedMutationReason ? `批量操作：${selectedMutationReason}` : ''}
-            {selectedMutationReason && selectedDownloadReason ? '；' : ''}
-            {selectedDownloadReason ? `下载：${selectedDownloadReason}` : ''}
-          </Typography>
-        ) : null}
+        {/* Transient action/selection feedback is truthful, but not a new
+            navigation layout state. In-flow captions used to shrink the only
+            virtual scroll host each time progress or an operation changed. */}
+        <Box data-mobile-files-feedback-overlay sx={{
+          position: 'absolute', left: 12, right: 12,
+          bottom: selectionActive
+            ? 'calc(env(safe-area-inset-bottom) + 64px)'
+            : 'calc(env(safe-area-inset-bottom) + 88px)',
+          zIndex: 5, display: 'flex', flexDirection: 'column', gap: 0.5,
+          alignItems: 'stretch', pointerEvents: 'none',
+          maxHeight: 'min(35dvh, 220px)',
+        }}>
+          {props.actionFeedback ? (
+            <Box data-mobile-files-operation-feedback
+              sx={{ pointerEvents: 'auto', minWidth: 0 }}>
+              {props.actionFeedback}
+            </Box>
+          ) : null}
+          {selectionLoad ? <Typography data-mobile-files-select-progress role="status"
+            variant="caption" sx={{
+              px: 2, py: 0.5, borderRadius: 1.5, bgcolor: 'background.paper',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            }}>
+            正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项
+          </Typography> : null}
+          {selectionFeedback ? <Typography role="status" variant="caption" color="warning.main"
+            sx={{
+              px: 2, py: 0.5, borderRadius: 1.5, bgcolor: 'background.paper',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            }}>{selectionFeedback}</Typography> : null}
+          {selectionActive && !selectionLoad && selection.length > 0 &&
+            (selectedMutationReason || selectedDownloadReason) ? (
+            <Typography data-mobile-files-selection-limits role="status" variant="caption"
+              color="text.secondary" sx={{
+                px: 2, py: 0.5, borderRadius: 1.5, bgcolor: 'background.paper',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+              }}>
+              {selectedMutationReason ? `批量操作：${selectedMutationReason}` : ''}
+              {selectedMutationReason && selectedDownloadReason ? '；' : ''}
+              {selectedDownloadReason ? `下载：${selectedDownloadReason}` : ''}
+            </Typography>
+          ) : null}
+        </Box>
         {selectionActive ? (
           <Stack data-xdrive-mobile-selection-toolbar direction="row" alignItems="stretch" sx={{
             px: 0.5, pt: 0.5, pb: 'max(env(safe-area-inset-bottom), 4px)',
