@@ -1204,9 +1204,15 @@ export default function WebFileExplorer({
       if (!node.parent_id) break
       nodeID = node.parent_id
     }
-    if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return
+    if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return false
     chain.reverse()
-    await navigateTo(chain, true, navigationIntentID)
+    let accepted = false
+    await navigateTo(chain, true, navigationIntentID, currentAccepted => {
+      accepted = currentAccepted
+    })
+    // Unlike void Promise completion, this proves the original workspace
+    // accepted its own counted first page, not a failed/superseded lookup.
+    return accepted && isNavigationIntentCurrent(navigationIntentID)
   }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
 
   return (

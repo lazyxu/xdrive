@@ -4947,7 +4947,8 @@ test('P104 source-exact Web/Mobile Owner-only navigation gates retain independen
     mobile.indexOf('  useLayoutEffect(() => {\n    // An identical ResizeObserver'),
   )
   assert.ok(commit.length > 800)
-  assert.equal((commit.match(/props\.virtualCollection && !ownerDirectoryLoading/g) || []).length, 3)
+  assert.equal((commit.match(/props\.virtualCollection && !ownerDirectoryLoading/g) || []).length, 4,
+    'P104 original three authenticated commit sites plus P107 saved-resume receipt')
   assert.ok(commit.includes('!props.trashActive && !props.searchActive && !ownerDirectoryLoading &&'))
   assert.ok(commit.includes('props.requestedDirectoryID, props.virtualCollection, ownerDirectoryLoading,'))
   assert.equal(commit.includes('!props.loading'), false,
@@ -5053,4 +5054,130 @@ test('P105 source gates empty/cold Browse states on Owner GET and retains indepe
   assert.ok(mobile.includes('showRangeLoading'))
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
   assert.equal(agents.split('## P105 · Verified-zero Mobile directory independent from operation busy').length, 2)
+})
+
+
+test('P107: saved Mobile folder resume keeps bootstrap root completely silent until its counted first Range', async () => {
+  let completeRestore
+  const navigation = new Promise(resolve => { completeRestore = resolve })
+  const rootFile = { id: 7, name: 'bootstrap-root.txt', kind: 'file', revision: 1 }
+  const rootRange = {
+    interactionKey: 'p107-bootstrap-root', itemCount: 1,
+    loadedItems: new Map([[0, rootFile]]),
+    itemAt: index => index === 0 ? rootFile : undefined,
+    onRangeChange() {}, groups: [],
+  }
+  const savedEmpty = {
+    interactionKey: 'p107-counted-saved-empty', itemCount: 0,
+    loadedItems: new Map(), itemAt: () => undefined,
+    onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const stateNow = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-item'), 0,
+      'bootstrap root items cannot masquerade as the persisted folder')
+    assert.equal(find(h.view, 'data-mobile-files-zero-state', true)
+      .props['data-mobile-files-cold-read-slot'], true)
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true)
+      .props['aria-hidden'], true,
+    'bootstrap root name may not flicker into the saved folder title')
+    assert.equal(stateNow().folderID, 42)
+    assert.equal(stateNow().scrollTop, 688)
+    await h.update({ directoryLoading: false, loading: false })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 370)) })
+    assert.equal(count(h.view, 'data-mobile-files-item'), 0)
+    assert.equal(find(h.view, 'data-mobile-files-zero-state', true)
+      .props['data-mobile-files-cold-read-slot'], true,
+    'even a slow, completed bootstrap root GET cannot certify the saved directory')
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
+    await act(async () => { completeRestore(true); await navigation })
+    assert.equal(count(h.view, 'data-mobile-files-item'), 0,
+      'a successful navigation Promise without an accepted rendered Range is not a visual commit')
+    await h.update({
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已恢复文件夹' }],
+      directoryLoading: false, loading: false, items: [], virtualCollection: savedEmpty,
+    })
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true)
+      .props['aria-hidden'], false)
+    assert.equal(stateNow().folderID, 42)
+    assert.equal(stateNow().scrollTop, 688,
+      'normal saved-folder restoration must not perform a fresh-navigation scroll reset')
+    assert.equal(count(h.view, 'data-mobile-files-zero-state'), 1)
+    assert.ok(h.view.root.findAll(n => n.type === 'state-panel'
+      && n.props?.message === '此文件夹为空').length > 0,
+    'a verified counted zero is content, not a delayed spinner or unverified error')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }], items: [rootFile],
+      virtualCollection: rootRange, directoryLoading: false, loading: false,
+      onRestoreFolder: () => navigation,
+    },
+  })
+})
+
+test('P107: abandoned restore cannot override Recent or strand Browse, whether old receipt succeeds or fails', async () => {
+  for (const accepted of [false, true]) {
+    let finishRestore
+    const navigation = new Promise(resolve => { finishRestore = resolve })
+    await withView(async h => {
+      const persisted = () => state.mobileFilesDecodeState(
+        h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+      await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+      await act(async () => { finishRestore(accepted); await navigation })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+      assert.equal(find(h.view, 'data-mobile-files-section', 'recent')
+        .props['aria-current'], 'page',
+      'superseded saved navigation may not show a late Browse Home or folder')
+      assert.equal(persisted().folderID, 42)
+      assert.equal(persisted().scrollTop, 688)
+      await act(async () => { find(h.view, 'data-mobile-files-section', 'browse').props.onClick() })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+        'returning to Browse after abandoning an old resume must not remain silently pending')
+      assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+      assert.equal(persisted().folderID, 42,
+        'the abandoned background restore must not erase the valid saved location')
+    }, {
+      saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+      props: { onRestoreFolder: () => navigation,
+        crumbs: [{ id: 1, name: '我的文件' }], directoryLoading: true },
+    })
+  }
+})
+
+test('P107: only a current failed saved-folder receipt returns to Browse Home', async () => {
+  let finishRestore
+  const navigation = new Promise(resolve => { finishRestore = resolve })
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    await act(async () => { finishRestore(false); await navigation })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    const persisted = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(persisted.folderID, null)
+    assert.equal(persisted.scrollTop, 0)
+  }, {
+    saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+    props: { onRestoreFolder: () => navigation,
+      crumbs: [{ id: 1, name: '我的文件' }], directoryLoading: false },
+  })
+})
+
+test('P107: original Web restore reports the actual accepted owner GET; permanent rule and media progress remain', () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  assert.ok(web.includes('await navigateTo(chain, true, navigationIntentID, currentAccepted => {'))
+  assert.ok(web.includes('return accepted && isNavigationIntentCurrent(navigationIntentID)'))
+  assert.ok(source.includes('const totalCount = props.virtualCollection?.itemCount ?? props.items.length'))
+  assert.ok(source.includes('const displayedCount = savedResumePending ? 0'))
+  assert.ok(source.includes('acceptedResumeRef.current = storageKey +'))
+  assert.ok(source.includes('!savedResumePending && !effectiveGrid'))
+  assert.ok(source.includes('XDriveFileExplorerThumbnailProvider'))
+  assert.ok(source.includes('xDriveFileExplorerInlineLayout'))
+  assert.equal(agents.split('## P107 · Mobile Files saved-folder resume is a verified visual commit').length, 2)
 })
