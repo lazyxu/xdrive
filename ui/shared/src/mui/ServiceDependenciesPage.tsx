@@ -220,7 +220,9 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
     ? { label: '待人工在线验证', color: 'warning' as const }
     : statusLabels[service.status] ?? statusLabels.unknown
   const evidenceDetails = [
-    configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知',
+    service.id === 'caddy' && service.configuration_state === 'configured' && service.installation_state !== 'observed'
+      ? 'Server 已声明 HTTPS 入口（宿主运行另验）'
+      : configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知',
     installationStateLabels[service.installation_state ?? 'unknown'] ?? '部署未确认',
     healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认',
     service.id === 'caddy' && service.activation_state === 'deployment-only'
@@ -244,6 +246,14 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
             {service.detail}
           </Typography>
+          {service.id === 'caddy' && service.caddy_internal_http_state && (
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-internal-http-evidence
+              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+              {service.caddy_internal_http_state === 'reachable'
+                ? '内部 HTTP 转发通路已响应；不代表 Docker、HTTPS/TLS、公网或期望修订已生效。'
+                : '内部 HTTP 转发未得到可信成功响应；不代表原有 Caddy 已停止或未部署。'}
+            </Typography>
+          )}
           {service.id === 'baidu-map' && service.health_state === 'not-checked' && (
             <Typography variant="caption" color="text.secondary"
               data-xdrive-baidu-static-unverified-hint

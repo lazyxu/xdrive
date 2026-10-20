@@ -138,3 +138,34 @@ func TestAdminServiceDependenciesRequiresAuthentication(t *testing.T) {
 		t.Fatalf("unauthenticated admin endpoint returned %d", recorder.Code)
 	}
 }
+
+func TestAdminServiceDependenciesCaddyDeclaredIngressWithoutHostWitness(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("XD_DOMAIN", "existing.example.test")
+	t.Setenv("XD_LAN_HTTPS_IP", "")
+	s := &Server{HostControlDir: t.TempDir()}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services", nil)
+	s.adminServiceDependencies(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("services HTTP %d", recorder.Code)
+	}
+	var response serviceDependenciesSnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range response.Services {
+		if item.ID != "caddy" {
+			continue
+		}
+		if item.ConfigurationState != "configured" || item.InstallationState != "unknown" ||
+			item.HealthState != "unknown" || item.ActivationState != "deployment-only" ||
+			item.Status != "unknown" || item.CaddyInternalHTTPState != "" ||
+			item.HTTPSConfigured != nil || item.LocalTLSState != "" {
+			t.Fatalf("declared ingress may not fabricate installed Caddy or TLS: %+v", item)
+		}
+		return
+	}
+	t.Fatal("missing Caddy service")
+}
