@@ -18,7 +18,11 @@ test('SH-P012: public and Owner Details actually mount one neutral name/visual r
   }
   assert.match(pure, /WebkitLineClamp: 2/)
   assert.match(pure, /width: 24, height: 24/)
-  assert.match(publicView, /width: 72, height: 72/)
+  assert.match(pure, /width: thumbnailWidth, height: thumbnailHeight/)
+  assert.match(publicView, /thumbnailWidth=\{72\}[\s\S]*?thumbnailHeight=\{72\}/)
+  assert.match(owner, /thumbnailWidth=\{gridMetrics\.thumbnailWidth\}/)
+  assert.match(owner, /<XDriveFileExplorerGridTileContent/)
+  assert.match(publicView, /<XDriveFileExplorerGridTileContent/)
   assert.match(publicView, /size=\{52\} folderSize=\{52\}/)
   assert.doesNotMatch(pure, /\/api\/v1|sessionToken|onDeleteItems|onMoveItemsTo/)
 })

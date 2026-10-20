@@ -1,3 +1,11 @@
+## SH-P013 · 真实物理专项第一次源准确通过（2026-10-20）
+
+准确码 `cca9875451e60cc991d18b698a55efec7bfc9b65`，PG17 [#39433239426](https://github.com/lazyxu/xdrive/actions/runs/39433239426) 真正三个 100k Node 元数据/1000页完整 walk P50 **11,230ms**、最大页 P95 13.033ms、worst 21.085ms；Chromium [#39433237016](https://github.com/lazyxu/xdrive/actions/runs/39433237016) 真正 100k 独立 SHA JPEG，Web1440 n3 first/next P50 **318.885/228.164ms**、CDP390 **273.335/231.665ms**，12/12 SHA原件、≤100行、0旧行/溢出。原始完整 JSON [SH-P013](performance-evidence/public-share-grid-parity-shp013/ci-run-39433237016-and-39433239426.json)。两项冻结预算 PASS，纯视觉重构保持生产 SQL/Go/Cancel 无改动，**AFTER/speedup=N/A**；非同 Runner matched A/B。全量 CI/FinalGate 和归档后的新准确 HEAD 尚须确认，真实手机/PWA/WAN/H264/Live Motion Not measured。
+
+## SH-P013 · Share / Owner 真正共用 Grid Tile 视觉槽（2026-10-20）
+
+- 已合入 #2240 原版真 PG17 100k 目录完整 keyset P50 10.946s；真实 100k 不同 SHA JPEG Web1440 首/下一页 P50 284.417/195.242ms，CDP390 244.532/198.417ms；12/12 原图签名下载 SHA 正确。SH-P013 仅共享 Grid Tile 的 72px 中号可视容器/文件名布局和无边框卡片，**不属于生产性能热点优化**。新 HEAD 100k 物理 n3、完整 CI 待实测，当前 AFTER/speedup=N/A，不使用跨 Runner 历史值推断加速。冻结 SH-P001 1000页≤60s/P95≤500ms/worst≤2000ms，SH-P005 首/下一页≤2000ms、单次原件下载≤5000ms，100 item/page，全部 SHA/越权/取消不变。Native Desktop、真机/PWA/WAN 未测。详情 [SH-P013](public-share-grid-parity-shp013.md)。
+
 ## SH-P012 · 第一轮真实100k基线及完整 CI RED（2026-10-20）
 
 - **准确测试源** `1c4f91a5bbd7b9cd03b05d1f1794bc61388c7add`。独立 [100k PG17 元数据分页 SH-P001 #39421704471](https://github.com/lazyxu/xdrive/actions/runs/39421704471) **SUCCESS**，三组真实 100000 个 Node / 1000 pages；完整遍历 P50 **16.894s**，最大 page P95 **19.283ms**，最慢分页 **30.670ms**，每组 HTTP JSON bytes `11327793/11316793/11325793`。原始 [机器样本](performance-evidence/public-share-visual-parity-shp012/ci-run-39421704471.json)。冻结 60s walk、P95≤500ms、worst≤2000ms 均通过。

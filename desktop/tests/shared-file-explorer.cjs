@@ -458,10 +458,11 @@ test('Grid cells stay centered and geometrically aligned across density steps', 
     "justifySelf: 'center'",
     "boxSizing: 'border-box'",
     "alignItems: 'center'",
+  ]) assert.ok(explorer.includes(token), 'Owner Grid surface missing: ' + token)
+  assert.ok(explorer.includes('<XDriveFileExplorerGridTileContent'), 'Owner must mount the neutral Grid content')
+  for (const token of [
     'data-xdrive-file-explorer-grid-name',
     'minHeight: 32',
     "flex: '0 0 auto'",
-  ]) {
-    assert.ok(explorer.includes(token), 'Grid alignment polish missing: ' + token)
-  }
+  ]) assert.ok(iconPresentation.includes(token), 'Shared Grid visual/title alignment missing: ' + token)
 })

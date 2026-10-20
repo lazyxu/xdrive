@@ -88,9 +88,12 @@ test('FileExplorer file thumbnails use square frames without rounded clipping', 
     'Details thumbnail frame must remain square',
   )
   assert.ok(
-    explorer.includes("width: gridMetrics.thumbnailWidth,\n            height: gridMetrics.thumbnailHeight,") &&
-      explorer.includes("overflow: 'hidden',\n            borderRadius: 0,\n            position: 'relative',"),
-    'Grid thumbnail frame must remain square',
+    explorer.includes('thumbnailWidth={gridMetrics.thumbnailWidth}') &&
+      explorer.includes('thumbnailHeight={gridMetrics.thumbnailHeight}') &&
+      explorer.includes('<XDriveFileExplorerGridTileContent') &&
+      visual.includes('width: thumbnailWidth, height: thumbnailHeight,') &&
+      visual.includes("overflow: 'hidden', borderRadius: 0, position: 'relative', flex: '0 0 auto',"),
+    'Owner must render the square non-clipped visual frame through the shared Grid leaf',
   )
   assert.ok(
     pane.includes("position: 'relative', overflow: 'visible', borderRadius: 0"),
