@@ -3504,6 +3504,7 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'fix/files-quiet-navigation-') ||
+            startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||
@@ -3911,6 +3912,7 @@ jobs:
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'fix/files-quiet-navigation-') ||
+            startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||
@@ -3925,9 +3927,9 @@ jobs:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
           # First-paint P17/P18 and competing-navigation P19 are mandatory
           # for quiet-navigation PRs, not silently skipped by branch gating.
-          XDRIVE_MOBILE_FILES_P17: ${{ startsWith(github.head_ref, 'fix/files-quiet-navigation-') && '1' || '0' }}
-          XDRIVE_MOBILE_FILES_P18: ${{ startsWith(github.head_ref, 'fix/files-quiet-navigation-') && '1' || '0' }}
-          XDRIVE_MOBILE_FILES_P19: ${{ startsWith(github.head_ref, 'fix/files-quiet-navigation-') && '1' || '0' }}
+          XDRIVE_MOBILE_FILES_P17: ${{ (startsWith(github.head_ref, 'fix/files-quiet-navigation-') || startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-')) && '1' || '0' }}
+          XDRIVE_MOBILE_FILES_P18: ${{ (startsWith(github.head_ref, 'fix/files-quiet-navigation-') || startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-')) && '1' || '0' }}
+          XDRIVE_MOBILE_FILES_P19: ${{ (startsWith(github.head_ref, 'fix/files-quiet-navigation-') || startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-')) && '1' || '0' }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/xdrive-files-ios27"
@@ -3956,6 +3958,7 @@ jobs:
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'fix/files-quiet-navigation-') ||
+            startsWith(github.head_ref, 'fix/mobile-files-owner-prepaint-navigation-p118-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||

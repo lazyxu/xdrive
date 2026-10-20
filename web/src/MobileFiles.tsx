@@ -1296,7 +1296,10 @@ export default function MobileFiles(props: Props) {
   }, [props.lifecycleKey, props.searchActive, props.searchSummary?.resultCount,
     props.searchSummary?.loading, props.searchSummary?.error, section, scrollTop, persist])
 
-  useEffect(() => {
+  // An externally activated Search may arrive while Recent/Favorites is on
+  // screen. Commit its rail switch before paint, not via a passive effect
+  // that exposes a one-frame stale page after the Owner state changes.
+  useLayoutEffect(() => {
     if (!props.searchActive) {
       searchClearPendingRef.current = false
       return
@@ -1457,7 +1460,9 @@ export default function MobileFiles(props: Props) {
   const openExternalDirectory = (id: number, activate: () => Promise<boolean>) => {
     abandonPendingGlobalSearch()
     const intent = ++navigationIntentRef.current
-    const alreadyCommitted = directoryID === id && Boolean(props.virtualCollection) && !props.loading
+    // Composite loading also includes uploads/copies. Only the directory's
+    // own Owner GET can invalidate an already-accepted same-folder Range.
+    const alreadyCommitted = directoryID === id && Boolean(props.virtualCollection) && !ownerDirectoryLoading
     pendingExternalDirectoryRef.current = { directoryID: id, intent, alreadyCommitted }
     // Start the real Server/Agent navigation immediately. If completion beats
     // the authorized counted Range, keep the old rail and scroll intact.
@@ -2664,12 +2669,6 @@ export default function MobileFiles(props: Props) {
                   sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>清除</Button>
               </Stack>
             ) : null}
-            {props.searchSummary?.error ? (
-              <Stack direction="row" alignItems="center" gap={1} role="alert" sx={{ mt: 0.5 }}>
-                <Typography variant="caption" color="error" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{props.searchSummary.error}</Typography>
-                {props.searchSummary.onRetry ? <Button size="small" onClick={props.searchSummary.onRetry}>重试</Button> : null}
-              </Stack>
-            ) : null}
           </Box>
           {section === 'browse' && !showDirectory ? (
             <Box data-xdrive-mobile-files-home
@@ -2898,6 +2897,24 @@ export default function MobileFiles(props: Props) {
               sx={{ pointerEvents: 'auto', minWidth: 0 }}>
               {props.actionFeedback}
             </Box>
+          ) : null}
+          {props.searchSummary?.error ? (
+            <Stack data-mobile-files-search-error role="alert" direction="row" alignItems="center"
+              sx={{
+                pointerEvents: 'auto', px: 2, gap: 1, minHeight: MIN_TOUCH,
+                minWidth: 0, maxHeight: 'min(30dvh, 180px)', overflowY: 'auto',
+                borderRadius: 1.5, bgcolor: 'background.paper',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+              }}>
+              <Typography variant="caption" color="error" sx={{
+                minWidth: 0, flex: 1, overflowWrap: 'anywhere',
+              }}>{props.searchSummary.error}</Typography>
+              {props.searchSummary.onRetry ? (
+                <Button onClick={props.searchSummary.onRetry} sx={{
+                  minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, whiteSpace: 'nowrap',
+                }}>重试</Button>
+              ) : null}
+            </Stack>
           ) : null}
           {section === 'browse' && !showDirectory && !props.organizationLoading && props.organizationError ? (
             <Stack data-mobile-files-organization-error role="alert" direction="row" alignItems="center"
