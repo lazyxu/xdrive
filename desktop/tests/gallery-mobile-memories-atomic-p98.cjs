@@ -69,6 +69,8 @@ function harness(mobile) {
     },
   }
   const env = {
+    // A3h Cell isolation: no Cell request is active in this legacy fixture.
+    nativeCellOpenAbort: { current: null },
     useCallback: value => value,
     mobileGalleryViewport: mobile,
     source, preferenceScope: 'p98-a', requestID,

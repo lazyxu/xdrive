@@ -67,6 +67,8 @@ function owner(mobile) {
   let setShown = () => {}
   const routeSectionAppliedRef = { current: 'albums' }
   const env = {
+    // A3h Cell isolation: no Cell request is active in this legacy fixture.
+    nativeCellOpenAbort: { current: null },
     useCallback: fn => fn,
     mobileGalleryViewport: mobile,
     placesReturnPageRef: { current: null },

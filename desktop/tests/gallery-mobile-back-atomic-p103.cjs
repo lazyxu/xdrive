@@ -37,6 +37,9 @@ function harness(kind, mobile = true) {
   const record = key => value => updates.push({ key, value })
   let generation = 0
   const env = {
+    // A3h Cell isolation: this is an ordinary non-Cell Gallery Back fixture.
+    collectionTargetRef: { current: null },
+    leaveBaiduCellWall: () => { throw new Error('ordinary Gallery Back must not leave a Cell wall') },
     useCallback: fn => fn,
     mobileGalleryViewport: mobile,
     section: kind === 'media-type' ? 'media-types' :

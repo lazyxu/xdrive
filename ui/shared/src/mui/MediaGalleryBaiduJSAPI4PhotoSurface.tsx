@@ -41,6 +41,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   camera,
   onOpenPhoto,
   onOpenCell,
+  onCellInvalidated,
   onReady,
 }: {
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
@@ -50,6 +51,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   camera: XDriveBaiduJSAPI4InitialPhotoCamera
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
   onOpenCell?: (selection: MediaBaiduNativeCellSelection) => void
+  onCellInvalidated?: () => void
   onReady: (ready: boolean) => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
@@ -57,6 +59,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   latestOpenPhoto.current = onOpenPhoto
   const latestOpenCell = useRef(onOpenCell)
   latestOpenCell.current = onOpenCell
+  const latestInvalidation = useRef(onCellInvalidated)
+  latestInvalidation.current = onCellInvalidated
   // Capture the exact authenticated /cells result and the bounds of its query.
   // Provider clicks may never reconstruct these from a later camera frame.
   const currentAcceptedCellFrame = useRef<{
@@ -134,6 +138,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         onViewportInvalidated: () => {},
         onCells: (page, bounds) => {
           if (!active || pending.signal.aborted) return
+          if (!page) latestInvalidation.current?.()
           // A new pan/zoom invalidates the old selectable collection BEFORE paint.
           currentAcceptedCellFrame.current = page && bounds ? {
             page: { ...page, cells: page.cells.map(cell => ({ ...cell })) },

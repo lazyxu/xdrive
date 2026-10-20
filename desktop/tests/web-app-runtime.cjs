@@ -96,7 +96,8 @@ test('Web FileExplorer launches Web programs while Desktop ordinary Open uses th
 
 test('Preview and media viewers preserve collection navigation without materializing huge lists', () => {
   assert.ok(viewerContext.includes('xDriveFindWebViewerNeighbor'))
-  assert.ok(viewerContext.includes('const pageSize = 128'))
+  assert.ok(viewerContext.includes("const pageSize = context?.kind === 'gallery' && context.target.kind === 'baidu-cell'"))
+  assert.ok(viewerContext.includes('? 100 : 128'), 'signed Cell pages use 100; ordinary Viewer stays 128')
   assert.ok(viewerContext.includes('api.listRange('))
   assert.ok(viewerContext.includes('api.searchRange('))
   assert.ok(viewerContext.includes('loadGalleryRange('))

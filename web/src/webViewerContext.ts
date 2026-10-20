@@ -61,6 +61,16 @@ async function loadGalleryRange(
     case 'suggested-person':
       if (!target.id || !source.listSuggestedPersonItemRange) throw new Error('当前客户端不支持人物建议范围加载。')
       return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+    case 'baidu-cell': {
+      if (!target.baiduCell || !source.listBaiduNativeCellItems)
+        throw new Error('当前客户端不支持地图区域照片范围加载。')
+      return source.listBaiduNativeCellItems(
+        target.baiduCell, limit, offset,
+        { by: target.query.sort_by === 'added' ? 'added' : 'captured',
+          dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc' },
+        new AbortController().signal,
+      )
+    }
     case 'album':
       if (!target.id) throw new Error('相册 ID 缺失。')
       return source.listAlbumItemRange(target.id, limit, offset, target.query)
@@ -171,7 +181,11 @@ export function createXDriveWebViewerSession(
   const nodes = new Map<number, Entry<Node>>()
   const media = new Map<number, Entry<MediaItem>>()
   const acknowledgedPatches = new Map<number, { node: Node; patch: XDriveWebViewerMediaPatch }>()
-  const pageSize = 128
+  // The signed Owner-only BD09 /cell-items API limits each page to <=100.
+  // The Viewer cache must use the same offset grid, including boundaries:
+  // page index 100 is on offset 100, not a rejected offset 0/128 request.
+  const pageSize = context?.kind === 'gallery' && context.target.kind === 'baidu-cell'
+    ? 100 : 128
   const nodeLimit = 32
   if (initialCandidate) {
     const { node, mediaItem } = initialCandidate
