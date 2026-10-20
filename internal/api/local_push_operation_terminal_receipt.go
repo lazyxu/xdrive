@@ -131,6 +131,9 @@ func (s *Server) recordBoundLocalPushReservationTerminal(
 		if err := requireLocalPushSourceWithoutFirstLeafSQLCommitTx(tx, sourceID); err != nil {
 			return denied
 		}
+		if err := requireLocalPushFileTerminalVacantTx(tx, sourceID); err != nil {
+			return denied
+		}
 		var terminalState string
 		switch {
 		case latest.State == meta.LocalPushOperationIntentAborted &&
