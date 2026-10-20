@@ -121,6 +121,55 @@ caddy_host_meta_state() {
   fi
 }
 
+# Strictly read-only fixed Docker Server /host-control mount comparison.
+# Output only a fixed reason; no actual mount path, Docker ID or env contents.
+caddy_bridge_mount_state() {
+  local host="$1" id raw src actual expected
+  [[ -d "$host" && ! -L "$host" ]] || { echo host-directory-unavailable; return; }
+  id="$(compose ps -q server 2>/dev/null | head -n1 || true)"
+  [[ -n "$id" ]] || { echo server-container-unavailable; return; }
+  raw="$(timeout 4s docker inspect --format '{{range .Mounts}}{{if eq .Destination "/host-control"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}' "$id" 2>/dev/null)" || { echo docker-inspect-unavailable; return; }
+  [[ -n "$raw" ]] || { echo mount-missing; return; }
+  case "$raw" in
+    bind\|/*\|true) ;;
+    bind\|/*\|false) echo mount-read-only; return ;;
+    *) echo mount-invalid; return ;;
+  esac
+  src="${raw#bind|}"
+  src="${src%|true}"
+  [[ "$src" != *"|"* && "$src" != *$'\n'* ]] || { echo mount-invalid; return; }
+  expected="$(readlink -f -- "$host" 2>/dev/null)" || { echo host-directory-unavailable; return; }
+  actual="$(readlink -f -- "$src" 2>/dev/null)" || { echo mount-source-mismatch; return; }
+  if [[ "$actual" == "$expected" ]]; then echo matched-metadata-only
+  else echo mount-source-mismatch; fi
+}
+
+# Numeric GID mismatches may still work with ACL. Rootless group IDs are
+# namespace-remapped; an actual running Server witness is the proof.
+caddy_bridge_group_hint() {
+  local host="$1" gid expected
+  [[ -d "$host" && ! -L "$host" ]] || { echo unknown; return; }
+  [[ "$docker_mode" != rootless ]] || { echo rootless-userns-check-server; return; }
+  gid="$(stat -c %g -- "$host" 2>/dev/null)" || { echo unknown; return; }
+  expected="$(env_value XD_SERVER_GID)"
+  [[ "$expected" =~ ^[0-9]{1,10}$ ]] || expected=65532
+  if [[ "$gid" == "$expected" ]]; then echo group-matched-not-proof
+  else echo group-mismatch-or-acl; fi
+}
+
+# Never print CLI output: it may be an old binary or unexpected data.
+caddy_running_server_revision_state() {
+  local expected raw actual
+  expected="$(env_value XD_RELEASE_COMMIT)"
+  raw="$(timeout 5s docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server version 2>/dev/null | head -c 2048)" ||
+    { echo running-version-unavailable; return; }
+  actual="$(printf '%s\n' "$raw" | LC_ALL=C sed -nE 's/^commit: ([0-9a-f]{40})$/\1/p' | head -n1)"
+  [[ "$actual" =~ ^[0-9a-f]{40}$ ]] || { echo running-commit-unavailable; return; }
+  [[ "$expected" =~ ^[0-9a-f]{40}$ ]] || { echo running-commit-unpinned; return; }
+  if [[ "$actual" == "$expected" ]]; then echo matches-pinned-commit
+  else echo running-commit-mismatch; fi
+}
+
 compose() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
@@ -294,6 +343,24 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   [[ -n "$caddy_host_dir" ]] || caddy_host_dir="$STATE_DIR/control"
   caddy_host_heartbeat_state="$(caddy_host_meta_state "$caddy_host_dir" heartbeat)"
   caddy_host_snapshot_state="$(caddy_host_meta_state "$caddy_host_dir" caddy-runtime-status.json)"
+  caddy_mount_state="$(caddy_bridge_mount_state "$caddy_host_dir")"
+  if [[ "$caddy_mount_state" == matched-metadata-only ]]; then
+    record PASS "Caddy Server mount" "fixed host bridge bind matches running Server (metadata only)"
+  else
+    record WARN "Caddy Server mount" "reason=$caddy_mount_state; inspect fixed /host-control bind without touching Caddy"
+  fi
+  caddy_group_hint="$(caddy_bridge_group_hint "$caddy_host_dir")"
+  if [[ "$caddy_group_hint" == group-matched-not-proof ]]; then
+    record PASS "Caddy bridge access" "numeric GID matches (not proof of running Server read access)"
+  else
+    record WARN "Caddy bridge access" "reason=$caddy_group_hint; verify Server UID/GID, Rootless namespace and POSIX ACL"
+  fi
+  caddy_running_rev="$(caddy_running_server_revision_state)"
+  if [[ "$caddy_running_rev" == matches-pinned-commit ]]; then
+    record PASS "Caddy Server revision" "running Server matches pinned deployment commit (not latest release proof)"
+  else
+    record WARN "Caddy Server revision" "reason=$caddy_running_rev; compare running Server image to deployed release"
+  fi
   if [[ "$caddy_host_heartbeat_state" == fresh && "$caddy_host_snapshot_state" == fresh ]]; then
     record PASS "Caddy Host producer" "host heartbeat=fresh snapshot=fresh (metadata only; Server and TLS separately checked)"
   else

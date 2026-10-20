@@ -259,7 +259,7 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
             <Typography variant="caption" color="text.secondary" data-xdrive-caddy-host-witness-help
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
               如果原 Caddy 已能正常访问，请在实际宿主机执行 xdrive-server doctor，
-              核对 Host Control 采样文件与 Server 共享挂载；无需重装或重启 Caddy。
+              核对运行中 Server 版本、/host-control 挂载、UID/GID 或 ACL 与采样文件；无需重装或重启 Caddy。
             </Typography>
           )}
           {service.id === 'baidu-map' && service.health_state === 'not-checked' && (

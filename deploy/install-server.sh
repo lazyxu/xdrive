@@ -170,6 +170,61 @@ prepare_host_layout() {
   done
 }
 
+# Non-root Rootful installations may own the fixed control directory but be
+# unable to chgrp it to the container's numeric GID (65532). Its 2770 mode
+# then hides fresh Caddy observations from the running Server. Only grant the
+# EXISTING, intended Server UID access to this fixed bridge, never chmod o+rwx
+# or change container identity/storage ownership. Rootless/userns-remapped
+# container IDs cannot be mapped to the host UID safely in this function.
+prepare_caddy_host_bridge_access() {
+  local dir="$STATE_DIR/control" actual_gid owner_gid file fallback_ok=1
+  [[ -d "$dir" && ! -L "$dir" ]] || {
+    echo "[xDrive] WARNING: fixed Host Control bridge directory is unavailable or not a real directory; Caddy is unchanged." >&2
+    return 0
+  }
+  actual_gid="$(stat -c '%g' -- "$dir" 2>/dev/null || true)"
+  [[ "$actual_gid" =~ ^[0-9]{1,10}$ ]] || {
+    echo "[xDrive] WARNING: Host Control group metadata unavailable; ACL untouched, verify running Server with doctor." >&2
+    return 0
+  }
+  [[ "$actual_gid" != "$SERVER_GID" ]] || return 0
+  # A Docker info failure or unrecognized SecurityOptions JSON must NOT be
+  # treated as evidence that user namespace remapping is absent.
+  if [[ "$DOCKER_MODE" != rootful ||
+        ! "$docker_security_options" =~ ^\[(\"[^\"]*\"(,\"[^\"]*\")*)?\]$ ||
+        "$docker_security_options" == *userns* ]]; then
+    echo "[xDrive] WARNING: Rootless, userns or unverified Docker security mode; no unsafe Host Control UID ACL attempted. Verify via xdrive-server doctor." >&2
+    return 0
+  fi
+  if ! command -v setfacl >/dev/null 2>&1; then
+    echo "[xDrive] WARNING: Host Control cannot use the intended Server GID and POSIX ACL utility is absent; Server observation may be unavailable. Install ACL support and verify with doctor." >&2
+    return 0
+  fi
+  owner_gid="$(stat -c '%u' -- "$dir" 2>/dev/null || true)"
+  if [[ "$(id -u)" != 0 && "$owner_gid" != "$(id -u)" ]]; then
+    echo "[xDrive] WARNING: Host Control directory not owned by installer; refusing ACL mutation. Caddy remains untouched." >&2
+    return 0
+  fi
+  # Only the original fixed bridge receives ACL; never the whole home,
+  # Caddy certificates, keyring, database, or arbitrary host paths.
+  if ! setfacl -m "u:${SERVER_UID}:rwx,d:u:${SERVER_UID}:rwx" -- "$dir" 2>/dev/null; then
+    echo "[xDrive] WARNING: Host Control Server ACL could not be established; verify mount and permissions with doctor." >&2
+    return 0
+  fi
+  for file in "$dir/heartbeat" "$dir/caddy-runtime-status.json"; do
+    [[ -e "$file" ]] || continue
+    if [[ ! -f "$file" || -L "$file" ]] ||
+        ! setfacl -m "u:${SERVER_UID}:rw-" -- "$file" 2>/dev/null; then
+      fallback_ok=0
+    fi
+  done
+  if [[ "$fallback_ok" == 1 ]]; then
+    echo "[xDrive] Host Control fixed Server UID access restored through POSIX ACL; real running-Server witness still requires verification."
+  else
+    echo "[xDrive] WARNING: Host Control ACL was partial; existing snapshot metadata cannot prove Server read access." >&2
+  fi
+}
+
 detect_shell_rc() {
   local shell_name
   if [[ -n "${XD_SHELL_RC_PATH:-}" ]]; then
@@ -1615,6 +1670,7 @@ ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 ensure_env XD_STORAGE_INVENTORY_INTERVAL_SECONDS "${XD_STORAGE_INVENTORY_INTERVAL_SECONDS:-300}"
 set_env XD_HOST_CONTROL_HOST_DIR "$STATE_DIR/control"
+prepare_caddy_host_bridge_access
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"

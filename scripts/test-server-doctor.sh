@@ -34,6 +34,17 @@ if [[ "$1" == "info" ]]; then
   exit 0
 fi
 if [[ "$1" == "inspect" ]]; then
+  if [[ "$args" == *'eq .Destination "/host-control"'* ]]; then
+    case "${XD_TEST_CADDY_MOUNT:-matched}" in
+      matched) echo "bind|$HOME/state/control|true" ;;
+      mismatch) echo "bind|$HOME/state/other|true" ;;
+      absent) : ;;
+      readonly) echo "bind|$HOME/state/control|false" ;;
+      poison) echo 'bind|/tmp/ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak|true' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+  fi
   if [[ "$args" == *".State.Status"* ]]; then echo "running"; exit 0; fi
   if [[ "$args" == *".State.Health"* ]]; then echo "healthy"; exit 0; fi
   if [[ "$args" == *".Config.Image"* ]]; then echo "ghcr.io/lazyxu/test:sha-test"; exit 0; fi
@@ -59,6 +70,14 @@ if [[ "$1" == "compose" ]]; then
       exit 0
       ;;
     exec)
+      if [[ "$*" == *"server xdrive-server version"* ]]; then
+        case "${XD_TEST_SERVER_COMMIT:-matched}" in
+          matched) echo 'server version: test'; echo 'commit: 0123456789abcdef0123456789abcdef01234567'; exit 0 ;;
+          mismatch) echo 'server version: test'; echo 'commit: ffffffffffffffffffffffffffffffffffffffff'; exit 0 ;;
+          poison) echo 'ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak'; exit 0 ;;
+          unavailable) exit 2 ;;
+        esac
+      fi
       if [[ "$*" == *"caddy-host witness-check"* ]]; then
         case "${XD_TEST_CADDY_WITNESS:-missing}" in
           observed) echo 'Caddy local observation: local-https-observed'; exit 0 ;;
@@ -132,6 +151,24 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
   bash "$DOCTOR" >"$TMP/report-host-snapshot" 2>"$TMP/err-host-snapshot"
 grep -q 'Caddy Host producer.*heartbeat=fresh snapshot=fresh' "$TMP/report-host-snapshot"
 grep -q 'Caddy Host correlation.*host-snapshot-present-server-unreadable' "$TMP/report-host-snapshot"
+
+grep -q '\[PASS\] Caddy Server mount.*fixed host bridge bind source' "$TMP/report-host-snapshot" ||
+  grep -q '\[PASS\] Caddy Server mount.*fixed host bridge bind matches' "$TMP/report-host-snapshot"
+grep -q '\[PASS\] Caddy Server revision.*matches pinned deployment commit' "$TMP/report-host-snapshot"
+XD_TEST_CADDY_MOUNT=mismatch TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-mount-mismatch" 2>"$TMP/err-mount-mismatch"
+grep -q 'Caddy Server mount.*reason=mount-source-mismatch' "$TMP/report-mount-mismatch"
+XD_TEST_CADDY_MOUNT=absent TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-mount-missing" 2>"$TMP/err-mount-missing"
+grep -q 'Caddy Server mount.*reason=mount-missing' "$TMP/report-mount-missing"
+XD_TEST_SERVER_COMMIT=mismatch TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-binary-mismatch" 2>"$TMP/err-binary-mismatch"
+grep -q 'Caddy Server revision.*reason=running-commit-mismatch' "$TMP/report-binary-mismatch"
+XD_TEST_SERVER_COMMIT=poison XD_TEST_CADDY_MOUNT=poison TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-binary-poison" 2>"$TMP/err-binary-poison"
+grep -q 'Caddy Server revision.*reason=running-commit-unavailable' "$TMP/report-binary-poison"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-binary-poison" "$TMP/err-binary-poison"
+
 ! grep -Fq 'poison-must-not-leak' "$TMP/report-host-snapshot" "$TMP/err-host-snapshot"
 touch -d '2 minutes ago' "$TMP/home/state/control/caddy-runtime-status.json"
 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
@@ -179,5 +216,61 @@ for secret in super-secret-db-password super-secret-jwt super-secret-alidns toke
   fi
 done
 grep -q '<redacted>' "$TMP/report"
+
+
+# Execute only the exact installer ACL helper in a disposable fixture; the
+# function itself must never call Docker, Caddy, DNS or modify .env.
+mkdir -p "$TMP/acl/state/control"
+printf 'alive\n' > "$TMP/acl/state/control/heartbeat"
+printf 'fake\n' > "$TMP/acl/state/control/caddy-runtime-status.json"
+awk '/^prepare_caddy_host_bridge_access\(\) \{/{copy=1}copy{print}copy&&/^}/{exit}' \
+  "$ROOT/deploy/install-server.sh" > "$TMP/caddy-bridge-function.sh"
+test -s "$TMP/caddy-bridge-function.sh"
+(
+  source "$TMP/caddy-bridge-function.sh"
+  STATE_DIR="$TMP/acl/state"
+  SERVER_UID=65532
+  SERVER_GID=65532
+  DOCKER_MODE=rootful
+  docker_security_options='[]'
+  export XD_TEST_ACL_LOG="$TMP/state/acls"
+  setfacl() { printf '%s\n' "$*" >> "$XD_TEST_ACL_LOG"; }
+  stat() {
+    if [[ "$*" == *'%g'* ]]; then echo 1000
+    elif [[ "$*" == *'%u'* ]]; then id -u
+    else command stat "$@"; fi
+  }
+  prepare_caddy_host_bridge_access >/dev/null
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  grep -Fq 'u:65532:rwx,d:u:65532:rwx' "$XD_TEST_ACL_LOG"
+  grep -Fq 'u:65532:rw-' "$XD_TEST_ACL_LOG"
+  DOCKER_MODE=rootless
+  prepare_caddy_host_bridge_access >/dev/null 2>&1
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  DOCKER_MODE=rootful
+  docker_security_options='["name=userns"]'
+  prepare_caddy_host_bridge_access >/dev/null 2>&1
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  docker_security_options=''
+  prepare_caddy_host_bridge_access >/dev/null 2>&1
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  docker_security_options='null'
+  prepare_caddy_host_bridge_access >/dev/null 2>&1
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  docker_security_options='[malformed]'
+  prepare_caddy_host_bridge_access >/dev/null 2>&1
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  docker_security_options='["name=seccomp,profile=builtin","name=cgroupns"]'
+  prepare_caddy_host_bridge_access >/dev/null
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 6
+  docker_security_options='[]'
+  stat() {
+    if [[ "$*" == *'%g'* ]]; then echo 65532
+    elif [[ "$*" == *'%u'* ]]; then id -u
+    else command stat "$@"; fi
+  }
+  prepare_caddy_host_bridge_access >/dev/null
+  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 6
+)
 
 echo "server doctor tests passed"

@@ -1162,3 +1162,15 @@ test('Caddy snapshot-missing instructions stay in shared Web and Desktop UI with
   assert.ok(page.includes("service.installation_state !== 'observed'"))
   assert.equal(page.includes('docker restart'), false)
 })
+
+test('Caddy Host bridge access and running binary diagnostic remain shared and read-only', () => {
+  const install = read('deploy', 'install-server.sh')
+  const doctor = read('scripts', 'server-doctor.sh')
+  assert.ok(install.includes('prepare_caddy_host_bridge_access'))
+  assert.ok(doctor.includes('Caddy Server mount'))
+  assert.ok(doctor.includes('Caddy bridge access'))
+  assert.ok(doctor.includes('Caddy Server revision'))
+  assert.ok(doctor.includes('matches-pinned-commit'))
+  assert.ok(page.includes('运行中 Server 版本、/host-control 挂载、UID/GID 或 ACL'))
+  assert.equal(doctor.includes('docker restart'), false)
+});
