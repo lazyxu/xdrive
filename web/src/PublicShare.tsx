@@ -61,7 +61,42 @@ export default function PublicShareView({ token }: { token: string }) {
     ;(async () => {
       try {
         const result = await api.publicShare(token, controller.signal)
-        if (active && !controller.signal.aborted) setShare(result)
+        if (active && !controller.signal.aborted) {
+          setShare(result)
+          // Directly open the first bounded Share-scoped folder page: do not
+          // mount the authenticated Owner FileExplorer or prefetch media.
+          // Protected / exhausted shares keep their existing explicit form.
+          if (result.type === 'dir' && !result.requires_password &&
+              !(result.max_downloads > 0 && result.download_count >= result.max_downloads)) {
+            const firstPage = new AbortController()
+            pendingPage.current?.abort()
+            pendingPage.current = firstPage
+            setFolderPending(true)
+            setFolderError('')
+            void (async () => {
+              try {
+                const page = await api.publicShareChildren(token, '', 0, 0, firstPage.signal)
+                if (!active || pendingPage.current !== firstPage || firstPage.signal.aborted) return
+                setFolder({
+                  path: [{ id: 0, name: result.name }],
+                  items: page.items, cursor: 0, next: page.next_cursor, history: [],
+                })
+              } catch (err) {
+                if (!active || pendingPage.current !== firstPage || firstPage.signal.aborted) return
+                setFolderError(err instanceof ApiError && err.status === 401
+                  ? '分享密码错误。'
+                  : err instanceof ApiError && err.status === 410
+                    ? '此分享已过期或被撤销。'
+                    : err instanceof Error ? err.message : '无法打开此文件夹。')
+              } finally {
+                if (pendingPage.current === firstPage) {
+                  pendingPage.current = null
+                  setFolderPending(false)
+                }
+              }
+            })()
+          }
+        }
       } catch (err) {
         if (!active || controller.signal.aborted) return
         if (err instanceof ApiError && err.status === 410) {
@@ -75,7 +110,14 @@ export default function PublicShareView({ token }: { token: string }) {
         if (active && !controller.signal.aborted) setLoading(false)
       }
     })()
-    return () => { active = false; controller.abort() }
+    return () => {
+      active = false
+      controller.abort()
+      // The first-page request and metadata belong to this specific link,
+      // unlike the explicitly initiated durable whole-folder ZIP.
+      pendingPage.current?.abort()
+      pendingPage.current = null
+    }
   }, [api, token])
 
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
@@ -332,7 +374,7 @@ export default function PublicShareView({ token }: { token: string }) {
                     kind="dir"
                     items={folder?.items ?? []}
                     path={folder?.path ?? []}
-                    folderOpened={Boolean(folder)}
+                    folderOpened={Boolean(folder) || folderPending}
                     pending={folderPending}
                     canDownload={canDownload}
                     hasPreviousPage={Boolean(folder?.history.length)}

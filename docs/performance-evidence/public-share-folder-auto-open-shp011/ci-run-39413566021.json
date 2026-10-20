@@ -1,0 +1,132 @@
+{
+  "workload_id": "SH-P011",
+  "source_sha": "72f5fc4b911f3b2992d16a78c98e6ca63ab39657",
+  "real_browser_workflow": "https://github.com/lazyxu/xdrive/actions/runs/39413566021",
+  "full_77_job_ci": "https://github.com/lazyxu/xdrive/actions/runs/39413565919",
+  "ci": {
+    "success": 25,
+    "conditional_skips": 52,
+    "failed": 0,
+    "final_gate": "success"
+  },
+  "p50_ms": {
+    "wide_first": 360.0900449999899,
+    "wide_next": 313.0642979999975,
+    "mobile_first": 304.8280189999932,
+    "mobile_next": 280.38868800000637
+  },
+  "machine": {
+    "workload": "SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb",
+    "exact_source_head": "72f5fc4b911f3b2992d16a78c98e6ca63ab39657",
+    "original_jpeg_cas": 100000,
+    "browser_sessions": 6,
+    "page_budget_ms": 2000,
+    "original_download_budget_ms": 5000,
+    "scope": "Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails",
+    "excluded": "Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion, 100k thumbnail decode and user-owned transfer cancellation",
+    "sessions": [
+      {
+        "width": 1440,
+        "sample": 1,
+        "first_page_ms": 379.99896300000546,
+        "next_page_ms": 322.631613000005,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 103.18768600000476,
+        "next_download_ms": 78.6447909999988,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 2,
+        "first_page_ms": 360.0900449999899,
+        "next_page_ms": 296.71499499998754,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 95.95877199999813,
+        "next_download_ms": 89.5522520000086,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 3,
+        "first_page_ms": 351.1705490000022,
+        "next_page_ms": 313.0642979999975,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 110.4097000000038,
+        "next_download_ms": 77.50987999999779,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 1,
+        "first_page_ms": 306.45374399999855,
+        "next_page_ms": 270.25723899999866,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 96.79606399999466,
+        "next_download_ms": 100.0814640000026,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 2,
+        "first_page_ms": 299.8309159999917,
+        "next_page_ms": 302.7596409999969,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 95.93267000000924,
+        "next_download_ms": 84.02549700000964,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 3,
+        "first_page_ms": 304.8280189999932,
+        "next_page_ms": 280.38868800000637,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 96.05127999999968,
+        "next_download_ms": 100.60203100000217,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      }
+    ],
+    "original_bytes": 70893376,
+    "allocated_cas_bytes": 409604096,
+    "seed_excluded_ms": 76728.987,
+    "source_aggregate_sha256": "1e94e01ef63cd256e4da685115785ac99dc115079ea9d770d67384b15cb6352b",
+    "http_counts": {
+      "original_download_calls": 12,
+      "public_page_calls": 12,
+      "signed_ticket_calls": 12
+    },
+    "first_page_max_ms": 379.99896300000546,
+    "next_page_max_ms": 322.631613000005,
+    "native_download_max_ms": 110.4097000000038,
+    "electron_main_maxrss_kib": 194676,
+    "electron_main_cpu_user_us": 917585,
+    "electron_main_cpu_system_us": 682629,
+    "all_passed": true
+  },
+  "comparison": "NEW link navigation -> first100; not same-runner matched A/B against old click -> first100. Production speedup N/A",
+  "device_limitations": "Mobile 390 is Chromium CDP emulation, not physical iOS/Android or installed PWA"
+}

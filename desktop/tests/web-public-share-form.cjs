@@ -373,7 +373,7 @@ test('Shared folder browser keeps at most one 100-item mounted page and download
   const visibleRows = () => renderer.root.findAll(
     (node) => typeof node.type === 'string' && node.props.role === 'listitem')
 
-  await click('浏览文件夹')
+  // Initial unrestricted share metadata now starts exactly one bounded folder read.
   assert.equal(visibleRows().length, 100, 'first page must be bounded')
   assert.equal(calls.length, 1)
   assert.equal(calls[0].cursor, 0)
@@ -416,10 +416,9 @@ test('Unmounting an unconsumed public-folder page aborts its actual signal', asy
   const PublicShare = loadPublicShare(Api)
   let renderer
   await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
-  const button = renderer.root.findAllByType('button')
-    .find(item => textContent(item.children).trim() === '浏览文件夹')
-  assert.ok(button)
-  await act(async () => { button.props.onClick() })
+  assert.equal(renderer.root.findAllByType('button').some(
+    item => textContent(item.children).trim() === '浏览文件夹'), false,
+    'auto-opening an unrestricted folder has no intermediate button')
   assert.ok(signal && !signal.aborted, 'real in-flight directory read must have AbortSignal')
   await act(async () => { renderer.unmount() })
   assert.equal(signal.aborted, true, 'leaving the public share must stop its unused network request')
@@ -513,12 +512,12 @@ test('P90 actual React public folder browse and nested folder retain geometry an
     assert.ok(b, 'missing original Public Share button ' + label)
     await act(async () => { b.props.onClick() })
   }
-  await click('浏览文件夹')
+  // Initial unrestricted share metadata now starts exactly one bounded folder read.
   assert.equal(calls.length, 1)
-  assert.equal(button('浏览文件夹').props.disabled, true)
+  assert.equal(button('浏览文件夹'), undefined, 'initial read uses the real Explorer viewport')
   assert.equal(browser().props['aria-busy'], true)
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 370)) })
-  assert.ok(button('浏览文件夹'), 'a sustained first folder read must keep the original button')
+  assert.equal(button('浏览文件夹'), undefined, 'pending first page stays in Explorer')
   assert.equal(text().includes('正在读取文件夹'), false)
   await act(async () => {
     resolveRoot({ parent_id: 0, next_cursor: 0, items: [
@@ -618,7 +617,7 @@ test('Folder capability switches real shared Explorer Details/Grid without chang
     typeof node.type === 'string' && node.props.role === 'listitem')
   const view = () => renderer.root.findAll(node =>
     typeof node.type === 'string' && node.props['data-xdrive-public-share-explorer-view'])[0]
-  await click('浏览文件夹')
+  // Initial unrestricted share metadata now starts exactly one bounded folder read.
   assert.equal(rows().length, 2)
   assert.equal(view().props['data-xdrive-public-share-explorer-view'], 'details')
   assert.ok(textContent(renderer.toJSON()).includes('HEIC 图像'))
@@ -769,8 +768,7 @@ test('Public folder workspace supports bounded local page filtering, refresh and
   const button = label => renderer.root.findAllByType('button')
     .find(node => textContent(node.children).trim() === label)
   const rows = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.role === 'listitem')
-  assert.ok(button('浏览文件夹'))
-  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(button('浏览文件夹'), undefined, 'readable share opens its first page directly')
   assert.equal(calls.length, 1)
   assert.equal(rows().length, 2)
   const filter = renderer.root.findAllByType('input')
@@ -877,7 +875,7 @@ test('Refreshing a later public keyset page does not add a spurious Back cursor'
     assert.ok(btn, 'expected public-only navigation action ' + label)
     await act(async () => { btn.props.onClick() })
   }
-  await click('浏览文件夹')
+  // Initial unrestricted share metadata now starts exactly one bounded folder read.
   await click('下一页')
   assert.deepEqual(cursors, [0, 100])
   const refresh = renderer.root.findAllByType('button')
@@ -917,7 +915,7 @@ test('P115: same accepted public page refresh retains filter and selected row, n
   const rows = () => view.root.findAll(x => x.type === 'div' && x.props.role === 'listitem')
   const filter = () => view.root.findAllByType('input')
     .find(x => x.props.placeholder === '筛选当前页')
-  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(button('浏览文件夹'), undefined, 'no intermediate folder browse step')
   assert.equal(reads, 1)
   await act(async () => { filter().props.onChange({ target: { value: 'Frame' } }) })
   assert.equal(rows().length, 1)
@@ -968,7 +966,7 @@ test('P115: original public folder failure and ZIP notices never resize Explorer
   const button = label => view.root.findAllByType('button')
     .find(x => textContent(x.children).trim() === label)
   const find = marker => view.root.findAll(x => x.type === 'div' && x.props[marker] === true)
-  await act(async () => { button('浏览文件夹').props.onClick() })
+  assert.equal(button('浏览文件夹'), undefined, 'no intermediate folder browse step')
   assert.equal(find('data-xdrive-public-share-folder-browser').length, 1)
   const browser = find('data-xdrive-public-share-folder-browser')[0]
   const owner = find('data-xdrive-public-share-floating-feedback')[0]
@@ -1032,4 +1030,60 @@ test('Public JPEG image Quick Look requests one Share-only preview URL on explic
   await act(async () => { close.props.onClick() })
   assert.equal(renderer.root.findAll(node =>
     typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] !== undefined).length, 0)
+})
+
+test('SH-P011: passworded and exhausted folder shares do not auto-open or expose children', async () => {
+  for (const scope of [
+    { requires_password: true, max_downloads: 0, download_count: 0 },
+    { requires_password: false, max_downloads: 1, download_count: 1 },
+  ]) {
+    let childRequests = 0
+    class Api {
+      async publicShare() {
+        return { type: 'dir', name: 'Private album', size: 0, expires_at: null, ...scope }
+      }
+      async publicShareChildren() {
+        childRequests++
+        return { parent_id: 0, next_cursor: 0, items: [] }
+      }
+    }
+    const PublicShare = loadPublicShare(Api)
+    let renderer
+    await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+    assert.equal(childRequests, 0, 'metadata does not grant child listing without a usable capability')
+    const browse = renderer.root.findAllByType('button')
+      .find(x => textContent(x.children).trim() === '浏览文件夹')
+    assert.ok(browse)
+    assert.equal(browse.props.disabled, true)
+    await act(async () => { renderer.unmount() })
+  }
+})
+
+test('SH-P011: failed automatic first-page read preserves an explicit retry action', async (t) => {
+  const requests = []
+  class Api {
+    async publicShare() {
+      return { type: 'dir', name: 'Shared album', size: 0, expires_at: null,
+        requires_password: false, max_downloads: 0, download_count: 0 }
+    }
+    async publicShareChildren(_token, _password, _parentID, _cursor, signal) {
+      requests.push(signal)
+      if (requests.length === 1) throw new Error('temporary public page error')
+      return { parent_id: 0, next_cursor: 0,
+        items: [{ id: 17, type: 'file', name: 'photo.jpg', size: 1024 }] }
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare,{token:'test-share-token'})) })
+  t.after(() => act(() => renderer.unmount()))
+  assert.equal(requests.length, 1)
+  assert.ok(textContent(renderer.toJSON()).includes('temporary public page error'))
+  const retry = renderer.root.findAllByType('button')
+    .find(x => textContent(x.children).trim() === '浏览文件夹')
+  assert.ok(retry, 'terminal first-page failures can be retried by recipients')
+  await act(async () => { retry.props.onClick() })
+  assert.equal(requests.length, 2)
+  assert.equal(renderer.root.findAll(x => typeof x.type === 'string' && x.props?.role === 'listitem').length, 1,
+    'one accepted host row after retry, without counting both MUI Box and its host')
 })

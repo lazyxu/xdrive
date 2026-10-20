@@ -10,7 +10,8 @@ jobs:
       github.head_ref == 'perf/sh-p005-browser-physical-jpeg-share-100k-20261018' ||
       github.head_ref == 'feat/public-share-readonly-explorer-20261019' ||
       github.head_ref == 'feat/public-share-explorer-workspace-20261020' ||
-      github.head_ref == 'feat/public-share-scoped-image-preview-shp010-20261020'
+      github.head_ref == 'feat/public-share-scoped-image-preview-shp010-20261020' ||
+      github.head_ref == 'feat/public-share-folder-auto-open-shp011-20261020'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     services:
