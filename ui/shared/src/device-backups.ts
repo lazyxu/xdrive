@@ -128,6 +128,17 @@ export interface XDriveLocalBackupPreview {
 
 // An owning Desktop can explicitly persist a LOCAL-only, verified inventory.
 // It is not a completed backup, deletion/missing inference, or cloud checkpoint.
+// A real one-shot native first-file observation, never a whole backup.
+export interface XDriveLocalBackupFirstFile {
+  source_id: number
+  revision: number
+  observed_files: 1
+  observed_bytes: number
+  physical_observed: true
+  backup_complete: false
+  retirement_safe: false
+}
+
 export interface XDriveLocalBackupSnapshot {
   source_id: number
   revision: number

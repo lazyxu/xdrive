@@ -562,6 +562,18 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupFirstFile = useMemo(() => {
+    if (!localBackupSettings ||
+      !agent.hello?.capabilities.includes('device-backup-local-first-file')) return undefined
+    return {
+      run: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.startDeviceBackupLocalFirstFile(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const localBackupDelta = useMemo(() => {
     if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-delta')) return undefined
     return {
@@ -2838,6 +2850,7 @@ export default function App({
             localSchedule={localBackupSchedule}
             localPreview={localBackupPreview}
             localSnapshot={localBackupSnapshot}
+            localFirstFile={localBackupFirstFile}
             localDelta={localBackupDelta}
             localEvidence={localBackupEvidence}
             localEvidenceSummary={localBackupEvidenceSummary}

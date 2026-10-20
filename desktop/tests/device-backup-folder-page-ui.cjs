@@ -59,5 +59,5 @@ test('folder continuation cannot claim completeness or publish stale account dat
   assert.ok(view.includes('NAS 备份 · 待支持'))
   assert.ok(view.includes('连接状态未知'))
   const gated = (view.match(/localOwnsFolder\([a-zA-Z]+\.id\)/g) ?? [])
-  assert.equal(gated.length, 12, 'all twelve own-Desktop local dialogs remain scope-gated')
+  assert.equal(gated.length, 13, 'all thirteen own-Desktop local dialogs remain scope-gated, including real first-file Push')
 })

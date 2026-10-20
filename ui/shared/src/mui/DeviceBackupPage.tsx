@@ -18,6 +18,7 @@ import { XDriveDeviceBackupLocalRulesDialog } from './DeviceBackupLocalRulesDial
 import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalScheduleDialog'
 import { XDriveDeviceBackupLocalPreviewDialog } from './DeviceBackupLocalPreviewDialog'
 import { XDriveDeviceBackupLocalSnapshotDialog } from './DeviceBackupLocalSnapshotDialog'
+import { XDriveDeviceBackupLocalFirstFileDialog } from './DeviceBackupLocalFirstFileDialog'
 import { XDriveDeviceBackupLocalDeltaDialog } from './DeviceBackupLocalDeltaDialog'
 import { XDriveDeviceBackupLocalEvidenceDialog } from './DeviceBackupLocalEvidenceDialog'
 import { XDriveDeviceBackupLocalEvidenceSummaryDialog } from './DeviceBackupLocalEvidenceSummaryDialog'
@@ -30,6 +31,7 @@ import type { XDriveLocalBackupRulesActions } from './DeviceBackupLocalRulesDial
 import type { XDriveLocalBackupScheduleActions } from './DeviceBackupLocalScheduleDialog'
 import type { XDriveLocalBackupPreviewActions } from './DeviceBackupLocalPreviewDialog'
 import type { XDriveLocalBackupSnapshotActions } from './DeviceBackupLocalSnapshotDialog'
+import type { XDriveLocalBackupFirstFileActions } from './DeviceBackupLocalFirstFileDialog'
 import type { XDriveLocalBackupDeltaActions } from './DeviceBackupLocalDeltaDialog'
 import type { XDriveLocalBackupEvidenceActions } from './DeviceBackupLocalEvidenceDialog'
 import type { XDriveLocalBackupEvidenceSummaryActions } from './DeviceBackupLocalEvidenceSummaryDialog'
@@ -112,6 +114,7 @@ export function XDriveDeviceBackupPage({
   localSchedule,
   localPreview,
   localSnapshot,
+  localFirstFile,
   localDelta,
   localEvidence,
   localEvidenceSummary,
@@ -130,6 +133,7 @@ export function XDriveDeviceBackupPage({
   localSchedule?: XDriveLocalBackupScheduleActions
   localPreview?: XDriveLocalBackupPreviewActions
   localSnapshot?: XDriveLocalBackupSnapshotActions
+  localFirstFile?: XDriveLocalBackupFirstFileActions
   localDelta?: XDriveLocalBackupDeltaActions
   localEvidence?: XDriveLocalBackupEvidenceActions
   localEvidenceSummary?: XDriveLocalBackupEvidenceSummaryActions
@@ -151,6 +155,7 @@ export function XDriveDeviceBackupPage({
   const [scheduleTarget, setScheduleTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [previewTarget, setPreviewTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [snapshotTarget, setSnapshotTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [firstFileTarget, setFirstFileTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [deltaTarget, setDeltaTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceTarget, setEvidenceTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceSummaryTarget, setEvidenceSummaryTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
@@ -170,6 +175,7 @@ export function XDriveDeviceBackupPage({
     setScheduleTarget(null)
     setPreviewTarget(null)
     setSnapshotTarget(null)
+    setFirstFileTarget(null)
     setDeltaTarget(null)
     setEvidenceTarget(null)
     setEvidenceSummaryTarget(null)
@@ -621,6 +627,12 @@ export function XDriveDeviceBackupPage({
                             保存本机扫描清单（不上传）
                           </Button>
                         ) : null}
+                        {localFirstFile && folder.sync_mode === 'backup' && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="contained"
+                            onClick={() => setFirstFileTarget({ source, id: folder.source_id })}>
+                            开始真实备份（首文件试运行）
+                          </Button>
+                        ) : null}
                         {localDelta && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setDeltaTarget({ source, id: folder.source_id })}>
@@ -841,6 +853,15 @@ export function XDriveDeviceBackupPage({
           sourceID={snapshotTarget.id}
           actions={localSnapshot}
           onClose={() => setSnapshotTarget(null)}
+        />
+      ) : null}
+      {firstFileTarget && firstFileTarget.source === source && source && localFirstFile &&
+        verifiedLocalDeviceID && localOwnsFolder(firstFileTarget.id) ? (
+        <XDriveDeviceBackupLocalFirstFileDialog
+          key={firstFileTarget.id}
+          sourceID={firstFileTarget.id}
+          actions={localFirstFile}
+          onClose={() => setFirstFileTarget(null)}
         />
       ) : null}
       {deltaTarget && deltaTarget.source === source && source && localDelta &&
