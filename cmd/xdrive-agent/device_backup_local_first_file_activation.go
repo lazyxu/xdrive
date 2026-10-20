@@ -7,6 +7,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/localpushrunner"
+	"github.com/lazyxu/xdrive/internal/localpushwriter"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -133,12 +134,35 @@ func (c *agentController) cloudStartLocalBoundBackupFirstFileOnce(
 		driver.proof != proof || driver.grant != grant {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
+	// Preserve all original owning-Agent, native Root, Source and OS-key
+	// preconditions BEFORE making a never-reused disk writer claim. The claim
+	// adds cross-process admission fencing; it grants no new Server authority.
+	if err := driver.Check(workCtx, driver.scope); err != nil {
+		return empty, safeLocalBackupFirstFileError(err)
+	}
+	writerScope, err := localpushwriter.NewScope(
+		configDir, grant.Path, account.Server, account.Username, account.SessionID,
+		proof.DeviceID, proof.RootID, proof.RootFingerprint, sourceID, source.Revision,
+		*source.TargetNodeID, digest.NativeIdentityKey, digest.SHA256)
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	// O_EXCL + Linux flock / Windows LockFileEx MUST precede real HTTP Stage,
+	// and the same live lock is held through exact SQL/CAS/native reconciliation.
+	writer, err := localpushwriter.Begin(workCtx, writerScope)
+	if err != nil {
+		return empty, safeLocalBackupFirstFileError(err)
+	}
+	defer writer.Close()
 	// Existing native Stage -> authenticated HTTP/CAS/SQL -> independently
 	// native-held historical SQL/physical CAS path. Ambiguity quarantines
 	// the original Stage/key; NO retry, key retirement or SourceRun.
-	outcome, err := (&localpushrunner.Runner{}).RunFirstLeaf(workCtx, driver.scope, driver)
-	if err != nil || !outcome.Confirmed || outcome.Uncertain {
-		return empty, safeLocalBackupFirstFileError(err)
+	outcome, runErr := (&localpushrunner.Runner{}).RunFirstLeaf(workCtx, driver.scope, driver)
+	// Close releases ONLY the live OS lock after reconciliation. The permanent
+	// marker is NEVER removed, even on a positive physical observation.
+	closeErr := writer.Close()
+	if runErr != nil || closeErr != nil || !outcome.Confirmed || outcome.Uncertain {
+		return empty, safeLocalBackupFirstFileError(runErr)
 	}
 	return localBackupFirstFileSummary{
 		SourceID: sourceID, Revision: source.Revision,
