@@ -1,0 +1,27 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = name => fs.readFileSync(path.join(root, name), 'utf8')
+const bridge = read('ui/shared/src/media-gallery-baidu-jsapi4-bd09-photo.ts')
+const surface = read('ui/shared/src/mui/MediaGalleryBaiduJSAPI4PhotoSurface.tsx')
+const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
+test('W2b1 pair /cells response to original queried BD09 bounds', () => {
+  assert.match(bridge, /onCells\?\(page: MediaBaiduNativeCellsPage \| null, bounds\?: XDriveBaiduNativePhotoBounds\)/)
+  assert.equal((bridge.match(/onCells\?\.\(summary, bounds\)/g) || []).length, 2)
+  assert.match(bridge, /onCells\?\.\(null\)/)
+})
+test('W2b1 current cell clicks do not re-read the mutated map camera', () => {
+  assert.match(surface, /xDriveSelectBaiduNativeCell\(frame\.page, frame\.bounds, clicked\)/)
+  assert.match(surface, /page: \{ \.\.\.page, cells: page\.cells\.map\(cell => \(\{ \.\.\.cell \}\)\) \}/)
+  assert.match(surface, /bounds: \{ \.\.\.bounds \}/)
+  assert.equal((surface.match(/onClick=\{\(\) => openTrustedCell\(cell\)\}/g) || []).length, 2)
+  assert.match(surface, /if \(!frame\) return/)
+})
+test('W2b1 supports only opt-in trusted selection, keeping legacy focus fallback', () => {
+  assert.match(surface, /latestBridge\.current\?\.focusCell\(clicked\)/)
+  assert.match(map, /onOpenBaiduNativeCell\?:/)
+  assert.match(map, /onOpenCell=\{onOpenBaiduNativeCell\}/)
+})

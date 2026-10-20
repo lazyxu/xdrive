@@ -11,7 +11,8 @@ import {
 } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4SessionGrant } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
-import type { MediaBaiduNativeCellsPage } from '../models'
+import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaBaiduNativeViewportBounds } from '../models'
+import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduNativePhotoCellsRequest } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveBindBaiduJSAPI4NativeMap } from '../media-gallery-baidu-jsapi4-native'
 import {
@@ -39,6 +40,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   loadThumbnail,
   camera,
   onOpenPhoto,
+  onOpenCell,
   onReady,
 }: {
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
@@ -47,11 +49,30 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   loadThumbnail?: MediaThumbnailLoader
   camera: XDriveBaiduJSAPI4InitialPhotoCamera
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
+  onOpenCell?: (selection: MediaBaiduNativeCellSelection) => void
   onReady: (ready: boolean) => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const latestOpenPhoto = useRef(onOpenPhoto)
   latestOpenPhoto.current = onOpenPhoto
+  const latestOpenCell = useRef(onOpenCell)
+  latestOpenCell.current = onOpenCell
+  // Capture the exact authenticated /cells result and the bounds of its query.
+  // Provider clicks may never reconstruct these from a later camera frame.
+  const currentAcceptedCellFrame = useRef<{
+    page: MediaBaiduNativeCellsPage
+    bounds: MediaBaiduNativeViewportBounds
+  } | null>(null)
+  const openTrustedCell = (clicked: MediaBaiduNativeCellsPage['cells'][number]) => {
+    if (!latestOpenCell.current) {
+      latestBridge.current?.focusCell(clicked)
+      return
+    }
+    const frame = currentAcceptedCellFrame.current
+    if (!frame) return
+    const cell = xDriveSelectBaiduNativeCell(frame.page, frame.bounds, clicked)
+    if (cell) latestOpenCell.current(cell)
+  }
   const [result, setResult] = useState('')
   const [cellSummary, setCellSummary] = useState<MediaBaiduNativeCellsPage | null>(null)
   const [coverPins, setCoverPins] = useState<XDriveBaiduPhotoCoverPin[]>([])
@@ -70,6 +91,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let stopRenewal: (() => void) | null = null
     let resize: ResizeObserver | null = null
     let currentCells: MediaBaiduNativeCellsPage | null = null
+    currentAcceptedCellFrame.current = null
     setResult('')
     setCellSummary(null)
     setCoverPins([])
@@ -110,8 +132,13 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           if (active && !pending.signal.aborted) latestOpenPhoto.current(identity)
         },
         onViewportInvalidated: () => {},
-        onCells: page => {
+        onCells: (page, bounds) => {
           if (!active || pending.signal.aborted) return
+          // A new pan/zoom invalidates the old selectable collection BEFORE paint.
+          currentAcceptedCellFrame.current = page && bounds ? {
+            page: { ...page, cells: page.cells.map(cell => ({ ...cell })) },
+            bounds: { ...bounds },
+          } : null
           currentCells = page
           setCellSummary(page)
           setCoverPins(page ? projectCovers(page) : [])
@@ -152,6 +179,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             native?.dispose()
             native = null
             currentCells = null
+            currentAcceptedCellFrame.current = null
             resize?.disconnect()
             setCellSummary(null)
             setCoverPins([])
@@ -174,6 +202,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       }
     })
     return () => {
+      currentAcceptedCellFrame.current = null
       stopRenewal?.()
       resize?.disconnect()
       active = false
@@ -202,8 +231,9 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             {coverPins.map(({ key, cell, x, y }) => (
               <Box component="button" type="button" key={key}
                 data-xdrive-baidu-photo-cover-pin={cell.cell_x + ':' + cell.cell_y}
-                aria-label={cell.photo_count.toLocaleString('zh-CN') + ' 张照片，打开或放大此处'}
-                onClick={() => latestBridge.current?.focusCell(cell)}
+                aria-label={cell.photo_count.toLocaleString('zh-CN') +
+                  (onOpenCell ? ' 张照片，打开区域照片墙' : ' 张照片，放大此处')}
+                onClick={() => openTrustedCell(cell)}
                 sx={{ position: 'absolute', left: x, top: y,
                   transform: 'translate(-50%, -100%)', width: 60, height: 64,
                   border: 0, bgcolor: 'transparent', p: 0, cursor: 'pointer',
@@ -254,7 +284,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             {cellSummary.cells.map(cell => (
               <Box component="button" type="button" key={cell.cell_x+':'+cell.cell_y}
                 data-xdrive-baidu-owner-cell-button
-                onClick={() => latestBridge.current?.focusCell(cell)}
+                onClick={() => openTrustedCell(cell)}
                 sx={{font:'inherit',color:'text.primary',border:'1px solid',
                   borderColor:'divider',borderRadius:1,background:'background.paper',
                   minHeight:44,cursor:'pointer',px:1}}>

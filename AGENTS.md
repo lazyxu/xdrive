@@ -1,3 +1,22 @@
+## A3h-W2b1 · exact-head test failure and full-master rebuild (2026-10-20)
+
+- Prior scoped W2b1 head `1d9d0a8cda54c79a3a593388bd836348ae40be39` on parent `9720b4c13b67...` was RED in actual 77-job [CI #39417218406](https://github.com/lazyxu/xdrive/actions/runs/39417218406): **two obsolete legacy source tests** expected the unconditional `focusCell(cell)` click handler. The new verified behavior correctly uses `openTrustedCell(cell)` and only falls back to `focusCell(clicked)` if no controller is available.
+- Amend those two tests to check verified Cell source identity + fallback. Full current master `63f9eef57d6251672a6ebb895e0c0bc9604debcd` also includes unrelated P116 Local Storage UI; preserve all its code and AGENTS history. Copy all five original W2b1 non-AGENTS code/test/doc blobs unchanged; add only the two corrected historic source tests and this AGENTS note. Exactly ONE work commit; full new exact HEAD CI/Final Gate/clean before merge.
+- User permanence: production environment security acceptance SKIPPED (unverified); Owner/Consent/revision/CSP source-level checks unchanged. W2b2 #2232 and W3a #2236 remain separate stacked Drafts, needing rebase after W2b1 merge.
+
+## P0 A3h-Wall W2b1 · accurate master reconstruction (2026-10-20)
+
+- Original single W2b1 feature commit `58153bc635069294c6f3ba09fdde8a882ac98e5c` on old W2a `659d7586ed9ca038aa2f30818b097e9b42e2f53d` was stacked. After #2220 safely passed exact CI and rebase-merged, branch must be reconstructed against full live `master@9720b4c13b67b5f38d7227697191a36ebf0270e3` rather than merging stale W2a ancestry.
+- Checked old-W2a→master for overlap: **none of W2b1's five non-AGENTS paths changed**. Copy these five original blobs byte-identically, retain full master tree and entire AGENTS history, and carry its original W2b1 policy notes below. Exactly one scoped commit in the same existing #2228 PR.
+- W2b1 only pairs verified Owner /cells result with original BD09 bounds and routes cover/list click; W2b2 #2232 remains Draft for authenticated VirtualCollection/Viewer. Do not mark P0-04 complete from W2b1 alone.
+- USER PERMANENT RULE: production-only security acceptance is skipped (not verified); never ask for production credentials/HAR or block CI/merge on inaccessible deployment checks. Continue code isolation, Owner/Consent/revocation and source tests. Exact HEAD full CI + Final Gate and fresh GitHub clean required before merge.
+
+## P0 A3h-Wall W2b1 · trusted native cell click handoff (2026-10-20)
+
+- Stacked Draft on W2a #2220 (unmerged): native bridge pairs exact Owner /cells page with the BD09 bounds used by the same request. Cover pin and all-cell list clicks freeze/verify that pair via xDriveSelectBaiduNativeCell; when GalleryPage has no callback, legacy focusCell remains active. NO full wall/Viewer/return is delivered by W2b1.
+- Require W1 #2214 and W2a #2220 source merge before promoting W2b1, rebuild atop complete master with one work commit and new exact-head CI/Final Gate. Preserve all independent owner changes and full AGENTS history. Do not claim SDK isolation, 100k or actual production acceptance.
+- Owner instruction: production-only safety acceptance is permanently skipped/out of assistant scope; do not request live AK/HAR/access or use inaccessible production evidence as feature PR gate. See dedicated rule in #2227. Continue code-level Owner/Consent/CSP/provider isolation regression checks.
+
 ## P116 · Local Storage async feedback must never resize accepted page geometry (2026-10-20)
 
 - **New confirmed shared-layout defect:** `LocalStoragePage.tsx` previously inserted refreshed-error and cache-operation success `XDriveStatusAlert sx={{mb:2}}` into normal document flow before **already accepted** storage metrics and Desktop file-policy trees. A receipt's arrival/removal shifted the viewport without a new verified page. **MANDATORY for all Web/Mobile Web/Desktop pages:** after a successful Owner/index snapshot is mounted, no asynchronous failed/success/progress receipt may add a normal-flow sibling ahead of that view, even if the message is brief. Use one already reserved or non-reflowing, safe-area-aware status owner; keep truthful error/success/retry/cancel/progress, `role=alert/status` and original actionable controls. The first cold/unverified read must retain its stable silent minHeight 180 slot and an equal-geometry terminal error, never a fake zero or loader. No timers that flash `正在加载目录` or interrupt accepted Files/Album/Viewer content.
