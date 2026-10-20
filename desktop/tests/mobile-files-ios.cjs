@@ -621,7 +621,7 @@ test('P95 typed path must wait for current shared navigation first-page receipt'
   const pathEffectEnd = mobileSource.indexOf('    // A Home/Recent/Quick Access/Search/path ticket', pathEffectStart)
   assert.ok(pathEffectStart > 0 && pathEffectEnd > pathEffectStart)
   assert.doesNotMatch(mobileSource.slice(pathEffectStart, pathEffectEnd), /previousRangeKey/)
-  assert.match(mobileSource, /acceptedPathIntent, initial\.folderID, persist\]\)/)
+  assert.match(mobileSource, /acceptedPathIntent, initial\.folderID, storageKey, persist\]\)/)
   const pathSubmitStart = mobileSource.indexOf('  const submitGoToPath = () => {')
   const pathSubmitEnd = mobileSource.indexOf('  const onOpenEntry =', pathSubmitStart)
   assert.ok(pathSubmitStart > 0 && pathSubmitEnd > pathSubmitStart)

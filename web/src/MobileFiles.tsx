@@ -124,7 +124,7 @@ type Props = {
   onCrumbClick: (index: number) => void
   pathValue?: string
   onPathSubmit?: (path: string) => boolean | void | Promise<boolean | void>
-  onRestoreFolder: (id: number) => Promise<void>
+  onRestoreFolder: (id: number) => Promise<boolean | void>
   onOpenItem: (item: XDriveFileExplorerItem, parentID?: number) => boolean | void | Promise<boolean | void>
   onQuickLookItem?: (item: XDriveFileExplorerItem, parentID?: number) => void
   onOpenError: (error: unknown) => void
@@ -396,7 +396,11 @@ export default function MobileFiles(props: Props) {
     } catch { return defaults }
   })
   const [viewPreference, setViewPreference] = useState<'details' | 'grid'>(initial.view)
-  const [ready, setReady] = useState(initial.folderID === null || Boolean(props.requestedDirectoryID))
+  const [ready, setReady] = useState(initial.folderID === null || Boolean(props.requestedDirectoryID) ||
+    // A current matching counted Range is already an accepted saved folder;
+    // do not hide a legitimately verified 100k list behind a second resume.
+    (initial.folderID === committedFolderID && Boolean(props.virtualCollection) &&
+      !(props.directoryLoading ?? props.loading)))
   const [scrollTop, setScrollTop] = useState(initial.scrollTop)
   const scrollSaveRef = useRef<number | null>(null)
   const pendingScrollRef = useRef<{ folderID: number; scrollTop: number } | null>(null)
@@ -503,7 +507,12 @@ export default function MobileFiles(props: Props) {
   const pendingGlobalSearchRef = useRef<{ intent: number; lifecycleKey: string } | null>(null)
   const restoreFolderRef = useRef(props.onRestoreFolder)
   restoreFolderRef.current = props.onRestoreFolder
-  const restoreTaskRef = useRef<{ id: number; promise: Promise<void> } | null>(null)
+  // Resuming is an intent; only the matching counted CloudFiles first Range
+  // may reveal the saved directory. A stale Promise must never flip the rail.
+  const restoreTaskRef = useRef<{
+    id: number; storageKey: string; intent: number; promise: Promise<boolean | void>
+  } | null>(null)
+  const acceptedResumeRef = useRef<string | null>(null)
   const holdRef = useRef<{
     id: number; item: XDriveFileExplorerItem; x: number; y: number; timer: number; held: boolean; moved: boolean
   } | null>(null)
@@ -557,6 +566,11 @@ export default function MobileFiles(props: Props) {
   const effectiveGrid = viewPreference === 'grid'
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
   const rowHeight = effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
+  // On a cold saved-folder resume the bootstrap root may already have files.
+  // It is NOT the saved folder: reserve the same silent virtual scroll slot
+  // until matching crumbs + current first counted Range are both verified.
+  // Always preserve the original authoritative Server count; a pending
+  // presentation may temporarily project zero *visible* items, not zero data.
   const totalCount = props.virtualCollection?.itemCount ?? props.items.length
   // Empty must mean an authoritative zero count, not an unanswered Search,
   // failed Search or empty Trash. Reuse the existing shared StatePanel rather
@@ -569,6 +583,10 @@ export default function MobileFiles(props: Props) {
   // Composite busy also includes unrelated Copy/Upload/Delete/Search work and
   // must never hide an already verified empty directory.
   const ownerDirectoryLoading = props.directoryLoading ?? props.loading
+  const savedResumePending = section === 'browse' && !browseHome &&
+    initial.folderID !== null && !ready && !props.requestedDirectoryID &&
+    !props.trashActive && !props.searchActive &&
+    (directoryID !== initial.folderID || !props.virtualCollection || ownerDirectoryLoading)
   const acceptedEmptyDirectoryRef = useRef<string | null>(null)
   const emptyDirectoryKey = section === 'browse' && !browseHome &&
     !props.searchActive && !props.trashActive && directoryID !== null
@@ -576,12 +594,12 @@ export default function MobileFiles(props: Props) {
   useEffect(() => {
     if (emptyDirectoryKey === null || totalCount > 0) {
       acceptedEmptyDirectoryRef.current = null
-    } else if (!ownerDirectoryLoading && totalCount === 0 && props.virtualCollection) {
+    } else if (!savedResumePending && !ownerDirectoryLoading && totalCount === 0 && props.virtualCollection) {
       // A failed cold first read also ends loading but cannot confirm zero.
       // Only an accepted counted Server range certifies an empty directory.
       acceptedEmptyDirectoryRef.current = emptyDirectoryKey
     }
-  }, [emptyDirectoryKey, ownerDirectoryLoading, props.virtualCollection, totalCount])
+  }, [emptyDirectoryKey, ownerDirectoryLoading, props.virtualCollection, totalCount, savedResumePending])
   const keepAcceptedEmptyDirectory = totalCount === 0 &&
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
@@ -591,9 +609,9 @@ export default function MobileFiles(props: Props) {
   // current Owner read, even past 300ms. Only an explicit Search or a refresh
   // of already accepted Trash rows may show delayed in-place feedback.
   // Network thumbnails and sparse page fetching retain their own progress.
-  const coldUnconfirmedBrowse = showDirectory && !props.searchActive &&
+  const coldUnconfirmedBrowse = savedResumePending || (showDirectory && !props.searchActive &&
     !props.trashActive && totalCount === 0 && !keepAcceptedEmptyDirectory &&
-    !props.virtualCollection
+    !props.virtualCollection)
   // Before the very first Owner Range is dispatched, loading may still be
   // false. It is NOT a failed directory read. Track a genuine pending cycle
   // for this exact account/directory/arrangement before showing a terminal
@@ -610,7 +628,7 @@ export default function MobileFiles(props: Props) {
   // controller's directory GET can confirm this exact cold-read lifecycle.
   if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true
   const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&
-    coldReadAttemptRef.current.began
+    coldReadAttemptRef.current.began && !savedResumePending
   const showRangeLoading = (props.loading || searchCountPending) &&
     (props.searchActive || (props.trashActive && totalCount > 0))
   const loadFeedbackScope = props.searchActive
@@ -664,7 +682,7 @@ export default function MobileFiles(props: Props) {
   // A cold Search COUNT is also an unresolved first Range. Reserve the same
   // empty-slot geometry before its 300ms *visual-only* delay instead of
   // inserting a new in-flow search panel when the timer fires.
-  const showZeroState = totalCount === 0 &&
+  const showZeroState = (savedResumePending || totalCount === 0) &&
     (coldDirectoryFirstRead || (props.searchActive && zeroStatePending) ||
       (!zeroStatePending && !coldUnconfirmedBrowse) ||
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
@@ -678,7 +696,7 @@ export default function MobileFiles(props: Props) {
       : props.trashActive ? '最近删除为空'
         : coldDirectoryReadFailed ? '文件夹内容尚未确认，请刷新页面后重试。'
           : '此文件夹为空'
-  const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
+  const inlineEnabled = showDirectory && !savedResumePending && !effectiveGrid && !props.trashActive &&
     !props.searchActive && directoryID !== null && Boolean(props.onToggleInlineFolder)
   // Run-length projection: no full-directory materialization at 100k items.
   const inlineLayout = useMemo(() => {
@@ -693,7 +711,7 @@ export default function MobileFiles(props: Props) {
       itemAt: index => branch.items.get(index),
     })))
   }, [inlineEnabled, directoryID, totalCount, props.virtualCollection, props.items, props.inlineBranches])
-  const displayedCount = inlineLayout?.itemCount ?? totalCount
+  const displayedCount = savedResumePending ? 0 : (inlineLayout?.itemCount ?? totalCount)
   const logicalRows = effectiveGrid ? Math.ceil(displayedCount / columns) : displayedCount
   const windowRows = mobileFilesWindow(logicalRows, scrollTop, viewport.height, rowHeight)
   const start = windowRows.start * (effectiveGrid ? columns : 1)
@@ -724,7 +742,8 @@ export default function MobileFiles(props: Props) {
   // Grouping is still the authoritative Server ordering/index. Never invent
   // local group membership from the loaded portion of a paged collection.
   const groupedLayout = useMemo(() => {
-    if (!props.grouping || props.trashActive) return null
+    // A pending saved resume must not paint the bootstrap root's group headers.
+    if (savedResumePending || !props.grouping || props.trashActive) return null
     // Retain Server group membership/order: children are inserted under their
     // parent's section, without regrouping the sparse loaded subset.
     const groups = inlineLayout && directoryID !== null
@@ -740,7 +759,7 @@ export default function MobileFiles(props: Props) {
       groupHeaderHeight: 30,
       groupGap: 6,
     })
-  }, [props.grouping?.groupBy, props.trashActive, props.virtualCollection?.groups,
+  }, [savedResumePending, props.grouping?.groupBy, props.trashActive, props.virtualCollection?.groups,
     inlineLayout, directoryID, totalCount, displayedCount, effectiveGrid, columns, rowHeight])
   const groupedSegments = useMemo(() => groupedLayout
     ? xDriveFileExplorerVisibleGroupSegments(groupedLayout, scrollTop, Math.max(1, viewport.height), rowHeight * 4)
@@ -822,22 +841,34 @@ export default function MobileFiles(props: Props) {
   useEffect(() => {
     if (initial.folderID === null || props.requestedDirectoryID) return
     const folderID = initial.folderID
-    // Reuse the one pending navigation through StrictMode effect replay;
-    // the second subscription must still observe the same completion.
-    if (restoreTaskRef.current?.id !== folderID) {
-      restoreTaskRef.current = { id: folderID, promise: restoreFolderRef.current(folderID) }
+    // StrictMode may replay an effect. Reuse only the SAME owner, folder and
+    // navigation intent; a second account's identical numeric ID is distinct.
+    if (restoreTaskRef.current?.id !== folderID ||
+        restoreTaskRef.current.storageKey !== storageKey ||
+        restoreTaskRef.current.intent !== navigationIntentRef.current) {
+      restoreTaskRef.current = {
+        id: folderID, storageKey, intent: navigationIntentRef.current,
+        promise: Promise.resolve().then(() => restoreFolderRef.current(folderID)),
+      }
     }
     let live = true
     const task = restoreTaskRef.current
-    void task.promise.then(() => {
-      if (live && restoreTaskRef.current === task) { setBrowseHome(false); setReady(true) }
-    }).catch(() => {
-      if (live && restoreTaskRef.current === task) {
-        setBrowseHome(true)
-        setReady(true)
-        persist({ folderID: null, scrollTop: 0 })
-      }
-    })
+    const canApplyFailure = () => live && restoreTaskRef.current === task &&
+      navigationIntentRef.current === task.intent &&
+      acceptedResumeRef.current !== storageKey + ':' + folderID
+    const failCurrentResume = () => {
+      if (!canApplyFailure()) return
+      // Failed current restore may return to Browse Home. A superseded result
+      // cannot erase a newer folder, section, account or saved scroll anchor.
+      setBrowseHome(true)
+      setReady(true)
+      persist({ folderID: null, scrollTop: 0 })
+    }
+    void task.promise.then(accepted => {
+      // Success is not a visual acknowledgement. The pre-paint receipt guard
+      // below owns the ONLY saved-folder reveal; false is a terminal failure.
+      if (accepted === false) failCurrentResume()
+    }).catch(failCurrentResume)
     return () => { live = false }
   }, [storageKey, initial.folderID, props.requestedDirectoryID, persist])
 
@@ -871,6 +902,26 @@ export default function MobileFiles(props: Props) {
     // CloudFiles GET is the receipt owner. "props.loading" also includes
     // Search and durable FileOperation busy: upload/copy/delete/sync progress
     // must NOT postpone a folder whose first counted Range already committed.
+    const savedResumeTask = restoreTaskRef.current
+    const savedResumeCommit = Boolean(
+      !ready && section === 'browse' && !browseHome &&
+      initial.folderID !== null && !props.requestedDirectoryID &&
+      !props.trashActive && !props.searchActive &&
+      savedResumeTask?.id === initial.folderID &&
+      savedResumeTask.storageKey === storageKey &&
+      savedResumeTask.intent === navigationIntentRef.current &&
+      directoryID === initial.folderID &&
+      props.virtualCollection && !ownerDirectoryLoading)
+    if (savedResumeCommit) {
+      acceptedResumeRef.current = storageKey + ':' + initial.folderID
+      lastCommittedDirectoryRef.current = directoryID
+      setSection('browse')
+      setBrowseHome(false)
+      setReady(true)
+      // Do not perform a new-navigation scrollTo(0): the saved folder's
+      // original scroll anchor is restored in its dedicated layout effect.
+      return
+    }
     const pendingRoot = pendingBrowseRootRef.current
     const homeRootCommit = Boolean(pendingRoot &&
       pendingRoot.intent === navigationIntentRef.current &&
@@ -943,7 +994,7 @@ export default function MobileFiles(props: Props) {
     if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
   }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
     props.requestedDirectoryID, props.virtualCollection, ownerDirectoryLoading,
-    acceptedPathIntent, initial.folderID, persist])
+    acceptedPathIntent, initial.folderID, storageKey, persist])
 
   useLayoutEffect(() => {
     // An identical ResizeObserver delivery must not re-render the 100k
@@ -1506,6 +1557,13 @@ export default function MobileFiles(props: Props) {
         ? { recentScrollTop: departingTop } : { favoritesScrollTop: departingTop })
     }
     navigationIntentRef.current += 1
+    if (!ready && initial.folderID !== null) {
+      // Explicit rail selection abandons a cold saved-folder resume. Never
+      // strand Browse on the old pending ticket or show its stale root data.
+      // Keep the saved folder ID/anchor for the next genuine app opening.
+      setReady(true)
+      setBrowseHome(true)
+    }
     if (props.trashActive) {
       props.onCloseTrash()
       if (next === 'browse') setBrowseHome(true)
@@ -1518,7 +1576,9 @@ export default function MobileFiles(props: Props) {
     globalSearchPresentationRef.current = false
     setSection(next)
     const top = next === 'browse'
-      ? !browseHome && !props.trashActive ? browseScrollRef.current : 0
+      ? !ready && initial.folderID !== null
+        ? 0
+        : !browseHome && !props.trashActive ? browseScrollRef.current : 0
       : collectionScrollRef.current[next]
     setScrollTop(top)
     pendingSectionScrollRef.current = top
@@ -2304,7 +2364,8 @@ export default function MobileFiles(props: Props) {
     showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const editTitle = editBrowseHome && section === 'browse' && !showDirectory
   const compactTitleVisible = showDirectory || scrollTop > 48 || selectionActive || editTitle
-  const hasFolderAncestors = showDirectory && section === 'browse' && !props.trashActive &&
+  const hasFolderAncestors = !savedResumePending && showDirectory &&
+    section === 'browse' && !props.trashActive &&
     !props.searchActive && !selectionActive && props.crumbs.length > 1
   const compactTitle = selectionActive ? `已选 ${selection.length} 项` : editTitle ? '整理浏览' : heading
   const overflowAction = (label: string, action: () => void, disabled = false, disabledReason?: string) => {
@@ -2475,9 +2536,9 @@ export default function MobileFiles(props: Props) {
             </Button>
           ) : (
             <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
-              aria-hidden={!compactTitleVisible} dir="auto" title={compactTitle}
+              aria-hidden={!compactTitleVisible || savedResumePending} dir="auto" title={compactTitle}
               sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
-                visibility: compactTitleVisible ? 'visible' : 'hidden' }}>
+                visibility: compactTitleVisible && !savedResumePending ? 'visible' : 'hidden' }}>
               {compactTitle}
             </Typography>
           )}
