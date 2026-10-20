@@ -1014,6 +1014,18 @@ export interface MediaBaiduNativeCellsPage {
   }>
 }
 
+/** A3h-W2a: immutable claim from a current authorized BD09 8x8 /cells page.
+ * This is NOT a token; the Server revalidates Owner, consent, revisions and count. */
+export interface MediaBaiduNativeCellSelection {
+  bounds: MediaBaiduNativeViewportBounds
+  cell_x: number
+  cell_y: number
+  asset_id: number
+  node_id: number
+  node_revision: number
+  photo_count: number
+}
+
 export interface MediaMemory {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string

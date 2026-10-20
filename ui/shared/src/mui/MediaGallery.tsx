@@ -271,6 +271,13 @@ export interface MediaGalleryDataSource {
   ) => Promise<import('../models').MediaBaiduNativeViewportPage>
   listBaiduNativeCells?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
     signal: AbortSignal) => Promise<import('../models').MediaBaiduNativeCellsPage>
+  /** Trusted parent Owner-only sparse W1 Cell Range; NEVER an SDK call. */
+  listBaiduNativeCellItems?: (
+    selection: import('../models').MediaBaiduNativeCellSelection,
+    limit: number, offset: number,
+    sort: import('../media-gallery-baidu-jsapi4-cell-range').XDriveBaiduCellRangeSort,
+    signal: AbortSignal,
+  ) => Promise<MediaItemRange>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
   }>

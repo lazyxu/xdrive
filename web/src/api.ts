@@ -1,4 +1,8 @@
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
+import {
+  xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
+} from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
+import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage, XDriveDeviceBackupFolderPage } from '../../ui/shared/src'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapVerification, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
@@ -60,6 +64,7 @@ import type {
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
   MediaBaiduNativeCellsPage,
+  MediaBaiduNativeCellSelection,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -1617,6 +1622,26 @@ export class XDriveApi {
     ).then(page => {
       if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page,bounds))
         throw new Error('Invalid BD09 cell response')
+      return page
+    })
+  }
+
+  /** Signed-Owner W1 cell-to-original-Gallery Range. Never a Provider SDK URL
+   * or a general share-token /media/items access. */
+  mediaBaiduNativeCellItems(
+    selection: MediaBaiduNativeCellSelection,
+    limit: number, offset: number,
+    sort: XDriveBaiduCellRangeSort, signal: AbortSignal,
+  ) {
+    const query = xDriveBaiduNativeCellRangeParams(selection, limit, offset, sort)
+    if (!query || signal?.aborted)
+      return Promise.reject(new Error('Invalid or cancelled BD09 cell selection'))
+    return this.request<MediaItemRange>(
+      `/api/v1/media/places/baidu-jsapi/cell-items?${query.toString()}`,
+      { signal, cache: 'no-store' },
+    ).then(page => {
+      if (signal.aborted || !xDriveValidBaiduNativeCellRangePage(page, limit, offset))
+        throw new Error('Invalid or cancelled BD09 cell Range')
       return page
     })
   }
