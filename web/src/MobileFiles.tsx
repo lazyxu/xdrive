@@ -2728,16 +2728,8 @@ export default function MobileFiles(props: Props) {
                   ) : null}
                 </>
               ) : null}
-              {/* The fixed header slot above owns pending feedback, never an in-flow row. */}
-              {!props.organizationLoading && props.organizationError ? (
-                <Stack data-mobile-files-organization-error role="alert" direction="row" alignItems="center"
-                  sx={{ px: 2, gap: 1, minHeight: MIN_TOUCH }}>
-                  <Typography variant="caption" color="error" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-                    {props.organizationError}
-                  </Typography>
-                  {props.onRetryOrganization ? <Button onClick={props.onRetryOrganization} sx={{ minHeight: MIN_TOUCH }}>重试</Button> : null}
-                </Stack>
-              ) : null}
+              {/* A failed organization read is handled by the stable feedback overlay,
+                  not inserted as a row between the Browse Home sections. */}
               {props.savedSearches.length > 0 || props.tags.length > 0 ? (
                 <>
                   <Button data-mobile-files-home-section="organization" aria-expanded={browseSections.organization}
@@ -2906,6 +2898,19 @@ export default function MobileFiles(props: Props) {
               sx={{ pointerEvents: 'auto', minWidth: 0 }}>
               {props.actionFeedback}
             </Box>
+          ) : null}
+          {section === 'browse' && !showDirectory && !props.organizationLoading && props.organizationError ? (
+            <Stack data-mobile-files-organization-error role="alert" direction="row" alignItems="center"
+              sx={{
+                pointerEvents: 'auto', px: 2, gap: 1, minHeight: MIN_TOUCH,
+                borderRadius: 1.5, bgcolor: 'background.paper',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+              }}>
+              <Typography variant="caption" color="error" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+                {props.organizationError}
+              </Typography>
+              {props.onRetryOrganization ? <Button onClick={props.onRetryOrganization} sx={{ minHeight: MIN_TOUCH }}>重试</Button> : null}
+            </Stack>
           ) : null}
           {selectionLoad ? <Typography data-mobile-files-select-progress role="status"
             variant="caption" sx={{
