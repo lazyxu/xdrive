@@ -49,9 +49,10 @@ export function xDriveValidBaiduNativeCellsPage(
   let total = 0
   for (const c of p.cells) {
     if (!c || typeof c !== 'object' || Array.isArray(c) ||
-        Object.keys(c).length !== 7 ||
+        (Object.keys(c).length !== 7 && Object.keys(c).length !== 8) ||
         Object.keys(c).some(k => !['cell_x','cell_y','photo_count','asset_id',
-          'node_id','latitude','longitude'].includes(k)) ||
+          'node_id','node_revision','latitude','longitude'].includes(k)) ||
+        ('node_revision' in c && !positive(c.node_revision)) ||
         !safeInt(c.cell_x) || c.cell_x < 0 || c.cell_x >= 8 ||
         !safeInt(c.cell_y) || c.cell_y < 0 || c.cell_y >= 8 ||
         !positive(c.photo_count) || !positive(c.asset_id) || !positive(c.node_id) ||
@@ -107,6 +108,21 @@ export class XDriveBaiduJSAPI4NativeCellOverlays {
     }
     this.overlays = []
   }
+  /** A3h: confirm Owner cells for trusted React photo-cover pins WITHOUT
+   * passing private thumbnail data, Blob URLs or HTML into provider Labels.
+   * The existing focusCell still uses current revision-fenced committed IDs. */
+  applyCovers(page: MediaBaiduNativeCellsPage, bounds: MediaBaiduNativeViewportBounds,
+    signal: AbortSignal): boolean {
+    this.clear()
+    if (this.disposed || signal.aborted || !xDriveValidBaiduNativeCellsPage(page, bounds) ||
+        page.cells.some(cell => !positive(cell.node_revision))) return false
+    for (const cell of page.cells) {
+      if (signal.aborted || this.disposed) { this.clear(); return false }
+      this.committed.set(cell.cell_x + ':' + cell.cell_y, cell)
+    }
+    return true
+  }
+
   apply(page: MediaBaiduNativeCellsPage, bounds: MediaBaiduNativeViewportBounds,
     signal: AbortSignal): boolean {
     this.clear()
@@ -143,7 +159,8 @@ export class XDriveBaiduJSAPI4NativeCellOverlays {
     if (this.disposed) return
     const live = this.committed.get(cell.cell_x+':'+cell.cell_y)
     if (!live || live.asset_id !== cell.asset_id || live.node_id !== cell.node_id ||
-        live.photo_count !== cell.photo_count) return
+        live.photo_count !== cell.photo_count ||
+        live.node_revision !== cell.node_revision) return
     if (live.photo_count === 1) {
       // Existing Gallery Range/Viewer performs its own new Owner authorization.
       this.onOpenPhoto({assetID:live.asset_id,nodeID:live.node_id})

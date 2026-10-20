@@ -32,6 +32,7 @@ export function XDriveMediaGalleryPlacesMap({
   loadBaiduStaticMap,
   listBaiduNativeViewport,
   listBaiduNativeCells,
+  loadPhotoCoverThumbnail,
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
@@ -53,6 +54,7 @@ export function XDriveMediaGalleryPlacesMap({
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   listBaiduNativeViewport?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCells']
+  loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
@@ -321,6 +323,7 @@ export function XDriveMediaGalleryPlacesMap({
             mintMapOnlySession={mintBaiduJSAPI4Session}
             listOwnerViewport={listBaiduNativeViewport}
             listOwnerCells={listBaiduNativeCells}
+            loadThumbnail={loadPhotoCoverThumbnail}
             camera={nativeCamera}
             onOpenPhoto={onOpenBaiduNativePhoto}
             onReady={setNativeMapReady}

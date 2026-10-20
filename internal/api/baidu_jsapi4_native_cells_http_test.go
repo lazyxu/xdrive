@@ -92,7 +92,7 @@ func TestBaiduNativeCellsWireNoOriginalWGS84OrUnboundedPoints(t *testing.T) {
 		cells[i] = baiduPhotoMapCell{
 			CellX: i % 8, CellY: i / 8,
 			PhotoCount: 1562, AssetID: uint64(i + 1),
-			NodeID: uint64(i + 101), Latitude: 39.9, Longitude: 116.4,
+			NodeID: uint64(i + 101), NodeRevision: 7, Latitude: 39.9, Longitude: 116.4,
 		}
 		total += cells[i].PhotoCount
 	}
@@ -114,6 +114,7 @@ func TestBaiduNativeCellsWireNoOriginalWGS84OrUnboundedPoints(t *testing.T) {
 	if !strings.Contains(body, "\"total_count\":100000") ||
 		!strings.Contains(body, "\"grid_columns\":8") ||
 		!strings.Contains(body, "\"grid_rows\":8") ||
+		!strings.Contains(body, "\"node_revision\":7") ||
 		strings.Contains(body, "source_latitude") ||
 		strings.Contains(body, "source_longitude") ||
 		strings.Contains(body, "owner_id") ||

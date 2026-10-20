@@ -267,6 +267,9 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     },
     private readonly listCells?: XDriveBaiduNativePhotoCellsRequest,
     nativeNamespace?: unknown,
+    /** Explicitly enabled only when shared Gallery has an authenticated
+     * thumbnail loader and the official map has safe pixel projection. */
+    private readonly preferPhotoCovers = false,
   ) {
     if (!runtime || typeof runtime.map?.getBounds !== 'function' ||
         typeof listViewport !== 'function') throw new Error('baidu_indexed_viewport_unavailable')
@@ -325,6 +328,19 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
         if(!xDriveValidBaiduNativeCellsPage(summary,bounds))
           return this.deliver({kind:'query-unavailable'},generation)
         priorCount=summary.total_count
+        // A3h: the same signed, Owner-scoped 8x8 summary supplies one genuine
+        // representative cover and exact count per visible cluster, including
+        // <=100 photos. It never copies browser thumbnails into provider JS.
+        // Old Agent/Server (missing Node revision) preserves numeric/ClusterLayer.
+        if (this.preferPhotoCovers &&
+            summary.cells.every(cell => Number.isSafeInteger(cell.node_revision) &&
+              (cell.node_revision ?? 0) > 0)) {
+          if (!this.overlays.applyCovers(summary, bounds, abort.signal))
+            return this.deliver({kind:'query-unavailable'},generation)
+          try {this.callbacks.onCells?.(summary)} catch {}
+          return this.deliver({kind:'aggregated',totalPhotos:priorCount,
+            cells:summary.cells.length},generation)
+        }
         if(priorCount>XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX) {
           if(!this.overlays.apply(summary,bounds,abort.signal))
             return this.deliver({kind:'query-unavailable'},generation)
