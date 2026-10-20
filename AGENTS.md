@@ -1,3 +1,15 @@
+## P1-Places-B1-A · 冲突后保留 SD-UX-V2/Caddy/Album 完整主线，重建准确 HEAD（2026-10-20）
+
+- 初始 B1-A 准确源 SHA `5eb3077d26796d6e407852f95a41017c63218770` 的完整 [CI #39381525631](https://github.com/lazyxu/xdrive/actions/runs/39381525631) **SUCCESS**，但 independent Caddy Host #2198、Gallery Album #2201 和 SD-UX-V2 #2202 先合入，主线 AGENTS 累积历史与此 Draft 同时前置而出现真实冲突。旧 CI 不能验证新 HEAD，也不能覆盖最新 master 的 Caddy/UI/图库独立实现。
+- 冻结**完整新 master@557320d9f446a0afabb3c84f04c88e99bdc8a379**；用 ONE 新 B1-A 工作提交，只重放原 6 个 B1 Go/Test/Doc 的内容（严格不改这些 Git blob），保留完整当前 master AGENTS 历史并前置本说明与完整原 B1-A 规则。必须重新在准确 SHA 上运行 77+ 全 CI、真实 PostgreSQL Go API Race、Windows/Linux/Web/Desktop、Rootless/package/installer 与 Final Gate，并确认 GitHub mergeable_state=clean 后 Ready/Rebase Merge，旧的绿色不授权合入。
+- B1-A 仍只保存 GeoNames city ID、Admin1Code、最近距离与 GPS 指纹，不把最近城市判为行政归属；B1-B/C/D 国家/区域/城市虚拟集合后续另做；无用户生产实例迁移、真机/100k 验收。不得更动 A3h/SD-V2/Caddy/LocalPush/性能等其他 Owner 范围。
+
+## P1-Places-B1A · GeoNames 近邻城市身份/距离与旧记录待重算约束（2026-10-20）
+
+- SD-UX-V1 #2186 和 A3h #2194 已分别合入系统依赖去重与有界真实照片封面聚合，必须保持；截图旧构建不表示当前 master 仍有重复字段。全部系统依赖继续一服务一个真状态、状态/检测/可写配置/历史职责分离、历史和六字段按需展开，禁止编辑 Server 授权状态或自动消耗百度配额。
+- B1 只新增可信 GeoNames 数据基础：保留 region_code Admin1Code、city_geo_name_id、可空 distance_km、当前 WGS84 输入指纹；旧行 fingerprint 为空明确待重算，不能拿展示名称当稳定城市，也不能将最近 cities500 点当精确行政辖区。全程 Owner/live Node、ResolverVersion、当前 GPS 来源；百度仍唯一地图 Provider。
+- 本提交仅 Go 原模型、GeoNames、PlaceRunner、既有测试、专项文档与完整 AGENTS 历史；后续 B1-B/C/D 才实现国家/地区/城市 Facet API、原 Media Range 过滤与 Web/Mobile/Desktop 共用 UI。源码未通过物理部署/迁移、100k 或 iOS27 证明时一律不得宣称完成；A3h Issue #2188 仍待私有 SDK 安全与真实三端验证。
+- 按 AGENTS 冻结完整 master→唯一 scoped work commit→本 HEAD 全平台 77+（Go/Linux/Windows/真实 PostgreSQL Race/Web/Desktop/Rootless/installer/Final Gate）且 fresh mergeable clean 后方可 Ready/Rebase Merge；失败只修本专项、其他并行 Owner PR/分支不碰。详见 docs/gallery-places-b1a-provenance-distances.md。
 ## SD-UX-V2 · 所有系统依赖详情必须单标题、轻量四轴、证据按需显示（2026-10-20）
 
 - SD-UX-V1 #2186 已合入，但详情页仍有**页面标题 + 状态卡再次显示同名**以及在「配置/部署/健康/生效」四轴下无条件堆叠配置来源、config_hint、版本、生效 Chip、反复的提示文本。本次修复明确是全部 11 项系统依赖（及全局策略共享入口）的永久规则：**每项详情主标题仅一次，默认只有一次可信状态与四个独立证据轴**；详细配置能力、版本、来源、生效模式和长说明移入可访问的「查看状态依据」，且不能以“精简”为由隐藏重大故障或 Caddy actionable blocker。四轴不能把“未检测”冒充成功。
