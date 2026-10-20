@@ -36,6 +36,7 @@ import type {
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
   MediaBaiduNativeCellsPage,
+  MediaBaiduNativeCellSelection,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -53,6 +54,7 @@ import type {
   XDriveTransportResult,
 } from '../transport-result'
 import type { MediaGalleryDataSource } from './MediaGallery'
+import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveMediaGalleryDeleteOperation } from './MediaGalleryCleanupTask'
 
 export type XDriveMediaGalleryTransportError = XDriveTransportError
@@ -156,6 +158,10 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeViewportPage>>
   listBaiduNativeCells?: (bounds: MediaBaiduNativeViewportBounds, signal: AbortSignal) =>
     Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeCellsPage>>
+  listBaiduNativeCellItems?: (
+    selection: MediaBaiduNativeCellSelection, limit: number, offset: number,
+    sort: XDriveBaiduCellRangeSort, signal: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
@@ -569,6 +575,11 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listBaiduNativeCells: port.listBaiduNativeCells
       ? (bounds, signal) => resolveXDriveTransport(port.listBaiduNativeCells!(bounds, signal))
+      : undefined,
+    listBaiduNativeCellItems: port.listBaiduNativeCellItems
+      ? (selection, limit, offset, sort, signal) => resolveXDriveTransport(
+          port.listBaiduNativeCellItems!(selection, limit, offset, sort, signal),
+        )
       : undefined,
     getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
       ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))
