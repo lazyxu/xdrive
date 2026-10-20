@@ -8,6 +8,7 @@ import {
 } from '../service-dependencies'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveBaiduJSAPIConfigSnapshot } from './BaiduJSAPIConfigSnapshot'
 
 type ReleaseBlocker = NonNullable<XDriveBaiduJSAPIConfig['release_blockers']>[number]
 const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
@@ -60,6 +61,8 @@ export function XDriveBaiduJSAPIDesiredPanel({
   const [newAK, setNewAK] = useState('')
   const [busy, setBusy] = useState(false)
   const [reading, setReading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastReadAt, setLastReadAt] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -87,6 +90,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
     setProbeResult(null)
     setProbeError('')
     setReading(true)
+    setLastReadAt(null)
     if (!source.loadBaiduJSAPIConfig) {
       setReading(false)
       setError('当前 Server/Agent 不支持 Browser AK 管理，请升级到支持 JSAPI 4.0 的版本。')
@@ -97,6 +101,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
       if (!validConfig(value)) throw new Error('invalid_config')
       setConfig(value)
       setEnabled(value.desired_enabled)
+      setLastReadAt(new Date().toISOString())
     }).catch(() => {
       if (revision === generation.current) setError('读取 Browser AK 配置失败，请检查 Server/Agent 权限与版本。')
     }).finally(() => {
@@ -105,8 +110,30 @@ export function XDriveBaiduJSAPIDesiredPanel({
     return () => { ++generation.current }
   }, [source])
 
+  // Read the Server's current saved state; never fabricate or edit release authority.
+  // Preserve unsaved Browser AK and toggle drafts rather than silently discarding them.
+  const refreshConfig = async () => {
+    if (busy || refreshing || dirty || !source.loadBaiduJSAPIConfig) return
+    const revision = generation.current
+    setRefreshing(true)
+    setError('')
+    setNotice('')
+    try {
+      const value = await source.loadBaiduJSAPIConfig()
+      if (revision !== generation.current) return
+      if (!validConfig(value)) throw new Error('invalid_config')
+      setConfig(value)
+      setEnabled(value.desired_enabled)
+      setLastReadAt(new Date().toISOString())
+    } catch {
+      if (revision === generation.current) setError('刷新生效状态失败；当前显示上次成功读取的 Server 状态。')
+    } finally {
+      if (revision === generation.current) setRefreshing(false)
+    }
+  }
+
   const apply = async (clearAK = false) => {
-    if (busy || !config?.editable || !source.saveBaiduJSAPIConfig) return
+    if (busy || refreshing || !config?.editable || !source.saveBaiduJSAPIConfig) return
     const key = newAK.trim()
     if (!clearAK && enabled && !config.configured && key === '') {
       setError('启用 Browser AK 的期望配置前，必须输入独立的 Browser 类型 AK。')
@@ -130,6 +157,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
       if (!validConfig(result) || result.revision <= config.revision) throw new Error('invalid_revision')
       setConfig(result)
       setEnabled(result.desired_enabled)
+      setLastReadAt(new Date().toISOString())
       setNewAK('')
       setProbeResult(null)
       setProbeError('')
@@ -190,6 +218,11 @@ export function XDriveBaiduJSAPIDesiredPanel({
           </Typography>
         )}
         {reading ? <Box sx={{ minHeight: 32 }} aria-busy="true" /> : null}
+        {config && (
+          <XDriveBaiduJSAPIConfigSnapshot config={config} lastReadAt={lastReadAt}
+            refreshing={refreshing} canRefresh={Boolean(source.loadBaiduJSAPIConfig) && !busy && !dirty}
+            dirty={dirty} onRefresh={() => { void refreshConfig() }} />
+        )}
         {config && mode === 'config' ? (
           <Typography variant="caption" color={verified ? 'success.main' : 'text.secondary'}
             data-xdrive-baidu-jsapi4-status>
@@ -204,17 +237,17 @@ export function XDriveBaiduJSAPIDesiredPanel({
           <>
             <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
               control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
-                disabled={busy} />} />
+                disabled={busy || refreshing} />} />
             <TextField fullWidth size="small" type="password" autoComplete="new-password"
               label="设置或更换 Browser AK" inputProps={{ maxLength: 256 }}
               placeholder={config.configured ? '留空保留当前 Browser AK' : '请输入独立的 Browser 类型 AK'}
               helperText="仅提交新密钥；不会显示、回填或输出已保存的 Browser AK。"
-              value={newAK} disabled={busy} onChange={event => setNewAK(event.target.value)} />
+              value={newAK} disabled={busy || refreshing} onChange={event => setNewAK(event.target.value)} />
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Button size="small" variant="contained" disabled={busy}
+              <Button size="small" variant="contained" disabled={busy || refreshing}
                 onClick={() => { void apply(false) }}>保存并应用</Button>
               <Button size="small" color="error" variant="outlined"
-                disabled={busy || !config.configured}
+                disabled={busy || refreshing || !config.configured}
                 onClick={() => setConfirmClear(true)}>清除 Browser AK</Button>
             </Stack>
           </>
