@@ -1,0 +1,108 @@
+name: PWA P0-B2b2a Real Caddy and Two Go Versions
+
+on:
+  pull_request:
+    branches: [master, feat/pwa-two-release-web-p0b2b1-20261021]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-real-caddy-go-skew:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-real-caddy-go-b2b2a-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@127.0.0.1:5432/xdrive_test?sslmode=disable
+    steps:
+      - name: Checkout exact immutable historical Web and Go A
+        uses: actions/checkout@v4
+        with:
+          path: release-a
+          ref: e6018a4c260d1d7fff5e1718421cfb2a21f9dbd4
+      - name: Checkout current exact candidate Web and Go B
+        uses: actions/checkout@v4
+        with:
+          path: release-b
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Source, shell syntax and security contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C release-a rev-parse HEAD)" = e6018a4c260d1d7fff5e1718421cfb2a21f9dbd4
+          test "$(git -C release-a rev-parse HEAD)" != "$(git -C release-b rev-parse HEAD)"
+          bash -n release-b/scripts/pwa-two-real-caddy-go-p0b2b2a.sh
+          node --check release-b/desktop/scripts/pwa-two-real-caddy-go-p0b2b2a.cjs
+          node --test release-b/desktop/tests/pwa-two-real-caddy-go-p0b2b2a.cjs
+      - name: Build two independent real release Web and Go API versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix release-a/web ci --no-audit --no-fund
+          npm --prefix release-b/web ci --no-audit --no-fund
+          npm --prefix release-a/web run build
+          npm --prefix release-b/web run build
+          (cd release-a && go test -c -o "$RUNNER_TEMP/pwa-go-a.test" ./internal/api)
+          (cd release-b && go test -c -o "$RUNNER_TEMP/pwa-go-b.test" ./internal/api)
+          test -x "$RUNNER_TEMP/pwa-go-a.test"
+          test -x "$RUNNER_TEMP/pwa-go-b.test"
+          mkdir -p "$RUNNER_TEMP/pwa-b2b2a-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-b2b2a-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          docker pull caddy:2.10.2-alpine
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_PWA_B2B2_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_PWA_B2B2_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_PWA_B2B2_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "No genuine Chrome executable" >&2
+            exit 1
+          fi
+      - name: Real Caddy plus independent Web A to Go B and Web B to Go A
+        shell: bash
+        env:
+          XD_PWA_B2B2_A_ROOT: ${{ github.workspace }}/release-a
+          XD_PWA_B2B2_B_ROOT: ${{ github.workspace }}/release-b
+          XD_PWA_B2B2_A_GO: ${{ runner.temp }}/pwa-go-a.test
+          XD_PWA_B2B2_B_GO: ${{ runner.temp }}/pwa-go-b.test
+          XD_PWA_B2B2_OUTPUT: ${{ github.workspace }}/release-b/desktop/pwa-b2b2a-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_PWA_B2B2_CHROME }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/pwa-b2b2a-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          test "$(git -C release-b rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          bash release-b/scripts/pwa-two-real-caddy-go-p0b2b2a.sh
+          node -e "const s=require(process.env.XD_PWA_B2B2_OUTPUT + '/summary.json');if(!s.passed||!s.realWebAB||!s.realGoAB||!s.realCaddy||s.physicalIOS||s.realRunningUpload||s.cases.length!==2)process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-b2b2a-two-real-caddy-go-sanitized
+          # Never upload local Gin logs, private readiness JSON, JWT or browser profiles.
+          path: |
+            release-b/desktop/pwa-b2b2a-results/summary.json
+            release-b/desktop/pwa-b2b2a-results/Aweb-Bgo/summary.json
+            release-b/desktop/pwa-b2b2a-results/Bweb-Ago/summary.json
+          if-no-files-found: warn
+          retention-days: 14
