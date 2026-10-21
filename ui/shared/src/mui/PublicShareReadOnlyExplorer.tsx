@@ -10,6 +10,7 @@ import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { Box, Button, Breadcrumbs, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material'
 import type { PublicShareChild } from '../models'
+import { xDriveResolveFileExplorerCapabilities } from '../file-explorer-capabilities'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import { XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider } from './FileExplorerThumbnail'
 import { formatBytes } from '../format'
@@ -88,6 +89,13 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
   folderOpened?: boolean
   pending?: boolean
   canDownload?: boolean
+  // Pending native handoff is not a capability or a viewport-cancel signal.
+  downloadPending?: boolean
+  // Future read-only account folders and preview-only shares can narrow these
+  // independently. Omitted props preserve existing Share behavior.
+  canBrowse?: boolean
+  canPreview?: boolean
+  canDownloadZip?: boolean
   hasPreviousPage?: boolean
   hasNextPage?: boolean
   toolbarActions?: ReactNode
@@ -108,7 +116,8 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
 // never imports the account FileExplorer, Owner API, session or private actions.
 export function XDrivePublicShareReadOnlyExplorer({
   kind, items, path = [], folderOpened = false, pending = false,
-  canDownload = false, hasPreviousPage = false, hasNextPage = false,
+  canDownload = false, downloadPending = false, canBrowse, canPreview, canDownloadZip,
+  hasPreviousPage = false, hasNextPage = false,
   toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, onDownloadFolder,
   folderZIPPreparing = false, loadImagePreview, loadThumbnail,
   onPreviousPage, onNextPage, onRefresh,
@@ -123,8 +132,26 @@ export function XDrivePublicShareReadOnlyExplorer({
   } | null>(null)
   const [propertiesEntry, setPropertiesEntry] = useState<PublicShareChild | null>(null)
   const [previewEntry, setPreviewEntry] = useState<PublicShareChild | null>(null)
+  // UI capability upper bounds only; the Share API separately validates
+  // password, revocation, expiry, root containment and download tickets.
+  const capabilities = xDriveResolveFileExplorerCapabilities('share', {
+    list: canBrowse ?? canDownload,
+    preview: (canPreview ?? canBrowse ?? canDownload) && Boolean(loadImagePreview),
+    download: canDownload && Boolean(onDownloadItem),
+    downloadZip: (canDownloadZip ?? canDownload) && Boolean(onDownloadFolder),
+    search: false,
+    write: false,
+    delete: false,
+  })
+  // Legacy Share shows the download action disabled while a browser-native
+  // download is busy. An explicit browse grant can instead hide it entirely
+  // for future preview-only capabilities without changing existing layouts.
+  const showDownloadOption = canBrowse === undefined
+    ? Boolean(onDownloadItem)
+    : capabilities.download
+  const canStartDownload = capabilities.download && !downloadPending
   const supportsPublicImagePreview = (entry: PublicShareChild) => entry.type === 'file' &&
-    Boolean(loadImagePreview) && /\.(?:jpe?g|png|webp|gif)$/i.test(entry.name)
+    capabilities.preview && /\.(?:jpe?g|png|webp|gif)$/i.test(entry.name)
   const folder = kind === 'dir'
   const compactShareViewport = useMediaQuery('(max-width:620px)')
   const currentFolderID = path.at(-1)?.id ?? 0
@@ -145,10 +172,10 @@ export function XDrivePublicShareReadOnlyExplorer({
   }, [acceptedPageIdentity])
 
   const openEntry = (entry: PublicShareChild) => {
-    if (!canDownload) return
+    if (!capabilities.list) return
     if (entry.type === 'dir') onOpenFolder?.(entry)
     else if (supportsPublicImagePreview(entry)) setPreviewEntry(entry)
-    else onDownloadItem?.(entry)
+    else if (canStartDownload) onDownloadItem?.(entry)
   }
   const onEntryKeyDown = (event: KeyboardEvent<HTMLDivElement>, entry: PublicShareChild) => {
     if (event.target !== event.currentTarget) return
@@ -176,12 +203,14 @@ export function XDrivePublicShareReadOnlyExplorer({
   // The fixed-size selection slot stays mounted, preventing toolbar reflow.
   const selectedEntry = visibleItems.find(entry => entry.id === selectedID) ?? null
   const shareDetailsColumns = 'minmax(0,1fr) 190px 150px 120px'
-  const directoryControlsEnabled = folder && folderOpened && canDownload
+  const directoryControlsEnabled = folder && folderOpened && capabilities.list
   const thumbnailEntries = useMemo(
     () => new Map(items.map(entry => [entry.id, entry])),
     [items],
   )
-  const shareThumbnailLoader = useMemo(() => loadThumbnail
+  // A temporary download-busy state must not evict already visible cached
+  // thumbnails. Explicit preview denial still prevents requesting them.
+  const shareThumbnailLoader = useMemo(() => canPreview !== false && loadThumbnail
     ? (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
       const entry = thumbnailEntries.get(Number(item.id))
       return entry && entry.type === 'file' && entry.revision === item.revision
@@ -189,7 +218,7 @@ export function XDrivePublicShareReadOnlyExplorer({
         : Promise.resolve(null)
     }
     : undefined,
-  [loadThumbnail, thumbnailEntries])
+  [canPreview, loadThumbnail, thumbnailEntries])
   const viewButtons = (
     <Stack direction="row" spacing={0.5} alignItems="center">
       <Button type="button" size="small" aria-pressed={view === 'details'}
@@ -271,7 +300,7 @@ export function XDrivePublicShareReadOnlyExplorer({
             <XDriveFileExplorerDetailsRowCell columnKey="name">
               <XDriveFileExplorerDetailsNameCell
                 compact={compactShareViewport}
-                visual={<XDrivePublicShareThumbnailSlot entry={entry} grid={false} enabled={Boolean(loadThumbnail)} />}
+                visual={<XDrivePublicShareThumbnailSlot entry={entry} grid={false} enabled={canPreview !== false && Boolean(loadThumbnail)} />}
                 label={<XDriveFileExplorerItemName name={entry.name} grid={false} />}
               />
             </XDriveFileExplorerDetailsRowCell>
@@ -279,7 +308,7 @@ export function XDrivePublicShareReadOnlyExplorer({
             <XDriveFileExplorerGridTileContent
               thumbnailWidth={72}
               thumbnailHeight={72}
-              visual={<XDrivePublicShareThumbnailSlot entry={entry} grid enabled={Boolean(loadThumbnail)} />}
+              visual={<XDrivePublicShareThumbnailSlot entry={entry} grid enabled={canPreview !== false && Boolean(loadThumbnail)} />}
               label={<XDriveFileExplorerItemName name={entry.name} grid />}
             />
           )}
@@ -338,7 +367,7 @@ export function XDrivePublicShareReadOnlyExplorer({
               {folder ? '文件夹内容' : '共享文件'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              只读访问 · 浏览与下载
+              {capabilities.download ? '只读访问 · 浏览与下载' : '只读访问 · 浏览与预览'}
             </Typography>
           </Box>
           {toolbarActions}
@@ -358,7 +387,7 @@ export function XDrivePublicShareReadOnlyExplorer({
                   '& .MuiBreadcrumbs-li': { minWidth: 0 } }}>
                 {path.map((crumb, index) => (
                   <Button key={crumb.id} type="button" size="small"
-                    disabled={pending || !canDownload || index === path.length - 1}
+                    disabled={pending || !capabilities.list || index === path.length - 1}
                     onClick={() => onCrumbClick?.(index)}
                     sx={{ textTransform: 'none', maxWidth: 230, minWidth: 0, overflow: 'hidden',
                       textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{crumb.name}</Button>
@@ -382,20 +411,22 @@ export function XDrivePublicShareReadOnlyExplorer({
               <Stack data-xdrive-public-share-selection-actions
                 direction="row" alignItems="center" spacing={0.5} sx={{ whiteSpace: 'nowrap' }}>
                 {selectedEntry.type === 'dir' ? (
-                  <Button type="button" size="small" disabled={!canDownload || pending}
+                  <Button type="button" size="small" disabled={!capabilities.list || pending}
                     data-xdrive-public-share-selected-open
                     onClick={() => onOpenFolder?.(selectedEntry)}>打开</Button>
                 ) : (
                   <>
                     {supportsPublicImagePreview(selectedEntry) && (
-                      <Button type="button" size="small" disabled={!canDownload || pending}
+                      <Button type="button" size="small" disabled={!capabilities.preview || pending}
                         data-xdrive-public-share-selected-preview
                         onClick={() => setPreviewEntry(selectedEntry)}>预览</Button>
                     )}
-                    <Button type="button" size="small" disabled={!canDownload || pending}
-                      data-xdrive-public-share-selected-download
-                      startIcon={<DownloadRoundedIcon />}
-                      onClick={() => onDownloadItem?.(selectedEntry)}>下载</Button>
+                    {showDownloadOption && (
+                      <Button type="button" size="small" disabled={!canStartDownload || pending}
+                        data-xdrive-public-share-selected-download
+                        startIcon={<DownloadRoundedIcon />}
+                        onClick={() => onDownloadItem?.(selectedEntry)}>下载</Button>
+                    )}
                   </>
                 )}
                 <Button type="button" size="small"
@@ -432,7 +463,7 @@ export function XDrivePublicShareReadOnlyExplorer({
                   使用只读文件管理器查看目录及文件，不会修改原始内容。
                 </Typography>
                 <XDriveActionButton intent="primary" type="button"
-                  disabled={!canDownload || pending} onClick={onBrowse}>浏览文件夹</XDriveActionButton>
+                  disabled={!capabilities.list || pending} onClick={onBrowse}>浏览文件夹</XDriveActionButton>
               </Stack>
             )}
           </Box>
@@ -454,7 +485,8 @@ export function XDrivePublicShareReadOnlyExplorer({
       <Menu open={contextMenu !== null} onClose={() => setContextMenu(null)}
         anchorReference="anchorPosition"
         anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}>
-        <MenuItem disabled={!canDownload} onClick={() => {
+        {contextMenu?.entry && (contextMenu.entry.type === 'dir' ? (canBrowse === undefined || capabilities.list) : showDownloadOption) && (
+        <MenuItem disabled={contextMenu?.entry.type === 'dir' ? !capabilities.list : !canStartDownload} onClick={() => {
           const entry = contextMenu?.entry
           setContextMenu(null)
           // Context-menu Download must retain its original meaning even when
@@ -464,15 +496,16 @@ export function XDrivePublicShareReadOnlyExplorer({
         }}>
           {contextMenu?.entry.type === 'dir' ? '打开文件夹' : '下载文件'}
         </MenuItem>
-        {contextMenu?.entry.type === 'dir' && onDownloadFolder && (
-          <MenuItem disabled={!canDownload || pending || folderZIPPreparing} onClick={() => {
+        )}
+        {contextMenu?.entry.type === 'dir' && onDownloadFolder && capabilities.downloadZip && (
+          <MenuItem disabled={downloadPending || pending || folderZIPPreparing} onClick={() => {
             const entry = contextMenu?.entry
             setContextMenu(null)
             if (entry?.type === 'dir') onDownloadFolder?.(entry)
           }}>下载该文件夹 ZIP</MenuItem>
         )}
         {contextMenu?.entry && supportsPublicImagePreview(contextMenu.entry) && (
-          <MenuItem disabled={!canDownload} onClick={() => {
+          <MenuItem disabled={!capabilities.preview} onClick={() => {
             setPreviewEntry(contextMenu.entry)
             setContextMenu(null)
           }}>预览图片</MenuItem>
@@ -499,7 +532,7 @@ export function XDrivePublicShareReadOnlyExplorer({
           <Button type="button" onClick={() => setPropertiesEntry(null)}>关闭</Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={previewEntry !== null} onClose={() => setPreviewEntry(null)}
+      <Dialog open={previewEntry !== null && capabilities.preview} onClose={() => setPreviewEntry(null)}
         aria-labelledby="xdrive-public-share-preview-title" maxWidth="lg" fullWidth>
         <DialogTitle id="xdrive-public-share-preview-title">
           {previewEntry?.name || '预览'} · 只读
@@ -513,13 +546,15 @@ export function XDrivePublicShareReadOnlyExplorer({
                 : Promise.resolve(null)}
               imageFit="contain" interactiveImage minHeight={300}
               maxHeight="min(74dvh, 840px)"
-              fallback={<Typography color="text.secondary">当前媒体不能安全预览，请下载原文件。</Typography>}
+              fallback={<Typography color="text.secondary">当前媒体不能安全预览。</Typography>}
             />
           )}
         </DialogContent>
         <DialogActions>
-          <Button type="button" disabled={!canDownload || previewEntry === null}
-            onClick={() => { if (previewEntry) onDownloadItem?.(previewEntry) }}>下载原文件</Button>
+          {showDownloadOption && (
+            <Button type="button" disabled={!canStartDownload || previewEntry === null}
+              onClick={() => { if (previewEntry) onDownloadItem?.(previewEntry) }}>下载原文件</Button>
+          )}
           <Button type="button" onClick={() => setPreviewEntry(null)}>关闭预览</Button>
         </DialogActions>
       </Dialog>

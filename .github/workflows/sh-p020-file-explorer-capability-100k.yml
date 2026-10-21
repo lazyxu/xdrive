@@ -1,0 +1,115 @@
+name: SH-P020 Unified FileExplorer Capabilities Physical Share 100k
+on:
+  # Branch-scoped guard below allows stacked or master-targeted specialty runs.
+  pull_request: {}
+permissions:
+  contents: read
+jobs:
+  real-capability-physical-100k:
+    if: github.head_ref == 'refactor/file-explorer-shared-capabilities-p020-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_SH_P005_BROWSER_PHYSICAL_PERF: '1'
+      XD_SH_P005_GO_TEST_BIN: ${{ github.workspace }}/desktop/sh-p005-api-bin/api.test
+      XD_SH_P005_RESULTS: ${{ github.workspace }}/desktop/sh-p005-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify common capability contract and Share mutation isolation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          npm --prefix desktop install --no-audit --no-fund
+          node --check desktop/tests/file-explorer-capabilities-p020.cjs
+          node --test desktop/tests/file-explorer-capabilities-p020.cjs desktop/tests/web-public-share-form.cjs desktop/tests/public-share-outer-surface-shp019.cjs desktop/tests/shared-file-explorer.cjs
+      - name: Pin original and test-only source formatting
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          file=internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go
+          changes="$(gofmt -l "$file")"
+          if [ -n "$changes" ]; then gofmt -d "$file"; exit 1; fi
+          node --check desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs
+          node - <<'NODE'
+          const fs=require('node:fs')
+          const x=fs.readFileSync('desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs','utf8')
+          const g=fs.readFileSync('internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go','utf8')
+          for(const s of ['will-download','getFilename()', 'createHash(','clickFirstDownload','public_page_calls','first_page_ms'])if(!x.includes(s))throw Error(s)
+          for(const s of ['fileExplorerPhysicalJPEG(i)','100000','share.Token','public-share-download','original_download_calls','physical_cas_inodes'])if(!g.includes(s))throw Error(s)
+          if(x.includes('route.fulfill(')||x.includes('mockFetch')||x.includes('synthesizeDownload'))throw Error('No mock network')
+          NODE
+      - name: Build real PostgreSQL Gin CAS fixture and genuine shared Web UI
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix web run build
+          mkdir -p desktop/sh-p005-api-bin desktop/sh-p005-results
+          go test -mod=readonly -c -o "$XD_SH_P005_GO_TEST_BIN" ./internal/api
+      - name: Six native Chromium Web and Mobile Web real file-save sessions
+        run: |
+          set -euo pipefail
+          printf 'EXACT_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_SH_P005_RESULTS/source.txt"
+          go version >> "$XD_SH_P005_RESULTS/source.txt"
+          node --version >> "$XD_SH_P005_RESULTS/source.txt"
+          /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+            -o "$XD_SH_P005_RESULTS/resources.txt" \
+            timeout --signal=TERM --kill-after=15s 15m \
+            xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox \
+              desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs \
+            | tee "$XD_SH_P005_RESULTS/run.log"
+          node - <<'NODE'
+          const fs=require('node:fs'),path=require('node:path')
+          const s=JSON.parse(fs.readFileSync(path.join(process.env.XD_SH_P005_RESULTS,'summary.json'),'utf8'))
+          if(!s.all_passed||s.physical_jpeg_originals!==undefined)throw Error('invalid result schema')
+          if(s.original_jpeg_cas!==100000||s.sessions.length!==6||s.browser_sessions!==6)throw Error('not real 6 sessions')
+          if(s.original_bytes<50000000||s.allocated_cas_bytes<100001*4096)throw Error('not physical')
+          for(const w of [1440,390]){
+            const rows=s.sessions.filter(x=>x.width===w)
+            if(rows.length!==3||rows.some(r=>r.first_rows!==100||r.next_rows!==100||
+              !r.original_sha_verified||!r.no_stale_rows||r.horizontal_overflow||
+              r.first_page_ms>2000||r.next_page_ms>2000||
+              r.first_download_ms>5000||r.next_download_ms>5000))throw Error('wrong original UI')
+          }
+          if(s.http_counts.public_page_calls<12||s.http_counts.signed_ticket_calls<12||
+            s.http_counts.original_download_calls<12)throw Error('actual production HTTP missing')
+          console.log('SH_P005_SOURCE_EXACT_ACCEPTED',JSON.stringify({
+            source:s.exact_source_head,physical:s.original_jpeg_cas,
+            first:s.first_page_max_ms,next:s.next_page_max_ms,download:s.native_download_max_ms,
+            clients:'1440px Chromium Web / 390px Chromium mobile emulation (NOT physical mobile/PWA)'
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p020-capability-real-100k-six-session
+          path: desktop/sh-p005-results/
+          if-no-files-found: warn
+          retention-days: 30

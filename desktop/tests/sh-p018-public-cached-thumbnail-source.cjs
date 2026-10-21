@@ -46,8 +46,10 @@ test('SH-P018 signed cached GET is held after original Gin entry, not replaced b
   assert.ok(loadFolderSource.includes('activeThumbnailRequests.current) request.abort()'),
     'navigation must synchronously abort obsolete cached thumbnail HTTP GETs')
   assert.ok(loadFolderSource.indexOf('request.abort()') <
-    loadFolderSource.indexOf('await api.publicShareChildren('),
+    loadFolderSource.indexOf('await shareFileAdapter.list('),
     'server-side request cancellation must precede replacement-page network wait')
+  assert.ok(publicPage.includes('await api.publicShareChildren(token, password, parentID, pageCursor, signal)'),
+    'neutral list adapter must forward the actual scoped Share API request and AbortSignal')
   assert.match(publicView, /IntersectionObserver/)
   assert.doesNotMatch(publicView, /onDeleteItems|onMoveItemsTo|onUpload|onPaste|OwnerJWT/)
 })

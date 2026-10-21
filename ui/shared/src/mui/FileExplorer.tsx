@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { xDriveResolveFileExplorerCapabilities } from '../file-explorer-capabilities'
 import {
   XDriveFileExplorerItemIcon,
   xDriveFileKind,
@@ -1009,6 +1010,20 @@ export function XDriveFileExplorer({
   externallySorted?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
+  // The account and public Share data sources resolve one capability contract.
+  // Existing owner callbacks remain the authority for which UI actions exist;
+  // JWT/ACL authorization is still enforced by the Owner API.
+  const accountCapabilities = xDriveResolveFileExplorerCapabilities('account', {
+    list: true,
+    preview: Boolean(onPreviewItem || onOpenQuickLook || loadPreviewURL),
+    download: Boolean(onDownloadItems),
+    downloadZip: Boolean(onDownloadItems && folderDownloadSupported),
+    search: Boolean(searchEnabled && onSearch),
+    write: Boolean(onCreateFolder || onUpload || onUploadFolder ||
+      onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||
+      onPaste || onDeleteItems),
+    delete: Boolean(onDeleteItems),
+  })
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
     () => pathValue ?? crumbs.map((crumb) => crumb.name).join('/'),
@@ -1642,8 +1657,8 @@ export function XDriveFileExplorer({
   if (onCutItems) supportedSelectionActions.push('cut')
   if (onCopyItemsTo) supportedSelectionActions.push('copy-to')
   if (onMoveItemsTo) supportedSelectionActions.push('move-to')
-  if (onDownloadItems) supportedSelectionActions.push('download')
-  if (onDeleteItems) supportedSelectionActions.push('delete')
+  if (accountCapabilities.download && onDownloadItems) supportedSelectionActions.push('download')
+  if (accountCapabilities.delete && onDeleteItems) supportedSelectionActions.push('delete')
   if (onManageTags) supportedSelectionActions.push('manage-tags')
   const selectionDisabledReasons = selectedCount > 0 ? [...new Set(
     supportedSelectionActions

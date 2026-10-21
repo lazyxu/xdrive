@@ -68,6 +68,8 @@ import type {
   XDriveWebAppBrowseContext,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
+import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import { xDriveFileExplorerVerifiedChildReanchor } from '../../ui/shared/src/mui/FileExplorerReanchor'
 
 /** The existing Files Search input in either responsive presentation. */
@@ -589,22 +591,41 @@ export default function WebFileExplorer({
     onError,
   })
 
+  // This is the real JWT/Owner-backed READ adapter for Columns, not a
+  // forged Share grant. Grid/Details keep their existing bounded Range
+  // collection; writes still belong exclusively to the Owner API.
+  const accountReadAdapter = useMemo<XDriveFileExplorerDataAdapter<Node, number>>(() => ({
+    source: 'account',
+    rootID: Number(explorerCrumbs[0]?.id ?? 0),
+    // Only the column-read capability is established by this adapter.
+    // Full account ACL grants are not inferred from a renderer callback.
+    capabilities: xDriveResolveFileExplorerCapabilities('account', { list: true }),
+    list: async (parentID, cursor, signal) => {
+      if (!Number.isSafeInteger(parentID) || parentID <= 0) {
+        throw new Error('Invalid Owner directory identity')
+      }
+      signal.throwIfAborted()
+      const page = await api.listPageAbortable(parentID, {
+        cursor: typeof cursor === 'string' && cursor ? cursor : undefined,
+        limit: 200,
+        sort: 'name',
+        order: 'asc',
+      }, signal)
+      return { items: page.items, nextCursor: page.next_cursor ?? null }
+    },
+  }), [api, explorerCrumbs[0]?.id])
+
   const loadColumnPage = useCallback(async (
     parentID: string | number,
     cursor: string,
     signal: AbortSignal,
   ) => {
-    const page = await api.listPageAbortable(Number(parentID), {
-      cursor: cursor || undefined,
-      limit: 200,
-      sort: 'name',
-      order: 'asc',
-    }, signal)
+    const page = await accountReadAdapter.list(Number(parentID), cursor || null, signal)
     return {
       items: page.items.map((node) => xDriveProjectFileExplorerNode(node, '')),
-      nextCursor: page.next_cursor,
+      nextCursor: typeof page.nextCursor === 'string' ? page.nextCursor : undefined,
     }
-  }, [api])
+  }, [accountReadAdapter])
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
     lifecycleKey: navigationSessionStorageKey ?? '',
