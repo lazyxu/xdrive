@@ -11,7 +11,7 @@ export const XDRIVE_PWA_OFFLINE_MAX_ITEMS = 200
 export const XDRIVE_PWA_OFFLINE_MAX_RECORD_BYTES = 192 * 1024
 export const XDRIVE_PWA_OFFLINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-const DB_NAME = 'xdrive-pwa-offline-metadata-v1'
+const DB_NAME = 'xdrive-pwa-offline-metadata-v2'
 const STORE_NAME = 'owner-scopes'
 const DB_VERSION = 1
 
@@ -19,6 +19,8 @@ export type XDrivePwaOfflineOwner = {
   origin: string
   userID: number
   username: string
+  /** Durable Server-owned UUID fetched through authenticated /me. */
+  instanceID: string
 }
 
 export type XDrivePwaOfflineCandidate = {
@@ -75,10 +77,12 @@ function shortName(value: unknown): string {
   return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 128) : ''
 }
 
-function ownerKey(owner: XDrivePwaOfflineOwner): string {
+export function xDrivePwaOfflineScopeKey(owner: XDrivePwaOfflineOwner): string {
   if (!owner || !safePositiveInt(owner.userID) ||
       typeof owner.username !== 'string' || !/^[^\u0000-\u001f]{1,128}$/.test(owner.username) ||
-      typeof owner.origin !== 'string' || !/^https?:\/\/[^\s/]+$/i.test(owner.origin)) {
+      typeof owner.origin !== 'string' || !/^https?:\/\/[^\s/]+$/i.test(owner.origin) ||
+      typeof owner.instanceID !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(owner.instanceID)) {
     throw new Error('Invalid offline metadata owner scope')
   }
   // IndexedDB is same-origin. The explicit origin and immutable server user ID
@@ -86,7 +90,7 @@ function ownerKey(owner: XDrivePwaOfflineOwner): string {
   if (typeof window !== 'undefined' && owner.origin !== window.location.origin) {
     throw new Error('Offline metadata origin changed')
   }
-  return owner.origin + '\u0000' + owner.userID + '\u0000' + owner.username
+  return owner.origin + '\u0000' + owner.instanceID + '\u0000' + owner.userID + '\u0000' + owner.username
 }
 
 /** Bounded, selective projection. Never serialize a raw Node, URL, token,
@@ -220,7 +224,7 @@ export function xDrivePwaOfflineAvailable(): boolean {
 export async function xDrivePwaSetOfflineConsent(
   owner: XDrivePwaOfflineOwner, enabled: boolean,
 ): Promise<void> {
-  const key = ownerKey(owner)
+  const key = xDrivePwaOfflineScopeKey(owner)
   await withStore<void>('readwrite', (store, done) => {
     if (!enabled) {
       store.delete(key)
@@ -242,7 +246,7 @@ export async function xDrivePwaCaptureVisitedDirectory(
   owner: XDrivePwaOfflineOwner,
   input: Parameters<typeof xDrivePwaNormalizeVisitedDirectory>[0],
 ): Promise<boolean> {
-  const key = ownerKey(owner)
+  const key = xDrivePwaOfflineScopeKey(owner)
   const snapshot = xDrivePwaNormalizeVisitedDirectory(input)
   if (!snapshot) return false
   return withStore<boolean>('readwrite', (store, done) => {
@@ -267,7 +271,7 @@ export async function xDrivePwaCaptureVisitedDirectory(
 
 /** A cached record is never a live ACL proof, even when navigator.onLine=true. */
 export async function xDrivePwaReadOfflineDirectories(owner: XDrivePwaOfflineOwner): Promise<XDrivePwaOfflineRead> {
-  const key = ownerKey(owner)
+  const key = xDrivePwaOfflineScopeKey(owner)
   return withStore<XDrivePwaOfflineRead>('readonly', (store, done) => {
     const request = store.get(key)
     request.onsuccess = () => {

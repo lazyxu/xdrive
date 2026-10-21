@@ -96,3 +96,15 @@ test('storage is opt-in, never touched by merely importing the module', () => {
   assert.ok(!source.includes('skipWaiting('))
   assert.ok(!source.includes('localStorage.setItem('))
 })
+
+test('instance binding is mandatory and isolates the same Owner across Server replacements', () => {
+  const origin = 'https://drive.example.test'
+  const first = { origin, instanceID: '11111111-1111-4111-8111-111111111111', userID: 5, username: 'example' }
+  const second = { ...first, instanceID: '22222222-2222-4222-8222-222222222222' }
+  const key = exportsObject.xDrivePwaOfflineScopeKey
+  assert.notEqual(key(first), key(second))
+  assert.notEqual(key(first), key({ ...first, userID: 6 }))
+  assert.notEqual(key(first), key({ ...first, origin: 'https://other.example.test' }))
+  assert.throws(() => key({ ...first, instanceID: '' }))
+  assert.throws(() => key({ ...first, instanceID: 'not-verified' }))
+})
