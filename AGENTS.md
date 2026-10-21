@@ -1,3 +1,9 @@
+## P120 · Fixed one-row FileExplorer status bar across async updates (permanent, 2026-10-20)
+
+- Shared Web/Desktop FileExplorer status bar is a sibling of the virtual scroll owner, not a second loading surface. It MUST have a stable **single-line fixed-height** footprint across upload, copy/paste/delete, Search, Sort, Trash, selection and realtime operation-state changes. Do not use flex-wrap, auto height, text wrapping or insert dynamic feedback rows to resize the scroll host.
+- Preserve genuine status text, cancellation and Retry controls, thumbnail/video/Live Photo loading and all Server/Agent source checks. When a line is longer than the viewport, provide horizontal overflow or other **non-reflowing** access, not a permanently hidden capability.
+- Mandatory original shared-source regression: `desktop/tests/file-explorer-wide-statusbar-no-reflow-p120.cjs`. Require actual real-width layout measurement before claiming CSS-pixel and 100k CLS/FPS acceptance. Never infer physical-device success from the new source test.
+
 ## PWA P0-B1 · retained prior public hashed chunks (2026-10-21)
 
 - P0-A #2246 merged as master e6018a4 after exact 77-job full CI/Final Gate and actual Chromium. Installed iOS Home Screen, performance p50/p95 and physical 100k remain UNVERIFIED. 6 public build files / 2,491,727 raw bytes are NOT a latency benchmark.

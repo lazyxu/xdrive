@@ -5233,9 +5233,18 @@ export function XDriveFileExplorer({
         alignItems="center"
         justifyContent="space-between"
         spacing={2}
-        sx={{ minHeight: 28, px: 1.25, py: compactViewport ? 0.5 : 0, flexShrink: 0, flexWrap: 'wrap', rowGap: 0.25, color: 'text.secondary', bgcolor: 'background.default' }}
+        sx={{
+          height: compactViewport ? 36 : 28,
+          minHeight: compactViewport ? 36 : 28,
+          px: 1.25, py: 0, flexShrink: 0, flexWrap: 'nowrap',
+          whiteSpace: 'nowrap', overflowX: 'auto', overflowY: 'hidden',
+          overscrollBehaviorX: 'contain', scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+          color: 'text.secondary', bgcolor: 'background.default',
+        }}
       >
-        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}
+          sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
           <Typography variant="caption" noWrap>
             {searchSummary?.resultCount === null ? '等待搜索结果' : `${logicalItemCount} 个项目`}
           </Typography>
@@ -5260,11 +5269,12 @@ export function XDriveFileExplorer({
             </Typography>
           ) : null}
         </Stack>
-        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0} sx={{ flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}
+          sx={{ flexShrink: 0, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
           {statusText && !searchSummary ? (
-            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{statusText}</Box>
+            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>{statusText}</Box>
           ) : null}
-          <Typography variant="caption" title={arrangementStatusText} sx={{ overflowWrap: 'anywhere' }}>
+          <Typography variant="caption" noWrap title={arrangementStatusText}>
             {arrangementStatusText}
           </Typography>
           <Typography variant="caption" noWrap aria-label={`当前视图：${viewStatusText}`}>
