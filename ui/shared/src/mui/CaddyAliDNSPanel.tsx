@@ -158,7 +158,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
       data-xdrive-admin-caddy-alidns>
       <Stack spacing={1.5}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-          <Typography variant="subtitle2" fontWeight={700}>Caddy · AliDNS DNS-01 凭据</Typography>
+          <Typography variant="subtitle2" fontWeight={700}>AliDNS DNS-01 凭据</Typography>
           {config && (
             <Button size="small" variant="outlined" data-xdrive-caddy-alidns-manage
               disabled={busy || revealing || (manageOpen && (keyID.length > 0 || keySecret.length > 0))}
@@ -207,7 +207,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
                 disabled={!canEdit || !config.configured || !source.saveCaddyAliDNS}
                 onClick={() => setConfirmClear(true)}>清除已保存凭据</Button>
             </Stack>
-            {shown && (
+            {active && shown && (
               <Box>
                 <TextField size="small" fullWidth label="已保存 AccessKey ID · 临时显示"
                   value={shown.access_key_id} slotProps={{ input: { readOnly: true } }} sx={{ mb: 1 }} />

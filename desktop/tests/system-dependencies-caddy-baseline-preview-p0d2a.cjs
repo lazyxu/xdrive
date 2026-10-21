@@ -76,7 +76,7 @@ test('P0-D2a: actual Caddy Config manually invokes only existing read-only prefl
   const page=read('ui/shared/src/mui/CaddyDetailV1.tsx')
   const panel=read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
   assert.match(page,/XDriveCaddyHostBaselinePreviewPanel/)
-  assert.match(page,/active=\{screen === 'config'\}/)
+  assert.match(page,/active=\{true\}/)
   assert.match(panel,/onClick=\{\(\) => \{ void inspect\(\) \}\}/)
   assert.match(panel,/verifyCaddyPreflightContract\(await source\.loadCaddyHTTPSPreflight\(\)\)/)
   assert.match(panel,/<Dialog open=\{open && active && !hasUnsavedEdits\}/)
