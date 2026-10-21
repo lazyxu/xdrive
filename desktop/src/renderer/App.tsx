@@ -571,6 +571,13 @@ export default function App({
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
+      inspect: agent.hello?.capabilities.includes('device-backup-local-first-file-status')
+        ? async (sourceID: number) => {
+          const result = await window.xdriveDesktop.agent.getDeviceBackupLocalFirstFileStatus(sourceID)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+        : undefined,
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 

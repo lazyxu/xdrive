@@ -390,6 +390,16 @@ export type AgentLocalBackupFirstFile = {
   retirement_safe: false
 }
 
+export type AgentLocalBackupFirstFileJobStatus = {
+  source_id: number
+  phase: 'not-recorded' | 'running' | 'observed' | 'uncertain'
+  revision?: number
+  observed_bytes?: number
+  physical_observed: boolean
+  backup_complete: false
+  retirement_safe: false
+}
+
 export type AgentLocalBackupSnapshot = {
   source_id: number
   revision: number
@@ -3405,6 +3415,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupFirstFile>(
       'POST', `/v1/device-backups/local-first-file?${query.toString()}`, undefined, 495_000,
+    )
+  }
+
+  localBoundBackupFirstFileStatus(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupFirstFileJobStatus>(
+      'GET', `/v1/device-backups/local-first-file-status?${query.toString()}`, undefined, 15_000,
     )
   }
 
