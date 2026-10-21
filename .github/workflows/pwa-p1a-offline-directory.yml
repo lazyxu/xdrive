@@ -1,0 +1,26 @@
+name: PWA P1-A opted-in metadata store
+on:
+  pull_request:
+    paths:
+      - 'web/src/pwaOfflineDirectory.ts'
+      - 'web/scripts/test-pwa-offline-directory.cjs'
+      - '.github/workflows/pwa-p1a-offline-directory.yml'
+      - 'docs/pwa-p1a-offline-metadata-store.md'
+  workflow_dispatch:
+jobs:
+  offline-metadata-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Web dependencies from lockfile
+        run: npm ci --prefix web
+      - name: Strict metadata projection and bounds
+        run: node web/scripts/test-pwa-offline-directory.cjs
+      - name: Web TypeScript and UI source validation
+        run: npm run lint --prefix web
