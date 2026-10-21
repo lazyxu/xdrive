@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   file-explorer-mobile-physical-jpeg-100k:
-    if: github.head_ref == 'perf/file-explorer-mobile-physical-jpeg-100k-p039-20261012'
+    if: github.head_ref == 'perf/file-explorer-mobile-physical-jpeg-100k-p039-20261012' || github.head_ref == 'test/pwa-p0c1-100k-shared-mobile-before-20261021'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:

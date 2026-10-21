@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   gallery-mobile-real-physical-100k:
-    if: github.head_ref == 'perf/gallery-mobile-physical-mixed-100k-p036-20261012'
+    if: github.head_ref == 'perf/gallery-mobile-physical-mixed-100k-p036-20261012' || github.head_ref == 'test/pwa-p0c1-100k-shared-mobile-before-20261021'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
