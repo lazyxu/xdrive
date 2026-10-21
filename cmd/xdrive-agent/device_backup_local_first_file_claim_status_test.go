@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lazyxu/xdrive/internal/localpushwriter"
 )
 
 func TestLocalFirstFileDurableClaimSlotsMatchRealStableOriginal(t *testing.T) {
@@ -27,6 +29,11 @@ func TestLocalFirstFileDurableClaimSlotsMatchRealStableOriginal(t *testing.T) {
 	_, operation, _, err := localPushRequestKeyNames(configDir, scope)
 	if err != nil || paths[2] != operation {
 		t.Fatalf("original operation path drifted: %s %s %v", paths[2], operation, err)
+	}
+	productionWriter, err := localpushwriter.OriginalClaimPath(
+		configDir, scope.server, scope.account, scope.deviceID, scope.sourceID)
+	if err != nil || paths[0] != productionWriter {
+		t.Fatalf("restarted Agent read path differs from native O_EXCL Writer: %s %s %v", paths[0], productionWriter, err)
 	}
 	if filepath.Base(paths[0]) == filepath.Base(paths[1]) ||
 		!strings.HasPrefix(paths[0], filepath.Join(configDir, "localpush", "native-writers")) {

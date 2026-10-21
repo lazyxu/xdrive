@@ -83,9 +83,25 @@ func (s Scope) valid() bool {
 	return true
 }
 
+// OriginalClaimPath derives the exact original OS-private Writer claim slot.
+// It is for owning-Agent internal read-only recovery, not for Renderer, Web,
+// a replacement upload, or exposing a local filesystem path through IPC.
+// This uses the SAME stable fields as the physical O_EXCL Writer admission;
+// mutable session, Root, revision, target and original file cannot reset it.
+func OriginalClaimPath(configDir, server, account, deviceID string, sourceID uint64) (string, error) {
+	if !filepath.IsAbs(configDir) || filepath.Clean(configDir) != configDir ||
+		!privateString(server) || !privateString(account) ||
+		!privateString(deviceID) || sourceID == 0 {
+		return "", ErrUnavailable
+	}
+	sum := sha256.Sum256([]byte("xdrive/native-writer-slot-v1\x00" + server + "\x00" + account + "\x00" + deviceID + "\x00" + strconv.FormatUint(sourceID, 10)))
+	return filepath.Join(configDir, "localpush", "native-writers", hex.EncodeToString(sum[:16])+".claim"), nil
+}
+
 func (s Scope) path() string {
-	sum := sha256.Sum256([]byte("xdrive/native-writer-slot-v1\x00" + s.server + "\x00" + s.account + "\x00" + s.deviceID + "\x00" + strconv.FormatUint(s.sourceID, 10)))
-	return filepath.Join(s.configDir, "localpush", "native-writers", hex.EncodeToString(sum[:16])+".claim")
+	// Begin and all historical readers validate Scope before calling path.
+	path, _ := OriginalClaimPath(s.configDir, s.server, s.account, s.deviceID, s.sourceID)
+	return path
 }
 
 func (s Scope) marker() string {

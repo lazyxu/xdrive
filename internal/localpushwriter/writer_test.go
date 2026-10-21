@@ -149,3 +149,53 @@ func TestNativeWriterSymlinkedParentCannotCreateOutsideDirectory(t *testing.T) {
 		t.Fatalf("created outside Agent private tree: %v", err)
 	}
 }
+
+func TestOriginalClaimPathUsesExactLiveWriterSlotAndSeparatesOwners(t *testing.T) {
+	s := testScope(t)
+	path, err := OriginalClaimPath(s.configDir, s.server, s.account, s.deviceID, s.sourceID)
+	if err != nil || path != s.path() {
+		t.Fatalf("restart observer and physical Writer disagree: %s %s %v", path, s.path(), err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("pure slot derivation unexpectedly touched disk: %v", err)
+	}
+	mutable := s
+	mutable.sessionID = "another-session"
+	mutable.rootID = "another-root"
+	mutable.rootFingerprint = strings.Repeat("d", 64)
+	mutable.revision++
+	mutable.targetID++
+	mutable.originalKey = strings.Repeat("e", 64)
+	mutable.contentSHA256 = strings.Repeat("f", 64)
+	if mutable.path() != path {
+		t.Fatal("mutable Root/session/original escaped the permanent Writer claim")
+	}
+	for _, altered := range []func(*Scope){
+		func(v *Scope) { v.server = "https://other.invalid" },
+		func(v *Scope) { v.account = "another-owner" },
+		func(v *Scope) { v.deviceID = "another-device" },
+		func(v *Scope) { v.sourceID++ },
+	} {
+		foreign := s
+		altered(&foreign)
+		other, err := OriginalClaimPath(foreign.configDir, foreign.server, foreign.account,
+			foreign.deviceID, foreign.sourceID)
+		if err != nil || other == path {
+			t.Fatalf("foreign owning source inherited original slot: %s %v", other, err)
+		}
+	}
+
+	mustDeny := func(dir, server, account, device string, source uint64) {
+		t.Helper()
+		got, err := OriginalClaimPath(dir, server, account, device, source)
+		if err == nil || got != "" {
+			t.Fatalf("invalid recovery key derived private Writer path: %s %v", got, err)
+		}
+	}
+	mustDeny("relative-dir", s.server, s.account, s.deviceID, s.sourceID)
+	mustDeny(s.configDir+string(filepath.Separator)+"..", s.server, s.account, s.deviceID, s.sourceID)
+	mustDeny(s.configDir, "wrong\nserver", s.account, s.deviceID, s.sourceID)
+	mustDeny(s.configDir, s.server, "", s.deviceID, s.sourceID)
+	mustDeny(s.configDir, s.server, s.account, "bad\ndevice", s.sourceID)
+	mustDeny(s.configDir, s.server, s.account, s.deviceID, 0)
+}
