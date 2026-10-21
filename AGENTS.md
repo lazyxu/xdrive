@@ -1,3 +1,25 @@
+## SD-CI-HOST-001 · rescope original Host Manager fixture on full latest master (2026-10-21)
+
+- Previous exact HEAD `3b5f12e3fd2200567135f2769019e1848f9dcc1d` completed [full CI #39579302795](https://github.com/lazyxu/xdrive/actions/runs/39579302795) SUCCESS including genuine PostgreSQL API Race and Final Gate, but the full master parent has advanced with independent LocalPush and physical Mobile Web performance work. Previous green does not certify this new parent.
+- Retain the EXACT existing stronger Host second-update Bash test Blob with finite wait, runner liveness and terminal request-id/result checks. Only additive AGENTS, no Host runtime changes, Caddy restart, DNS/CA, credentials or production operations. Re-run NEW exact SHA full CI/Final Gate and fresh clean before Ready/Rebase Merge. Production-only acceptance: 按用户决定跳过（未验收）; source safety/CI mandatory.
+
+## SD-CI-HOST-001 · after merged Caddy single-page P0 UI (2026-10-21)
+
+- This fixture remains exactly ONE scoped work commit on complete `master@07098d95d4d4b6e53859266ac9aca2a246c76653` after verified, full-exact-head merged #2270. Preserve original test script Blob, full master source and all accumulated AGENTS history; only rebuild AGENTS prefix for this independent Host fixture.
+- Prior original HEAD `9a28161c1361994a53de860a425264740865574a` full [CI #39574546802](https://github.com/lazyxu/xdrive/actions/runs/39574546802) succeeded, but that CI does not certify this new parent. Require a wholly NEW accurate HEAD full CI (real PG API Race, Go/Web/Desktop Windows/Linux, Rootless/Host, artifacts/images/Final Gate), then fresh mergeable_state=clean before Ready/Rebase Merge. Production-only acceptance is 按用户决定跳过（未验收）；source safety and terminal second-request proof are mandatory.
+
+## SD-CI-HOST-001 · restack second Host Control fixture on merged Adoption (2026-10-21)
+
+- Read-only Caddy adoption evidence #2255 was correctly CI-gated and Rebase-merged to full `master@9e60cafeee1456bf8616707c7c37aeed212dd07c`. Its administrator routes, tests, and complete AGENTS history must remain untouched; Host fixture changes have no business overlap.
+- Preserve exact original bounded second-update test script Blob and the entire latest merged master, plus the original SD-CI-HOST-001 rule; reconstruct exactly ONE two-file work commit, no unsafe Production/Host runtime mutations. Previous test CI belongs only to older SHA and is not certification of the new parent. Run NEW exact-head full CI (real PostgreSQL API Race, Go/Web/Desktop Windows/Linux, Rootless/Host, artifacts/images and Final Gate), require fresh clean before Ready/Rebase Merge.
+- Production-only safety acceptance: 按用户决定跳过（未验收）；source security CI and the strict second request terminal-success assertions remain mandatory.
+
+## SD-CI-HOST-001 · bounded second Host Manager fixture wait with positive terminal proof (2026-10-21)
+
+- [Caddy UI full CI #39561233951](https://github.com/lazyxu/xdrive/actions/runs/39561233951) first attempt failed `server-validation` in `scripts/test-xdrive-server-host.sh`: the second (backup_file_data=true) mock update was still **running** after the original 100 × 0.1s poll, with installer downloaded and syntax-checked; the exact same SHA passed its **second full CI attempt**, without business-code changes. The 10s threshold was a fixture scheduling assumption, not a measured Host restart latency SLA. This is a real CI reliability defect, not an excuse to skip the test.
+- Adjust only the SECOND host mock request to 300 × 0.1s maximum, check Runner PID each iteration (fail fast if dead), and require **terminal state success + exact second request ID + exact --backup-file-data option + no request/active remnants**. The patch strengthens acceptance against observing a still-running update or a stale prior success; no production host script, real Host/Docker/Rescue/Caddy, endpoint, secret, network or latency budget is modified. The first mock request and all other original fixtures are unchanged.
+- One strictly scoped test-only commit plus additive full-history AGENTS; source `scripts/test-xdrive-server-host.sh` diff must be a single contiguous hunk with all surrounding source intact. Exact HEAD full Go/PostgreSQL API Race, Web/Desktop/Linux/Windows, Host/Rootless/images/installers and Final Gate plus fresh GitHub clean are mandatory before merge. Production-only security acceptance remains **按用户决定跳过（未验收）**, never request live production credentials/HAR; no source-level safety gate may be skipped.
+
 ## SD-P0-SAVE-C · preserve stronger refresh guard in original V1.5 Desktop oracle (2026-10-21)
 
 - On source-exact #2283 CI #39581826908, original desktop `SD-UI-V1.5` test failed because it matched only the pre-atomic-Save `busy || changed` guard while current production code correctly blocks `busy || atomicSaving || changed`. Amend the exact two original assertions rather than deleting/skipping that test, and explicitly require both original dirty protection and new in-flight single transaction protection. Preserve all other original node tests and scoped feature business blobs, no Host Apply.
