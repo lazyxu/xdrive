@@ -1,3 +1,18 @@
+## PWA P0-B2a · Chromium real App Shell readiness gate (2026-10-21)
+
+- The first rebuilt B2a SHA 3cce4a8805baa823b960d1daf8434a36eb022510 had TWO accurate Chromium failures in run #39527418983 at Playwright page.goto(waitUntil:'load') 30s; no success may be inferred from the historical fc06dd7 all-green runs. Production Vite build bytes and SW revision were identical between the runs. Keep failure evidence.
+- The B2a real browser harness may wait for domcontentloaded plus the *visible real login App Shell* and HTTP 200 instead of the entire page load event; it must preserve real SW readiness/controller/waiting, real POSIX archive, lazy JS, actual authenticated API bypass, rollback, CacheStorage privacy and 404 checks. Do not use a synthetic rendering stub, blanket retries, increased timeout, skipped assertions or direct edits to user-facing SW behavior to make tests pass.
+- Reconcile only B2a scoped files onto the COMPLETE latest master with ONE work commit. Require exact new HEAD Chromium workflow, full cross-platform 77-job GitHub CI/Final Gate and fresh clean mergeability before Draft→Ready/Rebase Merge. Physical iOS/100k speed gains remain NOT VERIFIED; production-only safety acceptance skipped by owner's explicit decision (not verified), source auth/privacy tests mandatory.
+
+## PWA P0-B2a · Chromium archived lazy and rollback evidence (2026-10-21)
+
+- P0-A #2246 and P0-B1 #2252 are merged; B1 exact 77-job CI #39522474445 succeeded and master reached 9825f379614a2de7c6c34a85c793a4d208eb81e8. Retained public Vite hash bytes are NOT proof of API skew, independent real releases, or installed iOS.
+- P0-B2a probes the real production Vite dynamic manifest entry and the actual append-only POSIX asset archive, in Chromium with two fixture-version lazy ES modules, SW waiting, post-close activation and rollback. Test-only SW message probes never ship. No private data or browser intercept fixture may substitute genuine HTTP and genuine SW.
+- Never force skipWaiting/reload or cancel live uploads, downloads, Viewer or editing for updates. Missing /assets/* must stay 404 (not index.html); no private user bytes, auth, token, cookies, Range, API or tickets in public SW CacheStorage/Caddy archive. No automatic old-asset GC without reviewed lifetime and rollback policy.
+- Performance discipline: first measure baseline BEFORE under identical device/browser/network/100k fixture conditions, then optimize, then measure AFTER; keep only clearly beneficial changes. Do not invent true iOS Home Screen p50/p95/FCP/CLS numbers or claim emulator results are physical devices.
+- Keep this work separate from P0-B2b true two-version Web/Server compatibility and P0-B2c archive lifecycle, then P0-C physical/100k baselines. Require new exact HEAD full CI, real Chromium workflow, Final Gate and GitHub clean state before merge. Production-only security acceptance SKIPPED (UNVERIFIED) by owner decision; source security is mandatory. Retain all older AGENTS.md content byte-for-byte.
+- Implementation and boundaries: docs/pwa-old-lazy-upgrade-p0b2a.md.
+
 ## P120 · Fixed one-row FileExplorer status bar across async updates (permanent, 2026-10-20)
 
 - Shared Web/Desktop FileExplorer status bar is a sibling of the virtual scroll owner, not a second loading surface. It MUST have a stable **single-line fixed-height** footprint across upload, copy/paste/delete, Search, Sort, Trash, selection and realtime operation-state changes. Do not use flex-wrap, auto height, text wrapping or insert dynamic feedback rows to resize the scroll host.
