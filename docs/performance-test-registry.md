@@ -1,3 +1,43 @@
+## SH-P018 · 真实100k同Runner配对BEFORE/AFTER有效结果（2026-10-21）
+
+- 实际源码 `c5c1dabef3170eb810b206bccc050013fccde44c` [配对CI #39576621816](https://github.com/lazyxu/xdrive/actions/runs/39576621816) **SUCCESS**：同一 Ubuntu Runner、相同真实生产 Web 编译器与 Go/Gin/PG17/LocalCAS 接口，三个独立真实100000 SHA-distinct JPEG物理源/arm，Web1440+CDP390 每个模式原版/候选各9次 next-page 取消，A-B/B-A/A-B 交替。同源源码 SHA：原版 `5b3432aa4191e8cab4d5c29a0a375fbb761bfbc8c438e232315a9b3b56b9ec9b`，候选 `8ba01caecc986b91ed8c0b19b58bb3cdfa2b532408459eb793dab25a501d765b`，保存原始每一事件、CPU/RSS及 CI URL 于 [原始数值 JSON](docs/performance-evidence/sh-p018-public-cached-thumbnail-go-cancel/ci-run-39576621816-paired.json)。
+- **Web1440**：原版 P50 153.201ms → 候选 68.221ms，改善 **55.470%**；**Mobile CDP390**：原版 139.976ms → 候选 66.037ms，改善 **52.823%**。每个宽度单独超过预先冻结 ≥20% 的显著收益门槛；真实 Go `Request.Context.Done` / Handler退出、0过期响应字节、真实当前页100行、同源CPU/RSS门槛全部PASS；单次候选仍≤160ms。历史原版 [#39570769600](https://github.com/lazyxu/xdrive/actions/runs/39570769600) 161.465ms RED完整保留，不能删样本或宣称旧版达标。
+- 同一准确 HEAD 六场景真实浏览器 100k 原图+16 JPEG派生图 [#39576621700](https://github.com/lazyxu/xdrive/actions/runs/39576621700) **SUCCESS**：6/6 Go Context.Done，最慢64.964ms、废弃0B、旧Handler0。该全场景数据与独立同Runner配对数据不可互相代替。
+- 这是短时可视 JPEG GET 的真实取消延迟优化，不是 100k 图片同时解码、全 H264/Live Motion、真实 Windows/macOS/iOS/Android安装PWA/WAN或用户持久上传/下载/同步/删除取消的证明。保留显著且正确的候选，**但本记录与新主线复基会改变 HEAD，必须新准确HEAD独立100k六场景、100k同Runner配对及全CI/Final Gate和fresh clean全部通过，才能Ready/Rebase Merge**；旧 HEAD 的绿色不能直接授权新 HEAD。生产环境专有验收按用户决定跳过（未验收），源码权限/资源范围/撤销负例和 CI 不可跳过；Race 不修改。
+
+## SH-P018 · 100k 真实物理 JPEG 翻页→Go 取消同 Runner A/B 验证合同（2026-10-21）
+
+- 已归档真实不达标 BEFORE：原版 `a14f5138` [PG17/CAS 浏览器专项 #39570769600](https://github.com/lazyxu/xdrive/actions/runs/39570769600) 在 Web1440 翻页时观测到 Go Request.Context.Done **161.465ms > 冻结160ms**；不能删除样本、放宽预算或称 6/6 全通过。候选 `fd759d68` [独立真实 100k 专项 #39572509530](https://github.com/lazyxu/xdrive/actions/runs/39572509530) **六次均成功、最慢83.413ms、0废弃响应字节、0遗留 Handler**，但不同源码/CI Runner 的结果不能计算正式提速。
+- 新专用 `.github/workflows/sh-p018-paired-next-page-100k.yml` 在**同一个 Runner**由 `HEAD^:web/src/PublicShare.tsx` 和 `HEAD:web/src/PublicShare.tsx` 分别构建真实 Web，Go 测试代码/资源库保持一致；3 对交替原版→候选 / 候选→原版 / 原版→候选，每臂 3 个独立 PG17+LocalCAS 真正 100k 不同 SHA 可解码 JPEG 物理源、16 个真实缓存衍生 JPEG，Web1440 与 390px 浏览器模拟各每臂 n=9 翻页取消。Go 测试 Server 逐事件记录 `Request.Context.Done`，避免累计最大值冒充单次数据。原版超预算样本**保留**而不误判测试夹具 Invalid；候选 160ms、零旧 Handler、零废弃字节、真实 Scope/JPEG/分页数据、原源字节及授权边界严格不放宽。
+- 保留生产候选的条件：同条件每个视口取消耗时 P50 至少改善 20%，CPU/RSS 中位不退化超过 25%，Go Handler/HTTP 字节和 Scope 不退化；不成立则拒绝该优化、保留原始结果。不用不同 Runner 计算提升。当前真实配对 AFTER **未测（n=0）**，只能写原独立 CURRENT / 试验候选，须待准确新 HEAD 原六场景、配对实验及完整 77+ CI/Final Gate 全部成功，GitHub clean 后合并；绝不触及 Race。短时视口 JPEG GET 可立即 abort，用户主动的 durable ZIP/上传/下载/同步/删除只能显式 Task Cancel。真实 iOS/Android/PWA、WAN、完整 H264/Live Motion 未测试。生产安全专有验收**按用户决定跳过（未验收）**，代码级认证/范围/撤销及 CI 不跳过。
+
+## SH-P018 · 新合入 Owner/Share 核心后的原版 160ms 请求取消 RED 与最小同步取消候选（2026-10-21）
+
+- 源准确旧 HEAD `a14f513871a3b8552c813ebce16bd580bb6064db` [真实100k SHA不同物理 JPEG、16 个缓存派生图、Web1440/CDP390专项 #39570769600](https://github.com/lazyxu/xdrive/actions/runs/39570769600) **FAILED**，不是成功的六会话：Wide 第1次实际滚动 26.135ms、Wide 第2次 pagehide 26.135ms（累计最大值）；第3次 bounded-next-page 收到实际 Go `Request.Context.Done`，但原冻结最大 160ms 门槛得到 **161.465ms**（超 1.465ms）。不能剔除这次样本、放宽门槛或冒充新完整100k验收。完整 CI 结果和专项分开看。
+- 代码级瓶颈候选：Web 分享 `loadFolder` 过去在等待下一次 `publicShareChildren` 结果后才经 React 页面接受/虚拟视口卸载撤销旧 JPEG GET。新候选仅在用户真正导航至不同目录/页游标时，先同步 AbortController.abort 现存未完成的 Share 缩略图消费者，再发有界下一页 HTTP；同页 Refresh 不取消，已有滚动/页面关闭行为不变，持久 ZIP/原文件下载/上传/同步/删除不取消。不触及 Go/CAS、Owner 访问范围、Race、其他媒体/任务。
+- **当前候选 AFTER 尚未测量，n=0，提速 N/A**。保留旧 RED；新 HEAD 必须在真实100k CAS Chrome 六会话中满足全部 160ms / 2s / 缓存解码 / Go Handler/零丢弃字节，同时重新通过全 CI，才可继续考虑合并；旧 SHA 绿或其他 runner 比较不能算匹配 A/B。若不能证实收益，继续准确的同runner BEFORE/AFTER，不猜测优化。
+
+## SH-P018 · 已实测原版 100k Public Share 缓存 JPEG 可视取消（2026-10-21）
+
+- 原版 CURRENT 精确源码 1164d9e38535b5ad578554bf839d226f6964e99d；真实 [PG17/Gin/LocalCAS + Chromium 专项 #39549378966](https://github.com/lazyxu/xdrive/actions/runs/39549378966) **SUCCESS**。100000 个不同 SHA 的真实物理 JPEG Original，CAS 已分配 409604096 B；只有 16 个已缓存 JPEG 派生图，不是同时解码 100k 缩略图。Web1440 和 Chromium 模拟 Mobile390 各 n=3，均展示 100 条受限首屏行，实际解码缓存图 6/6/5 与 2/4/4。
+- 首 100 项 P50：Web1440 **214.341ms**（226.722 / 214.341 / 200.504ms），Mobile390 **172.579ms**（174.948 / 172.579 / 164.699ms），低于原冻结 2000ms；不是 matched BEFORE/AFTER。
+- 6/6 浏览器真实 scroll-out / pagehide / next bounded page 触发 AbortSignal 到 Go Request.Context().Done 和 Handler 退出；最慢 **84.061ms** < 冻结 **160ms**，+160ms 旧 Handler **0**、遗留 body 字节 **0**、横向溢出 **0**；六会话全 PASS。保持 Share-only 授权和零 Owner JWT/API，不因页面淘汰取消持久 ZIP/用户任务。
+- 同一原版源码的 [77-job 完整 CI #39549378825](https://github.com/lazyxu/xdrive/actions/runs/39549378825) **SUCCESS**，含 PostgreSQL Go API、Windows/Linux、Desktop/Web、single-commit、Final Gate。原始日志结构化度量完整转录至 [真实 SH-P018 源数据](performance-evidence/sh-p018-public-cached-thumbnail-go-cancel/ci-run-39549378966.json)，另外保留 [原始专项 job log](https://github.com/lazyxu/xdrive/actions/runs/39549378966/job/119054827705) 和 Actions artifact。
+- **决策：原版达标，不修改生产热路径；AFTER=N/A，speedup=N/A。** 新证据/最新 master 复基生成新 HEAD，旧 SHA 绿色不可代替新 HEAD 的真实 100k 专项与 77+ CI/Final Gate；本阶段仍 DRAFT，待源码自身重跑和 clean。真实 iOS/Android、安装 PWA、WAN、Desktop Native Share IPC、H264/Live Motion 此专项未覆盖；不触及 Race。生产专有安全验收按用户决定跳过（未验收），源码权限/撤销验证仍必做。
+
+---
+## SH-P018 · first exact-head formatting RED — invalid source, no performance result (2026-10-21)
+
+Initial SH-P018 source `541a6cd89de6d54626e64027fdeb529762337a00`: [real specialized #39548818165](https://github.com/lazyxu/xdrive/actions/runs/39548818165) **FAILED before real physical seeding at gofmt**, [full #39548818553](https://github.com/lazyxu/xdrive/actions/runs/39548818553) `go-linux` same format gate RED. Six exact alignment hunks in only new test Go file, reconstructed verbatim from runner diff; no production source/Go Context/threshold changes. Valid n=0, AFTER/N/A, **no 100k Go cancellation measurement yet**. Preserve RED, rerun source-exact 100k native 1440/390 Chromium six-session specialty plus full 77+ CI on amended one-work commit. Source shape and budgets in [SH-P018](public-share-cached-thumbnail-go-cancel-shp018.md).
+
+---
+
+## SH-P018 · real Chromium Share cached-thumbnail viewport→Go baseline (2026-10-21)
+
+**Status: Benchmarking / original CURRENT unmeasured n=0 / AFTER=N/A / speedup=N/A, no production code change.** New [canonical SH-P018](public-share-cached-thumbnail-go-cancel-shp018.md) covers a previously **untested combination**: production Share-only signed cached derivative POST+GET, 100000 distinct real JPEG CAS originals but **16 actual persisted JPEG cache derivatives** on two bounded pages, native Chromium 1440px and emulated CDP390px 3 sessions each, genuine viewport-scroll / window pagehide / next-page AbortSignal to Go Request.Context.Done. The prior merged [SH-P016](public-share-cached-thumbnail-shp016.md) 100k file metadata/UI/original-download tests do NOT prove cached-thumbnail body transport cancellation; Owner P052/P053/P054 cancel tests are different authentication paths. A **test-only response-body gate** after executing the actual Gin authorization/handler ensures an in-flight signed thumbnail GET (not a mocked fetch) and observes real Go Context cancellation. Pre-frozen per-session <=160ms cancel, zero stale handler/body +160ms, actual decoded >=2 cached JPEGs, 100 visible rows <=2s, 6/6 real Go abort, no Owner mutations/durable-task cancellation. Real iOS/Android installed PWA, physical phones, native Agent IPC, H264/Live/HEVC 100k and WAN Not measured. Exact-source opt-in [CI](../.github/workflows/sh-p018-public-cached-thumbnail-cancel-100k.yml), raw n3 source and CPU/RSS/bytes evidence to be appended to this registry and [platform matrix](performance-platform-coverage.md) only after genuine execution. Original within budget => keep unchanged; legitimate RED => paired n>=3 BEFORE/AFTER, material gain only. No Race modifications. Inaccessible production security acceptance skipped per user (unverified); source auth regression remains mandatory.
+
+---
+
 ## PWA P0-C2a · compiled Mobile Web Files ↔ Gallery UI navigation CURRENT/BEFORE (2026-10-21)
 
 - **Immutable source-exact evidence:** [real Chromium 390px n9 navigation JSON](performance-evidence/pwa-p0c2-navigation/ci-run-39573729521.json), verified against [original P0-C2a native Chrome run #39573729521](https://github.com/lazyxu/xdrive/actions/runs/39573729521) on HEAD `322e0c432c3de8e96ea5f35cd23cf8b0c46270ff` and [full CI/Final Gate #39573730899](https://github.com/lazyxu/xdrive/actions/runs/39573730899). Three independent Chrome155 processes × three on-screen Files→Gallery→Files cycles: n=9 **per direction**, 52px App Header 18/18 and retained main DOM 9/9 each.

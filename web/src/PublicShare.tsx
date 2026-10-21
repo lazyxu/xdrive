@@ -183,6 +183,14 @@ export default function PublicShareView({ token }: { token: string }) {
 
   const loadFolder = async (path: FolderPath[], cursor = 0, back = false, refresh = false) => {
     if (!share || share.type !== 'dir' || !canDownload) return
+    // Cancel obsolete Share thumbnail GETs at the user navigation action,
+    // not after the NEXT 100-item HTTP page resolves and React unmounts.
+    // Refreshing the same accepted page does not discard its active consumers.
+    if (!refresh && folder && (
+      folder.cursor !== cursor || folder.path.at(-1)?.id !== path.at(-1)?.id
+    )) {
+      for (const request of activeThumbnailRequests.current) request.abort()
+    }
     pendingPage.current?.abort()
     const controller = new AbortController()
     pendingPage.current = controller

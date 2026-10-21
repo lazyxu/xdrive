@@ -1,3 +1,24 @@
+## SH-P018 · 100k 真实物理 JPEG 翻页→Go 取消同 Runner A/B 验证合同（2026-10-21）
+
+- 已归档真实不达标 BEFORE：原版 `a14f5138` [PG17/CAS 浏览器专项 #39570769600](https://github.com/lazyxu/xdrive/actions/runs/39570769600) 在 Web1440 翻页时观测到 Go Request.Context.Done **161.465ms > 冻结160ms**；不能删除样本、放宽预算或称 6/6 全通过。候选 `fd759d68` [独立真实 100k 专项 #39572509530](https://github.com/lazyxu/xdrive/actions/runs/39572509530) **六次均成功、最慢83.413ms、0废弃响应字节、0遗留 Handler**，但不同源码/CI Runner 的结果不能计算正式提速。
+- 新专用 `.github/workflows/sh-p018-paired-next-page-100k.yml` 在**同一个 Runner**由 `HEAD^:web/src/PublicShare.tsx` 和 `HEAD:web/src/PublicShare.tsx` 分别构建真实 Web，Go 测试代码/资源库保持一致；3 对交替原版→候选 / 候选→原版 / 原版→候选，每臂 3 个独立 PG17+LocalCAS 真正 100k 不同 SHA 可解码 JPEG 物理源、16 个真实缓存衍生 JPEG，Web1440 与 390px 浏览器模拟各每臂 n=9 翻页取消。Go 测试 Server 逐事件记录 `Request.Context.Done`，避免累计最大值冒充单次数据。原版超预算样本**保留**而不误判测试夹具 Invalid；候选 160ms、零旧 Handler、零废弃字节、真实 Scope/JPEG/分页数据、原源字节及授权边界严格不放宽。
+- 保留生产候选的条件：同条件每个视口取消耗时 P50 至少改善 20%，CPU/RSS 中位不退化超过 25%，Go Handler/HTTP 字节和 Scope 不退化；不成立则拒绝该优化、保留原始结果。不用不同 Runner 计算提升。当前真实配对 AFTER **未测（n=0）**，只能写原独立 CURRENT / 试验候选，须待准确新 HEAD 原六场景、配对实验及完整 77+ CI/Final Gate 全部成功，GitHub clean 后合并；绝不触及 Race。短时视口 JPEG GET 可立即 abort，用户主动的 durable ZIP/上传/下载/同步/删除只能显式 Task Cancel。真实 iOS/Android/PWA、WAN、完整 H264/Live Motion 未测试。生产安全专有验收**按用户决定跳过（未验收）**，代码级认证/范围/撤销及 CI 不跳过。
+
+## SH-P018 · 已实测原版 100k Public Share 缓存 JPEG 可视取消（2026-10-21）
+
+- 原版 CURRENT 精确源码 1164d9e38535b5ad578554bf839d226f6964e99d；真实 [PG17/Gin/LocalCAS + Chromium 专项 #39549378966](https://github.com/lazyxu/xdrive/actions/runs/39549378966) **SUCCESS**。100000 个不同 SHA 的真实物理 JPEG Original，CAS 已分配 409604096 B；只有 16 个已缓存 JPEG 派生图，不是同时解码 100k 缩略图。Web1440 和 Chromium 模拟 Mobile390 各 n=3，均展示 100 条受限首屏行，实际解码缓存图 6/6/5 与 2/4/4。
+- 首 100 项 P50：Web1440 **214.341ms**（226.722 / 214.341 / 200.504ms），Mobile390 **172.579ms**（174.948 / 172.579 / 164.699ms），低于原冻结 2000ms；不是 matched BEFORE/AFTER。
+- 6/6 浏览器真实 scroll-out / pagehide / next bounded page 触发 AbortSignal 到 Go Request.Context().Done 和 Handler 退出；最慢 **84.061ms** < 冻结 **160ms**，+160ms 旧 Handler **0**、遗留 body 字节 **0**、横向溢出 **0**；六会话全 PASS。保持 Share-only 授权和零 Owner JWT/API，不因页面淘汰取消持久 ZIP/用户任务。
+- 同一原版源码的 [77-job 完整 CI #39549378825](https://github.com/lazyxu/xdrive/actions/runs/39549378825) **SUCCESS**，含 PostgreSQL Go API、Windows/Linux、Desktop/Web、single-commit、Final Gate。原始日志结构化度量完整转录至 [真实 SH-P018 源数据](performance-evidence/sh-p018-public-cached-thumbnail-go-cancel/ci-run-39549378966.json)，另外保留 [原始专项 job log](https://github.com/lazyxu/xdrive/actions/runs/39549378966/job/119054827705) 和 Actions artifact。
+- **决策：原版达标，不修改生产热路径；AFTER=N/A，speedup=N/A。** 新证据/最新 master 复基生成新 HEAD，旧 SHA 绿色不可代替新 HEAD 的真实 100k 专项与 77+ CI/Final Gate；本阶段仍 DRAFT，待源码自身重跑和 clean。真实 iOS/Android、安装 PWA、WAN、Desktop Native Share IPC、H264/Live Motion 此专项未覆盖；不触及 Race。生产专有安全验收按用户决定跳过（未验收），源码权限/撤销验证仍必做。
+
+---
+## SH-P018 · public capability cached thumbnail 100k viewport cancellation specialization (2026-10-21)
+
+The existing Owner P067 true 100k logical/115k physical JPEG/H264/Live Grid/Details and Web/Desktop 4GiB transfer baselines already meet their unchanged budgets; **do not optimize them speculatively**. The untested public Share-only cached JPEG signed POST→GET visual cancellation is a *different* request/authorization path. [P018 canonical](public-share-cached-thumbnail-go-cancel-shp018.md) will measure true original Chromium Web1440 and emulated Mobile390 3 sessions each against **100000 physically SHA-distinct CAS JPEG originals** with 16 separately cached/ready derivatives (only visible tile images, never 100k simultaneous thumbnail decodes), using actual Shared Grid/Details provider lifecycle; scroll, real pagehide, next page must cause original Go Request.Context.Done and handler termination <=160ms, zero stale bytes/handlers. Instrumented TEST-ONLY writer keeps one real signed GET in flight after original auth. No production hot-path changes, CURRENT=n0/AFTER N/A. Compare only later same runner/data/viewport if original exceeds frozen budgets and record CPU/RSS/network. Copy #2136 remains separately blocked by long-tail enqueue, not modified; no Race edits.
+
+---
+
 ## SH-P019 · 原版真实 100k 物理 SHA 不同 JPEG 六会话通过，原 CI 两处旧样式断言 RED（2026-10-21）
 
 - **严格原测量源码** `deef8a01d0ca0b9d2fc1ff898a03d0c69268e694`，[PG17/Gin/LocalCAS + Chromium 专项 #39560252661](https://github.com/lazyxu/xdrive/actions/runs/39560252661) SUCCESS。100,000 个真实 SHA 不同物理 JPEG 原片，实际 CAS 分配 409604096B；1440px Web n3 与 CDP390 模拟 Mobile Web n3 均仅渲染受限 100 行、翻页 100 行。Wide 首/次页 P50 **371.160 / 226.060ms**，CDP390 **289.874 / 249.598ms**；每页都低于冻结 2000ms。12/12 真正签名下载 SHA、文件名与完整字节校验成功；0 stale rows / 0 horizontal overflow，最慢原件下载 **165.687ms** < 5000ms。**没有 100k 缩略图同时解码，也没有真 iOS/PWA/WAN**。

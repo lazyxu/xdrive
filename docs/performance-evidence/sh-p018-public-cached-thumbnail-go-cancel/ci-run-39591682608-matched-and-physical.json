@@ -1,0 +1,214 @@
+{
+  "kind": "SH-P018 latest verified exact source A/B and six-window physical evidence",
+  "measured_head": "87a6542f525c87ad642eb7a6f0ace2d6fb4f05bc",
+  "matched_workflow_run": "https://github.com/lazyxu/xdrive/actions/runs/39591682608",
+  "physical_workflow_run": "https://github.com/lazyxu/xdrive/actions/runs/39591684485",
+  "full_ci_workflow_run": "https://github.com/lazyxu/xdrive/actions/runs/39591685244",
+  "matched": {
+    "workload": "SH-P018 genuine physical 100k next-page matched A-B/B-A/A-B",
+    "variants": {
+      "original": "5b3432aa4191e8cab4d5c29a0a375fbb761bfbc8c438e232315a9b3b56b9ec9b",
+      "candidate": "8ba01caecc986b91ed8c0b19b58bb3cdfa2b532408459eb793dab25a501d765b"
+    },
+    "per_width_per_arm": 9,
+    "populations_per_variant": 3,
+    "widths": {
+      "390": {
+        "original_events_ms": [
+          149.344,
+          156.375,
+          141.636,
+          155.88,
+          151.931,
+          154.521,
+          158.055,
+          141.68,
+          148.849
+        ],
+        "candidate_events_ms": [
+          65.361,
+          67.516,
+          71.795,
+          66.586,
+          66.376,
+          75.268,
+          65.723,
+          65.593,
+          73.498
+        ],
+        "before": {
+          "median_ms": 151.931,
+          "median_rss_kib": 229468,
+          "median_cpu_seconds": 56.010000000000005
+        },
+        "after": {
+          "median_ms": 66.586,
+          "median_rss_kib": 229608,
+          "median_cpu_seconds": 55.9
+        },
+        "median_gain_fraction": 0.5617352614015574
+      },
+      "1440": {
+        "original_events_ms": [
+          174.07,
+          159.24,
+          160.637,
+          174.639,
+          178.69,
+          183.146,
+          174.736,
+          171.459,
+          169.428
+        ],
+        "candidate_events_ms": [
+          83.189,
+          75.932,
+          69.711,
+          65.982,
+          75.935,
+          64.51,
+          66.829,
+          84.684,
+          63.526
+        ],
+        "before": {
+          "median_ms": 174.07,
+          "median_rss_kib": 229468,
+          "median_cpu_seconds": 56.010000000000005
+        },
+        "after": {
+          "median_ms": 69.711,
+          "median_rss_kib": 229608,
+          "median_cpu_seconds": 55.9
+        },
+        "median_gain_fraction": 0.5995231803297524
+      }
+    },
+    "accepted": true
+  },
+  "physical": {
+    "workload": "SH-P018-100k-real-CAS-public-cached-JPEG-viewport-to-Go-cancel",
+    "exact_source_head": "87a6542f525c87ad642eb7a6f0ace2d6fb4f05bc",
+    "paired_next_page": false,
+    "variant": "current",
+    "variant_web_sha256": null,
+    "original_jpeg_cas": 100000,
+    "browser_sessions": 6,
+    "page_budget_ms": 2000,
+    "original_download_budget_ms": 5000,
+    "cached_thumbnail_go_cancel_budget_ms": 160,
+    "scope": "Production public Share 1440px/390px Chromium, real Gin/PG17 100k SHA-distinct physical JPEG originals; 16 real cached derivatives, first-page decoded previews and signed GET held by bounded TEST-ONLY response writer, actual scroll/next-page/pagehide -> Go Request.Context().Done; no fake fetch",
+    "excluded": "Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion; SH-P018 does not decode 100k thumbnails simultaneously and does not cancel durable ZIP/user tasks",
+    "sessions": [
+      {
+        "width": 1440,
+        "sample": 1,
+        "cause": "scroll-out-of-viewport",
+        "decoded_cached_jpegs": 2,
+        "actual_signed_thumbnail_GETs": 8,
+        "observed_go_cancelled_requests": 1,
+        "go_cancel_max_ms": 18.835,
+        "go_cancel_event_ms": 18.835,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 378.46436900000845,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 2,
+        "cause": "real-window-pagehide",
+        "decoded_cached_jpegs": 4,
+        "actual_signed_thumbnail_GETs": 16,
+        "observed_go_cancelled_requests": 2,
+        "go_cancel_max_ms": 18.835,
+        "go_cancel_event_ms": 5.793,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 351.5894830000034,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 3,
+        "cause": "bounded-next-page",
+        "decoded_cached_jpegs": 3,
+        "actual_signed_thumbnail_GETs": 24,
+        "observed_go_cancelled_requests": 3,
+        "go_cancel_max_ms": 64.338,
+        "go_cancel_event_ms": 64.338,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 361.71018500000355,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 1,
+        "cause": "scroll-out-of-viewport",
+        "decoded_cached_jpegs": 4,
+        "actual_signed_thumbnail_GETs": 29,
+        "observed_go_cancelled_requests": 4,
+        "go_cancel_max_ms": 64.338,
+        "go_cancel_event_ms": 20.149,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 288.0894640000042,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 2,
+        "cause": "real-window-pagehide",
+        "decoded_cached_jpegs": 2,
+        "actual_signed_thumbnail_GETs": 34,
+        "observed_go_cancelled_requests": 5,
+        "go_cancel_max_ms": 64.338,
+        "go_cancel_event_ms": 3.556,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 300.50869099999545,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 3,
+        "cause": "bounded-next-page",
+        "decoded_cached_jpegs": 2,
+        "actual_signed_thumbnail_GETs": 39,
+        "observed_go_cancelled_requests": 6,
+        "go_cancel_max_ms": 73.464,
+        "go_cancel_event_ms": 73.464,
+        "abandoned_body_bytes": 0,
+        "cancelled_active_handlers_at_observation": 0,
+        "first_page_ms": 295.3647659999988,
+        "first_rows": 100,
+        "horizontal_overflow": false
+      }
+    ],
+    "original_bytes": 70893376,
+    "allocated_cas_bytes": 409604096,
+    "seed_excluded_ms": 70573.187,
+    "source_aggregate_sha256": "1e94e01ef63cd256e4da685115785ac99dc115079ea9d770d67384b15cb6352b",
+    "http_counts": {
+      "original_download_calls": 0,
+      "public_page_calls": 8,
+      "signed_ticket_calls": 0,
+      "thumbnail_active_held": 0,
+      "thumbnail_cancel_last_us": 73464,
+      "thumbnail_cancel_max_us": 73464,
+      "thumbnail_cancelled_go": 6,
+      "thumbnail_held_starts": 6,
+      "thumbnail_stale_body_bytes": 0,
+      "thumbnail_stream_calls": 39,
+      "thumbnail_ticket_calls": 39
+    },
+    "cancel_max_ms": 73.464,
+    "all_passed": true
+  }
+}

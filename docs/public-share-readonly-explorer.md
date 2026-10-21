@@ -1,3 +1,18 @@
+## SH-P018 · 已实测原版 100k Public Share 缓存 JPEG 可视取消（2026-10-21）
+
+- 原版 CURRENT 精确源码 1164d9e38535b5ad578554bf839d226f6964e99d；真实 [PG17/Gin/LocalCAS + Chromium 专项 #39549378966](https://github.com/lazyxu/xdrive/actions/runs/39549378966) **SUCCESS**。100000 个不同 SHA 的真实物理 JPEG Original，CAS 已分配 409604096 B；只有 16 个已缓存 JPEG 派生图，不是同时解码 100k 缩略图。Web1440 和 Chromium 模拟 Mobile390 各 n=3，均展示 100 条受限首屏行，实际解码缓存图 6/6/5 与 2/4/4。
+- 首 100 项 P50：Web1440 **214.341ms**（226.722 / 214.341 / 200.504ms），Mobile390 **172.579ms**（174.948 / 172.579 / 164.699ms），低于原冻结 2000ms；不是 matched BEFORE/AFTER。
+- 6/6 浏览器真实 scroll-out / pagehide / next bounded page 触发 AbortSignal 到 Go Request.Context().Done 和 Handler 退出；最慢 **84.061ms** < 冻结 **160ms**，+160ms 旧 Handler **0**、遗留 body 字节 **0**、横向溢出 **0**；六会话全 PASS。保持 Share-only 授权和零 Owner JWT/API，不因页面淘汰取消持久 ZIP/用户任务。
+- 同一原版源码的 [77-job 完整 CI #39549378825](https://github.com/lazyxu/xdrive/actions/runs/39549378825) **SUCCESS**，含 PostgreSQL Go API、Windows/Linux、Desktop/Web、single-commit、Final Gate。原始日志结构化度量完整转录至 [真实 SH-P018 源数据](performance-evidence/sh-p018-public-cached-thumbnail-go-cancel/ci-run-39549378966.json)，另外保留 [原始专项 job log](https://github.com/lazyxu/xdrive/actions/runs/39549378966/job/119054827705) 和 Actions artifact。
+- **决策：原版达标，不修改生产热路径；AFTER=N/A，speedup=N/A。** 新证据/最新 master 复基生成新 HEAD，旧 SHA 绿色不可代替新 HEAD 的真实 100k 专项与 77+ CI/Final Gate；本阶段仍 DRAFT，待源码自身重跑和 clean。真实 iOS/Android、安装 PWA、WAN、Desktop Native Share IPC、H264/Live Motion 此专项未覆盖；不触及 Race。生产专有安全验收按用户决定跳过（未验收），源码权限/撤销验证仍必做。
+
+---
+## SH-P018 · measure real Share cached thumbnail cancel without product modifications (2026-10-21)
+
+Already merged files/folders Owner right-click Share #2117, Share-only read-only Explorer #2148, root ZIP #2158, purpose-scoped cached derivatives #2258 and descendant ZIP #2267. Do not recreate these. **Current unmeasured gap** is the real production Shared Web/Mobile Chromium thumbnail POST+GET crossing Browser AbortSignal→Go Request.Context.Done after scrolling, page switching or pagehide on a 100k real-physical-JPEG source. [SH-P018 benchmark-only canonical](public-share-cached-thumbnail-go-cancel-shp018.md) uses 100000 independent original JPEG CAS objects (not 100k decoded thumbnails), exactly 16 separate cached JPEG derivatives, a temporary in-flight body gate **after original Go auth**, 6 native 1440/390 sessions and <=160ms abandoned Go Handler termination with 0 discarded body bytes. No Owner bearer/private download or generated media; normal Share read-only context ZIP survives browser exit unless the recipient explicitly cancels its durable job. Baseline CURRENT and speedup **Not measured / N/A**, original code unchanged. New full-source-exact specialized CI and archived evidence + 77+ Final Gate required before claiming accepted baseline. User skips inaccessible production-only security acceptance (unverified), source-level auth/CI not skipped.
+
+---
+
 ## SH-P019 · 原版真实 100k 物理 SHA 不同 JPEG 六会话通过，原 CI 两处旧样式断言 RED（2026-10-21）
 
 - **严格原测量源码** `deef8a01d0ca0b9d2fc1ff898a03d0c69268e694`，[PG17/Gin/LocalCAS + Chromium 专项 #39560252661](https://github.com/lazyxu/xdrive/actions/runs/39560252661) SUCCESS。100,000 个真实 SHA 不同物理 JPEG 原片，实际 CAS 分配 409604096B；1440px Web n3 与 CDP390 模拟 Mobile Web n3 均仅渲染受限 100 行、翻页 100 行。Wide 首/次页 P50 **371.160 / 226.060ms**，CDP390 **289.874 / 249.598ms**；每页都低于冻结 2000ms。12/12 真正签名下载 SHA、文件名与完整字节校验成功；0 stale rows / 0 horizontal overflow，最慢原件下载 **165.687ms** < 5000ms。**没有 100k 缩略图同时解码，也没有真 iOS/PWA/WAN**。

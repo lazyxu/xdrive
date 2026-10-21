@@ -1,0 +1,115 @@
+name: SH-P018 Matched Real 100k Share Next-Page Go Cancel
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  matched-real-100k:
+    if: github.head_ref == 'perf/sh-p018-public-share-thumbnail-cancel-100k-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_SH_P005_BROWSER_PHYSICAL_PERF: '1'
+      XD_SH_P018_REAL_CACHED_THUMBNAIL: '1'
+      XD_SH_P018_PAIRED_NEXT_PAGE: '1'
+      XD_SH_P005_GO_TEST_BIN: ${{ github.workspace }}/desktop/sh-p018-paired-bin/api.test
+      XD_SH_P018_PAIRED_RESULTS: ${{ github.workspace }}/desktop/sh-p018-paired-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate paired benchmark source and parsers
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go)"
+          node --check desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs
+          node --check desktop/scripts/sh-p018-paired-summary.cjs
+          node --test desktop/tests/sh-p018-paired-next-page.cjs
+          node --test desktop/tests/sh-p018-public-cached-thumbnail-source.cjs
+      - name: Build both actual Web versions and a single real PostgreSQL CAS Go fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb postgresql-client
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          mkdir -p desktop/sh-p018-paired-bin desktop/sh-p018-paired-builds "$XD_SH_P018_PAIRED_RESULTS"
+          git show HEAD^:web/src/PublicShare.tsx > web/src/PublicShare.tsx
+          sha256sum web/src/PublicShare.tsx | cut -d' ' -f1 > "$XD_SH_P018_PAIRED_RESULTS/original.sha256"
+          rm -rf web/dist
+          npm --prefix web run build
+          cp -a web/dist desktop/sh-p018-paired-builds/original
+          git show HEAD:web/src/PublicShare.tsx > web/src/PublicShare.tsx
+          sha256sum web/src/PublicShare.tsx | cut -d' ' -f1 > "$XD_SH_P018_PAIRED_RESULTS/candidate.sha256"
+          rm -rf web/dist
+          npm --prefix web run build
+          cp -a web/dist desktop/sh-p018-paired-builds/candidate
+          test -z "$(git diff -- web/src/PublicShare.tsx)"
+          test "$(cat "$XD_SH_P018_PAIRED_RESULTS/original.sha256")" != "$(cat "$XD_SH_P018_PAIRED_RESULTS/candidate.sha256")"
+          go test -mod=readonly -c -o "$XD_SH_P005_GO_TEST_BIN" ./internal/api
+      - name: Same-runner original-candidate candidate-original original-candidate
+        run: |
+          set -euo pipefail
+          for iteration in 1 2 3; do
+            if [ "$iteration" = 2 ]; then order="candidate original"; else order="original candidate"; fi
+            for variant in $order; do
+              database="shp018_${variant}_${iteration}"
+              PGPASSWORD=xdrive psql -h localhost -U xdrive -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${database}"
+              rm -rf web/dist
+              cp -a "desktop/sh-p018-paired-builds/${variant}" web/dist
+              export XD_TEST_DATABASE_URL="postgres://xdrive:xdrive@localhost:5432/${database}?sslmode=disable"
+              export XD_SH_P018_VARIANT="$variant"
+              export XD_SH_P018_WEB_SHA256="$(cat "$XD_SH_P018_PAIRED_RESULTS/${variant}.sha256")"
+              export XD_SH_P005_RESULTS="$XD_SH_P018_PAIRED_RESULTS/${variant}-${iteration}"
+              mkdir -p "$XD_SH_P005_RESULTS"
+              if [ "$variant" = original ]; then
+                # Preserve original >160ms physical samples; never waive candidate gate.
+                export XD_SH_P018_ALLOW_SLOW_ORIGINAL=1
+              else
+                unset XD_SH_P018_ALLOW_SLOW_ORIGINAL
+              fi
+              printf 'exact_head=%s\nvariant=%s\niteration=%s\n' "$(git rev-parse HEAD)" "$variant" "$iteration" > "$XD_SH_P005_RESULTS/provenance.txt"
+              /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+                -o "$XD_SH_P005_RESULTS/resources.txt" \
+                timeout --signal=TERM --kill-after=15s 18m \
+                xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+                ./desktop/node_modules/.bin/electron --no-sandbox \
+                desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs \
+                | tee "$XD_SH_P005_RESULTS/run.log"
+            done
+          done
+      - name: Validate same-runner n3 original versus candidate and Go Context.Done
+        run: |
+          set -euo pipefail
+          node desktop/scripts/sh-p018-paired-summary.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p018-real-100k-paired-next-page-before-after
+          path: desktop/sh-p018-paired-results/
+          if-no-files-found: warn
+          retention-days: 30
