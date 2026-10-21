@@ -108,6 +108,7 @@ import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
+import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
 import XDriveManualConnectionDialog from './ManualConnectionDialog'
@@ -267,9 +268,28 @@ function App({
   const [publicShareToken, setPublicShareToken] = useState(
     () => xDrivePublicShareTokenFromHash(window.location.hash),
   )
+  const [offlineSnapshotRoute, setOfflineSnapshotRoute] = useState(
+    () => window.location.hash === '#/offline/files',
+  )
+  const lastNonOfflineHashRef = useRef(
+    window.location.hash === '#/offline/files' ? '#/app/files' : window.location.hash,
+  )
   useEffect(() => {
     const syncShareRoute = () => {
-      setPublicShareToken(xDrivePublicShareTokenFromHash(window.location.hash))
+      const nextHash = window.location.hash
+      // Opening a readonly historical view may unmount the active FileManager.
+      // Never make that switch during a browser-owned foreground transfer.
+      if (nextHash === '#/offline/files' && (
+        xDriveHasPendingBrowserUpload(webTransferStore.snapshot()) ||
+        xDriveHasPendingBrowserDownload(webTransferStore.snapshot())
+      )) {
+        window.history.replaceState(window.history.state, '', lastNonOfflineHashRef.current)
+        setOfflineSnapshotRoute(false)
+        return
+      }
+      if (nextHash !== '#/offline/files') lastNonOfflineHashRef.current = nextHash
+      setPublicShareToken(xDrivePublicShareTokenFromHash(nextHash))
+      setOfflineSnapshotRoute(nextHash === '#/offline/files')
     }
     window.addEventListener('hashchange', syncShareRoute)
     window.addEventListener('popstate', syncShareRoute)
@@ -348,6 +368,18 @@ function App({
 
   if (publicShareToken) {
     return <PublicShareView key={publicShareToken} token={publicShareToken} />
+  }
+
+  // Deliberately separate from authenticated FileExplorer and Share APIs.
+  // A browser restart can read an explicitly opted-in historical snapshot,
+  // but a local hint can never recreate an authenticated Owner session.
+  if (offlineSnapshotRoute) {
+    return <PwaOfflineDirectoryBrowser api={api}
+      hasSession={Boolean(session.accessToken)}
+      onExit={() => {
+        window.location.hash = '#/app/files'
+        setOfflineSnapshotRoute(false)
+      }} />
   }
 
   if (!session.accessToken) {
@@ -488,6 +520,10 @@ function AuthView({
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面
         </Button>
+        <Button data-xdrive-pwa-offline-login-entry variant="text" sx={{ minHeight: 44 }}
+          onClick={() => { window.location.hash = '#/offline/files' }}>
+          查看此设备已保存的目录摘要（仅历史只读）
+        </Button>
         <XDriveManualConnectionDialog open={connectionOpen}
           onClose={() => setConnectionOpen(false)} />
         {installOpen ? (
@@ -519,6 +555,7 @@ function FileManager({
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
+  const [profileReadFailed, setProfileReadFailed] = useState(false)
   const offlineOwner = useMemo<XDrivePwaOfflineOwner | null>(() => {
     if (!profile || profile.must_change_password || profile.username !== username ||
         !profile.pwa_offline_instance_id) return null
@@ -991,15 +1028,26 @@ function FileManager({
 
   useEffect(() => {
     let active = true
-    void api.me()
-      .then((me) => {
-        if (active) setProfile(me)
-      })
-      .catch((error) => {
-        if (active) handleError(error)
-      })
+    const refreshProfile = () => {
+      void api.me()
+        .then((me) => {
+          if (!active) return
+          setProfile(me)
+          setProfileReadFailed(false)
+        })
+        .catch((error) => {
+          if (!active) return
+          setProfileReadFailed(true)
+          handleError(error)
+        })
+    }
+    refreshProfile()
+    // A cold offline App Shell must recover after connectivity returns
+    // without navigating through a fake, unauthenticated file listing.
+    window.addEventListener('online', refreshProfile)
     return () => {
       active = false
+      window.removeEventListener('online', refreshProfile)
     }
   }, [api, handleError])
 
@@ -2085,6 +2133,16 @@ function FileManager({
             {profile ? (
               <XDriveStatePanel variant="plain"
                 message="该工作区不可用或没有访问权限，请从导航返回主页。" />
+            ) : profileReadFailed ? (
+              <Box sx={{ p: 2 }} data-xdrive-pwa-offline-profile-fallback>
+                <Typography variant="body2" color="text.secondary">
+                  暂时无法验证服务端登录状态；不能显示实时文件。
+                </Typography>
+                <Button sx={{ minHeight: 44 }}
+                  onClick={() => { window.location.hash = '#/offline/files' }}>
+                  查看本设备的历史目录摘要（只读）
+                </Button>
+              </Box>
             ) : null}
           </Box>
         )}
