@@ -596,6 +596,7 @@ export interface XDriveMediaGalleryPageProps {
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   onShowInFolder?: (location: NodeLocation) => void
   onOpenSecureDesktopMap?: () => void
+  onOpenBaiduMapDiagnostics?: () => void
   onError?: (error: unknown) => void
 }
 
@@ -614,6 +615,7 @@ export function XDriveMediaGalleryPage({
   onOpenViewer,
   onShowInFolder,
   onOpenSecureDesktopMap,
+  onOpenBaiduMapDiagnostics,
   onError,
 }: XDriveMediaGalleryPageProps) {
   const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
@@ -3413,6 +3415,7 @@ export function XDriveMediaGalleryPage({
         onOpenBaiduNativeCell={source.listBaiduNativeCellItems ? openBaiduNativeCell : undefined}
         onBaiduNativeCellInvalidated={() => nativeCellOpenAbort.current?.abort()}
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
+        onOpenBaiduMapDiagnostics={onOpenBaiduMapDiagnostics}
         placesCameraSnapshot={placesCameraSnapshot}
         onPlacesCameraChange={rememberPlacesCamera}
         baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
@@ -3902,6 +3905,7 @@ export interface XDriveMediaGalleryProps {
   onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
+  onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
@@ -5611,6 +5615,7 @@ export function XDriveMediaGallery({
   onOpenBaiduNativeCell,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
+  onOpenBaiduMapDiagnostics,
   placesCameraSnapshot,
   onPlacesCameraChange,
   baiduNativeCameraSnapshot,
@@ -7839,6 +7844,8 @@ export function XDriveMediaGallery({
             selectedNativeCell={selectedBaiduNativeCell}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
+            diagnosticScope={preferenceScope}
+            onOpenDiagnostics={onOpenBaiduMapDiagnostics}
             initialCamera={placesCameraSnapshot}
             onCameraChange={onPlacesCameraChange}
             initialNativeCamera={baiduNativeCameraSnapshot}

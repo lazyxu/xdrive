@@ -4672,3 +4672,25 @@ Prefer small, focused branches that remain single-commit from their first commit
 - Integrate the already-private, unrouted previous first-file SQL/CAS/native receipt replay under BOTH a held real CURRENT native original fd and the exact prior O_EXCL Writer marker's nonblocking Linux/Windows OS lock. Derive the original Writer Scope only from revalidated Agent Server/account/Device/Root/Source and the live strong native descriptor key. Never choose an alternate slot, mint a new Stage/key, repeat upload, insert a terminal, retire credentials or expose any recovery control through Web/Renderer/foreign Desktop.
 - A missing/live/tampered original, source/account/native drift, cancelled observer, failed physical receipt or lost ACK must remain uncertain and permanently quarantined. Held local OS lock is not remote HTTP/SQL/CAS quiescence or physical CANCEL proof. The original manual first <=64MiB Backup-only upload remains enabled; no SourceRun, schedule, multi-file, deletion, Mirror or NAS in this child.
 - Keep this as exactly ONE scoped child work commit stacked on Draft #2266. Parent #2266 requires its own full exact-head CI and merge. Rebuild the child on full newer master with all cumulative AGENTS and unchanged original code/test/docs blobs, then run a NEW independent exact-head full Go Linux/Windows + PostgreSQL API Race, Web/Desktop, artifacts/images/Rootless/packages and Final Gate; only fresh clean Ready/Rebase merge. Production safety acceptance **按用户决定跳过（未验收）** and is not a PR/code/CI gate, but original Owner/Device/Root/native/SQL/CAS tests are mandatory.
+
+
+## P0 · 百度动态照片地图故障诊断归属（2026-10-21）
+
+- 地图业务错误的**集中管理入口**为管理员「系统依赖 → 百度地图 → 检测与生效证据」；Gallery/Places 仅保持“百度动态照片地图暂不可用，仍可使用原有地点与静态地图”紧凑回退提示，管理员单按钮精准跳转，不在照片墙重复诊断配置或直接展示 Provider 细节。
+- 故障应按真实阶段区分 Server Release blockers、Owner Status/Session HTTP 状态、SDK 加载/8s 初始化超时、native Map binding、受授权 /cells/viewport、2min Session renewal；Server 的 release_blockers 和 Browser 过程记录是不同的证据。现有六项 Server 技术字段和手动 Loader 检测只能作为独立读数，不能伪造认证或静态地图健康成功。
+- Browser 临时诊断仅保存**白名单无秘密错误码与时间**，按当前实例和账号/进程隔离、最多 8 scope、15min TTL、仅内存；不得存原始异常 message/body/URL、AK、JWT、Cookie、PhotoAsset/Node ID、GPS、thumbnail 或图像。普通 Back/Abort 不计失败，真正 Server/API/SDK/续期失败需有阶段信息；成功渲染清理陈旧错误。Viewer/虚拟列表和 Go ctx.cancel 原链路不受影响。
+- Web/Mobile/PWA 为管理员复用已有受保护系统依赖 route；Desktop file: 不执行百度脚本，只打开独立 HTTPS Map 窗口，Desktop 管理员可跳系统依赖。其他账号/窗口的客户端诊断无法交叉读取，不得推断其错误。
+- 专项源码见 `docs/gallery-baidu-map-diagnostics-dependency-ui-p0.md`，真实 TS/恶意状态码隔离回归 `desktop/tests/gallery-baidu-diagnostics-navigation.cjs`。P0-03 真正独立 HTTPS Origin iframe、CSP/恶意 Provider 隔离及 100k/iOS27 真实验收仍属未完成，不因错误 UI 完成而改写状态。
+- 按 #2227 与用户永久决定，ChatGPT 无法访问的**生产环境安全验收「按用户决定跳过（未验收）」**；不索取生产 AK/HAR/JWT/Cookie/账号权限，也不阻塞源代码、CI、PR 合并；源码级 Owner/Consent/revoke/Origin/CSP/fail-closed 控制与受控测试必须继续。
+
+## P0 百度动态照片地图诊断：实际 CI RED 与源码修正（2026-10-21）
+
+- #2279 原 HEAD `c9e7bfd649cf6ae48064f88ec53805ccd6a2403e` 完整 CI #39560062624 已证实 Linux/Windows Desktop TypeScript RED：外层 XDriveMediaGalleryPage 的管理员跳转 callback 未透传内层 XDriveMediaGallery，Desktop 重复 preferenceScope JSX 属性。本轮补全内层 Props+接线、删除重复属性，强化原始 Node 回归；不削弱产品功能或删除测试。
+- 复用全部最新 master，包括 PWA 先行的 AGENTS 前缀与代码；重建唯一单工作提交。永久规则：生产安全验收**按用户决定跳过（未验收）**，不得索取生产 AK/HAR/JWT/Cookie/账号，亦不得阻塞源码/CI/PR；源码安全与准确 HEAD CI+Final Gate/无冲突依然必需。
+
+## P0 百度动态地图详细故障诊断：准确源码与 CI 修复（2026-10-21）
+
+- 旧准确 HEAD `468f241e8b5c89bc73f871e3a561cbaa5e2fc9cb` 全量 CI `#39562138337` 发现真实 Desktop Node Test RED：原合入 `gallery-places-viewport-quiet-navigation.cjs` 自行转译 `MediaGalleryPlacesMap.tsx`，新 TS 诊断 import 未被原 fixture 加载，抛 `MODULE_NOT_FOUND: ../media-gallery-baidu-diagnostics`。保留原真实 viewport Owner / Abort / 不抖动所有断言，加入**真实 TS 源模块的转译和加载**，不改测试关闭范围、不伪造替身。
+- 对当前用户文案有**确定性源码结论**：该句来自 PhotoSurface 而非 `/status`，通常表示此前已获取 Server `authorized_signed_release` 且已尝试初始化。它本身不能证明到底是 Session、SDK、地图原生层、Viewport 或续期哪一项失败。浏览器若是 HTTP / file: / 非 HTTPS，`secureDocument()` 必然拒绝 SDK；新诊断先精确显示 `https_origin_required` 并立即保持 Static fallback，不错误记为 Session 网络故障。首轮 Session 8s 与 SDK 8s 分别标 `session_timeout` / `sdk_timeout`；都未经用户真实环境观测则绝不声称实机已确认原因。任何用户 URL/Host/AK/JWT/Cookie/坐标不进入诊断。
+- 当前完整 master AGENTS（包括新 PWA/LocalPush/Caddy/Share 限制）无损保留，已合入地图 #2261/#2263 的状态仍以独立 PR 核查为准；当前独立 #2279 保持一个工作提交，要求新 HEAD 所有 CI/Final Gate 与 GitHub clean 才合入。不在本轮实施第三方 JS HTTPS Origin 隔离，不谎称 P0-03 已通过。
+- **生产环境安全验收始终按用户决定跳过（未验收）**，不索取生产 HAR/AK/JWT/Cookie/账号、权限，不作为源代码/CI/PR 阻塞；但源码 Owner、Consent、撤销、Origin、CSP、fail-closed 和受控恶意脚本测试必须做。

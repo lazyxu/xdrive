@@ -34,9 +34,15 @@ const stub = {
 }
 const hookPath = path.join(root,'ui/shared/src/mui/useDeferredLoading.ts')
 const hook = compile(hookPath,{})
+// The original mounted React test must load the REAL compiled diagnostic
+// module. Do not silently stub it out: static fallback may not publish
+// foreign Owner, SDK, or credential data.
+const diagnosticsPath = path.join(root,'ui/shared/src/media-gallery-baidu-diagnostics.ts')
+const diagnostics = compile(diagnosticsPath,{})
 const galleryMap = compile(uiFile,{
   '@mui/material':stub,
   './useDeferredLoading':hook,
+  '../media-gallery-baidu-diagnostics':diagnostics,
   // A3 adds an optional shared native Map, but this existing Places
   // viewport test deliberately has NO production authorized runtime.
   // Keep static map ownership and the original Server Range contract.

@@ -14,6 +14,9 @@ import type { XDriveBaiduJSAPI4AuthorizedMountPort, XDriveBaiduJSAPI4InitialPhot
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { useXDriveDeferredLoading } from './useDeferredLoading'
+import {
+  xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
+} from '../media-gallery-baidu-diagnostics'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
 
@@ -45,6 +48,8 @@ export function XDriveMediaGalleryPlacesMap({
   selectedNativeCell,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
+  diagnosticScope,
+  onOpenDiagnostics,
   authorizedJSAPI4Runtime,
   activePlaceID,
   focusPlaceID,
@@ -73,6 +78,8 @@ export function XDriveMediaGalleryPlacesMap({
   selectedNativeCell?: import('../models').MediaBaiduNativeCellSelection
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
+  diagnosticScope?: string
+  onOpenDiagnostics?: () => void
   /** Only supplied by a future independently released Server-authorized proxy.
    * Production currently supplies NO runtime, so there are zero SDK requests. */
   authorizedJSAPI4Runtime?: XDriveBaiduJSAPI4AuthorizedMountPort
@@ -96,22 +103,46 @@ export function XDriveMediaGalleryPlacesMap({
   const [nearbyRadiusKM, setNearbyRadiusKM] = useState(5)
   const [nativeMapReady, setNativeMapReady] = useState(false)
   const [serverNativeAuthorized, setServerNativeAuthorized] = useState(false)
+  const desktopHTTPSOnly = Boolean(onOpenSecureDesktopMap)
+  const [nativeStatus, setNativeStatus] = useState<'checking' | 'authorized' |
+    'blocked' | 'error' | 'unsupported'>('checking')
   useEffect(() => {
     setServerNativeAuthorized(false)
+    setNativeStatus('checking')
     if (!getBaiduJSAPI4Status || !mintBaiduJSAPI4Session ||
-        !listBaiduNativeViewport || !onOpenBaiduNativePhoto) return
+        !listBaiduNativeViewport || !onOpenBaiduNativePhoto) {
+      // Desktop file: is intentionally denied the browser SDK and has its own
+      // HTTPS window. It is not a failed browser JSAPI request.
+      if (!desktopHTTPSOnly) {
+        setNativeStatus('unsupported')
+        if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(
+          diagnosticScope, 'client_transport_missing')
+      }
+      return
+    }
     const signal = new AbortController()
-    // A desired Browser AK is NOT a signed runtime; ask Server itself.
+    // Only an actual signed Server release allows the native mount.
     void getBaiduJSAPI4Status(signal.signal).then(status => {
-      if (!signal.signal.aborted && status?.provider === 'baidu-jsapi-4.0' &&
-          status.enabled === true &&
+      if (signal.signal.aborted) return
+      if (status?.provider === 'baidu-jsapi-4.0' && status.enabled === true &&
           status.activation_state === 'authorized_signed_release') {
         setServerNativeAuthorized(true)
+        setNativeStatus('authorized')
+      } else {
+        setNativeStatus('blocked')
+        if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(
+          diagnosticScope, 'server_release_blocked')
       }
-    }).catch(() => { /* signed release absent: static Baidu map stays visible */ })
+    }).catch(error => {
+      if (signal.signal.aborted) return
+      setNativeStatus('error')
+      if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(
+        diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
+    })
     return () => signal.abort()
   }, [getBaiduJSAPI4Status, mintBaiduJSAPI4Session,
-    listBaiduNativeViewport, onOpenBaiduNativePhoto])
+    listBaiduNativeViewport, onOpenBaiduNativePhoto,
+    desktopHTTPSOnly, diagnosticScope])
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
     places.find((item) => item.id === focusPlaceID) ??
@@ -130,6 +161,12 @@ export function XDriveMediaGalleryPlacesMap({
     : null
   const nativePhotoCamera: XDriveBaiduJSAPI4InitialPhotoCamera | null =
     nativeRestoreRef.current ?? nativeCamera
+  useEffect(() => {
+    if (nativeStatus === 'authorized' && !nativePhotoCamera && diagnosticScope) {
+      xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'camera_unavailable')
+    }
+  }, [nativeStatus, nativePhotoCamera?.latitude, nativePhotoCamera?.longitude, diagnosticScope])
+
   const canMountNativePhoto = Boolean(serverNativeAuthorized &&
     mintBaiduJSAPI4Session && listBaiduNativeViewport &&
     onOpenBaiduNativePhoto && nativePhotoCamera)
@@ -345,6 +382,26 @@ export function XDriveMediaGalleryPlacesMap({
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
             使用独立 HTTPS 会话，首次需要登录；动态地图仍受 Server 签名发布门禁控制。
           </Typography>
+          {onOpenDiagnostics ? (
+            <Button size="small" variant="text" onClick={onOpenDiagnostics}
+              data-xdrive-baidu-map-diagnostics-link>查看原因与修复建议</Button>
+          ) : null}
+        </Box>
+      ) : null}
+      {!desktopHTTPSOnly && !authorizedJSAPI4Runtime &&
+        (nativeStatus === 'blocked' || nativeStatus === 'error' ||
+          nativeStatus === 'unsupported' ||
+          (nativeStatus === 'authorized' && !nativePhotoCamera)) ? (
+        <Box data-xdrive-baidu-map-fallback sx={{ px: 1.5, pb: 1 }}>
+          <Typography variant="caption" role="status" color="text.secondary">
+            百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
+          </Typography>
+          {onOpenDiagnostics ? (
+            <Button size="small" variant="text" sx={{ ml: 0.5, minHeight: 36 }}
+              data-xdrive-baidu-map-diagnostics-link onClick={onOpenDiagnostics}>
+              查看原因与修复建议
+            </Button>
+          ) : null}
         </Box>
       ) : null}
       {canMountNativePhoto && mintBaiduJSAPI4Session && listBaiduNativeViewport &&
@@ -363,6 +420,8 @@ export function XDriveMediaGalleryPlacesMap({
             onNativeCameraChange={onNativeCameraChange}
             onNativeCameraClear={clearNativeReturnCamera}
             onReady={setNativeMapReady}
+            diagnosticScope={diagnosticScope}
+            onOpenDiagnostics={onOpenDiagnostics}
           />
         ) : null}
       {!canMountNativePhoto && canMountLegacy && authorizedJSAPI4Runtime && listPlacesViewport &&

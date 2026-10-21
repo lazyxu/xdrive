@@ -1,3 +1,4 @@
+import { xDriveClearBaiduMapDiagnostic } from '../../../ui/shared/src/media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
@@ -229,6 +230,9 @@ export default function App({
   }, [])
 
   const [systemDependenciesNavigationResetKey, setSystemDependenciesNavigationResetKey] = useState(0)
+  const [baiduDiagnosticLocation, setBaiduDiagnosticLocation] = useState<
+    { service: 'baidu-map'; tab: 'verify' } | undefined
+  >(undefined)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -358,6 +362,11 @@ export default function App({
   const savedPasswordAvailable = password.length === 0 && hasStoredPassword
 
   const status = agent.status
+  const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
+  // Desktop file: owns no provider SDK; only clear this process-local
+  // bounded hint when identity changes or the renderer goes away.
+  useEffect(() => () => xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope),
+    [baiduDiagnosticScope])
   systemDependenciesAdminRef.current = status?.role === 'admin'
   const cloudFileExplorerNavigationState =
     cloudFileExplorerNavigationSnapshot &&
@@ -2813,6 +2822,12 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
+            onOpenBaiduMapDiagnostics={status?.role === 'admin' &&
+              agent.hello?.capabilities.includes('admin-services') ? () => {
+                setBaiduDiagnosticLocation({ service: 'baidu-map', tab: 'verify' })
+                setView('admin-services')
+              } : undefined}
             onOpenSecureDesktopMap={() => {
               void window.xdriveDesktop.openBaiduMapSecure().then((result) => {
                 if (!result.ok) setError(result.error.message)
@@ -2831,7 +2846,6 @@ export default function App({
               setView('files')
               void loadCloudDirectory(location.parent_id, ancestry)
             }}
-            preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
             shareDialog={{
               adapter: desktopShareDialogAdapter,
               expiryMode: 'days',
@@ -3077,6 +3091,8 @@ export default function App({
         {view === 'admin-services' && status?.role === 'admin' && (
           agent.hello?.capabilities.includes('admin-services') ? (
             <XDriveServiceDependenciesPage source={adminServicesPort}
+              location={baiduDiagnosticLocation}
+              diagnosticScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
               onUnsavedChange={setSystemDependenciesDraftDirty}
               navigationResetKey={systemDependenciesNavigationResetKey} />
           ) : (
