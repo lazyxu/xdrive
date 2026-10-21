@@ -340,6 +340,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/admin/services/geonames/rollback", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/caddy/https", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/caddy/https", suite: "admin"},
+		{method: "PUT", path: "/api/v1/admin/services/caddy/config", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/caddy/https/revisions", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/caddy/https/rollback", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/caddy/https/preflight", suite: "admin"},
