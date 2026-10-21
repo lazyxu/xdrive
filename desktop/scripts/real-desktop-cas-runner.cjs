@@ -336,6 +336,8 @@ async function main(){
     const result={
       name:`desktop-renderer-preload-main-agent-postgres17-physical-cas-${sizeGiB}gib-${highEntropyDesktop?'high-entropy':'sparse-zero'}`,
       highEntropyDesktop,
+      physicalPayloadBytes:transferBytes,
+      physicalPayloadGiB:sizeGiB,
       status:'CURRENT-BEFORE only / no production code optimization',
       n:rows.length,
       uploadMedianMs:median(rows.map(r=>r.upload.elapsedMs)),
@@ -353,7 +355,7 @@ async function main(){
         expectedPUTsEach:putCount,expectedGETsEach:1,
       },
       actualRealUIBoundary:highEntropyDesktop?
-        'P043 authenticated actual Desktop Renderer/Preload/Main/Go Agent IPC -> Gin/PostgreSQL17/physically allocated high-entropy 1GiB original CAS; source file SHA256 equals complete downloaded Desktop File SHA256 and actual Server CAS SHA. Linux loopback, NOT actual Windows desktop, WAN, 4GiB high-entropy, PWA, permanent task cancellation or FileExplorer button clicks; no production changes.'
+        `Authenticated Desktop Renderer/Preload/Main/Go Agent IPC -> Gin/PostgreSQL17/physically allocated high-entropy ${sizeGiB} GiB original CAS; source file SHA256 equals complete downloaded Desktop File SHA256 and actual Server CAS SHA. Linux loopback, not physical Windows Desktop, WAN, installed PWA, permanent task cancellation or FileExplorer button clicks; no production changes.`
         :'Electron Renderer uses actual Preload.cloudUploadDroppedFiles(file) with CDP-inserted File, actual Main upload-paths, real Go Agent IPC and genuine Gin/PostgreSQL/CAS; real Download uses production native Main file-save IPC with ONLY test OS-dialog selection override. NOT actual FileExplorer button clicks, not WAN, not durable cancellation.',
       samples:rows,
       passed:rows.length===3

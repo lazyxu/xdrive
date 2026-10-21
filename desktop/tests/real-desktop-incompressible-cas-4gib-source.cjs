@@ -63,3 +63,12 @@ test('P045 4GiB physical n3 requires every full native saved file SHA and bounde
  assert(runner.includes('xdrive-p043-desktop-aes256ctr:'))
  for(const x of ['sizeGiB===4?360000:240000','seedHighEntropyPhysicalOriginal(source,transferBytes,sample)','assert(free>=needed','hashFile(download)']) assert(runner.includes(x),'Real Desktop runner missing: '+x)
 });
+
+test('P069 native 1 GiB and 4 GiB Desktop provenance uses actual workload size, not stale P043 labels',()=>{
+ assert(runner.includes('physicalPayloadBytes:transferBytes'))
+ assert(runner.includes('physicalPayloadGiB:sizeGiB'))
+ assert(runner.includes('high-entropy ${sizeGiB} GiB original CAS'))
+ assert(!runner.includes('high-entropy 1GiB original CAS'))
+ assert(!runner.includes('NOT actual Windows desktop, WAN, 4GiB high-entropy'))
+ assert(runner.includes('status:\'CURRENT-BEFORE only / no production code optimization\''))
+})
