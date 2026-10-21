@@ -58,6 +58,14 @@
 - Follow the existing D2b-1b-b1 private reader, preserve ALL parent/other Owner source and cumulative AGENTS, one scoped commit/PR. Parent #2302 must finish its own exact HEAD complete CI and merge; then reparent this work onto the complete fresh master and obtain its own relevant full CI/Final Gate and clean mergeability.
 - Production-only safety acceptance 按用户决定跳过（未验收）; no user production credentials/HAR/signed manual confirmation; source-level negative crypto/permission/SQL/CI gates stay mandatory.
 
+## SD-D2b-1b-b2b1 · real host-local positive TLS/Ready probe, no adoption authority (2026-10-21)
+
+- Only internal/caddyhostidentity package-private read-only positive TLS/Ready observation. Domain uses system roots and SNI to fixed 127.0.0.1:8443; LAN requires canonical RFC1918 host-owned address and independently supplied trusted local CA. No public DNS dial, proxy, cookies, credentials, insecure TLS, redirects or arbitrary upstream URL. 1024-byte bounded JSON Ready and 6s cancellation scope.
+- Real local HTTPS + synthetic CA/leaf test server exercises hostname/IP SAN, trust, redirect denial, false Ready/HTML/oversize/trailing JSON, cancellation, and no disclosure. Synthetic tests do not verify production clients or WAN. Local Ready is weaker than authenticated admin access.
+- It is NOT a trusted Host Publisher, stable Caddy generation/Live Config snapshot, disabled-ingress negative proof, signed adoption authorization, Caddy Apply, rollback or receipt; DO NOT wire partial positive evidence into CandidateComplete/CanAdopt/ApplySupported (all remain false). Only signed/read-only parent stages are prerequisites.
+- Preserve all master/other Owner business source and cumulative AGENTS, one scoped work commit and exact HEAD CI + Final Gate. Production-only acceptance 按用户决定跳过（未验收）; never request live account/keys/HAR/captures/signoff; code-level checks mandatory.
+
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
