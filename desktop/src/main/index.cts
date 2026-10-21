@@ -234,6 +234,7 @@ import {
   type AgentLocalBackupPreview,
   type AgentLocalBackupSnapshot,
   type AgentLocalBackupFirstFile,
+  type AgentLocalBackupFirstFileJobStatus,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
@@ -2401,6 +2402,17 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'device-backup-local-first-file')
       return requireAgentClient().localBoundBackupFirstFile(sourceID)
+    }, false))
+  // Read-only, Agent-owned in-process first-file job observation. This GET
+  // never starts a Stage, retries a physical write or exports local paths.
+  ipcMain.handle('agent:get-device-backup-local-first-file-status', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBackupFirstFileJobStatus>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid first-file status Source.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-first-file-status')
+      return requireAgentClient().localBoundBackupFirstFileStatus(sourceID)
     }, false))
   // An advisory read-only local delta uses its own request registry.
   // Closing its dialog or changing account aborts Electron HTTP and Go.

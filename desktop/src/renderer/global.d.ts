@@ -12,6 +12,7 @@ import type {
   XDriveLocalBackupPreview,
   XDriveLocalBackupSnapshot,
   XDriveLocalBackupFirstFile,
+  XDriveLocalBackupFirstFileJobStatus,
   XDriveLocalBackupDelta,
   XDriveLocalBackupEvidence,
   XDriveLocalBackupEvidenceSummary,
@@ -765,6 +766,7 @@ declare global {
         cancelDeviceBackupLocalPreview: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         saveDeviceBackupLocalSnapshot: (sourceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupSnapshot>>
         startDeviceBackupLocalFirstFile: (sourceID: number) => Promise<DesktopResult<XDriveLocalBackupFirstFile>>
+        getDeviceBackupLocalFirstFileStatus: (sourceID: number) => Promise<DesktopResult<XDriveLocalBackupFirstFileJobStatus>>
         cancelDeviceBackupLocalSnapshot: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getDeviceBackupLocalDelta: (sourceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupDelta>>
         cancelDeviceBackupLocalDelta: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>

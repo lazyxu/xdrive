@@ -143,7 +143,7 @@ var desktopIPCCapabilities = []string{
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
-		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
+		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-preview", "device-backup-local-snapshot", "device-backup-local-first-file", "device-backup-local-first-file-status", "device-backup-local-delta", "device-backup-local-evidence", "device-backup-local-evidence-summary", "device-backup-local-evidence-preflight", "device-backup-local-remove")
 	}
 	if openWithSupportedPlatform() {
 		capabilities = append(capabilities, "open-with")
@@ -797,6 +797,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/device-backups/local-preview", h.localBoundBackupPreview)
 	mux.HandleFunc("POST /v1/device-backups/local-snapshot", h.saveLocalBoundBackupSnapshot)
 	mux.HandleFunc("POST /v1/device-backups/local-first-file", h.startLocalBoundBackupFirstFile)
+	mux.HandleFunc("GET /v1/device-backups/local-first-file-status", h.readLocalBoundBackupFirstFileStatus)
 	mux.HandleFunc("GET /v1/device-backups/local-delta", h.localBoundBackupDelta)
 	mux.HandleFunc("POST /v1/device-backups/local-evidence", h.stageLocalBoundBackupEvidence)
 	mux.HandleFunc("GET /v1/device-backups/local-evidence-summary", h.localBoundBackupEvidenceSummary)

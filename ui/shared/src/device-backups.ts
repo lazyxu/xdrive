@@ -139,6 +139,18 @@ export interface XDriveLocalBackupFirstFile {
   retirement_safe: false
 }
 
+// Owning-Agent-only process-lifetime status. "not-recorded" is NOT proof
+// that an earlier Stage/key did not survive an Agent restart.
+export interface XDriveLocalBackupFirstFileJobStatus {
+  source_id: number
+  phase: 'not-recorded' | 'running' | 'observed' | 'uncertain'
+  revision?: number
+  observed_bytes?: number
+  physical_observed: boolean
+  backup_complete: false
+  retirement_safe: false
+}
+
 export interface XDriveLocalBackupSnapshot {
   source_id: number
   revision: number
