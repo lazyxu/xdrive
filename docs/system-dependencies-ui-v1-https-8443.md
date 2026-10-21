@@ -1,3 +1,163 @@
+# xDrive「系统依赖」UI v1.1 + Caddy / HTTPS 8443 单页面实施规格
+
+> 日期：2026-10-21
+> 性质：经用户六项选择正式确认的实施合同；设计确认不等于源码已实现、PR 已合入或网关已部署。
+> 生效优先级：**本 v1.1 替代下方归档 v1.0 的 Caddy 三导航、默认只读表单、独立历史页和相关交互安排**；原网络事实、安全约束、密钥保护、Host/数据库分离及历史保留。
+> 生产安全验收：**按用户决定跳过（未验收）**。不索取生产环境账号/权限/AK/JWT/Cookie/HAR/抓包或人工验收；不作为源码开发、CI、PR 或合并门槛。仍必须完成源码安全、隔离、签名、PostgreSQL 竞态、故障注入与全平台 CI。
+
+## 0. 六项冻结产品决策
+
+| 编号 | 用户确认内容 |
+| --- | --- |
+| 1B | 严格两步：先「保存配置」，再独立点击「重新部署」。保存不能隐式应用。 |
+| 2A | 只部署 Caddy 网关，由受信部署管理器自动选择安全 reload 或仅 Caddy recreate；不重启整个 xDrive。 |
+| 3A | 公网域名、局域网 IP 和开关在同一页面直接可编辑；AliDNS 敏感凭据按需展开。 |
+| 4A | 不新增外网探针；真实本机检测与已有可信客户端证据分别显示，无证据标「未验证」。 |
+| 5A | 部署失败自动恢复上一份已知可用**运行配置**，数据库保存的新目标和失败记录保留。 |
+| 6A | 独立 Rescue、签名 Host Manager、独立进程 watchdog、受信应用回执等强制安全门禁不降级；条件不足就不可执行。 |
+
+本版已经能开始分阶段开发，不再需要产品选择题。工程实现只能细化已有合同；改变以上任一原则必须另行修订。
+
+## 1. 作用范围与既有网络事实
+
+仅改变管理员「系统依赖 → Caddy / HTTPS 网关」。其余 10 项系统依赖、角色权限、52px 全屏 App Frame、Server/Go Desktop Agent、ui/shared MUI 组件仍保持。Web、Mobile Web、iOS PWA、Desktop 共享同一前端/后端语义，不新建平行实现。
+
+公网：客户端可信 FQDN:8443 → 当前路由/NAT → 宿主 8443/TCP → Caddy 容器 443/TCP → xDrive Server:8080。LAN 私网 IPv4:8443 复用同一 Caddy 入口。**宿主 8443 与容器内 443 不可混同。** 公网域名主入口与 LAN IP 备用入口都保留、可同时开启；禁止两者都关闭。Local CA 本机成功不代表 Windows/iOS/Android 客户端信任，不能引导绕过浏览器证书警告。仍不要求修改路由器、终端 CA/DNS/hosts，不部署中继/Tunnel，也不默认改公网 DNS A/AAAA 或降低到 HTTP。
+
+当前已有的 Host Control 只读状态、内部 Ready、TLS、HTTPS 双修订目标、AliDNS 加密管理、历史、差异只读预览继续复用。**当前源码尚无完整、可用的 Caddy Host Apply/Restart/Applied Receipt；apply_supported=false 保持到强制门禁真实齐全。**
+
+## 2. 唯一页面的信息架构
+
+**只有一个 Caddy 详情滚动页面；删除「概览 / 配置 / 历史」三 Tab 和反复出现的标题、健康状态、证明限制。** 桌面最大正文宽约 1120px；手机单列，最小可触控目标 44px，兼容暗色、键盘、焦点、读屏和 iOS safe-area。
+
+从上至下：
+
+1. **顶部整体状态**：一个主结论：「网关运行正常 / 网关检查异常 / 运行尚未确认」；在同一区域紧凑展示四个不同事实：「网关运行」「配置生效」「公网域名 HTTPS」「局域网 IP HTTPS」。显示最近真实检查时间/来源、手动「重新检测」。发现异常/运行目标差异时仅出现一条可展开说明。不要出现四张重复的成功卡片。
+2. **HTTPS 访问入口配置组**：直接显示域名 HTTPS 开关与 FQDN 输入、LAN IP HTTPS 开关与 RFC1918 IPv4 输入、宿主端口 8443 只读。显示的是数据库**已保存目标**，必要时在相邻简短证据行显示实际 Host 运行值与差异。无证据时状态为未知，绝不自动把 Host 值塞进数据库或草稿。
+3. **证书与 AliDNS 组**：证书实际有效期、签发/续期观测（有证据才显示）；AliDNS 已加密保存与凭据 revision。AK/SK 的更换、清除、临时显示在「管理凭据」按需展开后出现。
+4. **操作区**：两个独立、顺序明确的动作：「保存配置」和「重新部署」。未保存草稿时不允许部署；未实现真实 Host Apply 或部署门禁不足时不得显示可操作的重新部署按钮，改为紧凑说明不可用原因。不得提供「保存并部署」。
+5. **诊断与历史**：「检测详情」「安全预检」「部署记录与配置历史」都是同页按需展开、首次主动打开才读取的区域。历史恢复依然只生成新的数据库目标修订，之后需要管理员再次独立部署。
+
+旧链接的 status 定位顶部，verify 自动展开同页「检测详情」，config 定位 HTTPS 入口，history 展开并定位历史；保留现有链接/浏览器前进后退兼容，但永远不会转入另一张 Caddy 内容页。
+
+## 3. 可信运行、目标和生效的证据分离
+
+下列事实不能合并：
+
+- **Runtime**：新鲜 Host Control/Docker/Caddy generation、可信 Live Config 身份、HTTP Ready、域名系统 CA + SNI TLS、LAN IP SAN/Local CA TLS；旧 Server/Agent 缺字段、Host 快照过期或来源不同即 unknown。仅固定 caddy:443 或 caddy:80 本机探测成功，不足以证明宿主被正确应用。
+- **Desired**：PostgreSQL 已保存的 HTTPS enabled/domain、LAN enabled/IP、HTTPS revision/source，以及 AliDNS secret revision；revision #0 和 deployment hints 不等于已保存的管理配置。
+- **Applied**：独立 Host Manager 签名或受信不可变回执，精确绑定双修订、宿主身份、运行 Live Config 哈希、Caddy generation、操作签名、时间、启用入口正向验证和禁用入口负向验证。不存在可靠回执时必须显示「生效未确认」，即使 Runtime 和 Desired 文本恰好相等。
+- **Reachability**：本机 TLS、当前已验证客户端、独立受信部署验证和真正 WAN 可达是不同来源、不同范围。选择 4A 后不新增公网测量服务；公网没有实际独立观测时固定显示「公网可达未验证」，不能凭本机 TLS 或用户报告自动标绿。
+
+| 已有证据 | 允许的屏幕结论 | 不允许的推断 |
+| --- | --- | --- |
+| 受信 Host + Docker healthy + Ready | 网关运行正常 | 公网与所有客户端可达 |
+| 独立内部 HTTP/HTTPS 成功，但 Host 快照缺失 | 内部代理/本机 TLS 已验证，宿主状态未确认 | Host 已部署 |
+| 域名 TLS 本机系统 CA/SNI 通过 | 本机域名 HTTPS 已验证 | WAN 可达 |
+| LAN 本机 IP SAN/Local CA 通过 | 本机 IP TLS 已验证；客户端信任未知 | 移动设备证书受信 |
+| 目标新修订已保存，无同修订受信回执 | 已保存，尚未确认生效 | 自动部署成功 |
+| 可信 Runtime 与 Desired 明确不符 | 运行配置与目标存在差异 | 静默修改运行配置 |
+| Host/数据库双修订/运行实例/哈希/独立验证回执一致 | 已确认应用对应修订 | 回执范围外的 WAN 检测成功 |
+| 旧字段、过期、Pending、无法判定入口已关闭 | 未确认/阻断 | 将 unknown 变成 healthy/failed |
+
+状态展示必须分别保留采样时间、来源、有效期和可展开的阻断原因。正常情况下只有一行主状态；不重复提示「配置完成、状态正常、已可用」。手动状态刷新保留已显示的可信结果与草稿；禁止瞬时 Loading、白屏、布局高度变化及过期异步结果回写。
+
+**4A 与 6A 不矛盾**：不新增常驻公网探针和公网仪表盘成功证明，但**实际重新部署**仍需要用户确认保留的独立 Rescue/外部于待更新 Caddy 进程的正向和禁用入口负向 TLS/认证验证。缺少这类独立部署证据，就不能执行受控应用或发布 Applied Receipt；不能把不检测公网当作弱化网关回滚门禁的理由。
+
+## 4. 直接编辑与「保存配置」事务
+
+### 4.1 表单与草稿
+
+公网域名按已有 FQDN 合同严格校验，不能填 URL、路径或非法字符串；LAN 仅允许规范 RFC1918 IPv4。两入口可以均开启，不能均关闭。输入字段默认显示 DB 已保存目标；旧 Host 导入/配置缺失/读失败与当前真实运行分开展示，不能假装已有管理员目标。
+
+任何修改只产生 UI draft。重新检测不能覆写未保存草稿；跨服务、浏览器后退、账号切换、页面离开时需保留或确认放弃；不同 Server/用户/epoch 的旧响应不得覆盖现有草稿。域名大小写规范化、输入错误就地说明，保存前验证完整。
+
+AliDNS 凭据按需管理：空输入代表不修改，显式清除必须单独确认；新 Secret 必须加密持久化、审计脱敏。临时查看明文不超过 30 秒，失焦、页面隐藏、切换账号或关闭凭据组立即清除；不把 Secret 写入 API 日志、审计详情、部署状态或 URL。
+
+### 4.2 点击「保存配置」
+
+- **只保存目标与不可变审计，不做任何宿主/容器/证书/DNS/ACME/CA 或网络变更。**
+- 同一表单草稿若同时修改双入口及 AliDNS，应由 Server 原子保存为一致的目标快照。HTTPS revision 和 AliDNS secret revision 分离、使用两个 expected revision 进行 CAS；真实 PostgreSQL 事务中只修改被编辑配置组，失败/409/审计失败整笔回滚。避免 Web 先保存入口再保存 Secret 后出现部分成功。
+- 保存成功清除 dirty，显示「目标已保存，待独立重新部署」或「当前生效未确认」；刷新目标读取并使旧目标比较/预检失效，但不将仍健康运行的旧 Caddy 误标为坏。
+- 历史恢复只新建目标修订；Host 当前基线采纳为独立 #2253 安全主线，不能通过普通 Save API、旧 host-import 或只读摘要绕过其鉴权、签名、CAS 与审计。
+
+## 5. 「重新部署」独立受控事务
+
+### 5.1 开放条件
+
+必须同时满足：无脏草稿；已保存且完整的 HTTPS + AliDNS 双修订；当前 Host/实例身份可信、没有冲突 Pending；有可用独立 Rescue；Host Manager 独立签名 scope、短有效期审批与一次性 nonce；数据库/Host 双修订 CAS；只影响 Caddy 的可信操作途径；安全私有回滚锚点；进程外 watchdog；启用入口正向和禁用入口负向独立验证能力；回执存储及审计能力。缺项即 fail closed，返回最短阻断原因，UI 不提供伪可用操作。
+
+普通管理员浏览器会话**只能**发起部署意图/读取状态，不能取得 Docker socket、Caddy Admin 修改接口或 Host 高权限。独立签名/受信 Operator/Host Manager 执行和消费授权，不复用普通 Cookie/JWT 直接提权。
+
+### 5.2 执行步骤
+
+1. **明确确认**：显示将应用的 HTTPS 和 AliDNS 双修订、删改入口风险、只涉及 Caddy 的预检差异；操作前重新读取两修订、Host generation、候选摘要并阻止 TOCTOU。
+2. **受信 admission**：Host Manager 核对签名 apply scope、once-only nonce、操作 UUID、期望修订、宿主/Compose/live 配置指纹、受信 Rescue；跨 Server/并发申请只允许一个有效事务。
+3. **原子备份**：以受控私有目录、严格权限、锁、fsync 和不可覆盖锚点保护上一份已知可用的运行配置、相关 .env/Compose 原始字节与哈希；拒绝路径欺骗、符号链接、FIFO、磁盘不足或无法恢复的配置。
+4. **最小应用**：仅安全变更 Caddy。可证明纯配置安全重载时优先 reload；当环境凭据、挂载、容器身份或插件特性要求时才重新创建 Caddy 服务/容器。严禁借此重启 Postgres、Server、Web、Worker、同步或整个 Docker Compose 栈。具体命令以当前 Installer/Host Manager 可证明的服务拓扑为准，不在 UI 中展示操作方式选项。
+5. **真实复检**：检测 live config、目标双修订、宿主及 Caddy generation、Ready、证书/SAN/SNI/CA、启用入口 TLS+匿名拒绝/管理员授权成功、禁用入口确已不可访问；由独立受信观察者出具所需证据，不能用 Docker healthy 或当前浏览器 HTTPS 代替。
+6. **签名回执**：上述全部成立才生成不可变 Applied Receipt，包含修订、候选和 Host/Caddy 摘要、验证范围、操作者/时间/操作 UUID。页面才显示「已确认应用修订 #N」；未证实 WAN 时公网状态仍为「未验证」。
+
+任务必须持久化 operation_id、expected revisions、各阶段状态、开始/完成时间、失败原因和回滚结果。浏览器断线、刷新、iOS PWA 进程重建后能够按同一任务读取结果，不能依赖网页连接维持 watchdog，也不能自动发第二次 Host Apply。
+
+### 5.3 失败、超时与回滚
+
+如果独立验证失败、网关启动异常、证书/源身份不一致、网络失联、强制截止时间到期或 watchdog 执行，原子恢复**上一份可用 Caddy 运行配置**并仅对 Caddy 做必要恢复。**保留**新数据库管理目标、AliDNS 密文目标、版本历史和失败审计。成功恢复后显示「部署失败，原运行配置已恢复；新目标仍待部署」。恢复本身还须取得旧配置指纹、实例代际、TLS/Ready 可信证据；未取得时标「恢复未确认」，恢复失败时为 critical/rescue-required，保留受限 Pending，禁止无限自动重试。
+
+旧签名/nonce 不得重放。再次部署必须重新核对当时 DB 双修订和 Host 状态、生成独立操作 UUID、完成新的签名许可。查看历史、保存、只读差异、状态刷新不允许影响正在服务的 Caddy。
+
+## 6. 推荐 API / Agent 合同（目标设计，不声称现有）
+
+| 行为 | 建议语义 | 权限与副作用 |
+| --- | --- | --- |
+| 页面状态 | GET 管理员 Caddy 状态汇总 | no-store、只读、来源/时间/过期状态，绝不自动调用配额 API |
+| 目标和 AliDNS 状态 | 复用已有 HTTPS 与 AliDNS GET | 不返回明文 Secret |
+| 原子保存 | PUT 管理员 Caddy desired transaction | 双修订 CAS + PostgreSQL 审计原子事务，无 Host 行为 |
+| 只读预检 | 复用现有 preflight + 可信阻断原因 | 受限；有在线配额/写动作需额外显式授权 |
+| 重新部署意图 | POST 管理员 Caddy deployment intent | 只登记/请求独立 Host 授权，不直接操作 Docker |
+| 任务状态/历史 | GET 单次 deployment、列表和签名 receipt 摘要 | 管理员、no-store、脱敏、持久读取 |
+
+尽量扩展原 Server Router / Desktop Agent IPC / 共用 DTO，禁止新增第二套 Host Apply 通道。新状态至少覆盖运行 state、runtime source/observed_at/generation/live_hash、两入口本机 TLS、WAN source/scope、HTTPS/secret desired 双修订、已应用双修订/receipt 状态、deploy capability/blockers、active operation、回滚状态。缺失字段为 unknown，不能按 false 或成功处理。写接口拒绝非管理员、跨用户/跨实例、过期/不合法令牌，处理 409 CAS 冲突和 Pending；审计与双修订更新整笔成功或整笔失败。
+
+Host manager / Runner 的特权密钥必须与普通浏览器 Session 分离；未通过完整门禁，服务端始终为 apply_supported=false。任何「部署成功」只能由受信 Host 回执产生，不得由前端通过目标等于运行值或旧配置导入推算。
+
+## 7. 稳定交互、兼容与安全测试
+
+- status/verify/config/history 的旧深链接保留并映射为**同页锚点/按需展开**；无 Tab，后退前进、草稿保护、历史权限与回滚 CAS 不回归。
+- 读请求不卸载既有页面，不插入短命 Loading 状态，不重置滚动和焦点。失效/延迟事件不得造成页面高度抖动或覆盖新数据；错误在固定位置提示。
+- 禁止给移动端单独开页面或新后端；旧 11 项依赖导航必须完好。敏感明文 reveal TTL/失焦处理与 source/account 隔离仍强制。
+- Web/Desktop/Mobile/PWA 的同一操作状态可恢复；禁用入口、证书错误、Local CA 客户端不信任、Host 观测缺失及公网 unknown 的文案必须精确。
+
+### 必须通过的源码验收
+
+1. **配置与数据库**：both-on / domain-only / LAN-only / both-off 拒绝、非法 FQDN/RFC1918、host-import、revision #0、dirty/历史回退、两修订 CAS 并发、审计失败原子回滚、凭据加密/30 秒隐藏、跨 Server 防重放。
+2. **运行与证据**：Docker healthy 但无 Host、Host 快照旧/缺、独立内部 TLS 成功、域名本机系统 CA、LAN Local CA/IP SAN、已保存目标冲突、未签名 Applied Receipt、缺少公网 probe，不得把弱证据升级。
+3. **安全部署**：失联 Rescue、无签名、重放 nonce、宿主实例不匹配、坏私有路径/symlink、磁盘不足、锁竞争、多 Server 竞态、Caddy 无法启动、证书/TLS 错误、禁用入口仍可访问、watchdog 超时、恢复成功与恢复失败；不得重启非 Caddy 服务。
+4. **持久任务**：同一 operation id 断线重连、刷新、旧异步结果、任务失败/回滚后目标双修订仍保留；前端不能伪造完成回执。
+5. **平台与 CI**：Go Linux/Windows、真实 PostgreSQL API Race、Web/Desktop Linux/Windows、Rootless/Host、镜像/安装器、Final Gate；同一 PR 准确 HEAD 全绿且 fresh GitHub mergeable_state=clean 才 Ready/Rebase Merge。真实 iOS/Android/用户生产网络未测时不能声称已测。
+
+**生产环境专属验收按用户决定跳过（未验收）**：不阻塞代码开发、测试、PR 或合并；同时，用户真实实例如果缺 6A 强制 Rescue/安全部署能力，重新部署功能仍不可用，不能因跳过生产验收而把门禁改成通过。
+
+## 8. 独立 PR 实施分解和现状
+
+截至本规格核查：正式 v1.0 #2217、Caddy 三 Tab #2226、运行/目标分离 #2242、Host 差异只读 #2249、脏草稿预览失效 #2254 **已合入**；#2255 仍为独立 Draft，只是 fail-closed 宿主只读采纳证据，并非已采纳或已部署。Host Apply 的工程主线见 Issue #2075，安全宿主采纳见 Issue #2253。
+
+推荐按以下小 PR、单工作提交推进：
+1. **DOC** 本文冻结。保留下方 v1.0 全文备查并显式声明覆盖范围。
+2. **UI** 把 CaddyDetailV1 改为一个页面，复用 HTTPS/AliDNS/history/preflight，保留旧深链、草稿、错误防抖；此 PR 无 Host Apply。
+3. **READ** 完善 runtime/desired/applied/reachability 独立只读证据和查询，尊重 #2255 独立 Owner 边界。
+4. **SAVE** 新增同一草稿 HTTPS/AliDNS 双修订原子保存与数据库审计测试。
+5. **HOST** 按 #2075 分段实现独立签名 Host Manager、Rescue、备份、only-Caddy reload/recreate、watchdog、正反验证、恢复、可信回执，不提前启用假按钮。
+6. **INTEGRATION** 启用能力门禁通过时的真正「重新部署」及持久任务/结果 UI，完成跨端与失败场景覆盖。
+
+每个 PR 基于完整最新 master；保留其他 Owner 原代码及全部 AGENTS.md 累积历史、严格 scoped 一工作提交、当前 HEAD 完整 CI/Final Gate 与 fresh clean 后才合入和清理远程分支。旧 SHA CI 不授权新 SHA。**最终验收判断：目标已保存、运行健康、修订已应用、本机 TLS、WAN 可达是相互独立事实，不能互相代替。**
+
+---
+
+## v1.0 原始冻结基线全文（仅供历史追溯）
+
+> 以下原文由 #2217 合入。对 Caddy 三导航、默认只读表单、历史独立页面及相关实施顺序的旧定义，以本文件上方 v1.1 为准；其他已经确认的网络及安全事实保留。
+
 # xDrive「系统依赖」UI v1.0 + HTTPS 8443 网络实施规格（冻结基线）
 
 > 版本：v1.0 · 2026-10-20  
