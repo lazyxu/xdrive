@@ -1,3 +1,9 @@
+## SD-UI-V1.1 · AliDNS reveal 30-second response lease (2026-10-21)
+
+- v1.1 §4.1 requires displayed AliDNS ID/Secret to disappear within 30s, on blur/visibility/account/source close. The existing shared MUI already applies Math.min(30, server expires_in_seconds); the privileged reveal endpoint previously advertised 60s, which is inconsistent for other consumers. Return exactly 30s from the Server and verify it in the existing authenticated real-PostgreSQL reveal test, without dumping a secret in test failures.
+- This TTL metadata does not revoke plaintext that a client copies; clients must enforce concealment on display and abandon old replies. No modification to credentials, encryption, audit fields, domain/IP, Host/Caddy, Docker, DNS, certificate, ACME, 8443, or deploy behavior; apply_supported=false. Preserve all other Owner code and all cumulative AGENTS text below byte-for-byte.
+- Single scoped work commit on complete newest master; Draft until exact-head full Go/Linux/Windows/real PostgreSQL API Race/Web/Desktop/Host/Rootless/installers/images/Final Gate and fresh clean. Production-only acceptance: 按用户决定跳过（未验收）; source security and CI remain required, no production credentials/HAR.
+
 ## SD-CI-HOST-001 · rescope original Host Manager fixture on full latest master (2026-10-21)
 
 - Previous exact HEAD `3b5f12e3fd2200567135f2769019e1848f9dcc1d` completed [full CI #39579302795](https://github.com/lazyxu/xdrive/actions/runs/39579302795) SUCCESS including genuine PostgreSQL API Race and Final Gate, but the full master parent has advanced with independent LocalPush and physical Mobile Web performance work. Previous green does not certify this new parent.
