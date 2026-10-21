@@ -60,10 +60,15 @@ test('Web public share keeps native download, password and eligibility feedback'
     'share.max_downloads > 0',
     '此分享已达到下载上限。',
     'loading={downloading}',
-    'disabled={!canDownload}',
+    'disabled={!canStartDownload}',
+    'const canStartDownload = canDownload && !downloading',
   ]) {
     assert.ok(publicShare.includes(token), `Public Share behavior missing: ${token}`)
   }
+  assert.ok(publicShare.includes('const canDownload = !!share && !exhausted'),
+    'download eligibility and browsing must remain independent of pending native handoff')
+  assert.ok(!publicShare.includes('!downloading && !exhausted'),
+    'native handoff activity must not revoke the UI browse/preview grant')
 })
 
 
@@ -76,7 +81,8 @@ test('Web folder share stays bounded, read-only and cancels stale page requests'
     "document.addEventListener('visibilitychange', onVisibilityChange)",
     'const controller = new AbortController()',
     'items: page.items',
-    'next: page.next_cursor',
+    'next: Number(page.nextCursor ?? 0)',
+    'await shareFileAdapter.list(',
     'hasPreviousPage={Boolean(folder?.history.length)}',
     'hasNextPage={Boolean(folder && folder.next > 0)}',
     'onPreviousPage={() => {',

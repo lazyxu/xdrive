@@ -89,6 +89,10 @@ function loadPublicShare(api) {
       }
       if (name === './ActionButton') return load('ui/shared/src/mui/ActionButton.tsx')
       if (name === '../format') return load('ui/shared/src/format.ts')
+      if (name === '../file-explorer-capabilities' ||
+          name === '../../ui/shared/src/file-explorer-capabilities') {
+        return load('ui/shared/src/file-explorer-capabilities.ts')
+      }
       if (name === '@xdrive/ui/mui') {
         return {
           ...load('ui/shared/src/mui/AuthSurface.tsx'),
@@ -1176,5 +1180,73 @@ test('SH-P017 nested folder read-only context ZIP uses Share-only target ID and 
   for (const forbidden of ['移动', '重命名', '删除', '上传', '粘贴']) {
     assert.equal(renderer.root.findAllByType('button').filter(x =>
       textContent(x.children).trim() === forbidden).length, 0)
+  }
+})
+
+
+test('Shared folder remains browseable while a native original download is pending', async (t) => {
+  const pending = deferred()
+  const pageCalls = []
+  const downloadCalls = []
+  class Api {
+    async publicShare() {
+      return {
+        type: 'dir', name: 'Shared Album', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null,
+      }
+    }
+    async publicShareChildren(token, password, parentID, cursor, signal) {
+      pageCalls.push({ token, password, parentID, cursor, signal })
+      return {
+        parent_id: 0,
+        items: cursor === 0
+          ? [{ id: 1, name: 'photo-1.jpg', type: 'file', size: 64 }]
+          : [{ id: 101, name: 'photo-101.jpg', type: 'file', size: 65 }],
+        next_cursor: cursor === 0 ? 100 : 0,
+      }
+    }
+    downloadPublicShare(token, password, filename, nodeID) {
+      downloadCalls.push({ token, password, filename, nodeID })
+      return pending.promise
+    }
+    async publicShareThumbnailURL() { return null }
+    async publicShareImagePreviewURL() { return null }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => {
+    renderer = create(React.createElement(PublicShare, { token: 'test-share-token' }))
+  })
+  t.after(() => act(() => renderer.unmount()))
+  try {
+    const rows = () => renderer.root.findAll(
+      node => typeof node.type === 'string' && node.props.role === 'listitem'
+    )
+    assert.equal(pageCalls.length, 1)
+    assert.equal(rows().length, 1)
+    await act(async () => {
+      rows()[0].props.onClick({ target: { closest: () => null } })
+    })
+    const downloadButton = () => renderer.root.findAllByType('button')
+      .find(button => button.props['data-xdrive-public-share-selected-download'] === true)
+    assert.ok(downloadButton() && !downloadButton().props.disabled)
+    await act(async () => { downloadButton().props.onClick() })
+    assert.equal(downloadCalls.length, 1)
+    assert.equal(downloadButton().props.disabled, true, 'busy disables duplicate download')
+    assert.ok(renderer.root.findAllByType('button').some(button =>
+      button.props['data-xdrive-public-share-selected-preview'] === true),
+      'preview remains granted during the download')
+    const next = renderer.root.findAllByType('button')
+      .find(button => textContent(button.children).trim() === '下一页')
+    assert.ok(next && !next.props.disabled)
+    await act(async () => { next.props.onClick() })
+    assert.equal(pageCalls.length, 2,
+      'navigation must issue a real Share-scoped page request during native download')
+    assert.equal(pageCalls[1].cursor, 100)
+    assert.equal(rows().length, 1, 'only the accepted bounded page stays mounted')
+    assert.ok(textContent(renderer.toJSON()).includes('photo-101.jpg'))
+    assert.equal(downloadCalls.length, 1, 'navigation does not cancel or duplicate the handoff')
+  } finally {
+    await act(async () => { pending.resolve() })
   }
 })

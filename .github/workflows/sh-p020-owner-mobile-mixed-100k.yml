@@ -1,0 +1,75 @@
+name: SH-P020 Owner Mobile Web 100k/115k Mixed Media Capability Regression
+on:
+  # Branch-scoped guard below allows stacked or master-targeted specialty runs.
+  pull_request: {}
+permissions:
+  contents: read
+jobs:
+  p020-file-explorer-mobile-mixed-p049:
+    if: >-
+      github.head_ref == 'perf/file-explorer-mobile-mixed-100k-p049-20261015' ||
+      github.head_ref == 'refactor/file-explorer-shared-capabilities-p020-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_MOBILE_MIXED_100K_PERF: '1'
+      XD_FILEEXPLORER_PHYSICAL_TEST_BINARY: ${{ github.workspace }}/desktop/mobile-mixed-p049-bin/api.test
+      XD_FILEEXPLORER_PHYSICAL_RESULTS: ${{ github.workspace }}/desktop/mobile-mixed-p049-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source-exact real physical 115k media, viewport and test-only Go contracts
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/gallery_real_web_cold_performance_integration_test.go)"
+          node --check desktop/scripts/file-explorer-real-physical-100k-main.cjs
+          node --test desktop/tests/file-explorer-mobile-mixed-p049-source.cjs
+      - name: Build actual shared Web FileExplorer and native Gin PostgreSQL17 CAS
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/mobile-mixed-p049-bin
+          go test -c -o "$XD_FILEEXPLORER_PHYSICAL_TEST_BINARY" ./internal/api
+      - name: Baseline unchanged CURRENT 100k PhotoAssets 115k real mixed CAS Grid and Details n3
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_PHYSICAL_RESULTS"
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_FILEEXPLORER_PHYSICAL_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/file-explorer-real-physical-100k-main.cjs
+          test "$(find "$XD_FILEEXPLORER_PHYSICAL_RESULTS" -maxdepth 1 -type f -name 'sample-*-*.json' | wc -l)" -eq 6
+          node -e "const s=require(process.env.XD_FILEEXPLORER_PHYSICAL_RESULTS+'/summary.json');if(!s.passed||!s.mobileMode||!s.mixedMobileMode||s.viewSamples!==6||s.itemsPerFixture!==115000||s.distinctMixedOriginalCASPerFixture!==115000||!s.samples.every(x=>x.metrics.length===5&&x.metrics.every(m=>m.narrow&&m.decoded>=m.requiredDecoded&&m.visibleKinds[m.expectedKind]>=m.requiredDecoded)))process.exit(1);console.log(JSON.stringify({passed:s.passed,grid:s.p50GridFirstRequiredMs,details:s.p50DetailsFirstRequiredMs}))"
+          cat "$XD_FILEEXPLORER_PHYSICAL_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p020-file-explorer-390px-mobile-mixed-100k-p049-n3
+          path: desktop/mobile-mixed-p049-results/
+          if-no-files-found: warn
+          retention-days: 14

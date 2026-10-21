@@ -7,12 +7,38 @@ import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
+import { xDriveShareReadOnlyDefaultCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
+import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import type { PublicShare, PublicShareChild } from '../../ui/shared/src'
 import { formatBytes } from '../../ui/shared/src'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 type FolderPath = { id: number; name: string }
-type FolderPage = { path: FolderPath[]; items: PublicShareChild[]; cursor: number; next: number; history: number[] }
+type FolderPage = { path: FolderPath[]; items: readonly PublicShareChild[]; cursor: number; next: number; history: number[] }
+
+// One source-specific authorization adapter for the shared FileExplorer model.
+// No Owner/JWT endpoint can be reached with a public Share capability.
+// Server must still independently validate password, root, expiry and revoke.
+function createPublicShareFileExplorerAdapter(
+  api: XDriveApi, token: string, password: string,
+): XDriveFileExplorerDataAdapter<PublicShareChild, number> {
+  return {
+    source: 'share',
+    rootID: 0,
+    capabilities: xDriveShareReadOnlyDefaultCapabilities,
+    list: async (parentID, cursor, signal) => {
+      const pageCursor = Number(cursor ?? 0)
+      if (!Number.isSafeInteger(parentID) || parentID < 0 ||
+          !Number.isSafeInteger(pageCursor) || pageCursor < 0) {
+        throw new Error('Invalid Share-only directory cursor')
+      }
+      const page = await api.publicShareChildren(token, password, parentID, pageCursor, signal)
+      return { items: page.items, nextCursor: page.next_cursor || null }
+    },
+    loadPreview: (item, signal) =>
+      api.publicShareImagePreviewURL(token, password, item.id, signal),
+  }
+}
 
 export default function PublicShareView({ token }: { token: string }) {
   const api = useMemo(() => new XDriveApi(), [])
@@ -123,11 +149,11 @@ export default function PublicShareView({ token }: { token: string }) {
             setFolderError('')
             void (async () => {
               try {
-                const page = await api.publicShareChildren(token, '', 0, 0, firstPage.signal)
+                const page = await createPublicShareFileExplorerAdapter(api, token, '').list(0, 0, firstPage.signal)
                 if (!active || pendingPage.current !== firstPage || firstPage.signal.aborted) return
                 setFolder({
                   path: [{ id: 0, name: result.name }],
-                  items: page.items, cursor: 0, next: page.next_cursor, history: [],
+                  items: page.items, cursor: 0, next: Number(page.nextCursor ?? 0), history: [],
                 })
               } catch (err) {
                 if (!active || pendingPage.current !== firstPage || firstPage.signal.aborted) return
@@ -169,7 +195,10 @@ export default function PublicShareView({ token }: { token: string }) {
   }, [api, token])
 
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
-  const canDownload = !!share && !downloading && !exhausted && (!share.requires_password || Boolean(password))
+  // A pending browser handoff is not an authorization revocation. The granted
+  // browse/preview/download capabilities remain stable across downloading.
+  const canDownload = !!share && !exhausted && (!share.requires_password || Boolean(password))
+  const canStartDownload = canDownload && !downloading
   // Keep the single-file DTO stable across selection/toolbar state changes;
   // the shared Explorer's accepted-page effect must not reset highlighting.
   const sharedFileItems = useMemo<PublicShareChild[]>(
@@ -183,9 +212,8 @@ export default function PublicShareView({ token }: { token: string }) {
 
   const loadFolder = async (path: FolderPath[], cursor = 0, back = false, refresh = false) => {
     if (!share || share.type !== 'dir' || !canDownload) return
-    // Cancel obsolete Share thumbnail GETs at the user navigation action,
-    // not after the NEXT 100-item HTTP page resolves and React unmounts.
-    // Refreshing the same accepted page does not discard its active consumers.
+    // Abort superseded request-scoped JPEG GETs at user navigation time.
+    // Do not abort user-owned original/ZIP downloads or an in-place refresh.
     if (!refresh && folder && (
       folder.cursor !== cursor || folder.path.at(-1)?.id !== path.at(-1)?.id
     )) {
@@ -197,9 +225,8 @@ export default function PublicShareView({ token }: { token: string }) {
     setFolderError('')
     setFolderPending(true)
     try {
-      const page = await api.publicShareChildren(
-        token, password, path.at(-1)?.id ?? 0, cursor, controller.signal,
-      )
+      const shareFileAdapter = createPublicShareFileExplorerAdapter(api, token, password)
+      const page = await shareFileAdapter.list(path.at(-1)?.id ?? 0, cursor, controller.signal)
       if (pendingPage.current !== controller || controller.signal.aborted) return
       // Keep one server page in the DOM even for a 100k-child folder.
       // A short cursor history supports Back without retaining older Nodes.
@@ -210,7 +237,7 @@ export default function PublicShareView({ token }: { token: string }) {
           else if (back) history = old.history.slice(0, -1)
           else if (cursor > 0) history = [...old.history, old.cursor]
         }
-        return { path, items: page.items, cursor, next: page.next_cursor, history }
+        return { path, items: page.items, cursor, next: Number(page.nextCursor ?? 0), history }
       })
     } catch (err) {
       if (pendingPage.current !== controller || controller.signal.aborted) return
@@ -228,7 +255,7 @@ export default function PublicShareView({ token }: { token: string }) {
   }
 
   const download = async (entry?: PublicShareChild) => {
-    if (!share || !canDownload) return
+    if (!share || !canStartDownload) return
     setDownloading(true)
     setError('')
     setNotice('')
@@ -250,7 +277,7 @@ export default function PublicShareView({ token }: { token: string }) {
   }
 
   const startSharedFolderZIP = async (entry?: PublicShareChild) => {
-    if (!share || share.type !== 'dir' || !canDownload || zipPreparing) return
+    if (!share || share.type !== 'dir' || !canStartDownload || zipPreparing) return
     const zipName = entry?.name ?? share.name
     const folderID = entry?.type === 'dir' ? entry.id : 0
     zipPollRef.current?.abort()
@@ -437,12 +464,13 @@ export default function PublicShareView({ token }: { token: string }) {
                     folderOpened={Boolean(folder) || folderPending}
                     pending={folderPending}
                     canDownload={canDownload}
+                    downloadPending={downloading}
                     hasPreviousPage={Boolean(folder?.history.length)}
                     hasNextPage={Boolean(folder && folder.next > 0)}
                     toolbarActions={
                       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                         <XDriveActionButton type="button" intent="primary"
-                          disabled={!canDownload || zipPreparing}
+                          disabled={!canStartDownload || zipPreparing}
                           loading={zipPreparing}
                           loadingLabel="正在准备 ZIP…"
                           startIcon={<FolderZipRoundedIcon />}
@@ -489,13 +517,14 @@ export default function PublicShareView({ token }: { token: string }) {
                   kind="file"
                   items={sharedFileItems}
                   canDownload={canDownload}
+                  downloadPending={downloading}
                   onDownloadItem={() => void download()}
                   loadThumbnail={loadSharedThumbnail}
                   loadImagePreview={(_entry, signal) => api.publicShareImagePreviewURL(token, password, 0, signal)}
                   toolbarActions={
                     <XDriveActionButton intent="primary" type="submit"
                       startIcon={<DownloadRoundedIcon />} loading={downloading}
-                      loadingLabel="正在下载…" disabled={!canDownload}>
+                      loadingLabel="正在下载…" disabled={!canStartDownload}>
                       下载文件
                     </XDriveActionButton>
                   }
