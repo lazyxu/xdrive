@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   gallery-mobile-web-h264-poster-100k:
-    if: github.head_ref == 'perf/gallery-mobile-web-h264-posters-100k-p041-20261013'
+    if: github.head_ref == 'perf/gallery-mobile-web-h264-posters-100k-p041-20261013' || github.head_ref == 'test/pwa-p0c1-100k-shared-mobile-before-20261021'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     services:

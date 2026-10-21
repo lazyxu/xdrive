@@ -1,0 +1,34 @@
+{
+  "schema": "xdrive-pwa-p0c1-anonymous-current-baseline-v1",
+  "kind": "gallery-h264-100k-115k",
+  "provenance": {
+    "source_commit_sha": "6b951dd7589399ab26add97ce48527a20ca09db9",
+    "workflow_run_id": 39561430086,
+    "workflow_job_id": 119093375008,
+    "raw_ci_log_marker": "GALLERY_MOBILE_H264_100K_SUMMARY"
+  },
+  "environment": {
+    "runner": "GitHub Actions Linux; native Electron Chromium 390px Mobile Web; genuine Go/PostgreSQL17/CAS",
+    "physical_ios": false,
+    "installed_pwa": false,
+    "network_wan": false
+  },
+  "benchmark": {
+    "current_before_only": true,
+    "after": null,
+    "speedup_claim": null,
+    "independent_same_runner_paired_ab": false,
+    "metrics": {
+      "logical_assets": 100000,
+      "physical_cas_originals": 115000,
+      "independent_n": 3,
+      "required_new_video_posters_per_viewport": 1,
+      "median_of_fixture_p50_ms": 1765.0502330000163,
+      "worst_ms": 2031.3553180000017,
+      "max_renderer_growth_bytes": 108232704,
+      "max_go_rss_growth_bytes": 217088,
+      "accepted": true
+    }
+  },
+  "limitations": "Different scenarios measure different quantities; 100k logical data is not 100k visible images and cannot be interpreted as standalone iOS Home Screen or automatic offline photo caching."
+}
