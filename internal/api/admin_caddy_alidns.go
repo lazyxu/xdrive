@@ -310,6 +310,6 @@ func (s *Server) adminRevealCaddyAliDNS(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_key_id":      pair.AccessKeyID,
 		"access_key_secret":  pair.AccessKeySecret,
-		"expires_in_seconds": 60,
+		"expires_in_seconds": 30,
 	})
 }

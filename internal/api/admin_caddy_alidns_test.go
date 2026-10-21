@@ -181,6 +181,14 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 		reveal.Header().Get("Cache-Control") != "no-store" || reveal.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("explicit audited reveal failed: %d", reveal.Code)
 	}
+	var revealLease struct {
+		ExpiresInSeconds int `json:"expires_in_seconds"`
+	}
+	if err := json.Unmarshal(reveal.Body.Bytes(), &revealLease); err != nil ||
+		revealLease.ExpiresInSeconds != 30 {
+		t.Fatalf("AliDNS reveal v1.1 30-second response contract failed (ttl=%d, decode=%v)",
+			revealLease.ExpiresInSeconds, err)
+	}
 	cleared := call(http.MethodPut, path, adminToken, `{"revision":1,"clear":true}`)
 	if cleared.Code != 200 || !strings.Contains(cleared.Body.String(), `"configured":false`) ||
 		!strings.Contains(cleared.Body.String(), `"revision":2`) {
