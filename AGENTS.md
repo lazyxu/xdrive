@@ -4627,3 +4627,9 @@ Prefer small, focused branches that remain single-commit from their first commit
 
 - Owning Agent first-file process job and read-only status must bind **current OS-registered device UUID** in addition to current Server/account/session/Source, and recheck on return. Re-enrollment to another device must not see/rejoin the original job or admit a second physical Stage; process-local cache is never a durable COMMIT/CANCEL proof. No DeviceID/private Source Root/key/path enters IPC; Web/foreign Desktop remain read-only.
 - Parent #2257 must pass accurate-head full CI and merge before this child is rebuilt as ONE work commit on complete latest master. Preserve original tests and cumulative AGENTS, run new exact-head Windows/Linux, real PostgreSQL Race, Web/Desktop, rootless/packages/images and Final Gate, then clean rebase merge. Production environment security acceptance remains **按用户决定跳过（未验收）**; source security and integrity checks remain required.
+
+
+## G2c2d2b3a · original OS Writer held read-only observation (2026-10-21)
+
+- Add a strictly private native, nonblocking OS lock on the EXISTING original O_EXCL writer marker with bounded exact pre/post validation and read-only callback. This local lock is NOT remote writer quiescence, physical CANCEL, SQL COMMIT, SourceRun, new Stage/key or request-key retirement. Preserve exact no-write/no-IPC/no-Web restrictions; never allow an uncertain original to be restarted.
+- Require real Linux+Windows live lock and killed-process regression, immutable original marker and Source-wide quarantine. One work commit on full latest master; exact-head cross-platform, true PostgreSQL API Race, Web/Desktop, images/rootless/installers and Final Gate before clean rebase merge. Production security acceptance **按用户决定跳过（未验收）**, not a CI/PR gate.
