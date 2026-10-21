@@ -61,8 +61,8 @@ func (c *agentController) inspectLocalFirstFileJobForKey(
 }
 
 // CloudReadLocalBoundBackupFirstFileStatus is a narrow owning-Agent-only
-// observer. The current OS-stored Server/account/session must match before and
-// after reading the in-memory job. Never expose a former account's job, an OS
+// observer. The current OS-stored Server/account/session AND registered local
+// device identity must match before and after reading the in-memory job. Never expose a former account's job, an OS
 // path, Stage, operation token, original error or any additional write right.
 func (c *agentController) CloudReadLocalBoundBackupFirstFileStatus(
 	ctx context.Context, sourceID uint64,
@@ -76,10 +76,11 @@ func (c *agentController) CloudReadLocalBoundBackupFirstFileStatus(
 		account.Username == "" || account.SessionID == "" {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
-	view, err := c.inspectLocalFirstFileJobForKey(ctx, localPushFirstFileJobKey{
-		server: account.Server, account: account.Username,
-		sessionID: account.SessionID, sourceID: sourceID,
-	})
+	key, err := currentLocalFirstFileDeviceKey(account, sourceID)
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	view, err := c.inspectLocalFirstFileJobForKey(ctx, key)
 	if err != nil {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
@@ -87,6 +88,10 @@ func (c *agentController) CloudReadLocalBoundBackupFirstFileStatus(
 	if err != nil || current.SessionInvalid || current.Server != account.Server ||
 		current.Username != account.Username || current.SessionID != account.SessionID ||
 		ctx.Err() != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	currentKey, err := currentLocalFirstFileDeviceKey(current, sourceID)
+	if err != nil || currentKey != key || ctx.Err() != nil {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
 	return view, nil

@@ -12,6 +12,8 @@ import (
 type localPushFirstFileJobKey struct {
 	server, account, sessionID string
 	sourceID                   uint64
+
+	deviceID string
 }
 type localPushFirstFileJob struct {
 	done   chan struct{}
@@ -22,7 +24,8 @@ type localPushFirstFileJob struct {
 const maxLocalPushFirstFileJobs = 128
 
 func (key localPushFirstFileJobKey) valid() bool {
-	return key.server != "" && key.account != "" && key.sessionID != "" && key.sourceID != 0
+	return key.server != "" && key.account != "" && key.sessionID != "" &&
+		key.sourceID != 0 && validLocalPushRequestUUID(key.deviceID)
 }
 
 func (c *agentController) runDetachedLocalPushFirstFile(
@@ -95,8 +98,20 @@ func (c *agentController) CloudStartLocalBoundBackupFirstFile(
 		account.Username == "" || account.SessionID == "" {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
-	return c.runDetachedLocalPushFirstFile(ctx, localPushFirstFileJobKey{
-		server: account.Server, account: account.Username,
-		sessionID: account.SessionID, sourceID: sourceID,
-	}, c.cloudStartLocalBoundBackupFirstFileOnce)
+	key, err := currentLocalFirstFileDeviceKey(account, sourceID)
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	out, runErr := c.runDetachedLocalPushFirstFile(ctx, key, c.cloudStartLocalBoundBackupFirstFileOnce)
+	// Returning a completed old-device result across local re-enrollment is
+	// never acceptable, even if the physical writer already finished.
+	current, err := userconfig.Load()
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	currentKey, err := currentLocalFirstFileDeviceKey(current, sourceID)
+	if err != nil || currentKey != key || ctx.Err() != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
+	return out, runErr
 }

@@ -34,10 +34,11 @@ func TestLocalFirstFileReadOnlyStatusBoundToOriginalAgentJob(t *testing.T) {
 		t.Fatalf("live upload forged success: %+v", got)
 	}
 	for _, foreign := range []localPushFirstFileJobKey{
-		{server: "https://other.invalid", account: key.account, sessionID: key.sessionID, sourceID: key.sourceID},
-		{server: key.server, account: "other", sessionID: key.sessionID, sourceID: key.sourceID},
-		{server: key.server, account: key.account, sessionID: "other-login", sourceID: key.sourceID},
-		{server: key.server, account: key.account, sessionID: key.sessionID, sourceID: 43},
+		{server: "https://other.invalid", account: key.account, sessionID: key.sessionID, sourceID: key.sourceID, deviceID: key.deviceID},
+		{server: key.server, account: "other", sessionID: key.sessionID, sourceID: key.sourceID, deviceID: key.deviceID},
+		{server: key.server, account: key.account, sessionID: "other-login", sourceID: key.sourceID, deviceID: key.deviceID},
+		{server: key.server, account: key.account, sessionID: key.sessionID, sourceID: 43, deviceID: key.deviceID},
+		{server: key.server, account: key.account, sessionID: key.sessionID, sourceID: key.sourceID, deviceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
 	} {
 		if got := observe(foreign); got.Phase != "not-recorded" || got.PhysicalObserved {
 			t.Fatalf("foreign Source/account/session read original job: %+v", got)
@@ -54,11 +55,19 @@ func TestLocalFirstFileReadOnlyStatusBoundToOriginalAgentJob(t *testing.T) {
 		!got.PhysicalObserved || got.BackupComplete || got.RetirementSafe {
 		t.Fatalf("original physical result not represented safely: %+v", got)
 	}
+	// Re-enrolling after the first upload has finished must not expose
+	// the original device's positive physical result either.
+	reEnrolled := key
+	reEnrolled.deviceID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	if foreign := observe(reEnrolled); foreign.Phase != "not-recorded" ||
+		foreign.PhysicalObserved || foreign.ObservedBytes != 0 {
+		t.Fatalf("re-enrolled device saw completed original job: %+v", foreign)
+	}
 	encoded, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, private := range []string{"original", "root_path", "stage_id", "request_key", "native_key", "session_id"} {
+	for _, private := range []string{"original", "root_path", "stage_id", "request_key", "native_key", "session_id", "device_id"} {
 		if strings.Contains(string(encoded), private) {
 			t.Fatalf("private Agent evidence leaked into IPC: %s", encoded)
 		}
