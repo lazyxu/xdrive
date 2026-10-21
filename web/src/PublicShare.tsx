@@ -241,8 +241,10 @@ export default function PublicShareView({ token }: { token: string }) {
     }
   }
 
-  const startSharedFolderZIP = async () => {
+  const startSharedFolderZIP = async (entry?: PublicShareChild) => {
     if (!share || share.type !== 'dir' || !canDownload || zipPreparing) return
+    const zipName = entry?.name ?? share.name
+    const folderID = entry?.type === 'dir' ? entry.id : 0
     zipPollRef.current?.abort()
     const controller = new AbortController()
     zipPollRef.current = controller
@@ -251,13 +253,13 @@ export default function PublicShareView({ token }: { token: string }) {
     setZipNotice('')
     setZipError('')
     try {
-      let status = await api.preparePublicShareArchive(token, password, controller.signal)
+      let status = await api.preparePublicShareArchive(token, password, controller.signal, folderID)
       if (controller.signal.aborted) return
       setZipTaskID(status.prepare_id)
       while (!controller.signal.aborted) {
         if (status.state === 'completed') {
           await api.downloadPublicShareArchive(
-            token, password, status.prepare_id, status.filename || `${share.name}.zip`,
+            token, password, status.prepare_id, status.filename || `${zipName}.zip`,
             controller.signal,
           )
           if (controller.signal.aborted) return
@@ -455,6 +457,8 @@ export default function PublicShareView({ token }: { token: string }) {
                       if (folder) void loadFolder([...folder.path, { id: entry.id, name: entry.name }])
                     }}
                     onDownloadItem={(entry) => void download(entry)}
+                    onDownloadFolder={(entry) => void startSharedFolderZIP(entry)}
+                    folderZIPPreparing={zipPreparing}
                     loadThumbnail={loadSharedThumbnail}
                     loadImagePreview={(entry, signal) => api.publicShareImagePreviewURL(token, password, entry.id, signal)}
                     onPreviousPage={() => {

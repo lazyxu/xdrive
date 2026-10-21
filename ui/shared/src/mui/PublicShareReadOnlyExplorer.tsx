@@ -94,6 +94,8 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
   onCrumbClick?: (index: number) => void
   onOpenFolder?: (entry: PublicShareChild) => void
   onDownloadItem?: (entry: PublicShareChild) => void
+  onDownloadFolder?: (entry: PublicShareChild) => void
+  folderZIPPreparing?: boolean
   loadImagePreview?: (entry: PublicShareChild, signal?: AbortSignal) => Promise<string | null | undefined>
   loadThumbnail?: (entry: PublicShareChild, signal?: AbortSignal) => Promise<string | null | undefined>
   onPreviousPage?: () => void
@@ -106,7 +108,8 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
 export function XDrivePublicShareReadOnlyExplorer({
   kind, items, path = [], folderOpened = false, pending = false,
   canDownload = false, hasPreviousPage = false, hasNextPage = false,
-  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, loadImagePreview, loadThumbnail,
+  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, onDownloadFolder,
+  folderZIPPreparing = false, loadImagePreview, loadThumbnail,
   onPreviousPage, onNextPage, onRefresh,
 }: XDrivePublicShareReadOnlyExplorerProps) {
   const [view, setView] = useState<'details' | 'grid'>('details')
@@ -469,6 +472,13 @@ export function XDrivePublicShareReadOnlyExplorer({
         }}>
           {contextMenu?.entry.type === 'dir' ? '打开文件夹' : '下载文件'}
         </MenuItem>
+        {contextMenu?.entry.type === 'dir' && onDownloadFolder && (
+          <MenuItem disabled={!canDownload || pending || folderZIPPreparing} onClick={() => {
+            const entry = contextMenu?.entry
+            setContextMenu(null)
+            if (entry?.type === 'dir') onDownloadFolder?.(entry)
+          }}>下载该文件夹 ZIP</MenuItem>
+        )}
         {contextMenu?.entry && supportsPublicImagePreview(contextMenu.entry) && (
           <MenuItem disabled={!canDownload} onClick={() => {
             setPreviewEntry(contextMenu.entry)

@@ -3420,11 +3420,12 @@ export class XDriveApi {
 
   // The public archive is a separate capability: no Owner FileExplorer API,
   // account authorization, saved share password or bearer in a download URL.
-  preparePublicShareArchive(token: string, password: string, signal?: AbortSignal) {
+  preparePublicShareArchive(token: string, password: string, signal?: AbortSignal, folderID = 0) {
+    // A nested folder is a Share-only selection; never invoke the Owner ZIP API.
     return this.request<PublicShareArchivePrepare>('/api/v1/public/share/archive/prepare', {
       method: 'POST',
       headers: { 'X-XDrive-Share-Token': token },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify(folderID ? { password, folder_id: folderID } : { password }),
       signal,
     }, false)
   }

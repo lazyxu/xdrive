@@ -114,6 +114,81 @@ func TestPublicShareFolderZIPLifecycleAndSecurity(t *testing.T) {
 	post("", preparePath, "zip-secret", "", http.StatusNotFound)
 	post(share.Token, statusPath, "zip-secret", "not-a-uuid", http.StatusNotFound)
 	request(t, router, http.MethodPost, "/api/v1/download/archive/prepare", "", strings.NewReader(`{"ids":[1]}`), http.StatusUnauthorized)
+
+	// A descendant can be downloaded as its OWN ZIP, never by borrowing
+	// the Owner's archive endpoint. Root download remains independently valid.
+	nestedShare := createShare(0)
+	selectedPrepare := func(folderID uint64, want int) *publicShareArchiveStatus {
+		t.Helper()
+		body := fmt.Sprintf(`{"password":"zip-secret","folder_id":%d}`, folderID)
+		res := requestWithHeaders(t, router, http.MethodPost, preparePath, "",
+			strings.NewReader(body), want,
+			map[string]string{"X-XDrive-Share-Token": nestedShare.Token})
+		if want != http.StatusAccepted {
+			return nil
+		}
+		var result publicShareArchiveStatus
+		if err := json.Unmarshal(res.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return &result
+	}
+	selectedPrepare(outside.ID, http.StatusNotFound)   // file, not folder
+	selectedPrepare(otherRoot.ID, http.StatusNotFound) // foreign Owner
+	selectedPrepare(ownerRoot.ID, http.StatusNotFound) // ancestor outside share
+	nestedStarted := selectedPrepare(nested.ID, http.StatusAccepted)
+	if nestedStarted.PrepareID == "" {
+		t.Fatal("missing nested archive ID")
+	}
+	again := selectedPrepare(nested.ID, http.StatusAccepted)
+	if again.PrepareID != nestedStarted.PrepareID {
+		t.Fatal("identical nested selection started duplicate worker")
+	}
+	selectedPrepare(0, http.StatusTooManyRequests) // different subtree while active
+	post(share.Token, statusPath, "zip-secret", nestedStarted.PrepareID, http.StatusNotFound)
+	if err := server.executeArchivePrepareRun(context.Background(), nestedStarted.PrepareID); err != nil {
+		t.Fatal(err)
+	}
+	nestedDone := post(nestedShare.Token, statusPath, "zip-secret",
+		nestedStarted.PrepareID, http.StatusOK)
+	if nestedDone.Filename != "Nested.zip" ||
+		nestedDone.TotalBytes != int64(len("inside-zip-content")) {
+		t.Fatalf("nested ZIP not isolated: %+v", nestedDone)
+	}
+	nestedTicket := requestWithHeaders(t, router, http.MethodPost, ticketPath, "",
+		strings.NewReader(fmt.Sprintf(`{"password":"zip-secret","prepare_id":%q}`, nestedStarted.PrepareID)),
+		http.StatusOK, map[string]string{"X-XDrive-Share-Token": nestedShare.Token})
+	var nestedSigned publicShareDownloadTicketDTO
+	if err := json.Unmarshal(nestedTicket.Body.Bytes(), &nestedSigned); err != nil {
+		t.Fatal(err)
+	}
+	nestedResponse := requestWithHeaders(t, peer, http.MethodGet, nestedSigned.URL, "",
+		nil, http.StatusOK, nil)
+	nestedEntries := readArchiveTestEntries(t, nestedResponse.Body.Bytes())
+	if len(nestedEntries) != 2 ||
+		nestedEntries["Nested/inside.bin"] != "inside-zip-content" {
+		t.Fatalf("nested ZIP leaked sibling/other entries: %v", nestedEntries)
+	}
+	if _, ok := nestedEntries["Nested/"]; !ok {
+		t.Fatal("nested folder root absent")
+	}
+	var nestedCount meta.Share
+	if err := db.First(&nestedCount, nestedShare.ID).Error; err != nil || nestedCount.DownloadCount != 1 {
+		t.Fatalf("nested ZIP did not consume exactly one download: %+v %v", nestedCount, err)
+	}
+	// Previously signed tickets MUST reject the selected subtree after it
+	// leaves the shared ancestor chain, even on an independent Server.
+	if err := db.Model(&meta.Node{}).Where("id = ?", nested.ID).
+		Update("parent_id", ownerRoot.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, peer, http.MethodGet, nestedSigned.URL, "", nil,
+		http.StatusConflict, nil)
+	if err := db.Model(&meta.Node{}).Where("id = ?", nested.ID).
+		Update("parent_id", shared.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	first := post(share.Token, preparePath, "zip-secret", "", http.StatusAccepted)
 	duplicate := post(share.Token, preparePath, "zip-secret", "", http.StatusAccepted)
 	if first.PrepareID == "" || first.PrepareID != duplicate.PrepareID {

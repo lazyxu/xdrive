@@ -1124,3 +1124,57 @@ test('SH-P011: failed automatic first-page read preserves an explicit retry acti
   assert.equal(renderer.root.findAll(x => typeof x.type === 'string' && x.props?.role === 'listitem').length, 1,
     'one accepted host row after retry, without counting both MUI Box and its host')
 })
+
+
+test('SH-P017 nested folder read-only context ZIP uses Share-only target ID and leaves root ZIP available', async (t) => {
+  const calls = []
+  class Api {
+    async publicShare() {
+      return { name: 'Shared', type: 'dir', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null }
+    }
+    async publicShareChildren() {
+      return { next_cursor: 0, items: [
+        { id: 40, name: 'Nested', type: 'dir', size: 0 },
+        { id: 41, name: 'outside-on-same-page.txt', type: 'file', size: 7 },
+      ] }
+    }
+    async preparePublicShareArchive(token, password, signal, folderID = 0) {
+      calls.push(['prepare', token, password, folderID, Boolean(signal)])
+      return { prepare_id: 'share-only-zip', state: 'completed',
+        filename: (folderID ? 'Nested' : 'Shared') + '.zip', total_bytes: 7 }
+    }
+    async downloadPublicShareArchive(token, password, id, filename, signal) {
+      calls.push(['download', token, password, id, filename, Boolean(signal)])
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'nested-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const row = renderer.root.findAll(node => typeof node.type === 'string' &&
+    node.props['data-xdrive-public-share-item-id'] === 40)[0]
+  assert.ok(row, 'share-scoped folder row missing')
+  await act(async () => { row.props.onContextMenu({ preventDefault() {}, clientX: 80, clientY: 90 }) })
+  const option = renderer.root.findAll(node => typeof node.type === 'string' &&
+    textContent(node.children).trim() === '下载该文件夹 ZIP' &&
+    typeof node.props.onClick === 'function')[0]
+  assert.ok(option, 'folder-only read-only context command missing')
+  await act(async () => { option.props.onClick() })
+  assert.deepEqual(calls, [
+    ['prepare','nested-share-token','',40,true],
+    ['download','nested-share-token','','share-only-zip','Nested.zip',true],
+  ])
+  const rootZIP = renderer.root.findAllByType('button')
+    .find(x => textContent(x.children).trim() === '下载整个文件夹 ZIP')
+  assert.ok(rootZIP, 'root ZIP must coexist with selected subtree ZIP')
+  await act(async () => { rootZIP.props.onClick() })
+  assert.deepEqual(calls.slice(2), [
+    ['prepare','nested-share-token','',0,true],
+    ['download','nested-share-token','','share-only-zip','Shared.zip',true],
+  ])
+  for (const forbidden of ['移动', '重命名', '删除', '上传', '粘贴']) {
+    assert.equal(renderer.root.findAllByType('button').filter(x =>
+      textContent(x.children).trim() === forbidden).length, 0)
+  }
+})
