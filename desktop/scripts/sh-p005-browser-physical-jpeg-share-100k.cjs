@@ -16,6 +16,11 @@ const out = path.resolve(process.env.XD_SH_P005_RESULTS || path.join(root, 'desk
 const dist = path.join(root, 'web/dist')
 const readyPath = path.join(out, 'private-ready.json')
 const bin = process.env.XD_SH_P005_GO_TEST_BIN
+const shP018 = process.env.XD_SH_P018_REAL_CACHED_THUMBNAIL === '1'
+const pairedNextPage = process.env.XD_SH_P018_PAIRED_NEXT_PAGE === '1'
+const allowSlowOriginal = process.env.XD_SH_P018_ALLOW_SLOW_ORIGINAL === '1'
+if (allowSlowOriginal && (!pairedNextPage || process.env.XD_SH_P018_VARIANT !== 'original'))
+  throw Error('over-budget original only permitted within genuine physical A/B test')
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 app.on('window-all-closed', () => {})
 app.commandLine.appendSwitch('no-sandbox')
@@ -178,6 +183,67 @@ async function clickFirstDownload(win, expected, width, n, page) {
   assert(response.ms <= 5000, 'actual native original download exceeded 5s budget')
   return response
 }
+// Original signed thumbnail ticket POST and JPEG GET execute in Chromium.
+ // SH-P018 waits for the genuine in-flight Gin handler's bounded test-only
+ // slow transport gate; then an actual scroll, page change or unload aborts
+ // the SAME browser request all the way to Go Request.Context().Done.
+async function probePublicCachedThumbnailCancellation(win, base, width, sample) {
+  const number = (width === 1440 ? 0 : 3) + sample
+  const loaded = await until(async () => {
+    const remote = await readJSON(base + '/__perf/state')
+    const view = await dom(win, () => {
+      const images = [...document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport] img[src^="blob:"]')]
+      return { decoded: images.filter(x => x.complete && x.naturalWidth > 0).length,
+        visibleSlots: document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport]').length,
+        rows: document.querySelectorAll('[data-xdrive-public-share-item-id]').length }
+    })
+    return remote.thumbnail_held_starts >= number && view.decoded >= 2 &&
+      view.visibleSlots > 0 ? {remote, view} : null
+  }, 12000, 'actual Share cached JPEG decoded and signed GET held in Gin')
+  assert(loaded.view.decoded >= 2, 'public Share thumbnail list never decoded source pixels')
+  assert(loaded.remote.thumbnail_stream_calls >= number, 'no real signed thumbnail GET')
+  await post(base + '/__perf/mark-thumbnail-eviction')
+  let cause
+  if (!pairedNextPage && sample === 1) {
+    cause = 'scroll-out-of-viewport'
+    const scrolled = await dom(win, () => {
+      const root = document.querySelector('[data-xdrive-public-share-scroll-host]')
+      if (!root) return false
+      root.scrollTop = root.scrollHeight
+      root.dispatchEvent(new Event('scroll', { bubbles: true }))
+      return root.scrollTop > 0
+    })
+    assert(scrolled, '100-row Share scroll host did not scroll')
+  } else if (!pairedNextPage && sample === 2) {
+    cause = 'real-window-pagehide'
+    await win.loadURL('about:blank')
+  } else {
+    cause = 'bounded-next-page'
+    await click(win, '下一页')
+    const next = await until(async () => {
+      const view = await dom(win,buttonsAndRows)
+      return view.rows.length === 100 && view.rows.some(x => x.includes('photo-000100.jpg')) ? view : null
+    }, 12000, 'Share next page after thumbnail request cancel')
+    assert(!next.rows.some(x => x.includes('photo-000000.jpg')))
+  }
+  const stopped = await until(async () => {
+    const remote = await readJSON(base + '/__perf/state')
+    return remote.thumbnail_cancelled_go >= number && remote.thumbnail_active_held === 0 ? remote : null
+  }, 2000, 'real canceled signed Share GET Go handler exit')
+  const latencyMs = stopped.thumbnail_cancel_max_us / 1000
+  const eventLatencyMs = stopped.thumbnail_cancel_last_us / 1000
+  assert(eventLatencyMs > 0, 'Go Context.Done event latency missing')
+  if (!allowSlowOriginal) assert(latencyMs > 0 && latencyMs <= 160,
+    'real Share thumbnail request did not cancel to Go within 160ms: ' + latencyMs)
+  assert.equal(stopped.thumbnail_stale_body_bytes,0,
+    'no abandoned cached JPEG body may continue writing to inactive viewport')
+  return { width, sample, cause, decoded_cached_jpegs:loaded.view.decoded,
+    actual_signed_thumbnail_GETs:stopped.thumbnail_stream_calls,
+    observed_go_cancelled_requests:stopped.thumbnail_cancelled_go,
+    go_cancel_max_ms:latencyMs, go_cancel_event_ms:eventLatencyMs,
+    abandoned_body_bytes:stopped.thumbnail_stale_body_bytes,
+    cancelled_active_handlers_at_observation:stopped.thumbnail_active_held }
+}
 async function main() {
   assert.equal(process.env.XD_SH_P005_BROWSER_PHYSICAL_PERF, '1', 'explicit opt-in required')
   fs.mkdirSync(out, {recursive: true})
@@ -186,12 +252,20 @@ async function main() {
   const firstResource = process.resourceUsage()
   let base = '', win = null
   const result = {
-    workload:'SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb',
+    workload: shP018
+      ? 'SH-P018-100k-real-CAS-public-cached-JPEG-viewport-to-Go-cancel'
+      : 'SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb',
     exact_source_head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),
+    paired_next_page:pairedNextPage,
+    variant:process.env.XD_SH_P018_VARIANT || 'current',
+    variant_web_sha256:process.env.XD_SH_P018_WEB_SHA256 || null,
     original_jpeg_cas:100000, browser_sessions:6,
     page_budget_ms:2000, original_download_budget_ms:5000,
-    scope:'Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails',
-    excluded:'Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion, 100k thumbnail decode and user-owned transfer cancellation',
+    cached_thumbnail_go_cancel_budget_ms:shP018?160:undefined,
+    scope:shP018
+      ? 'Production public Share 1440px/390px Chromium, real Gin/PG17 100k SHA-distinct physical JPEG originals; 16 real cached derivatives, first-page decoded previews and signed GET held by bounded TEST-ONLY response writer, actual scroll/next-page/pagehide -> Go Request.Context().Done; no fake fetch'
+      : 'Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails',
+    excluded:'Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion; SH-P018 does not decode 100k thumbnails simultaneously and does not cancel durable ZIP/user tasks',
     sessions:[],
   }
   try {
@@ -209,6 +283,7 @@ async function main() {
     assert.equal(cfg.physical_cas_inodes,100001)
     assert(cfg.share_token && cfg.share_token.length >= 40)
     assert.deepEqual(cfg.downloads.map(x=>x.name),['photo-000000.jpg','photo-000100.jpg'])
+    if (shP018) assert.equal(cfg.cached_thumbnail_candidates,16,'real cached derivative corpus missing')
     result.original_bytes=ready.original_bytes
     result.allocated_cas_bytes=ready.allocated_bytes
     result.seed_excluded_ms=ready.seed_ms_excluded
@@ -245,6 +320,15 @@ async function main() {
         assert.equal(first.pageFilter,true,'local page filter not available')
         assert.equal(first.publicExplorer,true,'shared Explorer remounted away during initial page')
         assert(first.explorerWidth >= (width === 1440 ? 1000 : 300))
+        if (shP018) {
+          const observed = await probePublicCachedThumbnailCancellation(win,base,width,sample)
+          result.sessions.push({ ...observed, first_page_ms:firstMs, first_rows:first.rows.length,
+            horizontal_overflow:first.horizontalOverflow })
+          console.log('SH_P018_BROWSER_GO_CANCEL_RESULT '+JSON.stringify(result.sessions.at(-1)))
+          await closeWindow(win)
+          win=null
+          continue
+        }
         const downloadA=await clickFirstDownload(win,cfg.downloads[0],width,sample,'first')
         const nextStart=performance.now()
         await click(win,'下一页')
@@ -272,6 +356,29 @@ async function main() {
       }
     }
     const server=await readJSON(base+'/__perf/state')
+    if (shP018) {
+      assert(server.public_page_calls>=6,'no actual bounded Share page POST')
+      assert(server.thumbnail_ticket_calls>=6,'no actual Share-only signed thumbnail POST')
+      assert(server.thumbnail_stream_calls>=6,'no real cached JPEG GET')
+      assert.equal(server.thumbnail_held_starts,6,'no genuine held Go signed GET for every browser')
+      assert.equal(server.thumbnail_cancelled_go,6,'not all browser evictions reached actual Go ctx.Done')
+      assert.equal(server.thumbnail_active_held,0,'old Go handler leaked')
+      assert.equal(server.thumbnail_stale_body_bytes,0,'stale cached JPEG bytes leaked')
+      assert(server.thumbnail_cancel_max_us>0 &&
+        (allowSlowOriginal || server.thumbnail_cancel_max_us<=160000),
+        'Go viewport cancellation exceeds frozen 160ms')
+      assert.equal(server.original_download_calls,0,'Share thumbnail tests must not start original downloads')
+      result.http_counts=server
+      result.cancel_max_ms=server.thumbnail_cancel_max_us/1000
+      result.all_passed=result.sessions.length===6&&result.sessions.every(x=>
+        x.first_rows===100&&x.decoded_cached_jpegs>=2&&
+        (allowSlowOriginal || x.go_cancel_max_ms<=160)&&x.go_cancel_event_ms>0&&
+        x.abandoned_body_bytes===0&&!x.horizontal_overflow)
+      assert(result.all_passed,'SH-P018 original production Share request cancellation failed')
+      fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
+      console.log('SH_P018_SOURCE_EXACT_BASELINE '+JSON.stringify(result))
+      return
+    }
     assert(server.public_page_calls>=12,'no actual PG page POST')
     assert(server.signed_ticket_calls>=12,'no real ticket POST')
     assert(server.original_download_calls>=12,'no actual original GET')

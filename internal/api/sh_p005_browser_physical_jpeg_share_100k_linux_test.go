@@ -26,6 +26,60 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// SH-P018 is an isolated opt-in test of the original Share cached thumbnail
+// request/cancel lifecycle; SH-P005 production source remains unchanged by
+// default and its original HTTP/download acceptance is still independent.
+type shP018ThumbnailProof struct {
+	heldStarts       atomic.Int64
+	goCancelled      atomic.Int64
+	active           atomic.Int64
+	cancelMaxMicros  atomic.Int64
+	cancelLastMicros atomic.Int64
+	abortAtUnixNano  atomic.Int64
+	ticketCalls      atomic.Int64
+	streamCalls      atomic.Int64
+	bodyBytesWasted  atomic.Int64
+}
+
+type shP018HeldBodyWriter struct {
+	http.ResponseWriter
+	request *http.Request
+	proof   *shP018ThumbnailProof
+}
+
+func (w *shP018HeldBodyWriter) Write(p []byte) (int, error) {
+	// This fixed test-only transport gate makes a genuine authorized signed
+	// GET stay in flight until the real Chromium consumer aborts the request.
+	// It does NOT replace the original Gin handler or inject a fake Go cancel.
+	w.proof.heldStarts.Add(1)
+	w.proof.active.Add(1)
+	defer w.proof.active.Add(-1)
+	<-w.request.Context().Done()
+	mark := w.proof.abortAtUnixNano.Load()
+	if mark != 0 {
+		elapsed := time.Since(time.Unix(0, mark)).Microseconds()
+		if elapsed > 0 {
+			w.proof.cancelLastMicros.Store(elapsed)
+			for {
+				old := w.proof.cancelMaxMicros.Load()
+				if old >= elapsed || w.proof.cancelMaxMicros.CompareAndSwap(old, elapsed) {
+					break
+				}
+			}
+		}
+	}
+	w.proof.goCancelled.Add(1)
+	// The request ended before writing a body. A cancelled stale response
+	// must not transfer original or cached bytes to the inactive viewport.
+	return 0, w.request.Context().Err()
+}
+
+func (w *shP018HeldBodyWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 // SH-P005: real owner PostgreSQL17 + 100k independently decodable physical
 // JPEG LocalCAS originals + original read-only shared-folder APIs (test-only).
 func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
@@ -42,6 +96,7 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 	}
 	const count = 100000
 	const sample = "shared-browser-corpus"
+	cachedThumbnailCancel := os.Getenv("XD_SH_P018_REAL_CACHED_THUMBNAIL") == "1"
 	gin.SetMode(gin.TestMode)
 	db := fileExplorerMediaPerfDatabase(t, os.Getenv("XD_TEST_DATABASE_URL"))
 	db = db.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
@@ -122,6 +177,15 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 		t.Fatalf("not all physical source Nodes seeded: %d %v", len(ids), rowsErr)
 	}
 	aggregate := sha256.New()
+	// Only sixteen actually visible/next-page cache candidates are supplied;
+	// 100000 distinct originals remain real physical CAS files, not 100k
+	// fabricated cached renders or a fake all-images-decoded benchmark.
+	type thumbnailSeed struct {
+		nodeID  uint64
+		ordinal int
+		sha     string
+	}
+	var thumbnailSeeds []thumbnailSeed
 	var sourceBytes int64
 	uniques := make(map[string]bool, count)
 	blobs := make([]meta.ContentBlob, 0, 250)
@@ -149,6 +213,9 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 		}
 		uniques[hash] = true
 		_, _ = aggregate.Write(digest[:])
+		if cachedThumbnailCancel && (i < 8 || (i >= 100 && i < 108)) {
+			thumbnailSeeds = append(thumbnailSeeds, thumbnailSeed{nodeID: id, ordinal: i, sha: hash})
+		}
 		key, err := storage.ContentAddressedKey(hash)
 		if err != nil {
 			t.Fatal(err)
@@ -205,6 +272,37 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 		t.Fatalf("real original physical CAS inventory=%d allocated=%d err=%v", preCount, preAllocated, err)
 	}
 	seedMS := float64(time.Since(seedStart).Microseconds()) / 1000
+	// Actual small, separately generated and persisted cached derivatives.
+	// These have a different JPEG payload from their respective originals.
+	if cachedThumbnailCancel {
+		if len(thumbnailSeeds) != 16 {
+			t.Fatalf("wrong real cached sample count: %d", len(thumbnailSeeds))
+		}
+		for _, candidate := range thumbnailSeeds {
+			node := meta.Node{ID: candidate.nodeID, OwnerID: user.ID,
+				Revision: 1, Name: fmt.Sprintf("photo-%06d.jpg", candidate.ordinal)}
+			row := meta.MediaMetadata{
+				NodeID: candidate.nodeID, OwnerID: user.ID, NodeRevision: 1,
+				SHA256: candidate.sha, MediaKind: meta.MediaKindImage,
+				MIMEType: "image/jpeg", IndexState: meta.MediaIndexStateReady,
+			}
+			row.ThumbnailKey = mediaThumbnailStorageKey(node, row)
+			thumbnailBytes, thumbErr := fileExplorerPhysicalJPEG(count + candidate.ordinal + 700)
+			if thumbErr != nil {
+				t.Fatal(thumbErr)
+			}
+			if _, putErr := store.Put(ctx, row.ThumbnailKey, bytes.NewReader(thumbnailBytes)); putErr != nil {
+				t.Fatal(putErr)
+			}
+			if createErr := db.Create(&row).Error; createErr != nil {
+				t.Fatal(createErr)
+			}
+		}
+	}
+	blockedNodeID := uint64(0)
+	if cachedThumbnailCancel {
+		blockedNodeID = thumbnailSeeds[0].nodeID
+	}
 	ids = nil
 	uniques = nil
 	blobs = nil
@@ -237,6 +335,7 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 		})
 	}
 	var pageCalls, ticketCalls, originalStreams atomic.Int64
+	thumbnailProof := &shP018ThumbnailProof{}
 	stopped := make(chan struct{})
 	var stopOnce sync.Once
 	filesOnDisk := http.FileServer(http.Dir(dist))
@@ -246,24 +345,40 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 			w.Header().Set("Cache-Control", "private, no-store")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"share_token":             share.Token,
-				"directory_id":            source.ID,
-				"physical_jpeg_originals": count,
-				"physical_cas_inodes":     preCount,
-				"allocated_bytes":         preAllocated,
-				"original_bytes":          sourceBytes,
-				"source_aggregate_sha256": sourceHash,
-				"seed_ms_excluded":        seedMS,
-				"downloads":               originalExpected,
+				"share_token":                 share.Token,
+				"directory_id":                source.ID,
+				"physical_jpeg_originals":     count,
+				"physical_cas_inodes":         preCount,
+				"allocated_bytes":             preAllocated,
+				"original_bytes":              sourceBytes,
+				"source_aggregate_sha256":     sourceHash,
+				"seed_ms_excluded":            seedMS,
+				"downloads":                   originalExpected,
+				"cached_thumbnail_candidates": len(thumbnailSeeds),
 			})
 		case "/__perf/state":
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]int64{
-				"public_page_calls":       pageCalls.Load(),
-				"signed_ticket_calls":     ticketCalls.Load(),
-				"original_download_calls": originalStreams.Load(),
+				"public_page_calls":          pageCalls.Load(),
+				"signed_ticket_calls":        ticketCalls.Load(),
+				"original_download_calls":    originalStreams.Load(),
+				"thumbnail_ticket_calls":     thumbnailProof.ticketCalls.Load(),
+				"thumbnail_stream_calls":     thumbnailProof.streamCalls.Load(),
+				"thumbnail_held_starts":      thumbnailProof.heldStarts.Load(),
+				"thumbnail_cancelled_go":     thumbnailProof.goCancelled.Load(),
+				"thumbnail_active_held":      thumbnailProof.active.Load(),
+				"thumbnail_cancel_max_us":    thumbnailProof.cancelMaxMicros.Load(),
+				"thumbnail_cancel_last_us":   thumbnailProof.cancelLastMicros.Load(),
+				"thumbnail_stale_body_bytes": thumbnailProof.bodyBytesWasted.Load(),
 			})
+		case "/__perf/mark-thumbnail-eviction":
+			if !cachedThumbnailCancel || r.Method != http.MethodPost {
+				http.Error(w, "test-only mark disabled", http.StatusNotFound)
+				return
+			}
+			thumbnailProof.abortAtUnixNano.Store(time.Now().UnixNano())
+			w.WriteHeader(http.StatusNoContent)
 		case "/__perf/stop":
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -283,6 +398,21 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 					r.Method == http.MethodGet {
 					originalStreams.Add(1)
 				}
+				if cachedThumbnailCancel {
+					if r.URL.Path == "/api/v1/public/share/thumbnail-ticket" && r.Method == http.MethodPost {
+						thumbnailProof.ticketCalls.Add(1)
+					}
+					if strings.HasPrefix(r.URL.Path, "/api/v1/public-share-thumbnail/") && r.Method == http.MethodGet {
+						thumbnailProof.streamCalls.Add(1)
+						claims, claimErr := server.Auth.ParsePublicShareThumbnail(strings.TrimSpace(r.URL.Query().Get("ticket")))
+						if claimErr == nil && claims.NodeID == blockedNodeID && claims.ShareID == share.ID {
+							router.ServeHTTP(&shP018HeldBodyWriter{
+								ResponseWriter: w, request: r, proof: thumbnailProof,
+							}, r)
+							return
+						}
+					}
+				}
 				router.ServeHTTP(w, r)
 				return
 			}
@@ -296,12 +426,13 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 	}
 	// This private 0600 file intentionally contains NO bearer or signed URL.
 	ready, err := json.Marshal(map[string]any{
-		"url":                     httpFixture.URL,
-		"physical_jpeg_originals": count,
-		"physical_cas_inodes":     preCount,
-		"allocated_bytes":         preAllocated,
-		"original_bytes":          sourceBytes,
-		"seed_ms_excluded":        seedMS,
+		"url":                         httpFixture.URL,
+		"physical_jpeg_originals":     count,
+		"physical_cas_inodes":         preCount,
+		"allocated_bytes":             preAllocated,
+		"original_bytes":              sourceBytes,
+		"seed_ms_excluded":            seedMS,
+		"cached_thumbnail_candidates": len(thumbnailSeeds),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +440,7 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 	if err := os.WriteFile(readyFile, ready, 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("SH_P005_PHYSICAL_READY originals=%d cas_inodes=%d physical_allocated=%d seed_excluded_ms=%.3f", count, preCount, preAllocated, seedMS)
+	t.Logf("SH_P005_PHYSICAL_READY originals=%d cas_inodes=%d physical_allocated=%d seed_excluded_ms=%.3f cache_cancel=%v", count, preCount, preAllocated, seedMS, cachedThumbnailCancel)
 	select {
 	case <-stopped:
 		t.Logf("SH_P005_PHYSICAL_STOP pages=%d signed_tickets=%d completed_download_requests=%d",

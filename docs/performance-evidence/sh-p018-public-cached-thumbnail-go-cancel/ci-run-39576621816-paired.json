@@ -1,0 +1,98 @@
+{
+  "measurement": "SH-P018-paired-next-page-physical-100k",
+  "source_commit": "c5c1dabef3170eb810b206bccc050013fccde44c",
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/39576621816",
+  "specialty_url": "https://github.com/lazyxu/xdrive/actions/runs/39576621700",
+  "test_conditions": {
+    "database": "PostgreSQL17",
+    "real_content": "100000 distinct SHA physical JPEG originals + 16 cached derivative JPEG per fixture",
+    "browser": "native Chromium desktop 1440 / mobile 390 emulation",
+    "order": "A-B/B-A/A-B",
+    "samples_per_client_arm": 9,
+    "zero_wasted_bytes": true,
+    "context_done": true
+  },
+  "result": {
+    "workload": "SH-P018 genuine physical 100k next-page matched A-B/B-A/A-B",
+    "variants": {
+      "original": "5b3432aa4191e8cab4d5c29a0a375fbb761bfbc8c438e232315a9b3b56b9ec9b",
+      "candidate": "8ba01caecc986b91ed8c0b19b58bb3cdfa2b532408459eb793dab25a501d765b"
+    },
+    "per_width_per_arm": 9,
+    "populations_per_variant": 3,
+    "widths": {
+      "390": {
+        "original_events_ms": [
+          134.843,
+          139.976,
+          136.286,
+          142.183,
+          134.113,
+          153.376,
+          146.537,
+          148.179,
+          131.614
+        ],
+        "candidate_events_ms": [
+          72.382,
+          71.759,
+          62.291,
+          71.116,
+          63.366,
+          66.037,
+          61.773,
+          71.661,
+          63.376
+        ],
+        "before": {
+          "median_ms": 139.976,
+          "median_rss_kib": 244992,
+          "median_cpu_seconds": 52.019999999999996
+        },
+        "after": {
+          "median_ms": 66.037,
+          "median_rss_kib": 245776,
+          "median_cpu_seconds": 52.04
+        },
+        "median_gain_fraction": 0.5282262673601188
+      },
+      "1440": {
+        "original_events_ms": [
+          164.853,
+          153.982,
+          147.974,
+          155.109,
+          148.928,
+          153.496,
+          153.201,
+          152.576,
+          150.035
+        ],
+        "candidate_events_ms": [
+          73.202,
+          65.866,
+          69.627,
+          68.221,
+          64.903,
+          66.335,
+          72.224,
+          65.064,
+          81.365
+        ],
+        "before": {
+          "median_ms": 153.201,
+          "median_rss_kib": 244992,
+          "median_cpu_seconds": 52.019999999999996
+        },
+        "after": {
+          "median_ms": 68.221,
+          "median_rss_kib": 245776,
+          "median_cpu_seconds": 52.04
+        },
+        "median_gain_fraction": 0.5546961181715524
+      }
+    },
+    "accepted": true
+  },
+  "limitations": "Not physical iOS or Android or installed PWA; not matched Gallery/Owner; not 100k simultaneous image decoding; not durable task cancel; extra Web source verification on each new commit still required."
+}
