@@ -27,6 +27,15 @@
 - **绝不绕过实际门禁。** GitHub 实际强制要求的最新状态、签名、审查、必需检查及新鲜 mergeability 仍需满足；不借旧绿掩盖失败/取消/未跑的必需测试，也不绕过源码安全授权、密钥隔离、审计、回滚和故障注入。清晰记录原被测试 SHA、CI URL、新 master 范围、无冲突/无耦合的核查依据、是否有新 SHA 和实际执行的补充测试。保护独立 Owner 修改和全部历史，禁止通过覆盖文件制造假无冲突。
 - 本规则取代下文旧阶段记录中“只要 master 前进或重新基于新 master 就必须全量重新测试”的一刀切表述；下方历史保留作为发生过的工作记录。生产环境专属验收继续 **按用户决定跳过（未验收）**，绝不索取生产账号、AK/JWT/Cookie/HAR/抓包或人工签字，也不作为源码/CI/PR 合并门槛。
 
+## SD-D2b-1b-a · signed running-identity verifier only (2026-10-21)
+
+- v1.1 specs #2217/#2265, atomic SAVE A/B/C #2272/#2278/#2283, Host fixture #2284, TTL #2292 and no-conflict CI policy #2295 are all merged. There are no open Caddy PRs or remaining old Caddy remote branches. Host adoption #2255 remains only READ-ONLY evidence; C2-E rollback-anchor re-verifier #2109 is already merged.
+- This scoped D2b-1b-a supplies ONLY a cryptographically strict, canonical private Ed25519 running-identity read-only verifier and unit tests. There is no trusted Host producer or admin endpoint integration yet. Signature validity alone does NOT establish real running identity, actual negative ingress proof, Applied Receipt, WAN reachability, source trust or authorization. VerifiedReadOnly CandidateComplete/CanAdopt/ApplySupported MUST all remain false. Never derive Host running FQDN/IP from DB desired, XD_DOMAIN, XD_LAN_HTTPS_IP or a browser payload.
+- Complete next D2b-1b-b with trusted Host producer and independently observed source/generation/live Caddy and enabled/disabled ingress proofs; D2b-2 independently signed adoption with nonce and dual-revision PostgreSQL CAS; D2b-3 explicit admin confirm. Host C3/C4 signed apply/Rescue/watchdog/rollback/receipts remain #2075 and apply_supported=false. No changes to Host/Docker/Caddy/DNS/CA/8443/real production.
+- Keep every original AGENTS history byte-identical in its existing position, all other Owners' source untouched, exactly one scoped work commit. Initial source tests and exact-head full CI/fresh GitHub mergeability before ready/merge; later CI reuse depends on actual source coupling rather than automatic master SHA changes. Production-only safety acceptance **按用户决定跳过（未验收）**; no credentials/HAR or production access requested, mandatory code-level auth/crypto/CI unchanged.
+
+- Trust-root compatibility: key SHA-256 MUST fingerprint the 44-byte Ed25519 DER SubjectPublicKeyInfo public key (matching existing Host signing reviews), NOT its raw 32-byte bytes. The signed message still has a unique domain prefix plus canonical JSON. No browser/DB-supplied root is accepted.
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
