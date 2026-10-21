@@ -23,6 +23,7 @@ import (
 
 type Server struct {
 	DB                             *gorm.DB
+	PWAOfflineInstanceID           string // Persisted in PostgreSQL; not a permission or secret.
 	localPushCIOnlyFirstLeaf       bool
 	localPushCIOnlyFirstDirectory  bool
 	postgresPoolSaveMu             sync.Mutex

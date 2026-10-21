@@ -290,12 +290,19 @@ func (s *Server) me(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	result := gin.H{
 		"id":                   user.ID,
 		"username":             user.Username,
 		"role":                 user.Role,
 		"must_change_password": user.MustChangePassword,
-	})
+	}
+	// Only authenticated /me can reveal the non-secret installation binding.
+	// Tests/older Servers without a durable ID omit it, never fabricate one.
+	if s.PWAOfflineInstanceID != "" {
+		result["pwa_offline_instance_id"] = s.PWAOfflineInstanceID
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, result)
 }
 
 func (s *Server) root(c *gin.Context) {

@@ -73,6 +73,8 @@ export interface PublicShare {
 export interface MeResult {
   id: number
   username: string
+  /** Non-secret persistent PostgreSQL installation ID; not ACL or authentication. */
+  pwa_offline_instance_id?: string
   role: 'user' | 'admin'
   must_change_password: boolean
 }
