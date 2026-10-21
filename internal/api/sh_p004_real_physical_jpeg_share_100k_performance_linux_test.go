@@ -51,6 +51,7 @@ func TestSHP004RealPhysicalJPEG100KSharedFolder(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.AuditEvent{}, &meta.Node{},
 		&meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.ContentBlob{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.FileOperation{},
+		&meta.MediaMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}

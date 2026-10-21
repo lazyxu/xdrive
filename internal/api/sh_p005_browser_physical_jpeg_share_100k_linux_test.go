@@ -49,6 +49,7 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.AuditEvent{}, &meta.Node{},
 		&meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.ContentBlob{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.FileOperation{},
+		&meta.MediaMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}

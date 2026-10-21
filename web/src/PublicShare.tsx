@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
@@ -31,6 +31,29 @@ export default function PublicShareView({ token }: { token: string }) {
   const [zipError, setZipError] = useState('')
   const zipPollRef = useRef<AbortController | null>(null)
   const pendingPage = useRef<AbortController | null>(null)
+  const activeThumbnailRequests = useRef(new Set<AbortController>())
+  const [thumbnailVisibilityEpoch, setThumbnailVisibilityEpoch] = useState(0)
+  // Stable Share-only loader across unrelated page/status/ZIP updates. An
+  // explicit visibility epoch resets only thumbnail cache after backgrounding.
+  const loadSharedThumbnail = useCallback(
+    (entry: PublicShareChild, signal?: AbortSignal) => {
+      const controller = new AbortController()
+      if (signal?.aborted ||
+          (typeof document !== 'undefined' && document.visibilityState === 'hidden')) {
+        controller.abort()
+        return Promise.resolve(null)
+      }
+      const cancelFromViewport = () => controller.abort()
+      signal?.addEventListener('abort', cancelFromViewport, { once: true })
+      activeThumbnailRequests.current.add(controller)
+      return api.publicShareThumbnailURL(token, password, entry.id, entry.revision, controller.signal)
+        .finally(() => {
+          activeThumbnailRequests.current.delete(controller)
+          signal?.removeEventListener('abort', cancelFromViewport)
+        })
+    },
+    [api, token, password, thumbnailVisibilityEpoch],
+  )
   // Public metadata and normal folder navigation are presentation-silent.
   // Real GETs start immediately; authenticated rows/crumbs remain mounted.
 
@@ -38,14 +61,39 @@ export default function PublicShareView({ token }: { token: string }) {
     // Unmount must ALWAYS cancel an unused directory request, including in
     // no-DOM renderers. Browser-only visibility observation is optional.
     const hasDocument = typeof document !== 'undefined'
+    const hasWindow = typeof window !== 'undefined'
+    // Request-scoped cancellation must happen synchronously in the browser
+    // lifecycle event, not after React has committed an unmount/render.
+    const abortEphemeralThumbnails = () => {
+      for (const controller of activeThumbnailRequests.current) controller.abort()
+    }
     const onVisibilityChange = () => {
-      if (hasDocument && document.visibilityState === 'hidden') {
+      if (!hasDocument) return
+      if (document.visibilityState === 'hidden') {
         pendingPage.current?.abort()
+        abortEphemeralThumbnails()
+      } else {
+        // A new loader/cache epoch permits intentionally canceled visible
+        // thumbnails to retry, without clearing selection/scroll or ZIP jobs.
+        setThumbnailVisibilityEpoch(epoch => epoch + 1)
       }
     }
+    const onPageHide = () => abortEphemeralThumbnails()
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setThumbnailVisibilityEpoch(epoch => epoch + 1)
+    }
     if (hasDocument) document.addEventListener('visibilitychange', onVisibilityChange)
+    if (hasWindow) {
+      window.addEventListener('pagehide', onPageHide)
+      window.addEventListener('pageshow', onPageShow)
+    }
     return () => {
       if (hasDocument) document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (hasWindow) {
+        window.removeEventListener('pagehide', onPageHide)
+        window.removeEventListener('pageshow', onPageShow)
+      }
+      abortEphemeralThumbnails()
       pendingPage.current?.abort()
       pendingPage.current = null
       // Stop only the browser's status requests, not the durable preparation
@@ -127,7 +175,8 @@ export default function PublicShareView({ token }: { token: string }) {
   const sharedFileItems = useMemo<PublicShareChild[]>(
     () => share?.type === 'file'
       ? [{ id: 0, name: share.name, type: 'file', size: share.size,
-        revision: share.revision, updated_at: share.updated_at }]
+        revision: share.revision, updated_at: share.updated_at,
+        thumbnail_candidate: true }]
       : [],
     [share?.type, share?.name, share?.size, share?.revision, share?.updated_at],
   )
@@ -406,6 +455,7 @@ export default function PublicShareView({ token }: { token: string }) {
                       if (folder) void loadFolder([...folder.path, { id: entry.id, name: entry.name }])
                     }}
                     onDownloadItem={(entry) => void download(entry)}
+                    loadThumbnail={loadSharedThumbnail}
                     loadImagePreview={(entry, signal) => api.publicShareImagePreviewURL(token, password, entry.id, signal)}
                     onPreviousPage={() => {
                       if (folder?.history.length) {
@@ -428,6 +478,7 @@ export default function PublicShareView({ token }: { token: string }) {
                   items={sharedFileItems}
                   canDownload={canDownload}
                   onDownloadItem={() => void download()}
+                  loadThumbnail={loadSharedThumbnail}
                   loadImagePreview={(_entry, signal) => api.publicShareImagePreviewURL(token, password, 0, signal)}
                   toolbarActions={
                     <XDriveActionButton intent="primary" type="submit"

@@ -49,6 +49,7 @@ export interface PublicShareChild {
   // Only metadata of the authorized Share subtree; no Owner endpoint or CAS identifier.
   revision?: number
   updated_at?: string
+  thumbnail_candidate?: boolean
 }
 
 export interface PublicShareChildren {

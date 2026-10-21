@@ -33,7 +33,11 @@ func folderShareTestFixture(t *testing.T) (*gin.Engine, *gorm.DB, string, meta.N
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The shared fixture recreates xd_nodes for multiple integration tests.
+	// Drop its dependent media table first; otherwise stale media FKs from the
+	// previous case can conflict when AutoMigrate recreates current nodes.
 	if err := db.Migrator().DropTable(
+		&meta.MediaMetadata{},
 		&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
@@ -43,7 +47,7 @@ func folderShareTestFixture(t *testing.T) (*gin.Engine, *gorm.DB, string, meta.N
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{},
 		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
-		&meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
+		&meta.LocalPushQuotaHold{}, &meta.AuditEvent{}, &meta.MediaMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}

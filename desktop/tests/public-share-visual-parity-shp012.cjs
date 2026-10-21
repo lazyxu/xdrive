@@ -23,7 +23,12 @@ test('SH-P012: public and Owner Details actually mount one neutral name/visual r
   assert.match(owner, /thumbnailWidth=\{gridMetrics\.thumbnailWidth\}/)
   assert.match(owner, /<XDriveFileExplorerGridTileContent/)
   assert.match(publicView, /<XDriveFileExplorerGridTileContent/)
-  assert.match(publicView, /size=\{52\} folderSize=\{52\}/)
+  // Grid still renders the shared 52px fallback through the dedicated slot;
+  // Details keeps the 21px version without duplicating the presenter.
+  assert.match(publicView, /const size = grid \? 52 : 21/)
+  assert.match(publicView, /folderSize=\{grid \? 52 : 22\}/)
+  assert.match(publicView, /visual=\{<XDrivePublicShareThumbnailSlot entry=\{entry\} grid/)
+  assert.match(publicView, /XDriveFileExplorerThumbnailProvider/)
   assert.doesNotMatch(pure, /\/api\/v1|sessionToken|onDeleteItems|onMoveItemsTo/)
 })
 

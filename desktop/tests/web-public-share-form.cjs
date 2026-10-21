@@ -73,6 +73,13 @@ function loadPublicShare(api) {
       if (name === '../../ui/shared/src') return load('ui/shared/src/format.ts')
       if (name === '../../ui/shared/src/mui/useDeferredLoading') return load('ui/shared/src/mui/useDeferredLoading.ts')
       if (name === './FileExplorerItemPresentation') return load('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+      // This renderer verifies public form/navigation/authorization, not image
+      // decoding. Retain the neutral fallback visual; real thumbnail behavior
+      // has its own source/Go/physical browser coverage and is never bypassed.
+      if (name === './FileExplorerThumbnail') return {
+        XDriveFileExplorerThumbnailProvider: ({ children }) => children,
+        XDriveFileExplorerThumbnail: ({ fallback }) => fallback,
+      }
       if (name === './FilePreviewSurface') return {
         XDriveFilePreviewSurface: ({ target, loadImagePreview }) =>
           React.createElement('div', {

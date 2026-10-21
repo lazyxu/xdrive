@@ -1,0 +1,141 @@
+{
+  "workload_id": "SH-P016 source-exact 100k unchanged-Share-visual metadata and original JPEG",
+  "measured_head": "e75b574f9dabeaf4dc3e8c1ca4ae2504444f1c19",
+  "source_difference": "prior measured exact product tree, current PR changes test assertion/docs only",
+  "user_visible_speedup": "N/A; historical runs differ in runner cohort/conditions",
+  "metadata": {
+    "ci_run": 39529500190,
+    "artifact_id": 12314332854,
+    "workload": "real PostgreSQL17 metadata-only 100000 nodes, keyset 1000 pages x n3, source original CAS count=0",
+    "sample_count": 3,
+    "samples": [
+      {
+        "sample": 1,
+        "seed_ms": 1590,
+        "page_walk_ms": 11046,
+        "page_p50_ms": 10.773,
+        "page_p95_ms": 12.226,
+        "page_worst_ms": 19.566,
+        "http_body_bytes": 11320793,
+        "pages": 1000
+      },
+      {
+        "sample": 2,
+        "seed_ms": 1629,
+        "page_walk_ms": 10904,
+        "page_p50_ms": 10.709,
+        "page_p95_ms": 11.961,
+        "page_worst_ms": 15.66,
+        "http_body_bytes": 11318793,
+        "pages": 1000
+      },
+      {
+        "sample": 3,
+        "seed_ms": 1515,
+        "page_walk_ms": 10912,
+        "page_p50_ms": 10.674,
+        "page_p95_ms": 12.008,
+        "page_worst_ms": 17.577,
+        "http_body_bytes": 11323793,
+        "pages": 1000
+      }
+    ],
+    "p50_full_walk_ms": 10912,
+    "max_sample_page_p95_ms": 12.226,
+    "worst_page_ms": 19.566,
+    "budgets_ms": {
+      "full_walk": 60000,
+      "p95_page": 500,
+      "worst_page": 2000
+    },
+    "passed": true
+  },
+  "browser": {
+    "ci_run": 39529498894,
+    "artifact_id": 12315036955,
+    "workload": "one 100k SHA-distinct physical JPEG CAS/PG17 corpus, n3 browser sessions Web1440/CDP390; no 100k derivative prepopulation",
+    "sessions": [
+      {
+        "width": 1440,
+        "sample": 1,
+        "first_ms": 386.28854599999613,
+        "next_ms": 223.4163600000029,
+        "first_download_ms": 153.44419800001197,
+        "next_download_ms": 117.36401999999362
+      },
+      {
+        "width": 1440,
+        "sample": 2,
+        "first_ms": 366.0510990000039,
+        "next_ms": 216.8611569999921,
+        "first_download_ms": 147.85241900000256,
+        "next_download_ms": 122.67053199998918
+      },
+      {
+        "width": 1440,
+        "sample": 3,
+        "first_ms": 346.2347210000007,
+        "next_ms": 214.07722999999532,
+        "first_download_ms": 151.64266500000667,
+        "next_download_ms": 117.62279999999737
+      },
+      {
+        "width": 390,
+        "sample": 1,
+        "first_ms": 303.55486999999266,
+        "next_ms": 226.7333440000075,
+        "first_download_ms": 144.25186200000462,
+        "next_download_ms": 107.79230300000927
+      },
+      {
+        "width": 390,
+        "sample": 2,
+        "first_ms": 295.89182699999947,
+        "next_ms": 254.9377439999953,
+        "first_download_ms": 144.5085490000056,
+        "next_download_ms": 109.50872600000002
+      },
+      {
+        "width": 390,
+        "sample": 3,
+        "first_ms": 310.3678050000017,
+        "next_ms": 232.3456370000058,
+        "first_download_ms": 157.96113200001128,
+        "next_download_ms": 114.91146199998911
+      }
+    ],
+    "all_first_and_next_rows": 100,
+    "all_original_sha_verified": true,
+    "no_stale_rows": true,
+    "no_horizontal_overflow": true,
+    "signed_native_original_downloads_verified": 12,
+    "p50_by_width_ms": {
+      "390": {
+        "first": 303.55486999999266,
+        "next": 232.3456370000058
+      },
+      "1440": {
+        "first": 366.0510990000039,
+        "next": 216.8611569999921
+      }
+    },
+    "worst_download_ms": 157.96113200001128,
+    "budgets_ms": {
+      "first_page": 2000,
+      "next_page": 2000,
+      "download_original": 5000
+    },
+    "passed": true
+  },
+  "direct_original_artifacts": [
+    "https://github.com/lazyxu/xdrive/actions/runs/39529500190/artifacts/12314332854",
+    "https://github.com/lazyxu/xdrive/actions/runs/39529498894/artifacts/12315036955"
+  ],
+  "constraints": [
+    "not matched before/after optimization; speedup=N/A",
+    "100k file originals distinct SHA; no 100k cached thumbnail decode",
+    "no Go cancel timing of new endpoint",
+    "not physical iOS Android PWA, Windows machine, WAN",
+    "feature candidate remains DRAFT until full exact-head CI green"
+  ]
+}

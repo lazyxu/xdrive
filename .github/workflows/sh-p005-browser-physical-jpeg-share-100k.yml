@@ -15,7 +15,8 @@ jobs:
       github.head_ref == 'feat/public-share-visual-parity-shp012-20261020' ||
       github.head_ref == 'feat/public-share-grid-tile-parity-shp013-20261020' ||
       github.head_ref == 'feat/public-share-details-presenter-shp014-20261021' ||
-      github.head_ref == 'feat/public-share-four-column-readonly-shp015-20261021'
+      github.head_ref == 'feat/public-share-four-column-readonly-shp015-20261021' ||
+      github.head_ref == 'feat/public-share-cached-thumbnail-shp016-20261021'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     services:
