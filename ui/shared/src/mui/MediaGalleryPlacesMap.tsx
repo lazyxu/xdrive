@@ -10,7 +10,9 @@ import type {
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
 import { XDriveMediaGalleryBaiduJSAPI4Surface } from './MediaGalleryBaiduJSAPI4Surface'
 import { XDriveMediaGalleryBaiduJSAPI4PhotoSurface } from './MediaGalleryBaiduJSAPI4PhotoSurface'
-import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
+import type { XDriveBaiduJSAPI4AuthorizedMountPort, XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
+import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
@@ -28,6 +30,9 @@ export function XDriveMediaGalleryPlacesMap({
   listPlacesViewport,
   initialCamera,
   onCameraChange,
+  initialNativeCamera,
+  onNativeCameraChange,
+  onNativeCameraClear,
   getBaiduMapProvider,
   loadBaiduStaticMap,
   listBaiduNativeViewport,
@@ -52,6 +57,9 @@ export function XDriveMediaGalleryPlacesMap({
     signal?: AbortSignal) => Promise<MediaPlacesViewportPage>
   initialCamera?: XDrivePlacesCameraSnapshot
   onCameraChange?: (camera: XDrivePlacesViewportCamera) => void
+  initialNativeCamera?: XDriveBaiduNativeCameraSnapshot
+  onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
+  onNativeCameraClear?: () => void
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   listBaiduNativeViewport?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeViewport']
@@ -73,6 +81,16 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
+  // Freeze the returning BD09 camera for THIS native mount. Parent state changes
+  // on pan/zoom must never change initialCamera props and remount the SDK.
+  const nativeRestoreRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
+    xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
+      ? { ...initialNativeCamera } : null,
+  )
+  const clearNativeReturnCamera = useCallback(() => {
+    nativeRestoreRef.current = null
+    onNativeCameraClear?.()
+  }, [onNativeCameraClear])
   const [nearbyRadiusKM, setNearbyRadiusKM] = useState(5)
   const [nativeMapReady, setNativeMapReady] = useState(false)
   const [serverNativeAuthorized, setServerNativeAuthorized] = useState(false)
@@ -108,9 +126,11 @@ export function XDriveMediaGalleryPlacesMap({
     ? { latitude: selectedPlace.sample_latitude!, longitude: selectedPlace.sample_longitude!,
         zoom: xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.zoom : 12 }
     : null
+  const nativePhotoCamera: XDriveBaiduJSAPI4InitialPhotoCamera | null =
+    nativeRestoreRef.current ?? nativeCamera
   const canMountNativePhoto = Boolean(serverNativeAuthorized &&
     mintBaiduJSAPI4Session && listBaiduNativeViewport &&
-    onOpenBaiduNativePhoto && nativeCamera)
+    onOpenBaiduNativePhoto && nativePhotoCamera)
   const canMountLegacy = Boolean(authorizedJSAPI4Runtime && listPlacesViewport &&
     onOpenPlace && nativeCamera)
   const showingNative = (canMountNativePhoto || canMountLegacy) && nativeMapReady
@@ -261,7 +281,12 @@ export function XDriveMediaGalleryPlacesMap({
           getOptionLabel={(place) => place.name}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           value={selectedPlace ?? null}
-          onChange={(_event, place) => setSelectedPlaceID(place?.id ?? null)}
+          onChange={(_event, place) => {
+            // Explicitly choosing a new place uses its trusted WGS84 sample,
+            // not the old BD09 camera from a different location.
+            clearNativeReturnCamera()
+            setSelectedPlaceID(place?.id ?? null)
+          }}
           renderInput={(params) => (
             <TextField {...params} label="选择地图地点" size="small" />
           )}
@@ -321,17 +346,19 @@ export function XDriveMediaGalleryPlacesMap({
         </Box>
       ) : null}
       {canMountNativePhoto && mintBaiduJSAPI4Session && listBaiduNativeViewport &&
-        onOpenBaiduNativePhoto && nativeCamera ? (
+        onOpenBaiduNativePhoto && nativePhotoCamera ? (
           <XDriveMediaGalleryBaiduJSAPI4PhotoSurface
             key={selectedPlace?.id}
             mintMapOnlySession={mintBaiduJSAPI4Session}
             listOwnerViewport={listBaiduNativeViewport}
             listOwnerCells={listBaiduNativeCells}
             loadThumbnail={loadPhotoCoverThumbnail}
-            camera={nativeCamera}
+            camera={nativePhotoCamera}
             onOpenPhoto={onOpenBaiduNativePhoto}
             onOpenCell={onOpenBaiduNativeCell}
             onCellInvalidated={onBaiduNativeCellInvalidated}
+            onNativeCameraChange={onNativeCameraChange}
+            onNativeCameraClear={clearNativeReturnCamera}
             onReady={setNativeMapReady}
           />
         ) : null}

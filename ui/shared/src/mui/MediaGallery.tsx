@@ -2,6 +2,11 @@ import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '..
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDriveReadPlacesCamera, xDriveRememberPlacesCamera, xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
+import {
+  xDriveReadBaiduNativeCamera, xDriveRememberBaiduNativeCamera,
+  xDriveClearBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot,
+} from '../media-gallery-baidu-native-camera-session'
+import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
@@ -642,6 +647,24 @@ export function XDriveMediaGalleryPage({
       ...(prior?.focusPlaceID ? { focusPlaceID: prior.focusPlaceID } : {}),
     })
   }, [persistPlacesCamera])
+  // The Baidu SDK camera is BD09LL, not original WGS84. Keep a separate
+  // short-lived per-owner memory snapshot so native pan/zoom never corrupts
+  // static map / original EXIF GPS or leaks across account switches.
+  const [baiduCameraOwner, setBaiduCameraOwner] = useState<{
+    scope: string; camera?: XDriveBaiduNativeCameraSnapshot
+  }>(() => ({ scope: preferenceScope,
+    camera: xDriveReadBaiduNativeCamera(preferenceScope) }))
+  const baiduNativeCameraSnapshot = baiduCameraOwner.scope === preferenceScope
+    ? baiduCameraOwner.camera : xDriveReadBaiduNativeCamera(preferenceScope)
+  const rememberBaiduNativeCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
+    if (!xDriveValidBaiduNativeCameraSnapshot(camera) ||
+        !xDriveRememberBaiduNativeCamera(preferenceScope, camera)) return
+    setBaiduCameraOwner({ scope: preferenceScope, camera: { ...camera } })
+  }, [preferenceScope])
+  const clearBaiduNativeCamera = useCallback(() => {
+    xDriveClearBaiduNativeCamera(preferenceScope)
+    setBaiduCameraOwner({ scope: preferenceScope, camera: undefined })
+  }, [preferenceScope])
   const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   // Albums, people, pets and Places arrive together in one authorized facets
   // response; empty arrays are not a successful zero on the first render.
@@ -3365,6 +3388,9 @@ export function XDriveMediaGalleryPage({
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         placesCameraSnapshot={placesCameraSnapshot}
         onPlacesCameraChange={rememberPlacesCamera}
+        baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
+        onBaiduNativeCameraChange={rememberBaiduNativeCamera}
+        onBaiduNativeCameraClear={clearBaiduNativeCamera}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
@@ -3836,6 +3862,9 @@ export interface XDriveMediaGalleryProps {
   places?: MediaPlaceFacet[]
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
+  baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
+  onBaiduNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
+  onBaiduNativeCameraClear?: () => void
   listPlacesViewport?: MediaGalleryDataSource['listPlacesViewport']
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
@@ -5555,6 +5584,9 @@ export function XDriveMediaGallery({
   onOpenSecureDesktopMap,
   placesCameraSnapshot,
   onPlacesCameraChange,
+  baiduNativeCameraSnapshot,
+  onBaiduNativeCameraChange,
+  onBaiduNativeCameraClear,
   focusPlaceID,
   getBaiduMapProvider,
   loadBaiduStaticMap,
@@ -7779,6 +7811,9 @@ export function XDriveMediaGallery({
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             initialCamera={placesCameraSnapshot}
             onCameraChange={onPlacesCameraChange}
+            initialNativeCamera={baiduNativeCameraSnapshot}
+            onNativeCameraChange={onBaiduNativeCameraChange}
+            onNativeCameraClear={onBaiduNativeCameraClear}
             getBaiduMapProvider={getBaiduMapProvider}
             loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}

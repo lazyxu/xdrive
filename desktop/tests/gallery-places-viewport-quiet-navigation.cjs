@@ -58,6 +58,12 @@ const galleryMap = compile(uiFile,{
   '../media-gallery-places-camera-session':{
     xDriveValidPlacesCameraSnapshot:()=>false,
   },
+  // W3b1 Native BD09 camera is a separate optional Owner-only dependency.
+  // This original mounted legacy Static Map fixture deliberately has no
+  // signed Native Map session and must never instantiate the new runtime.
+  '../media-gallery-baidu-native-camera-session':{
+    xDriveValidBaiduNativeCameraSnapshot:()=>false,
+  },
 })
 const MapView = galleryMap.XDriveMediaGalleryPlacesMap
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
