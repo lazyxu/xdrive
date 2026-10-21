@@ -79,7 +79,7 @@ test('P0-D2a: actual Caddy Config manually invokes only existing read-only prefl
   assert.match(page,/active=\{screen === 'config'\}/)
   assert.match(panel,/onClick=\{\(\) => \{ void inspect\(\) \}\}/)
   assert.match(panel,/verifyCaddyPreflightContract\(await source\.loadCaddyHTTPSPreflight\(\)\)/)
-  assert.match(panel,/<Dialog open=\{open && active\}/)
+  assert.match(panel,/<Dialog open=\{open && active && !hasUnsavedEdits\}/)
   assert.match(panel,/hasUnsavedEdits/)
   for(const prohibited of ['saveCaddyHTTPSConfig','rollbackCaddyHTTPS',
     'verifyCaddyAliDNSRead','revealCaddyAliDNS','loadCaddyHTTPSHostPlan',
@@ -88,4 +88,16 @@ test('P0-D2a: actual Caddy Config manually invokes only existing read-only prefl
   }
   assert.equal(original.includes('can_adopt: true'),false)
   assert.equal(original.includes('apply_supported = true'),false)
+})
+
+// Both in-flight and already displayed read-only Host evidence become invalid
+// as soon as an administrator modifies an unsaved HTTPS/AliDNS draft.
+test('P0-D2a: dirty draft immediately hides and invalidates stale Host evidence', () => {
+  const panel = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
+  const owner = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  assert.match(owner, /hasUnsavedEdits=\{hasUnsavedEdits\}/)
+  assert.match(panel, /\}, \[source, config, evidenceRevision, active, hasUnsavedEdits\]\)/)
+  assert.match(panel, /const current = !hasUnsavedEdits &&/)
+  assert.match(panel, /<Dialog open=\{open && active && !hasUnsavedEdits\}/)
+  assert.match(panel, /return \(\) => \{ \+\+epochRef\.current \}/)
 })
