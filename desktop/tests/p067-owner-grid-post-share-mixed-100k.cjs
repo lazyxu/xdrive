@@ -55,9 +55,13 @@ test('P067 validates the actual Owner grid and media, not public-share-only orig
   // empty. Three real 100k client scripts must not die on an unmigrated test DB
   // before the first physical media is even seeded.
   const fixture = read('internal/api/gallery_real_web_cold_performance_integration_test.go')
-  const start = fixture.indexOf('if desktopFileExplorerMixed {')
+  const start = fixture.indexOf('if desktopFileExplorerMixed || p0c2SPAMode {')
   const end = fixture.indexOf('local, err := storage.NewLocal(', start)
   assert.ok(start > 0 && end > start, 'real mixed fixture migration scope missing')
+  // The Desktop quota-migration branch still executes; PWA SPA adds an
+  // independently enabled test mode without weakening physical benchmarks.
+  assert.ok(fixture.includes('desktopFileExplorerMixed := os.Getenv('))
+  assert.ok(fixture.includes('p0c2SPAMode := os.Getenv('))
   assert.ok(fixture.slice(start, end).includes(
     'db.AutoMigrate(&meta.LocalPushQuotaHold{}, &meta.FileVersion{}'),
     'opt-in mixed physical fixture needs the real quota-hold model for authenticated /me/quota')
