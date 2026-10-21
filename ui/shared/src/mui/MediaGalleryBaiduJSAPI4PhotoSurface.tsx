@@ -15,6 +15,7 @@ import { xDriveCaptureBaiduNativeCamera } from '../media-gallery-baidu-native-ca
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaBaiduNativeViewportBounds } from '../models'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
+import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import type { XDriveBaiduNativePhotoCellsRequest } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveBindBaiduJSAPI4NativeMap } from '../media-gallery-baidu-jsapi4-native'
 import {
@@ -43,6 +44,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   camera,
   onOpenPhoto,
   onOpenCell,
+  selectedCell,
   onCellInvalidated,
   onNativeCameraChange,
   onNativeCameraClear,
@@ -55,6 +57,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   camera: XDriveBaiduJSAPI4InitialPhotoCamera
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
   onOpenCell?: (selection: MediaBaiduNativeCellSelection) => void
+  selectedCell?: MediaBaiduNativeCellSelection
   onCellInvalidated?: () => void
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onNativeCameraClear?: () => void
@@ -257,6 +260,26 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   }, [mintMapOnlySession, listOwnerViewport, listOwnerCells, loadThumbnail, onReady,
     camera.latitude, camera.longitude, camera.zoom])
 
+  // The old Owner-scoped Cell return hint is NEVER an authorization source.
+  // Require current accepted /cells identity, bounds, representative revision,
+  // and count before displaying a selected overlay.
+  const selectionFrame = currentAcceptedCellFrame.current
+  const selectedLiveCell = selectedCell && selectionFrame
+    ? selectionFrame.page.cells.find(cell =>
+        cell.cell_x === selectedCell.cell_x && cell.cell_y === selectedCell.cell_y)
+    : undefined
+  const freshlyMatched = selectedLiveCell && selectionFrame
+    ? xDriveSelectBaiduNativeCell(selectionFrame.page, selectionFrame.bounds, selectedLiveCell)
+    : null
+  const selectedInFrame = xDriveBaiduCellReturnMatchesFreshSelection(
+    selectedCell, freshlyMatched,
+  ) ? freshlyMatched : null
+  const isSelected = (cell: MediaBaiduNativeCellsPage['cells'][number]): boolean =>
+    Boolean(selectedInFrame && cell.cell_x === selectedInFrame.cell_x &&
+      cell.cell_y === selectedInFrame.cell_y &&
+      cell.asset_id === selectedInFrame.asset_id &&
+      cell.node_revision === selectedInFrame.node_revision)
+
   return (
     <Box component="section" data-xdrive-baidu-jsapi4-bd09-photo-surface
       sx={{ px: { xs: 1.25, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
@@ -272,6 +295,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             {coverPins.map(({ key, cell, x, y }) => (
               <Box component="button" type="button" key={key}
                 data-xdrive-baidu-photo-cover-pin={cell.cell_x + ':' + cell.cell_y}
+                aria-pressed={isSelected(cell)}
                 aria-label={cell.photo_count.toLocaleString('zh-CN') +
                   (onOpenCell ? ' 张照片，打开区域照片墙' : ' 张照片，放大此处')}
                 onClick={() => openTrustedCell(cell)}
@@ -282,7 +306,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
                   '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.main',
                     outlineOffset: 2, borderRadius: 1 } }}>
                 <Box sx={{ width: 54, height: 54, borderRadius: 1.5,
-                  border: '3px solid #fff', bgcolor: 'background.paper',
+                  border: '3px solid #fff', borderColor: isSelected(cell) ? 'primary.main' : 'common.white', bgcolor: 'background.paper',
                   overflow: 'hidden', boxShadow: 3 }}>
                   <XDriveMediaGalleryCoverThumbnail nodeID={cell.node_id}
                     revision={cell.node_revision} loadThumbnail={loadThumbnail}
@@ -308,7 +332,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           <Typography role="status" variant="caption" color="text.secondary">
             当前范围共 {cellSummary.total_count.toLocaleString('zh-CN')} 张已授权照片，
             按 {cellSummary.cells.length} 个区域显示真实计数。
-            数字标记使用真实照片位置；选择多张区域将放大地图；
+            数字标记使用真实照片位置；
+            {onOpenCell ? '选择区域打开已授权照片墙；' : '选择多张区域将放大地图；'}
             查看单张照片需经图库重新鉴权。
           </Typography>
           {coverPins.length > 0 ? (
@@ -325,6 +350,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             {cellSummary.cells.map(cell => (
               <Box component="button" type="button" key={cell.cell_x+':'+cell.cell_y}
                 data-xdrive-baidu-owner-cell-button
+                aria-pressed={isSelected(cell)}
                 onClick={() => openTrustedCell(cell)}
                 sx={{font:'inherit',color:'text.primary',border:'1px solid',
                   borderColor:'divider',borderRadius:1,background:'background.paper',

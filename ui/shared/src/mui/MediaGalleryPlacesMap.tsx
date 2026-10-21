@@ -42,6 +42,7 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
   onOpenBaiduNativeCell,
+  selectedNativeCell,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
   authorizedJSAPI4Runtime,
@@ -69,6 +70,7 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   onOpenBaiduNativeCell?: (selection: import('../models').MediaBaiduNativeCellSelection) => void
+  selectedNativeCell?: import('../models').MediaBaiduNativeCellSelection
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
   /** Only supplied by a future independently released Server-authorized proxy.
@@ -356,6 +358,7 @@ export function XDriveMediaGalleryPlacesMap({
             camera={nativePhotoCamera}
             onOpenPhoto={onOpenBaiduNativePhoto}
             onOpenCell={onOpenBaiduNativeCell}
+            selectedCell={selectedNativeCell}
             onCellInvalidated={onBaiduNativeCellInvalidated}
             onNativeCameraChange={onNativeCameraChange}
             onNativeCameraClear={clearNativeReturnCamera}
