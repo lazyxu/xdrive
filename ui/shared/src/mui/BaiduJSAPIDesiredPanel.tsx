@@ -9,6 +9,11 @@ import {
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveBaiduJSAPIConfigSnapshot } from './BaiduJSAPIConfigSnapshot'
+import {
+  xDriveBaiduMapDiagnosticDetails, xDriveReadBaiduMapDiagnostic,
+  xDriveSubscribeBaiduMapDiagnostics, XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS,
+} from '../media-gallery-baidu-diagnostics'
+import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 
 type ReleaseBlocker = NonNullable<XDriveBaiduJSAPIConfig['release_blockers']>[number]
 const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
@@ -19,6 +24,15 @@ const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
   instance_signing_identity_unavailable: '自动托管的实例签名密钥尚未准备好',
   child_resource_inventory_not_reviewed: '尚无完整、逐项审核的地图子资源白名单',
   signed_release_not_installed: '尚未安装当前有效的 Server 受信签名发布',
+}
+const releaseBlockerHints: Record<ReleaseBlocker, string> = {
+  browser_ak_not_configured: '在「配置与修改」保存独立的 Browser 类型 AK；不要填写 Server 静态地图 AK。',
+  desired_disabled: '在「配置与修改」开启 JSAPI 4.0 并保存后重新读取 Server 发布状态。',
+  encryption_keyring_unavailable: '检查 Server 凭据加密密钥环的部署状态和实例重启要求；不应在浏览器打印密钥。',
+  trusted_https_origin_invalid: '检查 Server 当前可信 HTTPS Origin、Caddy Host 与实际站点入口是否一致。',
+  instance_signing_identity_unavailable: '检查 Server 实例签名身份的配置与初始化状态。',
+  child_resource_inventory_not_reviewed: '完成固定百度 JSAPI4 子资源清单审查和白名单发布；不能放宽成任意代理。',
+  signed_release_not_installed: '检查当前 Server 的签名 Release 修订及激活状态；旧构建/错误修订不能强行开启运行态。',
 }
 const releaseBlockerIDs = Object.keys(releaseBlockerLabels)
 
@@ -50,11 +64,12 @@ function validConfig(value: unknown): value is XDriveBaiduJSAPIConfig {
  * It never requests an existing Browser AK or treats a desired flag as signed
  * production authorization. No map script is loaded from this panel. */
 export function XDriveBaiduJSAPIDesiredPanel({
-  source, mode, onDirtyChange,
+  source, mode, onDirtyChange, diagnosticScope,
 }: {
   source: XDriveBaiduJSAPIDesiredPort
   mode: 'config' | 'verify'
   onDirtyChange?: (dirty: boolean) => void
+  diagnosticScope?: string
 }) {
   const [config, setConfig] = useState<XDriveBaiduJSAPIConfig | null>(null)
   const [enabled, setEnabled] = useState(false)
@@ -70,6 +85,31 @@ export function XDriveBaiduJSAPIDesiredPanel({
   const [probeResult, setProbeResult] = useState<XDriveBaiduJSAPI4LoaderProbe | null>(null)
   const [probeError, setProbeError] = useState('')
   const generation = useRef(0)
+  const [diagnosticState, setDiagnosticState] = useState<{
+    scope: string; item: XDriveBaiduMapDiagnostic | null
+  }>({ scope: diagnosticScope ?? '', item: null })
+  useEffect(() => {
+    const scope = diagnosticScope ?? ''
+    const refresh = () => setDiagnosticState({
+      scope, item: xDriveReadBaiduMapDiagnostic(scope),
+    })
+    refresh()
+    return xDriveSubscribeBaiduMapDiagnostics(refresh)
+  }, [diagnosticScope])
+  const latestDiagnostic = diagnosticState.scope === (diagnosticScope ?? '')
+    ? diagnosticState.item : xDriveReadBaiduMapDiagnostic(diagnosticScope ?? '')
+  // A permanently mounted Admin page must not continue showing a diagnostic
+  // after the promise of "recent 15 minutes" has expired.
+  useEffect(() => {
+    if (!latestDiagnostic) return
+    const scope = diagnosticScope ?? ''
+    const remaining = XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS -
+      (Date.now() - latestDiagnostic.recordedAt)
+    const timer = window.setTimeout(() => setDiagnosticState({
+      scope, item: xDriveReadBaiduMapDiagnostic(scope),
+    }), Math.max(1, remaining + 2))
+    return () => window.clearTimeout(timer)
+  }, [diagnosticScope, latestDiagnostic?.recordedAt])
   const dirty = Boolean(config && (config.desired_enabled !== enabled || newAK !== ''))
 
   useEffect(() => {
@@ -223,6 +263,38 @@ export function XDriveBaiduJSAPIDesiredPanel({
             {verified ? 'Server 已签名授权动态地图' : '动态地图尚未获得 Server 签名放行'}
           </Typography>
         )}
+        {mode === 'verify' && (
+          <Box component="section" data-xdrive-baidu-map-diagnostic
+            sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5,
+              p: { xs: 1.25, sm: 1.5 }, minWidth: 0 }}>
+            <Typography variant="subtitle2" fontWeight={700}>动态照片地图 · 具体故障诊断</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+              Server 发布原因以当前管理员只读状态为准；下方只显示本客户端最近 15 分钟的
+              匿名故障阶段。其他浏览器或 Desktop 独立 HTTPS 窗口不会共享记录。
+            </Typography>
+            {latestDiagnostic ? (
+              <Stack spacing={0.5} sx={{ mt: 1 }} data-xdrive-baidu-client-diagnostic>
+                <Typography variant="body2" fontWeight={600}>
+                  {xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary"
+                  sx={{ overflowWrap: 'anywhere' }}>
+                  错误码：{latestDiagnostic.code}
+                  {' · '}时间：{new Date(latestDiagnostic.recordedAt).toLocaleString('zh-CN')}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  建议：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].action}
+                </Typography>
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary"
+                data-xdrive-baidu-no-client-error sx={{ mt: 1 }}>
+                本客户端会话暂无可归因的动态地图故障记录；这不代表动态 SDK、瓦片或三端交互已验证。
+                可先在图库重试，再返回此处查看具体失败阶段。
+              </Typography>
+            )}
+          </Box>
+        )}
         {config && mode === 'verify' && (
           <XDriveBaiduJSAPIConfigSnapshot config={config} lastReadAt={lastReadAt}
             refreshing={refreshing} canRefresh={Boolean(source.loadBaiduJSAPIConfig) && !busy && !dirty}
@@ -288,8 +360,15 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 {config.release_blockers?.length ? (
                   <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
                     {config.release_blockers.map(reason => (
-                      <Typography key={reason} component="li" variant="body2"
-                        color="text.secondary">{releaseBlockerLabels[reason]}</Typography>
+                      <Box key={reason} component="li" data-xdrive-baidu-release-blocker={reason}>
+                        <Typography variant="body2" fontWeight={600}>
+                          {releaseBlockerLabels[reason]}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary"
+                          sx={{ overflowWrap: 'anywhere' }}>
+                          {reason} · 处理：{releaseBlockerHints[reason]}
+                        </Typography>
+                      </Box>
                     ))}
                   </Stack>
                 ) : (

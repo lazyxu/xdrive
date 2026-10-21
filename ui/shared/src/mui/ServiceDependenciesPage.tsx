@@ -560,8 +560,10 @@ function ServiceOverviewCard({ service, onOpen }: {
 /** Administrator-only status and encrypted Baidu AK management. No Docker control socket. */
 export function XDriveServiceDependenciesPage({
   source, location, onLocationChange, onUnsavedChange, navigationResetKey = 0,
+  diagnosticScope,
 }: {
   source: XDriveServiceDependenciesPort
+  diagnosticScope?: string
   location?: XDriveSystemDependenciesLocation
   onLocationChange?: (next: XDriveSystemDependenciesLocation, options?: { replace?: boolean }) => void
   onUnsavedChange?: (hasUnsavedEdits: boolean) => void
@@ -2191,6 +2193,7 @@ export function XDriveServiceDependenciesPage({
               )}
               {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
                 <XDriveBaiduJSAPIDesiredPanel source={source} mode={currentTab}
+                  diagnosticScope={diagnosticScope}
                   onDirtyChange={currentTab === 'config' ? setBaiduJSAPIDirty : undefined} />
               )}
               {selectedPage === 'geonames' && currentTab === 'verify' && (

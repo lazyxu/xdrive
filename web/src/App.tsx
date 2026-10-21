@@ -1,3 +1,4 @@
+import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
@@ -505,6 +506,11 @@ function FileManager({
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
+  const baiduDiagnosticScope = `web:${profile?.id ?? username}`
+  // Keep diagnostics while navigating to Admin, but never across an
+  // account change, logout or detached Web App lifecycle.
+  useEffect(() => () => xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope),
+    [baiduDiagnosticScope])
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
   const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
@@ -1869,6 +1875,9 @@ function FileManager({
               if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
             }}
             preferenceScope={`web:${profile?.id ?? username}`}
+            onOpenBaiduMapDiagnostics={profile?.role === 'admin' ? () =>
+              launchWebApp({ app: 'admin-services', params: { service: 'baidu-map', tab: 'verify' } })
+              : undefined}
             initialSection={route.app === 'gallery'
               ? route.params.section as MediaGallerySection | undefined
               : undefined}
@@ -1968,6 +1977,7 @@ function FileManager({
         ) : appView === 'admin-services' && profile?.role === 'admin' ? (
           <XDriveServiceDependenciesPage
             source={serviceDependenciesPort}
+            diagnosticScope={`web:${profile?.id ?? username}`}
             onUnsavedChange={setSystemDependenciesDraftDirty}
             location={route.app === 'admin-services' ? route.params : undefined}
             onLocationChange={(next, options) => launchWebApp(

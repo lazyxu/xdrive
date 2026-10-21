@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import {
+  xDriveRecordBaiduMapDiagnostic, xDriveClearBaiduMapDiagnostic,
+  xDriveClassifyBaiduMapRequestFailure, xDriveBaiduMapHTTPSRequired,
+} from '../media-gallery-baidu-diagnostics'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { Box, Button, Typography } from '@mui/material'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
@@ -49,6 +53,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   onNativeCameraChange,
   onNativeCameraClear,
   onReady,
+  diagnosticScope,
+  onOpenDiagnostics,
 }: {
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
   listOwnerViewport: XDriveBaiduNativePhotoViewportRequest
@@ -62,6 +68,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onNativeCameraClear?: () => void
   onReady: (ready: boolean) => void
+  diagnosticScope?: string
+  onOpenDiagnostics?: () => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const latestOpenPhoto = useRef(onOpenPhoto)
@@ -101,10 +109,39 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     if (!container) return
     let active = true
     const pending = new AbortController()
-    const mount = xDriveCreateBaiduJSAPI4IndexedBD09Mount({ mintMapOnlySession })
+    let phase: 'session' | 'sdk' | 'bind' | 'viewport' = 'session'
+    let sessionFailureRecorded = false
+    let viewportFailureRecorded = false
+    const record = (code: Parameters<typeof xDriveRecordBaiduMapDiagnostic>[1]) => {
+      if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, code)
+    }
+    // The caller still owns auth and Abort. Only the numeric HTTP status is
+    // inspected; never persist error.message/URL/response/provider data.
+    const mount = xDriveCreateBaiduJSAPI4IndexedBD09Mount({
+      mintMapOnlySession: async signal => {
+        try {
+          const grant = await mintMapOnlySession(signal)
+          phase = 'sdk'
+          return grant
+        } catch (error) {
+          if (active && !signal.aborted) {
+            sessionFailureRecorded = true
+            record(xDriveClassifyBaiduMapRequestFailure('session', error))
+          }
+          throw error
+        }
+      },
+    })
     let native: Awaited<ReturnType<typeof mount.acquire>> | null = null
     let bridge: XDriveBaiduJSAPI4IndexedViewportBridge | null = null
-    let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => pending.abort(), 8000)
+    let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      if (!active || pending.signal.aborted) return
+      // This was a timeout, not an ordinary route-change Abort.
+      record(phase === 'session' ? 'session_timeout' : 'sdk_timeout')
+      pending.abort()
+      setResult('unavailable')
+      onReady(false)
+    }, 8000)
     let stopRenewal: (() => void) | null = null
     let resize: ResizeObserver | null = null
     let unbindNativeCamera: (() => void) | null = null
@@ -116,6 +153,24 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     setShowCellList(false)
     onReady(false)
     const opened = async () => {
+      // The real SDK loader rejects non-HTTPS documents before it can even
+      // mint a map-only Session. Surface that *deterministic* cause rather
+      // than inaccurately blaming a Server Session or Baidu API outage.
+      // Read the protocol only, NEVER store or display a URL/host/credential.
+      let protocol: unknown
+      try { protocol = container.ownerDocument.defaultView?.location.protocol } catch {}
+      if (xDriveBaiduMapHTTPSRequired(protocol)) {
+        if (clock !== null) {
+          clearTimeout(clock)
+          clock = null
+        }
+        record('https_origin_required')
+        if (active && !pending.signal.aborted) {
+          setResult('unavailable')
+          onReady(false)
+        }
+        return
+      }
       native = await mount.acquire(container, pending.signal, camera)
       if (clock !== null) {
         clearTimeout(clock)
@@ -128,6 +183,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         native = null
         return
       }
+      phase = 'bind'
       const bound = xDriveBindBaiduJSAPI4NativeMap(native.map, native.namespace)
       const map = bound.map as XDriveBaiduNativeMapWithBounds & {
         pointToPixel?: (point: { lng: number; lat: number }) => { x: number; y: number }
@@ -163,9 +219,33 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
               page, map as typeof map & { pointToPixel: NonNullable<typeof map.pointToPixel> },
               native!.namespace, container.clientWidth, container.clientHeight) ?? []
           : []
+      const monitoredViewport: XDriveBaiduNativePhotoViewportRequest =
+        async (bounds, limit, offset, signal) => {
+          try {
+            return await listOwnerViewport(bounds, limit, offset, signal)
+          } catch (error) {
+            if (active && !signal.aborted && !pending.signal.aborted) {
+              viewportFailureRecorded = true
+              record(xDriveClassifyBaiduMapRequestFailure('viewport', error))
+            }
+            throw error
+          }
+        }
+      const monitoredCells: XDriveBaiduNativePhotoCellsRequest | undefined =
+        listOwnerCells ? async (bounds, signal) => {
+          try {
+            return await listOwnerCells(bounds, signal)
+          } catch (error) {
+            if (active && !signal.aborted && !pending.signal.aborted) {
+              viewportFailureRecorded = true
+              record(xDriveClassifyBaiduMapRequestFailure('viewport', error))
+            }
+            throw error
+          }
+        } : undefined
       bridge = new XDriveBaiduJSAPI4IndexedViewportBridge({
         ...bound, map,
-      }, listOwnerViewport, {
+      }, monitoredViewport, {
         onOpenPhoto: identity => {
           if (active && !pending.signal.aborted) latestOpenPhoto.current(identity)
         },
@@ -186,11 +266,17 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         onResult: response => {
           if (!active || pending.signal.aborted) return
           setResult(response.kind)
+          if (response.kind === 'rendered' || response.kind === 'aggregated' ||
+              response.kind === 'incomplete') {
+            if (diagnosticScope) xDriveClearBaiduMapDiagnostic(diagnosticScope)
+          } else if (response.kind !== 'cancelled' && !viewportFailureRecorded) {
+            record(response.kind === 'invalid-bounds' ? 'map_binding_failed' : 'viewport_unavailable')
+          }
           // A truncated result may show a licensed map but no invented cluster.
           onReady(response.kind === 'rendered' || response.kind === 'aggregated' ||
             response.kind === 'incomplete')
         },
-      }, listOwnerCells, native.namespace, supportsCovers)
+      }, monitoredCells, native.namespace, supportsCovers)
       latestBridge.current = bridge
       if (supportsCovers && typeof ResizeObserver !== 'undefined') {
         resize = new ResizeObserver(() => {
@@ -199,19 +285,25 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         })
         resize.observe(container)
       }
+      phase = 'viewport'
       const first = await bridge.refresh()
       if (!active || pending.signal.aborted) return
       setResult(first.kind)
       const ready = first.kind === 'rendered' || first.kind === 'aggregated' ||
         first.kind === 'incomplete'
       onReady(ready)
+      if (!ready && first.kind !== 'cancelled' && !viewportFailureRecorded) {
+        record(first.kind === 'invalid-bounds' ? 'map_binding_failed' : 'viewport_unavailable')
+      }
       if (ready) {
+        if (diagnosticScope) xDriveClearBaiduMapDiagnostic(diagnosticScope)
         recordNativeCamera()
         stopRenewal = xDriveKeepBaiduJSAPI4MapSessionAlive(
           mintMapOnlySession, pending.signal, container.ownerDocument, () => {
             if (!active || pending.signal.aborted) return
             // The 2-minute map Cookie was revoked or could not be renewed.
             // Tear down BMap/ClusterLayer NOW; static Baidu remains available.
+            record('session_renew_failed')
             pending.abort()
             latestCameraClear.current?.()
             unbindNativeCamera?.()
@@ -240,6 +332,9 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       native?.dispose()
       native = null
       if (active && !pending.signal.aborted) {
+        if (!sessionFailureRecorded && !viewportFailureRecorded) record(phase === 'sdk' ? 'sdk_load_failed'
+          : phase === 'bind' ? 'map_binding_failed'
+            : phase === 'viewport' ? 'viewport_unavailable' : 'session_unavailable')
         setResult('unavailable')
         onReady(false)
       }
@@ -258,7 +353,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       onReady(false)
     }
   }, [mintMapOnlySession, listOwnerViewport, listOwnerCells, loadThumbnail, onReady,
-    camera.latitude, camera.longitude, camera.zoom])
+    diagnosticScope, camera.latitude, camera.longitude, camera.zoom])
 
   // The old Owner-scoped Cell return hint is NEVER an authorization source.
   // Require current accepted /cells identity, bounds, representative revision,
@@ -367,9 +462,17 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           当前地图范围内的已授权照片超过 100 张，请放大地图；不显示不完整的聚合结果。
         </Typography>
       ) : result && result !== 'rendered' && result !== 'aggregated' && result !== 'cancelled' ? (
-        <Typography role="status" variant="caption" color="text.secondary">
-          百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
-        </Typography>
+        <Box data-xdrive-baidu-map-fallback sx={{ px: 0.5, mt: 0.5 }}>
+          <Typography role="status" variant="caption" color="text.secondary">
+            百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
+          </Typography>
+          {onOpenDiagnostics ? (
+            <Button size="small" variant="text" sx={{ ml: 0.5, minHeight: 36 }}
+              data-xdrive-baidu-map-diagnostics-link onClick={onOpenDiagnostics}>
+              查看原因与修复建议
+            </Button>
+          ) : null}
+        </Box>
       ) : null}
     </Box>
   )
