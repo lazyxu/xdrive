@@ -5,22 +5,25 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
 const publicFolderSharePageLimit = 100
 
 type publicFolderShareItem struct {
-	ID        uint64    `json:"id"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Size      int64     `json:"size"`
-	Revision  uint64    `json:"revision"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                 uint64    `json:"id"`
+	Name               string    `json:"name"`
+	Type               string    `json:"type"`
+	Size               int64     `json:"size"`
+	Revision           uint64    `json:"revision"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	ThumbnailCandidate bool      `json:"thumbnail_candidate,omitempty"`
 }
 
 type publicFolderSharePage struct {
@@ -120,6 +123,48 @@ func (s *Server) publicFolderShareChildren(c *gin.Context) {
 		children = children[:publicFolderSharePageLimit]
 		page.NextCursor = children[len(children)-1].ID
 	}
+	// One bounded, owner-only metadata lookup for at most 100 visible-page
+	// entries. Do not issue 100 exploratory thumbnail requests on metadata-only
+	// 100k shares: only exact revision/SHA media can enter the visible loader.
+	eligible := make(map[uint64]bool)
+	byID := make(map[uint64]meta.Node)
+	fileIDs := make([]uint64, 0, len(children))
+	for _, item := range children {
+		if item.Type == meta.NodeTypeFile && item.File != nil {
+			fileIDs = append(fileIDs, item.ID)
+			byID[item.ID] = item
+		}
+	}
+	if len(fileIDs) > 0 {
+		var indexed []meta.MediaMetadata
+		if err := s.DB.WithContext(c.Request.Context()).
+			Select("node_id", "node_revision", "sha256", "media_kind", "index_state", "thumbnail_key").
+			Where("owner_id = ? AND node_id IN ?", share.OwnerID, fileIDs).
+			Find(&indexed).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "shared thumbnail metadata unavailable")
+			return
+		}
+		for _, media := range indexed {
+			node, ok := byID[media.NodeID]
+			if !ok || media.NodeRevision != node.Revision || media.IndexState != meta.MediaIndexStateReady ||
+				strings.TrimSpace(media.SHA256) == "" ||
+				!strings.EqualFold(media.SHA256, node.File.SHA256) {
+				continue
+			}
+			switch media.MediaKind {
+			case meta.MediaKindImage:
+				eligible[media.NodeID] = media.ThumbnailKey != "" &&
+					media.ThumbnailKey == mediaThumbnailStorageKey(node, media)
+			case meta.MediaKindVideo:
+				// A mere indexed video is not proof of a cached poster. Do not
+				// schedule a ticket/Storage probe for each uncached H264 tile.
+				// Only a revision+SHA-matched persisted poster key is eligible.
+				eligible[media.NodeID] = media.ThumbnailKey != "" &&
+					media.ThumbnailKey == mediapkg.VideoPosterStorageKey(
+						node.ID, node.Revision, media.SHA256)
+			}
+		}
+	}
 	for _, item := range children {
 		if item.Type != meta.NodeTypeDir && item.Type != meta.NodeTypeFile {
 			continue
@@ -127,6 +172,7 @@ func (s *Server) publicFolderShareChildren(c *gin.Context) {
 		entry := publicFolderShareItem{
 			ID: item.ID, Name: item.Name, Type: item.Type,
 			Revision: item.Revision, UpdatedAt: item.UpdatedAt,
+			ThumbnailCandidate: eligible[item.ID],
 		}
 		if item.Type == meta.NodeTypeFile && item.File != nil {
 			entry.Size = item.File.Size

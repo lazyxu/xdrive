@@ -1,0 +1,169 @@
+{
+  "workload_id": "SH-P016",
+  "measured_source_head": "ab0d985df7afa43bad4d570f608ab5adec901938",
+  "source_type": "prior evidence-head, before no-exploratory-uncached-video-candidate correction",
+  "before_after_pairing": "none; no measured speedup",
+  "after_ms": null,
+  "speedup_pct": null,
+  "postgres": {
+    "ci_run": 39527268477,
+    "raw_artifact_id": 12313643588,
+    "sample_count": 3,
+    "dataset": "metadata-only 100000 PostgreSQL17 file/folder Nodes, 1000 bounded pages; zero original CAS in this workload",
+    "samples": [
+      {
+        "sample": 1,
+        "entries": 100000,
+        "pages": 1000,
+        "seed_ms": 1578,
+        "page_walk_ms": 16393,
+        "page_p50_ms": 15.972,
+        "page_p95_ms": 18.55,
+        "page_worst_ms": 26.396,
+        "http_body_bytes": 11322793
+      },
+      {
+        "sample": 2,
+        "entries": 100000,
+        "pages": 1000,
+        "seed_ms": 1556,
+        "page_walk_ms": 16454,
+        "page_p50_ms": 16.084,
+        "page_p95_ms": 18.652,
+        "page_worst_ms": 26.264,
+        "http_body_bytes": 11327793
+      },
+      {
+        "sample": 3,
+        "entries": 100000,
+        "pages": 1000,
+        "seed_ms": 1549,
+        "page_walk_ms": 16365,
+        "page_p50_ms": 16.12,
+        "page_p95_ms": 18.512,
+        "page_worst_ms": 24.755,
+        "http_body_bytes": 11327793
+      }
+    ],
+    "median_walk_ms": 16393,
+    "max_per_sample_p95_ms": 18.652,
+    "worst_page_ms": 26.396,
+    "frozen_budgets": {
+      "walk_ms_max": 60000,
+      "per_page_p95_ms_max": 500,
+      "per_page_worst_ms_max": 2000
+    },
+    "passed": true
+  },
+  "browser": {
+    "ci_run": 39527268669,
+    "raw_artifact_id": 12312698955,
+    "fixture": "one corpus with 100000 SHA-distinct physical CAS JPEG originals (not 3 separate corpora)",
+    "sessions": [
+      {
+        "width": 1440,
+        "sample": 1,
+        "first_page_ms": 417.158958,
+        "next_page_ms": 273.958593000003,
+        "first_download_ms": 192.70579700000235,
+        "next_download_ms": 136.11942600000475,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 2,
+        "first_page_ms": 454.6344850000023,
+        "next_page_ms": 314.031541999997,
+        "first_download_ms": 196.6968990000023,
+        "next_download_ms": 153.96729099999357,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 3,
+        "first_page_ms": 492.3088609999977,
+        "next_page_ms": 282.91184099999373,
+        "first_download_ms": 191.33454599999823,
+        "next_download_ms": 157.11289000000397,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 1,
+        "first_page_ms": 391.00902199999837,
+        "next_page_ms": 293.7920460000023,
+        "first_download_ms": 181.33438800000295,
+        "next_download_ms": 145.95878999998968,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 2,
+        "first_page_ms": 419.4323909999948,
+        "next_page_ms": 326.0572630000097,
+        "first_download_ms": 247.7008189999906,
+        "next_download_ms": 218.31561099999817,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 3,
+        "first_page_ms": 419.40119699999923,
+        "next_page_ms": 338.81571200001054,
+        "first_download_ms": 190.29053500000737,
+        "next_download_ms": 167.3790580000059,
+        "first_rows": 100,
+        "next_rows": 100,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      }
+    ],
+    "median_by_width": {
+      "390": {
+        "first_ms": 419.40119699999923,
+        "next_ms": 326.0572630000097
+      },
+      "1440": {
+        "first_ms": 454.6344850000023,
+        "next_ms": 282.91184099999373
+      }
+    },
+    "signed_original_download_sha_verified": 12,
+    "max_download_ms": 247.7008189999906,
+    "frozen_budgets": {
+      "first_page_ms_max": 2000,
+      "next_page_ms_max": 2000,
+      "signed_download_ms_max": 5000
+    },
+    "passed": true
+  },
+  "exclusions": [
+    "cached JPEG/H264/Live actual 100k derivative decode not exercised",
+    "no native iOS/Android installed PWA",
+    "no WAN transport",
+    "no Go cancellation timing for this new public thumbnail endpoint",
+    "no same-runner original-vs-candidate A/B"
+  ],
+  "source": "GitHub CI logs and original artifact IDs; raw artifact holds unabridged machine data"
+}

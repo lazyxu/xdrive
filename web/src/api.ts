@@ -3320,6 +3320,44 @@ export class XDriveApi {
     }, false)
   }
 
+  // Share-only, revision-scoped cached derivative. Never use account thumbnail
+  // endpoints or the original 32MiB public-image-preview endpoint for tiles.
+  async publicShareThumbnailURL(token: string, password: string, nodeID: number, revision?: number, signal?: AbortSignal) {
+    const ticket = await this.request<{ url: string; expires_at: string; mime_type: string }>(
+      '/api/v1/public/share/thumbnail-ticket', {
+        method: 'POST',
+        headers: { 'X-XDrive-Share-Token': token },
+        body: JSON.stringify({ password, node_id: nodeID, revision: revision ?? 0 }),
+        signal,
+      }, false,
+    )
+    signal?.throwIfAborted()
+    if (!['image/jpeg', 'image/png'].includes(ticket.mime_type)) {
+      throw new ApiError(415, 'Unsupported public cached thumbnail type')
+    }
+    const response = await fetch(this.nativeDownloadURL(ticket.url), {
+      signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    })
+    if (!response.ok) {
+      if (response.status === 404 || response.status === 415) return null
+      throw new ApiError(response.status, 'Shared cached thumbnail unavailable')
+    }
+    const mime = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase()
+    if (mime !== ticket.mime_type) throw new ApiError(415, 'Public thumbnail MIME mismatch')
+    const sizeLimit = 4 * 1024 * 1024
+    const declaredSize = Number(response.headers.get('Content-Length') || 0)
+    if (declaredSize > sizeLimit) throw new ApiError(413, 'Public thumbnail body too large')
+    const blob = await response.blob()
+    signal?.throwIfAborted()
+    if (blob.size > sizeLimit || !await xDriveThumbnailHasSafeImageEnvelope(blob, mime, signal)) {
+      throw new ApiError(415, 'Public thumbnail image bytes are invalid')
+    }
+    return URL.createObjectURL(blob)
+  }
+
   // Public-only, short-lived image preview purpose: never use Owner JWT or download ticket.
   async publicShareImagePreviewURL(token: string, password: string, nodeID = 0, signal?: AbortSignal) {
     const ticket = await this.request<{ url: string; expires_at: string; mime_type: string }>(

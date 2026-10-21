@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
@@ -10,6 +10,8 @@ import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { Box, Button, Breadcrumbs, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material'
 import type { PublicShareChild } from '../models'
+import type { XDriveFileExplorerItem } from './FileExplorer'
+import { XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider } from './FileExplorerThumbnail'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
@@ -25,6 +27,57 @@ import {
   xDriveFileExplorerDetailsHeaderHeight,
   xDriveFileExplorerDetailsMobileRowHeight,
 } from './FileExplorerItemPresentation'
+
+// The same neutral Owner/Share thumbnail surface is mounted ONLY while its
+// small page tile intersects the real scroll viewport. Eviction unmounts the
+// consumer and immediately aborts the underlying Share-scoped GET/Go context.
+function XDrivePublicShareThumbnailSlot({
+  entry, grid, enabled,
+}: {
+  entry: PublicShareChild
+  grid: boolean
+  enabled: boolean
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [nearViewport, setNearViewport] = useState(false)
+  const eligible = enabled && entry.thumbnail_candidate === true && entry.type === 'file' && Number(entry.revision ?? 0) > 0 &&
+    /\.(?:jpe?g|png|webp|gif|bmp|heic|heif|avif|tiff?|livp|mp4|mov|mkv|webm)$/i.test(entry.name)
+  useEffect(() => {
+    const host = ref.current
+    if (!host || !eligible) {
+      setNearViewport(false)
+      return
+    }
+    if (typeof IntersectionObserver === 'undefined') {
+      setNearViewport(true)
+      return
+    }
+    const root = host.closest('[data-xdrive-public-share-scroll-host]')
+    const observer = new IntersectionObserver(
+      (entries) => setNearViewport(Boolean(entries[0]?.isIntersecting)),
+      { root, rootMargin: '80px 0px' },
+    )
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [entry.id, entry.revision, eligible, grid])
+  const size = grid ? 52 : 21
+  const fallback = <XDriveFileExplorerItemIcon
+    item={{ name: entry.name, kind: entry.type }}
+    size={size} folderSize={grid ? 52 : 22} />
+  const item: XDriveFileExplorerItem = {
+    id: entry.id, name: entry.name, kind: entry.type, size: entry.size,
+    revision: entry.revision, updatedAt: entry.updated_at,
+  }
+  return (
+    <Box ref={ref} data-xdrive-public-share-thumbnail-viewport
+      sx={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {eligible && nearViewport
+        ? <XDriveFileExplorerThumbnail item={item} eligible fallback={fallback} />
+        : fallback}
+    </Box>
+  )
+}
 
 export type XDrivePublicShareExplorerCrumb = { id: number; name: string }
 export type XDrivePublicShareReadOnlyExplorerProps = {
@@ -42,6 +95,7 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
   onOpenFolder?: (entry: PublicShareChild) => void
   onDownloadItem?: (entry: PublicShareChild) => void
   loadImagePreview?: (entry: PublicShareChild, signal?: AbortSignal) => Promise<string | null | undefined>
+  loadThumbnail?: (entry: PublicShareChild, signal?: AbortSignal) => Promise<string | null | undefined>
   onPreviousPage?: () => void
   onNextPage?: () => void
   onRefresh?: () => void
@@ -52,7 +106,7 @@ export type XDrivePublicShareReadOnlyExplorerProps = {
 export function XDrivePublicShareReadOnlyExplorer({
   kind, items, path = [], folderOpened = false, pending = false,
   canDownload = false, hasPreviousPage = false, hasNextPage = false,
-  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, loadImagePreview,
+  toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem, loadImagePreview, loadThumbnail,
   onPreviousPage, onNextPage, onRefresh,
 }: XDrivePublicShareReadOnlyExplorerProps) {
   const [view, setView] = useState<'details' | 'grid'>('details')
@@ -119,6 +173,19 @@ export function XDrivePublicShareReadOnlyExplorer({
   const selectedEntry = visibleItems.find(entry => entry.id === selectedID) ?? null
   const shareDetailsColumns = 'minmax(0,1fr) 190px 150px 120px'
   const directoryControlsEnabled = folder && folderOpened && canDownload
+  const thumbnailEntries = useMemo(
+    () => new Map(items.map(entry => [entry.id, entry])),
+    [items],
+  )
+  const shareThumbnailLoader = useMemo(() => loadThumbnail
+    ? (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+      const entry = thumbnailEntries.get(Number(item.id))
+      return entry && entry.type === 'file' && entry.revision === item.revision
+        ? loadThumbnail(entry, signal)
+        : Promise.resolve(null)
+    }
+    : undefined,
+  [loadThumbnail, thumbnailEntries])
   const viewButtons = (
     <Stack direction="row" spacing={0.5} alignItems="center">
       <Button type="button" size="small" aria-pressed={view === 'details'}
@@ -130,7 +197,8 @@ export function XDrivePublicShareReadOnlyExplorer({
     </Stack>
   )
   const rows = (
-    <Box role="list" aria-label={folder ? '分享文件夹中的文件' : '已分享文件'}
+    <XDriveFileExplorerThumbnailProvider lifecycleKey={acceptedPageIdentity} loadThumbnail={shareThumbnailLoader}>
+    <Box role="list" data-xdrive-public-share-scroll-host aria-label={folder ? '分享文件夹中的文件' : '已分享文件'}
       data-xdrive-public-share-explorer-view={view}
       sx={{
         flex: '1 1 auto', minHeight: 0, overflowY: 'auto', minWidth: 0,
@@ -208,7 +276,7 @@ export function XDrivePublicShareReadOnlyExplorer({
             <XDriveFileExplorerDetailsRowCell columnKey="name">
               <XDriveFileExplorerDetailsNameCell
                 compact={compactShareViewport}
-                visual={<XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={21} folderSize={22} />}
+                visual={<XDrivePublicShareThumbnailSlot entry={entry} grid={false} enabled={Boolean(loadThumbnail)} />}
                 label={<XDriveFileExplorerItemName name={entry.name} grid={false} />}
               />
             </XDriveFileExplorerDetailsRowCell>
@@ -216,7 +284,7 @@ export function XDrivePublicShareReadOnlyExplorer({
             <XDriveFileExplorerGridTileContent
               thumbnailWidth={72}
               thumbnailHeight={72}
-              visual={<XDriveFileExplorerItemIcon item={{ name: entry.name, kind: entry.type }} size={52} folderSize={52} />}
+              visual={<XDrivePublicShareThumbnailSlot entry={entry} grid enabled={Boolean(loadThumbnail)} />}
               label={<XDriveFileExplorerItemName name={entry.name} grid />}
             />
           )}
@@ -250,6 +318,7 @@ export function XDrivePublicShareReadOnlyExplorer({
           sx={{ py: 5 }}>当前页没有匹配的文件</Typography>
       )}
     </Box>
+    </XDriveFileExplorerThumbnailProvider>
   )
 
   return (
