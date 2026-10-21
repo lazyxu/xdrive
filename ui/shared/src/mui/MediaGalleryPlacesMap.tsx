@@ -518,12 +518,24 @@ export function XDriveMediaGalleryPlacesMap({
             百度静态地图可用后显示相机视窗地点；原始地点列表仍可使用。
           </Typography>
         ) : (
-          <Stack spacing={1} aria-busy={viewportLoading}>
+          <>
             {viewportError ? (
-              <Typography role="alert" variant="caption" color="error">
+              <Typography data-xdrive-places-viewport-error role="alert"
+                variant="caption" color="error" sx={{
+                  position: 'absolute', top: 52, right: 12,
+                  zIndex: 2, pointerEvents: 'none',
+                  maxWidth: 'min(calc(100% - 24px), 520px)',
+                  maxHeight: 'min(30dvh, 180px)', overflowY: 'auto',
+                  px: 1, py: 0.75, borderRadius: 1,
+                  bgcolor: 'background.paper', boxShadow: 2,
+                  overflowWrap: 'anywhere',
+                }}>
                 {viewportError}
               </Typography>
             ) : null}
+            {/* Error is a viewport sibling, not a normal-flow child of the
+                result Stack. MUI Stack spacing counts absolute children too. */}
+            <Stack spacing={1} aria-busy={viewportLoading}>
             {displayedViewportResult ? (
               <>
                 <Typography variant="caption" color="text.secondary"
@@ -573,10 +585,15 @@ export function XDriveMediaGalleryPlacesMap({
                   </Button>
                 </Stack>
               </>
-            ) : !viewportError ? (
-              <Box data-xdrive-places-viewport-first-read sx={{ minHeight: 96 }} />
-            ) : null}
-          </Stack>
+            ) : (
+              // Network failure is not a verified empty state; do not collapse
+              // the original quiet 96px slot on a cold viewport read failure.
+              <Box data-xdrive-places-viewport-first-read
+                aria-busy={viewportLoading || undefined}
+                sx={{ minHeight: 96 }} />
+            )}
+            </Stack>
+          </>
         )}
       </Box>
         </>

@@ -117,6 +117,7 @@ test('P66: accepted Source cards survive an ongoing refresh and a genuine refres
   try{
     await act(async()=>{v=Renderer.create(React.createElement(Page,props))})
     assert.equal(types(v,'source-card').length,1)
+    const originalCard=types(v,'source-card')[0]
     await act(async()=>{v.update(React.createElement(Page,{
       ...props,loading:true,
     }))})
@@ -132,8 +133,20 @@ test('P66: accepted Source cards survive an ongoing refresh and a genuine refres
       ...props,loadError:true,
     }))})
     assert.equal(types(v,'source-card').length,1)
+    assert.equal(types(v,'source-card')[0],originalCard,
+      'a failed Source refresh must not remount the accepted Source card')
     assert.equal(types(v,'status-alert').length,1)
+    const error=marks(v,'data-xdrive-source-overview-refresh-error')
+    assert.equal(error.length,1,'real refresh error is still visible')
+    assert.equal(error[0].props.sx.position,'fixed',
+      'asynchronous failure must not displace the persistent Source cards')
+    assert.equal(error[0].props.sx.pointerEvents,'none')
+    assert.match(error[0].props.sx.bottom,/safe-area-inset-bottom/)
     assert.equal(marks(v,'data-xdrive-source-overview-verified-empty').length,0)
+    await act(async()=>{v.update(React.createElement(Page,props))})
+    assert.equal(marks(v,'data-xdrive-source-overview-refresh-error').length,0)
+    assert.equal(types(v,'source-card')[0],originalCard,
+      'dismissing the transient error must leave the same card mounted')
   }finally{if(v)await act(async()=>v.unmount())}
 })
 

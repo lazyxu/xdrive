@@ -87,7 +87,18 @@ export function XDriveSourceManagerListPage({
       }
     >
       {loadError && rows.length > 0 ? (
-        <XDriveStatusAlert tone="bad">刷新{sourceNoun}失败，仍显示上次成功读取的内容；可重试。</XDriveStatusAlert>
+        <Box data-xdrive-source-overview-refresh-error
+          sx={{
+            position: 'fixed',
+            left: '50%', transform: 'translateX(-50%)',
+            bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+            width: 'min(calc(100vw - 24px), 560px)',
+            maxHeight: 'min(34dvh, 220px)', overflowY: 'auto',
+            zIndex: (theme) => theme.zIndex.snackbar,
+            pointerEvents: 'none', borderRadius: 1,
+          }}>
+          <XDriveStatusAlert tone="bad">刷新{sourceNoun}失败，仍显示上次成功读取的内容；可重试。</XDriveStatusAlert>
+        </Box>
       ) : null}
       {!hasLoaded && loading ? (
         // The initial owner read has no authoritative count. Keep the same
