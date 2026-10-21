@@ -1,3 +1,11 @@
+## AGENTS.md 通用规则：仅实际兼容性变化才要求重复 CI（2026-10-21，覆盖历史机械重跑要求）
+
+- **主线前进不等于 CI 失效。** 一个 PR 的准确 HEAD 已经通过自身完整 CI/Final Gate，后续仅因其他 PR 合入使 master 前进时，先对比该 PR 的 merge-base → 新 master 变化与该 PR 的有效改动，检查代码文件、运行时依赖、共享 API/DTO、构建/测试工作流、数据库 schema/migration、环境与生成物、Owner/权限/安全边界及测试覆盖。Git 没有文本冲突只是必要线索，不是足够的语义兼容性证明。
+- **真正不冲突时直接收尾。** 业务代码及相关依赖、工具链、测试前置条件均无重叠或语义耦合，原准确 HEAD 的全量成功/Final Gate 可作为原 PR 的有效测试证据；不要仅因为 master SHA 增长，就反复重建一次提交或强制重新跑全部 77+ CI。若只存在累积 AGENTS.md 的前置笔记重叠，完整无损地保留双方历史；它本身不构成功能冲突。GitHub 若允许原 HEAD 无冲突 Rebase Merge，就优先保持原 HEAD 检查记录并直接合入，再核验最终合入结果及分支清理。
+- **新提交不得冒称旧 SHA 已测试。** 如果因真实冲突确实修改了源码、历史、测试或创建新 work SHA，旧绿色记录仍归属旧 HEAD，不能贴到新 SHA 上称“此 SHA 全绿”。但对照变更范围之后，没有新增影响路径或仅有证明为无语义变动的 AGENTS 文档差异，可以复用旧源码行为的已有证据，并根据风险补做范围内的验证，不机械重跑全套。出现真实代码冲突、相关 API/依赖/工具链/CI 门禁改变、测试覆盖缺口、SQL/安全语义变化时，修复并执行相应测试；涉及高风险交叉变动时仍做全量 CI、真实 PostgreSQL Race、跨平台和 Final Gate。
+- **绝不绕过实际门禁。** GitHub 实际强制要求的最新状态、签名、审查、必需检查及新鲜 mergeability 仍需满足；不借旧绿掩盖失败/取消/未跑的必需测试，也不绕过源码安全授权、密钥隔离、审计、回滚和故障注入。清晰记录原被测试 SHA、CI URL、新 master 范围、无冲突/无耦合的核查依据、是否有新 SHA 和实际执行的补充测试。保护独立 Owner 修改和全部历史，禁止通过覆盖文件制造假无冲突。
+- 本规则取代下文旧阶段记录中“只要 master 前进或重新基于新 master 就必须全量重新测试”的一刀切表述；下方历史保留作为发生过的工作记录。生产环境专属验收继续 **按用户决定跳过（未验收）**，绝不索取生产账号、AK/JWT/Cookie/HAR/抓包或人工签字，也不作为源码/CI/PR 合并门槛。
+
 ## SD-UI-V1.1 · AliDNS reveal 30-second response lease (2026-10-21)
 
 - v1.1 §4.1 requires displayed AliDNS ID/Secret to disappear within 30s, on blur/visibility/account/source close. The existing shared MUI already applies Math.min(30, server expires_in_seconds); the privileged reveal endpoint previously advertised 60s, which is inconsistent for other consumers. Return exactly 30s from the Server and verify it in the existing authenticated real-PostgreSQL reveal test, without dumping a secret in test failures.
