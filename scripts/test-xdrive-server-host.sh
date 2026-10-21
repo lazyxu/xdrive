@@ -621,15 +621,26 @@ grep -q '^--source github --channel master$' "$TMP/state/installer-args"
 cat > "$TMP/home/state/control/request.json" <<EOF
 {"request_id":"test-request-backup-files","source":"github","channel":"master","backup_file_data":true,"requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
-for _ in $(seq 1 100); do
+# Verify a second complete update, not an arbitrary 10-second latency SLA.
+# Slow, loaded CI hosts may take longer to syntax-check the same installer.
+# Keep a finite wait; detect early runner death and assert terminal success.
+for _ in $(seq 1 300); do
   if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
      grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json" 2>/dev/null; then
     break
   fi
+  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
+    echo "host control runner exited before completing second update" >&2
+    exit 1
+  }
   sleep 0.1
 done
+grep -q '"state":"success"' "$TMP/home/state/control/status.json"
+grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json"
 grep -q '^--source github --channel master --backup-file-data$' "$TMP/state/installer-args"
 grep -q '"backup_file_data":true' "$TMP/home/state/control/status.json"
+[[ ! -f "$TMP/home/state/control/request.json" ]]
+[[ ! -f "$TMP/home/state/control/active.json" ]]
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
