@@ -45,6 +45,13 @@
 - Production-only security acceptance: 按用户决定跳过（未验收）; no production secrets, HAR, account or user manual signoff requested. Code-level crypto, filesystem, authorization and CI gates are mandatory.
 
 
+## SD-D2b-1b-b2a · sealed private Host signing envelope (2026-10-21)
+
+- Add ONLY an unexported, pure, domain-separated Ed25519 sign helper that re-verifies the canonical read-only envelope. Both claimed Host ingress observations must be explicitly marked before it can frame bytes; marks alone are NOT independent proof and must never enable adoption, Host Apply or an Applied Receipt.
+- No real trusted Host observer/publisher/privileged key mount, external network probe, Server consumer, database write, Caddy reload, Docker, ACME/DNS or secret access. Test-only synthetic signed fixtures never prove operational reachability. CandidateComplete/CanAdopt/ApplySupported remain false.
+- Follow the existing D2b-1b-b1 private reader, preserve ALL parent/other Owner source and cumulative AGENTS, one scoped commit/PR. Parent #2302 must finish its own exact HEAD complete CI and merge; then reparent this work onto the complete fresh master and obtain its own relevant full CI/Final Gate and clean mergeability.
+- Production-only safety acceptance 按用户决定跳过（未验收）; no user production credentials/HAR/signed manual confirmation; source-level negative crypto/permission/SQL/CI gates stay mandatory.
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
