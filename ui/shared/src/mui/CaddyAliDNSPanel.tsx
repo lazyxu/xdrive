@@ -10,18 +10,34 @@ export type XDriveCaddyAliDNSPort = {
   saveCaddyAliDNS?: (input: XDriveCaddyAliDNSUpdate) => Promise<XDriveCaddyAliDNSConfig>
   revealCaddyAliDNS?: (revision: number) => Promise<XDriveCaddyAliDNSReveal>
 }
+export type XDriveCaddyAliDNSAtomicDraft = {
+  source: XDriveCaddyAliDNSPort
+  revision: number
+  action: 'keep' | 'replace' | 'clear'
+  access_key_id: string
+  access_key_secret: string
+  valid: boolean
+  ready: boolean
+  host_pending: boolean
+}
 
 function validSecret(value: string, min: number, max: number) {
   return value.length >= min && value.length <= max && /^[\x21-\x7e]+$/.test(value)
 }
 
 // Global credentials are staged only. This panel never controls Caddy or DNS.
-export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged, onDirtyChange, active = true }: {
+export function XDriveCaddyAliDNSPanel({
+  source, refreshID, onConfigurationChanged, onDirtyChange, active = true,
+  atomicMode = false, atomicSaving = false, onAtomicDraft,
+}: {
   source: XDriveCaddyAliDNSPort
   refreshID: number
   onConfigurationChanged?: () => void
   onDirtyChange?: (dirty: boolean) => void
   active?: boolean // Hide temporary plaintext when Caddy config tab is no longer visible.
+  atomicMode?: boolean
+  atomicSaving?: boolean // The parent single Save owns the form during submission.
+  onAtomicDraft?: (draft: XDriveCaddyAliDNSAtomicDraft | null) => void
 }) {
   const requestEpochRef = useRef(0)
   const revealEpochRef = useRef(0)
@@ -32,6 +48,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   const [revealing, setRevealing] = useState(false)
   const [keyID, setKeyID] = useState('')
   const [keySecret, setKeySecret] = useState('')
+  const [pendingClear, setPendingClear] = useState(false)
   const [shown, setShown] = useState<XDriveCaddyAliDNSReveal | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
@@ -73,6 +90,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     setConfig(null)
     setKeyID('')
     setKeySecret('')
+    setPendingClear(false)
     setShown(null)
     setRevealing(false)
     setManageOpen(false)
@@ -97,10 +115,10 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   }, [source, refreshID, retryReadID])
 
   const valid = validSecret(keyID, 8, 128) && validSecret(keySecret, 8, 256)
-  const canEdit = !!config?.editable && !busy && !loading && !revealing
+  const canEdit = !!config?.editable && !busy && !loading && !revealing && !atomicSaving
 
   const save = async (clear = false) => {
-    if (!config || !config.editable || !source.saveCaddyAliDNS || busy || (!clear && !valid) || (clear && !config.configured)) return
+    if (!config || !config.editable || !source.saveCaddyAliDNS || busy || atomicSaving || (!clear && !valid) || (clear && !config.configured)) return
     const epoch = ++requestEpochRef.current
     ++revealEpochRef.current
     setBusy(true)
@@ -130,7 +148,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
   }
 
   const reveal = async () => {
-    if (!config?.configured || !source.revealCaddyAliDNS || revealing || busy) return
+    if (!config?.configured || !source.revealCaddyAliDNS || revealing || busy || atomicSaving) return
     const epoch = ++revealEpochRef.current
     setShown(null)
     setRevealing(true)
@@ -150,8 +168,19 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
     }
   }
 
-  useEffect(() => { onDirtyChange?.(keyID.length > 0 || keySecret.length > 0) },
-    [onDirtyChange, keyID, keySecret])
+  const action = pendingClear ? 'clear' : keyID || keySecret ? 'replace' : 'keep'
+  useEffect(() => { onDirtyChange?.(action !== 'keep') }, [onDirtyChange, action])
+  useEffect(() => {
+    onAtomicDraft?.(config ? {
+      source, revision: config.revision, action,
+      access_key_id: action === 'replace' ? keyID : '',
+      access_key_secret: action === 'replace' ? keySecret : '',
+      valid: action === 'keep' || (canEdit && (action === 'clear' ? config.configured : valid)),
+      ready: !loading && !busy && !revealing,
+      host_pending: config.host_apply_pending === true,
+    } : null)
+  }, [onAtomicDraft, source, config, action, keyID, keySecret, valid,
+    canEdit, loading, busy, revealing])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
@@ -161,7 +190,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
           <Typography variant="subtitle2" fontWeight={700}>AliDNS DNS-01 凭据</Typography>
           {config && (
             <Button size="small" variant="outlined" data-xdrive-caddy-alidns-manage
-              disabled={busy || revealing || (manageOpen && (keyID.length > 0 || keySecret.length > 0))}
+              disabled={busy || revealing || atomicSaving || (manageOpen && (keyID.length > 0 || keySecret.length > 0 || pendingClear))}
               onClick={() => { hide(); setManageOpen((opened) => !opened) }}>
               {manageOpen ? '收起管理' : '管理'}
             </Button>
@@ -184,28 +213,35 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip size="small" variant="outlined"
                 color={config.configured ? 'warning' : 'default'}
-                label={config.source === 'host-import' ? '原 Caddy 凭据已加密导入 · 生效另验' :
+                label={pendingClear ? '清除凭据已加入待保存草稿' :
+                  config.source === 'host-import' ? '原 Caddy 凭据已加密导入 · 生效另验' :
                   config.configured ? '已加密保存 · 待应用' : '服务器未保存凭据'} />
               <Chip size="small" variant="outlined" label={`凭据修订 #${config.revision}`} />
             </Stack>
             {manageOpen && (<>
             <TextField fullWidth size="small" label="AccessKey ID（新值）"
               type="password" autoComplete="new-password" value={keyID}
-              onChange={(event) => setKeyID(event.target.value)} disabled={!canEdit}
+              onChange={(event) => { setPendingClear(false); setKeyID(event.target.value) }} disabled={!canEdit}
               helperText="留空表示不修改；更换时必须同时填写 ID 和 Secret。" />
             <TextField fullWidth size="small" label="AccessKey Secret（新值）"
               type="password" autoComplete="new-password" value={keySecret}
-              onChange={(event) => setKeySecret(event.target.value)} disabled={!canEdit}
+              onChange={(event) => { setPendingClear(false); setKeySecret(event.target.value) }} disabled={!canEdit}
               helperText="只接受可打印的非空 ASCII 凭据；填写后请在安全环境操作。" />
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button size="small" variant="outlined" disabled={!canEdit || !valid || !source.saveCaddyAliDNS}
-                onClick={() => setConfirmSave(true)}>加密保存凭据（不应用 Caddy）</Button>
+              {!atomicMode && <Button size="small" variant="outlined" disabled={!canEdit || !valid || !source.saveCaddyAliDNS}
+                onClick={() => setConfirmSave(true)}>加密保存凭据（不应用 Caddy）</Button>}
+              {atomicMode && <Typography variant="caption" color="text.secondary">
+                {action === 'replace' ? '凭据待更换，请使用下方统一「保存配置」；不会单独保存。' :
+                  '填写新 ID/Secret 后使用下方统一「保存配置」。'}
+              </Typography>}
               <Button size="small" variant="outlined"
                 disabled={!canEdit || !config.configured || !source.revealCaddyAliDNS}
                 onClick={() => { void reveal() }}>临时显示已保存凭据（审计）</Button>
               <Button size="small" color="error" variant="text"
-                disabled={!canEdit || !config.configured || !source.saveCaddyAliDNS}
-                onClick={() => setConfirmClear(true)}>清除已保存凭据</Button>
+                disabled={!canEdit || !config.configured || (!atomicMode && !source.saveCaddyAliDNS) || pendingClear}
+                onClick={() => setConfirmClear(true)}>{atomicMode ? '标记清除已保存凭据' : '清除已保存凭据'}</Button>
+              {atomicMode && pendingClear && <Button size="small" variant="text"
+                onClick={() => setPendingClear(false)}>取消清除草稿</Button>}
             </Stack>
             {active && shown && (
               <Box>
@@ -228,16 +264,26 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
               </Typography>
             </>)}
             </>)}
-            <XDriveConfirmDialog open={confirmSave} loading={busy}
+            {!atomicMode && <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="加密保存 AliDNS 凭据"
               description="保存新 ID/Secret 将创建审计修订，但不替换宿主机凭据，也不会操作 Caddy。"
               confirmLabel="仅保存凭据" onCancel={() => setConfirmSave(false)}
-              onConfirm={() => { void save() }} />
+              onConfirm={() => { void save() }} />}
             <XDriveConfirmDialog open={confirmClear} loading={busy}
               title="清除服务器保存的 AliDNS 凭据"
-              description="删除此加密配置并审计；无法据此证明或清除宿主机正在使用的任何凭据。"
-              confirmLabel="仅清除已保存配置" onCancel={() => setConfirmClear(false)}
-              onConfirm={() => { void save(true) }} />
+              description={atomicMode ? '只加入待保存草稿。下方统一「保存配置」后才会删除数据库里的密文；不会修改 Caddy 或宿主机。' :
+                '删除此加密配置并审计；无法据此证明或清除宿主机正在使用的任何凭据。'}
+              confirmLabel={atomicMode ? '加入清除草稿' : '仅清除已保存配置'}
+              onCancel={() => setConfirmClear(false)}
+              onConfirm={() => {
+                if (atomicMode) {
+                  setConfirmClear(false)
+                  setPendingClear(true)
+                  setKeyID('')
+                  setKeySecret('')
+                  hide()
+                } else void save(true)
+              }} />
           </>
         ) : (
           loading ? <Typography variant="body2" color="text.secondary">正在读取 AliDNS 凭据状态…</Typography>
@@ -246,7 +292,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
               <Typography variant="body2" color="text.secondary">
                 未能读取凭据状态；为避免误操作，暂时禁止保存、清除和显示凭据。这不等于缺少加密密钥。
               </Typography>
-              <Button size="small" variant="outlined" disabled={busy}
+              <Button size="small" variant="outlined" disabled={busy || atomicSaving}
                 onClick={() => setRetryReadID((value) => value + 1)}>重试读取 AliDNS 配置</Button>
             </Stack>
           ) : <Typography variant="body2" color="text.secondary">

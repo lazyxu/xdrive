@@ -15,6 +15,21 @@ export type XDriveCaddyHTTPSPort = {
   rollbackCaddyHTTPS?: (input: XDriveCaddyHTTPSRollbackInput) => Promise<XDriveCaddyHTTPSConfig>
 }
 
+// Parent receives draft values, never a network action. In v1.1 atomic mode,
+// this child cannot issue its legacy single-group Save.
+export type XDriveCaddyHTTPSAtomicDraft = {
+  source: XDriveCaddyHTTPSPort
+  revision: number
+  enabled: boolean
+  domain: string
+  lan_enabled: boolean
+  lan_ip: string
+  changed: boolean
+  valid: boolean
+  ready: boolean
+  host_pending: boolean
+}
+
 function validDomain(value: string): boolean {
   if (value === '') return true
   if (value.length > 253 || value.trim() !== value || value.length < 4) return false
@@ -35,7 +50,8 @@ function validPrivateLANIP(value: string): boolean {
 }
 
 export function XDriveCaddyHTTPSDesiredPanel({
-  source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange, inlineEdit = false,
+  source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange,
+  inlineEdit = false, atomicMode = false, atomicSaving = false, onAtomicDraft,
 }: {
   source: XDriveCaddyHTTPSPort
   refreshID: number
@@ -43,6 +59,9 @@ export function XDriveCaddyHTTPSDesiredPanel({
   section?: 'config' | 'history'
   onDirtyChange?: (dirty: boolean) => void
   inlineEdit?: boolean
+  atomicMode?: boolean
+  atomicSaving?: boolean // Freeze both draft editors while the parent atomic Save is in flight.
+  onAtomicDraft?: (draft: XDriveCaddyHTTPSAtomicDraft | null) => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyHTTPSConfig | null>(null)
@@ -110,16 +129,24 @@ export function XDriveCaddyHTTPSDesiredPanel({
   const valid = validDomain(domain) && (!enabled || domain.length > 0) &&
     (!lanIP || validPrivateLANIP(lanIP)) && (!lanEnabled || validPrivateLANIP(lanIP)) &&
     (lanEnabled || enabled)
-  const canEdit = !!config?.editable && !busy && !loading
+  const canEdit = !!config?.editable && !busy && !loading && !atomicSaving
   const changed = !!config && (
     enabled !== config.desired_enabled || domain.toLowerCase() !== config.desired_domain ||
     (supportsLAN && (lanEnabled !== config.desired_lan_enabled || lanIP !== config.desired_lan_ip))
   )
   useEffect(() => { onDirtyChange?.(changed) }, [onDirtyChange, changed])
-
+  useEffect(() => {
+    onAtomicDraft?.(config && section === 'config' ? {
+      source, revision: config.revision, enabled, domain: domain.toLowerCase(),
+      lan_enabled: lanEnabled, lan_ip: lanIP, changed,
+      valid: valid && supportsLAN, ready: canEdit && supportsLAN,
+      host_pending: config.host_apply_pending === true,
+    } : null)
+  }, [onAtomicDraft, source, config, section, enabled, domain, lanEnabled, lanIP,
+    changed, valid, supportsLAN, canEdit])
 
   const reload = async () => {
-    if (!source.loadCaddyHTTPSConfig || busy || changed) return
+    if (!source.loadCaddyHTTPSConfig || busy || atomicSaving || changed) return
     const epoch = ++epochRef.current
     setLoading(true)
     setError('')
@@ -218,7 +245,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
               onClick={() => setEditing((old) => !old)}>
               {editing ? '完成' : '编辑'}
             </Button>}
-            <Button size="small" variant="text" disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}
+            <Button size="small" variant="text" disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}
               onClick={() => { void reload() }}>重新读取已保存配置</Button>
           </Stack>
         </Stack>
@@ -316,9 +343,9 @@ export function XDriveCaddyHTTPSDesiredPanel({
             {!lanEnabled && !enabled && <Typography variant="caption" color="error.main">
               不能同时关闭局域网 IP HTTPS 和公网域名 HTTPS；至少保留一个可信管理入口。
             </Typography>}
-            <Button variant="outlined" size="small"
+            {!atomicMode && <Button variant="outlined" size="small"
               disabled={!canEdit || !supportsLAN || !valid || !changed || !source.saveCaddyHTTPSConfig}
-              onClick={() => setConfirmSave(true)}>{inlineEdit ? '保存配置' : '仅保存期望配置（不操作 Caddy）'}</Button>
+              onClick={() => setConfirmSave(true)}>{inlineEdit ? '保存配置' : '仅保存期望配置（不操作 Caddy）'}</Button>}
             <Typography variant="caption" color="warning.main">
               {config.requirement}
             </Typography>
@@ -350,11 +377,11 @@ export function XDriveCaddyHTTPSDesiredPanel({
                 </Button>
               </Box>
             )}
-            <XDriveConfirmDialog open={confirmSave} loading={busy}
+            {!atomicMode && <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="保存 Caddy HTTPS 期望配置"
               description="仅保存独立的 LAN IP HTTPS 与公网域名 HTTPS 启用目标并审计，必须至少保留一个开启；不自动修改宿主机环境、不重启 Caddy，也不声明已生效。"
               confirmLabel="保存期望修订" onCancel={() => setConfirmSave(false)}
-              onConfirm={() => { void save() }} />
+              onConfirm={() => { void save() }} />}
             <XDriveConfirmDialog open={confirmRollback} loading={busy}
               title="恢复历史 Caddy HTTPS 期望配置"
               description="回滚仅创建新的审计修订，宿主机正在运行的 Caddy 不受影响。"
@@ -368,7 +395,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
               <Typography variant="body2" color="text.secondary">
                 本次未能取得当前 HTTPS 配置；编辑与历史回滚保持禁用。这不代表网关已停止或接口一定不受支持。
               </Typography>
-              <Button size="small" variant="outlined" disabled={busy}
+              <Button size="small" variant="outlined" disabled={busy || atomicSaving}
                 onClick={() => { void reload() }}>重试读取 HTTPS 配置</Button>
             </Stack>
           ) : (

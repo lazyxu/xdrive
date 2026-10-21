@@ -131,7 +131,10 @@ test('Only an opened service panel fetches its configuration and history', () =>
     assert.ok(body.includes('onDirtyChange?.('), 'missing draft guard: ' + name)
   }
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
-  assert.ok(alidns.includes('onDirtyChange?.(keyID.length > 0 || keySecret.length > 0)'))
+  // Pending credential clear is also a dirty draft; it must be guarded like AK/SK edits.
+  assert.ok(alidns.includes("const action = pendingClear ? 'clear' : keyID || keySecret ? 'replace' : 'keep'"))
+  assert.ok(alidns.includes("onDirtyChange?.(action !== 'keep')"))
+  assert.ok(alidns.includes('host_pending: config.host_apply_pending === true'))
 })
 
 test('only eleven fixed, correctly grouped services reach the administrator overview', () => {
@@ -434,9 +437,9 @@ test('SD-UI-V1.5: Caddy editor avoids duplicate TLS status, preserves drafts and
   assert.equal(caddy.includes('config.host_https_configured'), false)
   assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"),
     'the existing parent status/verification body owns runtime evidence')
-  assert.ok(caddy.includes('if (!source.loadCaddyHTTPSConfig || busy || changed) return'),
-    'a refresh event must not overwrite unsaved fields even if invoked programmatically')
-  assert.ok(caddy.includes('disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}'))
+  assert.ok(caddy.includes('if (!source.loadCaddyHTTPSConfig || busy || atomicSaving || changed) return'),
+    'a refresh event must not overwrite unsaved fields or in-flight atomic Save, even if invoked programmatically')
+  assert.ok(caddy.includes('disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}'))
   assert.ok(caddy.includes('data-xdrive-caddy-draft-refresh-guard'))
   assert.ok(caddy.includes('重新读取已保存配置'))
   assert.ok(caddy.includes('disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}'),
