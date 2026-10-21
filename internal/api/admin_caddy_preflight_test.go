@@ -92,6 +92,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		return out
 	}
 	const path = "/api/v1/admin/services/caddy/https/preflight"
+	const candidatePath = "/api/v1/admin/services/caddy/https/adoption-candidate"
 	read := func() adminCaddyPreflightDTO {
 		t.Helper()
 		out := call(http.MethodGet, path, adminToken, "")
@@ -115,6 +116,28 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		if out := call(http.MethodGet, path, test.token, ""); out.Code != test.status {
 			t.Fatalf("nonadmin HTTPS preflight got %d expected %d", out.Code, test.status)
 		}
+	}
+	for _, test := range []struct {
+		token  string
+		status int
+	}{{"", 401}, {memberToken, 403}} {
+		if out := call(http.MethodGet, candidatePath, test.token, ""); out.Code != test.status {
+			t.Fatalf("nonadmin adoption evidence got %d expected %d", out.Code, test.status)
+		}
+	}
+	candidate := call(http.MethodGet, candidatePath, adminToken, "")
+	var adoption adminCaddyAdoptionCandidateDTO
+	if candidate.Code != http.StatusOK ||
+		candidate.Header().Get("Cache-Control") != "no-store" ||
+		candidate.Header().Get("Referrer-Policy") != "no-referrer" ||
+		json.Unmarshal(candidate.Body.Bytes(), &adoption) != nil ||
+		adoption.CanAdopt || adoption.ApplySupported || adoption.CandidateComplete ||
+		adoption.DesiredRevision != 0 || adoption.HostObserved ||
+		!adoption.SnapshotStable || len(adoption.Blockers) == 0 {
+		t.Fatalf("new read-only adoption evidence must fail closed: HTTP %d, %+v", candidate.Code, adoption)
+	}
+	if out := call(http.MethodPost, candidatePath, adminToken, "{}"); out.Code != http.StatusNotFound {
+		t.Fatalf("adoption write route must not exist: %d", out.Code)
 	}
 	blank := read()
 	if blank.Action != "unset" || blank.ConfigurationComplete || blank.HostObserved ||
@@ -146,6 +169,17 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		bytes.Contains(response.Body.Bytes(), []byte(keySecret)) ||
 		bytes.Contains(response.Body.Bytes(), []byte("photos.example.com")) {
 		t.Fatalf("preflight leaked desired hostname or secret: HTTP %d", response.Code)
+	}
+	candidate = call(http.MethodGet, candidatePath, adminToken, "")
+	if candidate.Code != http.StatusOK ||
+		bytes.Contains(candidate.Body.Bytes(), []byte("photos.example.com")) ||
+		bytes.Contains(candidate.Body.Bytes(), []byte(keyID)) ||
+		bytes.Contains(candidate.Body.Bytes(), []byte(keySecret)) ||
+		json.Unmarshal(candidate.Body.Bytes(), &adoption) != nil ||
+		adoption.CanAdopt || adoption.ApplySupported ||
+		adoption.DesiredRevision != 1 || adoption.CredentialRevision != 1 ||
+		len(adoption.Blockers) == 0 {
+		t.Fatalf("adoption evidence disclosed saved target or grant: %d", candidate.Code)
 	}
 	cfg := read()
 	if cfg.Action != "enable" || !cfg.ConfigurationComplete || cfg.HostObserved ||
