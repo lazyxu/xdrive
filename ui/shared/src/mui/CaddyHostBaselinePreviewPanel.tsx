@@ -33,8 +33,8 @@ export function XDriveCaddyHostBaselinePreviewPanel({
   const [error, setError] = useState('')
   const [snapshot, setSnapshot] = useState<PreviewSnapshot | null>(null)
 
-  // A different Server, saved revision or app view invalidates the result,
-  // including any in-flight response. Never display a prior account's proof.
+  // A different Server, saved revision, app view or dirty draft invalidates
+  // any in-flight response and displayed proof. Never retain stale evidence.
   useEffect(() => {
     ++epochRef.current
     setOpen(false)
@@ -42,7 +42,7 @@ export function XDriveCaddyHostBaselinePreviewPanel({
     setError('')
     setSnapshot(null)
     return () => { ++epochRef.current }
-  }, [source, config, evidenceRevision, active])
+  }, [source, config, evidenceRevision, active, hasUnsavedEdits])
 
   const close = () => {
     ++epochRef.current
@@ -75,7 +75,7 @@ export function XDriveCaddyHostBaselinePreviewPanel({
     }
   }
 
-  const current = snapshot?.source === source && snapshot.config === config &&
+  const current = !hasUnsavedEdits && snapshot?.source === source && snapshot.config === config &&
     snapshot.evidenceRevision === evidenceRevision ? snapshot.data : null
   const preview = assessCaddyHostBaselineReadOnly(config, current)
 
@@ -103,7 +103,7 @@ export function XDriveCaddyHostBaselinePreviewPanel({
           </Typography>
         )}
       </Paper>
-      <Dialog open={open && active} onClose={() => close()} maxWidth="sm" fullWidth
+      <Dialog open={open && active && !hasUnsavedEdits} onClose={() => close()} maxWidth="sm" fullWidth
         aria-labelledby="xdrive-caddy-baseline-preview-title"
         data-xdrive-caddy-baseline-preview-dialog>
         <DialogTitle id="xdrive-caddy-baseline-preview-title">宿主基线核对 · 只读</DialogTitle>
