@@ -20,7 +20,9 @@ type localPushPhysicalTerminalCandidate struct {
 
 // observeBoundLocalPushHistoricalPhysicalTerminalCandidate is intentionally
 // UNROUTED. It holds the original Operation UPDATE and a SOURCE-WIDE empty
-// file-terminal decision slot through a freshly pinned physical CAS check.
+// file-terminal decision slot through a doubly verified pinned physical CAS
+// pre-COMMIT check. Only the original read-only SQL transaction is committed
+// under the same physical pin; no file-terminal SQL mutation is performed.
 // Every identity is reauthenticated in the same SQL transaction. Neither an
 // expired reservation nor a released native OS Writer lock is a physical
 // CANCEL witness. This does not write a terminal, retire secrets or enable
@@ -48,7 +50,7 @@ func (s *Server) observeBoundLocalPushHistoricalPhysicalTerminalCandidate(
 	}
 	receipt, err := s.readBoundLocalPushFirstLeafReceiptWithCASInspector(
 		c, sourceID, revision, proof, stageID, relativeLeaf,
-		local.InspectPinnedLocalPushHistoricalCAS, selector,
+		local.InspectPinnedLocalPushHistoricalCASBeforeCommit, selector,
 	)
 	if err != nil || c.Request.Context().Err() != nil ||
 		receipt.State != localPushFirstLeafSQLReceiptState ||
