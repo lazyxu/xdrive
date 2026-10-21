@@ -11,6 +11,8 @@ import {
 } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4SessionGrant } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
+import { xDriveCaptureBaiduNativeCamera } from '../media-gallery-baidu-native-camera-session'
+import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaBaiduNativeViewportBounds } from '../models'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduNativePhotoCellsRequest } from '../media-gallery-baidu-jsapi4-cells'
@@ -42,6 +44,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   onOpenPhoto,
   onOpenCell,
   onCellInvalidated,
+  onNativeCameraChange,
+  onNativeCameraClear,
   onReady,
 }: {
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
@@ -52,6 +56,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
   onOpenCell?: (selection: MediaBaiduNativeCellSelection) => void
   onCellInvalidated?: () => void
+  onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
+  onNativeCameraClear?: () => void
   onReady: (ready: boolean) => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
@@ -61,6 +67,10 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   latestOpenCell.current = onOpenCell
   const latestInvalidation = useRef(onCellInvalidated)
   latestInvalidation.current = onCellInvalidated
+  const latestCameraChange = useRef(onNativeCameraChange)
+  latestCameraChange.current = onNativeCameraChange
+  const latestCameraClear = useRef(onNativeCameraClear)
+  latestCameraClear.current = onNativeCameraClear
   // Capture the exact authenticated /cells result and the bounds of its query.
   // Provider clicks may never reconstruct these from a later camera frame.
   const currentAcceptedCellFrame = useRef<{
@@ -94,6 +104,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => pending.abort(), 8000)
     let stopRenewal: (() => void) | null = null
     let resize: ResizeObserver | null = null
+    let unbindNativeCamera: (() => void) | null = null
     let currentCells: MediaBaiduNativeCellsPage | null = null
     currentAcceptedCellFrame.current = null
     setResult('')
@@ -119,6 +130,26 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         pointToPixel?: (point: { lng: number; lat: number }) => { x: number; y: number }
       }
       if (typeof map.getBounds !== 'function') throw new Error('map_unavailable')
+      // Native BMap center/zoom is BD09LL, never original photo WGS84.
+      // Keep settled camera observers scoped to this authorized mount.
+      const recordNativeCamera = () => {
+        if (!active || pending.signal.aborted) return
+        const camera = xDriveCaptureBaiduNativeCamera(map)
+        if (camera) latestCameraChange.current?.(camera)
+      }
+      try {
+        map.addEventListener('moveend', recordNativeCamera)
+        map.addEventListener('zoomend', recordNativeCamera)
+        unbindNativeCamera = () => {
+          try { map.removeEventListener('moveend', recordNativeCamera) } catch {}
+          try { map.removeEventListener('zoomend', recordNativeCamera) } catch {}
+        }
+      } catch {
+        // Older/mock SDK lacking the expected events cannot retain a camera;
+        // never infer WGS84 from its native bounds.
+        try { map.removeEventListener('moveend', recordNativeCamera) } catch {}
+        try { map.removeEventListener('zoomend', recordNativeCamera) } catch {}
+      }
       // Third-party provider gets ONLY BD09 Point coordinates. Its Label/Layer
       // never receives a thumbnail URL, HTML, secret or photo pixels.
       const supportsCovers = Boolean(loadThumbnail && listOwnerCells &&
@@ -172,12 +203,15 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         first.kind === 'incomplete'
       onReady(ready)
       if (ready) {
+        recordNativeCamera()
         stopRenewal = xDriveKeepBaiduJSAPI4MapSessionAlive(
           mintMapOnlySession, pending.signal, container.ownerDocument, () => {
             if (!active || pending.signal.aborted) return
             // The 2-minute map Cookie was revoked or could not be renewed.
             // Tear down BMap/ClusterLayer NOW; static Baidu remains available.
             pending.abort()
+            latestCameraClear.current?.()
+            unbindNativeCamera?.()
             bridge?.dispose()
             bridge = null
             latestBridge.current = null
@@ -194,6 +228,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       }
     }
     void opened().catch(() => {
+      unbindNativeCamera?.()
       // A failed SDK bind, revoked Session or unusable viewport must release
       // the native map immediately, not only after a later component unmount.
       bridge?.dispose()
@@ -209,6 +244,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     return () => {
       currentAcceptedCellFrame.current = null
       stopRenewal?.()
+      unbindNativeCamera?.()
       resize?.disconnect()
       active = false
       pending.abort()

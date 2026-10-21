@@ -23,11 +23,12 @@ export interface XDriveBaiduJSAPI4MountedMap {
   dispose(): void
 }
 
-export type XDriveBaiduJSAPI4InitialPhotoCamera = {
-  latitude: number
-  longitude: number
-  zoom: number
-}
+/** WGS84 photo origin and native BD09LL camera are distinct types.
+ * The latter is allowed only as a typed, ephemeral restored camera;
+ * it must NOT go through the WGS84->BD09 Convertor a second time. */
+export type XDriveBaiduJSAPI4InitialPhotoCamera =
+  | { latitude: number; longitude: number; zoom: number; coordinate_space?: 'wgs84' }
+  | { latitude: number; longitude: number; zoom: number; coordinate_space: 'bd09ll' }
 
 export interface XDriveBaiduJSAPI4AuthorizedMountPort {
   /** Use official WGS84→BD09 conversion for the initial original photo GPS. */

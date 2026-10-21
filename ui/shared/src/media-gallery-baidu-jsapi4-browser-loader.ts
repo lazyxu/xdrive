@@ -225,7 +225,9 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
       if (!container || signal.aborted || !camera ||
           ![camera.latitude, camera.longitude, camera.zoom].every(Number.isFinite) ||
           Math.abs(camera.latitude) > 85 || Math.abs(camera.longitude) > 180 ||
-          !Number.isInteger(camera.zoom) || camera.zoom < 3 || camera.zoom > 18) {
+          !Number.isInteger(camera.zoom) || camera.zoom < 3 || camera.zoom > 18 ||
+          (camera.coordinate_space !== undefined &&
+            camera.coordinate_space !== 'wgs84' && camera.coordinate_space !== 'bd09ll')) {
         throw new Error(unavailable)
       }
       const { document: doc, browser, serviceHost } = secureDocument()
@@ -246,8 +248,16 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
       try {
         // The API's public BMap namespace is accepted only after our
         // authenticated, same-origin loader actually completed.
-        const point = await originalPhotoPoint(namespace, camera, signal)
-        if (signal.aborted) throw new Error(unavailable)
+        const point = camera.coordinate_space === 'bd09ll'
+          ? new namespace.Point(camera.longitude, camera.latitude)
+          : await originalPhotoPoint(namespace, camera, signal)
+        if (signal.aborted || !point ||
+            !Number.isFinite(point.lng) || !Number.isFinite(point.lat) ||
+            Math.abs(point.lng) > 180 || Math.abs(point.lat) > 85) {
+          throw new Error(unavailable)
+        }
+        // BD09LL is a separate, explicit native camera only. Unlabeled original
+        // photo GPS always uses Baidu's official WGS84(1)->BD09(5) conversion.
         map = new namespace.Map(container)
         map.centerAndZoom(point, camera.zoom)
         const initialized = map
