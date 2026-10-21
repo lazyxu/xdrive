@@ -1,0 +1,130 @@
+name: SH-P017 Public Share Nested Folder ZIP 100k
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+
+jobs:
+  nested-share-postgres:
+    if: github.head_ref == 'feat/public-share-nested-zip-shp017-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Check original scoped Go formatting
+        run: |
+          set -euo pipefail
+          files="internal/api/public_share_archive.go internal/api/public_share_archive_integration_test.go internal/api/public_share_archive_100k_performance_linux_test.go"
+          changes="$(gofmt -l $files)"
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            exit 1
+          fi
+      - name: Share-only root and nested ZIP PostgreSQL permission regression
+        run: |
+          set -euo pipefail
+          go test -mod=readonly ./internal/api -run '^TestPublicShareFolderZIPLifecycleAndSecurity$' -count=1 -timeout=15m -v
+
+  nested-physical-100k:
+    if: github.head_ref == 'feat/public-share-nested-zip-shp017-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PUBLIC_SHARE_ZIP_100K: '1'
+      XD_SH_P017_NESTED_ZIP: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Three real 100k SHA-distinct nested subtree ZIP and signed HTTP cancel trials
+        run: |
+          set -euo pipefail
+          mkdir -p nested-zip-100k-results
+          printf 'EXACT_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > nested-zip-100k-results/source.txt
+          go version >> nested-zip-100k-results/source.txt
+          for sample in 1 2 3; do
+            export XD_PUBLIC_SHARE_ZIP_SAMPLE="sample-$sample"
+            go test -mod=readonly ./internal/api -run '^TestPublicShareZIP100KPhysical$' -count=1 -timeout=22m -v \
+              | tee "nested-zip-100k-results/sample-$sample.log"
+          done
+          python3 - <<'PY'
+          import json, pathlib, statistics
+          out=pathlib.Path('nested-zip-100k-results')
+          samples=[]
+          for i in range(1,4):
+              rows=[json.loads(line.split('PUBLIC_SHARE_ZIP_100K_RESULT ',1)[1])
+                    for line in (out/f'sample-{i}.log').read_text().splitlines()
+                    if 'PUBLIC_SHARE_ZIP_100K_RESULT ' in line]
+              if len(rows)!=1: raise SystemExit(f'no genuine nested sample-{i}')
+              r=rows[0]
+              if not r['nested_zip'] or r['exact_physical_originals']!=100000 or not r['passed']:
+                  raise SystemExit(f'invalid authentic nested sample-{i}: {r}')
+              if r['zip_entry_count']!=100001 or r['zip_entries_crc_verified']!=100000 or r['sampled_original_files_sha_exact']!=4:
+                  raise SystemExit(f'nested archive lost source bytes or scope: {r}')
+              if r['public_zip_prepare_ms']>300000 or r['public_zip_stream_ms']>300000 or r['go_http_cancel_to_handler_exit_ms']>1000:
+                  raise SystemExit('frozen native ZIP performance budget violated')
+              if not r['go_abandoned_stream_context_done'] or r['go_postseed_rss_growth_bytes']>512*1024*1024:
+                  raise SystemExit('real Go cancellation/resource bound failed')
+              samples.append(r)
+          if len(set(s['aggregate_original_sha256'] for s in samples))!=3:
+              raise SystemExit('different 100k physical corpora must have distinct aggregate SHA')
+          median=statistics.median(s['public_zip_prepare_ms'] for s in samples)
+          if median>120000: raise SystemExit('nested 100k ZIP prepare P50 above frozen 120000ms')
+          summary={'status':'accepted-on-measured-source','source':(out/'source.txt').read_text().splitlines()[0],
+                   'n':3,'nested':True,'physical_sha_distinct_jpeg_per_sample':100000,
+                   'prepare_p50_ms':median,'stream_p50_ms':statistics.median(s['public_zip_stream_ms'] for s in samples),
+                   'cancel_max_ms':max(s['go_http_cancel_to_handler_exit_ms'] for s in samples),
+                   'rss_growth_max_bytes':max(s['go_postseed_rss_growth_bytes'] for s in samples),
+                   'samples':samples}
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
+          print('SH_P017_NESTED_100K_SUCCESS',json.dumps(summary,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p017-nested-100k-physical-zip
+          path: nested-zip-100k-results/
+          if-no-files-found: warn
+          retention-days: 30

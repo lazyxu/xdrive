@@ -39,6 +39,9 @@ func TestPublicShareZIP100KPhysical(t *testing.T) {
 		t.Fatal("real PostgreSQL17 required")
 	}
 	const count = 100000
+	// SH-P017 additionally runs the same 100k physical workload on a nested
+	// recipient-selected folder beneath a different public-share root.
+	nestedZIP := os.Getenv("XD_SH_P017_NESTED_ZIP") == "1"
 	sample := os.Getenv("XD_PUBLIC_SHARE_ZIP_SAMPLE")
 	if sample != "sample-1" && sample != "sample-2" && sample != "sample-3" {
 		t.Fatal("SH-P007 needs sample-1 through sample-3")
@@ -87,6 +90,17 @@ func TestPublicShareZIP100KPhysical(t *testing.T) {
 	sentinel := meta.Node{
 		ParentID: &root.ID, Name: "outside-private.jpg", Type: meta.NodeTypeFile,
 		OwnerID: user.ID, Revision: 1,
+	}
+	var shareParent meta.Node
+	if nestedZIP {
+		shareParent = meta.Node{
+			ParentID: &root.ID, Name: "public-capability-root", Type: meta.NodeTypeDir,
+			OwnerID: user.ID, Revision: 1,
+		}
+		if err := db.Create(&shareParent).Error; err != nil {
+			t.Fatal(err)
+		}
+		source.ParentID = &shareParent.ID
 	}
 	for _, node := range []*meta.Node{&source, &target, &sentinel} {
 		if err := db.Create(node).Error; err != nil {
@@ -213,8 +227,12 @@ func TestPublicShareZIP100KPhysical(t *testing.T) {
 	files = nil
 
 	// Seeding is explicitly excluded from measured ZIP prepare/stream timings.
+	sharedRootID := source.ID
+	if nestedZIP {
+		sharedRootID = shareParent.ID
+	}
 	shareRes := request(t, router, http.MethodPost,
-		fmt.Sprintf("/api/v1/nodes/%d/shares", source.ID), token,
+		fmt.Sprintf("/api/v1/nodes/%d/shares", sharedRootID), token,
 		strings.NewReader(`{"max_downloads":2}`), http.StatusCreated)
 	var share createdShareDTO
 	if err := json.Unmarshal(shareRes.Body.Bytes(), &share); err != nil || len(share.Token) < 40 {
@@ -266,8 +284,12 @@ func TestPublicShareZIP100KPhysical(t *testing.T) {
 	}()
 	post := func(path, id string, want int) *httptest.ResponseRecorder {
 		t.Helper()
+		payload := fmt.Sprintf(`{"prepare_id":%q,"password":""}`, id)
+		if nestedZIP && path == "/api/v1/public/share/archive/prepare" {
+			payload = fmt.Sprintf(`{"prepare_id":%q,"password":"","folder_id":%d}`, id, source.ID)
+		}
 		return requestWithHeaders(t, router, http.MethodPost, path, "",
-			strings.NewReader(fmt.Sprintf(`{"prepare_id":%q,"password":""}`, id)), want,
+			strings.NewReader(payload), want,
 			map[string]string{"X-XDrive-Share-Token": share.Token})
 	}
 	prepareStart := time.Now()
@@ -459,9 +481,13 @@ func TestPublicShareZIP100KPhysical(t *testing.T) {
 	}
 	rssGrowth := max(int64(0), peakRSS-beforeRSS)
 	passed := prepareMS <= 300000 && streamMS <= 300000 && cancelMS <= 1000 && sawGoContextDone.Load() && rssGrowth <= 512<<20
+	workload := "SH-P007-source-exact-100k-SHA-distinct-public-folder-ZIP"
+	if nestedZIP {
+		workload = "SH-P017-source-exact-100k-SHA-distinct-nested-public-folder-ZIP"
+	}
 	result := map[string]any{
-		"workload": "SH-P007-source-exact-100k-SHA-distinct-public-folder-ZIP",
-		"sample":   sample, "exact_physical_originals": count, "total_cas_inodes": preCount,
+		"workload": workload, "nested_zip": nestedZIP,
+		"sample": sample, "exact_physical_originals": count, "total_cas_inodes": preCount,
 		"physical_allocated_bytes": preAllocated,
 		"physical_original_bytes":  sourceBytes, "aggregate_original_sha256": sourceHash,
 		"seed_ms_excluded": seedMS, "public_zip_prepare_ms": prepareMS,

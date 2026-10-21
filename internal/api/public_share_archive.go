@@ -32,6 +32,7 @@ const (
 type publicShareArchiveRequest struct {
 	Password  string `json:"password"`
 	PrepareID string `json:"prepare_id,omitempty"`
+	FolderID  uint64 `json:"folder_id,omitempty"`
 }
 
 type publicShareArchiveStatus struct {
@@ -70,17 +71,78 @@ func (s *Server) publicShareArchiveInput(c *gin.Context) (meta.Share, meta.Node,
 	return share, root, req, true
 }
 
+// Resolve a folder strictly inside the capability root. This helper never
+// grants the recipient a private account/archive API: a moved-out folder,
+// sibling, foreign owner or deleted subtree is denied by the bounded ancestor
+// walk. folderID=0 preserves existing root ZIP links.
+func (s *Server) publicShareArchiveSelectedFolder(
+	ctx context.Context, share meta.Share, shareRoot meta.Node, folderID uint64,
+) (meta.Node, error) {
+	if folderID == 0 || folderID == shareRoot.ID {
+		return shareRoot, nil
+	}
+	allowed, err := s.publicFolderShareContainsNode(ctx, share.OwnerID, shareRoot.ID, folderID)
+	if err != nil {
+		return meta.Node{}, err
+	}
+	if !allowed {
+		return meta.Node{}, gorm.ErrRecordNotFound
+	}
+	var target meta.Node
+	if err := s.DB.WithContext(ctx).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			folderID, share.OwnerID, meta.NodeTypeDir).
+		First(&target).Error; err != nil {
+		return meta.Node{}, err
+	}
+	if target.ParentID == nil {
+		return meta.Node{}, gorm.ErrRecordNotFound
+	}
+	return target, nil
+}
+
+func (s *Server) publicShareArchiveSelectedRunFolder(
+	ctx context.Context, share meta.Share, root meta.Node, run meta.ArchivePrepareRun,
+) (meta.Node, error) {
+	ids, err := archivePrepareIDs(run)
+	if err != nil || len(ids) != 1 || ids[0] == 0 {
+		return meta.Node{}, errArchiveProgressMismatch
+	}
+	target, err := s.publicShareArchiveSelectedFolder(ctx, share, root, ids[0])
+	if err != nil {
+		if ctx.Err() != nil {
+			return meta.Node{}, ctx.Err()
+		}
+		return meta.Node{}, errArchiveProgressMismatch
+	}
+	return target, nil
+}
+
 // Public browsing has no ZIP side effects; preparation only begins after the
 // recipient explicitly requests the entire folder download.
 func (s *Server) publicShareArchivePrepare(c *gin.Context) {
-	share, root, _, ok := s.publicShareArchiveInput(c)
+	share, root, req, ok := s.publicShareArchiveInput(c)
 	if !ok {
+		return
+	}
+	selected, err := s.publicShareArchiveSelectedFolder(c.Request.Context(), share, root, req.FolderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "shared folder not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "folder scope lookup failed")
+		}
+		return
+	}
+	requestedIDsJSON, err := json.Marshal([]uint64{selected.ID})
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "invalid archive selection")
 		return
 	}
 
 	var run meta.ArchivePrepareRun
 	newRun := false
-	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var locked meta.Share
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", share.ID).First(&locked).Error; err != nil {
@@ -91,23 +153,31 @@ func (s *Server) publicShareArchivePrepare(c *gin.Context) {
 			return errShareUnavailable
 		}
 
-		// Do not enqueue the same 100k root repeatedly on button double-click
-		// or cross-Server polling. The job survives page unmount/restarts.
+		// Deduplicate per selected subtree, not simply by share ID: a
+		// completed root ZIP must not block the recipient's nested ZIP.
+		// Only one live preparation per share is admitted at a time.
 		var existing meta.ArchivePrepareRun
-		err := tx.Where("owner_id = ? AND public_share_id = ? AND public_root_revision = ? AND expires_at > ? AND status IN ?",
-			root.OwnerID, share.ID, root.Revision, time.Now().UTC(),
+		err := tx.Where("owner_id = ? AND public_share_id = ? AND public_root_revision = ? AND requested_ids_json = ? AND expires_at > ? AND status IN ?",
+			root.OwnerID, share.ID, root.Revision, string(requestedIDsJSON), time.Now().UTC(),
 			[]string{meta.ArchivePrepareStatusQueued, meta.ArchivePrepareStatusRunning, meta.ArchivePrepareStatusCancelRequested, meta.ArchivePrepareStatusCompleted}).
 			Order("created_at DESC").Take(&existing).Error
 		if err == nil {
-			ids, err := archivePrepareIDs(existing)
-			if err == nil && len(ids) == 1 && ids[0] == root.ID {
-				run = existing
-				return nil
-			}
-			return errArchiveProgressMismatch
+			run = existing
+			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		var otherActive int64
+		if err := tx.Model(&meta.ArchivePrepareRun{}).
+			Where("owner_id = ? AND public_share_id = ? AND public_root_revision = ? AND expires_at > ? AND status IN ?",
+				root.OwnerID, share.ID, root.Revision, time.Now().UTC(),
+				[]string{meta.ArchivePrepareStatusQueued, meta.ArchivePrepareStatusRunning, meta.ArchivePrepareStatusCancelRequested}).
+			Count(&otherActive).Error; err != nil {
+			return err
+		}
+		if otherActive != 0 {
+			return errPublicArchiveLimited
 		}
 
 		var started int64
@@ -120,15 +190,11 @@ func (s *Server) publicShareArchivePrepare(c *gin.Context) {
 		if started >= publicShareArchiveStartLimit {
 			return errPublicArchiveLimited
 		}
-		ids, err := json.Marshal([]uint64{root.ID})
-		if err != nil {
-			return err
-		}
 		now := time.Now().UTC()
 		run = meta.ArchivePrepareRun{
 			ID: uuid.NewString(), OwnerID: root.OwnerID, PublicShareID: &share.ID,
 			PublicRootRevision: root.Revision,
-			RequestedIDsJSON:   string(ids), Status: meta.ArchivePrepareStatusQueued,
+			RequestedIDsJSON:   string(requestedIDsJSON), Status: meta.ArchivePrepareStatusQueued,
 			ExpiresAt: now.Add(archiveDownloadProgressTTL), CreatedAt: now, UpdatedAt: now,
 		}
 		if err := tx.Create(&run).Error; err != nil {
@@ -192,9 +258,8 @@ func (s *Server) loadPublicShareArchiveRun(
 	if err := query.Take(&run).Error; err != nil {
 		return meta.ArchivePrepareRun{}, err
 	}
-	ids, err := archivePrepareIDs(run)
-	if err != nil || len(ids) != 1 || ids[0] != root.ID {
-		return meta.ArchivePrepareRun{}, errArchiveProgressMismatch
+	if _, err := s.publicShareArchiveSelectedRunFolder(ctx, share, root, run); err != nil {
+		return meta.ArchivePrepareRun{}, err
 	}
 	if !time.Now().UTC().Before(run.ExpiresAt) {
 		return meta.ArchivePrepareRun{}, errArchivePrepareExpired
@@ -376,9 +441,14 @@ func (s *Server) publicShareArchiveTicket(c *gin.Context) {
 		fail(c, http.StatusConflict, "ZIP 尚未准备完成")
 		return
 	}
+	selected, err := s.publicShareArchiveSelectedRunFolder(c.Request.Context(), share, root, run)
+	if err != nil {
+		fail(c, http.StatusConflict, "文件夹已离开分享范围")
+		return
+	}
 	manifest, err := s.loadPublicArchiveManifest(c.Request.Context(), run)
 	if err == nil {
-		err = s.verifyPublicArchiveSnapshot(c.Request.Context(), share.OwnerID, root, manifest)
+		err = s.verifyPublicArchiveSnapshot(c.Request.Context(), share.OwnerID, selected, manifest)
 	}
 	if err != nil {
 		if errors.Is(err, errArchiveProgressMismatch) {
@@ -498,9 +568,14 @@ func (s *Server) publicShareArchiveStream(c *gin.Context) {
 		writePublicArchiveRunError(c, err)
 		return
 	}
+	selected, err := s.publicShareArchiveSelectedRunFolder(c.Request.Context(), share, root, run)
+	if err != nil {
+		fail(c, http.StatusConflict, "文件夹已离开分享范围")
+		return
+	}
 	manifest, err := s.loadPublicArchiveManifest(c.Request.Context(), run)
 	if err == nil {
-		err = s.verifyPublicArchiveSnapshot(c.Request.Context(), share.OwnerID, root, manifest)
+		err = s.verifyPublicArchiveSnapshot(c.Request.Context(), share.OwnerID, selected, manifest)
 	}
 	if err != nil {
 		fail(c, http.StatusConflict, "文件夹已变化或 ZIP 无法下载，请重新准备")
