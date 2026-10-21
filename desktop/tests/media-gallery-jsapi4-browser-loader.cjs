@@ -244,7 +244,7 @@ test('A3c22 a script without onload/onerror expires and can be retried', async (
   const realClearTimeout = global.clearTimeout
   const scheduled = []
   global.setTimeout = (fn, duration, ...args) => {
-    if (duration === 8_000) {
+    if (duration === 7_500) {
       const task = { fn, cancelled: false }
       scheduled.push(task)
       return task
@@ -261,7 +261,7 @@ test('A3c22 a script without onload/onerror expires and can be retried', async (
     assert.equal(f.requests.length, 1)
     assert.equal(scheduled.length, 1)
     assert.equal(scheduled[0].cancelled, false)
-    // Fire the REAL registered timeout callback with a controlled clock,
+    // Fire the REAL bounded 7.5s bootstrap timeout, before Gallery's 8s deadline.
     // not an old source regex or an invented authorized SDK.
     scheduled[0].fn()
     await assert.rejects(first, /baidu_jsapi4_not_authorized/)

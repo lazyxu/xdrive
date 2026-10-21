@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClearBaiduMapDiagnostic,
   xDriveClassifyBaiduMapRequestFailure, xDriveBaiduMapHTTPSRequired,
+  xDriveReadBaiduMapDiagnostic, xDriveBaiduMapDiagnosticDetails,
 } from '../media-gallery-baidu-diagnostics'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { Box, Button, Typography } from '@mui/material'
@@ -112,6 +113,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let phase: 'session' | 'sdk' | 'bind' | 'viewport' = 'session'
     let sessionFailureRecorded = false
     let viewportFailureRecorded = false
+    let runtimeFailureRecorded = false
     const record = (code: Parameters<typeof xDriveRecordBaiduMapDiagnostic>[1]) => {
       if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, code)
     }
@@ -129,6 +131,12 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
             record(xDriveClassifyBaiduMapRequestFailure('session', error))
           }
           throw error
+        }
+      },
+      onRuntimeFailure: code => {
+        if (active && !pending.signal.aborted) {
+          runtimeFailureRecorded = true
+          record(code)
         }
       },
     })
@@ -332,7 +340,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       native?.dispose()
       native = null
       if (active && !pending.signal.aborted) {
-        if (!sessionFailureRecorded && !viewportFailureRecorded) record(phase === 'sdk' ? 'sdk_load_failed'
+        if (!sessionFailureRecorded && !viewportFailureRecorded && !runtimeFailureRecorded) record(phase === 'sdk' ? 'sdk_load_failed'
           : phase === 'bind' ? 'map_binding_failed'
             : phase === 'viewport' ? 'viewport_unavailable' : 'session_unavailable')
         setResult('unavailable')
@@ -374,6 +382,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       cell.cell_y === selectedInFrame.cell_y &&
       cell.asset_id === selectedInFrame.asset_id &&
       cell.node_revision === selectedInFrame.node_revision)
+  const latestDiagnostic = diagnosticScope ? xDriveReadBaiduMapDiagnostic(diagnosticScope) : null
 
   return (
     <Box component="section" data-xdrive-baidu-jsapi4-bd09-photo-surface
@@ -466,6 +475,14 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           <Typography role="status" variant="caption" color="text.secondary">
             百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
           </Typography>
+          {latestDiagnostic ? (
+            <Typography variant="body2" role="alert" color="text.secondary"
+              data-xdrive-baidu-map-runtime-reason sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
+              原因：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].title}
+              {' · '}错误码：{latestDiagnostic.code}。
+              {' '}处理：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].action}
+            </Typography>
+          ) : null}
           {onOpenDiagnostics ? (
             <Button size="small" variant="text" sx={{ ml: 0.5, minHeight: 36 }}
               data-xdrive-baidu-map-diagnostics-link onClick={onOpenDiagnostics}>
