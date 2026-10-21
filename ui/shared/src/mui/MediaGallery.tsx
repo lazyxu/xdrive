@@ -10,7 +10,10 @@ import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-nat
 import {
   xDriveReadBaiduCellReturn, xDriveRememberBaiduCellReturn,
   xDriveRememberBaiduCellAnchor, xDriveClearBaiduCellReturn,
+  xDriveMarkBaiduCellViewerReturn, xDriveTakeBaiduCellViewerReturn,
+  xDriveClearBaiduCellViewerReturn,
 } from '../media-gallery-baidu-cell-return-session'
+import type { XDriveBaiduCellReturnSnapshot } from '../media-gallery-baidu-cell-return-session'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
@@ -1733,6 +1736,9 @@ export function XDriveMediaGalleryPage({
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     // Changing the owning tab must immediately cancel any pending cell Range.
     nativeCellOpenAbort.current?.abort()
+    // An explicit tab switch cancels a pending Viewer Cell return; it does not
+    // erase the already selected short-lived visual Cell hint.
+    xDriveClearBaiduCellViewerReturn(preferenceScope)
     // A direct compact Cleanup tab is no different from its Collections
     // card: only a genuinely accepted first list can change the visible UI.
     if (mobileGalleryViewport && nextSection === 'cleanup') {
@@ -1822,7 +1828,7 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders,
     mobileGalleryViewport, onSectionRouteChange, openTrashFromCollections,
-    openCompactPhotoSection, openCleanupFromCollections])
+    openCompactPhotoSection, openCleanupFromCollections, preferenceScope])
 
   // Page replacement (not append) bounds the number of live location cards.
   // The photo-wall remains on the existing shared sparse VirtualCollection.
@@ -2245,13 +2251,18 @@ export function XDriveMediaGalleryPage({
   // A cover click becomes a navigation intent. The old Places map is retained
   // until the FIRST authenticated Server cell Range succeeds. Never use a
   // grid center or an untrusted BMap event to infer collection membership.
-  const openBaiduNativeCell = useCallback((selection: MediaBaiduNativeCellSelection) => {
+  const openBaiduNativeCell = useCallback((
+    selection: MediaBaiduNativeCellSelection,
+    returning?: XDriveBaiduCellReturnSnapshot,
+  ) => {
     if (!source.listBaiduNativeCellItems || pageSize < 1 || pageSize > 100) return
+    // A fresh user Cell click supersedes any unconsumed Viewer return intent.
+    if (!returning) xDriveClearBaiduCellViewerReturn(preferenceScope)
     nativeCellOpenAbort.current?.abort()
     const controller = new AbortController()
     nativeCellOpenAbort.current = controller
     const request = ++requestID.current
-    const sort = gallerySortRef.current
+    const sort = returning?.sort ?? gallerySortRef.current
     const cell: MediaBaiduNativeCellSelection = {
       ...selection, bounds: { ...selection.bounds },
     }
@@ -2262,16 +2273,29 @@ export function XDriveMediaGalleryPage({
       kind: 'baidu-cell', baiduCell: cell, query: cellQuery, requestID: request,
     }
     void source.listBaiduNativeCellItems(
-      cell, pageSize, 0, { by: sort.by, dir: sort.dir }, controller.signal,
+      cell, pageSize, 0, {
+        by: sort.by, dir: sort.dir,
+        ...(returning?.anchorNodeID ? { anchorNodeID: returning.anchorNodeID } : {}),
+      }, controller.signal,
     ).then((range) => {
       if (controller.signal.aborted || request !== requestID.current) return
       if (range.offset !== 0 || range.limit !== pageSize ||
           !Number.isSafeInteger(range.total_count) || range.total_count < 0 ||
           !Array.isArray(range.items) || range.items.length > pageSize) return
+      // A remembered anchor is NOT membership. Server must return its
+      // current authorised sorted index or the map stays visible.
+      if (returning?.anchorNodeID &&
+          (!Number.isSafeInteger(range.anchor_index) ||
+            range.anchor_index! < 0 || range.anchor_index! >= range.total_count)) {
+        setError('该区域照片已变化，请在地图中重新选择')
+        return
+      }
       // Selected only after the matching authorized Owner Cell Range wins.
       // Never use this remembered identity as permission for another request.
       if (xDriveRememberBaiduCellReturn(preferenceScope, {
         selection: cell, sort: { by: sort.by, dir: sort.dir },
+        ...(returning?.anchorNodeID ? { anchorNodeID: returning.anchorNodeID,
+          anchorIndex: range.anchor_index } : {}),
       })) {
         setBaiduCellOwner({ scope: preferenceScope,
           selection: { ...cell, bounds: { ...cell.bounds } } })
@@ -2290,7 +2314,8 @@ export function XDriveMediaGalleryPage({
       setItems([...range.items])
       setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
       setSearchOrder(range.search_order ?? '')
-      setSortAnchorRestoration(null)
+      setSortAnchorRestoration(returning?.anchorNodeID
+        ? { index: range.anchor_index!, requestID: request } : null)
       virtualCollection.primePage({
         items: range.items, totalCount: range.total_count,
         offset: range.offset, limit: range.limit,
@@ -2544,6 +2569,7 @@ export function XDriveMediaGalleryPage({
   // A cell wall is not the general /media/items collection. Back and
   // Refresh return to the authorised map for a fresh consent-checked choice.
   const leaveBaiduCellWall = useCallback(() => {
+    xDriveClearBaiduCellViewerReturn(preferenceScope)
     nativeCellOpenAbort.current?.abort()
     const request = ++requestID.current
     collectionTargetRef.current = null
@@ -2557,7 +2583,7 @@ export function XDriveMediaGalleryPage({
     setQuery({})
     setDraftFilters(emptyMediaGalleryFilterDraft)
     setMobileCollectionsOverview(false)
-  }, [virtualCollection.reset])
+  }, [preferenceScope, virtualCollection.reset])
 
   const leaveCollection = useCallback(() => {
     if (collectionTargetRef.current?.kind === 'baidu-cell') {
@@ -3235,9 +3261,21 @@ export function XDriveMediaGalleryPage({
       (nextSection === 'library' || nextSection === 'favorites' ||
        nextSection === 'memories' || nextSection === 'cleanup')
     if (!pendingCompactPhoto) setMobileCollectionsOverview(false)
+    if (nextSection === 'places' && source.listBaiduNativeCellItems &&
+        !collectionTargetRef.current) {
+      // One-shot, short-lived Owner intent, NOT a trusted cached media Range.
+      // Keep the map painted until the fresh authenticated /cell-items Range
+      // verifies the old Cell representative and the logical Node anchor.
+      const previous = xDriveTakeBaiduCellViewerReturn(preferenceScope)
+      if (previous?.anchorNodeID) {
+        openBaiduNativeCell(previous.selection, previous)
+        return
+      }
+    }
     if (nextSection === 'library' && !pendingCompactPhoto) void loadFirstPage(null, {})
     else selectSection(nextSection)
-  }, [initialSection, loadFirstPage, mobileGalleryViewport, selectSection])
+  }, [initialSection, loadFirstPage, mobileGalleryViewport, openBaiduNativeCell,
+    preferenceScope, selectSection, source])
 
   useEffect(() => () => {
     requestID.current += 1
@@ -3575,6 +3613,11 @@ export function XDriveMediaGalleryPage({
               kind: target.kind,
               id: target.id ?? '',
             })
+          }
+          if (target.kind === 'baidu-cell') {
+            // Logical Viewer anchor only. Server rechecks the Cell and Node on
+            // any true remount; the mounted Web background keeps its scroll.
+            xDriveMarkBaiduCellViewerReturn(preferenceScope, item.node.id, activeIndex)
           }
           onOpenViewer(item, {
             target: { ...serializableTarget, query: viewerQuery },
