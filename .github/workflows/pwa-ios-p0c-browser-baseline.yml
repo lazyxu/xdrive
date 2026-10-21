@@ -1,0 +1,79 @@
+name: PWA P0-C0 Independent 390px Chromium Startup BEFORE
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-p0c-baseline:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-ios-p0c-startup-baseline-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Prepare exact-source Chrome driver and Web dependencies
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-p0c-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p0c-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_P0C_BROWSER=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_P0C_BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_P0C_BROWSER=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Real Chrome/Chromium missing" >&2
+            exit 1
+          fi
+      - name: Strict numerical report and runner source gate
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-browser-install-offline.cjs
+          node --check desktop/scripts/pwa-p0c-metrics.cjs
+          node --test desktop/tests/pwa-p0c-metrics.cjs
+      - name: Build actual current production Web
+        run: npm --prefix web run build
+      - name: Real 9-context Chrome FIRST/WARM/OFFLINE startup and exact public-only cache
+        env:
+          XD_PWA_P0C_BASELINE: '1'
+          XD_PWA_S2B_RESULT_DIR: ${{ github.workspace }}/desktop/pwa-p0c-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_P0C_BROWSER }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-p0c-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node desktop/scripts/pwa-browser-install-offline.cjs
+          node - <<'NODE'
+          const assert = require('node:assert/strict')
+          const s = require('./desktop/pwa-p0c-results/summary.json')
+          assert(s.passed && s.p0c && s.p0c.sample_count === 9)
+          assert(s.p0c.metrics.first.fcp_ms.p50 > 0 && s.p0c.metrics.warm.fcp_ms.p95 > 0)
+          assert(s.p0c.metrics.offline.fcp_ms.p95 > 0)
+          assert(s.p0c.physical_ios === false && s.p0c.actual_100k === false)
+          assert(s.p0c.samples.every(s => s.warm.worker_controlled && s.offline.worker_controlled))
+          console.log('PWA_P0C_CHROMIUM_BASELINE_BEFORE ' + JSON.stringify({
+            sha: s.commit, browser: s.browserVersion, samples: s.p0c.sample_count,
+            viewport: s.p0c.viewport_px, phases: s.p0c.metrics,
+            physicalIOS: false, actual100k: false, improvementClaim: false,
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p0c-390px-chromium-before-n9
+          path: desktop/pwa-p0c-results/summary.json
+          if-no-files-found: warn
+          retention-days: 21
