@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Box, Button, Paper, Stack, Typography } from '@mui/material'
 import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig } from '../service-dependencies'
 import type { XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { hasPersistedCaddyIntent, caddyLANLocalMatch } from '../caddy-reconciliation'
@@ -10,7 +10,6 @@ import { XDriveCaddyHostBaselinePreviewPanel } from './CaddyHostBaselinePreviewP
 
 // Only layout and verified read-only evidence; no Host/Docker/ACME/DNS Apply.
 type CaddyPort = XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort
-type CaddyScreen = 'overview' | 'config' | 'history'
 type ConfigSnapshot = { source: CaddyPort; config: XDriveCaddyHTTPSConfig | null; failed: boolean }
 
 export function XDriveCaddyDetailV1({
@@ -31,12 +30,11 @@ export function XDriveCaddyDetailV1({
   onConfigurationChanged: () => void
   evidenceRevision: number
 }) {
-  // The legacy ?tab=verify deep link opens Overview with evidence exposed.
-  const screen: CaddyScreen = activeTab === 'config' ? 'config'
-    : activeTab === 'history' ? 'history' : 'overview'
+  // Existing deep links map to anchors/disclosures on one continuously mounted page.
   const [showEvidence, setShowEvidence] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const evidenceOpen = showEvidence || activeTab === 'verify'
-  const [visitedConfig, setVisitedConfig] = useState(screen === 'config')
+  const historyOpen = showHistory || activeTab === 'history'
   const [configRevision, setConfigRevision] = useState(0)
   const [snapshot, setSnapshot] = useState<ConfigSnapshot | null>(null)
   // Never render the prior Server/account's sensitive Host/desired state.
@@ -44,8 +42,11 @@ export function XDriveCaddyDetailV1({
   const readFailed = snapshot?.source === source && snapshot.failed
 
   useEffect(() => {
-    if (screen === 'config') setVisitedConfig(true)
-  }, [screen])
+    const anchor = activeTab === 'verify' ? 'caddy-v1-evidence'
+      : activeTab === 'config' ? 'caddy-v1-config'
+      : activeTab === 'history' ? 'caddy-v1-history' : ''
+    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: 'start', behavior: 'auto' })
+  }, [activeTab])
 
   useEffect(() => {
     let alive = true
@@ -75,8 +76,6 @@ export function XDriveCaddyDetailV1({
     config.host_lan_tls_state === 'verified'
   const lanMatch = caddyLANLocalMatch(config)
   const lanMismatch = lanMatch === 'mismatch-local'
-  const hasSavedLAN = hasSavedDesired && typeof config?.desired_lan_enabled === 'boolean' &&
-    typeof config?.desired_lan_ip === 'string'
   const healthy = service.installation_state === 'observed' &&
     service.health_state === 'ready' && service.local_tls_state === 'verified'
   // A legacy inventory "unavailable" may mean missing trusted Host evidence,
@@ -90,28 +89,8 @@ export function XDriveCaddyDetailV1({
       : '运行状态与 HTTPS 证书验证需分别核对'
 
   return (
-    <Box data-xdrive-caddy-v1-detail sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
-      <Tabs value={screen} variant="fullWidth"
-        aria-label="Caddy 管理页面" data-xdrive-caddy-v1-navigation
-        onChange={(_event, next: CaddyScreen) => {
-          onTabChange(next === 'overview' ? 'status' : next)
-        }}
-        sx={{ minHeight: 44, borderBottom: 1, borderColor: 'divider', mb: 2,
-          '& .MuiTab-root': { minHeight: 44, px: 1 } }}>
-        <Tab value="overview" label="概览" id="caddy-v1-tab-overview" aria-controls="caddy-v1-overview" />
-        <Tab value="config" label="配置" id="caddy-v1-tab-config" aria-controls="caddy-v1-config" />
-        <Tab value="history" label="历史" id="caddy-v1-tab-history" aria-controls="caddy-v1-history" />
-      </Tabs>
-      {hasUnsavedEdits && screen !== 'config' && (
-        <Typography variant="caption" data-xdrive-caddy-v1-preserved-draft
-          color="warning.main" sx={{ display: 'block', mb: 1 }}>
-          配置页有未保存的草稿；切换本服务页面不会丢失，离开服务前会要求确认。
-        </Typography>
-      )}
-
-      <Box id="caddy-v1-overview" role="tabpanel"
-        aria-labelledby="caddy-v1-tab-overview"
-        hidden={screen !== 'overview'} sx={{ display: screen === 'overview' ? 'block' : 'none' }}>
+    <Box data-xdrive-caddy-v1-detail data-xdrive-caddy-single-page="true" sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
+      <Box id="caddy-v1-overview" sx={{ scrollMarginTop: 72 }}>
         <Stack spacing={2}>
           <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}>
             <Stack direction="row" justifyContent="space-between"
@@ -134,60 +113,44 @@ export function XDriveCaddyDetailV1({
                 重新检测
               </Button>
             </Stack>
+            <Box data-xdrive-caddy-v1-ingresses data-xdrive-caddy-v1-reconciliation sx={{
+              display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2,minmax(0,1fr))' },
+              gap: 1.5, mt: 1.5, minWidth: 0,
+            }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary">网关运行</Typography>
+                <Typography variant="body2" data-xdrive-caddy-v1-runtime-axis>
+                  {healthy ? '可信 Host 运行和本机 TLS 已验证' : bad ? 'Host 检查明确失败' : '宿主运行未确认'}
+                </Typography>
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary">配置生效</Typography>
+                <Typography variant="body2" data-xdrive-caddy-v1-applied-axis>
+                  尚无绑定管理双修订的可信 Applied Receipt · 生效未确认
+                </Typography>
+                <Typography variant="caption" color="text.secondary" data-xdrive-caddy-v1-desired-axis>
+                  {hasSavedDesired ? '管理目标已保存，运行另验' : '数据库目标未确认'}
+                </Typography>
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary">公网域名 HTTPS</Typography>
+                <Typography variant="body2" data-xdrive-caddy-v1-domain-evidence-source
+                  color={domainVerified ? 'success.main' : 'text.secondary'}>
+                  {hostDomainVerified ? '可信 Host 本机域名 TLS 已验证'
+                    : independentDomainVerified ? '仅内部 caddy:443 域名 TLS 已验证' : '本机域名 TLS 未确认'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">公网实际可达：未验证</Typography>
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary">局域网 IP HTTPS</Typography>
+                <Typography variant="body2" data-xdrive-caddy-v1-saved-lan-target
+                  color={lanVerified ? 'success.main' : 'text.secondary'}>
+                  {lanVerified ? '本机 IP SAN / Local CA TLS 已验证' : '本机 IP TLS 未确认'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">当前设备信任 Caddy Local CA：未验证</Typography>
+              </Box>
+            </Box>
           </Paper>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: {
-            xs: 'minmax(0,1fr)', sm: 'repeat(2,minmax(0,1fr))',
-          }, gap: 1.5 }} data-xdrive-caddy-v1-ingresses>
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
-              <Typography variant="subtitle2" fontWeight={700}>公网域名 HTTPS</Typography>
-              <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-                {!config ? '管理目标尚未取得，不能推断关闭'
-                  : hasSavedDesired
-                    ? (config.desired_enabled ? config.desired_domain : '已保存目标：域名入口关闭')
-                    : '没有数据库管理修订；宿主部署提示尚未保存'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                上述域名为数据库管理目标；实际容器配置和目标修订需独立核验
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }} data-xdrive-caddy-v1-domain-evidence-source
-                color={domainVerified ? 'success.main' : 'text.secondary'}>
-                {hostDomainVerified
-                  ? '可信 Host 本机域名 TLS 验证通过'
-                  : independentDomainVerified
-                    ? '仅固定 caddy:443 域名 HTTPS/Ready 已验证（不是 Host 证明）'
-                    : '本机域名 TLS 尚无可靠成功证据'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                外网及内网实际连接分别验收；此处未证明公网可达
-              </Typography>
-            </Paper>
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
-              <Typography variant="subtitle2" fontWeight={700}>局域网 IP HTTPS</Typography>
-              <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-                {config?.host_lan_configured && config.host_lan_ip
-                  ? config.host_lan_ip + '（部署声明；是否运行须另证）'
-                  : '未取得有效局域网部署声明'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                私网 IP 为备用入口；服务器本机验证不代表当前设备信任 Caddy Local CA
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}
-                data-xdrive-caddy-v1-saved-lan-target>
-                {hasSavedLAN
-                  ? (config?.desired_lan_enabled
-                    ? '已保存目标：局域网 HTTPS 开启 · ' + config?.desired_lan_ip
-                    : '已保存目标：局域网 HTTPS 关闭')
-                  : '局域网管理目标：未保存或旧版字段不完整（未知）'}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }} color={lanVerified ? 'success.main' : 'text.secondary'}>
-                {lanVerified ? '本机 Local CA 与 IP TLS 已验证' : '本机局域网 TLS 尚未验证'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                不能要求用户忽略证书警告输入管理密码
-              </Typography>
-            </Paper>
-          </Box>
 
           {lanMismatch && (
             <Paper variant="outlined" data-xdrive-caddy-v1-runtime-desired-drift
@@ -200,7 +163,32 @@ export function XDriveCaddyDetailV1({
             </Paper>
           )}
 
-          <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}>
+          {readFailed && (
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-v1-config-read-failed>
+              本次未能读取管理目标；不代表原有 Caddy 已停止。
+              <Button size="small" onClick={() => setConfigRevision((value) => value + 1)}>重试读取</Button>
+            </Typography>
+          )}
+        </Stack>
+      </Box>
+
+      {/* Direct edit always stays mounted across evidence/history changes and browser navigation. */}
+      <Box id="caddy-v1-config" data-xdrive-caddy-v1-config sx={{ scrollMarginTop: 72 }}>
+          <Stack spacing={1.5}>
+            <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0} inlineEdit
+              onDirtyChange={onHTTPSDirtyChange} onConfigurationChanged={changed} />
+            <XDriveCaddyAliDNSPanel source={source} refreshID={0}
+              active={!historyOpen && !evidenceOpen}
+              onDirtyChange={onAliDNSDirtyChange} onConfigurationChanged={changed} />
+            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-v1-deploy-gate>
+              保存配置仅创建管理目标，实际部署需要另行确认。目前独立 Rescue、签名 Host Manager、
+              进程外 watchdog、可信应用回执尚未齐备，所以不开放重新部署。
+            </Typography>
+          </Stack>
+        </Box>
+
+          <Paper variant="outlined" id="caddy-v1-evidence"
+            sx={{ p: { xs: 1.5, sm: 2 }, mt: 1.5, borderRadius: 2, scrollMarginTop: 72 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="subtitle2" fontWeight={700}>检测详情与安全检查</Typography>
@@ -247,72 +235,29 @@ export function XDriveCaddyDetailV1({
                   以上均不证明 WAN 可达、全部终端 CA 信任或管理目标已应用。
                 </Typography>
                 <XDriveCaddyPreflightPanel source={source} refreshID={evidenceRevision} />
+                <XDriveCaddyHostBaselinePreviewPanel source={source} config={config}
+                  active={true} evidenceRevision={evidenceRevision}
+                  hasUnsavedEdits={hasUnsavedEdits} />
               </Stack>
             )}
           </Paper>
-          {readFailed && (
-            <Typography variant="caption" color="text.secondary" data-xdrive-caddy-v1-config-read-failed>
-              本次未能读取管理目标；不代表原有 Caddy 已停止。
-              <Button size="small" onClick={() => setConfigRevision((value) => value + 1)}>重试读取</Button>
-            </Typography>
-          )}
+
+      <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2 }}
+        data-xdrive-caddy-v1-history-toggle-owner>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+          <Typography variant="subtitle2" fontWeight={700}>配置历史</Typography>
+          <Button size="small" aria-expanded={historyOpen}
+            data-xdrive-caddy-v1-history-toggle
+            onClick={() => {
+              if (activeTab === 'history') {
+                setShowHistory(false)
+                onTabChange('status')
+              } else setShowHistory((old) => !old)
+            }}>{historyOpen ? '收起' : '查看'}</Button>
         </Stack>
-      </Box>
-
-      {/* Keep the editor mounted after first visit so normal in-service tab
-          navigation and browser back/forward never discard an unsaved draft. */}
-      {(visitedConfig || screen === 'config') && (
-        <Box id="caddy-v1-config" role="tabpanel" aria-labelledby="caddy-v1-tab-config"
-          hidden={screen !== 'config'} sx={{ display: screen === 'config' ? 'block' : 'none' }}>
-          <Stack spacing={1.5}>
-            <Typography variant="body2" color="text.secondary">
-              此页保存的是管理员目标配置，和运行中的 Caddy、证书及实际生效回执独立。
-            </Typography>
-            <Paper variant="outlined" data-xdrive-caddy-v1-reconciliation
-              sx={{ p: 1.5, minHeight: 142, borderRadius: 2 }}>
-              {snapshot?.source === source && (
-                <Stack spacing={0.75}>
-                  <Typography variant="subtitle2" fontWeight={700}>运行／目标／实际生效（只读）</Typography>
-                  <Typography variant="body2" data-xdrive-caddy-v1-runtime-axis>
-                    运行：{hostObserved
-                      ? (hostDomainVerified || lanVerified
-                        ? '可信 Host 有本机 TLS 证据；外网与客户端信任未验证'
-                        : '已有 Host 观测，HTTPS 仍无成功验证')
-                      : '宿主未确认；内部 HTTPS 探针不能证明 Host 运行'}
-                  </Typography>
-                  <Typography variant="body2" data-xdrive-caddy-v1-desired-axis>
-                    管理目标：{!config ? '读取失败，当前修订未知'
-                      : hasSavedDesired
-                        ? '已有 PostgreSQL 目标修订，具体字段见下方'
-                        : '修订 #0 只是未保存的部署提示'}
-                  </Typography>
-                  <Typography variant="body2" data-xdrive-caddy-v1-applied-axis>
-                    实际生效：未取得与当前管理修订绑定的可信 Applied Receipt。
-                    本机 TLS、字段相等或旧宿主导入都不能证明已应用。
-                  </Typography>
-                  {config?.host_apply_pending && (
-                    <Typography variant="caption" color="warning.main"
-                      data-xdrive-caddy-v1-host-pending>
-                      Host 申请待独立协调，不等于应用成功，也不能解除编辑围栏。
-                    </Typography>
-                  )}
-                </Stack>
-              )}
-            </Paper>
-            <XDriveCaddyHostBaselinePreviewPanel source={source} config={config}
-              active={screen === 'config'} evidenceRevision={evidenceRevision}
-              hasUnsavedEdits={hasUnsavedEdits} />
-            <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
-              onDirtyChange={onHTTPSDirtyChange} onConfigurationChanged={changed} />
-            <XDriveCaddyAliDNSPanel source={source} refreshID={0}
-              active={screen === 'config'}
-              onDirtyChange={onAliDNSDirtyChange} onConfigurationChanged={changed} />
-          </Stack>
-        </Box>
-      )}
-
-      {screen === 'history' && (
-        <Box id="caddy-v1-history" role="tabpanel" aria-labelledby="caddy-v1-tab-history">
+      </Paper>
+      {historyOpen && (
+        <Box id="caddy-v1-history" sx={{ scrollMarginTop: 72 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             历史只按需读取；恢复仅创建新的审计目标修订，不重启或应用当前网关。
           </Typography>

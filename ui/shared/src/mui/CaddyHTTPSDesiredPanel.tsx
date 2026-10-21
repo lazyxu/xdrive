@@ -35,13 +35,14 @@ function validPrivateLANIP(value: string): boolean {
 }
 
 export function XDriveCaddyHTTPSDesiredPanel({
-  source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange,
+  source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange, inlineEdit = false,
 }: {
   source: XDriveCaddyHTTPSPort
   refreshID: number
   onConfigurationChanged?: () => void
   section?: 'config' | 'history'
   onDirtyChange?: (dirty: boolean) => void
+  inlineEdit?: boolean
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyHTTPSConfig | null>(null)
@@ -55,7 +56,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirmSave, setConfirmSave] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const [editingState, setEditing] = useState(false)
+  const editing = inlineEdit || editingState
   const [confirmRollback, setConfirmRollback] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -209,13 +211,13 @@ export function XDriveCaddyHTTPSDesiredPanel({
       <Stack spacing={1.5}>
         {section === 'config' && (<>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-          <Typography variant="subtitle2" fontWeight={700}>Caddy · HTTPS 期望配置</Typography>
+          <Typography variant="subtitle2" fontWeight={700}>{inlineEdit ? 'HTTPS 访问入口' : 'Caddy · HTTPS 期望配置'}</Typography>
           <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-            <Button size="small" variant="outlined" data-xdrive-caddy-https-edit-toggle
+            {!inlineEdit && <Button size="small" variant="outlined" data-xdrive-caddy-https-edit-toggle
               disabled={!canEdit || (editing && changed)}
               onClick={() => setEditing((old) => !old)}>
               {editing ? '完成' : '编辑'}
-            </Button>
+            </Button>}
             <Button size="small" variant="text" disabled={busy || loading || changed || !source.loadCaddyHTTPSConfig}
               onClick={() => { void reload() }}>重新读取已保存配置</Button>
           </Stack>
@@ -223,7 +225,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
         {changed && <Typography variant="caption" color="warning.main" data-xdrive-caddy-draft-refresh-guard>
           当前有未保存的修改，禁止重新读取覆盖草稿；请先保存或恢复原配置。
         </Typography>}
-        {editing && (
+        {editing && !inlineEdit && (
           <Typography variant="body2" color="text.secondary">
             这里独立管理局域网 IP HTTPS 和公网域名 HTTPS 期望配置，允许同时启用，但不允许同时关闭。
             保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
@@ -247,11 +249,11 @@ export function XDriveCaddyHTTPSDesiredPanel({
             {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-host-pending-fence>
               存在待协调的宿主配置申请，IP/域名修改和历史回滚已锁定；这不是已部署或已重启的证明。
             </Typography>}
-            {config.source === 'host-import' && editing && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
+            {config.source === 'host-import' && editing && !inlineEdit && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
               已导入旧 Caddy 的 IP／域名管理记录。原证书和网关配置继续保留；请在「状态与检测」确认实际连接，
               不要把导入的修订号当成后续修改已生效。
             </Typography>}
-            {editing && (
+            {editing && !inlineEdit && (
               <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
                 运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
               </Typography>
@@ -316,7 +318,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
             </Typography>}
             <Button variant="outlined" size="small"
               disabled={!canEdit || !supportsLAN || !valid || !changed || !source.saveCaddyHTTPSConfig}
-              onClick={() => setConfirmSave(true)}>仅保存期望配置（不操作 Caddy）</Button>
+              onClick={() => setConfirmSave(true)}>{inlineEdit ? '保存配置' : '仅保存期望配置（不操作 Caddy）'}</Button>
             <Typography variant="caption" color="warning.main">
               {config.requirement}
             </Typography>
