@@ -71,6 +71,8 @@ function owner(compact) {
   const env = {
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
+    preferenceScope: 'p96',
+    xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p96') },
     useCallback: fn => fn,
     mobileGalleryViewport: compact,
     placesReturnPageRef: { current: null },

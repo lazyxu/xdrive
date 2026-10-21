@@ -15,8 +15,14 @@ export interface XDriveBaiduCellReturnSnapshot {
 }
 
 export const XDRIVE_BAIDU_CELL_RETURN_TTL_MS = 10 * 60 * 1000
+// A viewer-return hint must not reactivate a Cell after an unrelated visit.
+export const XDRIVE_BAIDU_CELL_VIEWER_RETURN_TTL_MS = 10 * 60 * 1000
 const maxOwnerSessions = 8
-const sessions = new Map<string, { snapshot: XDriveBaiduCellReturnSnapshot; seen: number }>()
+const sessions = new Map<string, {
+  snapshot: XDriveBaiduCellReturnSnapshot
+  seen: number
+  viewerReturnAt?: number
+}>()
 
 function validScope(scope: string): boolean {
   return typeof scope === 'string' && scope.length > 0 && scope.length <= 1024
@@ -68,6 +74,12 @@ function sweep(now: number): void {
   for (const [scope, entry] of sessions) {
     if (entry.seen > now || now - entry.seen >= XDRIVE_BAIDU_CELL_RETURN_TTL_MS) {
       sessions.delete(scope)
+      continue
+    }
+    if (entry.viewerReturnAt !== undefined &&
+        (entry.viewerReturnAt > now ||
+          now - entry.viewerReturnAt >= XDRIVE_BAIDU_CELL_VIEWER_RETURN_TTL_MS)) {
+      entry.viewerReturnAt = undefined
     }
   }
 }
@@ -90,8 +102,12 @@ export function xDriveRememberBaiduCellReturn(
   if (!validScope(scope) || !Number.isFinite(now) || now < 0 ||
       !validReturn(snapshot)) return false
   sweep(now)
+  // A mounted Gallery may report one more visible anchor during Viewer entry.
+  // Keep an already explicitly marked return within its short time window.
+  const viewerReturnAt = sessions.get(scope)?.viewerReturnAt
   sessions.delete(scope)
-  sessions.set(scope, { snapshot: clone(snapshot), seen: now })
+  sessions.set(scope, { snapshot: clone(snapshot), seen: now,
+    ...(viewerReturnAt !== undefined ? { viewerReturnAt } : {}) })
   while (sessions.size > maxOwnerSessions) {
     const oldest = sessions.keys().next().value
     if (oldest === undefined) break
@@ -113,6 +129,45 @@ export function xDriveRememberBaiduCellAnchor(
     ...current, anchorNodeID: nodeID,
     ...(index !== undefined ? { anchorIndex: index } : {}),
   }, now)
+}
+
+/** Mark a one-shot Viewer return ONLY from an already authorised Cell wall.
+ * We store a logical Node/index and existing signed Cell selector, no pixels. */
+export function xDriveMarkBaiduCellViewerReturn(
+  scope: string, nodeID: number, index: number, now = Date.now(),
+): boolean {
+  if (!Number.isFinite(now) || now < 0 ||
+      !xDriveRememberBaiduCellAnchor(scope, nodeID, index, now)) return false
+  const entry = sessions.get(scope)
+  if (!entry) return false
+  entry.viewerReturnAt = now
+  return true
+}
+
+/** Atomically consume the short-lived UI *intent*, not media authority.
+ * The caller must re-run the authenticated Owner Cell Range before display. */
+export function xDriveTakeBaiduCellViewerReturn(
+  scope: string, now = Date.now(),
+): XDriveBaiduCellReturnSnapshot | undefined {
+  if (!validScope(scope) || !Number.isFinite(now) || now < 0) return undefined
+  const copy = xDriveReadBaiduCellReturn(scope, now)
+  const entry = sessions.get(scope)
+  if (!copy || !entry || entry.viewerReturnAt === undefined) return undefined
+  if (entry.viewerReturnAt > now ||
+      now - entry.viewerReturnAt >= XDRIVE_BAIDU_CELL_VIEWER_RETURN_TTL_MS) {
+    entry.viewerReturnAt = undefined
+    return undefined
+  }
+  entry.viewerReturnAt = undefined
+  return copy
+}
+
+/** An explicit Back, tab switch or new Cell choice cancels only the
+ * viewer-return intent; the last selected Cell stays a visual map hint. */
+export function xDriveClearBaiduCellViewerReturn(scope: string): void {
+  if (!validScope(scope)) return
+  const entry = sessions.get(scope)
+  if (entry) entry.viewerReturnAt = undefined
 }
 
 export function xDriveClearBaiduCellReturn(scope: string): void {
