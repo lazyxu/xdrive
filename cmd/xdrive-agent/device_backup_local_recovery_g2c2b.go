@@ -209,5 +209,7 @@ func (c *agentController) recoverLocalPushFirstLeafPrivate(ctx context.Context, 
 	if err != nil {
 		return empty, errLocalPushDriverDenied
 	}
-	return d.recoverPreviousFirstLeafReadOnly(ctx, d.scope)
+	// Wrap the existing exact original SQL/CAS/native read inside the
+	// historical O_EXCL Writer's held OS-lock window. This never retries.
+	return d.recoverPreviousFirstLeafWithHeldWriter(ctx, d.scope)
 }
