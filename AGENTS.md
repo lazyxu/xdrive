@@ -5016,3 +5016,16 @@ Prefer small, focused branches that remain single-commit from their first commit
 ## A3i-Msg1 · current master re-stack 2026-10-21
 
 - Only three original pure protocol/test/doc blobs retained on complete latest master, with every master AGENTS byte preserved. This stage is INERT and is NOT a cross-origin iframe security boundary; actual independent HTTPS iframe/CSP/hostile-provider browser proof remains P0-03 mandatory. Re-run exact-head CI and Final Gate before Ready/Rebase Merge. Production-only safety acceptance permanently **按用户决定跳过（未验收）**; never request production HAR/AK/JWT/Cookie/accounts; source Owner/Consent/revocation/Origin/CSP tests mandatory.
+
+
+## G2c2d2b3c2b1 · typed Server private CAS pre-COMMIT uncertainty boundary (2026-10-21)
+
+- The merged #2291 private original-operation SQL/CAS candidate formerly collapsed a Local Store `ErrLocalPushCASPrecommitOutcomeUncertain` (callback may have durably committed SQL) and `ErrLocalPushCASPrecommitBusy` (no callback entered) into an indistinguishable ordinary denial. Preserve ONLY these two typed error classes at the original Server candidate, redact underlying OS path/callback error text, do not expose new Router/Agent/Renderer calls. Post-success context cancellation becomes conservative UNCERTAIN.
+- A genuine PostgreSQL/physical Local CAS fixture COMMITs a read-only SQL transaction inside its pinned double-verified CAS callback and loses the HTTP-like ACK afterward: typed UNCERTAIN must remain, source item PENDING, zero `LocalPushFileTerminal` and zero `SyncRun`, original Operation/CAS independently rereadable. Standard wrong owner/device/Root/Mirror/revoke/physical corrupt denials unchanged.
+- ONE scoped source work commit atop complete frozen master, exact new Go Linux/Windows/true PostgreSQL API Race/Web/Desktop/Host Rootless/images/installers/Final Gate plus fresh clean before merge. Still no durable physical terminal INSERT/CANCEL, native cross-host writer proof, key retirement, second file or scheduler. Previously merged manual owning Desktop Backup-only <=64MiB real first file stays enabled. Production safety acceptance **按用户决定跳过（未验收）** permanently: no production credentials/permissions/AK/Cookie/JWT/HAR/captures/signoff request, no code/CI/PR gate; maintain code security tests.
+
+
+## G2c2d2b3c2b1 · exact source Go formatting and complete-master reconcile (2026-10-21)
+
+- Preserve all three original B1 non-AGENTS scope files from current work, with only Go `gofmt` whitespace in its new real PostgreSQL/CAS test and no production behavior/authorization change. Fresh one-work HEAD uses complete latest master with ALL unrelated Caddy/Host/Places/PWA/Files changes intact, retains full master AGENTS + previous B1 notes.
+- Previous HEAD CI (if started) is superseded: only the NEW full cross-platform genuine PostgreSQL API Race, Web/Desktop, Go Linux+Windows, Rootless/artifacts, Final Gate and fresh clean can authorize merge. Inaccessible production security acceptance **按用户决定跳过（未验收）**; no production credentials, HAR or manual signoff requested or required, code security tests not skipped.
