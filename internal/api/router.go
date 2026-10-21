@@ -472,6 +472,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services", s.adminServiceDependencies)
 	admin.GET("/services/caddy/https", s.adminCaddyHTTPSConfig)
 	admin.PUT("/services/caddy/https", s.adminSaveCaddyHTTPS)
+	admin.PUT("/services/caddy/config", s.adminSaveCaddyConfiguration)
 	admin.GET("/services/caddy/https/revisions", s.adminCaddyHTTPSRevisions)
 	admin.POST("/services/caddy/https/rollback", s.adminRollbackCaddyHTTPS)
 	admin.GET("/services/caddy/alidns", s.adminCaddyAliDNSConfig)
