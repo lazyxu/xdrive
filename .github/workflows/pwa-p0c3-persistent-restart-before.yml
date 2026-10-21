@@ -1,0 +1,75 @@
+name: PWA P0-C3 Native Chromium Persistent Restart BEFORE
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-p0c3-native-browser:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-p0c3-persistent-restart-before-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install genuine production Web + isolated Chromium driver
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-p0c3-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p0c3-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "P0C3_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "P0C3_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "P0C3_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chrome missing" >&2
+            exit 1
+          fi
+      - name: Verify real-process and public-only source contracts
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-p0c3-persistent-restart.cjs
+          node --test desktop/tests/pwa-p0c3-persistent-contract.cjs
+      - name: Build unmodified original production Web and public shell
+        run: npm --prefix web run build
+      - name: Three profiles with native process exit and weak-network restart
+        env:
+          XD_PWA_P0C3_RESULT_DIR: ${{ github.workspace }}/desktop/pwa-p0c3-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.P0C3_CHROME }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-p0c3-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node desktop/scripts/pwa-p0c3-persistent-restart.cjs
+          node - <<'NODE'
+          const r=require('./desktop/pwa-p0c3-results/summary.json')
+          if(!r.passed||r.testedSha!==process.env.XD_PR_HEAD||r.samples.length!==3||
+            r.physicalIOS!==false||r.installedHomeScreen!==false||r.realWAN!==false||
+            r.actual100k!==false||r.privateCache!==false||r.afterOptimization!==null||
+            !(r.phases.offline.fcpP95Ms>0)||!(r.phases.recovered.fcpP95Ms>0)||
+            r.samples.some(s=>!s.persistedAcrossThreeProcesses||!s.offline.controlled||
+              !s.recovered.controlled||!s.recovered.ready||s.offline.cacheNames!==2))
+            process.exit(1)
+          console.log('PWA_P0C3_EXACT_BEFORE '+JSON.stringify({
+            sha:r.testedSha,phases:r.phases,n:r.samples.length,physicalIOS:false,after:null}))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p0c3-native-persistent-restart-before
+          path: desktop/pwa-p0c3-results/summary.json
+          if-no-files-found: warn
+          retention-days: 21
