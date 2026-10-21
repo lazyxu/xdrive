@@ -1,3 +1,18 @@
+## A3i-Msg2 cookie-site fail-closed hardening (2026-10-21)
+
+- Security review: two sibling hosts under example.net are NOT isolated Cookie sites. Reject same-host different-port, sibling suffix, IP and localhost before iframe creation; keep exact HTTPS Origin/WindowProxy/nonce tests. Synthetic fixtures must use separate example.net vs example.org domains.
+- Conservative last-two-DNS-label check deliberately rejects some valid private/public multi-label suffix hosts. It is NOT a complete PSL / independent-cookie-domain certification, and does not protect a hostile child navigating to Gallery. Do not activate SDK until independent registrable site, parent frame-src + frame-ancestors, child CSP, controlled browser hostile JS test and fail-closed Static fallback are really implemented. No production-only acceptance requested.
+- Permanent AGENTS #2227 rule remains: 生产环境安全验收按用户决定跳过（未验收）; code Owner/Consent/revoke/Origin/CSP/automated safety CI required. Only touch original Msg2 scoped source/test/doc + complete AGENTS; retain whole current Msg1 parent and unrelated source.
+
+## A3i-Msg2 · trusted parent-only distinct-HTTPS-host iframe transport (2026-10-21)
+
+- Only build an **inactive** parent DOM iframe transport on original strict A3i-Msg1 #2263; do NOT mount it in Gallery or load any third-party SDK. Cross-host HTTPS and crypto nonce required; same hostname with different port is forbidden (Cookie isolation cannot use ports).
+- Parent iframe sandbox permits scripts + same-origin only when actual parent and child are different HTTPS hosts; strict exact targetOrigin + source WindowProxy, generation/nonce and invalidation on reload/revoke. First handshake sends ZERO cells; later at most 64 already Owner-authorized BD09 points with fresh random opaque keys. Original Owner selection/Node/asset/photo pixels/JWT/Cookie/AK/URLs never leave parent; Cell activation must rerun current authenticated Owner /cell-items.
+- Source and original TS compiled Node adversarial tests only: do not claim independent child HTTPS deployment, CSP/cookie partition, malicious provider browser E2E, PWA/Desktop parity, or real JSAPI4 functionality. Those P0-03 requirements remain mandatory before product activation; old same-document SDK remains an unresolved security risk.
+- **Permanent user rule** (merged #2227): inaccessible production environment safety acceptance **按用户决定跳过（未验收）**, never require real production HAR/AK/JWT/Cookie/credentials or manual acceptance as CI/PR gates. Code Owner/Consent/revocation/Origin/CSP/fail-closed and controllable tests are never skipped.
+- Preserve complete parent AGENTS history, #2263 original 3 blobs, unrelated merged Share/Push/PWA; this child is a dedicated single-work Draft dependent on parent CI and merge. Own exact HEAD CI+Final Gate after restack on merged master is required.
+
+
 ## AGENTS.md 通用规则：仅实际兼容性变化才要求重复 CI（2026-10-21，覆盖历史机械重跑要求）
 
 - **主线前进不等于 CI 失效。** 一个 PR 的准确 HEAD 已经通过自身完整 CI/Final Gate，后续仅因其他 PR 合入使 master 前进时，先对比该 PR 的 merge-base → 新 master 变化与该 PR 的有效改动，检查代码文件、运行时依赖、共享 API/DTO、构建/测试工作流、数据库 schema/migration、环境与生成物、Owner/权限/安全边界及测试覆盖。Git 没有文本冲突只是必要线索，不是足够的语义兼容性证明。
