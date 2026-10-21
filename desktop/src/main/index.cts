@@ -100,6 +100,8 @@ import {
   type AgentAdminBaiduJSAPI4LoaderProbe,
   type AgentAdminCaddyHTTPSConfig,
   type AgentAdminCaddyHTTPSUpdate,
+  type AgentAdminCaddyConfigurationSaveInput,
+  type AgentAdminCaddyConfigurationSaveResult,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
   type AgentAdminCaddyAliDNSReadVerifyInput,
@@ -5264,6 +5266,54 @@ function registerIPCHandlers() {
       revision: input.revision, enabled: input.enabled, domain: input.domain,
     })
   }, false))
+  ipcMain.handle('agent:cloud-save-admin-caddy-config', (_event, value: unknown) =>
+    runAgentAction<AgentAdminCaddyConfigurationSaveResult>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      const input = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Partial<AgentAdminCaddyConfigurationSaveInput> : null
+      const validRevision = (v: unknown) =>
+        typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 2 ** 60
+      if (!input || !validRevision(input.https_revision) || !validRevision(input.alidns_revision) ||
+          (!input.https && !input.alidns)) {
+        throw new AgentIPCError('invalid_input', 0, 'Both Caddy revisions and at least one edited group are required.')
+      }
+      const https = input.https
+      if (https && (typeof https.enabled !== 'boolean' ||
+          typeof https.domain !== 'string' || https.domain.length > 253 ||
+          typeof https.lan_enabled !== 'boolean' ||
+          typeof https.lan_ip !== 'string' || https.lan_ip.length > 15 ||
+          (!https.enabled && !https.lan_enabled))) {
+        throw new AgentIPCError('invalid_input', 0, 'Complete bounded Caddy domain and LAN targets required.')
+      }
+      const alidns = input.alidns
+      if (alidns && (alidns.action !== 'clear' && alidns.action !== 'replace')) {
+        throw new AgentIPCError('invalid_input', 0, 'AliDNS requires explicit replace or clear.')
+      }
+      if (alidns?.action === 'clear' && (alidns.access_key_id || alidns.access_key_secret)) {
+        throw new AgentIPCError('invalid_input', 0, 'AliDNS clear must not carry credentials.')
+      }
+      if (alidns?.action === 'replace' &&
+          (typeof alidns.access_key_id !== 'string' ||
+          !/^[\x21-\x7e]{8,128}$/.test(alidns.access_key_id) ||
+          typeof alidns.access_key_secret !== 'string' ||
+          !/^[\x21-\x7e]{8,256}$/.test(alidns.access_key_secret))) {
+        throw new AgentIPCError('invalid_input', 0, 'Both bounded AliDNS credentials are required.')
+      }
+      return requireAgentClient().cloudSaveAdminCaddyConfiguration({
+        https_revision: input.https_revision!,
+        alidns_revision: input.alidns_revision!,
+        ...(https ? { https: {
+          enabled: https.enabled, domain: https.domain,
+          lan_enabled: https.lan_enabled, lan_ip: https.lan_ip,
+        } } : {}),
+        ...(alidns ? { alidns: alidns.action === 'clear'
+          ? { action: 'clear' as const }
+          : { action: 'replace' as const,
+              access_key_id: alidns.access_key_id,
+              access_key_secret: alidns.access_key_secret } } : {}),
+      })
+    }, false))
   ipcMain.handle('agent:cloud-admin-caddy-https-revisions', () => runAgentAction<AgentAdminCaddyHTTPSRevisionPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

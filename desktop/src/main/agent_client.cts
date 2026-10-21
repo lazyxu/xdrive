@@ -825,6 +825,20 @@ export type AgentAdminCaddyHTTPSRevisionPage = {
   }>
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
+export type AgentAdminCaddyConfigurationSaveInput = {
+  https_revision: number
+  alidns_revision: number
+  https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
+  alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
+}
+export type AgentAdminCaddyConfigurationSaveResult = {
+  https_revision: number
+  alidns_revision: number
+  saved: true
+  host_applied: false
+  apply_supported: false
+}
+
 
 export type AgentAdminCaddyAliDNSReadVerifyInput = {
   desired_revision: number
@@ -3854,6 +3868,9 @@ export class AgentIPCClient {
   }
   cloudSetAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSUpdate) {
     return this.request<AgentAdminCaddyHTTPSConfig>('PUT', '/v1/cloud/admin-caddy-https', input)
+  }
+  cloudSaveAdminCaddyConfiguration(input: AgentAdminCaddyConfigurationSaveInput) {
+    return this.request<AgentAdminCaddyConfigurationSaveResult>('PUT', '/v1/cloud/admin-caddy/config', input)
   }
   cloudAdminCaddyHTTPSRevisions() {
     return this.request<AgentAdminCaddyHTTPSRevisionPage>('GET', '/v1/cloud/admin-caddy-https/revisions')

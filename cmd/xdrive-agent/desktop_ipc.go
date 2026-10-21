@@ -625,6 +625,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-jsapi/verify-loader", h.cloudVerifyAdminBaiduJSAPI4Loader)
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https", h.cloudAdminCaddyHTTPS)
 	mux.HandleFunc("PUT /v1/cloud/admin-caddy-https", h.cloudSetAdminCaddyHTTPS)
+	mux.HandleFunc("PUT /v1/cloud/admin-caddy/config", h.cloudSaveAdminCaddyConfiguration)
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https/revisions", h.cloudAdminCaddyHTTPSRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-caddy-https/rollback", h.cloudRollbackAdminCaddyHTTPS)
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https/preflight", h.cloudAdminCaddyHTTPSPreflight)

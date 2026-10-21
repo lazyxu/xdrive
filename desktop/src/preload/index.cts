@@ -766,6 +766,11 @@ const agent = Object.freeze({
     revision: number; enabled: boolean; domain: string; lan_enabled?: boolean; lan_ip?: string
   }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-caddy-https', input),
+  cloudSaveAdminCaddyConfiguration: (input: {
+    https_revision: number; alidns_revision: number
+    https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
+    alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
+  }) => ipcRenderer.invoke('agent:cloud-save-admin-caddy-config', input),
   cloudAdminCaddyHTTPSRevisions: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-revisions'),
   cloudRollbackAdminCaddyHTTPS: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-caddy-https', input),
