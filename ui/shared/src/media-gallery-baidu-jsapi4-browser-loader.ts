@@ -43,11 +43,34 @@ type MapWindow = Window & {
 export type XDriveBaiduJSAPI4SameOriginOptions = {
   /** Authenticated Server POST; must issue a real Secure/HttpOnly map Cookie. */
   mintMapOnlySession(signal: AbortSignal): Promise<XDriveBaiduJSAPI4SessionGrant>
+  /** Optional client-local diagnostic callback with no URLs, secrets or provider errors. */
+  onRuntimeFailure?: (code: XDriveBaiduJSAPI4RuntimeFailureCode) => void
   /** Independent PHOTO-WGS84 view, never BMap.getBounds() relabeled as GPS. */
   trustedWGS84Bounds: XDriveBaiduJSAPI4TrustedWGS84Bounds
 }
 
 const unavailable = 'baidu_jsapi4_not_authorized'
+/** Internal, preapproved error codes: never expose provider exceptions or resource URLs. */
+export type XDriveBaiduJSAPI4RuntimeFailureCode =
+  | 'sdk_load_failed'
+  | 'sdk_service_host_conflict'
+  | 'sdk_cached_namespace_conflict'
+  | 'sdk_script_failed'
+  | 'sdk_script_timeout'
+  | 'sdk_script_injection_failed'
+  | 'sdk_namespace_missing'
+  | 'sdk_missing_map'
+  | 'sdk_missing_point'
+  | 'sdk_missing_convertor'
+  | 'sdk_missing_cluster_layer'
+  | 'sdk_coordinate_conversion_failed'
+  | 'sdk_map_initialization_failed'
+
+class XDriveBaiduJSAPI4RuntimeFailure extends Error {
+  constructor(readonly code: XDriveBaiduJSAPI4RuntimeFailureCode) {
+    super(unavailable)
+  }
+}
 const trustedSDK = new WeakMap<Document, NativeNamespace>()
 type PendingSDKLoad = {
   promise: Promise<NativeNamespace>
@@ -56,11 +79,22 @@ type PendingSDKLoad = {
 }
 const pendingSDK = new WeakMap<Document, PendingSDKLoad>()
 
+function missingNativeCapability(candidate: unknown): XDriveBaiduJSAPI4RuntimeFailureCode | null {
+  // Accessors on a third-party namespace may throw. Do not record error values.
+  try {
+    if (!candidate || typeof candidate !== 'object') return 'sdk_namespace_missing'
+    const v = candidate as Partial<NativeNamespace>
+    if (typeof v.Map !== 'function') return 'sdk_missing_map'
+    if (typeof v.Point !== 'function') return 'sdk_missing_point'
+    if (typeof v.Convertor !== 'function') return 'sdk_missing_convertor'
+    if (typeof v.ClusterLayer !== 'function') return 'sdk_missing_cluster_layer'
+    return null
+  } catch {
+    return 'sdk_namespace_missing'
+  }
+}
 function validNativeNamespace(candidate: unknown): candidate is NativeNamespace {
-  if (!candidate || typeof candidate !== 'object') return false
-  const v = candidate as Partial<NativeNamespace>
-  return typeof v.Map === 'function' && typeof v.Point === 'function' &&
-    typeof v.Convertor === 'function' && typeof v.ClusterLayer === 'function'
+  return missingNativeCapability(candidate) === null
 }
 
 function secureDocument(): {
@@ -90,7 +124,13 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     const cleanup = () => signal.removeEventListener('abort', onAbort)
     signal.addEventListener('abort', onAbort, { once: true })
     promise.then(value => { cleanup(); resolve(value) },
-      () => { cleanup(); reject(new Error(unavailable)) })
+      error => {
+        cleanup()
+        // Preserve ONLY our own finite diagnostic code; never propagate an
+        // arbitrary third-party rejection, HTTP body or credentialed URL.
+        reject(error instanceof XDriveBaiduJSAPI4RuntimeFailure
+          ? error : new Error(unavailable))
+      })
   })
 }
 
@@ -101,11 +141,13 @@ function loadSDK(doc: Document, browser: MapWindow, serviceHost: string,
   if (signal.aborted) return Promise.reject(new Error(unavailable))
   const previous = browser._BMapSecurityConfig
   if (previous && previous.serviceHost !== serviceHost) {
-    return Promise.reject(new Error(unavailable))
+    return Promise.reject(new XDriveBaiduJSAPI4RuntimeFailure('sdk_service_host_conflict'))
   }
   const already = trustedSDK.get(doc)
   if (already) {
-    if (browser.BMap !== already) return Promise.reject(new Error(unavailable))
+    if (browser.BMap !== already) {
+      return Promise.reject(new XDriveBaiduJSAPI4RuntimeFailure('sdk_cached_namespace_conflict'))
+    }
     return abortable(Promise.resolve(already), signal)
   }
 
@@ -116,39 +158,64 @@ function loadSDK(doc: Document, browser: MapWindow, serviceHost: string,
     const promise = new Promise<NativeNamespace>((resolve, reject) => {
       const script = doc.createElement('script')
       let settled = false
+      let bootstrapLoaded = false
       let timeout: ReturnType<typeof setTimeout> | null = null
-      const finish = (sdk: NativeNamespace | null) => {
+      let readinessPoll: ReturnType<typeof setTimeout> | null = null
+      const finish = (sdk: NativeNamespace | null,
+        code: XDriveBaiduJSAPI4RuntimeFailureCode = 'sdk_load_failed') => {
         if (settled) return
         settled = true
         if (timeout !== null) clearTimeout(timeout)
+        if (readinessPoll !== null) clearTimeout(readinessPoll)
         script.onload = null
         script.onerror = null
         if (!sdk) {
           script.remove()
-          reject(new Error(unavailable))
+          reject(new XDriveBaiduJSAPI4RuntimeFailure(code))
           return
         }
         trustedSDK.set(doc, sdk)
         resolve(sdk)
       }
       cancelLoad = () => finish(null)
+      // The bootstrap script's load event does not prove that asynchronous
+      // SDK subresources populated BMap. Wait for exactly the required APIs.
+      // Do not accept the namespace until OUR authenticated script loaded.
+      const checkReady = () => {
+        if (settled || !bootstrapLoaded) return
+        let candidate: unknown
+        try { candidate = browser.BMap } catch { candidate = null }
+        if (validNativeNamespace(candidate)) {
+          finish(candidate)
+          return
+        }
+        readinessPoll = setTimeout(checkReady, 80)
+      }
       script.async = true
       script.type = 'text/javascript'
       // Fixed same-origin, exact JSAPI4 route, NO client AK or URL input.
       script.src = new URL('/_BMapService/api?v=4.0', serviceHost).href
       script.referrerPolicy = 'no-referrer'
       script.onload = () => {
-        finish(validNativeNamespace(browser.BMap) ? browser.BMap : null)
+        bootstrapLoaded = true
+        checkReady()
       }
-      script.onerror = () => finish(null)
-      // A hung third-party script may never deliver onload OR onerror. A
-      // bounded deadline must release its shared slot so a new signed Owner
-      // session can retry without reusing a permanently pending Promise.
-      timeout = setTimeout(() => finish(null), 8_000)
+      script.onerror = () => finish(null, 'sdk_script_failed')
+      // Leave margin before the caller's own eight-second Abort deadline to
+      // preserve a precise, bounded diagnostic instead of only 'sdk_timeout'.
+      timeout = setTimeout(() => {
+        let code: XDriveBaiduJSAPI4RuntimeFailureCode = 'sdk_script_timeout'
+        if (bootstrapLoaded) {
+          let candidate: unknown
+          try { candidate = browser.BMap } catch { candidate = null }
+          code = missingNativeCapability(candidate) ?? 'sdk_namespace_missing'
+        }
+        finish(null, code)
+      }, 7_500)
       try {
         doc.head.appendChild(script)
       } catch {
-        finish(null)
+        finish(null, 'sdk_script_injection_failed')
       }
     })
     pending = { promise, consumers: 0, cancel: () => cancelLoad() }
@@ -242,9 +309,21 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
       }
       if (signal.aborted || grant?.provider !== 'baidu-jsapi-4.0' ||
           grant.runtime_enabled !== true) throw new Error(unavailable)
-      const namespace = await loadSDK(doc, browser, serviceHost, signal)
+      const reportFailure = (code: XDriveBaiduJSAPI4RuntimeFailureCode) => {
+        if (signal.aborted) return
+        try { options.onRuntimeFailure?.(code) } catch { /* diagnostic cannot block map teardown */ }
+      }
+      let namespace: NativeNamespace
+      try {
+        namespace = await loadSDK(doc, browser, serviceHost, signal)
+      } catch (error) {
+        reportFailure(error instanceof XDriveBaiduJSAPI4RuntimeFailure
+          ? error.code : 'sdk_load_failed')
+        throw new Error(unavailable)
+      }
       if (signal.aborted) throw new Error(unavailable)
       let map: NativeMap | null = null
+      let mapStage: 'coordinates' | 'constructor' = 'coordinates'
       try {
         // The API's public BMap namespace is accepted only after our
         // authenticated, same-origin loader actually completed.
@@ -258,6 +337,7 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
         }
         // BD09LL is a separate, explicit native camera only. Unlabeled original
         // photo GPS always uses Baidu's official WGS84(1)->BD09(5) conversion.
+        mapStage = 'constructor'
         map = new namespace.Map(container)
         map.centerAndZoom(point, camera.zoom)
         const initialized = map
@@ -270,6 +350,8 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
           },
         }
       } catch {
+        reportFailure(mapStage === 'coordinates'
+          ? 'sdk_coordinate_conversion_failed' : 'sdk_map_initialization_failed')
         try { map?.destroy?.() } catch { /* no raw SDK errors */ }
         throw new Error(unavailable)
       }
@@ -284,13 +366,14 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
  * Old WGS84 bridge is deliberately unavailable (not forged).
  */
 export function xDriveCreateBaiduJSAPI4IndexedBD09Mount(
-  options: Pick<XDriveBaiduJSAPI4SameOriginOptions, 'mintMapOnlySession'>,
+  options: Pick<XDriveBaiduJSAPI4SameOriginOptions, 'mintMapOnlySession' | 'onRuntimeFailure'>,
 ) {
   if (!options || typeof options.mintMapOnlySession !== 'function') {
     throw new Error(unavailable)
   }
   const existing = xDriveCreateBaiduJSAPI4SameOriginMount({
     mintMapOnlySession: options.mintMapOnlySession,
+    onRuntimeFailure: options.onRuntimeFailure,
     trustedWGS84Bounds: async () => { throw new Error(unavailable) },
   })
   return {

@@ -16,7 +16,10 @@ import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-nat
 import { useXDriveDeferredLoading } from './useDeferredLoading'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
+  xDriveReadBaiduMapDiagnostic, xDriveSubscribeBaiduMapDiagnostics,
+  xDriveBaiduMapDiagnosticDetails, XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS,
 } from '../media-gallery-baidu-diagnostics'
+import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
 
@@ -106,6 +109,44 @@ export function XDriveMediaGalleryPlacesMap({
   const desktopHTTPSOnly = Boolean(onOpenSecureDesktopMap)
   const [nativeStatus, setNativeStatus] = useState<'checking' | 'authorized' |
     'blocked' | 'error' | 'unsupported'>('checking')
+  // Scope the observation to the exact current account. Never show an old
+  // account's transient diagnosis during the first render after account switch.
+  const [diagnosticState, setDiagnosticState] = useState<{
+    scope: string; item: XDriveBaiduMapDiagnostic | null
+  }>({ scope: diagnosticScope ?? '', item: null })
+  useEffect(() => {
+    const scope = diagnosticScope ?? ''
+    const read = () => setDiagnosticState({
+      scope, item: xDriveReadBaiduMapDiagnostic(scope),
+    })
+    read()
+    const unsubscribe = xDriveSubscribeBaiduMapDiagnostics(read)
+    // Background-tab timers can be throttled; never surface a stale
+    // diagnostic when the operator returns to the tab.
+    // The real UI has a Window/Document; source-mounted React tests may not.
+    // Read-only resume checks must never turn into production network probes.
+    const browserWindow = typeof window === 'undefined' ? null : window
+    const browserDocument = typeof document === 'undefined' ? null : document
+    browserWindow?.addEventListener('focus', read)
+    browserDocument?.addEventListener('visibilitychange', read)
+    return () => {
+      unsubscribe()
+      browserWindow?.removeEventListener('focus', read)
+      browserDocument?.removeEventListener('visibilitychange', read)
+    }
+  }, [diagnosticScope])
+  const latestDiagnostic = diagnosticState.scope === (diagnosticScope ?? '')
+    ? diagnosticState.item : null
+  useEffect(() => {
+    if (!latestDiagnostic) return
+    const scope = diagnosticScope ?? ''
+    const remaining = XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS -
+      (Date.now() - latestDiagnostic.recordedAt)
+    const timer = window.setTimeout(() => setDiagnosticState({
+      scope, item: xDriveReadBaiduMapDiagnostic(scope),
+    }), Math.max(1, remaining + 2))
+    return () => window.clearTimeout(timer)
+  }, [diagnosticScope, latestDiagnostic?.recordedAt])
   useEffect(() => {
     setServerNativeAuthorized(false)
     setNativeStatus('checking')
@@ -396,6 +437,14 @@ export function XDriveMediaGalleryPlacesMap({
           <Typography variant="caption" role="status" color="text.secondary">
             百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
           </Typography>
+          {latestDiagnostic ? (
+            <Typography role="alert" variant="body2" color="text.secondary"
+              data-xdrive-baidu-map-blocked-reason sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
+              原因：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].title}
+              {' · '}错误码：{latestDiagnostic.code}。
+              {' '}处理：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].action}
+            </Typography>
+          ) : null}
           {onOpenDiagnostics ? (
             <Button size="small" variant="text" sx={{ ml: 0.5, minHeight: 36 }}
               data-xdrive-baidu-map-diagnostics-link onClick={onOpenDiagnostics}>

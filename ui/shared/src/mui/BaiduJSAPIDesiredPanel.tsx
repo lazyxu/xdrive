@@ -94,7 +94,20 @@ export function XDriveBaiduJSAPIDesiredPanel({
       scope, item: xDriveReadBaiduMapDiagnostic(scope),
     })
     refresh()
-    return xDriveSubscribeBaiduMapDiagnostics(refresh)
+    const unsubscribe = xDriveSubscribeBaiduMapDiagnostics(refresh)
+    // A suspended Safari/PWA tab may delay the 15-minute timer. Re-read
+    // current account's in-memory record when the tab resumes, without HTTP.
+    // The real UI has a Window/Document; source-mounted React tests may not.
+    // Read-only resume checks must never turn into production network probes.
+    const browserWindow = typeof window === 'undefined' ? null : window
+    const browserDocument = typeof document === 'undefined' ? null : document
+    browserWindow?.addEventListener('focus', refresh)
+    browserDocument?.addEventListener('visibilitychange', refresh)
+    return () => {
+      unsubscribe()
+      browserWindow?.removeEventListener('focus', refresh)
+      browserDocument?.removeEventListener('visibilitychange', refresh)
+    }
   }, [diagnosticScope])
   const latestDiagnostic = diagnosticState.scope === (diagnosticScope ?? '')
     ? diagnosticState.item : xDriveReadBaiduMapDiagnostic(diagnosticScope ?? '')
@@ -284,6 +297,12 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   建议：{xDriveBaiduMapDiagnosticDetails[latestDiagnostic.code].action}
+                </Typography>
+                <Typography variant="caption" color="text.secondary"
+                  data-xdrive-baidu-runtime-evidence-boundary>
+                  这是一条实际客户端运行阶段的匿名记录。Server AK 的静态 PNG、
+                  Server 签名发布和固定 Loader 校验属于不同前置条件；
+                  它们成功也不能覆盖此项浏览器 SDK 失败。
                 </Typography>
               </Stack>
             ) : (

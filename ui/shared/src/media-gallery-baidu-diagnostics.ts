@@ -59,6 +59,54 @@ export const xDriveBaiduMapDiagnosticDetails = {
     title: '百度 JSAPI SDK 初始化超时（8 秒）',
     action: '检查固定 /_BMapService/api?v=4.0 及受控子资源的可达性、CSP 和浏览器脚本策略。',
   },
+  sdk_service_host_conflict: {
+    title: '页面中已有不一致的百度地图代理地址',
+    action: '本页先前声明的 _BMapSecurityConfig.serviceHost 与当前受信 HTTPS 代理不一致；检查是否重复加载不同版本或重复注入地图 SDK，不要绕过隔离和域名验证。',
+  },
+  sdk_cached_namespace_conflict: {
+    title: '页面中已缓存的百度 SDK 被其他脚本替换',
+    action: '当前页面 BMap 与本应用此前成功校验的 SDK 实例不一致；停止继续加载，并检查重复脚本或第三方代码干预。',
+  },
+  sdk_script_failed: {
+    title: '浏览器无法加载百度 JSAPI 启动脚本',
+    action: '实际浏览器的同源 /_BMapService/api?v=4.0 触发 script.onerror；可能是网关、HTTP 状态、CSP 或浏览器拦截。固定 Server Loader 检测成功不能排除该问题，需查看浏览器 Network/CSP 拒绝项（不要上传带密钥的 URL）。',
+  },
+  sdk_script_timeout: {
+    title: '百度 JSAPI 启动脚本未在期限内响应',
+    action: '实际浏览器脚本未触发 load/error；检查同源代理、网络超时、CSP 和上游延迟。该阶段还没有证据表明 BMap 已初始化。',
+  },
+  sdk_script_injection_failed: {
+    title: '浏览器拒绝创建或插入 SDK 脚本',
+    action: '注入固定的同源脚本时出现本地异常；检查 CSP、Trusted Types 与页面脚本策略，不得通过禁用安全策略解决。',
+  },
+  sdk_namespace_missing: {
+    title: '启动脚本已加载，但未建立 BMap SDK 命名空间',
+    action: '已触发启动脚本 load，但在受控等待期内仍没有 window.BMap；检查 JSAPI 启动后子资源、代理重写、CSP 和脚本执行错误。',
+  },
+  sdk_missing_map: {
+    title: 'BMap 已存在，但缺少 Map 构造能力',
+    action: '加载后检测不到 JSAPI 4.0 的 BMap.Map；检查 SDK 版本、实际响应及后续脚本依赖，不接受不完整地图对象。',
+  },
+  sdk_missing_point: {
+    title: 'BMap 已存在，但缺少 Point 坐标能力',
+    action: '加载后检测不到 BMap.Point；检查 SDK 版本与子资源完整性，不使用其他坐标库进行未经授权的替代。',
+  },
+  sdk_missing_convertor: {
+    title: 'BMap 已存在，但缺少 Convertor 官方坐标转换',
+    action: '加载后检测不到 BMap.Convertor；检查地图脚本/子资源版本，保持原始 WGS84 到 BD-09 的官方转换约束。',
+  },
+  sdk_missing_cluster_layer: {
+    title: 'BMap 已存在，但缺少 ClusterLayer 聚合图层',
+    action: '加载后检测不到 JSAPI 4.0 的 BMap.ClusterLayer；核对 JSAPI 版本及可视化子资源，不伪造聚合结果。',
+  },
+  sdk_coordinate_conversion_failed: {
+    title: 'SDK 已加载，但官方坐标转换失败',
+    action: 'BMap.Convertor 未能提供有效 WGS84→BD-09 坐标；检查官方转换服务/额度和浏览器 SDK 依赖，不能绕过为客户端近似转换。',
+  },
+  sdk_map_initialization_failed: {
+    title: 'SDK 已就绪，但创建或定位原生地图失败',
+    action: '脚本和必需 API 已就绪；失败发生在 new BMap.Map 或 centerAndZoom。检查容器可见性、浏览器 WebGL、SDK 子资源与控制台错误，不展示原始异常。',
+  },
   sdk_load_failed: {
     title: '百度 JSAPI SDK 加载或初始化失败',
     action: '检查 /_BMapService/ 脚本资源、SDK 子资源白名单和浏览器 CSP；Server 签名通过不等于 SDK 加载通过。',
