@@ -1,0 +1,97 @@
+{
+  "schema": "xdrive-pwa-p0c2-anonymous-navigation-current-before-v1",
+  "provenance": {
+    "source_commit_sha": "322e0c432c3de8e96ea5f35cd23cf8b0c46270ff",
+    "real_native_chrome_run_id": 39573729521,
+    "job_id": 119133968890,
+    "source_marker": "PWA_P0C2_NAVIGATION_CURRENT",
+    "browser": "155.0.8059.84"
+  },
+  "test_scope": {
+    "viewport_px": {
+      "width": 390,
+      "height": 844
+    },
+    "independent_browser_sessions": 3,
+    "transitions_per_direction": 9,
+    "real_visible_compiled_web": true,
+    "backend": "strict bounded API fixture; no live PostgreSQL/Go",
+    "physical_ios": false,
+    "actual_100k": false,
+    "installed_pwa": false
+  },
+  "current_before": {
+    "metrics": {
+      "files-to-gallery": {
+        "visible_ms": {
+          "p50": 733.9,
+          "p95": 894.96,
+          "min": 689.3,
+          "max": 957.8
+        },
+        "layout_shift_raw": {
+          "p50": 0.774,
+          "p95": 0.774,
+          "min": 0.773,
+          "max": 0.774
+        },
+        "layout_shift_web_vitals": {
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0
+        },
+        "fixture_api_calls": {
+          "p50": 35,
+          "p95": 35,
+          "min": 27,
+          "max": 35
+        },
+        "header_height_px": {
+          "p50": 52,
+          "p95": 52,
+          "min": 52,
+          "max": 52
+        },
+        "same_main_count": 9
+      },
+      "gallery-to-files": {
+        "visible_ms": {
+          "p50": 712.5,
+          "p95": 750.74,
+          "min": 695.5,
+          "max": 755.7
+        },
+        "layout_shift_raw": {
+          "p50": 0.062,
+          "p95": 0.062,
+          "min": 0.062,
+          "max": 0.062
+        },
+        "layout_shift_web_vitals": {
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0
+        },
+        "fixture_api_calls": {
+          "p50": 11,
+          "p95": 12.6,
+          "min": 10,
+          "max": 13
+        },
+        "header_height_px": {
+          "p50": 52,
+          "p95": 52,
+          "min": 52,
+          "max": 52
+        },
+        "same_main_count": 9
+      }
+    },
+    "after": null,
+    "claimed_speedup": null,
+    "matched_paired_ab": false
+  },
+  "limits": "Fixture request counts are not network packets. Raw LayoutShift includes expected changes after user tap; Web Vitals-style CLS excludes recent input. Does not establish server ctx.cancel, 100k physical CAS, iOS Safari installed PWA or production optimization."
+}

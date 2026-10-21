@@ -47,6 +47,8 @@ const touchFixture = { quickOrder: [2, 3, 4], savedOrder: [17, 18, 19], quickWri
 const mobilePanelsScenario = options.scenario === 'mobile-panels';
 const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
+const p0c2NavBaseline = process.env.XD_PWA_P0C2_NAV_BEFORE === '1';
+if (p0c2NavBaseline && !galleryIos27ChromeScenario) throw new Error('P0-C2 must reuse real original gallery-ios27-chrome scenario');
 const galleryIos27ViewerScenario = options.scenario === 'gallery-ios27-viewer';
 const galleryAlbumNavigationScenario = options.scenario === 'gallery-ios27-album-nav';
 const galleryAlbumLibraryNavigationScenario = options.scenario === 'gallery-ios27-album-library-nav';
@@ -1007,6 +1009,7 @@ const result = {
   fixture: { rootItems: rootChildren.length, nestedItems: folderChildren.length, galleryItems: mediaItems.length, network: 'local bounded fixtures only' },
   checks: [], samples: {}, requests: {}, unknownRequests: [], consoleErrors: [], expectedConsoleErrors: [], expectedApiErrors: [], pageErrors: [], failures: [],
 };
+if (p0c2NavBaseline) result.p0c2Raw = [];
 let activeStage = 'startup';
 let page;
 let metadataGate;
@@ -2313,6 +2316,70 @@ async function navigateWorkspace(label, app) {
   // destination. A still visible backdrop makes Playwright scroll/retry taps.
   await page.locator('.MuiDrawer-root').waitFor({ state: 'hidden' });
   await settle();
+}
+
+/** P0-C2: observe REAL compiled Files<->Gallery route transitions.
+ * Bounded fixture API requests are not real Go/100k/installed iOS evidence. */
+async function runP0C2NavigationBefore(sessionIndex) {
+  const countFixtureCalls = () => Object.values(result.requests)
+    .reduce((sum, value) => sum + (Number.isInteger(value) ? value : 0), 0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' }).first().waitFor();
+  await page.evaluate(() => {
+    if (typeof PerformanceObserver === 'undefined' ||
+      !PerformanceObserver.supportedEntryTypes?.includes('layout-shift')) {
+      throw new Error('Real Chromium layout-shift observation unavailable');
+    }
+    window.__p0c2Shift = { raw: 0, vitals: 0, main: null };
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) {
+        window.__p0c2Shift.raw += entry.value;
+        if (!entry.hadRecentInput) window.__p0c2Shift.vitals += entry.value;
+      }
+    }).observe({ type: 'layout-shift', buffered: false });
+  });
+  for (let cycle = 1; cycle <= 3; cycle++) {
+    const navigateAndMeasure = async (direction, label, app, selector) => {
+      const before = await page.evaluate(() => {
+        const state = window.__p0c2Shift;
+        state.main = document.querySelector('main');
+        return { time: performance.now(), raw: state.raw, vitals: state.vitals };
+      });
+      const callsBefore = countFixtureCalls();
+      await navigateWorkspace(label, app);
+      await page.locator(selector).first().waitFor();
+      await settle();
+      const after = await page.evaluate(visibleSelector => {
+        const state = window.__p0c2Shift;
+        const main = document.querySelector('main');
+        const header = document.querySelector('[data-xdrive-mobile-app-header]');
+        const visible = [...document.querySelectorAll(visibleSelector)].some(node => {
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 &&
+            getComputedStyle(node).visibility !== 'hidden';
+        });
+        return { time: performance.now(), raw: state.raw, vitals: state.vitals,
+          mainReused: state.main === main, headerHeight: header?.getBoundingClientRect().height ?? null,
+          visible };
+      }, selector);
+      const expected = app === 'gallery' ? '#/app/gallery' : '#/app/files';
+      const actual = new URL(page.url()).hash;
+      const measured = {
+        session: sessionIndex, cycle, direction,
+        visible_ms: after.time - before.time,
+        layout_shift_raw: Math.max(0, after.raw - before.raw),
+        layout_shift_web_vitals: Math.max(0, after.vitals - before.vitals),
+        fixture_api_calls: countFixtureCalls() - callsBefore,
+        header_height_px: after.headerHeight,
+        main_reused: after.mainReused,
+        route_committed: actual === expected || actual.startsWith(expected + '?'),
+        content_ready: after.visible,
+      };
+      result.p0c2Raw.push(measured);
+    };
+    await navigateAndMeasure('files-to-gallery', '图库', 'gallery', '[data-xdrive-media-tile]');
+    await navigateAndMeasure('gallery-to-files', '文件', 'files', '[data-mobile-files-item]');
+  }
 }
 
 async function viewerGeometry(name) {
@@ -7621,13 +7688,13 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
+    const cases = p0c2NavBaseline ? [1, 2, 3].map(p0c2Session => ({role: 'user', p0c2Session})) : galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
       : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryAlbumLibraryNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryFilterNavigationScenario || galleryFoldNavigationScenario || galleryTimeZoneNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
           : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
-    for (const { role, viewMode, galleryDensity, viewerPointer } of cases) {
+    for (const { role, viewMode, galleryDensity, viewerPointer, p0c2Session } of cases) {
       if (galleryIos27ViewerScenario) {
         // Each native pointer mode is an independent real browser context.
         // The first generated task must complete in both sessions, while
@@ -7876,7 +7943,8 @@ async function main() {
         }
       });
       await loadFiles(context, origin, role);
-      if (galleryDensity) {
+      if (p0c2NavBaseline) await runP0C2NavigationBefore(p0c2Session);
+      else if (galleryDensity) {
         await navigateWorkspace('图库', 'gallery');
         await page.locator('[data-xdrive-media-tile]').first().waitFor();
         await galleryOverlayAcceptance(role, galleryDensity);
@@ -7923,6 +7991,13 @@ async function main() {
       // the separate context-disposal stall in portable single-process Chromium.
       await browser.close();
       browser = undefined;
+    }
+    if (p0c2NavBaseline) {
+      const { summarizeP0C2 } = require('./pwa-p0c2-navigation-metrics.cjs');
+      const summary = summarizeP0C2(result.p0c2Raw, process.env.XD_PR_HEAD, result.browserVersion);
+      result.p0c2Summary = summary;
+      fs.writeFileSync(path.join(outputDir, 'p0c2-summary.json'), JSON.stringify(summary, null, 2) + '\n');
+      console.log('PWA_P0C2_NAVIGATION_CURRENT ' + JSON.stringify(summary));
     }
     check('no unknown API or external requests', result.unknownRequests.length === 0, result.unknownRequests);
     check('no application page errors', result.pageErrors.length === 0, result.pageErrors);
