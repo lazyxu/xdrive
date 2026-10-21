@@ -9,7 +9,10 @@ const { app, BrowserWindow } = require('electron')
 
 const root = path.resolve(__dirname, '..', '..')
 const dist = path.join(root, 'web', 'dist')
-const out = path.join(__dirname, '..', 'gallery-mobile-web-go-cancel-100k-results')
+// P0-C2b1: opt-in cross-document navigation; this is not an SPA route switch.
+const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
+const out = path.join(__dirname, '..', p0c2PageLeaveMode ?
+  'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 // P048: 390px native Chromium running the actual shared Mobile Web Gallery.
 // This measures a different platform than the accepted P016 wide-Web baseline.
@@ -220,14 +223,34 @@ async function sampleOnce(sample, ready) {
     const marker = await fetch(fixture.config.url + '/__perf/viewport-cancel-mark',
       { method: 'POST' })
     assert.equal(marker.status, 204)
-    const scroll = await win.webContents.executeJavaScript(
+    let scroll
+    let leaveNavigation = null
+    if (p0c2PageLeaveMode) {
+      const beforeLeave = await win.webContents.executeJavaScript(
+        '({mounted:!!document.querySelector("[data-xdrive-media-gallery-virtual-grid]"),width:document.documentElement.clientWidth})', true)
+      assert(beforeLeave.mounted && beforeLeave.width >= 360 && beforeLeave.width <= 390,
+        'cannot leave nonmounted shared Mobile Gallery: ' + JSON.stringify(beforeLeave))
+      scroll = {kind:'cross-document-navigation',mountedGalleryBefore:true}
+      // Keep navigation asynchronous until after the 160ms Go deadline.
+      leaveNavigation = win.loadURL(fixture.config.url +
+        '/?xdriveP0C2PageLeave=1&xdriveMediaProgress=off')
+    } else {
+      scroll = await win.webContents.executeJavaScript(
       '(' + scrollActualGalleryViewport.toString() + ')()', true)
     assert(!scroll.error, 'real Gallery DOM scroll unavailable: ' + JSON.stringify(scroll))
     assert(scroll.newScrollTop > scroll.oldScrollTop + 10000,
       'real Gallery scrollTop did not advance: ' + JSON.stringify(scroll))
     assert(scroll.initialMountedTiles > 0 && scroll.initialMountedTiles < 1000)
+    }
     await sleep(160)
     const after = await readStats(fixture.config.url)
+    if (p0c2PageLeaveMode) {
+      await leaveNavigation
+      const left = await win.webContents.executeJavaScript(
+        '({stillGallery:!!document.querySelector("[data-xdrive-media-gallery-virtual-grid]")})', true)
+      assert.equal(left.stillGallery, false, 'page leave must unmount actual Gallery')
+      scroll.galleryUnmounted = true
+    }
     clearInterval(resourceSampler); resourceSampler = null
     const goEnd = nativeProcessStats(actualGoPID)
     const rendererEnd = nativeProcessStats(rendererPID)
@@ -256,17 +279,20 @@ async function sampleOnce(sample, ready) {
       sample, viewport, streamCount, resources, logicalAssets: 100000, physicalNodes: 115000,
       firstImageNodes: fixture.config.first_image_nodes,
       seedMsExcluded: fixture.config.seed_ms,
-      scroll, healthy,
+      scroll, healthy, pageLeaveMode:p0c2PageLeaveMode,
       go: {
         started: started.started, canceled: after.cancelled - started.cancelled,
         contextDone: after.context_done - started.context_done,
         stillActiveAt160ms: after.active,
         wastedBytesAfterScroll: after.emitted_bytes - started.emitted_bytes,
+        wastedBytesAfterAction: after.emitted_bytes - started.emitted_bytes,
         beforeScrollActualBytes: started.emitted_bytes,
         worstContextNotificationMs: after.max_cancel_us / 1000,
         totalRequestBytesAfterCancel: after.emitted_bytes,
       },
-      scope: 'Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation.',
+      scope: p0c2PageLeaveMode ?
+        'Compiled 390px Mobile Web Gallery mounted with real Gin/PG17/CAS, 100k logical assets/115k nodes, 4-6 slow thumbnails: cross-document unload -> Go Context.Done in 160ms. NOT Files/Gallery SPA route; NOT 100k physical originals, iOS installed PWA/WAN or durable task cancellation.' :
+        'Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation.',
     }
     if (row.go.canceled !== streamCount || row.go.contextDone !== streamCount ||
         row.go.stillActiveAt160ms !== 0 || row.go.wastedBytesAfterScroll !== 0 ||
@@ -300,11 +326,17 @@ async function main() {
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
-      status: 'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
-      mobileCancelMode: true, cssWindowWidth:390,
+      status: p0c2PageLeaveMode ?
+        'measured-CURRENT-P0-C2b1-390px-Gallery-pageleave-Go-cancellation' :
+        'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
+      mobileCancelMode: true, cssWindowWidth:390, pageLeaveMode:p0c2PageLeaveMode,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!p0c2PageLeaveMode || (row.pageLeaveMode === true &&
+          row.scroll.kind === 'cross-document-navigation' &&
+          row.scroll.mountedGalleryBefore === true &&
+          row.scroll.galleryUnmounted === true)) &&
         row.go.started === row.streamCount && row.streamCount >= 4 && row.streamCount <= 6 &&
         row.viewport.narrow && row.viewport.width >= 360 && row.viewport.width <= 390 &&
         row.resources.go.peakGrowthBytes <= 128 * 1024 * 1024 &&
@@ -312,7 +344,9 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: '100k logical PhotoAssets and 115k metadata nodes, only first viewport 4-6 real physical JPEG streams; 390px Chromium shared Mobile Gallery; n3 independent real Gin/PG17/CAS, exact Go Handler Context.Done; Go/Renderer CPU RSS. Not iOS/Android native, installed PWA, all 100k real media, video/Live playback, slow WAN, durable task cancellation.',
+      limits: p0c2PageLeaveMode ?
+        'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :
+        '100k logical PhotoAssets and 115k metadata nodes, only first viewport 4-6 real physical JPEG streams; 390px Chromium shared Mobile Gallery; n3 independent real Gin/PG17/CAS, exact Go Handler Context.Done; Go/Renderer CPU RSS. Not iOS/Android native, installed PWA, all 100k real media, video/Live playback, slow WAN, durable task cancellation.',
     }
     fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     console.log('GALLERY_MOBILE_WEB_GO_CANCEL_100K_SUMMARY ' + JSON.stringify(summary))

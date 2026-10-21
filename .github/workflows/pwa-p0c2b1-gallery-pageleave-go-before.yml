@@ -1,0 +1,77 @@
+name: PWA P0-C2b1 Real 390px Gallery Page Leave to Go Context BEFORE
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-p0c2b1-gallery-pageleave-go-before:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-p0c2b1-pageleave-go-before-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_PAGELEAVE_BEFORE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate opt-in real Gallery-to-Go source and summary gates
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node --test desktop/tests/pwa-p0c2b1-pageleave-go-source.cjs
+          test -z "$(gofmt -l internal/api/gallery_real_web_scroll_cancel_support_test.go)"
+      - name: Compile original shared Web Gallery and actual Go/Gin PostgreSQL fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/pwa-p0c2-pageleave-go-api
+          go test -c -o desktop/pwa-p0c2-pageleave-go-api/api.test ./internal/api
+          test -x desktop/pwa-p0c2-pageleave-go-api/api.test
+      - name: Measure actual 390px Gallery cross-document leave and Go Context Done n3
+        run: |
+          set -euo pipefail
+          export XD_GALLERY_MOBILE_NATIVE_GO_BINARY="$GITHUB_WORKSPACE/desktop/pwa-p0c2-pageleave-go-api/api.test"
+          test -x "$XD_GALLERY_MOBILE_NATIVE_GO_BINARY"
+          mkdir -p desktop/pwa-p0c2-pageleave-go-results
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > desktop/pwa-p0c2-pageleave-go-results/source.txt
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node -e 'const fs=require("node:fs"),s=JSON.parse(fs.readFileSync("desktop/pwa-p0c2-pageleave-go-results/summary.json"));if(!s.passed||!s.pageLeaveMode||!s.mobileCancelMode||s.cssWindowWidth!==390||s.sampleCount!==3||s.worstGoContextMaxMs>160)process.exit(1);console.log(JSON.stringify({passed:s.passed,pageLeaveMode:s.pageLeaveMode,n:s.sampleCount,worstGoContextMaxMs:s.worstGoContextMaxMs}))'
+          test "$(find desktop/pwa-p0c2-pageleave-go-results -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p0c2b1-real-gallery-cross-document-go-context-before
+          path: desktop/pwa-p0c2-pageleave-go-results/
+          if-no-files-found: warn
+          retention-days: 14
