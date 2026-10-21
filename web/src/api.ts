@@ -775,8 +775,8 @@ export class XDriveApi {
     })
   }
 
-  me() {
-    return this.request<MeResult>('/api/v1/me')
+  me(signal?: AbortSignal) {
+    return this.request<MeResult>('/api/v1/me', { signal })
   }
 
   quota() {
@@ -2512,8 +2512,8 @@ export class XDriveApi {
     return this.request<Node>('/api/v1/nodes/root')
   }
 
-  node(id: number) {
-    return this.request<Node>(`/api/v1/nodes/${id}`)
+  node(id: number, signal?: AbortSignal) {
+    return this.request<Node>(`/api/v1/nodes/${id}`, { signal })
   }
 
   list(parentID: number) {

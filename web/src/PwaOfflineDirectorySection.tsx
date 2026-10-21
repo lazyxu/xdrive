@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, FormControlLabel, Switch, Typography } from '@mui/material'
+import { Alert, Box, Button, FormControlLabel, Switch, Typography } from '@mui/material'
 import {
   xDrivePwaOfflineAvailable,
   xDrivePwaOfflineScopeKey,
@@ -8,6 +8,8 @@ import {
   xDrivePwaObserveOfflinePurge,
 } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner, XDrivePwaOfflineRead } from './pwaOfflineDirectory'
+import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload } from './pwaTransferSafety'
+import { webTransferStore } from './transfers'
 
 /**
  * P1-B1: explicit opt-in, never an offline permission grant.
@@ -98,11 +100,28 @@ export default function PwaOfflineDirectorySection({
             label="允许在此设备保存已访问目录的只读摘要"
           />
           {snapshot?.consented ? (
-            <Typography variant="body2" color="text.secondary" data-xdrive-pwa-offline-count>
-              当前存有 {directoryCount} 个目录、{fileCount} 条摘要；
-              每账号最多 10 个目录、200 条记录，最长保留 7 天。
-              重新联网后必须由服务器再次验证；这不是离线修改或下载授权。
-            </Typography>
+            <>
+              <Typography variant="body2" color="text.secondary" data-xdrive-pwa-offline-count>
+                当前存有 {directoryCount} 个目录、{fileCount} 条摘要；
+                每账号最多 10 个目录、200 条记录，最长保留 7 天。
+                重新联网后必须由服务器再次验证；这不是离线修改或下载授权。
+              </Typography>
+              {directoryCount > 0 ? (
+                <Button data-xdrive-pwa-offline-open-history variant="outlined"
+                  sx={{ mt: 1, minHeight: 44 }}
+                  onClick={() => {
+                    const tasks = webTransferStore.snapshot()
+                    if (xDriveHasPendingBrowserUpload(tasks) ||
+                        xDriveHasPendingBrowserDownload(tasks)) {
+                      setError('当前有浏览器上传或下载正在进行，请完成或取消后再打开历史目录。')
+                      return
+                    }
+                    window.location.hash = '#/offline/files'
+                  }}>
+                  查看已保存的历史目录（只读）
+                </Button>
+              ) : null}
+            </>
           ) : null}
         </>
       )}

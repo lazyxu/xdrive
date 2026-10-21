@@ -14,6 +14,9 @@ export const XDRIVE_PWA_OFFLINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const DB_NAME = 'xdrive-pwa-offline-metadata-v2'
 const STORE_NAME = 'owner-scopes'
 const DB_VERSION = 1
+// Only a non-secret hint to locate the last explicitly opted-in scope after a
+// browser process restart. This is NOT an authentication token or ACL proof.
+const RELAUNCH_HINT_KEY = 'xdrive:pwa:offline-relaunch-owner:v1'
 
 export type XDrivePwaOfflineOwner = {
   origin: string
@@ -49,6 +52,13 @@ export type XDrivePwaOfflineDirectory = {
   capturedAt: number
   partial: true
   items: XDrivePwaOfflineItem[]
+}
+
+type OfflineRelaunchHint = {
+  key: typeof RELAUNCH_HINT_KEY
+  version: 1
+  savedAt: number
+  owner: XDrivePwaOfflineOwner
 }
 
 type OwnerRecord = {
@@ -228,7 +238,18 @@ export async function xDrivePwaSetOfflineConsent(
   await withStore<void>('readwrite', (store, done) => {
     if (!enabled) {
       store.delete(key)
-      done(undefined)
+      const last = store.get(RELAUNCH_HINT_KEY)
+      last.onsuccess = () => {
+        const hint = last.result as OfflineRelaunchHint | undefined
+        if (hint?.version === 1) {
+          try {
+            if (xDrivePwaOfflineScopeKey(hint.owner) === key) store.delete(RELAUNCH_HINT_KEY)
+          } catch {
+            store.delete(RELAUNCH_HINT_KEY)
+          }
+        }
+        done(undefined)
+      }
       return
     }
     const request = store.get(key)
@@ -237,9 +258,13 @@ export async function xDrivePwaSetOfflineConsent(
       const directories = existing?.version === 1 && existing?.consented === true &&
         Array.isArray(existing.directories) ? existing.directories : []
       store.put({ key, version: 1, consented: true, directories } satisfies OwnerRecord)
+      store.put({
+        key: RELAUNCH_HINT_KEY, version: 1, savedAt: Date.now(), owner: { ...owner },
+      } satisfies OfflineRelaunchHint)
       done(undefined)
     }
   })
+  if (!enabled) xDrivePwaBroadcastOfflinePurge()
 }
 
 export async function xDrivePwaCaptureVisitedDirectory(
@@ -263,8 +288,22 @@ export async function xDrivePwaCaptureVisitedDirectory(
         done(false)
         return
       }
-      store.put(next)
-      done(true)
+      // Refresh the relaunch TTL only for this still-active consent hint.
+      // An obsolete in-flight capture for a different Owner must not take
+      // over the currently selected offline identity.
+      const hintRead = store.get(RELAUNCH_HINT_KEY)
+      hintRead.onsuccess = () => {
+        const hint = hintRead.result as OfflineRelaunchHint | undefined
+        if (hint?.version === 1) {
+          try {
+            if (xDrivePwaOfflineScopeKey(hint.owner) === key) {
+              store.put({ ...hint, savedAt: Date.now() } satisfies OfflineRelaunchHint)
+            }
+          } catch { /* keep the untrusted invalid hint from becoming active */ }
+        }
+        store.put(next)
+        done(true)
+      }
     }
   })
 }
@@ -281,12 +320,67 @@ export async function xDrivePwaReadOfflineDirectories(owner: XDrivePwaOfflineOwn
         return
       }
       const now = Date.now()
-      const directories = record.directories.filter(directory =>
-        Number.isSafeInteger(directory.capturedAt) && directory.capturedAt <= now &&
-        now - directory.capturedAt <= XDRIVE_PWA_OFFLINE_MAX_AGE_MS)
+      // Treat same-origin IDB as untrusted input. Never render over-limit or
+      // non-whitelisted fields even if a stale/corrupt record was injected.
+      const directories = record.directories.slice(0, XDRIVE_PWA_OFFLINE_MAX_DIRECTORIES)
+        .flatMap(directory => {
+          if (!directory || !Number.isSafeInteger(directory.capturedAt) ||
+              directory.capturedAt > now || now - directory.capturedAt > XDRIVE_PWA_OFFLINE_MAX_AGE_MS ||
+              !Array.isArray(directory.items)) return []
+          const sanitized = xDrivePwaNormalizeVisitedDirectory({
+            id: directory.id, name: directory.name,
+            capturedAt: directory.capturedAt,
+            totalCount: directory.totalCount ?? undefined,
+            items: directory.items.slice(0, XDRIVE_PWA_OFFLINE_MAX_ITEMS_PER_DIRECTORY),
+          })
+          return sanitized ? [sanitized] : []
+        })
       done({ consented: true, revalidated: false, directories })
     }
   })
+}
+
+/** The offline relaunch hint is an explicit-consent locator, never proof
+ * that a previous login or directory permission is still valid. */
+export async function xDrivePwaReadRelaunchOwner(): Promise<XDrivePwaOfflineOwner | null> {
+  if (!offlineSupported()) return null
+  return withStore<XDrivePwaOfflineOwner | null>('readonly', (store, done) => {
+    const hintRead = store.get(RELAUNCH_HINT_KEY)
+    hintRead.onsuccess = () => {
+      const hint = hintRead.result as OfflineRelaunchHint | undefined
+      const now = Date.now()
+      if (!hint || hint.key !== RELAUNCH_HINT_KEY || hint.version !== 1 ||
+          !Number.isSafeInteger(hint.savedAt) || hint.savedAt > now ||
+          now - hint.savedAt > XDRIVE_PWA_OFFLINE_MAX_AGE_MS) {
+        done(null)
+        return
+      }
+      let scope: string
+      try { scope = xDrivePwaOfflineScopeKey(hint.owner) }
+      catch { done(null); return }
+      const recordRead = store.get(scope)
+      recordRead.onsuccess = () => {
+        const record = recordRead.result as OwnerRecord | undefined
+        done(record?.version === 1 && record.consented === true &&
+          Array.isArray(record.directories) ? { ...hint.owner } : null)
+      }
+    }
+  })
+}
+
+export function xDrivePwaVerifiedIdentityMatches(owner: XDrivePwaOfflineOwner, me: {
+  id: number
+  username: string
+  must_change_password?: boolean
+  pwa_offline_instance_id?: string
+}): boolean {
+  if (!me || me.must_change_password || !me.pwa_offline_instance_id) return false
+  try {
+    return xDrivePwaOfflineScopeKey(owner) === xDrivePwaOfflineScopeKey({
+      origin: owner.origin, userID: me.id, username: me.username,
+      instanceID: me.pwa_offline_instance_id,
+    })
+  } catch { return false }
 }
 
 /** Invoke on sign-out/auth switch, including when offline; never clear the
@@ -297,12 +391,16 @@ export async function xDrivePwaClearOfflineMetadata(): Promise<void> {
     store.clear()
     done(undefined)
   })
-  // Cross-tab best-effort display invalidation. No credentials or IDs in the message.
-  if (typeof BroadcastChannel !== 'undefined') {
-    const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
-    channel.postMessage({ kind: 'xdrive-pwa-offline-purge' })
-    channel.close()
-  }
+  xDrivePwaBroadcastOfflinePurge()
+}
+
+function xDrivePwaBroadcastOfflinePurge(): void {
+  // A peer must discard a rendered snapshot after logout or consent removal.
+  // Broadcast contains no credentials, Owner identifiers, or file names.
+  if (typeof BroadcastChannel === 'undefined') return
+  const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
+  channel.postMessage({ kind: 'xdrive-pwa-offline-purge' })
+  channel.close()
 }
 
 export function xDrivePwaObserveOfflinePurge(listener: () => void): () => void {
