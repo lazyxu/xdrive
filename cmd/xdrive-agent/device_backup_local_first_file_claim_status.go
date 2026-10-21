@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/lazyxu/xdrive/internal/localpushwriter"
 )
 
 // localFirstFileDurableClaimPaths derives ONLY the same nonsecret, stable
@@ -28,10 +30,17 @@ func localFirstFileDurableClaimPaths(
 	identity := key.server + "\x00" + key.account + "\x00" + key.deviceID + "\x00" + source
 	requestHash := sha256.Sum256([]byte("xdrive-localpush-request-slot-v1\x00" + identity))
 	requestID := "local-push-request-" + hex.EncodeToString(requestHash[:16])
-	writerHash := sha256.Sum256([]byte("xdrive/native-writer-slot-v1\x00" + identity))
+	// Use the actual production native Writer slot algorithm instead of
+	// copying its hash/prefix: a future Writer naming change must not make
+	// a surviving original appear absent after Agent restart.
+	writerPath, err := localpushwriter.OriginalClaimPath(
+		configDir, key.server, key.account, key.deviceID, key.sourceID)
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
 	root := filepath.Join(configDir, "localpush")
 	return [3]string{
-		filepath.Join(root, "native-writers", hex.EncodeToString(writerHash[:16])+".claim"),
+		writerPath,
 		filepath.Join(root, "stage-admissions", requestID+".claim"),
 		filepath.Join(root, "operation-requests", requestID+".claim"),
 	}, nil
