@@ -42,6 +42,10 @@ COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
 COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
 COPY deploy/Caddyfile.common /etc/caddy/Caddyfile.common
 COPY web/dist/ /srv/
+# Main Caddy overlays /srv/assets; rescue keeps the image-baked copy.
+COPY web/dist/assets/ /usr/share/xdrive-current-assets/
+COPY deploy/pwa-archive-assets.sh /usr/local/bin/xdrive-pwa-archive-assets
+RUN chmod 0755 /usr/local/bin/xdrive-pwa-archive-assets
 
 # A bare IP URL normally sends no SNI. Caddy 2.10.2 must emit a real
 # TLS connection policy with default_sni for BOTH IP-only and dual modes,

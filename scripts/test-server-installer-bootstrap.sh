@@ -381,6 +381,9 @@ fi
 grep -q 'Migrated legacy connector credential key into keyring version 1.' "$TMP/upgrade.out"
 grep -q 'Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication.' "$TMP/upgrade.out"
 grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
+# A legacy deployment without discoverable Caddy must upgrade without aborting.
+# Warning is mandatory: old lazy assets cannot be claimed as preserved.
+grep -q 'WARNING: old Caddy unavailable; no historical PWA assets migrated.' "$TMP/upgrade.err"
 grep -q '\[xDrive\] existing deployment detected; entering upgrade maintenance window...' "$TMP/upgrade.out"
 grep -q '\[xDrive\] transaction armed; rollback backup:' "$TMP/upgrade.out"
 test -x "$TMP/config-upgrade/bin/xdrive-server"

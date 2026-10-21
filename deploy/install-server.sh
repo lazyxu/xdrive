@@ -1032,6 +1032,68 @@ managed_container_id() {
     --filter "label=com.docker.compose.service=$service" </dev/null 2>/dev/null | head -n1
 }
 
+# P0-B1: export the currently running image's public lazy chunks before
+# replacing it. A content-hash collision is a deployment failure.
+preserve_current_caddy_assets() {
+  [[ "$UPGRADE_EXISTING" == "1" ]] || return 0
+  local archive old_id staging origin relative target directory temp
+  archive="$(env_value XD_CADDY_ASSET_DIR)"
+  # Missing or inaccessible legacy Caddy is an expected upgrade input.
+  # Probe failure must not abort the already armed transaction.
+  old_id="$(managed_container_id caddy || true)"
+  if [[ -z "$old_id" ]]; then
+    echo "[xDrive] WARNING: old Caddy unavailable; no historical PWA assets migrated." >&2
+    return 0
+  fi
+  mkdir -p "$archive"
+  if [[ -L "$archive" || -n "$(find "$archive" -type l -print -quit)" ]]; then
+    echo "[xDrive] unsafe public asset archive symlink." >&2
+    return 1
+  fi
+  staging="$(mktemp -d "$STATE_DIR/.pwa-old-assets.XXXXXX")"
+  if ! docker cp "$old_id:/srv/assets/." "$staging/" </dev/null >/dev/null 2>&1; then
+    rm -rf "$staging"
+    echo "[xDrive] WARNING: old image /srv/assets not readable; no old assets migrated." >&2
+    return 0
+  fi
+  if [[ -n "$(find "$staging" -type l -print -quit)" ]]; then
+    rm -rf "$staging"
+    echo "[xDrive] rejecting symlink from old public bundle." >&2
+    return 1
+  fi
+  while IFS= read -r -d '' origin; do
+    relative="${origin#"$staging"/}"
+    if [[ ! "$relative" =~ ^([A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(js|css|svg|png|webp|woff|woff2|jpg|jpeg|gif|avif|wasm)$ ]]; then
+      rm -rf "$staging"
+      echo "[xDrive] rejecting non-hashed old public asset." >&2
+      return 1
+    fi
+    target="$archive/$relative"
+    directory="${target%/*}"
+    mkdir -p "$directory"
+    if [[ -e "$target" || -L "$target" ]]; then
+      if [[ ! -f "$target" || -L "$target" ]] || ! cmp -s "$origin" "$target"; then
+        rm -rf "$staging"
+        echo "[xDrive] immutable archive collision." >&2
+        return 1
+      fi
+      continue
+    fi
+    temp="$(mktemp "$directory/.xdrive-old-asset.XXXXXX")"
+    if ! install -m 0644 "$origin" "$temp"; then
+      rm -f "$temp"; rm -rf "$staging"; return 1
+    fi
+    if ! ln "$temp" "$target" 2>/dev/null; then
+      if [[ ! -f "$target" || -L "$target" ]] || ! cmp -s "$origin" "$target"; then
+        rm -f "$temp"; rm -rf "$staging"; return 1
+      fi
+    fi
+    rm -f "$temp"
+  done < <(find "$staging" -type f -print0)
+  rm -rf "$staging"
+  echo "[xDrive] previous public PWA hashed assets archived."
+}
+
 container_env_value() {
   local container_id="$1" key="$2"
   [[ -n "$container_id" ]] || return 0
@@ -1624,6 +1686,7 @@ configure_data_path XD_FILES_DATA_DIR "$DATA_DIR/files"
 configure_data_path XD_POSTGRES_DATA_DIR "$DATA_DIR/postgres"
 configure_data_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data"
 configure_data_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config"
+configure_data_path XD_CADDY_ASSET_DIR "$DATA_DIR/caddy/assets"
 set_env XD_HOME_HOST_DIR "$(cd "$XDRIVE_HOME" && pwd)"
 set_env XD_BACKUP_ROOT_HOST_DIR "$(cd "$BACKUP_ROOT" && pwd)"
 configure_data_path XD_MEDIA_WORKER_RUNTIME_DIR "$STATE_DIR/media-worker"
@@ -1893,6 +1956,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP (database-only; file data backup disabled)"
   fi
   migrate_legacy_named_volumes
+  preserve_current_caddy_assets
 fi
 
 stage 6 "install deployment files"
