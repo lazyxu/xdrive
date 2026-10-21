@@ -1,0 +1,93 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { execFileSync, spawnSync } = require('node:child_process')
+const script = path.resolve(__dirname, '../../scripts/pwa-archive-audit.mjs')
+const publisher = path.resolve(__dirname, '../../deploy/pwa-archive-assets.sh')
+function setup(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-public-archive-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  return root
+}
+function run(root) { return execFileSync(process.execPath, [script, root], { encoding: 'utf8' }) }
+function reject(root) {
+  const p = spawnSync(process.execPath, [script, root], { encoding: 'utf8' })
+  assert.equal(p.status, 1)
+  assert.equal(p.stdout, '')
+  assert.match(p.stderr, /unsafe or unreadable public archive/)
+  assert.equal(p.stderr.includes(root), false, 'operator paths must not be logged')
+}
+test('empty archive is valid, no private paths in output', t => {
+  const root = setup(t)
+  const report = JSON.parse(run(root))
+  assert.equal(report.files, 0)
+  assert.equal(report.logical_bytes, 0)
+  assert.deepEqual(report.extensions, {})
+  assert.equal(report.read_only, true)
+  assert.equal(JSON.stringify(report).includes(root), false)
+})
+test('two public releases and hardlinks count without duplicate physical bytes', t => {
+  const root = setup(t)
+  fs.mkdirSync(path.join(root, 'releaseA'))
+  fs.writeFileSync(path.join(root, 'index-QweRtY12.js'), 'abcdef')
+  fs.linkSync(path.join(root, 'index-QweRtY12.js'), path.join(root, 'releaseA', 'index-ZyXwVu34.js'))
+  fs.writeFileSync(path.join(root, 'releaseA', 'styles-abcdef12.css'), '123')
+  const before = fs.statSync(path.join(root, 'index-QweRtY12.js')).mtimeMs
+  const report = JSON.parse(run(root))
+  assert.equal(report.files, 3)
+  assert.equal(report.directories, 1)
+  assert.equal(report.logical_bytes, 15)
+  assert.equal(report.inode_unique_bytes, 9)
+  assert.deepEqual(report.extensions, {css:{files:1,bytes:3},js:{files:2,bytes:12}})
+  assert.ok(report.allocated_bytes >= 0 || report.allocated_bytes === null)
+  assert.equal(fs.statSync(path.join(root, 'index-QweRtY12.js')).mtimeMs, before)
+})
+test('reject un-hashed files and never echo operator filenames', t => {
+  const root = setup(t)
+  fs.writeFileSync(path.join(root, 'client.jwt'), 'secret')
+  reject(root)
+})
+test('reject symbolic links and unsafe nested directory names', { skip: process.platform === 'win32' }, t => {
+  const root = setup(t)
+  const target = path.join(root, 'client-AbCdEf12.js')
+  fs.writeFileSync(target, 'asset')
+  fs.symlinkSync(target, path.join(root, 'alias-QwErTy99.js'))
+  reject(root)
+  fs.rmSync(path.join(root, 'alias-QwErTy99.js'))
+  fs.mkdirSync(path.join(root, 'private.assets'))
+  reject(root)
+})
+test('reject symbolic link as the archive root', { skip: process.platform === 'win32' }, t => {
+  const root = setup(t)
+  const linked = root + '-link'
+  t.after(() => fs.rmSync(linked, { force:true }))
+  fs.symlinkSync(root, linked, 'dir')
+  reject(linked)
+})
+test('read-only audit of real immutable publisher output, including repeat seed', { skip: process.platform === 'win32' }, t => {
+  const root = setup(t)
+  const input = path.join(root, 'input')
+  const archive = path.join(root, 'archive')
+  fs.mkdirSync(input)
+  fs.mkdirSync(archive)
+  fs.writeFileSync(path.join(input, 'index-QweRtY12.js'), 'historicalA')
+  fs.writeFileSync(path.join(input, 'chunk-ZyXwVu34.css'), 'historicalB')
+  execFileSync('sh', [publisher, input, archive])
+  const first = JSON.parse(run(archive))
+  assert.equal(first.files, 2)
+  assert.equal(first.logical_bytes, 'historicalA'.length + 'historicalB'.length)
+  execFileSync('sh', [publisher, input, archive])
+  const second = JSON.parse(run(archive))
+  assert.deepEqual(second, first)
+  assert.equal(fs.readFileSync(path.join(archive, 'index-QweRtY12.js'), 'utf8'), 'historicalA')
+})
+
+test('mixed safe and private entries never produce partial inventory', t => {
+  const root = setup(t)
+  fs.writeFileSync(path.join(root, 'safe-AbCdEf99.js'), 'safe-public')
+  fs.writeFileSync(path.join(root, 'session.jwt'), 'secret-private')
+  reject(root)
+})
