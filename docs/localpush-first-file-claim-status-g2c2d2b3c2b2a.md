@@ -1,0 +1,16 @@
+# G2c2d2b3c2b2a — owning Agent first-file persistent quarantine status after restart
+
+## Accepted baseline
+P0-A1 #1276, P0-C1 #1277 and Desktop safe read #1290 are merged. Actual Windows/Linux owning Desktop manual Backup-only first-file upload (≤64 MiB) is enabled in source by #2212. #2297 (B3c2b1) has merged on a complete master with 77-job source-exact CI/Final Gate success. An in-memory Agent job can report `running`, `observed` or `uncertain`, but after Agent restart it has no entry and historically reported `not-recorded` even when an OS-private permanent upload claim survived.
+
+## Implemented read-only correction
+The already authenticated owning Desktop first-file status GET continues to use exactly the current Server/account/session/OS-registered Device + Source key, with another identity check after reading. Only when the process has no matching job, the Agent independently and read-only probes three stable private, nonsecret O_EXCL slots for this exact Server/account/Device/Source: original native Writer, first Stage admission and operation-request claim. These slots intentionally exclude mutable session, Root, target and revision. A surviving OR unreadable claim downgrades `not-recorded` to `uncertain`; empty slots remain nonauthoritative `not-recorded`. No request-key contents, OS path, original filename, private error or Root fingerprint crosses IPC. Running and already verified process observations never change.
+
+Any positive, broken or symlinked marker is only quarantine evidence, never proof that SQL/CAS committed, a physical cancel, a completed backup or permission to retry. Directory and claim reads create no files or tokens and never delete original evidence. If the claim probe fails, response remains conservative `uncertain` rather than returning apparent no-history. Every manual start still invokes the original native and Server O_EXCL/Owner/Device/Root writer fences; this GET grants no write capability and does not lift the one-shot limit.
+
+## Validation and next priorities
+Go regression checks compare the Stage/Operation claim paths to the production original key builders, verify session-stable but foreign Server/account/Device/Source-separated slots, test all three persisted markers, malformed/noncanonical/cancelled paths, no mutation, and forbid promoting an uncertain status into `observed`. Current exact HEAD must pass Go Linux/Windows, genuine PostgreSQL API Race, Web/Desktop, Rootless, packaging/images and Final Gate; retain Draft until green and fresh clean mergeability.
+
+Still not implemented: durable native/SQL/CAS `LocalPushFileTerminalPhysicalCommit` writing and physical-CANCEL exclusion, audited Stage/key retirement, second file, SourceRun, scheduler, NAS/Mirror, power-loss distributed recovery or installed 100k/≥4 GiB evidence. This status improvement does NOT pretend that existing one-shot upload is a finished or deployed backup. Continue #2204's actual terminal-writer priority next.
+
+Production environment security acceptance: **按用户决定跳过（未验收）**. Never request production access, accounts, AK/JWT/Cookie/HAR/packet captures or human signoff, and never gate source/CI/PR on inaccessible production acceptance. Retain code-level Owner/Device/Root/native/SQL/CAS security and genuine tests.
