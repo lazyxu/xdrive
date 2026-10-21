@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -48,7 +50,7 @@ func TestLocalPushOriginalOperationPhysicalTerminalCandidateIsReadOnly(t *testin
 func TestLocalPushOriginalOperationPhysicalTerminalCandidateFailsClosed(t *testing.T) {
 	for _, scenario := range []string{
 		"wrong-key", "wrong-stage", "wrong-generation", "wrong-owner",
-		"revoked-device", "missing-cas", "existing-terminal", "missing-terminal-schema",
+		"revoked-device", "missing-cas", "corrupt-cas", "existing-terminal", "missing-terminal-schema",
 		"wrong-revision", "mirror-mode", "canceled",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -71,6 +73,18 @@ func TestLocalPushOriginalOperationPhysicalTerminalCandidateFailsClosed(t *testi
 				}
 			case "missing-cas":
 				if err := f.local.Delete(context.Background(), f.casKey); err != nil {
+					t.Fatal(err)
+				}
+			case "corrupt-cas":
+				// Genuine in-place same-size mutation of the original physical
+				// CAS. This is not an HTTP mock or altered SQL digest.
+				if len(f.body) == 0 {
+					t.Fatal("physical CAS fixture unexpectedly empty")
+				}
+				altered := append([]byte(nil), f.body...)
+				altered[len(altered)/2] ^= 0x40
+				path := filepath.Join(f.local.FilesystemRoot(), filepath.FromSlash(f.casKey))
+				if err := os.WriteFile(path, altered, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			case "existing-terminal":
@@ -103,6 +117,15 @@ func TestLocalPushOriginalOperationPhysicalTerminalCandidateFailsClosed(t *testi
 			if err == nil || candidate != (localPushPhysicalTerminalCandidate{}) {
 				t.Fatalf("%s admitted an unauthenticated or contradictory candidate: %+v %v",
 					scenario, candidate, err)
+			}
+			if scenario == "corrupt-cas" {
+				// A corrupt canonical blob must never be promoted by the
+				// Server's retained operation UPDATE/CAS double check.
+				var count int64
+				if err := f.server.DB.Model(&meta.LocalPushFileTerminal{}).
+					Where("source_id = ?", f.source.ID).Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("corrupt CAS published a file-terminal outcome: %d %v", count, err)
+				}
 			}
 			if scenario == "existing-terminal" {
 				// Ordinary historical diagnostics do not inherit the new B3b2
