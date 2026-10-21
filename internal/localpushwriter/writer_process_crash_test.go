@@ -85,6 +85,13 @@ func TestNativeWriterClaimRemainsQuarantinedAfterProcessDeath(t *testing.T) {
 		strings.Contains(string(original), s.rootPath) {
 		t.Fatal("private original identity leaked in quarantined marker")
 	}
+	// A held observation following process death sees only the released
+	// LOCAL OS lock. It does not prove remote HTTP/SQL/CAS quiescence.
+	observed := 0
+	if err := WithHeldOriginalWriterObservation(context.Background(), s,
+		func(context.Context) error { observed++; return nil }); err != nil || observed != 1 {
+		t.Fatalf("post-kill original OS-lock observation failed: %v count=%d", err, observed)
+	}
 	// Correlation of exact original marker after a real OS Kill only:
 	// NO remote physical COMMIT/CANCEL, restart, key retirement, new Stage.
 	if err := ReadOriginalWriterQuarantine(context.Background(), s); err != nil {
