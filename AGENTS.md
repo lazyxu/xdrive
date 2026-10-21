@@ -1,3 +1,11 @@
+## A3i-Msg2 · Inert isolated-iframe PARENT interface only (2026-10-21)
+
+- This staged child branch depends on #2263 A3i-Msg1 and changes ONLY ui/shared/src/media-gallery-baidu-isolated-frame-host.ts, the real-source desktop/tests/gallery-places-a3i-isolated-frame-host.cjs, docs/gallery-places-a3i-isolated-frame-parent-msg2.md and this additive AGENTS note. It is NOT an independent active Baidu map, iframe child, Server origin host, production CSP or hostile SDK isolation proof.
+- The trusted parent mints WebCrypto nonce and opaque random Cell keys, posts at most 64 explicit-opt-in BD09 representative points with exact targetOrigin, and checks exact incoming window/source/nonce/method. A child click remains an intent; fresh Owner + Consent + revision + signed /cell-items Range must be checked before any viewer opens.
+- Using sandbox allow-scripts + allow-same-origin needs a REAL separately deployed and audited site with independent cookies/storage AND Gallery frame-ancestors protection, navigation prohibition and strict parent/child CSP. Different hostnames are not enough to prove this. Until those source and controlled browser security checks exist, do not enable the component or change current fail-closed Static map fallback.
+- No user production account, HAR, AK, JWT, Cookie, credential or manual production review requested. Permanent rule: production-only security acceptance 按用户决定跳过（未验收）, not a code/CI/PR/merge gate. Source Origin/CSP/Owner/Consent/revoke/fail-closed tests remain mandatory.
+- Keep original Msg1 PR and tests unmodified; this child is Draft on Msg1 parent and must later restack on complete current master after Msg1 merges, then pass its OWN exact-head CI/Final Gate and clean GitHub PR before merge.
+
 ## P0-D2b-1a · restore independently merged Share routes during Caddy read-only PR rebuild (2026-10-21)
 
 - Accurate old PR HEAD 09fc045df3a0cf0ed729f258b88bd693a523254c was rebuilt with OLD router.go/router_contract_test.go blobs, dropping unrelated NEW master public thumbnail-ticket endpoint and its manifest despite retaining the Host adoption GET. Exact CI #39539487799 desktop-tests failed real SH-P016 route contract (POST /public/share/thumbnail-ticket), 3472 passed / 1 failed / 1 skipped. THIS WAS A REAL REBASE REGRESSION, NOT A flaky test. Never change or skip SH-P016 to hide it.
