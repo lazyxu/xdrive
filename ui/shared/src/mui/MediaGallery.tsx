@@ -7,6 +7,10 @@ import {
   xDriveClearBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot,
 } from '../media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import {
+  xDriveReadBaiduCellReturn, xDriveRememberBaiduCellReturn,
+  xDriveRememberBaiduCellAnchor, xDriveClearBaiduCellReturn,
+} from '../media-gallery-baidu-cell-return-session'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
@@ -656,6 +660,13 @@ export function XDriveMediaGalleryPage({
     camera: xDriveReadBaiduNativeCamera(preferenceScope) }))
   const baiduNativeCameraSnapshot = baiduCameraOwner.scope === preferenceScope
     ? baiduCameraOwner.camera : xDriveReadBaiduNativeCamera(preferenceScope)
+  // Persisted in-memory only after Owner Range authorization, not from SDK.
+  const [baiduCellOwner, setBaiduCellOwner] = useState<{
+    scope: string; selection?: MediaBaiduNativeCellSelection
+  }>(() => ({ scope: preferenceScope,
+    selection: xDriveReadBaiduCellReturn(preferenceScope)?.selection }))
+  const selectedBaiduCell = baiduCellOwner.scope === preferenceScope
+    ? baiduCellOwner.selection : xDriveReadBaiduCellReturn(preferenceScope)?.selection
   const rememberBaiduNativeCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
     if (!xDriveValidBaiduNativeCameraSnapshot(camera) ||
         !xDriveRememberBaiduNativeCamera(preferenceScope, camera)) return
@@ -663,7 +674,9 @@ export function XDriveMediaGalleryPage({
   }, [preferenceScope])
   const clearBaiduNativeCamera = useCallback(() => {
     xDriveClearBaiduNativeCamera(preferenceScope)
+    xDriveClearBaiduCellReturn(preferenceScope)
     setBaiduCameraOwner({ scope: preferenceScope, camera: undefined })
+    setBaiduCellOwner({ scope: preferenceScope, selection: undefined })
   }, [preferenceScope])
   const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   // Albums, people, pets and Places arrive together in one authorized facets
@@ -942,10 +955,15 @@ export function XDriveMediaGalleryPage({
     setCurrentPerson((current) => current?.id === next.id ? next : current)
   }, [])
 
-  const rememberMobileGalleryAnchor = useCallback((nodeID: number) => {
-    if (!mobileGalleryViewport || !preferenceScope || !Number.isSafeInteger(nodeID) || nodeID <= 0) return
+  const rememberMobileGalleryAnchor = useCallback((nodeID: number, visibleIndex?: number) => {
+    if (!preferenceScope || !Number.isSafeInteger(nodeID) || nodeID <= 0) return
     const current = collectionTargetRef.current
-    if (!current || (current.kind !== 'all' && current.kind !== 'album')) return
+    if (current?.kind === 'baidu-cell') {
+      xDriveRememberBaiduCellAnchor(preferenceScope, nodeID, visibleIndex)
+      return
+    }
+    if (!mobileGalleryViewport || !current ||
+        (current.kind !== 'all' && current.kind !== 'album')) return
     mobileGalleryBrowsePositions.set(preferenceScope, {
       nodeID,
       section,
@@ -2248,6 +2266,14 @@ export function XDriveMediaGalleryPage({
       if (range.offset !== 0 || range.limit !== pageSize ||
           !Number.isSafeInteger(range.total_count) || range.total_count < 0 ||
           !Array.isArray(range.items) || range.items.length > pageSize) return
+      // Selected only after the matching authorized Owner Cell Range wins.
+      // Never use this remembered identity as permission for another request.
+      if (xDriveRememberBaiduCellReturn(preferenceScope, {
+        selection: cell, sort: { by: sort.by, dir: sort.dir },
+      })) {
+        setBaiduCellOwner({ scope: preferenceScope,
+          selection: { ...cell, bounds: { ...cell.bounds } } })
+      }
       if (section === 'places' && !query.place && !query.nearby && !query.bbox &&
           placesTotalCount !== null && places.length <= 48) {
         placesReturnPageRef.current = {
@@ -2288,7 +2314,7 @@ export function XDriveMediaGalleryPage({
     }).finally(() => {
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
-  }, [pageSize, places, placesPageOffset, placesTotalCount, query, section, source,
+  }, [pageSize, places, placesPageOffset, placesTotalCount, preferenceScope, query, section, source,
     virtualCollection.primePage, virtualCollection.reset])
 
   const nativePhotoOpenAbort = useRef<AbortController | null>(null)
@@ -3350,6 +3376,7 @@ export function XDriveMediaGalleryPage({
         hasRequestedPhotoRange={collectionTarget !== null}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         isBaiduCellWall={collectionTarget?.kind === 'baidu-cell'}
+        selectedBaiduNativeCell={selectedBaiduCell}
         selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
         albums={acceptedFacetOwner === preferenceScope ? albums : []}
         indexFacetsVerified={acceptedFacetOwner === preferenceScope}
@@ -3836,7 +3863,7 @@ export interface XDriveMediaGalleryProps {
   onMobileCollectionsOverviewChange?: (overview: boolean) => void
   onMobilePrimaryTabChange?: (tab: 'library' | 'collections') => void
   onOpenMobileFilters?: () => void
-  onVisibleAnchorNode?: (nodeID: number) => void
+  onVisibleAnchorNode?: (nodeID: number, logicalIndex?: number) => void
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
   preferenceScope?: string
@@ -3847,6 +3874,7 @@ export interface XDriveMediaGalleryProps {
   collectionKey?: string
   /** Explicit Owner-scoped Cell wall presentation, never derived from an opaque key. */
   isBaiduCellWall?: boolean
+  selectedBaiduNativeCell?: MediaBaiduNativeCellSelection
   /** Stable logical selection scope, distinct from a sort/range request generation. */
   selectionScopeKey?: string
   albums?: MediaAlbum[]
@@ -5562,6 +5590,7 @@ export function XDriveMediaGallery({
   hasRequestedPhotoRange = true,
   collectionKey = '',
   isBaiduCellWall = false,
+  selectedBaiduNativeCell,
   selectionScopeKey = collectionKey,
   albums = [],
   indexFacetsVerified = true,
@@ -6058,7 +6087,7 @@ export function XDriveMediaGallery({
     if (!Number.isSafeInteger(index) || index < 0) return
     viewAnchorIndexRef.current = index
     const visible = virtualCollection?.itemAt(index) ?? items[index]
-    if (visible?.node?.id) onVisibleAnchorNode?.(visible.node.id)
+    if (visible?.node?.id) onVisibleAnchorNode?.(visible.node.id, index)
     const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineGroupsRef.current, index)
     const key = group?.key ?? null
     setCurrentTimelineGroupKey((current) => current === key ? current : key)
@@ -7807,6 +7836,7 @@ export function XDriveMediaGallery({
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
             onOpenBaiduNativeCell={onOpenBaiduNativeCell}
+            selectedNativeCell={selectedBaiduNativeCell}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             initialCamera={placesCameraSnapshot}

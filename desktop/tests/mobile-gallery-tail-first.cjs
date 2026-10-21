@@ -46,7 +46,10 @@ test('mobile sort key is separate and the server tail query is one ephemeral fir
   assert.ok(gallery.includes('mobileGalleryBrowsePositions.set('))
   assert.ok(gallery.includes('browsePosition.querySignature === mediaGalleryQuerySignature(scopedQuery)'))
   assert.ok(gallery.includes('onVisibleAnchorNode={rememberMobileGalleryAnchor}'))
-  assert.ok(gallery.includes('onVisibleAnchorNode?.(visible.node.id)'))
+  // Original Mobile Web anchor must still receive Node identity, now accompanied
+  // by a bounded logical index for Owner-scoped BD09 Cell sparse restoration.
+  // This asserts the stronger callback without relaxing legacy mobile handling.
+  assert.ok(gallery.includes('onVisibleAnchorNode?.(visible.node.id, index)'))
   assert.match(web,/values\.set\('initial_position', query\.initial_position\)/)
   assert.match(web,/values\.set\('unknown_first', 'true'\)/)
   assert.match(models,/initial_position\?: 'latest'/)
