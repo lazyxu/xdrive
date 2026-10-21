@@ -85,6 +85,11 @@ func TestNativeWriterClaimRemainsQuarantinedAfterProcessDeath(t *testing.T) {
 		strings.Contains(string(original), s.rootPath) {
 		t.Fatal("private original identity leaked in quarantined marker")
 	}
+	// Correlation of exact original marker after a real OS Kill only:
+	// NO remote physical COMMIT/CANCEL, restart, key retirement, new Stage.
+	if err := ReadOriginalWriterQuarantine(context.Background(), s); err != nil {
+		t.Fatal("post-crash original writer quarantine unreadable:", err)
+	}
 	released, err := os.OpenFile(s.path(), os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
