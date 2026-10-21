@@ -1,0 +1,87 @@
+name: PWA P0-C2 Real Chromium Files Gallery Navigation BEFORE
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-p0c2-nav-before:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-p0c2-navigation-before-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install original Web dependencies and native Chromium Playwright driver
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-p0c2-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p0c2-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_P0C2_BROWSER=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_P0C2_BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_P0C2_BROWSER=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "No real Chromium binary" >&2
+            exit 1
+          fi
+      - name: Validate numeric-only and genuine original browser source contracts
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/mobile-web-app-browser.cjs
+          node --check desktop/scripts/pwa-p0c2-navigation-metrics.cjs
+          node --test desktop/tests/pwa-p0c2-navigation-metrics.cjs
+      - name: Build actual current production Web
+        run: npm --prefix web run build
+      - name: Actual 390px Files/Gallery taps, nine transitions each direction
+        env:
+          XD_PWA_P0C2_NAV_BEFORE: '1'
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_P0C2_BROWSER }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-p0c2-driver/node_modules/playwright-core
+          XDRIVE_BROWSER_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          mkdir -p desktop/pwa-p0c2-results
+          node desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-chrome --output-dir=desktop/pwa-p0c2-results
+          node - <<'NODE'
+          const assert = require('node:assert/strict')
+          const r = require('./desktop/pwa-p0c2-results/p0c2-summary.json')
+          assert.equal(r.schema, 'xdrive-pwa-p0c2-bounded-browser-navigation-before-v1')
+          assert.equal(r.independent_browser_sessions, 3)
+          assert.equal(r.transitions_per_direction, 9)
+          assert.equal(r.source_commit_sha, process.env.XD_PR_HEAD)
+          assert.equal(r.physical_ios, false)
+          assert.equal(r.actual_100k, false)
+          assert.equal(r.authenticated_go_backend, false)
+          for (const name of ['files-to-gallery', 'gallery-to-files']) {
+            const x = r.metrics[name]
+            assert(x.visible_ms.p50 > 0 && x.visible_ms.p95 > 0)
+            assert(x.header_height_px.p50 >= 50 && x.header_height_px.p50 <= 64)
+          }
+          assert.equal(r.samples.length, 18)
+          console.log('PWA_P0C2_CHROMIUM_BEFORE_VERIFIED ' + JSON.stringify({
+            head:r.source_commit_sha, browser:r.browser_version, n:r.transitions_per_direction,
+            metrics:r.metrics, realChrome:true, physicalIOS:false, realGo:false,
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p0c2-390px-files-gallery-navigation-before
+          path: desktop/pwa-p0c2-results/p0c2-summary.json
+          if-no-files-found: warn
+          retention-days: 21
