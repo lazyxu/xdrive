@@ -110,7 +110,7 @@ func (s *Server) checkLocalPushStageScopeTx(
 		return source, err
 	}
 	if err := tx.Select("id", "owner_id", "kind", "direction",
-		"status", "revision", "target_node_id").
+		"status", "sync_mode", "revision", "target_node_id").
 		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
 		Take(&source).Error; err != nil {
 		return source, err

@@ -14,9 +14,10 @@ import (
 // Only the original OS-private 32-byte operation key is a valid selector.
 // These structures never cross a Router, Agent IPC or renderer boundary.
 type localPushHistoricalOperationPhysicalSelector struct {
-	requestKey  []byte
-	operationID string
-	generation  uint64
+	requestKey                []byte
+	operationID               string
+	generation                uint64
+	requireFileTerminalVacant bool
 }
 
 type localPushHistoricalOperationPhysicalObservation struct {
@@ -118,8 +119,17 @@ func (s *Server) validateLocalPushHistoricalOperationPhysicalTx(
 		hint.StageExpiresAt.IsZero() {
 		return empty, deny
 	}
+	// Only the private terminal candidate requires original Operation UPDATE.
+	// Normal historical read callers retain their existing SHARE behavior.
+	originalLockStrength := "SHARE"
+	if selector.requireFileTerminalVacant {
+		if source.SyncMode != meta.SourceSyncModeBackup || source.Status != meta.SourceStatusPaused {
+			return empty, deny
+		}
+		originalLockStrength = "UPDATE"
+	}
 	var original meta.LocalPushOperationIntent
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+	if err := tx.Clauses(clause.Locking{Strength: originalLockStrength}).
 		Where("id = ? AND source_id = ? AND generation = ?",
 			selector.operationID, source.ID, selector.generation).
 		Take(&original).Error; err != nil {
@@ -164,6 +174,20 @@ func (s *Server) validateLocalPushHistoricalOperationPhysicalTx(
 		binding.BoundAt.Before(original.IssuedAt) ||
 		binding.BoundAt.After(original.ExpiresAt) {
 		return empty, deny
+	}
+	// Hold the original Operation UPDATE, not a historical SHARE, before
+	// checking the source-wide decision slot and latest generation. This
+	// check expires at transaction end and never becomes a writer ticket.
+	if selector.requireFileTerminalVacant {
+		if err := requireLocalPushFileTerminalVacantTx(tx, source.ID); err != nil {
+			return empty, deny
+		}
+		var later int64
+		if err := tx.Model(&meta.LocalPushOperationIntent{}).
+			Where("source_id = ? AND generation > ?", source.ID, selector.generation).
+			Count(&later).Error; err != nil || later != 0 {
+			return empty, deny
+		}
 	}
 	var outcome meta.LocalPushFirstLeafOperationCommit
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
