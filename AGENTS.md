@@ -6,6 +6,13 @@
 - **绝不绕过实际门禁。** GitHub 实际强制要求的最新状态、签名、审查、必需检查及新鲜 mergeability 仍需满足；不借旧绿掩盖失败/取消/未跑的必需测试，也不绕过源码安全授权、密钥隔离、审计、回滚和故障注入。清晰记录原被测试 SHA、CI URL、新 master 范围、无冲突/无耦合的核查依据、是否有新 SHA 和实际执行的补充测试。保护独立 Owner 修改和全部历史，禁止通过覆盖文件制造假无冲突。
 - 本规则取代下文旧阶段记录中“只要 master 前进或重新基于新 master 就必须全量重新测试”的一刀切表述；下方历史保留作为发生过的工作记录。生产环境专属验收继续 **按用户决定跳过（未验收）**，绝不索取生产账号、AK/JWT/Cookie/HAR/抓包或人工签字，也不作为源码/CI/PR 合并门槛。
 
+## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
+
+- **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
+- **绝不跳过可控制的源码级安全工作**：Owner/ACL、逐照片 Consent 和撤销、GPS 修订/签名 Epoch、第三方 JS 真正不同站点 HTTPS Origin/CSP、独立 Cookie/Storage 与无父 DOM/账户媒体读取权限、严格跨窗消息和恶意脚本可控浏览器测试、秘密与资源 allowlist、限速、失败关闭、回滚及可复现集成测试仍为工程必要工作。需要安全隔离源码才允许启用的功能，应在隔离缺失时退回 Static Map；此限制不等于要求生产验收。
+- **统一状态口径**：生产不可接触项目从 P0 未完成研发计数中移出，保留「按用户决定跳过（未验收）」独立风险说明；无法在当前环境完成的真实硬件/100k 数据指标应如实标注「未实测」，不捏造数值，也不要求用户提交真实私有数据。
+- **优先续做现有地图 PR**：已合入 A3h Cell→Owner Media Range→Viewer 返回链路不得重新称为 focusCell-only；原 #2263 inert Msg1 → 原 #2287 inert Msg2 → 后续独立 HTTPS Child/CSP/真实受控隔离是 P0-03 顺序。SDK 运行失败诊断 #2293 应在现有 PR 上收尾。不要为了记录历史生产验证硬门禁而重启旧分支；保留全部先前 AGENTS 条款与现有 CI 可复用规则，实际代码依赖变化时才重新测试。
+
 ## SD-UI-V1.1 · AliDNS reveal 30-second response lease (2026-10-21)
 
 - v1.1 §4.1 requires displayed AliDNS ID/Secret to disappear within 30s, on blur/visibility/account/source close. The existing shared MUI already applies Math.min(30, server expires_in_seconds); the privileged reveal endpoint previously advertised 60s, which is inconsistent for other consumers. Return exactly 30s from the Server and verify it in the existing authenticated real-PostgreSQL reveal test, without dumping a secret in test failures.
@@ -4968,3 +4975,29 @@ Prefer small, focused branches that remain single-commit from their first commit
 - Original distinct c2a child `a1981889469eb5f1993b72ca330d65d0a8800aec` was exactly one work commit above old #2285 and changed five scoped paths. Reconstruct the child onto COMPLETE current master as ONE work commit, copying the original four non-AGENTS feature implementation/Go+Node test/docs Git Blob SHA values identically, retaining ALL merged master AGENTS bytes plus all child notes. No independent Caddy/PWA/Gallery/Files/Photo/Share/Map/Host owner edits reverted.
 - New child exact HEAD must pass its OWN genuine PostgreSQL API Race, Go Linux/Windows, Web/Desktop, Host/Rootless, installers/images/artifacts, Final Gate and fresh clean before Ready/Rebase Merge. Old parent/child CI not transferable.
 - Candidate remains PRIVATE UNROUTED READ-ONLY; actual file-terminal INSERT/physical CANCEL/native cross-host writer proof, Stage/key retirement, second file, SourceRun and scheduler remain separate next work. Existing owning Windows/Linux Desktop Backup-only manual <=64MiB first file is enabled in code. Production environment safety acceptance **按用户决定跳过（未验收）**, never request prod access, credentials, HAR, packet capture or manual signoff or gate code CI/PR on it; source security+CI mandatory.
+
+## A3i-Msg1 · separate-Origin protocol retained on current complete master (2026-10-21)
+
+- Existing security Draft #2263 original commit b2417d25927810ff641cc4ba459320ec74f2aa45 full accurate-head CI #39535117037 succeeded, but complete master advanced independently. Rebuild this exact source-only protocol as ONE isolated work commit on complete master with original THREE source/test/doc Git Blob SHAs byte-identical and all prior AGENTS bytes retained; demand fresh exact-head CI/Final Gate and GitHub clean before merge. Preserve the active W3b2a/#2259 and W3b2b/#2261 owner branches untouched.
+- This protocol is INERT: no independently hosted HTTPS iframe or real browser malicious-provider proof, no provider SDK move/activation and no production rollout. Current same-document Baidu executable JS remains unisolated; P0-03 source isolation still OPEN. No Store/Cookie/AK/GPS/Node/image/pixel passed to child. Continue Source code Owner/Consent/revoke/CSP/Origin fail-closed checks.
+- Production environment security acceptance permanently 按用户决定跳过（未验收） per merged AGENTS #2227, never ask for production AK/HAR/account/captures nor gate development/CI/merge on this inaccessible step.
+
+## P0-Places-A3i-Msg1 · do not mistake a protocol for third-party Origin isolation (2026-10-21)
+
+- Introduce a pure, inert cross-Origin Baidu iframe `postMessage` protocol contract and real-TypeScript compiled adversarial Node tests; scope ONLY `ui/shared/src/media-gallery-baidu-isolated-origin-protocol.ts`, original new test, `docs/gallery-places-a3i-isolated-origin-contract.md`, and this additive AGENTS section.
+- Same-Origin third-party executable Baidu JSAPI remains **UNISOLATED** until a future **physically different HTTPS Origin iframe** with tested CSP/frame-ancestors, no shared cookies/storage/privileged Electron context, and malicious-provider parent DOM/private fetch denial is actually integrated. No SDK load/activation, no map Provider addition and no production environment access in this phase.
+- Require source/event origin + exact iframe WindowProxy + nonce/generation/version/method and byte allowance. Never pass Owner JWT, cookies, browser/server AK, PhotoAsset/Node/revision, thumbnail URL/pixel, EXIF/GPS bytes or arbitrary GET method to map child; 64 anonymized explicit-opt-in BD09 samples only, parent owns authority.
+- Original signed Owner /cells and /cell-items, current Consent/revocation, user identity, VirtualCollection and Viewer stay fully in trusted Gallery. Fail closed to existing Baidu Static Map until real isolation is proven in CI.
+- Owner permanent policy: production security acceptance **按用户决定跳过（未验收）**; do not request production HAR/AK/account/credentials or use production approval as source/CI/PR merge gate. Preserve all older AGENTS history verbatim and keep code-level security controls mandatory.
+
+
+## P0-03 A3i-Msg1 · reconcile message-only security groundwork on complete current master (2026-10-21)
+
+- Preserve entire new authoritative `master` including every original `AGENTS.md` byte and original THREE A3i protocol/test/spec blobs unchanged. Earlier merged W3b2a #2259 and unrelated Push/Share/PWA commits untouched. This PR is only an INERT validated cross-Origin `postMessage` protocol and adversarial tests; **no independent HTTPS iframe, cookie partition, child CSP or malicious SDK browser proof is implemented or approved**.
+- NEW exact-head full CI including original desktop tests, real PostgreSQL API Race, Web/Desktop and Final Gate plus clean mergeability is mandatory. Previous successful #39544656954 applies only to its old SHA. The actual third-party JS isolate requires separate implementation; current same-document Loader remains unisolated.
+- Permanent owner rule (already merged #2227): inaccessible live production security acceptance **按用户决定跳过（未验收）**, never solicit production HAR/AK/JWT/Cookie/account/credentials or gate source/CI/PR merge on them. Distinct HTTPS Origin/CSP, exact WindowProxy/nonce/generation, Owner/Consent/revocation and controlled hostile browser tests remain code-level P0 obligations.
+
+
+## A3i-Msg1 · current master re-stack 2026-10-21
+
+- Only three original pure protocol/test/doc blobs retained on complete latest master, with every master AGENTS byte preserved. This stage is INERT and is NOT a cross-origin iframe security boundary; actual independent HTTPS iframe/CSP/hostile-provider browser proof remains P0-03 mandatory. Re-run exact-head CI and Final Gate before Ready/Rebase Merge. Production-only safety acceptance permanently **按用户决定跳过（未验收）**; never request production HAR/AK/JWT/Cookie/accounts; source Owner/Consent/revocation/Origin/CSP tests mandatory.
