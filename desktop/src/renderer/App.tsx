@@ -1746,6 +1746,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    saveCaddyConfiguration: async (input: import('../../../ui/shared/src').XDriveCaddyConfigurationSaveInput) => {
+      const result = await window.xdriveDesktop.agent.cloudSaveAdminCaddyConfiguration(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadCaddyHTTPSRevisions: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSRevisions()
       if (!result.ok) throw new Error(result.error.message)

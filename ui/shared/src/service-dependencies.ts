@@ -128,6 +128,22 @@ export type XDriveCaddyAliDNSReveal = {
   expires_in_seconds: number
 }
 
+// Administrator-only desired transaction: zero Host/Docker/DNS/CA effects.
+// Both revision CAS inputs are mandatory even for a one-group update.
+export type XDriveCaddyConfigurationSaveInput = {
+  https_revision: number
+  alidns_revision: number
+  https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
+  alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
+}
+export type XDriveCaddyConfigurationSaveResult = {
+  https_revision: number
+  alidns_revision: number
+  saved: true
+  host_applied: false
+  apply_supported: false
+}
+
 // Read-only, sanitized local prerequisite report; no Caddy or DNS apply.
 // A live fixed AliDNS DescribeSubDomainRecords probe, not DNS write authorization.
 export type XDriveCaddyAliDNSReadVerifyInput = {

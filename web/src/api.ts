@@ -814,6 +814,13 @@ export class XDriveApi {
       },
     )
   }
+  adminSaveCaddyConfiguration(input: import('../../ui/shared/src').XDriveCaddyConfigurationSaveInput) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyConfigurationSaveResult>(
+      '/api/v1/admin/services/caddy/config', {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
   adminCaddyHTTPSRevisions() {
     return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>(
       '/api/v1/admin/services/caddy/https/revisions', { cache: 'no-store' },

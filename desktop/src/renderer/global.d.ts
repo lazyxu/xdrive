@@ -889,6 +889,8 @@ declare global {
         cloudAdminCaddyHTTPSConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
         cloudSetAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
+        cloudSaveAdminCaddyConfiguration: (input: import('../../../ui/shared/src').XDriveCaddyConfigurationSaveInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyConfigurationSaveResult>>
         cloudAdminCaddyHTTPSRevisions: () =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>>
         cloudRollbackAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
