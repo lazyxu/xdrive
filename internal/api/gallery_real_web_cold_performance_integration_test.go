@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,7 +51,8 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		t.Fatal(err)
 	}
 	desktopFileExplorerMixed := os.Getenv("XD_GALLERY_DESKTOP_FILES_MIXED_PHYSICAL_100K_PERF") == "1"
-	if desktopFileExplorerMixed {
+	p0c2SPAMode := os.Getenv("XD_PWA_P0C2_SPA_BEFORE") == "1"
+	if desktopFileExplorerMixed || p0c2SPAMode {
 		// The production owner /me/quota path now reads active local Push quota holds.
 		// Include its model in this opt-in fixture; an absent test schema is not
 		// a 100k Grid/Details rendering or transfer performance failure.
@@ -60,6 +62,21 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			&meta.FileOperation{}, &meta.PhotoIntelligenceReanalyzeIntent{},
 			&meta.UploadSession{}, &meta.BackgroundOwnerCancellation{},
 			&meta.SyncRun{}, &meta.ArchivePrepareRun{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p0c2SPAMode {
+		// The real signed App mounts Files, Gallery, background tasks and
+		// intelligence panels, unlike the narrow historical P048 test harness.
+		// Migrate their actual schema only in this opt-in isolated fixture.
+		if err := db.AutoMigrate(
+			&meta.PhotoAnalysisState{}, &meta.PhotoFace{},
+			&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
+			&meta.PhotoPersonClusterState{}, &meta.PhotoPerson{},
+			&meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{},
+			&meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{},
+			&meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -139,16 +156,70 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		len(page.Items) < galleryFirstVisibleViewport {
 		t.Fatalf("invalid 100k browser page: total=%d first=%d", page.TotalCount, len(page.Items))
 	}
+	// Mobile Gallery starts at the chronological TAIL, not at the default
+	// first range of the old P048 harness. Only the genuine initial 100
+	// items get physical CAS bytes: never inflate this to all 100k items.
+	viewport := page.Items[:galleryFirstVisibleViewport]
+	if p0c2SPAMode {
+		tail, tailErr := server.queryMediaItemRange(
+			context.Background(), ownerRoot.OwnerID,
+			mediaQueryOptions{
+				SortBy: "captured", SortDir: "asc", UnknownFirst: true,
+				InitialPosition: "latest", TimeZone: "UTC",
+			},
+			"", 100, 0,
+		)
+		if tailErr != nil {
+			t.Fatal(tailErr)
+		}
+		if tail.TotalCount != mediaGalleryFirstOpenLogicalCount ||
+			tail.Offset != mediaGalleryFirstOpenLogicalCount-100 ||
+			len(tail.Items) != 100 {
+			t.Fatalf("authentic Mobile Gallery tail mismatch: total=%d offset=%d items=%d",
+				tail.TotalCount, tail.Offset, len(tail.Items))
+		}
+		// The visible rows are at the bottom; seed all 100 candidates to
+		// tolerate genuine 390px row-height and viewport changes.
+		viewport = tail.Items
+	}
 	var images, videos []uint64
 	var liveCount int
 	if physicalViewportMode {
 		images, videos, liveCount = galleryPhysicalMixedViewportIDs(
-			t, page.Items[:galleryFirstVisibleViewport],
+			t, viewport,
 		)
 	} else {
 		images, videos, liveCount = galleryFirstVisibleSeedObjects(
-			t, db, countingStore, page.Items[:galleryFirstVisibleViewport],
+			t, db, countingStore, viewport,
 		)
+	}
+
+	if p0c2SPAMode {
+		// The real Mobile Gallery loads captured-ASC offset=0 as well as
+		// the latest anchored tail. The old default DESC first viewport
+		// does not contain the oldest-date rows issued by the actual App.
+		// Prepare only genuine first and last counted Owner ranges.
+		earliest, firstErr := server.queryMediaItemRange(
+			context.Background(), ownerRoot.OwnerID,
+			mediaQueryOptions{
+				SortBy: "captured", SortDir: "asc",
+				UnknownFirst: true, TimeZone: "UTC",
+			}, "", 100, 0,
+		)
+		if firstErr != nil {
+			t.Fatal(firstErr)
+		}
+		if earliest.TotalCount != mediaGalleryFirstOpenLogicalCount ||
+			earliest.Offset != 0 || len(earliest.Items) != 100 {
+			t.Fatalf("authentic Mobile chronological first-page mismatch: total=%d offset=%d items=%d",
+				earliest.TotalCount, earliest.Offset, len(earliest.Items))
+		}
+		headImages, headVideos, headLive := galleryFirstVisibleSeedObjects(
+			t, db, countingStore, earliest.Items,
+		)
+		images = append(images, headImages...)
+		videos = append(videos, headVideos...)
+		liveCount += headLive
 	}
 	if len(images) < 12 || len(videos) == 0 || liveCount == 0 {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
@@ -182,6 +253,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	stopped := make(chan struct{})
 	var once sync.Once
 	files := http.FileServer(http.Dir(dist))
+	var p0c2MediaRangeLogs, p0c2UnwatchedThumbnailLogs atomic.Int64
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/__perf/config":
@@ -236,6 +308,27 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
+			// Diagnostic counters contain *only* synthetic test-shape flags
+			// or ephemeral fixture Node IDs, never a real user query or JWT.
+			if p0c2SPAMode && r.URL.Path == "/api/v1/media/items" &&
+				p0c2MediaRangeLogs.Add(1) <= 5 {
+				query := r.URL.Query()
+				t.Logf("P0C2_SPA_MEDIA_RANGE asc=%t latest=%t range=%t offset0=%t limit100=%t",
+					query.Get("sort_dir") == "asc",
+					query.Get("initial_position") == "latest",
+					query.Get("range") == "true",
+					query.Get("offset") == "0",
+					query.Get("limit") == "100")
+			}
+			if p0c2SPAMode && viewportProbe != nil && r.Method == http.MethodGet &&
+				strings.HasPrefix(r.URL.Path, "/api/v1/media/items/") &&
+				strings.HasSuffix(r.URL.Path, "/thumbnail") &&
+				!viewportProbe.matches(r.URL.Path) &&
+				p0c2UnwatchedThumbnailLogs.Add(1) <= 12 {
+				// IDs are generated inside this disposable PG schema; they
+				// cannot identify any real account, server or production file.
+				t.Logf("P0C2_SPA_UNWATCHED_FIXTURE_THUMBNAIL %s", r.URL.Path)
+			}
 			if physicalViewportMode && r.Method == http.MethodGet &&
 				strings.HasPrefix(r.URL.Path, "/api/v1/media/items/") &&
 				strings.HasSuffix(r.URL.Path, "/thumbnail") {
