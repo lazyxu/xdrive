@@ -153,6 +153,16 @@ test('failed viewport and account/port rotation cannot publish false empty or ot
   await act(async()=>{calls[1].reject(new Error('network failure'));await Promise.resolve()})
   assert.deepEqual(renderedNames(view),['owner-one'],'true network error retains last verified data')
   assert.ok(view.root.findAll(node=>node.props.role==='alert').length>0)
+  const displayed=view.root.findAll(node=>node.props['data-xdrive-places-viewport-results']!==undefined)[0]
+  const feedback=view.root.findAll(node=>node.props['data-xdrive-places-viewport-error']!==undefined)[0]
+  assert.ok(feedback,'the real Server viewport failure must remain visible')
+  assert.equal(feedback.props.sx.position,'absolute')
+  assert.equal(feedback.props.sx.pointerEvents,'none')
+  assert.ok(feedback.props.sx.top>=44)
+  assert.equal(feedback.parent.props['data-xdrive-gallery-places-viewport'],true,
+    'error must be a sibling of the result Stack: MUI Stack spacing selectors include absolute siblings')
+  assert.equal(view.root.findAll(node=>node.props['data-xdrive-places-viewport-results']!==undefined)[0],displayed,
+    'the error receipt must not replace the previously accepted viewport result owner')
   await act(async()=>{view.update(React.createElement(MapView,{...props,listPlacesViewport:second}))})
   assert.deepEqual(renderedNames(view),[],'new owner cannot see old GPS result')
   assert.ok(calls.length>=3,'new port starts its own Server read')
@@ -178,4 +188,46 @@ test('source contracts preserve canonical Server range and scroll-camera ownersh
     'onCameraChange?.({ ...cameraRef.current, viewportOffset: nextOffset })',
   ])assert.ok(source.includes(token),token)
   assert.equal(source.includes('保留上一视窗结果，当前视窗尚未确认。'),false)
+})
+
+
+test('P112: cold failed map viewport preserves the original 96px silent slot and truthful error', async () => {
+  const task=deferred()
+  const port=()=>task.promise
+  let view
+  try {
+    await act(async()=>{view=TestRenderer.create(React.createElement(MapView,{
+      places:[place('place:root','Root')],listPlacesViewport:port,onOpenPlace:()=>{},
+    }))})
+    const bounds={west:1,south:1,east:2,north:2}
+    await act(async()=>{view.root.findByType('map-fixture').props.onViewportChange(bounds)})
+    const before=view.root.findAll(node=>node.props['data-xdrive-places-viewport-first-read']!==undefined)[0]
+    assert.ok(before)
+    assert.equal(before.props.sx.minHeight,96)
+    await act(async()=>{task.reject(new Error('viewport offline'));await Promise.resolve()})
+    const after=view.root.findAll(node=>node.props['data-xdrive-places-viewport-first-read']!==undefined)[0]
+    assert.equal(after,before, 'real first-page failure cannot remove or replace the stable map viewport slot')
+    assert.equal(after.props.sx.minHeight,96)
+    const errors=view.root.findAll(node=>node.props['data-xdrive-places-viewport-error']!==undefined)
+    assert.equal(errors.length,1)
+    assert.equal(errors[0].props.role,'alert')
+    assert.equal(errors[0].props.sx.position,'absolute')
+    assert.equal(errors[0].parent.props['data-xdrive-gallery-places-viewport'],true,
+      'cold error cannot become a spacing Stack child and shift the next row')
+    assert.deepEqual(renderedNames(view),[], 'unverified viewport error is not a fake empty result')
+  } finally {if(view)await act(async()=>{view.unmount()})}
+})
+
+
+test('P112: an absolutely positioned error cannot be a MUI spaced Stack child', () => {
+  const container = source.indexOf('<Box component="section" data-xdrive-gallery-places-viewport')
+  const error = source.indexOf('<Typography data-xdrive-places-viewport-error', container)
+  const results = source.indexOf('<Stack spacing={1} aria-busy={viewportLoading}>', container)
+  const firstTile = source.indexOf('data-xdrive-places-viewport-results', results)
+  assert.ok(container >= 0 && error > container && results > error && firstTile > results,
+    'original error must be a sibling BEFORE the result Stack, not its child')
+  assert.ok(source.slice(error, results).includes('</Typography>'),
+    'the entire error element must close before the original Stack begins')
+  assert.equal(source.slice(results, firstTile).includes('data-xdrive-places-viewport-error'), false,
+    'MUI Stack sibling margin selectors must not see an absolutely positioned error child')
 })
