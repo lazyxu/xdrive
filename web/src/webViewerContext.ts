@@ -38,6 +38,7 @@ async function loadGalleryRange(
   target: XDriveWebAppGalleryTarget,
   offset: number,
   limit: number,
+  signal: AbortSignal,
 ) {
   switch (target.kind) {
     case 'trash':
@@ -68,7 +69,7 @@ async function loadGalleryRange(
         target.baiduCell, limit, offset,
         { by: target.query.sort_by === 'added' ? 'added' : 'captured',
           dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc' },
-        new AbortController().signal,
+        signal,
       )
     }
     case 'album':
@@ -85,6 +86,7 @@ async function loadRange(
   context: Exclude<XDriveWebAppBrowseContext, { kind: 'selection' }>,
   offset: number,
   limit: number,
+  signal: AbortSignal,
 ): Promise<{
   items: Array<{ node: Node; mediaItem?: MediaItem }>
   totalCount: number
@@ -126,6 +128,7 @@ async function loadRange(
     context.target,
     offset,
     limit,
+    signal,
   )
   return {
     items: page.items.map((mediaItem) => ({ node: mediaItem.node, mediaItem })),
@@ -187,6 +190,19 @@ export function createXDriveWebViewerSession(
   const pageSize = context?.kind === 'gallery' && context.target.kind === 'baidu-cell'
     ? 100 : 128
   const nodeLimit = 32
+  // One cancellation scope per Viewer route/index: the Owner Cell Range
+  // shares it with Web fetch -> Go Request.Context. React StrictMode effect
+  // replay can reactivate the same memoized reader without reusing stale pages.
+  let rangeController = new AbortController()
+  function activate() {
+    if (!rangeController.signal.aborted) return
+    rangeController = new AbortController()
+    pages.clear()
+  }
+  function dispose() {
+    rangeController.abort()
+    pages.clear()
+  }
   if (initialCandidate) {
     const { node, mediaItem } = initialCandidate
     nodes.set(node.id, { value: node, promise: Promise.resolve(node) })
@@ -215,7 +231,13 @@ export function createXDriveWebViewerSession(
 
   const pageAt = (offset: number) => {
     if (!context || context.kind === 'selection') throw new Error('没有范围浏览上下文。')
-    return read(pages, offset, 3, () => loadRange(api, gallerySource, context, offset, pageSize))
+    if (rangeController.signal.aborted) throw new Error('查看器范围已取消。')
+    // Freeze the signal before Promise.resolve().then(loader): a StrictMode
+    // remount must never let an old queued load borrow a new Owner request.
+    const signal = rangeController.signal
+    return read(pages, offset, 3, () => loadRange(
+      api, gallerySource, context, offset, pageSize, signal,
+    ))
   }
   const nodeAt = (id: number) => read(nodes, id, nodeLimit, () => api.node(id))
   const mediaAt = (id: number) => read(media, id, nodeLimit, () => api.mediaItem(id))
@@ -357,5 +379,5 @@ export function createXDriveWebViewerSession(
     return updated
   }
 
-  return { candidateAt, neighbor, current, updateMediaItem, invalidate }
+  return { candidateAt, neighbor, current, updateMediaItem, invalidate, activate, dispose }
 }
