@@ -36,6 +36,15 @@
 
 - Trust-root compatibility: key SHA-256 MUST fingerprint the 44-byte Ed25519 DER SubjectPublicKeyInfo public key (matching existing Host signing reviews), NOT its raw 32-byte bytes. The signed message still has a unique domain prefix plus canonical JSON. No browser/DB-supplied root is accepted.
 
+## SD-D2b-1b-b1 · fixed private signed Host bundle reader (2026-10-21)
+
+- This independent stacked read-only stage adds ONLY standard-library Go 1.25 os.OpenRoot-constrained reading of three fixed private Host identity bundle files, strict bounded regular/inode/mode/freshness validation and deterministic negative tests; existing D2b-1b-a Ed25519 verifier stays unchanged.
+- Private path hardening: group-writable manifest/signature/DER and group-writable/world-accessible roots MUST fail closed. A trusted service may use a read-only group mount (0750 root, 0640 signed files). Compare the opened root inode and mode to the originally validated directory.
+- Public-key SPKI DER, Host and Server pins MUST come from independently trusted operator inputs; do not take any pin from Host bundle, web requests, DB desired, import hint or log. Read failures stay nonsecret. Windows Host bundle access stays blocked until independent Windows ACL parity; Windows Desktop and unrelated APIs are unchanged.
+- NO real Host producer, independent disabled-entry probe, Server API consumer, SQL adoption, restart/Apply, Rescue, watchdog or Applied Receipt is added. CandidateComplete/CanAdopt/ApplySupported remain false. The parent #2298 must finish exact-head CI and merge before this stacked PR is retargeted and given its own full Go/PostgreSQL API Race/Web/Desktop/Host Rootless/final-gate tests.
+- Production-only security acceptance: 按用户决定跳过（未验收）; no production secrets, HAR, account or user manual signoff requested. Code-level crypto, filesystem, authorization and CI gates are mandatory.
+
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
