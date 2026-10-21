@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/lazyxu/xdrive/internal/localpushwriter"
 )
@@ -26,24 +23,19 @@ func localFirstFileDurableClaimPaths(
 		filepath.Clean(configDir) != configDir {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
-	source := strconv.FormatUint(key.sourceID, 10)
-	identity := key.server + "\x00" + key.account + "\x00" + key.deviceID + "\x00" + source
-	requestHash := sha256.Sum256([]byte("xdrive-localpush-request-slot-v1\x00" + identity))
-	requestID := "local-push-request-" + hex.EncodeToString(requestHash[:16])
-	// Use the actual production native Writer slot algorithm instead of
-	// copying its hash/prefix: a future Writer naming change must not make
-	// a surviving original appear absent after Agent restart.
+	// Use exactly the same production builders for every durable marker.
+	// A naming change must never conceal an original uncertain upload.
+	_, stagePath, operationPath, err := localPushStableClaimSlots(
+		configDir, key.server, key.account, key.deviceID, key.sourceID)
+	if err != nil {
+		return empty, errLocalBackupFirstFileUnavailable
+	}
 	writerPath, err := localpushwriter.OriginalClaimPath(
 		configDir, key.server, key.account, key.deviceID, key.sourceID)
 	if err != nil {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
-	root := filepath.Join(configDir, "localpush")
-	return [3]string{
-		writerPath,
-		filepath.Join(root, "stage-admissions", requestID+".claim"),
-		filepath.Join(root, "operation-requests", requestID+".claim"),
-	}, nil
+	return [3]string{writerPath, stagePath, operationPath}, nil
 }
 
 // localFirstFileDurableClaimPresent checks only existence of original OS

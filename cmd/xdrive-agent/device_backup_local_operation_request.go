@@ -73,16 +73,38 @@ func validLocalPushRequestScope(scope localPushRequestKeyScope) bool {
 	return true
 }
 
-func localPushRequestKeyNames(configDir string, scope localPushRequestKeyScope) (string, string, string, error) {
-	if !filepath.IsAbs(configDir) || !validLocalPushRequestScope(scope) {
+// localPushStableClaimSlots is the single production derivation for both
+// permanent Stage and Operation O_EXCL slots and the owning Agent restart
+// observer. Login/Root/revision/target must NOT create replacement slots.
+// This function is pure: it never reads keys or touches the filesystem.
+func localPushStableClaimSlots(configDir, server, account, deviceID string, sourceID uint64) (string, string, string, error) {
+	if !filepath.IsAbs(configDir) || filepath.Clean(configDir) != configDir ||
+		sourceID == 0 || !validLocalPushRequestUUID(deviceID) {
 		return "", "", "", errLocalPushRequestKeyUnavailable
 	}
-	// The slot excludes mutable Source/Root/session fields so a stale or
-	// uncertain request prevents silent replacement on the same device.
-	slot := sha256.Sum256([]byte("xdrive-localpush-request-slot-v1\x00" + scope.server + "\x00" +
-		scope.account + "\x00" + scope.deviceID + "\x00" + strconv.FormatUint(scope.sourceID, 10)))
+	for _, field := range []string{server, account} {
+		if field == "" || strings.TrimSpace(field) != field ||
+			strings.ContainsAny(field, "\x00\r\n") || len(field) > 2048 {
+			return "", "", "", errLocalPushRequestKeyUnavailable
+		}
+	}
+	slot := sha256.Sum256([]byte("xdrive-localpush-request-slot-v1\x00" + server + "\x00" +
+		account + "\x00" + deviceID + "\x00" + strconv.FormatUint(sourceID, 10)))
 	id := "local-push-request-" + hex.EncodeToString(slot[:16])
-	claim := filepath.Join(configDir, "localpush", "operation-requests", id+".claim")
+	root := filepath.Join(configDir, "localpush")
+	return id, filepath.Join(root, "stage-admissions", id+".claim"),
+		filepath.Join(root, "operation-requests", id+".claim"), nil
+}
+
+func localPushRequestKeyNames(configDir string, scope localPushRequestKeyScope) (string, string, string, error) {
+	if !validLocalPushRequestScope(scope) {
+		return "", "", "", errLocalPushRequestKeyUnavailable
+	}
+	id, _, claim, err := localPushStableClaimSlots(
+		configDir, scope.server, scope.account, scope.deviceID, scope.sourceID)
+	if err != nil {
+		return "", "", "", errLocalPushRequestKeyUnavailable
+	}
 	identity := strings.Join([]string{
 		"xdrive-localpush-request-scope-v1", scope.server, scope.account, scope.sessionID,
 		scope.deviceID, scope.rootID, scope.rootFingerprint,

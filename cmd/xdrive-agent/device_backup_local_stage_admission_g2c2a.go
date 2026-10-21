@@ -19,11 +19,15 @@ var errLocalPushStageAdmissionUnavailable = errors.New("owning local backup Stag
 // Stable Server/account/Device/Source identity avoids a second operation
 // when mutable session, Root, revision or target is replaced.
 func localPushStageAdmissionClaimPath(configDir string, scope localPushRequestKeyScope) (string, error) {
-	id, _, _, err := localPushRequestKeyNames(configDir, scope)
+	if !validLocalPushRequestScope(scope) {
+		return "", errLocalPushStageAdmissionUnavailable
+	}
+	_, path, _, err := localPushStableClaimSlots(
+		configDir, scope.server, scope.account, scope.deviceID, scope.sourceID)
 	if err != nil {
 		return "", errLocalPushStageAdmissionUnavailable
 	}
-	return filepath.Join(configDir, "localpush", "stage-admissions", id+".claim"), nil
+	return path, nil
 }
 
 func localPushStageAdmissionDirSafe(dir string) bool {
