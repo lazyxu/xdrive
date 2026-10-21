@@ -297,4 +297,19 @@ export async function xDrivePwaClearOfflineMetadata(): Promise<void> {
     store.clear()
     done(undefined)
   })
+  // Cross-tab best-effort display invalidation. No credentials or IDs in the message.
+  if (typeof BroadcastChannel !== 'undefined') {
+    const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
+    channel.postMessage({ kind: 'xdrive-pwa-offline-purge' })
+    channel.close()
+  }
+}
+
+export function xDrivePwaObserveOfflinePurge(listener: () => void): () => void {
+  if (typeof BroadcastChannel === 'undefined') return () => {}
+  const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
+  channel.onmessage = event => {
+    if (event.data?.kind === 'xdrive-pwa-offline-purge') listener()
+  }
+  return () => channel.close()
 }

@@ -107,6 +107,9 @@ import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './we
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
+import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
+import { xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
+import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
 import XDriveManualConnectionDialog from './ManualConnectionDialog'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
@@ -169,6 +172,8 @@ function WebAccountMenu({
   disabled = false,
   onAppearanceChange,
   onLogout,
+  offlineOwner,
+  onOfflineConsentChange,
 }: {
   username: string
   serverBuild: BuildInfo | null
@@ -176,6 +181,8 @@ function WebAccountMenu({
   disabled?: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
+  offlineOwner?: XDrivePwaOfflineOwner | null
+  onOfflineConsentChange?: (enabled: boolean) => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -229,7 +236,9 @@ function WebAccountMenu({
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
-      />
+      >
+        {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
+      </XDriveSettingsDialog>
       <XDriveManualConnectionDialog open={connectionOpen && !disabled}
         onClose={() => setConnectionOpen(false)} />
       {installOpen && !disabled ? (
@@ -282,6 +291,10 @@ function App({
 
   const clearSession = useCallback((notice = '') => {
     transferApiRef.current?.disposeTransfers()
+    // Fail closed across accounts and server instances. Never touch public SW App Shell.
+    void xDrivePwaClearOfflineMetadata().catch(() => {
+      setAuthNotice('无法确认本设备的离线摘要已清理，请在浏览器站点数据中手动清理。')
+    })
     localStorage.removeItem(ACCESS_KEY)
     localStorage.removeItem(LEGACY_TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
@@ -506,6 +519,33 @@ function FileManager({
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
+  const offlineOwner = useMemo<XDrivePwaOfflineOwner | null>(() => {
+    if (!profile || profile.must_change_password || profile.username !== username ||
+        !profile.pwa_offline_instance_id) return null
+    const candidate = {
+      origin: window.location.origin,
+      instanceID: profile.pwa_offline_instance_id,
+      userID: profile.id,
+      username: profile.username,
+    }
+    try { xDrivePwaOfflineScopeKey(candidate); return candidate }
+    catch { return null }
+  }, [profile?.id, profile?.username, profile?.must_change_password,
+      profile?.pwa_offline_instance_id, username])
+  const offlineScope = offlineOwner ? xDrivePwaOfflineScopeKey(offlineOwner) : ''
+  const [offlineConsent, setOfflineConsent] = useState(false)
+  useEffect(() => {
+    let current = true
+    setOfflineConsent(false)
+    if (!offlineOwner) return
+    const stopWatchingPurge = xDrivePwaObserveOfflinePurge(() => {
+      if (current) setOfflineConsent(false)
+    })
+    void xDrivePwaReadOfflineDirectories(offlineOwner)
+      .then(value => { if (current) setOfflineConsent(value.consented) })
+      .catch(() => { if (current) setOfflineConsent(false) })
+    return () => { current = false; stopWatchingPurge() }
+  }, [offlineScope])
   const baiduDiagnosticScope = `web:${profile?.id ?? username}`
   // Keep diagnostics while navigating to Admin, but never across an
   // account change, logout or detached Web App lifecycle.
@@ -899,6 +939,40 @@ function FileManager({
   })
 
   const refreshCurrentDirectory = refreshCurrentDirectoryIfIdle
+
+  // Only the Server-accepted first current directory Range, never a speculative
+  // navigation/search/virtual 100k collection, may be persisted. On ordinary
+  // scroll this effect does no new network reads or directory-wide materialization.
+  const fileRouteDirectoryID = route.app === 'files' ? route.params.dir : undefined
+  const lastOfflineCaptureRef = useRef('')
+  useEffect(() => {
+    if (!offlineConsent) { lastOfflineCaptureRef.current = ''; return }
+    if (!offlineOwner || route.app !== 'files' || loading || !current?.id ||
+        crumbs.at(-1)?.id !== current.id || !virtualDirectory ||
+        (fileRouteDirectoryID && fileRouteDirectoryID !== current.id)) return
+    const visibleFirstPage = items.slice(0, 20)
+    const fingerprint = [
+      offlineScope, current.id, virtualDirectory.itemCount,
+      ...visibleFirstPage.map(node => node.id + ':' + node.revision),
+    ].join('|')
+    if (lastOfflineCaptureRef.current === fingerprint) return
+    lastOfflineCaptureRef.current = fingerprint
+    void xDrivePwaCaptureVisitedDirectory(offlineOwner, {
+      id: current.id,
+      name: current.name || '我的文件',
+      totalCount: virtualDirectory.itemCount,
+      items: visibleFirstPage.map(node => ({
+        id: node.id, name: node.name, type: node.type,
+        size: node.size, revision: node.revision, updated_at: node.updated_at,
+      })),
+    }).then(written => {
+      if (!written && lastOfflineCaptureRef.current === fingerprint) lastOfflineCaptureRef.current = ''
+    }).catch(() => {
+      if (lastOfflineCaptureRef.current === fingerprint) lastOfflineCaptureRef.current = ''
+    })
+  }, [offlineConsent, offlineScope, route.app, fileRouteDirectoryID,
+    loading, current?.id, current?.name, crumbs, virtualDirectory?.itemCount, items])
+
 
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => api.quota(),
@@ -1612,6 +1686,8 @@ function FileManager({
   const accountAction = (
     <WebAccountMenu
       disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
+      offlineOwner={offlineOwner}
+      onOfflineConsentChange={setOfflineConsent}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}
