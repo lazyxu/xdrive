@@ -66,6 +66,14 @@
 - Preserve all master/other Owner business source and cumulative AGENTS, one scoped work commit and exact HEAD CI + Final Gate. Production-only acceptance 按用户决定跳过（未验收）; never request live account/keys/HAR/captures/signoff; code-level checks mandatory.
 
 
+## SD-D2b-1b-b2b2 · strict signed Host bundle private publisher, read-only (2026-10-21)
+
+- Add only a package-private Go 1.25 os.OpenRoot publisher for the three fixed signed read-only bundle files. Validate complete canonical Ed25519 signature/Host/Server/SPKI pins and 45s freshness BEFORE writing. No Host signing private key in the exported mount, DB, logs or Server HTTP.
+- Trusted absolute directory: no group-write/world access or symlink root/destination; root inode/mode bound; exclusive sticky O_EXCL writer lock; random O_EXCL temp files, 0640, file and directory fsync, rename, final strict Reader verification. Three separate rename operations are NOT atomic as a set: any intermediate observation fails closed and the writer lock is intentionally retained on failed publish for trusted manual recovery.
+- This stage does NOT invent genuine independent live Caddy source evidence or a disabled-ingress negative test, does NOT connect to the Host/Server runtime and never grants Host adoption, Docker/8443/DNS changes or an Applied Receipt. CandidateComplete/CanAdopt/ApplySupported remain false; no false deployed/healthy claim.
+- Preserve all other Owner product code + cumulative AGENTS, one scoped commit, real Go/PostgreSQL API Race/Linux/Windows/Web/Desktop/Host Rootless/Final Gate and GitHub clean. Production-only security acceptance 按用户决定跳过（未验收）; no request for production access/secrets/HAR/manual signoff.
+
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。
