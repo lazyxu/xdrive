@@ -84,6 +84,17 @@ func (c *agentController) CloudReadLocalBoundBackupFirstFileStatus(
 	if err != nil {
 		return empty, errLocalBackupFirstFileUnavailable
 	}
+	// After Agent restart its in-memory job is gone, while OS-private
+	// Writer/Stage/Operation O_EXCL markers may still survive. Presence (or
+	// an unreadable slot) is quarantine evidence, NEVER a COMMIT or retry.
+	if view.Phase == "not-recorded" {
+		configDir, dirErr := userconfig.Dir()
+		claimed, claimErr := false, dirErr
+		if dirErr == nil {
+			claimed, claimErr = localFirstFileDurableClaimPresent(ctx, configDir, key)
+		}
+		view = quarantineLocalFirstFileStatusByDurableClaim(view, claimed, claimErr)
+	}
 	current, err := userconfig.Load()
 	if err != nil || current.SessionInvalid || current.Server != account.Server ||
 		current.Username != account.Username || current.SessionID != account.SessionID ||
