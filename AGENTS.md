@@ -1,3 +1,11 @@
+## PWA P0-B1 · retained prior public hashed chunks (2026-10-21)
+
+- P0-A #2246 merged as master e6018a4 after exact 77-job full CI/Final Gate and actual Chromium. Installed iOS Home Screen, performance p50/p95 and physical 100k remain UNVERIFIED. 6 public build files / 2,491,727 raw bytes are NOT a latency benchmark.
+- Normal Caddy public /assets uses a durable, separate XD_CADDY_ASSET_DIR; official installer first exports previous Caddy assets, then new image seed only adds immutable hashed static files. Never mount this in Server/Worker/rescue, cache private owner/media/API/Range bytes, rewrite old hashes, or SPA-fallback JS 404. No automatic archive GC until P0-B2 has a safe lifetime/storage policy.
+- Never skipWaiting/reload forcibly during uploads/Viewer/edits or alter Go ctx.cancel due to release changes. P0-B2 handles version rollback/API compatibility, P0-C first collects iOS/Files/Gallery startup and navigation baselines, then compares exact hardware/browser/WAN conditions. P1 only opt-in account+instance readonly IndexedDB; P2 finite thumbnails, not originals/Live/videos without new explicit consent.
+- Require this exact HEAD full Linux/Windows, Web/Desktop, real PostgreSQL Go API Race, one-work-commit Final Gate, clean mergeability before merging. All preceding AGENTS.md content must survive untouched. Owner directive: production-only security acceptance SKIPPED (NOT VERIFIED), not a source/CI gate.
+- Design and gaps: docs/pwa-ios-old-assets-p0b1.md.
+
 ## P0-D2a · current-master PWA integration after full exact-head CI (2026-10-20)
 
 - Original complete full CI [#39454908056](https://github.com/lazyxu/xdrive/actions/runs/39454908056) for `102e2f18d7fc971c4df41d0f5f5e9da79f8382d9` is **SUCCESS** (25 success / 52 conditional skip / all Final Gate green, including true PostgreSQL API Race and Windows/Linux Go/Web/Desktop/Rootless/installer). Independent iOS PWA offline-shell source advanced full master to `master@e6018a4c260d1d7fff5e1718421cfb2a21f9dbd4` and changed the deployed Caddyfile.common plus Web PWA pipeline, without touching any of this P0-D2a PR's six files. Preserve all PWA source/config changes and all five original P0-D2a non-AGENTS blobs byte-identically on current complete master; entire master AGENTS remains an exact suffix.

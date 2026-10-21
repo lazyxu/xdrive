@@ -221,6 +221,8 @@ services:
     volumes:
       - "${XD_CADDY_DATA_DIR:-../data/caddy/data}:/data"
       - "${XD_CADDY_CONFIG_DIR:-../data/caddy/config}:/config"
+      # Only public Vite hash assets: old lazy chunks survive image swaps.
+      - "${XD_CADDY_ASSET_DIR:-../data/caddy/assets}:/srv/assets"
     depends_on:
       server:
         condition: service_healthy

@@ -56,4 +56,6 @@ if [ "${1:-}" = "--check" ]; then
   printf '%s\n' "$config"
   exit 0
 fi
+# The --check path never mutates state. Fail start if any bundled hash is corrupt.
+/usr/local/bin/xdrive-pwa-archive-assets /usr/share/xdrive-current-assets /srv/assets
 exec caddy run --config "$config" --adapter caddyfile
