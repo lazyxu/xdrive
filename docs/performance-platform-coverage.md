@@ -1,3 +1,18 @@
+## SH-P019 · 原版真实 100k 物理 SHA 不同 JPEG 六会话通过，原 CI 两处旧样式断言 RED（2026-10-21）
+
+- **严格原测量源码** `deef8a01d0ca0b9d2fc1ff898a03d0c69268e694`，[PG17/Gin/LocalCAS + Chromium 专项 #39560252661](https://github.com/lazyxu/xdrive/actions/runs/39560252661) SUCCESS。100,000 个真实 SHA 不同物理 JPEG 原片，实际 CAS 分配 409604096B；1440px Web n3 与 CDP390 模拟 Mobile Web n3 均仅渲染受限 100 行、翻页 100 行。Wide 首/次页 P50 **371.160 / 226.060ms**，CDP390 **289.874 / 249.598ms**；每页都低于冻结 2000ms。12/12 真正签名下载 SHA、文件名与完整字节校验成功；0 stale rows / 0 horizontal overflow，最慢原件下载 **165.687ms** < 5000ms。**没有 100k 缩略图同时解码，也没有真 iOS/PWA/WAN**。
+- 永久归档 [结构化原始日志 JSON](performance-evidence/sh-p019-shared-item-surface/ci-run-39560252661.json)，原始 [专项 job log](https://github.com/lazyxu/xdrive/actions/runs/39560252661/job/119089516414) 与 [workflow artifact](https://github.com/lazyxu/xdrive/actions/runs/39560252661/artifacts/12328010140) 保留。旧 SH-P015 100k 不同 CI Runner 的数据不能组成有效配对 A/B，所以 **AFTER/speedup=N/A**，代码改变是无权限的纯 JSX 复用，未动 Go/SQL/CAS/短时取消。
+- 同一原 HEAD [完整 CI #39560252823](https://github.com/lazyxu/xdrive/actions/runs/39560252823) 的 `desktop-tests` 实际 **RED 2项**：旧 `file-explorer-performance.cjs` 仍在 Owner 组件内查找已下沉纯组件的 `contentVisibility`；旧 SH-P013 Grid 视觉测试仍断言原 Public Box 上独立的 border/radius 字符串。真实 Web/Desktop build 与 100k 专项没有因此否决；本切片严格修正这两项**源码位置测试断言**，改为同时核对 Owner/Public 真调用共享 Surface、虚拟 Grid 仍使用 render containment、Grid 不恢复原边框。保留历史红色，禁止删除测试或削弱布局约束。
+- 最新完整 master 重建 / 新证据 HEAD 形成后，前面绿的**旧源码不能授权新 SHA**；必须新 SHA 独立真实 100k×6 专项、全部 77+ CI 包括 desktop-tests/Go PostgreSQL API/Windows/Linux/Web/Desktop/Final Gate、GitHub clean 然后才 Ready/Rebase Merge。生产安全验收按用户决定跳过（未验收），源码负权限仍必验。
+
+---
+## SH-P019 · Owner/Share FileExplorer 共用真实外层 item surface (2026-10-21)
+
+- 在纯展示层加入 XDriveFileExplorerItemSurface，Owner Details/Grid（原 ButtonBase）与 Public Share Details/Grid（原 Box）真正挂载同一组件，统一行高、轨道、网格项、圆角/选中/悬停/焦点。独立的 Share API、权限/下载/ZIP 和 Owner Agent/剪贴板/文件操作严格隔离，无 token 混用或 Race 修改。此前 #2117/#2148/#2158/#2251/#2258/#2267 已合入，不重做。
+- 首测 BEFORE 参考：Owner P067 真100k逻辑/115k物理 JPEG/H264/Live Desktop Grid/Details P50 740.436/598.782ms、Wide 608.684/426.829ms、CDP390 363.616/361.058ms；Public SH-P015 真100k SHA各异 JPEG Wide首/后356.446/193.260ms、CDP390 292.201/204.973ms，PG n3完整1000页 P50 15.815s、12/12原件SHA准确。不同 Runner/source 不能算匹配 A/B，SH-P019 new-head有效n=0、AFTER/speedup=N/A。专用真实物理n3×6 Chromium + 全77+ CI/Final Gate必需。详见 [SH-P019](public-share-deeper-shared-surface-shp019.md)。
+- 未完成：更高层布局、全目录安全排序/搜索、完整视频/Live Viewer、真机安装态PWA/WAN。生产专有安全验收按用户决定跳过（未验收），Go 源码授权/撤销及准确 CI 仍必需。
+
+---
 ## SH-P017 · REAL source-exact selected Share nested 100k ZIP baseline n3 SUCCESS (2026-10-21)
 
 - Measured real PostgreSQL17/Gin/LocalCAS source `41d998cd706f52fe6c08235bc4cc6c0d98fb794b` at [dedicated #39538925407](https://github.com/lazyxu/xdrive/actions/runs/39538925407): three independently seeded 100k physical SHA-distinct JPEG CAS nested-share ZIPs n3 PASS. Prepare P50 **2300.361ms**, signed HTTP archive stream P50 **3813.559ms**; true Go `Request.Context.Done` with abandoned stream max **0.198ms**; RSS max growth **426901504B**. All original unchanged ZIP correctness/bytes/100k CRC/CPU/RSS budgets passed. [Source and all samples](performance-evidence/public-share-nested-folder-zip-shp017/ci-run-39538925407.json).

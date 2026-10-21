@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
-import { Box, Stack, Typography } from '@mui/material'
+import { forwardRef } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
+import { Box, ButtonBase, Stack, Typography } from '@mui/material'
+import type { BoxProps } from '@mui/material'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
@@ -123,6 +125,83 @@ export function xDriveFileExplorerDetailsHeaderGeometry(gridTemplateColumns: str
     fontWeight: 500,
   }
 }
+
+/**
+ * The same *unprivileged* item surface for authenticated FileExplorer and
+ * capability-scoped public shares. Only DOM/presentation attributes can enter
+ * here; no API client, token, clipboard, drag/drop implementation or actions.
+ *
+ * Keep ButtonBase for the account explorer's original keyboard/touch behavior
+ * and Box for the public read-only explorer's original keyboard behavior.
+ * Callers own selection, events, authorized data and every allowed action.
+ */
+export type XDriveFileExplorerItemSurfaceProps =
+  Omit<HTMLAttributes<HTMLDivElement>, 'children'> & {
+    children: ReactNode
+    ownerInteraction?: boolean
+    surfaceMode: 'details' | 'grid'
+    selected?: boolean
+    dropTarget?: boolean
+    columns?: string
+    detailsRowHeight?: number
+    gridMinItemHeight?: number
+    gridMaxItemWidth?: number
+    gridItemPadding?: number
+    gridItemGap?: number
+    gridEstimatedRowHeight?: number
+    sx?: BoxProps['sx']
+  }
+
+export const XDriveFileExplorerItemSurface = forwardRef<HTMLDivElement, XDriveFileExplorerItemSurfaceProps>(
+  function XDriveFileExplorerItemSurface({
+    children, ownerInteraction = false, surfaceMode, selected = false, dropTarget = false,
+    columns, detailsRowHeight = xDriveFileExplorerDetailsNormalRowHeight,
+    gridMinItemHeight = 124, gridMaxItemWidth = 180,
+    gridItemPadding = 1, gridItemGap = 0.75, gridEstimatedRowHeight = 140,
+    sx, ...elementProps
+  }, ref) {
+    const grid = surfaceMode === 'grid'
+    const visualSx = {
+      width: '100%',
+      minWidth: 0,
+      display: grid ? 'flex' : 'grid',
+      gridTemplateColumns: grid ? undefined : columns,
+      flexDirection: grid ? 'column' : undefined,
+      minHeight: grid ? gridMinItemHeight : detailsRowHeight,
+      maxWidth: grid ? gridMaxItemWidth : undefined,
+      justifySelf: grid ? 'center' : undefined,
+      boxSizing: 'border-box',
+      position: grid ? 'relative' : undefined,
+      alignItems: 'center',
+      justifyContent: grid ? 'flex-start' : 'start',
+      px: grid ? undefined : 1.5,
+      py: grid ? undefined : 0,
+      p: grid ? gridItemPadding : undefined,
+      gap: grid ? gridItemGap : 0,
+      borderRadius: grid ? 1 : '4px',
+      textAlign: grid ? 'center' : 'left',
+      bgcolor: dropTarget ? 'action.hover' : selected ? 'action.selected' : 'transparent',
+      outline: dropTarget ? '2px solid' : undefined,
+      outlineColor: 'primary.main',
+      outlineOffset: -2,
+      contentVisibility: grid ? 'auto' : undefined,
+      containIntrinsicSize: grid
+        ? String(gridMaxItemWidth) + 'px ' + String(gridEstimatedRowHeight) + 'px'
+        : undefined,
+      cursor: ownerInteraction ? undefined : 'default',
+      '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+      '&:focus-visible': {
+        outline: '2px solid',
+        outlineColor: 'primary.main',
+        outlineOffset: -2,
+      },
+    }
+    const combinedSx = [visualSx, ...(Array.isArray(sx) ? sx : sx ? [sx] : [])] as BoxProps['sx']
+    return ownerInteraction
+      ? <ButtonBase ref={ref} component="div" {...elementProps} sx={combinedSx}>{children}</ButtonBase>
+      : <Box ref={ref} {...elementProps} sx={combinedSx}>{children}</Box>
+  },
+)
 
 // Owner and public Share use one neutral Grid visual/title layout.
 // No authenticated API, mutation or capability is imported into this component.

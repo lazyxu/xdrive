@@ -1,0 +1,176 @@
+{
+  "workload_id": "SH-P019",
+  "capture": "verbatim structured machine summary from exact-head GitHub Actions job log; old source only",
+  "source_commit": "deef8a01d0ca0b9d2fc1ff898a03d0c69268e694",
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/39560252661",
+  "job_id": 119089516414,
+  "artifact_id": 12328010140,
+  "full_ci_original_run": "https://github.com/lazyxu/xdrive/actions/runs/39560252823",
+  "full_ci_original_status": "RED: 2 obsolete static source test expectations moved into a shared pure item surface; code/browser/Go did not fail here",
+  "source_metrics": [
+    {
+      "viewport": 1440,
+      "n": 3,
+      "first_page_ms": [
+        385.7438860000111,
+        370.58706900000107,
+        371.1602799999964
+      ],
+      "next_page_ms": [
+        208.78669300000183,
+        226.06012900000496,
+        237.9146150000015
+      ],
+      "first_p50_ms": 371.1602799999964,
+      "next_p50_ms": 226.06012900000496,
+      "first_download_ms": [
+        159.2569519999961,
+        164.51253599999472,
+        165.68727900000522
+      ],
+      "next_download_ms": [
+        119.39725499998895,
+        118.27007800000138,
+        110.02699899999425
+      ]
+    },
+    {
+      "viewport": 390,
+      "n": 3,
+      "first_page_ms": [
+        288.5593189999927,
+        299.444857999988,
+        289.87441200000467
+      ],
+      "next_page_ms": [
+        249.59780599999067,
+        246.6402919999964,
+        272.02814399999625
+      ],
+      "first_p50_ms": 289.87441200000467,
+      "next_p50_ms": 249.59780599999067,
+      "first_download_ms": [
+        147.23156699999527,
+        151.7056719999964,
+        143.32322800000838
+      ],
+      "next_download_ms": [
+        105.65984799999569,
+        105.8294889999961,
+        111.47979200001282
+      ]
+    }
+  ],
+  "original_source_data": {
+    "workload": "SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb",
+    "exact_source_head": "deef8a01d0ca0b9d2fc1ff898a03d0c69268e694",
+    "original_jpeg_cas": 100000,
+    "browser_sessions": 6,
+    "page_budget_ms": 2000,
+    "original_download_budget_ms": 5000,
+    "scope": "Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails",
+    "excluded": "Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion, 100k thumbnail decode and user-owned transfer cancellation",
+    "sessions": [
+      {
+        "width": 1440,
+        "sample": 1,
+        "first_page_ms": 385.7438860000111,
+        "next_page_ms": 208.78669300000183,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 159.2569519999961,
+        "next_download_ms": 119.39725499998895,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 2,
+        "first_page_ms": 370.58706900000107,
+        "next_page_ms": 226.06012900000496,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 164.51253599999472,
+        "next_download_ms": 118.27007800000138,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "sample": 3,
+        "first_page_ms": 371.1602799999964,
+        "next_page_ms": 237.9146150000015,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 165.68727900000522,
+        "next_download_ms": 110.02699899999425,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 1,
+        "first_page_ms": 288.5593189999927,
+        "next_page_ms": 249.59780599999067,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 147.23156699999527,
+        "next_download_ms": 105.65984799999569,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 2,
+        "first_page_ms": 299.444857999988,
+        "next_page_ms": 246.6402919999964,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 151.7056719999964,
+        "next_download_ms": 105.8294889999961,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "sample": 3,
+        "first_page_ms": 289.87441200000467,
+        "next_page_ms": 272.02814399999625,
+        "first_rows": 100,
+        "next_rows": 100,
+        "first_download_ms": 143.32322800000838,
+        "next_download_ms": 111.47979200001282,
+        "actual_original_bytes": 1374,
+        "original_sha_verified": true,
+        "no_stale_rows": true,
+        "horizontal_overflow": false
+      }
+    ],
+    "original_bytes": 70893376,
+    "allocated_cas_bytes": 409604096,
+    "seed_excluded_ms": 73202.971,
+    "source_aggregate_sha256": "1e94e01ef63cd256e4da685115785ac99dc115079ea9d770d67384b15cb6352b",
+    "http_counts": {
+      "original_download_calls": 12,
+      "public_page_calls": 12,
+      "signed_ticket_calls": 12
+    },
+    "first_page_max_ms": 385.7438860000111,
+    "next_page_max_ms": 272.02814399999625,
+    "native_download_max_ms": 165.68727900000522,
+    "electron_main_maxrss_kib": 194772,
+    "electron_main_cpu_user_us": 810509,
+    "electron_main_cpu_system_us": 690640,
+    "all_passed": true
+  }
+}

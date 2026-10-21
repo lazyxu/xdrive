@@ -86,30 +86,41 @@ test('shared FileExplorer uses Windows-style compact navigation and command chro
   assert.ok(searchFilters.includes('data-xdrive-file-explorer-search-filters'), 'filter popover surface is missing')
 })
 
-test('shared FileExplorer details view avoids admin-table chrome', () => {
+test('shared FileExplorer details/grid outer surfaces preserve their original owner interactions', () => {
   assert.ok(
     explorer.includes('xDriveFileExplorerDetailsHeaderGeometry(detailsGridTemplate, detailsHeaderHeight)') &&
       iconPresentation.includes("alignItems: 'center' as const,") &&
       iconPresentation.includes("bgcolor: 'background.default'") &&
       iconPresentation.includes("borderBottom: 1"),
-    'details header should use the quiet workspace surface',
+    'details header should keep the shared quiet workspace geometry',
   )
-  assert.ok(explorer.includes("borderRadius: '4px'"), 'details rows should retain Explorer-style rounded surfaces')
+  assert.equal((explorer.match(/<XDriveFileExplorerItemSurface/g) || []).length, 2,
+    'account Explorer Details and Grid must both mount the shared visual outer shell')
+  assert.ok(explorer.includes('ownerInteraction') &&
+    explorer.includes('surfaceMode="details"') &&
+    explorer.includes('surfaceMode="grid"'),
+    'Owner keeps ButtonBase keyboard/touch semantics in both views')
   assert.ok(
-    explorer.includes("gridTemplateColumns: detailsGridTemplate") && explorer.includes("justifyContent: 'start'"),
-    'details row grid tracks must stay left-aligned with the header instead of inheriting ButtonBase centering',
+    explorer.includes('columns={detailsGridTemplate}') &&
+    iconPresentation.includes('gridTemplateColumns: grid ? undefined : columns') &&
+    iconPresentation.includes("justifyContent: grid ? 'flex-start' : 'start'"),
+    'row tracks must still align to the sortable Details header',
   )
-  assert.ok(explorer.includes("selected ? 'action.selected' : 'transparent'"), 'details rows should retain selected state styling')
-  assert.ok(explorer.includes("dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)"), 'details rows should expose drag-target styling')
-  assert.equal(
-    explorer.includes("textAlign: 'left',\n                  borderBottom: 1,\n                  borderColor: 'divider'"),
-    false,
-    'details rows should not be separated by admin-table grid lines',
-  )
-  assert.ok(
-    explorer.includes('borderRadius: 1,') && explorer.includes('p: gridMetrics.itemPadding,'),
-    'grid tiles should keep restrained corners while using shared density metrics',
-  )
+  assert.ok(iconPresentation.includes("borderRadius: grid ? 1 : '4px'"),
+    'shared Details/Grid row surfaces must keep Explorer corner geometry')
+  assert.ok(iconPresentation.includes("selected ? 'action.selected' : 'transparent'"),
+    'shared row must retain selection highlight')
+  assert.ok(explorer.includes('dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)') &&
+    iconPresentation.includes("dropTarget ? 'action.hover'"),
+    'Owner drag targets must remain visually distinct')
+  assert.ok(explorer.includes('gridItemPadding={gridMetrics.itemPadding}') &&
+    iconPresentation.includes('p: grid ? gridItemPadding : undefined'),
+    'grid tiles must keep the Owner density-driven padding')
+  assert.ok(explorer.includes('onDragStart={(event) => startItemDrag(event, item)}') &&
+    explorer.includes('onDrop={(event) => dropOnFolder(event, item)'),
+    'Owner drag/drop must remain wired outside the neutral visual component')
+  assert.equal(explorer.includes("textAlign: 'left',\n                  borderBottom: 1,\n                  borderColor: 'divider'"),
+    false, 'Details rows should not become admin tables')
 })
 
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {

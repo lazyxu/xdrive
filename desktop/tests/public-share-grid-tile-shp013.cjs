@@ -22,8 +22,14 @@ test('SH-P013 Owner and Share mount the same permission-neutral Grid Tile body',
   assert.match(owner, /nativeDragOutHandle\(item, 'grid'\)/)
   assert.match(publicView, /<XDriveFileExplorerGridTileContent[\s\S]*?thumbnailWidth=\{72\}[\s\S]*?thumbnailHeight=\{72\}/)
   assert.match(publicView, /label=\{<XDriveFileExplorerItemName name=\{entry.name\} grid \/>\}/)
-  assert.match(publicView, /border: view === 'grid' \? 0 : undefined/)
-  assert.match(publicView, /borderRadius: view === 'grid' \? 1 : '4px'/)
+  const surfaceStart = leaf.indexOf('export const XDriveFileExplorerItemSurface')
+  const surfaceEnd = leaf.indexOf('// Owner and public Share use one neutral Grid visual/title layout', surfaceStart)
+  assert.ok(surfaceStart > 0 && surfaceEnd > surfaceStart, 'neutral shared item surface must exist')
+  const surface = leaf.slice(surfaceStart, surfaceEnd)
+  assert.match(owner, /<XDriveFileExplorerItemSurface[\s\S]*?surfaceMode="grid"/)
+  assert.match(publicView, /<XDriveFileExplorerItemSurface[\s\S]*?surfaceMode=\{view\}/)
+  assert.ok(surface.includes("borderRadius: grid ? 1 : '4px'"), 'Owner and Share need identical grid/details corners')
+  assert.doesNotMatch(surface, /\bborder\s*:/, 'shared item surface must not reintroduce the old framed Grid cards')
   for (const forbidden of ['XDriveApi', 'JWT', 'onDelete', 'onRename', 'onUpload', 'onDropItemsToFolder']) {
     assert.ok(!component.includes(forbidden), 'pure presentation cannot request Owner mutation: ' + forbidden)
   }
