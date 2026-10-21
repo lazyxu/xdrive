@@ -120,7 +120,13 @@ test('large Details and Grid directories use bounded rendering', () => {
   assert.ok(shared.includes('groupedGridLayout.totalHeight'), 'grouped Grid must preserve full scroll height including group headers')
   assert.ok(shared.includes('virtualizeGrid ? gridWindow.totalHeight : undefined'), 'ungrouped Grid must preserve its existing virtual scroll height')
   assert.ok(shared.includes('gridPaddingPx + gridWindow.startRow * gridRowStep'), 'Grid window must position the mounted row range')
-  assert.ok(shared.includes("contentVisibility: 'auto'"), 'Grid items should retain browser render containment')
+  assert.ok(
+    shared.includes('surfaceMode="grid"') &&
+    shared.includes('gridEstimatedRowHeight={gridMetrics.estimatedRowHeight}') &&
+    visual.includes("contentVisibility: grid ? 'auto'") &&
+    visual.includes('containIntrinsicSize: grid'),
+    'Owner Grid items must retain the original browser render containment through the shared item surface',
+  )
 })
 
 test('type sorting uses the same labels users see', () => {

@@ -19,6 +19,7 @@ import {
   XDriveFileExplorerItemIcon,
   XDriveFileExplorerDetailsNameCell,
   XDriveFileExplorerDetailsRowCell,
+  XDriveFileExplorerItemSurface,
   xDriveFileExplorerDetailsHeaderGeometry,
   XDriveFileExplorerGridTileContent,
   XDriveFileExplorerItemName,
@@ -231,7 +232,17 @@ export function XDrivePublicShareReadOnlyExplorer({
         </Box>
       )}
       {visibleItems.map(entry => (
-        <Box key={entry.id} role="listitem" tabIndex={0}
+        <XDriveFileExplorerItemSurface key={entry.id} role="listitem" tabIndex={0}
+          surfaceMode={view}
+          selected={selectedID === entry.id}
+          columns={view === 'details' ? shareDetailsColumns : undefined}
+          detailsRowHeight={xDriveFileExplorerDetailsNormalRowHeight}
+          gridMinItemHeight={124}
+          gridMaxItemWidth={180}
+          gridItemPadding={1}
+          gridItemGap={0.75}
+          gridEstimatedRowHeight={140}
+          data-xdrive-file-explorer-item
           aria-selected={selectedID === entry.id}
           data-xdrive-public-share-item-id={entry.id}
           aria-label={(entry.type === 'dir' ? '文件夹 ' : '文件 ') + entry.name}
@@ -246,29 +257,10 @@ export function XDrivePublicShareReadOnlyExplorer({
           onKeyDown={(event) => onEntryKeyDown(event, entry)}
           onDoubleClick={() => { if (!compactShareViewport) openEntry(entry) }}
           sx={{
-            display: view === 'grid' ? 'flex' : 'grid',
-            flexDirection: view === 'grid' ? 'column' : undefined,
-            alignItems: 'center', minWidth: 0,
-            minHeight: view === 'grid' ? 124 : xDriveFileExplorerDetailsNormalRowHeight,
-            maxWidth: view === 'grid' ? 180 : undefined,
-            justifySelf: view === 'grid' ? 'center' : undefined,
-            boxSizing: 'border-box',
-            contentVisibility: view === 'grid' ? 'auto' : undefined,
-            containIntrinsicSize: view === 'grid' ? '180px 140px' : undefined,
-            px: view === 'grid' ? 1 : 1.5, py: view === 'grid' ? 1 : 0,
-            gap: view === 'grid' ? 0.75 : 0,
-            border: view === 'grid' ? 0 : undefined,
-            borderColor: 'divider', borderRadius: view === 'grid' ? 1 : '4px',
-            gridTemplateColumns: view === 'details'
-              ? shareDetailsColumns : undefined,
-            bgcolor: selectedID === entry.id ? 'action.selected' : 'transparent',
-            cursor: 'default',
-            '&:hover': { bgcolor: 'action.hover' },
-            '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
             '@media (max-width: 620px)': view === 'details' ? {
               minHeight: xDriveFileExplorerDetailsMobileRowHeight,
               gridTemplateColumns: 'minmax(0,1fr)',
-              // An empty cell host must not create another implicit mobile row.
+              // Hide entire empty metadata cells, not just their labels.
               '& > [role="cell"]:not(:first-child)': { display: 'none' },
               '& .xdrive-shared-file-updated': { display: 'none' },
               '& .xdrive-shared-file-type': { display: 'none' },
@@ -310,7 +302,7 @@ export function XDrivePublicShareReadOnlyExplorer({
               </XDriveFileExplorerDetailsRowCell>
             </>
           )}
-        </Box>
+        </XDriveFileExplorerItemSurface>
       ))}
       {!pending && folderOpened && pageItems.length === 0 && (
         <Typography variant="body2" color="text.secondary" textAlign="center"

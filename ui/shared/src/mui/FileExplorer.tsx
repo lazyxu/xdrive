@@ -10,6 +10,7 @@ import {
   XDriveFileExplorerItemName,
   XDriveFileExplorerDetailsNameCell,
   XDriveFileExplorerDetailsRowCell,
+  XDriveFileExplorerItemSurface,
   xDriveFileExplorerDetailsHeaderGeometry,
   XDriveFileExplorerGridTileContent,
 } from './FileExplorerItemPresentation'
@@ -4440,14 +4441,19 @@ export function XDriveFileExplorer({
       : explorerIDKey(activeItemID) === explorerIDKey(item.id)
     const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
     return (
-      <ButtonBase
+      <XDriveFileExplorerItemSurface
+        ownerInteraction
+        surfaceMode="details"
+        selected={selected}
+        dropTarget={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)}
+        columns={detailsGridTemplate}
+        detailsRowHeight={detailsRowHeight}
         key={item.id}
         ref={(element) => {
           const key = explorerIDKey(item.id)
           if (element) itemElementRefs.current.set(key, element)
           else itemElementRefs.current.delete(key)
         }}
-        component="div"
         role="row"
         aria-rowindex={xDriveFileExplorerAriaItemRowIndex(index, groupedDetailsLayout?.groups ?? [])}
         data-xdrive-file-explorer-item
@@ -4490,32 +4496,9 @@ export function XDriveFileExplorer({
         }}
         onKeyDown={(event) => itemKeyDown(event, item)}
         sx={{
-          width: '100%',
-          display: 'grid',
-          gridTemplateColumns: detailsGridTemplate,
-          minHeight: detailsRowHeight,
-          alignItems: 'center',
-          justifyContent: 'start',
-          px: 1.5,
-          textAlign: 'left',
-          borderRadius: '4px',
-          bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-            ? 'action.hover'
-            : selected ? 'action.selected' : 'transparent',
-          outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-            ? '2px solid'
-            : undefined,
-          outlineColor: 'primary.main',
-          outlineOffset: -2,
-          '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
           '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
             opacity: 0.72,
             pointerEvents: 'auto',
-          },
-          '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: -2,
           },
         }}
       >
@@ -4552,7 +4535,7 @@ export function XDriveFileExplorer({
             )}
           </XDriveFileExplorerDetailsRowCell>
         ))}
-      </ButtonBase>
+      </XDriveFileExplorerItemSurface>
     )
   }
 
@@ -4588,14 +4571,22 @@ export function XDriveFileExplorer({
       : explorerIDKey(activeItemID) === explorerIDKey(item.id)
     const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
     return (
-      <ButtonBase
+      <XDriveFileExplorerItemSurface
+        ownerInteraction
+        surfaceMode="grid"
+        selected={selected}
+        dropTarget={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)}
+        gridMinItemHeight={gridMetrics.minItemHeight}
+        gridMaxItemWidth={gridMetrics.maxItemWidth}
+        gridItemPadding={gridMetrics.itemPadding}
+        gridItemGap={gridMetrics.itemGap}
+        gridEstimatedRowHeight={gridMetrics.estimatedRowHeight}
         key={item.id}
         ref={(element) => {
           const key = explorerIDKey(item.id)
           if (element) itemElementRefs.current.set(key, element)
           else itemElementRefs.current.delete(key)
         }}
-        component="div"
         role="listitem"
         aria-setsize={logicalItemCount}
         aria-posinset={xDriveFileExplorerAriaItemPosition(index)}
@@ -4639,40 +4630,9 @@ export function XDriveFileExplorer({
         }}
         onKeyDown={(event) => itemKeyDown(event, item)}
         sx={{
-          width: '100%',
-          minWidth: 0,
-          minHeight: gridMetrics.minItemHeight,
-          maxWidth: gridMetrics.maxItemWidth,
-          justifySelf: 'center',
-          boxSizing: 'border-box',
-          position: 'relative',
-          borderRadius: 1,
-          p: gridMetrics.itemPadding,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: gridMetrics.itemGap,
-          textAlign: 'center',
-          bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-            ? 'action.hover'
-            : selected ? 'action.selected' : 'transparent',
-          outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-            ? '2px solid'
-            : undefined,
-          outlineColor: 'primary.main',
-          outlineOffset: -2,
-          contentVisibility: 'auto',
-          containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`,
-          '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
           '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
             opacity: 0.72,
             pointerEvents: 'auto',
-          },
-          '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: -2,
           },
         }}
       >
@@ -4691,7 +4651,7 @@ export function XDriveFileExplorer({
           </>}
           label={renderItemName(item, true)}
         />
-      </ButtonBase>
+      </XDriveFileExplorerItemSurface>
     )
   }
 
