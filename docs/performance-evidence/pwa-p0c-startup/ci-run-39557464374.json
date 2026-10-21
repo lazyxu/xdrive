@@ -1,0 +1,163 @@
+{
+  "schema": "xdrive-pwa-p0c-chromium-startup-before-ci-record-v1",
+  "provenance": {
+    "source_commit_sha": "62bb1f9ce4df65fde70701ae78e40d257d2404d0",
+    "run_id": 39557464374,
+    "job_id": 119080482601,
+    "browser": "155.0.8059.84",
+    "source": "PWA_P0C_CHROMIUM_BASELINE_BEFORE JSON in successful GitHub Actions native job stdout",
+    "environment": "CI Linux headless Chromium Android-UA mobile emulation, 390x844"
+  },
+  "boundaries": {
+    "samples": 9,
+    "physical_ios": false,
+    "actual_100k": false,
+    "production_web_traffic": false,
+    "original_product_app": false,
+    "baseline_only": true,
+    "after": null,
+    "claimed_speedup": null,
+    "resource_timing_transfer_bytes_are_wire_bytes": false,
+    "resource_timing_counts_are_remote_requests": false
+  },
+  "exact_summary": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "metrics": {
+      "first": {
+        "ready_ms": {
+          "p50": 334.7,
+          "p95": 409.28,
+          "min": 318.1,
+          "max": 446
+        },
+        "fcp_ms": {
+          "p50": 296,
+          "p95": 376.8,
+          "min": 280,
+          "max": 412
+        },
+        "dom_content_loaded_ms": {
+          "p50": 160,
+          "p95": 188.42,
+          "min": 135.1,
+          "max": 198.5
+        },
+        "load_ms": {
+          "p50": 160.3,
+          "p95": 188.82,
+          "min": 135.5,
+          "max": 198.9
+        },
+        "resource_requests": {
+          "p50": 6,
+          "p95": 6,
+          "min": 6,
+          "max": 6
+        },
+        "transfer_bytes_estimate": {
+          "p50": 2448712,
+          "p95": 2448712,
+          "min": 2448712,
+          "max": 2448712
+        },
+        "cls": {
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "warm": {
+        "ready_ms": {
+          "p50": 139.2,
+          "p95": 163.52,
+          "min": 131.7,
+          "max": 166.8
+        },
+        "fcp_ms": {
+          "p50": 132,
+          "p95": 152,
+          "min": 124,
+          "max": 152
+        },
+        "dom_content_loaded_ms": {
+          "p50": 95.6,
+          "p95": 106.82,
+          "min": 86.6,
+          "max": 107.7
+        },
+        "load_ms": {
+          "p50": 95.8,
+          "p95": 106.96,
+          "min": 86.8,
+          "max": 107.8
+        },
+        "resource_requests": {
+          "p50": 6,
+          "p95": 6,
+          "min": 6,
+          "max": 6
+        },
+        "transfer_bytes_estimate": {
+          "p50": 9134,
+          "p95": 9134,
+          "min": 9134,
+          "max": 9134
+        },
+        "cls": {
+          "p50": 0.009,
+          "p95": 0.009,
+          "min": 0.009,
+          "max": 0.009
+        }
+      },
+      "offline": {
+        "ready_ms": {
+          "p50": 124.9,
+          "p95": 170.7,
+          "min": 118.3,
+          "max": 199.9
+        },
+        "fcp_ms": {
+          "p50": 120,
+          "p95": 144.8,
+          "min": 116,
+          "max": 156
+        },
+        "dom_content_loaded_ms": {
+          "p50": 87.3,
+          "p95": 95.98,
+          "min": 81.8,
+          "max": 100.3
+        },
+        "load_ms": {
+          "p50": 87.5,
+          "p95": 96.24,
+          "min": 82,
+          "max": 100.6
+        },
+        "resource_requests": {
+          "p50": 6,
+          "p95": 6,
+          "min": 6,
+          "max": 6
+        },
+        "transfer_bytes_estimate": {
+          "p50": 8727,
+          "p95": 8727,
+          "min": 8727,
+          "max": 8727
+        },
+        "cls": {
+          "p50": 0.009,
+          "p95": 0.009,
+          "min": 0.009,
+          "max": 0.009
+        }
+      }
+    }
+  }
+}

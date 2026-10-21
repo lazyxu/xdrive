@@ -441,6 +441,93 @@ async function validateCase(browser, origin, spec) {
   }
 }
 
+const p0cBaseline = process.env.XD_PWA_P0C_BASELINE === '1'
+const { aggregateP0C } = require('./pwa-p0c-metrics.cjs')
+
+// P0-C0 measures the actual compiled public login App Shell only. It never
+// infers physical iOS, real 100k content or a performance improvement.
+async function runP0CBaseline(browser, origin) {
+  const samples = []
+  for (let i = 0; i < 9; i++) {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      locale: 'zh-CN', serviceWorkers: 'allow',
+      userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36',
+    })
+    try {
+      const page = await context.newPage()
+      page.setDefaultTimeout(20000)
+      await page.addInitScript(() => {
+        const holder = { total: 0 }
+        window.__xdriveP0CShift = holder
+        try {
+          const observer = new PerformanceObserver(list => {
+            for (const e of list.getEntries()) {
+              if (!e.hadRecentInput) holder.total += e.value
+            }
+          })
+          observer.observe({ type: 'layout-shift', buffered: true })
+        } catch {
+          holder.total = null
+        }
+      })
+      const readout = async () => {
+        await page.locator('[data-xdrive-pwa-login-entry]').waitFor()
+        // Record the DOM-observed entry before awaiting an actual paint event.
+        // A SW-cached offline DOM can be visible BEFORE Chrome reports FCP.
+        const observedReadyMs = await page.evaluate(() => performance.now())
+        await page.waitForFunction(() => performance.getEntriesByType('paint')
+          .some(entry => entry.name === 'first-contentful-paint'), null, { timeout: 8000 })
+        return page.evaluate(readyMs => {
+          const nav = performance.getEntriesByType('navigation')[0]
+          const resources = performance.getEntriesByType('resource')
+          const fcp = performance.getEntriesByType('paint')
+            .find(entry => entry.name === 'first-contentful-paint')
+          return {
+            ready_ms: readyMs,
+            fcp_ms: fcp ? fcp.startTime : null,
+            dom_content_loaded_ms: nav?.domContentLoadedEventEnd ?? null,
+            load_ms: nav?.loadEventEnd ?? null,
+            resource_requests: 1 + resources.length,
+            transfer_bytes_estimate: (nav?.transferSize ?? 0) +
+              resources.reduce((total, item) => total + (item.transferSize || 0), 0),
+            cls: window.__xdriveP0CShift?.total ?? null,
+            worker_controlled: Boolean(navigator.serviceWorker?.controller),
+          }
+        }, observedReadyMs)
+      }
+      const firstResponse = await page.goto(origin + '/' + expectedHash, { waitUntil: 'load' })
+      assert.equal(firstResponse?.status(), 200)
+      const first = await readout()
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), null, { timeout: 20000 })
+      await page.reload({ waitUntil: 'load' })
+      const warm = await readout()
+      assert.equal(warm.worker_controlled, true)
+      networkTransportDown = true
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      const offline = await readout()
+      assert.equal(offline.worker_controlled, true)
+      assert.equal(new URL(page.url()).hash, expectedHash)
+      networkTransportDown = false
+      const cache = await page.evaluate(async () => {
+        const names = await caches.keys()
+        const paths = []
+        for (const name of names) {
+          const entry = await caches.open(name)
+          for (const request of await entry.keys()) paths.push(new URL(request.url).pathname)
+        }
+        return { names, paths }
+      })
+      assertXDrivePublicShellCache(cache)
+      samples.push({ first, warm, offline })
+    } finally {
+      networkTransportDown = false
+      await context.close()
+    }
+  }
+  return aggregateP0C(samples)
+}
+
 async function main() {
   let browser
   await new Promise((resolve, reject) => {
@@ -479,6 +566,7 @@ async function main() {
     }
     assert(observed.privateTransportDrops >= 2, 'both contexts must bypass SW for private navigation')
     assert.equal(evidence.failures.length, 0)
+    if (p0cBaseline) evidence.p0c = await runP0CBaseline(browser, origin)
     evidence.passed = true
   } catch (error) {
     evidence.passed = false
