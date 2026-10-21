@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/storage"
 )
@@ -16,6 +18,24 @@ type localPushPhysicalTerminalCandidate struct {
 	nodeID              uint64
 	sourceItemID        uint64
 	physicalCASObserved bool
+}
+
+// localPushOriginalCASPrecommitError preserves only the safe typed outcomes.
+// The original physical Local error can include private OS paths or callback
+// secrets; never return it over a Server/Agent/UI boundary. A busy CAS pin has
+// NOT entered the commit callback; an uncertain result MAY have committed.
+// Both remain private and never authorize retries, cancellation or key release.
+func localPushOriginalCASPrecommitError(err error) error {
+	switch {
+	case errors.Is(err, storage.ErrLocalPushCASPrecommitOutcomeUncertain):
+		return errors.Join(errLocalPushOperationIntentDenied,
+			storage.ErrLocalPushCASPrecommitOutcomeUncertain)
+	case errors.Is(err, storage.ErrLocalPushCASPrecommitBusy):
+		return errors.Join(errLocalPushOperationIntentDenied,
+			storage.ErrLocalPushCASPrecommitBusy)
+	default:
+		return errLocalPushOperationIntentDenied
+	}
 }
 
 // observeBoundLocalPushHistoricalPhysicalTerminalCandidate is intentionally
@@ -52,8 +72,16 @@ func (s *Server) observeBoundLocalPushHistoricalPhysicalTerminalCandidate(
 		c, sourceID, revision, proof, stageID, relativeLeaf,
 		local.InspectPinnedLocalPushHistoricalCASBeforeCommit, selector,
 	)
-	if err != nil || c.Request.Context().Err() != nil ||
-		receipt.State != localPushFirstLeafSQLReceiptState ||
+	if err != nil {
+		return empty, localPushOriginalCASPrecommitError(err)
+	}
+	// This successful physical inspector has already entered its pinned
+	// transaction callback. A subsequent cancellation is NOT a rollback.
+	if c.Request.Context().Err() != nil {
+		return empty, errors.Join(errLocalPushOperationIntentDenied,
+			storage.ErrLocalPushCASPrecommitOutcomeUncertain)
+	}
+	if receipt.State != localPushFirstLeafSQLReceiptState ||
 		receipt.NodeID == 0 || receipt.SourceItemID == 0 {
 		return empty, errLocalPushOperationIntentDenied
 	}
