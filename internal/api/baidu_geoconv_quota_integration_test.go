@@ -138,41 +138,69 @@ func TestBaiduGeoconvQuotaAcrossIndependentPostgresPools(t *testing.T) {
 	}
 	// Simultaneous callers through independent DB pools cannot oversubscribe
 	// fleet or Owner limits. A fleet denial must leave the private row intact.
-	reset()
+	// These counters intentionally reset at PostgreSQL's UTC minute boundary.
+	// If concurrent admissions straddle that boundary, a total above six is
+	// expected across two separate minute windows, not quota oversubscription.
+	// Retry the WHOLE workload with fresh rows so each assertion checks one
+	// PostgreSQL clock minute; never discard a failed same-minute assertion.
 	parallel := baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 6, OwnerPoints: 3, FleetPoints: 6}
-	var admitted atomic.Int64
-	var unexpected atomic.Int64
-	var wg sync.WaitGroup
-	for i := 0; i < 24; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			connection := db
-			if i%2 != 0 {
-				connection = peer
-			}
-			owner := uint64(21 + i%3)
-			err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), connection, owner, 1, parallel)
-			switch {
-			case err == nil:
-				admitted.Add(1)
-			case errors.Is(err, errBaiduGeoconvQuotaDenied):
-			default:
-				unexpected.Add(1)
-			}
-		}(i)
-	}
-	wg.Wait()
-	if unexpected.Load() != 0 || admitted.Load() != 6 {
-		t.Fatalf("parallel admission drift: admitted=%d unexpected=%d", admitted.Load(), unexpected.Load())
-	}
-	if fleet := read(0); fleet.Requests != 6 || fleet.Points != 6 {
-		t.Fatalf("fleet exceeded: %+v", fleet)
-	}
-	for _, id := range []int64{21, 22, 23} {
-		if bucket := read(id); bucket.Requests != 2 || bucket.Points != 2 {
-			t.Fatalf("owner %d exceeded: %+v", id, bucket)
+	databaseMinute := func() int64 {
+		t.Helper()
+		var minute int64
+		if err := peer.Raw("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) / 60)::bigint").
+			Row().Scan(&minute); err != nil || minute <= 0 {
+			t.Fatalf("PostgreSQL quota minute unavailable: %v", err)
 		}
+		return minute
+	}
+	validated := false
+	for attempt := 0; attempt < 3; attempt++ {
+		reset()
+		startMinute := databaseMinute()
+		var admitted atomic.Int64
+		var unexpected atomic.Int64
+		var wg sync.WaitGroup
+		for i := 0; i < 24; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				connection := db
+				if i%2 != 0 {
+					connection = peer
+				}
+				owner := uint64(21 + i%3)
+				err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), connection, owner, 1, parallel)
+				switch {
+				case err == nil:
+					admitted.Add(1)
+				case errors.Is(err, errBaiduGeoconvQuotaDenied):
+				default:
+					unexpected.Add(1)
+				}
+			}(i)
+		}
+		wg.Wait()
+		endMinute := databaseMinute()
+		if endMinute != startMinute {
+			t.Logf("PostgreSQL minute changed (%d -> %d) during quota admission; rerun with fresh counters", startMinute, endMinute)
+			continue
+		}
+		if unexpected.Load() != 0 || admitted.Load() != 6 {
+			t.Fatalf("parallel admission drift: admitted=%d unexpected=%d", admitted.Load(), unexpected.Load())
+		}
+		if fleet := read(0); fleet.Requests != 6 || fleet.Points != 6 {
+			t.Fatalf("fleet exceeded: %+v", fleet)
+		}
+		for _, id := range []int64{21, 22, 23} {
+			if bucket := read(id); bucket.Requests != 2 || bucket.Points != 2 {
+				t.Fatalf("owner %d exceeded: %+v", id, bucket)
+			}
+		}
+		validated = true
+		break
+	}
+	if !validated {
+		t.Fatal("quota concurrency did not fit within a single PostgreSQL minute after three attempts")
 	}
 	reset()
 	if err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 41, 2, caps); err != nil {

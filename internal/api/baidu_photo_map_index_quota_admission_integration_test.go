@@ -306,6 +306,23 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	if secretReads.Load() != 0 || forwardCalls.Load() != 0 {
 		t.Fatal("denied one-shot demand accessed Server AK or exported GPS")
 	}
+	// The assertions below require two conversions and a denied third
+	// admission within ONE PostgreSQL UTC minute. CI may enter this phase at
+	// :59, when a valid next-minute reset is not quota oversubscription.
+	// Reserve a bounded 15s database-clock window BEFORE any successful
+	// conversion; keep all real PostgreSQL assertions and product caps intact.
+	var millisToMinuteBoundary int64
+	if err := peer.Raw(
+		"SELECT CEIL((60 - EXTRACT(SECOND FROM clock_timestamp())) * 1000)::bigint",
+	).Row().Scan(&millisToMinuteBoundary); err != nil ||
+		millisToMinuteBoundary <= 0 || millisToMinuteBoundary > 60000 {
+		t.Fatalf("PostgreSQL quota clock unavailable: remaining_ms=%d err=%v",
+			millisToMinuteBoundary, err)
+	}
+	if millisToMinuteBoundary <= 15000 {
+		// No bucket, consent, release, worker or product code is modified.
+		time.Sleep(time.Duration(millisToMinuteBoundary)*time.Millisecond + 300*time.Millisecond)
+	}
 	if err := executeOneBaiduPhotoMapIndexWithTrustedForward(context.Background(), verbose,
 		owner.ID, licence, serverAK, offlineForward); err != nil {
 		t.Fatalf("first quota-limited Owner one-shot demand failed: %v", err)

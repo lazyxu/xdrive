@@ -27,6 +27,12 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       selected?.owner === owner && selected.candidate.node.id === nodeID && selected.candidate.index === activeIndex
         ? selected.candidate : undefined)
   }, [owner, api, gallerySource, context, activeIndex, nodeID, refresh])
+  // Immediately cancel the old authorized Cell Range when Viewer closes,
+  // changes item, changes Owner, or replaces this reader. No orphaned fetch.
+  useEffect(() => {
+    session.activate()
+    return () => session.dispose()
+  }, [session])
   const activeReaderRef = useRef({ owner, session })
   activeReaderRef.current = { owner, session }
   const [content, setContent] = useState<{
