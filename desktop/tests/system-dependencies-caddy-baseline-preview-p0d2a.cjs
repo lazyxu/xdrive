@@ -72,32 +72,36 @@ test('P0-D2a: revision zero, stale preflight, missing Host witness and older Age
   assert.equal(pending.can_adopt,false)
 })
 
-test('P0-D2a: actual Caddy Config manually invokes only existing read-only preflight',()=>{
-  const page=read('ui/shared/src/mui/CaddyDetailV1.tsx')
-  const panel=read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
-  assert.match(page,/XDriveCaddyHostBaselinePreviewPanel/)
-  assert.match(page,/active=\{true\}/)
-  assert.match(panel,/onClick=\{\(\) => \{ void inspect\(\) \}\}/)
-  assert.match(panel,/verifyCaddyPreflightContract\(await source\.loadCaddyHTTPSPreflight\(\)\)/)
-  assert.match(panel,/<Dialog open=\{open && active && !hasUnsavedEdits\}/)
-  assert.match(panel,/hasUnsavedEdits/)
-  for(const prohibited of ['saveCaddyHTTPSConfig','rollbackCaddyHTTPS',
-    'verifyCaddyAliDNSRead','revealCaddyAliDNS','loadCaddyHTTPSHostPlan',
-    'InsecureSkipVerify','docker restart','applyCaddy']) {
-    assert.equal(panel.includes(prohibited),false,prohibited)
+test('P0-D2a: removed baseline UI cannot accidentally adopt Host state or reflow the form', () => {
+  const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  const legacy = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
+  assert.doesNotMatch(page, /XDriveCaddyHostBaselinePreviewPanel/)
+  assert.doesNotMatch(page, /data-xdrive-caddy-v1-runtime-desired-drift/)
+  assert.doesNotMatch(page, /运行与目标配置存在差异|caddy-v1-history/)
+  assert.match(https, /data-xdrive-caddy-running-lan-ip/)
+  assert.match(https, /host_lan_tls_state === 'verified'/)
+  assert.match(page, /<XDriveCaddyPreflightPanel source=\{source\}/)
+  assert.match(legacy, /verifyCaddyPreflightContract\(await source\.loadCaddyHTTPSPreflight\(\)\)/)
+  for (const unsafe of ['saveCaddyHTTPSConfig', 'rollbackCaddyHTTPS',
+    'verifyCaddyAliDNSRead', 'revealCaddyAliDNS', 'loadCaddyHTTPSHostPlan',
+    'InsecureSkipVerify', 'docker restart', 'applyCaddy']) {
+    assert.equal(legacy.includes(unsafe), false, unsafe)
   }
-  assert.equal(original.includes('can_adopt: true'),false)
-  assert.equal(original.includes('apply_supported = true'),false)
+  assert.equal(original.includes('can_adopt: true'), false)
+  assert.equal(original.includes('apply_supported = true'), false)
 })
 
-// Both in-flight and already displayed read-only Host evidence become invalid
-// as soon as an administrator modifies an unsaved HTTPS/AliDNS draft.
-test('P0-D2a: dirty draft immediately hides and invalidates stale Host evidence', () => {
-  const panel = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
+test('P0-D2a: page refresh and atomic Save still guard unsaved drafts after UI cleanup', () => {
   const owner = read('ui/shared/src/mui/CaddyDetailV1.tsx')
-  assert.match(owner, /hasUnsavedEdits=\{hasUnsavedEdits\}/)
-  assert.match(panel, /\}, \[source, config, evidenceRevision, active, hasUnsavedEdits\]\)/)
-  assert.match(panel, /const current = !hasUnsavedEdits &&/)
-  assert.match(panel, /<Dialog open=\{open && active && !hasUnsavedEdits\}/)
-  assert.match(panel, /return \(\) => \{ \+\+epochRef\.current \}/)
+  const legacy = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
+  assert.match(owner, /if \(hasUnsavedEdits\) return/)
+  assert.match(owner, /savePendingRef\.current/)
+  assert.match(owner, /epoch !== saveEpoch\.current/)
+  assert.match(owner, /onDirtyChange=\{onHTTPSDirtyChange\}/)
+  assert.match(owner, /onDirtyChange=\{onAliDNSDirtyChange\}/)
+  assert.doesNotMatch(owner, /XDriveCaddyHostBaselinePreviewPanel/)
+  // Legacy model remains independently inert even though its dialog is no longer mounted.
+  assert.match(legacy, /const current = !hasUnsavedEdits &&/)
+  assert.match(legacy, /\}, \[source, config, evidenceRevision, active, hasUnsavedEdits\]\)/)
 })

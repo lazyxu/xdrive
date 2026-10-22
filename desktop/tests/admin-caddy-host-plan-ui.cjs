@@ -79,9 +79,12 @@ test('shared system dependencies exposes only authenticated readonly plan transp
   assert.match(renderer, /loadCaddyHTTPSHostPlan/)
   assert.match(web, /loadCaddyHTTPSHostPlan/)
   assert.match(api, /adminCaddyHTTPSHostPlan/)
-  assert.match(panel, /verifyCaddyHTTPSHostPlan\(next\)/)
-  assert.match(panel, /data-xdrive-caddy-host-plan/)
-  assert.match(panel, /安全应用、重启与自动回滚功能尚未开放/)
+  // Backend plan remains available for trusted maintenance tooling, but the
+  // Caddy settings page no longer duplicates its saved target preview.
+  assert.doesNotMatch(panel, /verifyCaddyHTTPSHostPlan\(next\)/)
+  assert.doesNotMatch(panel, /data-xdrive-caddy-host-plan/)
+  assert.match(panel, /data-xdrive-admin-caddy-preflight/)
+  assert.match(panel, /onClick=\{\(\) => \{ void check\(\) \}\}/)
   assert.doesNotMatch(panel, /启动 Docker|执行 Caddy Apply|重启服务端/)
   assert.doesNotMatch(controller + ipc + go, /docker\.sock|exec\.Command|docker compose/)
 })

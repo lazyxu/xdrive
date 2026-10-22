@@ -46,7 +46,7 @@ test('P0-SAVE-C: refuse stale, missing, invalid or cross-instance drafts and for
   assert.match(page, /result\.alidns_revision !== input\.alidns_revision \+ \(input\.alidns \? 1 : 0\)/)
   assert.match(page, /\+\+saveEpoch\.current/)
   assert.match(page, /epoch !== saveEpoch\.current/)
-  assert.match(page, /当前 Server\/Agent 不支持联合原子保存；不会退回分两次保存/)
+  assert.match(page, /需要兼容联合保存的 Server\/Agent/)
   assert.match(page, /放弃未保存的修改/)
   assert.match(page, /setAtomicRefreshID/)
   assert.doesNotMatch(page, /applyCaddy|restartCaddy|docker restart|source\.deploy/)
@@ -69,7 +69,7 @@ test('P0-SAVE-C: AliDNS explicit clear stages locally, does not fire its standal
   assert.match(alidns, /if \(atomicMode\) \{[\s\S]*?setPendingClear\(true\)/)
 })
 
-test('P0-SAVE-C: HTTPS draft includes full LAN and FQDN semantics while history stays desired-only', () => {
+test('P0-SAVE-C: HTTPS draft stays authoritative without mounted Caddy history UI', () => {
   const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   assert.match(https, /onAtomicDraft\?\.\(config && section === 'config'/)
@@ -78,10 +78,10 @@ test('P0-SAVE-C: HTTPS draft includes full LAN and FQDN semantics while history 
   assert.match(https, /host_pending: config\.host_apply_pending === true/)
   assert.match(https, /validPrivateLANIP\(lanIP\)/)
   assert.match(https, /lanEnabled \|\| enabled/)
-  assert.match(page, /section="history" onConfigurationChanged=\{changed\}/)
-  assert.match(page, /component="fieldset" disabled=\{hasUnsavedEdits\}/)
+  assert.doesNotMatch(page, /section="history"/)
+  assert.doesNotMatch(page, /caddy-v1-history/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
-  assert.match(page, /目前独立 Rescue、签名 Host Manager/)
+  assert.match(page, /保存仅更新管理配置，不会重新部署 Caddy/)
 })
 test('P0-SAVE-C: in-flight atomic Save freezes both editors and secondary requests', () => {
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
@@ -96,7 +96,7 @@ test('P0-SAVE-C: in-flight atomic Save freezes both editors and secondary reques
   assert.match(alidns, /atomicSaving\?: boolean/)
   assert.match(alidns, /const canEdit = !!config\?\.editable && !busy && !loading && !revealing && !atomicSaving/)
   assert.match(alidns, /if \(!config\?\.configured \|\| !source\.revealCaddyAliDNS \|\| revealing \|\| busy \|\| atomicSaving\) return/)
-  assert.match(alidns, /disabled=\{busy \|\| revealing \|\| atomicSaving/)
+  assert.match(alidns, /disabled=\{!canEdit \|\| !config\.configured \|\| !source\.revealCaddyAliDNS/)
   assert.match(alidns, /disabled=\{busy \|\| atomicSaving\}/)
 })
 

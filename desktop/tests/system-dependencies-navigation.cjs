@@ -380,81 +380,71 @@ test('Runtime verification tabs load exact service-specific status without eager
 })
 
 
-test('one shared detail page replaces status/config/verify/history tabs without eager history', () => {
+test('Only Caddy uses flat always-visible config; other service sections retain their own lazy history', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  const caddy = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
-  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"),
-    'each relevant capability is an in-page section of the same service')
-  assert.ok(page.includes('data-xdrive-unified-detail-intro'))
-  assert.ok(page.includes('data-xdrive-unified-detail-section={sectionTab}'))
+  const workspace = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const editor = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
+  const preflight = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+
+  // Existing non-Caddy service sections and history are unchanged.
+  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"))
   assert.ok(page.includes('<AccordionSummary'))
   assert.ok(page.includes('<AccordionDetails'))
-  assert.equal(page.includes('<Tabs'), false)
-  assert.equal(page.includes('<Tab '), false)
-  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"),
-    'the audit history must be absent until the section opens or a history link targets it')
+  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"))
   assert.ok(page.includes("if (!historyExpanded) return"))
   assert.ok(page.includes("}, [source, selectedPage, historyExpanded])"))
-  assert.ok(page.includes("}, [source, selectedPage])"),
-    'within-page section switches must not reset a configuration draft')
-  assert.ok(page.includes("if (!next && unsavedRef.current) return"),
-    'collapsing an edited section must not unmount the draft')
-  assert.ok(page.includes("disabled={currentTab === 'history' && hasUnsavedEdits}"),
-    'history mutation must not overwrite a dirty in-page editor')
-  assert.ok(page.includes("currentTab === 'verify' ? 'verify'"),
-    'verify panel retains its restricted read-only contract')
-  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'config'"),
-    'HTTPS and encrypted AliDNS inputs remain in the single Caddy detail page')
-  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'verify'"),
-    'the seven existing Caddy preflight checks remain manual and separate from saving')
-  assert.ok(page.includes("selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history')"))
-  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}"))
+  assert.ok(page.includes("if (!next && unsavedRef.current) return"))
   assert.ok(page.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
-  assert.ok(page.includes('window.setTimeout(hideBaiduAK, seconds * 1000)'),
-    'Baibu AK must expire even if its reveal child unmounts on section collapse')
-  assert.ok(page.includes("!next && selectedPage === 'baidu-map' && sectionTab === 'config'"),
-    'closing the configuration accordion must immediately redact any exposed AK')
-  assert.ok(caddy.includes("(lanEnabled || enabled)"),
-    'both-disable rejection remains in the editable configuration panel')
-  assert.ok(caddy.includes("{section === 'config' && (<>"),
-    'Caddy editor stays scoped to configuration without duplicating status or history')
-  assert.ok(caddy.includes("当前期望修订 #{config.revision}。选择历史修订只会创建新的审计记录"),
-    'history contains a concise revision context, not duplicated runtime and TLS status')
-  assert.ok(caddy.includes("(lanEnabled || enabled)"))
-  assert.ok(caddy.includes("期望配置未应用"))
-  for (const forbidden of ['docker.sock', 'adminRestartHost', 'adminStopHost'])
-    assert.equal(page.includes(forbidden), false)
-});
 
+  // Caddy itself has no accordion, no history UI and no automatic probing.
+  assert.ok(workspace.includes('data-xdrive-caddy-single-page="true"'))
+  assert.ok(workspace.includes("activeTab === 'config' || activeTab === 'history' ? 'caddy-v1-config'"))
+  for (const forbidden of [
+    'showHistory', 'historyOpen', 'showEvidence', 'evidenceOpen',
+    'caddy-v1-history', 'section="history"', 'XDriveCaddyHostBaselinePreviewPanel',
+    'data-xdrive-caddy-v1-runtime-desired-drift',
+  ]) assert.equal(workspace.includes(forbidden), false, 'obsolete Caddy UI: ' + forbidden)
+  assert.ok(workspace.includes('data-xdrive-caddy-v11-atomic-save'))
+  assert.ok(workspace.includes('<XDriveCaddyPreflightPanel source={source}'))
+  assert.ok(workspace.includes('onConfigurationChanged={changed}'))
+  assert.ok(preflight.includes("onClick={() => { void check() }}"), 'preflight must be explicit')
+  assert.equal(alidns.includes('manageOpen'), false, 'masked AliDNS editor stays visible')
+  assert.ok(editor.includes('(lanEnabled || enabled)'), 'both entries cannot be off')
+  assert.ok(editor.includes('data-xdrive-caddy-running-lan-ip'), 'only verified runtime IP is shown')
+  for (const forbidden of ['docker.sock', 'adminRestartHost', 'adminStopHost', 'source.deploy'])
+    assert.equal(workspace.includes(forbidden), false)
+})
 
-test('SD-UI-V1.5: Caddy editor avoids duplicate TLS status, preserves drafts and lazy history', () => {
-  const caddy = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+test('Caddy editor keeps dirty draft, account/source fence, and no duplicate status or lazy history UI', () => {
+  const editor = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  assert.ok(caddy.includes('data-xdrive-caddy-evidence-location'))
-  assert.ok(caddy.includes('运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」'))
-  assert.equal(caddy.includes('tlsLabels['), false)
-  assert.equal(caddy.includes('lanTLSLabels['), false)
-  assert.equal(caddy.includes('config.host_https_configured'), false)
-  assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"),
-    'the existing parent status/verification body owns runtime evidence')
-  assert.ok(caddy.includes('if (!source.loadCaddyHTTPSConfig || busy || atomicSaving || changed) return'),
-    'a refresh event must not overwrite unsaved fields or in-flight atomic Save, even if invoked programmatically')
-  assert.ok(caddy.includes('disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}'))
-  assert.ok(caddy.includes('data-xdrive-caddy-draft-refresh-guard'))
-  assert.ok(caddy.includes('重新读取已保存配置'))
-  assert.ok(caddy.includes('disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}'),
-    'cannot disable the only active IP ingress')
-  assert.ok(caddy.includes('disabled={!canEdit || (enabled && !lanEnabled)}'),
-    'cannot disable the only active domain ingress')
-  assert.ok(caddy.includes('(!lanEnabled || !enabled)') === false)
-  assert.ok(caddy.includes('(lanEnabled || enabled)'), 'server-validation still fail-closes both-disabled drafts')
-  const reload = caddy.slice(caddy.indexOf('  const reload = async () => {'), caddy.indexOf('  const save = async () => {'))
-  assert.ok(reload.includes("if (section === 'history' && source.loadCaddyHTTPSRevisions)"),
-    'configuration refresh must not fetch audit history')
-  const save = caddy.slice(caddy.indexOf('  const save = async () => {'), caddy.indexOf('  const rollback = async () => {'))
-  assert.equal(save.includes('loadCaddyHTTPSRevisions'), false,
-    'saving desired settings must not eagerly read history')
-});
+  const workspace = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const ali = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
+
+  assert.ok(editor.includes('if (!source.loadCaddyHTTPSConfig || busy || atomicSaving || changed) return'))
+  assert.ok(editor.includes('disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}'))
+  assert.ok(editor.includes('data-xdrive-caddy-draft-refresh-guard'))
+  assert.ok(editor.includes('重新读取已保存配置'))
+  assert.ok(editor.includes('disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}'))
+  assert.ok(editor.includes('disabled={!canEdit || (enabled && !lanEnabled)}'))
+  assert.ok(editor.includes('(lanEnabled || enabled)'))
+  assert.ok(editor.includes('onAtomicDraft?.(config && section === \'config\''))
+  assert.ok(workspace.includes('++saveEpoch.current'))
+  assert.ok(workspace.includes('savePendingRef.current'))
+  assert.ok(workspace.includes('source.saveCaddyConfiguration(input)'))
+  assert.equal(workspace.includes('source.saveCaddyHTTPSConfig('), false)
+  assert.equal(workspace.includes('source.saveCaddyAliDNS('), false)
+  assert.equal(workspace.includes('section="history"'), false)
+  assert.ok(ali.includes('Math.min(30, shown.expires_in_seconds)'))
+  assert.ok(ali.includes("document.addEventListener('visibilitychange'"))
+  assert.ok(ali.includes("window.addEventListener('blur', hide)"))
+  assert.ok(page.includes('caddyEvidenceRevision'))
+  const reload = editor.slice(editor.indexOf('  const reload = async () => {'), editor.indexOf('  const save = async () => {'))
+  assert.ok(reload.includes('if (section === \'history\' && source.loadCaddyHTTPSRevisions)') || reload.includes("section === 'history'"))
+  const save = editor.slice(editor.indexOf('  const save = async () => {'), editor.indexOf('  const rollback = async () => {'))
+  assert.equal(save.includes('loadCaddyHTTPSRevisions'), false, 'Save must not read history')
+})
 
 test('Photo model details expose shared manual verification but only the host owns mutable configuration', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')

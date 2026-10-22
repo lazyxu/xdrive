@@ -192,7 +192,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setDomain(next.desired_domain)
       setLANEnabled(next.desired_lan_enabled === true)
       setLANIP(next.desired_lan_ip ?? '')
-      setNotice('期望配置已保存并审计；宿主机实际 HTTPS 未应用，需后续受限部署操作。')
+      setNotice('HTTPS 管理配置已保存。')
       setEditing(false)
       onConfigurationChanged?.() // Invalidate prior evidence; history is fetched on opening it.
     } catch (err) {
@@ -255,8 +255,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
         {editing && !inlineEdit && (
           <Typography variant="body2" color="text.secondary">
             这里独立管理局域网 IP HTTPS 和公网域名 HTTPS 期望配置，允许同时启用，但不允许同时关闭。
-            保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
-            的受限 Host Manager 验证和受控重启，不能将“保存成功”误当成运行入口已变化。
+            保存只更新管理配置，不会立即修改运行中的网关。
           </Typography>
         )}
         </>)}
@@ -264,25 +263,18 @@ export function XDriveCaddyHTTPSDesiredPanel({
           <>
             {section === 'config' && (<>
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-              <Chip variant="outlined" size="small" color="warning"
-                label={config.host_apply_pending ? 'Host 申请待协调 · 编辑已锁定' :
-                  config.source === 'host-import' ? '旧宿主配置已导入 · 生效待核验' :
-                  config.apply_state === 'pending' ? '期望配置未应用' : '未由管理员管理'} />
+              <Chip variant="outlined" size="small"
+                label={config.host_apply_pending ? 'Host 申请处理中' :
+                  config.source === 'host-import' ? '已导入管理配置' :
+                  config.source === 'saved' ? '已保存管理配置' : '管理配置未保存'} />
               <Typography variant="caption" color="text.secondary">
-                期望修订 #{config.revision} · {config.source === 'host-import' ? '升级时导入的原 Caddy 入口（不构成已应用回执）' :
-                  config.source === 'saved' ? '持久化期望配置' : '部署入口初始值（未保存，非生效证明）'}
+                管理修订 #{config.revision}
               </Typography>
             </Stack>
-            {config.host_apply_pending && <Typography variant="body2" color="warning.main" data-xdrive-caddy-host-pending-fence>
-              存在待协调的宿主配置申请，IP/域名修改和历史回滚已锁定；这不是已部署或已重启的证明。
-            </Typography>}
-            {config.source === 'host-import' && editing && !inlineEdit && <Typography variant="body2" color="text.secondary" data-xdrive-caddy-host-import>
-              已导入旧 Caddy 的 IP／域名管理记录。原证书和网关配置继续保留；请在「状态与检测」确认实际连接，
-              不要把导入的修订号当成后续修改已生效。
-            </Typography>}
-            {editing && !inlineEdit && (
-              <Typography variant="caption" color="text.secondary" data-xdrive-caddy-evidence-location>
-                运行状态、IP/域名 TLS 校验及实际生效证据集中在上方「状态与检测」；此处仅编辑期望值。
+            {config.host_apply_pending && (
+              <Typography variant="caption" color="text.secondary"
+                data-xdrive-caddy-host-pending-fence>
+                Host 申请处理中，暂时无法编辑。
               </Typography>
             )}
             {!editing && (
@@ -297,48 +289,50 @@ export function XDriveCaddyHTTPSDesiredPanel({
                   公网域名 HTTPS 目标：{config.desired_enabled ? '开启' : '关闭'}
                   {config.desired_domain ? ' · ' + config.desired_domain : ''}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  已保存目标、实际网关状态与应用回执独立；此处不执行 Caddy 应用。
-                </Typography>
+
               </Stack>
             )}
             </>)}
             {section === 'config' && editing && (<>
             <Typography variant="subtitle2" fontWeight={700}>
-              局域网 IP HTTPS · 默认部署入口
+              局域网 IP HTTPS
             </Typography>
             <FormControlLabel
               control={<Switch checked={lanEnabled} disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}
                 onChange={(event) => setLANEnabled(event.target.checked)} />}
-              label="期望启用局域网 IP HTTPS（保存后仍需受限维护重启）"
+              label="启用局域网 IP HTTPS"
             />
-            <TextField fullWidth size="small" label="期望局域网 IPv4 地址"
+            <TextField fullWidth size="small" label="局域网 IPv4 地址"
               value={lanIP} disabled={!canEdit || !supportsLAN}
               onChange={(event) => setLANIP(event.target.value)}
               error={Boolean(lanIP) && !validPrivateLANIP(lanIP)}
               placeholder="192.168.2.4"
-              helperText="必须是标准私有 IPv4；证书通过本机 CA 签发，设备需要自行安全地信任 CA。"
+              helperText="仅支持标准私网 IPv4。"
             />
+            {config.host_observed && config.host_lan_configured === true &&
+              config.host_lan_tls_state === 'verified' && config.host_lan_ip && (
+              <Typography variant="caption" color="text.secondary"
+                data-xdrive-caddy-running-lan-ip>
+                本机运行 IP：{config.host_lan_ip}
+              </Typography>
+            )}
             <Typography variant="subtitle2" fontWeight={700}>
-              公网域名 HTTPS · 可选入口
+              公网域名 HTTPS
             </Typography>
             <FormControlLabel
               control={<Switch checked={enabled} disabled={!canEdit || (enabled && !lanEnabled)}
                 onChange={(event) => setEnabled(event.target.checked)} />}
-              label="启用公网域名 HTTPS（保存后不会改变当前网关）"
+              label="启用公网域名 HTTPS"
             />
-            <Typography variant="caption" color="text.secondary">
-              关闭当前唯一启用的入口前，请先开启另一入口；两种入口允许同时开启。
-            </Typography>
-            <TextField fullWidth size="small" label="期望 HTTPS 域名 (FQDN)"
+            <TextField fullWidth size="small" label="HTTPS 域名 (FQDN)"
               value={domain} disabled={!canEdit}
               onChange={(event) => setDomain(event.target.value)}
               error={!validDomain(domain) || (enabled && !domain)}
               placeholder="photos.example.com"
-              helperText="仅接受纯 DNS 域名，不含 https://、端口、路径、IP 或通配符。禁用时可清空。"
+              helperText="输入 DNS 域名，不包含协议、端口或路径。"
             />
             {!supportsLAN && <Typography variant="caption" color="warning.main">
-              当前 Server/Agent 尚未报告双入口合同，禁止保存不完整的网络启停意图。
+              当前 Server/Agent 不支持双入口配置，无法保存。
             </Typography>}
             {!lanEnabled && !enabled && <Typography variant="caption" color="error.main">
               不能同时关闭局域网 IP HTTPS 和公网域名 HTTPS；至少保留一个可信管理入口。
@@ -346,13 +340,6 @@ export function XDriveCaddyHTTPSDesiredPanel({
             {!atomicMode && <Button variant="outlined" size="small"
               disabled={!canEdit || !supportsLAN || !valid || !changed || !source.saveCaddyHTTPSConfig}
               onClick={() => setConfirmSave(true)}>{inlineEdit ? '保存配置' : '仅保存期望配置（不操作 Caddy）'}</Button>}
-            <Typography variant="caption" color="warning.main">
-              {config.requirement}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {config.apply_supported ? '宿主机控制能力待独立验证' : '实际应用尚未开放：没有可安全操作网关的控制接口。'}
-              {' '}本机 TLS 验证不等于公网 HTTPS 可访问。
-            </Typography>
             </>)}
             {section === 'history' && source.loadCaddyHTTPSRevisions && source.rollbackCaddyHTTPS && (
               <Box>
@@ -393,7 +380,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
           : source.loadCaddyHTTPSConfig ? (
             <Stack spacing={1} data-xdrive-caddy-https-read-failed>
               <Typography variant="body2" color="text.secondary">
-                本次未能取得当前 HTTPS 配置；编辑与历史回滚保持禁用。这不代表网关已停止或接口一定不受支持。
+                无法读取 HTTPS 配置，暂时不能编辑。
               </Typography>
               <Button size="small" variant="outlined" disabled={busy || atomicSaving}
                 onClick={() => { void reload() }}>重试读取 HTTPS 配置</Button>
