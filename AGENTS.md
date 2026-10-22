@@ -74,6 +74,13 @@
 - Preserve all other Owner product code + cumulative AGENTS, one scoped commit, real Go/PostgreSQL API Race/Linux/Windows/Web/Desktop/Host Rootless/Final Gate and GitHub clean. Production-only security acceptance 按用户决定跳过（未验收）; no request for production access/secrets/HAR/manual signoff.
 
 
+## SD-D2b-1b-b2b3 · reject publication lock on all external Host bundle reads (2026-10-22)
+
+- Three signed Bundle files are renamed individually, not atomically as a set. Public ReadPrivateBundle MUST reject every active/stale/malformed publisher O_EXCL lock, checked before signature/file reads and again after full inode/crypto validation. Missing lock is the only accepted state; error must remain private and fail closed.
+- Only the package-private writer already owning the lock may call unexported readPrivateBundle with its self-verification override before retiring the lock. This is NOT a browser/Server/administrator capability or adoption authorization. Deterministic tests cover stale and malformed lock, internal verification and recovery.
+- No operational trusted Host Collector, independent disabled-ingress negative evidence, Server private trust binding, signed one-use adoption CAS, Host Apply/Rescue/watchdog/rollback/receipt. CandidateComplete/CanAdopt/ApplySupported stay false; preserve all master/Owner source and complete cumulative AGENTS with exact-head CI/Final Gate.
+- Production-only security acceptance 按用户决定跳过（未验收）; never require production credentials, account, HAR, packet capture or manual signoff; source-level checks mandatory.
+
 ## XDrive 地图与全部研发：生产环境专属验收永久跳过（2026-10-21，覆盖历史硬门禁）
 
 - **永久、全项目有效**：ChatGPT 无法访问的真实生产环境安全/浏览器网络验收，包括历史 P0-02 九组生产 HAR、真实生产百度账号/许可后台凭证、用户实际部署实例抓包、生产人工签字或设备数据安全放行，一律记录为 **「按用户决定跳过（未验收）」**。不再向用户请求生产环境访问、账号、AK、JWT、Cookie、HAR、抓包、权限或人工验收；不得以此作为源代码开发、CI、PR Ready、合并或后续任务的阻塞条件，不得伪称已经验证通过。

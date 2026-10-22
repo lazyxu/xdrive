@@ -105,8 +105,10 @@ func publishPrivateSignedReadOnlyBundle(dir string, raw, sig, publicDER []byte,
 		!os.SameFile(opened, after) || after.Mode() != before.Mode() {
 		return fail()
 	}
-	if _, err := ReadPrivateBundle(dir, expectedKeyPin,
-		expectedHostPin, expectedServerPin, time.Now().UTC()); err != nil {
+	// The exclusive Host writer validates the completed files while its
+	// publisher lock is held, then atomically retires that lock.
+	if _, err := readPrivateBundle(dir, expectedKeyPin,
+		expectedHostPin, expectedServerPin, time.Now().UTC(), true); err != nil {
 		return fail()
 	}
 	if err := root.Remove(privateBundlePublisherLock); err != nil {
