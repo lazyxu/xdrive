@@ -1,0 +1,104 @@
+name: PWA CR01b5 Different Owner Uploads During Independent SW Waiting
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-cr01b5-different-owner-live-upload:
+    if: github.head_ref == 'test/pwa-cr01b5-cross-owner-upload-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@127.0.0.1:5432/xdrive_test?sslmode=disable
+    steps:
+      - name: Checkout independently released historical A
+        uses: actions/checkout@v4
+        with:
+          path: release-a
+          ref: e6018a4c260d1d7fff5e1718421cfb2a21f9dbd4
+      - name: Checkout exact proposed B
+        uses: actions/checkout@v4
+        with:
+          path: release-b
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Fail closed on unsafe or invalid harness
+        run: |
+          set -euo pipefail
+          test "$(git -C release-a rev-parse HEAD)" = e6018a4c260d1d7fff5e1718421cfb2a21f9dbd4
+          test "$(git -C release-a rev-parse HEAD)" != "$(git -C release-b rev-parse HEAD)"
+          bash -n release-b/scripts/pwa-cr01b3-two-active-upload-waiting.sh
+          node --check release-b/desktop/scripts/pwa-cr01b3-two-active-upload-waiting.cjs
+          node --test release-b/desktop/tests/pwa-cr01b3-two-active-upload-waiting.cjs release-b/desktop/tests/pwa-cr01b5-cross-owner-sw-waiting.cjs
+      - name: Build two real Web releases and two full production cmd/server binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix release-a/web ci --no-audit --no-fund
+          npm --prefix release-b/web ci --no-audit --no-fund
+          npm --prefix release-a/web run build
+          npm --prefix release-b/web run build
+          (cd release-a && go build -ldflags="-X github.com/lazyxu/xdrive/internal/version.Version=pwa-b2b2b2-A" -o "$RUNNER_TEMP/pwa-b2b2b2-go-A" ./cmd/server)
+          (cd release-b && go build -ldflags="-X github.com/lazyxu/xdrive/internal/version.Version=pwa-b2b2b2-B" -o "$RUNNER_TEMP/pwa-b2b2b2-go-B" ./cmd/server)
+          test -x "$RUNNER_TEMP/pwa-b2b2b2-go-A"
+          test -x "$RUNNER_TEMP/pwa-b2b2b2-go-B"
+          mkdir -p "$RUNNER_TEMP/pwa-b2b2b2-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-b2b2b2-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          docker pull caddy:2.10.2-alpine
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_PWA_HOT_UPLOAD_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_PWA_HOT_UPLOAD_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_PWA_HOT_UPLOAD_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "System Chromium/Chrome executable missing" >&2
+            exit 1
+          fi
+      - name: Two real concurrent native Chromium PUT bodies, SW waiting and independent dual PostgreSQL/CAS proof
+        shell: bash
+        env:
+          XD_PWA_CR01B5_CROSS_OWNER: '1'
+          XD_PWA_HOT_UPLOAD_A_ROOT: ${{ github.workspace }}/release-a
+          XD_PWA_HOT_UPLOAD_B_ROOT: ${{ github.workspace }}/release-b
+          XD_PWA_HOT_UPLOAD_A_SERVER: ${{ runner.temp }}/pwa-b2b2b2-go-A
+          XD_PWA_HOT_UPLOAD_B_SERVER: ${{ runner.temp }}/pwa-b2b2b2-go-B
+          XD_PWA_HOT_UPLOAD_OUTPUT: ${{ github.workspace }}/release-b/desktop/pwa-cr01b5-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_PWA_HOT_UPLOAD_CHROME }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/pwa-b2b2b2-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          test "$(git -C release-b rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          bash release-b/scripts/pwa-cr01b3-two-active-upload-waiting.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr01b5-distinct-owner-sw-waiting-result
+          # Never upload original Go logs, browser profile, PostgreSQL, CAS,
+          # test JWT/password, admin output, Caddy auth headers, or HAR.
+          path: release-b/desktop/pwa-cr01b5-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
