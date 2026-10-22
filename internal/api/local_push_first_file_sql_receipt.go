@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -83,6 +84,28 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 	inspect func(context.Context, string, int64, func(context.Context) error) (bool, error),
 	selectors ...*localPushHistoricalOperationPhysicalSelector,
 ) (localPushFirstLeafSQLReceipt, error) {
+	return s.readBoundLocalPushFirstLeafReceiptWithPrivatePrecommitTx(
+		c, sourceID, revision, proof, stageID, relativeLeaf,
+		inspect, nil, selectors...,
+	)
+}
+
+// readBoundLocalPushFirstLeafReceiptWithPrivatePrecommitTx keeps the legacy
+// read-only receipt path unchanged while reserving a PRIVATE transaction hook
+// for a later independently authenticated native-witness producer.
+//
+// A callback can only run with the ORIGINAL Operation UPDATE, an empty
+// source-wide terminal slot, SQL CAS hash locks and the physical CAS pin all
+// held. Callers must not treat this hook as native evidence by itself.
+// It is UNROUTED; do not wire it to an Agent/HTTP entrypoint until the native
+// witness transport and exact operation replay are independently proven.
+func (s *Server) readBoundLocalPushFirstLeafReceiptWithPrivatePrecommitTx(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID, relativeLeaf string,
+	inspect func(context.Context, string, int64, func(context.Context) error) (bool, error),
+	privateCommit func(context.Context, *gorm.DB, localPushFirstLeafSQLReceipt) error,
+	selectors ...*localPushHistoricalOperationPhysicalSelector,
+) (localPushFirstLeafSQLReceipt, error) {
 	var empty localPushFirstLeafSQLReceipt
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
 		sourceID == 0 || revision == 0 || stageID == "" {
@@ -90,6 +113,14 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 	}
 	if len(selectors) > 1 ||
 		(len(selectors) == 1 && (selectors[0] == nil || inspect == nil || s.Store == nil)) {
+		return empty, errLocalPushOperationIntentDenied
+	}
+	// A write-intent callback cannot use an unscoped read selector, an
+	// expired reservation shortcut, or the SQL-only inspector path. This
+	// is necessary but NOT sufficient: native provenance is still absent.
+	if privateCommit != nil &&
+		(len(selectors) != 1 || selectors[0] == nil ||
+			!selectors[0].requireFileTerminalVacant || inspect == nil || s.Store == nil) {
 		return empty, errLocalPushOperationIntentDenied
 	}
 
@@ -269,6 +300,21 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 				return err
 			}
 			callbackRan = true
+			if privateCommit != nil {
+				// No cross-transaction ticket: run the private hook only
+				// inside the same pinned CAS callback, with all original
+				// SQL locks held. Even callback success is not a native
+				// witness or authorization to retire the source claim.
+				if !localPushFileTerminalHeldTx(tx) {
+					return errLocalPushOperationIntentDenied
+				}
+				if err := privateCommit(heldCtx, tx, result); err != nil {
+					return err
+				}
+				if err := heldCtx.Err(); err != nil {
+					return err
+				}
+			}
 			if err := tx.Commit().Error; err != nil {
 				return err
 			}
