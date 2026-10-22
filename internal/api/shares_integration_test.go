@@ -120,6 +120,11 @@ func TestDownloadShareLifecycle(t *testing.T) {
 	if public.Revision != nil || public.UpdatedAt != nil {
 		t.Fatalf("passworded share metadata must not expose revision/time before password validation: %+v", public)
 	}
+	if !public.Capabilities.List || !public.Capabilities.Preview || !public.Capabilities.Download ||
+		public.Capabilities.DownloadZIP || public.Capabilities.Search ||
+		public.Capabilities.Write || public.Capabilities.Delete {
+		t.Fatalf("passworded public FILE metadata grant must be read-only with no folder ZIP: %+v", public.Capabilities)
+	}
 
 	publicShareRequest(t, router, http.MethodPost, created.Token,
 		strings.NewReader(`{"password":"wrong-password"}`), http.StatusUnauthorized)
@@ -163,6 +168,12 @@ func TestDownloadShareLifecycle(t *testing.T) {
 	if unprotected.Revision == nil || *unprotected.Revision == 0 ||
 		unprotected.UpdatedAt == nil || unprotected.UpdatedAt.IsZero() {
 		t.Fatalf("unpassworded share should expose only its own node's revision and time: %+v", unprotected)
+	}
+	if !unprotected.Capabilities.List || !unprotected.Capabilities.Preview ||
+		!unprotected.Capabilities.Download || unprotected.Capabilities.DownloadZIP ||
+		unprotected.Capabilities.Search || unprotected.Capabilities.Write ||
+		unprotected.Capabilities.Delete {
+		t.Fatalf("unprotected public FILE must have the same readonly API grants: %+v", unprotected.Capabilities)
 	}
 	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/shares/%d", unlimited.ID),
 		otherToken, nil, http.StatusNotFound)

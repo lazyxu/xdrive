@@ -141,6 +141,7 @@ export default function PublicShareView({ token }: { token: string }) {
           // mount the authenticated Owner FileExplorer or prefetch media.
           // Protected / exhausted shares keep their existing explicit form.
           if (result.type === 'dir' && !result.requires_password &&
+              result.capabilities?.list !== false &&
               !(result.max_downloads > 0 && result.download_count >= result.max_downloads)) {
             const firstPage = new AbortController()
             pendingPage.current?.abort()
@@ -197,8 +198,17 @@ export default function PublicShareView({ token }: { token: string }) {
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
   // A pending browser handoff is not an authorization revocation. The granted
   // browse/preview/download capabilities remain stable across downloading.
-  const canDownload = !!share && !exhausted && (!share.requires_password || Boolean(password))
+  // Go grants only narrow the UI; password/revoke/quota/root are verified by
+  // every independent Share API and signed media endpoint.
+  const grants = share?.capabilities ?? xDriveShareReadOnlyDefaultCapabilities
+  const shareEligible = !!share && !exhausted &&
+    (!share.requires_password || Boolean(password))
+  const canBrowse = shareEligible && grants.list
+  const canPreview = canBrowse && grants.preview
+  const canDownload = canBrowse && grants.download
+  const canDownloadZip = canDownload && grants.downloadZip
   const canStartDownload = canDownload && !downloading
+  const canStartZip = canDownloadZip && !downloading
   // Keep the single-file DTO stable across selection/toolbar state changes;
   // the shared Explorer's accepted-page effect must not reset highlighting.
   const sharedFileItems = useMemo<PublicShareChild[]>(
@@ -211,7 +221,7 @@ export default function PublicShareView({ token }: { token: string }) {
   )
 
   const loadFolder = async (path: FolderPath[], cursor = 0, back = false, refresh = false) => {
-    if (!share || share.type !== 'dir' || !canDownload) return
+    if (!share || share.type !== 'dir' || !canBrowse) return
     // Abort superseded request-scoped JPEG GETs at user navigation time.
     // Do not abort user-owned original/ZIP downloads or an in-place refresh.
     if (!refresh && folder && (
@@ -277,7 +287,7 @@ export default function PublicShareView({ token }: { token: string }) {
   }
 
   const startSharedFolderZIP = async (entry?: PublicShareChild) => {
-    if (!share || share.type !== 'dir' || !canStartDownload || zipPreparing) return
+    if (!share || share.type !== 'dir' || !canStartZip || zipPreparing) return
     const zipName = entry?.name ?? share.name
     const folderID = entry?.type === 'dir' ? entry.id : 0
     zipPollRef.current?.abort()
@@ -463,14 +473,17 @@ export default function PublicShareView({ token }: { token: string }) {
                     path={folder?.path ?? []}
                     folderOpened={Boolean(folder) || folderPending}
                     pending={folderPending}
+                    canBrowse={canBrowse}
+                    canPreview={canPreview}
                     canDownload={canDownload}
+                    canDownloadZip={canDownloadZip}
                     downloadPending={downloading}
                     hasPreviousPage={Boolean(folder?.history.length)}
                     hasNextPage={Boolean(folder && folder.next > 0)}
                     toolbarActions={
                       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                         <XDriveActionButton type="button" intent="primary"
-                          disabled={!canStartDownload || zipPreparing}
+                          disabled={!canStartZip || zipPreparing}
                           loading={zipPreparing}
                           loadingLabel="正在准备 ZIP…"
                           startIcon={<FolderZipRoundedIcon />}
@@ -516,7 +529,10 @@ export default function PublicShareView({ token }: { token: string }) {
                 <XDrivePublicShareReadOnlyExplorer
                   kind="file"
                   items={sharedFileItems}
+                  canBrowse={canBrowse}
+                  canPreview={canPreview}
                   canDownload={canDownload}
+                  canDownloadZip={canDownloadZip}
                   downloadPending={downloading}
                   onDownloadItem={() => void download()}
                   loadThumbnail={loadSharedThumbnail}

@@ -41,16 +41,39 @@ type createdShareDTO struct {
 	Token string `json:"token"`
 }
 
+// These are the server-authoritative *maximum granted operations*, not
+// evidence that a request supplied a valid password or has not been revoked.
+// Every actual Share API, derivative, signed ticket, Range and ZIP path must
+// continue validating capability, password, expiry, quota and share subtree.
+type publicShareCapabilitiesDTO struct {
+	List        bool `json:"list"`
+	Preview     bool `json:"preview"`
+	Download    bool `json:"download"`
+	DownloadZIP bool `json:"downloadZip"`
+	Search      bool `json:"search"`
+	Write       bool `json:"write"`
+	Delete      bool `json:"delete"`
+}
+
+func publicShareCapabilitiesForNode(nodeType string) publicShareCapabilitiesDTO {
+	return publicShareCapabilitiesDTO{
+		List: true, Preview: true, Download: true,
+		DownloadZIP: nodeType == meta.NodeTypeDir,
+		Search:      false, Write: false, Delete: false,
+	}
+}
+
 type publicShareDTO struct {
-	Type             string     `json:"type"`
-	Name             string     `json:"name"`
-	Size             int64      `json:"size"`
-	RequiresPassword bool       `json:"requires_password"`
-	Revision         *uint64    `json:"revision,omitempty"`
-	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	MaxDownloads     int64      `json:"max_downloads"`
-	DownloadCount    int64      `json:"download_count"`
+	Type             string                     `json:"type"`
+	Name             string                     `json:"name"`
+	Size             int64                      `json:"size"`
+	RequiresPassword bool                       `json:"requires_password"`
+	Revision         *uint64                    `json:"revision,omitempty"`
+	UpdatedAt        *time.Time                 `json:"updated_at,omitempty"`
+	ExpiresAt        *time.Time                 `json:"expires_at,omitempty"`
+	MaxDownloads     int64                      `json:"max_downloads"`
+	DownloadCount    int64                      `json:"download_count"`
+	Capabilities     publicShareCapabilitiesDTO `json:"capabilities"`
 }
 
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
@@ -247,6 +270,7 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		ExpiresAt:        share.ExpiresAt,
 		MaxDownloads:     share.MaxDownloads,
 		DownloadCount:    share.DownloadCount,
+		Capabilities:     publicShareCapabilitiesForNode(node.Type),
 	})
 }
 

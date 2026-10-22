@@ -1,0 +1,55 @@
+name: SH-P022 Source-Exact Go Public Share Seven Grants and Readonly FileExplorer
+on:
+  pull_request: {}
+permissions:
+  contents: read
+
+jobs:
+  real-share-server-grants:
+    if: github.head_ref == 'feat/sh-p022-public-share-server-capabilities-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Freeze exactly tested HEAD and Go formatting
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/api/shares.go internal/api/shares_integration_test.go internal/api/public_share_capabilities_test.go)"
+          test -f docs/unified-file-explorer-server-grants-shp022.md
+      - name: Verify actual PostgreSQL17 Share metadata, passwords, quota and default read-only grants
+        run: |
+          set -euo pipefail
+          go test -mod=readonly ./internal/api -run '^(TestPublicShareSevenCapabilitiesDefaultReadOnly|TestDownloadShareLifecycle)$' -count=1 -timeout=20m -v
+      - name: Build production typed Web and run React Source/Share authorization regressions
+        run: |
+          set -euo pipefail
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix web run build
+          node --test desktop/tests/web-public-share.cjs desktop/tests/file-explorer-capabilities-p020.cjs desktop/tests/web-public-share-form.cjs desktop/tests/sh-p021-unified-explorer.cjs

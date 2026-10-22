@@ -1261,3 +1261,26 @@ test('Shared folder remains browseable while a native original download is pendi
     await act(async () => { pending.resolve() })
   }
 })
+
+test('Go-issued preview-only ceiling preserves recipient browsing but denies native originals', async (t) => {
+  const grants = { list: true, preview: true, download: false,
+    downloadZip: false, search: false, write: false, delete: false }
+  const view = await mountShare(t, {
+    share: { type: 'file', name: 'photo.jpg', requires_password: false, capabilities: grants },
+  })
+  assert.equal(view.button().props.disabled, true,
+    'server grant disabling download must disable existing native handoff')
+  await view.submit()
+  assert.equal(view.downloads.length, 0,
+    'disabled server download capability must also block direct form submission')
+  const explorer = view.renderer.root.findAll(node =>
+    typeof node.type === 'function' &&
+    node.type.name === 'XDrivePublicShareReadOnlyExplorer')[0]
+  assert.ok(explorer, 'the same read-only Explorer remains mounted')
+  assert.equal(explorer.props.canBrowse, true)
+  assert.equal(explorer.props.canPreview, true)
+  assert.equal(explorer.props.canDownload, false)
+  assert.equal(explorer.props.canDownloadZip, false)
+  // This is only a UI upper bound. A true preview-only signed-media policy
+  // still requires independent Go endpoint enforcement before product launch.
+})
