@@ -1,3 +1,9 @@
+## G2c2d2b3c4d · original Stage recovery hint pinned through owning-Agent readback (2026-10-22)
+
+- Continue Stage 1 only after merged #2354/#2359/#2362. The real owning first-file Agent `Reconcile` must hold the SAME opened OS-private Stage recovery hint descriptor throughout the existing authenticated original Operation SQL/CAS read and recheck its exact inode/path/bytes/permissions and Root afterwards. Same-content pathname replacement and changed content fail closed as UNCERTAIN. Nested native fd and Writer Claim proof remain unchanged.
+- This local descriptor pin is **NOT** independently trusted Agent→Server native Writer attestation, physical-COMMIT/CANCEL, a resumable operation or permission to retire keys/Stage/Writer and admit file #2. Keep `backup_complete=false`, `retirement_safe=false`; existing manual first-file Backup-only 0–64 MiB remains the sole upload.
+- Preserve complete existing AGENTS history and other Owner work; one scoped source commit and source-exact Go Windows/Linux, PostgreSQL API Race, Web/Desktop, artifact and Final Gate. Production-only security acceptance **按用户决定跳过（未验收）**, never a merge blocker; code-level security tests remain required.
+
 ## G2c2d2b3c4c1 · original Agent live native Operation evidence (2026-10-22)
 
 - Proceed serially after merged #2354/#2359: genuine owning Desktop first-file Commit must derive a private, domain-separated HMAC correlation bound to the original Operation UUID/generation/Stage/SecretStore key and strong native inode identity only INSIDE the already-held original native descriptor and same original Writer Claim callback. A changed OS object/Root/account/Device/snapshot/Stage/operation must fail closed or change the correlation. No Renderer/Web/IPC/Server route accepts this value.

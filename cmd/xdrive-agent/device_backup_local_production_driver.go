@@ -266,52 +266,62 @@ func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrun
 	if err != nil || prepared != d.prepared {
 		return empty, errLocalPushDriverDenied
 	}
-	hint, err := localpushstage.ReadLocalOriginalRecoveryHint(ctx, d.configDir, d.grant, st.StageID)
-	if err != nil || hint.Stage != d.stage || hint.RelativePath != s.RelativePath {
-		return empty, errLocalPushDriverDenied
-	}
 	var physical client.LocalPushHistoricalOperationPhysicalReceipt
-	native, cerr := localpush.WithHeldCurrentOriginalReadCheckpoint(ctx, d.configDir, d.grant,
-		d.stage.SnapshotSHA256, s.RelativePath, s.ContentSHA256, s.Size,
-		func(heldCtx context.Context, original localpush.NativeHeldCurrentOriginal) error {
-			if !d.nativeMatches(s, original) {
+	var native localpush.NativeHeldCurrentOriginal
+	hintErr := localpushstage.WithHeldLocalOriginalRecoveryHint(
+		ctx, d.configDir, d.grant, st.StageID,
+		func(heldHintCtx context.Context, hint localpushstage.LocalOriginalRecoveryHint) error {
+			if hint.Stage != d.stage || hint.RelativePath != s.RelativePath {
 				return errLocalPushDriverDenied
 			}
-			if err := d.Check(heldCtx, s); err != nil {
-				return err
-			}
-			var receipt client.LocalPushHistoricalOperationPhysicalReceipt
-			readBound := func(readCtx context.Context) error {
-				var readErr error
-				receipt, readErr = d.api.ReadLocalPushHistoricalOperationPhysicalReceipt(
-					readCtx, s.SourceID, s.Revision, d.proof, st.StageID,
-					s.RelativePath, key.bytes, op.ID, op.Generation,
-				)
-				return readErr
-			}
-			if d.liveWriterRequired {
-				if err := d.withCurrentOriginalLiveWriterProof(
-					heldCtx, s, original, readBound,
-				); err != nil {
-					return err
-				}
-			} else if err := readBound(heldCtx); err != nil {
-				return err
-			}
-			if receipt.SourceID != s.SourceID || receipt.Revision != s.Revision ||
-				receipt.StageID != st.StageID || receipt.OperationID != op.ID ||
-				receipt.Generation != op.Generation || receipt.NodeID == 0 || receipt.SourceItemID == 0 ||
-				!receipt.CASObserved || receipt.NativeVerified || receipt.BackupComplete ||
-				receipt.Authoritative || receipt.CommitSupported || receipt.RetirementSupported {
+			var cerr error
+			native, cerr = localpush.WithHeldCurrentOriginalReadCheckpoint(heldHintCtx, d.configDir, d.grant,
+				d.stage.SnapshotSHA256, s.RelativePath, s.ContentSHA256, s.Size,
+				func(heldCtx context.Context, original localpush.NativeHeldCurrentOriginal) error {
+					if !d.nativeMatches(s, original) {
+						return errLocalPushDriverDenied
+					}
+					if err := d.Check(heldCtx, s); err != nil {
+						return err
+					}
+					var receipt client.LocalPushHistoricalOperationPhysicalReceipt
+					readBound := func(readCtx context.Context) error {
+						var readErr error
+						receipt, readErr = d.api.ReadLocalPushHistoricalOperationPhysicalReceipt(
+							readCtx, s.SourceID, s.Revision, d.proof, st.StageID,
+							s.RelativePath, key.bytes, op.ID, op.Generation,
+						)
+						return readErr
+					}
+					if d.liveWriterRequired {
+						if err := d.withCurrentOriginalLiveWriterProof(
+							heldCtx, s, original, readBound,
+						); err != nil {
+							return err
+						}
+					} else if err := readBound(heldCtx); err != nil {
+						return err
+					}
+					if receipt.SourceID != s.SourceID || receipt.Revision != s.Revision ||
+						receipt.StageID != st.StageID || receipt.OperationID != op.ID ||
+						receipt.Generation != op.Generation || receipt.NodeID == 0 || receipt.SourceItemID == 0 ||
+						!receipt.CASObserved || receipt.NativeVerified || receipt.BackupComplete ||
+						receipt.Authoritative || receipt.CommitSupported || receipt.RetirementSupported {
+						return errLocalPushDriverDenied
+					}
+					if err := d.Check(heldCtx, s); err != nil {
+						return err
+					}
+					physical = receipt
+					return heldCtx.Err()
+				})
+			if cerr != nil || !d.nativeMatches(s, native) {
 				return errLocalPushDriverDenied
 			}
-			if err := d.Check(heldCtx, s); err != nil {
-				return err
-			}
-			physical = receipt
-			return heldCtx.Err()
-		})
-	if cerr != nil || !d.nativeMatches(s, native) {
+			return nil
+		},
+	)
+	if hintErr != nil || !d.nativeMatches(s, native) {
 		return empty, errLocalPushDriverDenied
 	}
 	if err := d.Check(ctx, s); err != nil {

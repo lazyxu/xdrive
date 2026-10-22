@@ -177,3 +177,24 @@ func TestFirstLeafRunnerCommitUsesExplicitNativeWriteWindow(t *testing.T) {
 		t.Fatal("canonical Agent HTTP writer bypasses explicit native write-window contract")
 	}
 }
+
+func TestOriginalOperationRecoveryKeepsStageHintOpenAcrossHTTP(t *testing.T) {
+	source, err := os.ReadFile("device_backup_local_production_driver.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := string(source)
+	begin := strings.Index(code, "func (d *localPushFirstLeafDriver) Reconcile(")
+	end := strings.Index(code, "// runLocalPushFirstLeafPrivate")
+	if begin < 0 || end <= begin {
+		t.Fatal("real Agent Reconcile callback unavailable")
+	}
+	body := code[begin:end]
+	hint := strings.Index(body, "WithHeldLocalOriginalRecoveryHint(")
+	native := strings.Index(body, "WithHeldCurrentOriginalReadCheckpoint(")
+	remote := strings.Index(body, "ReadLocalPushHistoricalOperationPhysicalReceipt(")
+	if hint < 0 || native <= hint || remote <= native ||
+		!strings.Contains(body, "hintErr != nil") {
+		t.Fatal("real Agent operation readback no longer holds original Stage descriptor during network")
+	}
+}
