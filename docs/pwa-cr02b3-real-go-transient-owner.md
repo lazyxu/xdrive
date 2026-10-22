@@ -1,0 +1,7 @@
+# xDrive PWA CR-02b3 · Go 429/503 while revalidating opt-in offline history
+
+Current date: 2026-10-22. Associated issue #2348.
+
+A single **test-only** Go/Gin fixture mode injects one genuine HTTP 503 for /me after offline cold restart and reconnect; UI must report unavailable, keep only historical data and never promote it to live ACL. A user-initiated retry then enters the unchanged real Owner Gin router: it first sees one HTTP 429 on the selected Node and one HTTP 503 on the one-row Range, followed by bounded S3C read-only retry and actual 200 authorized responses. The test requires genuine PostgreSQL17, LocalCAS, two independently authenticated Owners (foreign Owner 404), real Chromium persisted Profile and public SW privacy check. Real deletion and third offline process must still purge old history. Test control /__test/pwa-cr02b3/arm exists only in the opt-in Go fixture and cannot be called on production Server; there is NO browser API route mock.
+
+Limits: this does not prove live production 429 behavior on every endpoint, all-concurrent revoke ordering, a browser installation on iOS, native IDB QuotaExceeded, or Server Durable Task cancellation isolation. Keep #2348 open for remaining P0. No private cache, SW activation bypass, upload rewrite or public hashed asset deletion. Source-exact dedicated browser/Go CI plus full cross-platform 77-job Final Gate required prior to merge.
