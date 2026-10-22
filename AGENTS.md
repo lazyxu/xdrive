@@ -1,3 +1,9 @@
+## G2c2d2b3c4c1 · original Agent live native Operation evidence (2026-10-22)
+
+- Proceed serially after merged #2354/#2359: genuine owning Desktop first-file Commit must derive a private, domain-separated HMAC correlation bound to the original Operation UUID/generation/Stage/SecretStore key and strong native inode identity only INSIDE the already-held original native descriptor and same original Writer Claim callback. A changed OS object/Root/account/Device/snapshot/Stage/operation must fail closed or change the correlation. No Renderer/Web/IPC/Server route accepts this value.
+- An HMAC is **NOT** remotely verifiable kernel-lock attestation; a holder of the request key can recreate it. Never set `originalClaimHeld` from an externally supplied boolean/HMAC, and do not claim trusted physical-COMMIT/CANCEL, lost-ACK replay transport, Stage/Key/Writer retirement, file #2, SourceRun or scheduler. Keep existing first file Backup-only <=64MiB and both `backup_complete=false`, `retirement_safe=false`.
+- Preserve full additive master AGENTS and unrelated work, one scoped commit, real Windows/Linux native/Go, genuine PostgreSQL Race, Web/Desktop/install/images/Final Gate. Inaccessible production safety acceptance **按用户决定跳过（未验收）**; code-level security remains mandatory.
+
 ## G2c2d2b3c4b · original physical terminal pinned replay foundation (2026-10-22)
 
 - Continue Stage 1 serially after merged #2354; implement only an INTERNAL read-only replay for the EXACT original Operation/Stage/request key and valid current Owner/Device/Root/Source, with original SQL locks, matching durable physical-COMMIT row, canonical ContentBlob lock and a genuine Local CAS pinned double-hash. Absent/mismatched proof, missing CAS, physical-CANCEL and unknown outcomes remain fail-closed.

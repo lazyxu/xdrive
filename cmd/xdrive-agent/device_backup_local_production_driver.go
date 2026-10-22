@@ -227,7 +227,20 @@ func (d *localPushFirstLeafDriver) Commit(ctx context.Context, s localpushrunner
 				return err
 			}
 			if d.liveWriterRequired {
-				return d.withCurrentOriginalLiveWriterProof(heldCtx, s, original, commitBound)
+				return d.withBoundOriginalLiveWriterWitness(
+					heldCtx, s, original, st, op,
+					func(writeCtx context.Context, witness localPushOriginalHeldWitness) error {
+						// This is Agent-local correlation, NOT a Server
+						// physical terminal or remote OS attestation.
+						if witness.operationID != op.ID ||
+							witness.generation != op.Generation ||
+							witness.stageID != st.StageID ||
+							!validLocalPushNativeWitnessDigest(witness.digest) {
+							return errLocalPushDriverDenied
+						}
+						return commitBound(writeCtx)
+					},
+				)
 			}
 			return commitBound(heldCtx)
 		})
