@@ -52,6 +52,7 @@
   let active = false, parentOrigin = '', generation = 0, nonce = ''
   let cells = [], allowedKeys = new Set(), map = null, sdk = null
   let script = null, pending = false, disposed = false, labelBindings = []
+  let initialOverviewPending = true
   const send = (kind, fields = {}) => {
     if (!active || disposed) return
     window.parent.postMessage(Object.assign({version:1,generation,nonce,kind},fields),parentOrigin)
@@ -63,17 +64,36 @@
     }
     labelBindings = []
   }
+  const fitInitialOverview = () => {
+    if (!initialOverviewPending || !map || !sdk || !active || disposed) return
+    initialOverviewPending = false
+    if (cells.length === 0) return
+    try {
+      const points = cells.map(cell => new sdk.Point(cell.longitude,cell.latitude))
+      if (points.length === 1) {
+        map.centerAndZoom(points[0],12)
+      } else if (typeof map.setViewport === 'function') {
+        map.setViewport(points,{margins:[64,64,64,64]})
+      } else {
+        const lat=cells.reduce((sum,cell)=>sum+cell.latitude,0)/cells.length
+        const lon=cells.reduce((sum,cell)=>sum+cell.longitude,0)/cells.length
+        map.centerAndZoom(new sdk.Point(lon,lat),3)
+      }
+    } catch { /* retain conservative global camera when SDK fitting fails */ }
+  }
   const renderCells = () => {
     clearLabels()
     if (!map || !sdk || !active || disposed) return
     for (const cell of cells) {
       try {
-        const label = new sdk.Label(String(cell.count), {
+        const label = new sdk.Label(cell.count > 1 ? '▣ ' + cell.count.toLocaleString('zh-CN') : '▣', {
           position: new sdk.Point(cell.longitude,cell.latitude),
         })
-        label.setStyle({color:'#fff',backgroundColor:'#287cf4',borderColor:'#fff',
-          borderWidth:'2px',padding:'5px 9px',borderRadius:'18px',
-          cursor:'pointer',fontSize:'13px'})
+        label.setStyle({color:'#fff',backgroundColor:'#1677e9',
+          borderColor:'rgba(255,255,255,.96)',borderWidth:'3px',
+          padding:cell.count>1?'9px 12px':'9px 11px',borderRadius:'24px',
+          boxShadow:'0 3px 12px rgba(0,0,0,.24)',
+          cursor:'pointer',fontWeight:'600',fontSize:'14px'})
         const key = cell.key
         const click = () => { if (!disposed && active && allowedKeys.has(key)) send('activate-cell',{key}) }
         label.addEventListener('click',click)
@@ -109,9 +129,13 @@
         typeof native.Point !== 'function' || typeof native.Label !== 'function') throw Error('unavailable')
     sdk = native
     map = new native.Map(canvas)
-    const sample = cells[0]
-    map.centerAndZoom(new native.Point(sample ? sample.longitude : 116.4,
-      sample ? sample.latitude : 39.9),sample ? 8 : 4)
+    map.centerAndZoom(new native.Point(0,20),3)
+    try {
+      map.enableScrollWheelZoom?.(true)
+      map.enableDoubleClickZoom?.(true)
+      map.enablePinchToZoom?.(true)
+    } catch { /* unsupported optional SDK gesture API */ }
+    fitInitialOverview()
     map.addEventListener('movestart', () => { allowedKeys.clear(); clearLabels(); send('cancel') })
     map.addEventListener('zoomstart', () => { allowedKeys.clear(); clearLabels(); send('cancel') })
     map.addEventListener('moveend', emitViewport)
@@ -200,6 +224,7 @@
       cells=data.cells.map(cell=>({key:cell.key,latitude:cell.latitude,
         longitude:cell.longitude,count:cell.count}))
       allowedKeys=next
+      fitInitialOverview()
       renderCells()
       if(!map && status)status.textContent='已建立隔离消息通道；等待仅用于地图的会话。'
     } else if(data.kind==='map-session') {

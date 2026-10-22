@@ -26,6 +26,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   onCamera,
   onCameraClear,
   onReady,
+  onFailure,
   initialCamera,
   scope,
 }: {
@@ -37,10 +38,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onCameraClear?: () => void
   onReady: (ready: boolean) => void
+  onFailure?: () => void
   initialCamera?: XDriveBaiduNativeCameraSnapshot
   scope?: string
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
+  const failureCallback = useRef(onFailure)
+  failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
   const invalidated = useRef(onInvalidated)
   const cameraUpdate = useRef(onCamera)
@@ -95,6 +99,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       frame?.dispose()
       cameraClear.current?.()
       onReady(false)
+      failureCallback.current?.()
     }
     const frame = xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>({
       host:node,parentWindow:win,childOrigin,
@@ -114,17 +119,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       onMapFailure:failure,
       onViewport: bounds => { void queryCells(bounds) },
       onReady:() => {
-        void acquireTicket()
-        // Initial geo distribution is a bounded 8x8 Owner summary, not
-        // 100k browser-side raw GPS and not a fabricated WGS84 conversion.
         const world: Bounds = {coordinate_space:'bd09ll',west:-180,south:-85,east:180,north:85}
-        void queryCells(world)
+        // An initial viewport request must not race away the worldwide
+        // anonymous Owner/Consent summary before the SDK can fit to it.
+        void queryCells(world).then(ok => {
+          if (lifetime.signal.aborted || failed) return
+          if (!ok) { failure(); return }
+          void acquireTicket()
+        })
       },
     })
     if (!frame) { failure(); return }
 
-    const queryCells = async (bounds: Bounds) => {
-      if (lifetime.signal.aborted) return
+    const queryCells = async (bounds: Bounds): Promise<boolean> => {
+      if (lifetime.signal.aborted) return false
       cancel()
       frame.replaceAuthorizedCells([])
       const request = new AbortController()
@@ -134,7 +142,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       const run = generation
       try {
         const page = await listOwnerCells(bounds,request.signal)
-        if(request.signal.aborted || lifetime.signal.aborted || run!==generation) return
+        if(request.signal.aborted || lifetime.signal.aborted || run!==generation) return false
         if(!xDriveValidBaiduNativeCellsPage(page,bounds) ||
             page.cells.some(cell => !Number.isSafeInteger(cell.node_revision) || (cell.node_revision ?? 0)<=0)) {
           throw new Error('map_cells_invalid')
@@ -153,12 +161,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           selection:item.selection,
         })))
         setSummary(page)
+        return true
       } catch {
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation) {
           frame.replaceAuthorizedCells([])
           setSummary(null)
           setAccessible([])
         }
+        return false
       } finally {
         lifetime.signal.removeEventListener('abort',onLifetime)
         if(activeQuery===request)activeQuery=null
@@ -188,8 +198,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:{xs:1.25,sm:1.5},pb:1.5,minWidth:0}}>
-      <Box ref={mount} role="region" aria-label="百度独立安全文档地图"
-        sx={{width:'100%',height:{xs:320,sm:400},minHeight:280,borderRadius:1.5,
+      <Box ref={mount} role="region" aria-label="定位照片聚集地图"
+        data-xdrive-places-cluster-overview
+        sx={{width:'100%',height:{
+          xs:'max(460px, calc(100dvh - 190px))',
+          sm:'max(540px, calc(100dvh - 185px))'},
+          maxHeight:1024,borderRadius:1.5,
           overflow:'hidden',backgroundColor:'background.default',
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
       {summary ? (
@@ -204,6 +218,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         </Typography>
       ):null}
       {accessible.length>0 ? (
+        <Box component="details" data-xdrive-places-cluster-list>
+          <Box component="summary" sx={{cursor:'pointer',typography:'caption',
+            color:'text.secondary',minHeight:36}}>
+            聚集点列表（{accessible.length}）
+          </Box>
         <Box component="nav" aria-label="当前地图聚合区域"
           sx={{display:'flex',flexWrap:'wrap',gap:0.5,mt:0.5}}>
           {accessible.map((cell,index)=>(
@@ -212,6 +231,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               {cell.label}
             </Button>
           ))}
+        </Box>
         </Box>
       ):null}
       {error ? <Box data-xdrive-baidu-isolated-static-fallback /> : null}

@@ -1,3 +1,12 @@
+## 地点大地图默认聚集（2026-10-22）
+
+- 「图库 → 地点」根入口首先提供大幅地图；现有地点索引卡片、搜索、半径和范围筛选进入可展开区域，避免首屏先显示长列表。地图根视图不依赖一页地点 Facet 是否有结果。
+- 首次从真实 Owner/Consent/Node/GPS revision 有效的 BD09 8×8 世界 Cell 汇总得到匿名聚集位置，先完成有界查询才启动独立 HTTPS Child 的真实百度 SDK；客户端相机用 SDK fitViewport 展开所有授权区域，随后按视窗缩放重新聚合。不得把 WGS84 Place sample 当作 BD09 初始相机，也不传原始 GPS/照片字节/身份给 SDK。
+- 点击聚集点保留服务端精确 Owner /cell-items 分页/虚拟照片墙/Viewer 返回；未经逐资产许可的 GPS 照片不会默默向百度授权。没有有效 HTTPS 独立子站或签名发布仍 fail-closed 使用原静态百度地图；Desktop 特权 Electron 仍使用独立 HTTPS 窗口。
+- 用户当前先要产品交互；真实 100k、三端物理体验、许可资源清单和扩展安全 E2E 分别留待 P0 跟踪。生产不可触及安全验收始终按用户决定跳过（未验收），源码基本 CI 与 Owner/Consent/Origin 安全门禁不跳过。
+
+---
+
 ## G2c2d2b3c3a · private original Operation SQL/CAS-held precommit hook (2026-10-22)
 
 - Preserve merged #2212: owning Windows/Linux Desktop manual Backup-only real single <=64 MiB file upload stays ENABLED; never claim backup_complete or retirement_safe, and never issue automatic/second-file upload from an observation.

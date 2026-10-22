@@ -9,7 +9,7 @@ import type {
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
-import type { XDriveBaiduJSAPI4AuthorizedMountPort, XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
+import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { useXDriveDeferredLoading } from './useDeferredLoading'
@@ -152,6 +152,7 @@ export function XDriveMediaGalleryPlacesMap({
   useEffect(() => {
     setServerNativeAuthorized(false)
     setIsolatedChildOrigin('')
+    setNativeMapFailed(false)
     setNativeStatus('checking')
     if (!getBaiduJSAPI4Status || !mintBaiduIsolatedChildTicket || !listBaiduNativeCells ||
         !listBaiduNativeViewport || !onOpenBaiduNativePhoto) {
@@ -196,26 +197,13 @@ export function XDriveMediaGalleryPlacesMap({
     places[0]
   )
 
-  // Never supply a grid-center to the native SDK as if it were an original
-  // photo position. The authorized mount must use official WGS84→BD-09.
-  const nativeCamera = selectedPlace && Number.isFinite(selectedPlace.sample_latitude) &&
-    Number.isFinite(selectedPlace.sample_longitude) &&
-    Math.abs(selectedPlace.sample_latitude!) <= 85 &&
-    Math.abs(selectedPlace.sample_longitude!) <= 180
-    ? { latitude: selectedPlace.sample_latitude!, longitude: selectedPlace.sample_longitude!,
-        zoom: xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.zoom : 12 }
-    : null
-  const nativePhotoCamera: XDriveBaiduJSAPI4InitialPhotoCamera | null =
-    nativeRestoreRef.current ?? nativeCamera
-  useEffect(() => {
-    if (nativeStatus === 'authorized' && !nativePhotoCamera && diagnosticScope) {
-      xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'camera_unavailable')
-    }
-  }, [nativeStatus, nativePhotoCamera?.latitude, nativePhotoCamera?.longitude, diagnosticScope])
-
-  const canMountNativePhoto = Boolean(serverNativeAuthorized && isolatedChildOrigin &&
+  // Normal entry uses the anonymous Owner-authorized worldwide BD-09 Cells,
+  // not the first Places facet or any WGS84 grid center. Returning from Viewer
+  // may restore only a separately validated BD-09 camera.
+  const [nativeMapFailed, setNativeMapFailed] = useState(false)
+  const canMountNativePhoto = Boolean(!nativeMapFailed && serverNativeAuthorized && isolatedChildOrigin &&
     mintBaiduIsolatedChildTicket && listBaiduNativeCells &&
-    onOpenBaiduNativeCell && nativePhotoCamera && !desktopHTTPSOnly)
+    onOpenBaiduNativeCell && !desktopHTTPSOnly)
   // The in-document third-party JSAPI port is permanently disabled for Gallery.
   const showingNative = canMountNativePhoto && nativeMapReady
 
@@ -335,7 +323,7 @@ export function XDriveMediaGalleryPlacesMap({
     <Paper
       variant="outlined"
       data-xdrive-gallery-places-map
-      sx={{ borderRadius: 2, overflow: 'hidden' }}
+      sx={{ borderRadius: { xs: 0, sm: 2 }, overflow: 'hidden' }}
     >
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -346,18 +334,24 @@ export function XDriveMediaGalleryPlacesMap({
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
           <Typography variant="caption" color="text.secondary">
-            地点按约 0.01° GPS 网格分组；本页地图使用代表照片的真实坐标，仅使用百度地图 Server API
+            聚集点代表已授权的定位照片，缩放展开并点击进入照片墙；仅使用百度地图 Server API。
           </Typography>
         </Box>
         <Chip size="small" label={totalCount === null || totalCount === undefined
           ? `本页 ${places.length.toLocaleString('zh-CN')} 个地点`
           : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} />
       </Stack>
+      <Box component="details" data-xdrive-places-map-options
+        sx={{ px: 1.5, pb: 1 }}>
+        <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
+          typography: 'caption', minHeight: 36 }}>
+          地点筛选与更多操作
+        </Box>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={1}
-        sx={{ px: 1.5, pb: 1 }}
+        sx={{ pb: 1 }}
       >
         <Autocomplete
           size="small"
@@ -418,6 +412,7 @@ export function XDriveMediaGalleryPlacesMap({
           </Typography>
         </Stack>
       ) : null}
+      </Box>
       {onOpenSecureDesktopMap ? (
         <Box sx={{ px: 1.5, pb: 1.25 }}>
           <Button variant="outlined" size="small" onClick={onOpenSecureDesktopMap}
@@ -436,7 +431,7 @@ export function XDriveMediaGalleryPlacesMap({
       {!desktopHTTPSOnly && !authorizedJSAPI4Runtime &&
         (nativeStatus === 'blocked' || nativeStatus === 'error' ||
           nativeStatus === 'unsupported' ||
-          (nativeStatus === 'authorized' && !nativePhotoCamera)) ? (
+          (nativeStatus === 'authorized' && !canMountNativePhoto)) ? (
         <Box data-xdrive-baidu-map-fallback sx={{ px: 1.5, pb: 1 }}>
           <Typography variant="caption" role="status" color="text.secondary">
             百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
@@ -458,9 +453,9 @@ export function XDriveMediaGalleryPlacesMap({
         </Box>
       ) : null}
       {canMountNativePhoto && mintBaiduIsolatedChildTicket && listBaiduNativeCells &&
-        onOpenBaiduNativeCell && nativePhotoCamera ? (
+        onOpenBaiduNativeCell ? (
           <XDriveMediaGalleryBaiduIsolatedPhotoSurface
-            key={(diagnosticScope??'')+':'+(selectedPlace?.id??'')}
+            key={(diagnosticScope??'')+':'+isolatedChildOrigin}
             childOrigin={isolatedChildOrigin}
             mintChildTicket={mintBaiduIsolatedChildTicket}
             listOwnerCells={listBaiduNativeCells}
@@ -469,11 +464,12 @@ export function XDriveMediaGalleryPlacesMap({
             onCamera={onNativeCameraChange}
             onCameraClear={clearNativeReturnCamera}
             onReady={setNativeMapReady}
+            onFailure={() => setNativeMapFailed(true)}
             initialCamera={nativeRestoreRef.current??undefined}
             scope={diagnosticScope}
           />
         ) : null}
-      {!showingNative ? (
+      {!canMountNativePhoto ? (
         <>
           <XDriveMediaGalleryBaiduStaticMap
         place={selectedPlace}

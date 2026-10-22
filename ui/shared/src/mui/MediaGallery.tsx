@@ -6921,7 +6921,7 @@ export function XDriveMediaGallery({
             : section === 'people'
               ? '已确认人物、待审核建议与本地宠物类型集合'
               : section === 'places'
-                ? '按照片本地 GPS 与本地地名索引浏览'
+                ? '按照片位置聚集浏览，点击标记查看此区域照片'
                 : section === 'favorites'
                   ? '你收藏的照片和视频'
                   : section === 'trash'
@@ -7865,7 +7865,7 @@ export function XDriveMediaGallery({
         />
       ) : null}
 
-      {showPlacesIndex && places.length > 0 ? (
+      {showPlacesIndex ? (
         <Stack spacing={2}>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -7876,7 +7876,7 @@ export function XDriveMediaGallery({
               地点
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              按照片 GPS 坐标组织地点；地图仅使用百度地图 Server API
+              地图仅使用百度地图 Server API；已授权的照片在地图上聚集，放大查看并点按进入照片墙
             </Typography>
           </Stack>
 
@@ -7911,10 +7911,12 @@ export function XDriveMediaGallery({
             onOpenViewportPhotos={onOpenViewportPhotos}
           />
 
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
-              地点列表
-            </Typography>
+          <Box component="details" data-xdrive-places-list sx={{
+            border: 1, borderColor: 'divider', borderRadius: 2, px: 1.5, py: 1,
+          }}>
+            <Box component="summary" sx={{
+              cursor: 'pointer', fontWeight: 700, minHeight: 40, alignContent: 'center',
+            }}>地点列表 · {(placesTotalCount ?? places.length).toLocaleString('zh-CN')} 个地点</Box>
             <Box
               sx={{
                 display: 'grid',
@@ -8657,7 +8659,7 @@ export function XDriveMediaGallery({
       ) : null}
       {showPlacesIndex && places.length === 0 && !loading && placesStatus === 'ready' ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
-          <Typography color="text.secondary">没有带地点信息的照片</Typography>
+          <Typography color="text.secondary">没有带地点信息的照片（当前地点索引）；上方地图仍可独立查询已授权照片</Typography>
         </Paper>
       ) : null}
       {showPeopleIndex &&
