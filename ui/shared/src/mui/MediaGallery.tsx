@@ -136,6 +136,8 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import { XDriveMediaGalleryPlaceHierarchyNavigator } from './MediaGalleryPlaceHierarchyNavigator'
+import type { MediaPlaceHierarchyItem } from './MediaGalleryPlaceHierarchyNavigator'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCoverProvider, XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
@@ -271,6 +273,7 @@ export interface MediaGalleryDataSource {
   moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listPlacesPage?: (limit?: number, offset?: number) => Promise<MediaPlacesPage>
+  listPlacesHierarchy?: import('./MediaGalleryPlaceHierarchyNavigator').MediaPlaceHierarchyLoader
   listPlacesMapOverview?: (bounds: MediaPlacesViewportBounds, detail?: boolean,
     signal?: AbortSignal) => Promise<import('../models').MediaPlacesMapOverview>
   /** One shared, cancelable, Owner-authorized view for Web/Mobile Web/Desktop.
@@ -645,6 +648,7 @@ export function XDriveMediaGalleryPage({
   const [currentFolderView, setCurrentFolderView] = useState<MediaFolderView | null>(null)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
+  const [selectedHierarchyName, setSelectedHierarchyName] = useState('')
   // Exactly one tiny in-memory camera/anchor snapshot across Viewer routes.
   const [placesCameraSnapshot, setPlacesCameraSnapshot] = useState<XDrivePlacesCameraSnapshot | undefined>(
     () => xDriveReadPlacesCamera(preferenceScope),
@@ -713,6 +717,7 @@ export function XDriveMediaGalleryPage({
   useEffect(() => {
     placeOpenedFromCollectionsRef.current = false
     placesReturnPageRef.current = null
+    setSelectedHierarchyName('')
     const restored = xDriveReadPlacesCamera(preferenceScope)
     placesCameraRef.current = restored
     setPlacesCameraSnapshot(restored)
@@ -1104,10 +1109,10 @@ export function XDriveMediaGalleryPage({
       if (target.kind === 'all' && !target.query.folder_id) {
         // Returning from a place photo wall preserves the current bounded
         // Places page instead of jumping to the first 48 locations.
-        const returningPlacePage = section === 'places' && !target.query.place
+        const returningPlacePage = section === 'places' && !target.query.place && !target.query.place_hierarchy
           ? placesReturnPageRef.current : null
         const retainedPlacePage = returningPlacePage ??
-          (section === 'places' && target.query.place ? placesReturnPageRef.current : null)
+          (section === 'places' && (target.query.place || target.query.place_hierarchy) ? placesReturnPageRef.current : null)
         if (returningPlacePage) placesReturnPageRef.current = null
         setPlacesStatus('loading')
         placePageRequestID.current += 1
@@ -1931,6 +1936,7 @@ export function XDriveMediaGalleryPage({
   const applyFilters = useCallback(() => {
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(draftFilters),
+      ...(section === 'places' && query.place_hierarchy ? { place_hierarchy: query.place_hierarchy } : {}),
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     if (currentAlbum?.kind === 'smart') {
@@ -1971,6 +1977,8 @@ export function XDriveMediaGalleryPage({
     replaceAlbum,
     reloadFilteredPhotoWall,
     query.include_descendants,
+    query.place_hierarchy,
+    section,
     source,
   ])
 
@@ -2028,6 +2036,7 @@ export function XDriveMediaGalleryPage({
     }
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(draftFilters),
+      ...(section === 'places' && query.place_hierarchy ? { place_hierarchy: query.place_hierarchy } : {}),
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     const acceptedKind = collectionTargetRef.current?.kind
@@ -2056,7 +2065,7 @@ export function XDriveMediaGalleryPage({
   }, [
     currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson,
     draftFilters, items.length, loadFirstPage, loadMemories, mobileGalleryViewport,
-    query.include_descendants, section,
+    query.include_descendants, query.place_hierarchy, section,
   ])
 
   const clearFilters = useCallback(() => {
@@ -2072,6 +2081,7 @@ export function XDriveMediaGalleryPage({
       : baseDraft
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(nextDraft),
+      ...(section === 'places' && query.place_hierarchy ? { place_hierarchy: query.place_hierarchy } : {}),
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
@@ -2084,7 +2094,7 @@ export function XDriveMediaGalleryPage({
     currentSuggestedPerson,
     loadFirstPage,
     reloadFilteredPhotoWall,
-    query.include_descendants,
+    query.include_descendants, query.place_hierarchy,
     section,
   ])
 
@@ -2435,6 +2445,40 @@ export function XDriveMediaGalleryPage({
     }
   }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
+  // B1-D: stable hierarchy identities enter the existing Owner Media Range,
+  // never a second list or an approximate GPS-grid fallback.
+  const openPlaceHierarchy = useCallback((place: MediaPlaceHierarchyItem) => {
+    const nextDraft: MediaGalleryFilterDraft = { ...draftFilters, location: 'with', place: '' }
+    const nextQuery: MediaGalleryQuery = {
+      ...mediaGalleryQueryFromDraft(nextDraft), place_hierarchy: place.id,
+    }
+    const commit = () => {
+      placeOpenedFromCollectionsRef.current = false
+      if (section === 'places' && !query.place && !query.place_hierarchy &&
+          placesTotalCount !== null && places.length <= 48) {
+        placesReturnPageRef.current = {
+          items: [...places], offset: placesPageOffset, totalCount: placesTotalCount,
+        }
+      }
+      setSelectedHierarchyName(place.name)
+      setLastOpenedPlaceID(place.id)
+      placesExpandedRef.current = true
+      setSection('places')
+      setActiveMediaType('')
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+      setMobileCollectionsOverview(false)
+    }
+    if (mobileGalleryViewport) {
+      // On mobile, commit title and tiles only after the first Owner Range succeeds.
+      void loadFirstPage(null, nextQuery, null, null, 'default', null, null, null, commit)
+    } else {
+      commit()
+      void loadFirstPage(null, nextQuery)
+    }
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, places, placesPageOffset,
+    placesTotalCount, query.place, query.place_hierarchy, section])
+
   // A4 shares the existing Owner Media Range, Gallery VirtualCollection
   // and Viewer; no parallel nearby media list, no map-derived GPS identities.
   const openNearbyGeoRange = useCallback((geo: { nearby?: string; bbox?: string }, focusPlace?: string) => {
@@ -2643,13 +2687,14 @@ export function XDriveMediaGalleryPage({
       if (section === 'media-types' && activeMediaType) {
         setActiveMediaType('')
       }
-      if (section === 'places' && (query.place || query.nearby || query.bbox) && placeOpenedFromCollectionsRef.current) {
+      if (section === 'places' && (query.place || query.place_hierarchy || query.nearby || query.bbox) && placeOpenedFromCollectionsRef.current) {
         // Collections -> Place return also has one Owner-verified receipt.
         // Neither the old visible wall nor its Viewer return anchor should
         // be replaced by an interim Collections/empty photo screen.
         placeOpenedFromCollectionsRef.current = false
         setMobileCollectionsOverview(true)
       }
+      setSelectedHierarchyName('')
       setDraftFilters(nextDraft)
       setQuery(nextQuery)
     }
@@ -2677,6 +2722,7 @@ export function XDriveMediaGalleryPage({
     openCleanupFromCollections,
     openSyncFolderDirectory,
     query.place,
+    query.place_hierarchy,
     section,
     selectSection,
   ])
@@ -3298,7 +3344,7 @@ export function XDriveMediaGalleryPage({
     : query
   const draftPending = xDriveGalleryFilterSignature(
     mediaGalleryQueryFromDraft(draftFilters),
-  ) !== xDriveGalleryFilterSignature(appliedFilterQuery)
+  ) !== xDriveGalleryFilterSignature({ ...appliedFilterQuery, place_hierarchy: undefined })
 
   const removeAppliedFilter = useCallback((key: XDriveGalleryAppliedFilterKey) => {
     if (currentAlbum?.kind === 'smart') return
@@ -3307,11 +3353,12 @@ export function XDriveMediaGalleryPage({
     const nextDraft = mediaGalleryDraftFromQuery(nextApplied)
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(nextDraft),
+      ...(section === 'places' && query.place_hierarchy ? { place_hierarchy: query.place_hierarchy } : {}),
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
     reloadFilteredPhotoWall(nextQuery)
-  }, [currentAlbum, currentFolderView, reloadFilteredPhotoWall, query])
+  }, [currentAlbum, currentFolderView, reloadFilteredPhotoWall, query, section])
 
   const refreshGallery = () => {
     if (collectionTargetRef.current?.kind === 'baidu-cell') {
@@ -3453,6 +3500,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersError={syncFoldersError}
         places={places}
         listPlacesPage={source.listPlacesPage}
+        listPlacesHierarchy={source.listPlacesHierarchy}
         listPlacesMapOverview={source.listPlacesMapOverview}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
@@ -3497,7 +3545,8 @@ export function XDriveMediaGalleryPage({
         pets={acceptedFacetOwner === preferenceScope ? pets : []}
         suggestedPeople={acceptedFacetOwner === preferenceScope ? suggestedPeople : []}
         people={acceptedFacetOwner === preferenceScope ? people : []}
-        activePlaceID={query.place || (query.nearby ? 'nearby' : query.bbox ? 'bbox' : undefined)}
+        activePlaceID={query.place || query.place_hierarchy || (query.nearby ? 'nearby' : query.bbox ? 'bbox' : undefined)}
+        activePlaceHierarchyName={selectedHierarchyName}
         currentAlbum={currentAlbum}
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
@@ -3711,6 +3760,7 @@ export function XDriveMediaGalleryPage({
             }
           : undefined}
         onOpenPlace={(place) => openPlace(place, mobileCollectionsOverview)}
+        onOpenPlaceHierarchy={openPlaceHierarchy}
         onOpenNearby={(place, radiusKM) => {
           const lat = place.sample_latitude, lng = place.sample_longitude
           if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
@@ -3947,6 +3997,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
+  listPlacesHierarchy?: MediaGalleryDataSource['listPlacesHierarchy']
   listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
@@ -3988,6 +4039,7 @@ export interface XDriveMediaGalleryProps {
   suggestedPeople?: MediaSuggestedPerson[]
   people?: MediaPersonIdentity[]
   activePlaceID?: string
+  activePlaceHierarchyName?: string
   currentAlbum?: MediaAlbum | null
   currentSuggestedPerson?: MediaSuggestedPerson | null
   currentPerson?: MediaPersonIdentity | null
@@ -4081,6 +4133,7 @@ export interface XDriveMediaGalleryProps {
   onOpenFolder?: (folder: MediaFolderEntry) => void
   onOpenFolderBreadcrumb?: (breadcrumb: MediaFolderBreadcrumb) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenPlaceHierarchy?: (place: MediaPlaceHierarchyItem) => void
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
   onOpenViewportPhotos?: (bounds: import('../models').MediaPlacesViewportBounds) => void
   onOpenMemory?: (memory: MediaMemory) => void
@@ -5666,6 +5719,7 @@ export function XDriveMediaGallery({
   syncFoldersError = '',
   places = [],
   listPlacesPage,
+  listPlacesHierarchy,
   listPlacesMapOverview,
   listPlacesViewport,
   listBaiduNativeViewport,
@@ -5707,6 +5761,7 @@ export function XDriveMediaGallery({
   suggestedPeople = [],
   people = [],
   activePlaceID,
+  activePlaceHierarchyName,
   currentAlbum = null,
   currentSuggestedPerson = null,
   currentPerson = null,
@@ -5785,6 +5840,7 @@ export function XDriveMediaGallery({
   onOpenFolder,
   onOpenFolderBreadcrumb,
   onOpenPlace,
+  onOpenPlaceHierarchy,
   onOpenNearby,
   onOpenViewportPhotos,
   onOpenMemory,
@@ -6878,6 +6934,8 @@ export function XDriveMediaGallery({
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
         ? '人物建议'
+        : activePlaceID?.startsWith('country:') || activePlaceID?.startsWith('region:') || activePlaceID?.startsWith('city:')
+          ? (activePlaceHierarchyName || '地点照片')
         : activePlaceID === 'nearby'
           ? '附近照片'
           : activePlaceID === 'bbox'
@@ -6919,6 +6977,8 @@ export function XDriveMediaGallery({
       ? `${currentPerson.item_count.toLocaleString('zh-CN')} 张照片 · 长期人物${currentPerson.hidden ? ' · 已隐藏' : ''}`
       : currentSuggestedPerson
         ? `${currentSuggestedPerson.item_count.toLocaleString('zh-CN')} 张照片 · 自动聚类建议`
+        : activePlaceID?.startsWith('country:') || activePlaceID?.startsWith('region:') || activePlaceID?.startsWith('city:')
+          ? '可信 GeoNames 身份 · Owner 真实媒体资产集合；附近城市并非精确行政归属'
         : activePlaceID === 'nearby'
           ? '按原始 GPS 的真实球面距离筛选 · Server 精确计数'
           : activePlaceID === 'bbox'
@@ -7926,6 +7986,16 @@ export function XDriveMediaGallery({
             onOpenNearby={onOpenNearby}
             onOpenViewportPhotos={onOpenViewportPhotos}
           />
+
+          {listPlacesHierarchy && onOpenPlaceHierarchy ? (
+            <XDriveMediaGalleryPlaceHierarchyNavigator
+              key={preferenceScope || 'gallery-default'}
+              accountScope={preferenceScope}
+              listPage={listPlacesHierarchy}
+              loadThumbnail={loadThumbnail}
+              onOpenCollection={onOpenPlaceHierarchy}
+            />
+          ) : null}
 
           <Box component="details" data-xdrive-places-list sx={{
             border: 1, borderColor: 'divider', borderRadius: 2, px: 1.5, py: 1,

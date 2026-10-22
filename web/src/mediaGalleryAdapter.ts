@@ -64,6 +64,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
       api.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
     listPlacesPage: (limit = 48, offset = 0) => api.mediaPlacesPage(limit, offset),
+    listPlacesHierarchy: (request, signal) => api.mediaPlaceHierarchy(request, {}, signal),
     listPlacesMapOverview: (bounds, detail = false, signal) =>
       api.mediaPlacesMapOverview(bounds, detail, signal),
     listPlacesViewport: (bounds, limit = 64, offset = 0, signal) =>
