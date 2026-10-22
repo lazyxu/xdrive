@@ -1,0 +1,91 @@
+name: PWA P4A Genuine 100k Chrome CPU Network Decode Tail BEFORE
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p4a-real-phase-before:
+    if: github.head_ref == 'test/pwa-p4a-100k-phase-attribution-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_WEB_PHYSICAL_GO_BINARY: ${{ github.workspace }}/desktop/gallery-physical-web-go/api.test
+      XD_PWA_P4A_BEFORE: '1'
+      XD_PWA_P4A_RESULTS: ${{ github.workspace }}/desktop/pwa-p4a-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Native Chrome, exact-source P2-A2 and P1/P2-A negative source contracts
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha }}"
+          node --check desktop/scripts/pwa-p4a-100k-phase-attribution.cjs
+          node --test desktop/tests/pwa-p4a-phase-attribution-contract.cjs desktop/tests/pwa-p2a-before-contract.cjs
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-p2a2-playwright"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p2a2-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-p2a2-playwright/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "real Chrome/Chromium binary required" >&2
+            exit 1
+          fi
+      - name: Build production Vite Gallery and genuine Gin PostgreSQL17 LocalCAS fixture
+        run: |
+          set -euo pipefail
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build
+          mkdir -p desktop/gallery-physical-web-go
+          go test -c -o desktop/gallery-physical-web-go/api.test ./internal/api
+      - name: Three independent physical 100k/115k Go/CAS fixtures, Chrome process A/B, CDP phase attribution
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha }}"
+          mkdir -p "$XD_PWA_P4A_RESULTS"
+          printf 'SHA=%s\nRUN=%s\nBROWSER=%s\n' "$XD_PR_HEAD" "$GITHUB_RUN_ID" "$XDRIVE_BROWSER_EXECUTABLE" > "$XD_PWA_P4A_RESULTS/source.txt"
+          node desktop/scripts/pwa-p4a-100k-phase-attribution.cjs
+          test "$(find "$XD_PWA_P4A_RESULTS" -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+          node -e "const x=require(process.env.XD_PWA_P4A_RESULTS+'/summary.json');if(!x.accepted||x.sha!==process.env.XD_PR_HEAD||!x.nativeChromium||x.physicalIOS||x.privatePersistentCache||x.optimizationImplemented||x.n!==3||x.pairs!==9||x.after!==null||!x.phaseAttribution||!x.privateCacheUnchanged||!x.samples.every(s=>s.profilePersisted&&s.pidA!==s.pidB&&s.pairs.length===3&&s.pairs.every(p=>p.ids.length===4&&p.restartPhases.cpu.TaskDuration>=0&&Number.isFinite(p.restartPhases.lateDecodeAwaitMs)&&Number.isFinite(p.restartPhases.postDecodeTwoRafMs))))process.exit(1);console.log(JSON.stringify({sha:x.sha,firstP50:x.firstP50,restartP50:x.restartedP50,firstRequests:x.firstRequests,restartRequests:x.restartRequests,firstBodyBytes:x.firstBodyBytes,restartBodyBytes:x.restartBodyBytes}))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p4a-real-100k-phase-attribution-before-n3
+          path: |
+            desktop/pwa-p4a-results/summary.json
+            desktop/pwa-p4a-results/sample-*.json
+            desktop/pwa-p4a-results/source.txt
+          if-no-files-found: warn
+          retention-days: 14
