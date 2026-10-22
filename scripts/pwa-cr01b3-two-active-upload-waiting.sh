@@ -138,9 +138,15 @@ node "$B/desktop/scripts/pwa-cr01b3-two-active-upload-waiting.cjs"
   -count=1 -v -timeout=6m ./internal/api)
 
 # Independent readback of the second native Chromium upload and CAS.
-(cd "$B" && XD_PWA_CR01B3_DUAL_PHYSICAL=1 go test \
-  -run '^TestPWACR01B3RealSecondWindowPhysicalPostflight$' \
-  -count=1 -v -timeout=6m ./internal/api)
+if [ "${XD_PWA_CR01B5_CROSS_OWNER:-0}" = 1 ]; then
+  (cd "$B" && XD_PWA_CR01B5_CROSS_OWNER_PHYSICAL=1 go test \
+    -run '^TestPWACR01B5CrossOwnerPhysicalPostflight$' \
+    -count=1 -v -timeout=6m ./internal/api)
+else
+  (cd "$B" && XD_PWA_CR01B3_DUAL_PHYSICAL=1 go test \
+    -run '^TestPWACR01B3RealSecondWindowPhysicalPostflight$' \
+    -count=1 -v -timeout=6m ./internal/api)
+fi
 
 # Both full genuine physical LocalCAS readbacks passed; mark summary only NOW.
 node - "$OUT/summary.json" <<'NODE'
@@ -178,5 +184,9 @@ assert(!result.physicalIOS && result.oldSWWaitingVerified &&
   result.twoPartialGoCASFiles && result.secondOwnerSessionFinalized &&
   result.secondPhysicalGoCASPostflight &&
   !result.durableTaskCoactivityProven)
+if (process.env.XD_PWA_CR01B5_CROSS_OWNER === '1') {
+  assert(result.crossOwnerMode && result.crossOwnerDifferentUser &&
+    result.crossOwnerACL404 && result.crossOwnerTwoPartitions)
+}
 NODE
 echo "PWA_CR01B3_TWO_REAL_NATIVE_UPLOADS_CAS_AND_SW_WAITING_PASSED"

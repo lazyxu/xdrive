@@ -13,6 +13,7 @@ const { spawnSync } = require('node:child_process')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const env = process.env
+const crossOwner = env.XD_PWA_CR01B5_CROSS_OWNER === '1'
 const fields = [
   'XD_PWA_HOT_UPLOAD_OUTPUT', 'XD_PWA_HOT_UPLOAD_CADDY_COMMON',
   'XD_PWA_HOT_UPLOAD_CADDY_NAME', 'XD_PWA_HOT_UPLOAD_CADDY_PORT',
@@ -111,6 +112,8 @@ const summary = {
   twoDistinctDurableSessions: false, twoNativeInFlightPuts: false,
   twoPartialGoCASFiles: false, secondOwnerSessionFinalized: false,
   secondPhysicalGoCASPostflight: false,
+  crossOwnerMode:crossOwner,
+  crossOwnerDifferentUser:false, crossOwnerACL404:false, crossOwnerTwoPartitions:false,
   durableTaskCoactivityProven: false,
   physicalIOS: false, passed: false
 }
@@ -501,7 +504,7 @@ async function finalizeIndependentPeer(peer) {
    const replay=await again.json()
    if(replay.result?.id!==result.result.id||replay.sha256!==state.sha)
      throw Error('second repeated finalize created another committed Node')
-   return {finalized:true,idempotent:true,bytes:state.bytes.length}
+   return {finalized:true,idempotent:true,bytes:state.bytes.length,nodeID:result.result.id}
  })
 }
 
@@ -572,7 +575,7 @@ async function phaseB(page) {
     if (again.status !== 200 || (await again.json()).id !== id)
       throw new Error('post-finalize resume key must not create duplicate upload')
     return { sameOriginalID: true, onlyNewChunksOnB: true,
-      idempotentFinalize: true, byteCount: state.bytes.length }
+      idempotentFinalize: true, byteCount: state.bytes.length, nodeID:answer.result.id }
   })
 }
 async function checkPublicCache(page) {
@@ -646,10 +649,36 @@ async function main() {
     // Two actual controlled tabs must remain alive throughout the active
     // 17 MiB Owner upload session and candidate SW waiting period.
     safePhase = 'open-second-controlled-window'
-    const peer = await context.newPage()
+    if(crossOwner)await page.evaluate(async()=>{
+      const token=localStorage.getItem('xdrive.access_token')
+      const r=await fetch('/api/v1/admin/users',{method:'POST',
+        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({username:'pwa-cr01b5-user',password:'Pwa-B5-Synthetic-Only_2026!',
+          role:'user',must_change_password:false,quota_bytes:0})})
+      if(r.status!==201||(await r.json()).role!=='user')throw Error('real normal Owner creation failed')
+    })
+    const peerContext=crossOwner?await browser.newContext({
+      viewport:{width:390,height:844},isMobile:true,hasTouch:true,
+      serviceWorkers:'allow',ignoreHTTPSErrors:true}):context
+    const peer = await peerContext.newPage()
     peer.setDefaultTimeout(30000)
     const peerResponse = await peer.goto(origin + '/#/app/files', { waitUntil: 'commit' })
     assert.equal(peerResponse?.status(), 200)
+    if(crossOwner){
+      await peer.locator('#web-login-username').fill('pwa-cr01b5-user')
+      await peer.locator('#web-login-password').fill('Pwa-B5-Synthetic-Only_2026!')
+      await peer.getByRole('button',{name:'登录',exact:true}).click()
+      await peer.waitForFunction(()=>(localStorage.getItem('xdrive.access_token')||'').length>16)
+      const ids=await Promise.all([page,peer].map(p=>p.evaluate(async()=>{
+        const token=localStorage.getItem('xdrive.access_token')
+        const r=await fetch('/api/v1/me',{headers:{Authorization:'Bearer '+token},cache:'no-store'})
+        if(!r.ok)throw Error('real /me failed')
+        return (await r.json()).id
+      })))
+      if(!ids.every(x=>Number.isSafeInteger(x)&&x>0)||ids[0]===ids[1])
+        throw Error('two browser contexts not independently authenticated')
+      summary.crossOwnerDifferentUser=true;summary.crossOwnerTwoPartitions=true
+    }
     safePhase='wait-peer-native-public-SW'
     await peer.waitForLoadState('load',{timeout:30000})
     await peer.waitForFunction(async()=>{
@@ -710,7 +739,15 @@ async function main() {
       if (!reg) throw Error('Old production SW registration missing')
       await reg.update()
     })
+    if(crossOwner){
+      await peer.evaluate(async()=>{
+        const reg=await navigator.serviceWorker.getRegistration()
+        if(!reg)throw Error('separate normal Owner SW not installed')
+        await reg.update()
+      })
+    }
     await waitWaiting(page)
+    if(crossOwner)await waitWaiting(peer)
     await waitStableTwoWindowSWWaiting(page, peer)
     await requireInFlight(page)
     await requirePeerInFlight(peer)
@@ -749,6 +786,21 @@ async function main() {
     assert(second.finalized&&second.idempotent&&second.bytes===6*1024*1024)
     summary.secondOwnerSessionFinalized=true
     summary.twoIndependentWindowUploadsProven=true
+    if(crossOwner){
+      const otherSession=await peer.evaluate(()=>window.__pwaIndependentPeer.id)
+      const proof=await Promise.all([
+        [page,second.nodeID,otherSession],
+        [peer,sentB.nodeID,originalId]
+      ].map(async([p,node,upload])=>p.evaluate(async({node,upload})=>{
+        const token=localStorage.getItem('xdrive.access_token')
+        const headers={Authorization:'Bearer '+token}
+        const a=await fetch('/api/v1/nodes/'+node,{headers,cache:'no-store'})
+        const b=await fetch('/api/v1/uploads/'+upload,{headers,cache:'no-store'})
+        return a.status===404&&b.status===404
+      },{node,upload})))
+      if(!proof.every(Boolean))throw Error('foreign Go Node/UploadSession ACL did not return 404')
+      summary.crossOwnerACL404=true
+    }
     assert.equal(await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL || ''),
       initialControl)
     assert(await oldWorkerStayed(page, true))
@@ -766,6 +818,15 @@ async function main() {
     await waitNewActive(fresh)
     await checkPublicCache(fresh)
     await fresh.close()
+    if(crossOwner){
+      const reopened=await peerContext.newPage()
+      const res=await reopened.goto(origin+'/#/app/files',{waitUntil:'commit'})
+      assert.equal(res?.status(),200)
+      await waitNewActive(reopened)
+      await checkPublicCache(reopened)
+      await reopened.close()
+      await peerContext.close()
+    }
     summary.newSWActivatedOnlyAfterBothClosed = true
     safePhase = 'complete'
     summary.passed = true
