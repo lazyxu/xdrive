@@ -1,0 +1,80 @@
+name: PWA P2-A Current Before 100k Exact Thumbnail Revisit
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-p2a-physical-100k-before:
+    if: github.head_ref == 'test/pwa-p2a-100k-thumbnail-before-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_WEB_PHYSICAL_GO_BINARY: ${{ github.workspace }}/desktop/gallery-physical-web-go/api.test
+      XD_GALLERY_WEB_PHYSICAL_MOBILE_100K_PERF: '1'
+      XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS: ${{ github.workspace }}/desktop/pwa-p2a-current-before-results
+      XD_PWA_P2A_CURRENT_BEFORE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check native test-only fixture and real viewport source contracts
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/gallery_real_web_cold_performance_integration_test.go)"
+          node --check desktop/scripts/pwa-p2a-100k-thumbnail-before.cjs
+          node --test desktop/tests/gallery-web-physical-100k-source.cjs desktop/tests/gallery-mobile-web-physical-100k-source.cjs desktop/tests/pwa-p2a-before-contract.cjs
+      - name: Build actual native Go Gin PostgreSQL CAS fixture and Web Gallery
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/gallery-physical-web-go
+          go test -c -o desktop/gallery-physical-web-go/api.test ./internal/api
+      - name: Measure current authenticated 100k/115k first-view and exact-node revisit n3
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS"
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha }}"
+          printf 'CHECKED_OUT_HEAD=%s\nEVENT_SHA=%s\nRUN=%s\n' "$XD_PR_HEAD" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/pwa-p2a-100k-thumbnail-before.cjs
+          test "$(find "$XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS" -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+          node -e "const x=require(process.env.XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS+'/summary.json');if(!x.accepted||x.status!=='pwa-p2a-current-before-only-no-private-thumbnail-persistence'||x.sourceSha!==process.env.XD_PR_HEAD||x.n!==3||x.mobileMode!==true||x.cssViewportWidth!==390||x.matchedPairedWindows!==9||x.afterOptimization!==null||!Number.isFinite(x.revisitP95Ms)||!x.samples.every(s=>s.mobileViewport&&s.revisits.length===3&&s.revisits.every(r=>r.exactSameIndices.length===4&&r.revisitHTTP.requests>=0&&r.revisitHTTP.responseBodyBytes>=0)))process.exit(1);console.log(JSON.stringify({accepted:x.accepted,sourceSha:x.sourceSha,firstP50:x.firstVisitP50Ms,firstP95:x.firstVisitP95Ms,revisitP50:x.revisitP50Ms,revisitP95:x.revisitP95Ms,firstBytes:x.firstVisitServerThumbnailBodyBytes,revisitBytes:x.revisitServerThumbnailBodyBytes,requests:x.revisitHTTPRequests,peakGo:x.maxNativeGoRSSGrowthBytes,peakRenderer:x.maxRendererWorkingSetGrowthBytes,after:x.afterOptimization}))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p2a-current-before-100k-115k-390px-exact-n3
+          path: desktop/pwa-p2a-current-before-results/
+          if-no-files-found: warn
+          retention-days: 14
