@@ -29,6 +29,7 @@ type FileThumbnailCache = {
   leases: Map<string, number>
   retired: Set<string>
   disposed: boolean
+  pending: Set<() => void>
 }
 
 type FileThumbnailLease = {
@@ -53,6 +54,7 @@ type FileThumbnailVisibilityEntry = {
 type XDriveFileExplorerThumbnailContextValue = {
   loadThumbnail?: XDriveFileExplorerThumbnailLoader
   cache: FileThumbnailCache
+  foreground: boolean
 }
 
 const fileThumbnailConcurrency = 6
@@ -149,6 +151,7 @@ function fileThumbnailCacheSet(cache: FileThumbnailCache, key: string, value: st
 }
 
 function disposeFileThumbnailCache(cache: FileThumbnailCache) {
+  for (const cancel of [...cache.pending]) cancel()
   cache.disposed = true
   for (const value of cache.values.values()) retireFileThumbnailSource(cache, value)
   cache.values.clear()
@@ -319,16 +322,52 @@ export function XDriveFileExplorerThumbnailProvider({
       leases: new Map(),
       retired: new Set(),
       disposed: false,
+      pending: new Set(),
     }),
     [lifecycleKey, loadThumbnail],
   )
 
+  const [foreground, setForeground] = useState(
+    () => typeof document === 'undefined' || !document.hidden,
+  )
+
   useEffect(() => {
     cache.disposed = false
-    return () => disposeFileThumbnailCache(cache)
+    // Only ephemeral thumbnail requests. User-owned downloads, uploads,
+    // ZIP, sync and delete tasks have independent durable cancellation.
+    const suspend = () => {
+      for (const cancel of [...cache.pending]) cancel()
+      setForeground(false)
+    }
+    const onVisibilityChange = () => {
+      if (document.hidden) suspend()
+      else setForeground(true)
+    }
+    const onPageShow = () => setForeground(!document.hidden)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+      if (document.hidden) suspend()
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', suspend)
+      window.addEventListener('pageshow', onPageShow)
+    }
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pagehide', suspend)
+        window.removeEventListener('pageshow', onPageShow)
+      }
+      disposeFileThumbnailCache(cache)
+    }
   }, [cache])
 
-  const value = useMemo(() => ({ loadThumbnail, cache }), [cache, loadThumbnail])
+  const value = useMemo(
+    () => ({ loadThumbnail, cache, foreground }),
+    [cache, loadThumbnail, foreground],
+  )
 
   return (
     <XDriveFileExplorerThumbnailContext.Provider value={value}>
@@ -362,6 +401,7 @@ export function XDriveFileExplorerThumbnail({
   const leaseRef = useRef<FileThumbnailLease | null>(null)
   const loadThumbnail = context?.loadThumbnail
   const cache = context?.cache
+  const foreground = context?.foreground ?? true
   const visualState = xDriveFileExplorerThumbnailVisualState({
     eligible,
     visible,
@@ -397,7 +437,7 @@ export function XDriveFileExplorerThumbnail({
 
   useEffect(() => {
     if (
-      !cache || !loadThumbnail || !eligible || !visible ||
+      !cache || !loadThumbnail || !foreground || !eligible || !visible ||
       failed || src || item.thumbnail
     ) return
     const cached = fileThumbnailCacheAcquire(cache, cacheKey)
@@ -417,6 +457,13 @@ export function XDriveFileExplorerThumbnail({
       },
       (nextStage) => { if (active && !signal.aborted) setStage(nextStage) },
     ))
+    const cancelScheduled = () => {
+      if (!active) return
+      active = false
+      cache.pending.delete(cancelScheduled)
+      scheduled.cancel()
+    }
+    cache.pending.add(cancelScheduled)
     void scheduled.promise
       .then((value) => {
         if (!value) {
@@ -435,15 +482,14 @@ export function XDriveFileExplorerThumbnail({
       .catch(() => {
         if (active) setFailed(true)
       })
-    return () => {
-      active = false
-      scheduled.cancel()
-    }
+      .finally(() => { cache.pending.delete(cancelScheduled) })
+    return cancelScheduled
   }, [
     cache,
     cacheKey,
     eligible,
     failed,
+    foreground,
     item.thumbnail,
     loadThumbnail,
     src,
