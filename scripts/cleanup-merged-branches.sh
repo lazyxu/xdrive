@@ -7,47 +7,27 @@ superseded_label="${XD_CLEANUP_SUPERSEDED_LABEL:-superseded}"
 GH_BIN="${GH_BIN:-gh}"
 GIT_BIN="${GIT_BIN:-git}"
 dry_run=0
-exact_branch=""
-expected_sha=""
 retired_manifest="${XD_CLEANUP_RETIRED_MANIFEST:-.github/retired-branches.tsv}"
 
 usage() {
   cat <<'EOF'
-Usage:
-  cleanup-merged-branches.sh [--dry-run]
-  cleanup-merged-branches.sh --branch <name> --expected-sha <sha> [--dry-run]
+Usage: cleanup-merged-branches.sh [--dry-run]
 
-Event mode (--branch + --expected-sha) verifies exactly one fetched remote
-branch and deletes it with git when its current tip still equals the PR event's
-recorded head SHA. Event mode performs no GitHub REST requests.
+Scan mode removes only proven-redundant branches:
+  - current tip is the exact head of a merged pull request;
+  - current tip is the exact head of a closed, explicitly superseded pull request;
+  - current tip is an ancestor of master or its tree is identical to master;
+  - branch + full tip SHA appear in the reviewed retirement manifest.
 
-Scan mode deletes only remote branches that are provably redundant:
-  1. the current branch tip exactly matches the head SHA of a merged PR from
-     this repository;
-  2. a PR from this repository is closed without merge, is explicitly labeled
-     "superseded", and the current branch tip still exactly matches that PR's
-     recorded head SHA; or
-  3. the current branch tip is already an ancestor of origin/master; or
-  4. a reviewed retirement manifest exactly matches the current branch tip SHA.
-
-A branch used by any open PR from this repository is never deleted, even if it
-otherwise matches one of the rules above. The default branch is never deleted.
+Never delete master, a branch used as an open PR head or base, an advanced
+branch, or one whose remote tip changed since inspection. A failed PR
+inventory or deletion check stops the job instead of guessing.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
-    --branch)
-      [[ $# -ge 2 ]] || { echo "--branch requires a value" >&2; exit 2; }
-      exact_branch="$2"
-      shift 2
-      ;;
-    --expected-sha)
-      [[ $# -ge 2 ]] || { echo "--expected-sha requires a value" >&2; exit 2; }
-      expected_sha="$2"
-      shift 2
-      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -55,65 +35,13 @@ done
 
 [[ -n "$repo" ]] || { echo "GITHUB_REPOSITORY is required" >&2; exit 2; }
 command -v "$GIT_BIN" >/dev/null 2>&1 || { echo "$GIT_BIN is required" >&2; exit 1; }
-
-if [[ -n "$exact_branch" || -n "$expected_sha" ]]; then
-  [[ -n "$exact_branch" && -n "$expected_sha" ]] || {
-    echo "--branch and --expected-sha must be provided together" >&2
-    exit 2
-  }
-  [[ "$exact_branch" != "$default_branch" ]] || {
-    echo "cleanup: keep $exact_branch — default branch is never deleted"
-    exit 0
-  }
-  "$GIT_BIN" check-ref-format "refs/heads/$exact_branch" >/dev/null 2>&1 || {
-    echo "invalid branch name: $exact_branch" >&2
-    exit 2
-  }
-  [[ "$expected_sha" =~ ^[0-9a-fA-F]{40}$ ]] || {
-    echo "invalid expected SHA: $expected_sha" >&2
-    exit 2
-  }
-
-  current_sha="$("$GIT_BIN" rev-parse --verify "refs/remotes/origin/$exact_branch" 2>/dev/null || true)"
-  if [[ -z "$current_sha" ]]; then
-    echo "cleanup: $exact_branch — branch is already absent"
-    exit 0
-  fi
-  if [[ "$current_sha" != "$expected_sha" ]]; then
-    echo "cleanup: keep $exact_branch — tip advanced to $current_sha"
-    exit 0
-  fi
-
-  echo "cleanup: $exact_branch — tip matches closed PR head $expected_sha"
-  if [[ "$dry_run" != "1" ]]; then
-    # The checkout snapshot is only a preflight. Recheck the remote tip
-    # atomically at push time: a reused/advanced branch must never be deleted.
-    if ! "$GIT_BIN" push "--force-with-lease=refs/heads/$exact_branch:$expected_sha" \
-      origin ":refs/heads/$exact_branch" >/dev/null; then
-      # Concurrent master scan might already have removed this exact ref.
-      # Treat only confirmed remote absence as a successful duplicate cleanup.
-      if ! remote_state="$("$GIT_BIN" ls-remote --heads origin "refs/heads/$exact_branch")"; then
-        echo "cleanup: unable to verify remote $exact_branch after failed push" >&2
-        exit 1
-      fi
-      if [[ -n "$remote_state" ]]; then
-        echo "cleanup: could not delete $exact_branch — remote branch still exists" >&2
-        exit 1
-      fi
-      echo "cleanup: $exact_branch — already removed by concurrent cleanup"
-      exit 0
-    fi
-  fi
-  echo "cleanup: removed 1 redundant branch(es)"
-  exit 0
-fi
-
 [[ -n "$superseded_label" ]] || { echo "XD_CLEANUP_SUPERSEDED_LABEL must not be empty" >&2; exit 2; }
 command -v "$GH_BIN" >/dev/null 2>&1 || { echo "$GH_BIN is required" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 
 declare -A deleted=()
 declare -A open_pr_branches=()
+declare -A open_pr_bases=()
 
 # GitHub App API rate limits previously made 'gh api | jq' inside a process
 # substitution silently fail while the scan still reported success. Fetch
@@ -146,40 +74,69 @@ load_pr_snapshot() {
 load_pr_snapshot open
 load_pr_snapshot closed
 
+# One checked remote snapshot; never make thousands of branch-ref API requests.
+"$GIT_BIN" fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' >/dev/null
+
 current_ref_sha() {
   local branch="$1"
-  "$GH_BIN" api "repos/$repo/git/ref/heads/$branch" --jq '.object.sha' 2>/dev/null || true
+  "$GIT_BIN" rev-parse --verify -q "refs/remotes/origin/$branch" 2>/dev/null || true
 }
 
-# Protect every same-repository branch currently used by an open PR. This guard
-# applies to all deletion rules, including ancestry cleanup and branch-name reuse
-# after an older PR was merged or superseded.
-while IFS= read -r branch; do
+# Protect same-repository open PR heads AND bases (stacked PRs target other
+# feature branches). These protections apply to every deletion category.
+while IFS=$'\t' read -r branch number; do
   [[ -n "$branch" ]] || continue
-  open_pr_branches["$branch"]=1
+  open_pr_branches["$branch"]="$number"
 done < <(
   jq -r -s --arg repo "$repo" '
-      .[][] | select(.head.repo.full_name == $repo) | .head.ref
-    ' "$pr_snapshot_dir/open.json"
+    .[][] | select(.head.repo.full_name == $repo)
+    | [.head.ref, (.number | tostring)] | @tsv
+  ' "$pr_snapshot_dir/open.json"
+)
+while IFS=$'\t' read -r branch number; do
+  [[ -n "$branch" ]] || continue
+  open_pr_bases["$branch"]="$number"
+done < <(
+  jq -r -s --arg repo "$repo" '
+    .[][] | select(.base.repo.full_name == $repo)
+    | [.base.ref, (.number | tostring)] | @tsv
+  ' "$pr_snapshot_dir/open.json"
 )
 
 delete_branch() {
-  local branch="$1" reason="$2"
+  local branch="$1" reason="$2" expected_sha
   [[ -n "$branch" ]] || return 0
   [[ "$branch" != "$default_branch" ]] || return 0
   [[ -z "${deleted[$branch]+x}" ]] || return 0
   if [[ -n "${open_pr_branches[$branch]+x}" ]]; then
-    echo "cleanup: keep $branch — branch is used by an open PR"
+    echo "cleanup: keep $branch — open PR #${open_pr_branches[$branch]} head"
     return 0
   fi
-
-  echo "cleanup: $branch — $reason"
+  if [[ -n "${open_pr_bases[$branch]+x}" ]]; then
+    echo "cleanup: keep $branch — open PR #${open_pr_bases[$branch]} base"
+    return 0
+  fi
+  expected_sha="$(current_ref_sha "$branch")"
+  [[ -n "$expected_sha" ]] || return 0
+  echo "cleanup: $branch — $reason ($expected_sha)"
   if [[ "$dry_run" != "1" ]]; then
-    "$GH_BIN" api --method DELETE "repos/$repo/git/refs/heads/$branch" >/dev/null
+    # CAS-style remote deletion: reject if a concurrent contributor moved HEAD.
+    if ! "$GIT_BIN" push "--force-with-lease=refs/heads/$branch:$expected_sha" \
+      origin ":refs/heads/$branch" >/dev/null; then
+      local remote_state
+      if ! remote_state="$("$GIT_BIN" ls-remote --heads origin "refs/heads/$branch")"; then
+        echo "cleanup: cannot establish new remote state for $branch" >&2
+        return 1
+      fi
+      if [[ -n "$remote_state" ]]; then
+        echo "cleanup: $branch still exists, moved or delete was rejected; aborting" >&2
+        return 1
+      fi
+      echo "cleanup: $branch was removed by another cleanup job"
+    fi
   fi
   deleted["$branch"]=1
 }
-
 # Rebase merges intentionally create new commit SHAs on the default branch, so
 # ancestry alone cannot identify their source branches. A source branch is safe
 # to remove when its current tip still exactly equals a merged PR's recorded
@@ -246,8 +203,8 @@ if [[ -f "$retired_manifest" ]]; then
   done < "$retired_manifest"
 fi
 
-# Also catch branches that were merged without a PR or fast-forwarded into
-# master. Fetch after the PR cleanup so deleted refs disappear from origin/*.
+# Also catch fully contained or tree-identical branches. Refresh after the PR
+# cleanup so deleted refs disappear from origin/*.
 "$GIT_BIN" fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' >/dev/null
 while IFS= read -r remote; do
   [[ -n "$remote" ]] || continue
@@ -256,7 +213,46 @@ while IFS= read -r remote; do
   [[ -z "${deleted[$branch]+x}" ]] || continue
   if "$GIT_BIN" merge-base --is-ancestor "$remote" "origin/$default_branch"; then
     delete_branch "$branch" "tip is already contained in $default_branch"
+  elif "$GIT_BIN" diff --quiet "origin/$default_branch" "$remote" --; then
+    delete_branch "$branch" "complete tree is identical to $default_branch"
   fi
 done < <("$GIT_BIN" for-each-ref --format='%(refname:short)' refs/remotes/origin)
 
-echo "cleanup: removed ${#deleted[@]} redundant branch(es)"
+if [[ "$dry_run" == "1" ]]; then
+  echo "cleanup: dry-run proposed ${#deleted[@]} redundant branch(es)"
+else
+  echo "cleanup: removed ${#deleted[@]} redundant branch(es)"
+fi
+# Refresh after the final wave of safe deletions so the audit table is a
+# faithful remote branch inventory, not stale origin/* tracking refs.
+"$GIT_BIN" fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' >/dev/null
+
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo "## xDrive branch cleanup"
+    echo
+    echo "- Deleted (or dry-run proposed): ${#deleted[@]}"
+    echo "- Protected open PR heads: ${#open_pr_branches[@]}"
+    echo "- Protected open PR bases: ${#open_pr_bases[@]}"
+    echo
+    echo "| Remaining branch | Ahead of master | Behind master | Reason kept |"
+    echo "| --- | ---: | ---: | --- |"
+    while IFS= read -r remote; do
+      [[ -n "$remote" && "$remote" != "origin/HEAD" ]] || continue
+      local_name="${remote#origin/}"
+      ahead=0; behind=0
+      if [[ "$local_name" != "$default_branch" ]]; then
+        read -r behind ahead < <("$GIT_BIN" rev-list --left-right --count "origin/$default_branch...$remote")
+      fi
+      why="unique or unreviewed work; preserved"
+      if [[ "$local_name" == "$default_branch" ]]; then
+        why="protected default branch"
+      elif [[ -n "${open_pr_branches[$local_name]+x}" ]]; then
+        why="open PR #${open_pr_branches[$local_name]} head"
+      elif [[ -n "${open_pr_bases[$local_name]+x}" ]]; then
+        why="open PR #${open_pr_bases[$local_name]} base"
+      fi
+      printf '| `%s` | %s | %s | %s |\n' "$local_name" "$ahead" "$behind" "$why"
+    done < <("$GIT_BIN" for-each-ref --format='%(refname:short)' refs/remotes/origin)
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

@@ -7,3 +7,5 @@ feat/gallery-ai-cutout	b02d2958606fd808e97bdf060d6917fca726e20f	obsolete standal
 perf/gallery-selection-jobs-10k-100k	476c9936be201d779223be7d4758fddab12bb0f2	unmeasured duplicate of merged Desktop G07 #1180 and PostgreSQL baseline #1182
 perf/gallery-go-context-cancel-100k-baseline	f4df69854f1b80b719e7bab21e20b33b898cdec9	already ancestor of master; #1144 and #1147
 feat/system-dependencies-lan-tls-effect-netm5a-20261017	21852a3b8ac296a282e293cc5da8b650609f6352	superseded unmerged NET-M5-A candidate by merged #2007 and #2011; exact SHA pinned; no open PR
+sec/places-a3i-isolated-frame-parent-20261021	5a078129740fe162ebca800f18c3777ad704e2b3	closed duplicate PR #2288 explicitly superseded by merged original PR #2287; preserve audit history, delete redundant exact head
+perf/p064-copy-only-bounded-progress-20261019	a30490c40d14ef4d3345354d1fac100fe4d43e01	closed unmerged rejected performance candidate PR #2136; original P065 diagnostic #2164 merged; preserve source/evidence via closed PR and issue #2153
