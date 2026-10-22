@@ -238,16 +238,20 @@ func (r *Runner) RunFirstLeaf(ctx context.Context, scope Scope, d Driver) (First
 	// all new work BEFORE sending the first request, not after its response.
 	// Cross-process/crash recovery must additionally verify the OS-stored
 	// request-key claim and authoritative Server COMMIT evidence.
+	// Prepare can commit an original Operation before its HTTP ACK is lost.
+	// From this point forward, a failed response, invalid result, or canceled
+	// caller is UNCERTAIN, never proof that no durable Operation exists.
+	// Preserve the original claim and refuse another generation.
 	r.quarantine(scope.SourceID)
 	op, err := d.Prepare(ctx, scope, stage)
 	if err != nil {
-		return empty, err
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)
 	}
 	if !op.matches(scope) {
-		return empty, ErrDenied
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, ErrDenied)
 	}
 	if err := ctx.Err(); err != nil {
-		return empty, err
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)
 	}
 
 	// A timeout, HTTP disconnect, or cancellation may happen *during* this
