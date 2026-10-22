@@ -11,6 +11,7 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { Box, Button, Breadcrumbs, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material'
 import type { PublicShareChild } from '../models'
 import { xDriveResolveFileExplorerCapabilities } from '../file-explorer-capabilities'
+import { XDrivePublicShareUnifiedDirectoryExplorer } from './PublicShareUnifiedDirectoryExplorer'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import { XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider } from './FileExplorerThumbnail'
 import { formatBytes } from '../format'
@@ -219,6 +220,25 @@ export function XDrivePublicShareReadOnlyExplorer({
     }
     : undefined,
   [canPreview, loadThumbnail, thumbnailEntries])
+  // A shared *directory* uses the exact Owner Grid/Details/Viewer engine. The
+  // temporary Share facade still owns eligibility and single-file link UI;
+  // none of its independent directory Grid/Details rows mount on this path.
+  if (folder && folderOpened) {
+    return (
+      <XDrivePublicShareUnifiedDirectoryExplorer
+        kind="dir" items={items} path={path} folderOpened={folderOpened}
+        pending={pending} canDownload={canDownload} downloadPending={downloadPending}
+        canBrowse={canBrowse} canPreview={canPreview} canDownloadZip={canDownloadZip}
+        hasPreviousPage={hasPreviousPage} hasNextPage={hasNextPage}
+        toolbarActions={toolbarActions} onBrowse={onBrowse}
+        onCrumbClick={onCrumbClick} onOpenFolder={onOpenFolder}
+        onDownloadItem={onDownloadItem} onDownloadFolder={onDownloadFolder}
+        folderZIPPreparing={folderZIPPreparing} loadImagePreview={loadImagePreview}
+        loadThumbnail={loadThumbnail} onPreviousPage={onPreviousPage}
+        onNextPage={onNextPage} onRefresh={onRefresh}
+      />
+    )
+  }
   const viewButtons = (
     <Stack direction="row" spacing={0.5} alignItems="center">
       <Button type="button" size="small" aria-pressed={view === 'details'}
