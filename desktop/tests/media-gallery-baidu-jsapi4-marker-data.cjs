@@ -137,6 +137,43 @@ test('bounded server map-region samples use official conversion with exact 8x8 v
   )
 })
 
+
+test('Jinhua adaptive Owner region IDs retain multiple real GPS positions in JSAPI', async () => {
+  // The old global 8x8 encoded one 45-degree longitude bucket for all of
+  // these locations. Only the SERVER chooses real fitted bounds; the client
+  // validates each region and still uses only the official Convertor.
+  const coords=[
+    [29.08,119.27],[29.21,119.54],[29.34,119.81],[29.45,120.08],
+    [28.95,119.72],[29.52,119.36],[29.75,119.89],[29.12,120.15],
+  ]
+  const west=119.26,south=28.94,east=120.16,north=29.76
+  const markers=coords.map(([lat,lon],index)=>{
+    const row=Math.min(7,Math.floor((lat-south)/(north-south)*8))
+    const col=Math.min(7,Math.floor((lon-west)/(east-west)*8))
+    return {placeID:`map-region:${west}:${south}:${east}:${north}:${row}:${col}`,
+      latitude:lat,longitude:lon,photoCount:10+index}
+  })
+  const unique=new Set(markers.map(m=>m.placeID))
+  assert.equal(unique.size,8,'distinct real GPS region IDs must not share world bucket')
+  const sourceOnly=markers.reduce((sum,m)=>sum+m.photoCount,0)
+  const calls=[]
+  const translated=await convert({kind:'ready',markers,totalPhotoCount:sourceOnly},
+    {translate(points,from,to,callback){
+      calls.push({length:points.length,from,to})
+      callback({status:0,points:points.map(point=>({
+        lng:point.lng+0.005,lat:point.lat+0.005
+      }))})
+    }},(lng,lat)=>({lng,lat}))
+  assert.equal(translated.features.length,8)
+  assert.equal(new Set(translated.features.map(f=>f.id)).size,8)
+  assert.deepEqual(calls,[{length:8,from:1,to:5}])
+  assert.equal(translated.features.reduce((sum,f)=>sum+f.properties.photo_count,0),
+    sourceOnly)
+  const [longitude,latitude]=translated.features[0].geometry.coordinates
+  assert.ok(Math.abs(longitude-119.275)<1e-9)
+  assert.ok(Math.abs(latitude-29.085)<1e-9)
+})
+
 test('A3b3a3a converter fails closed on provider failure, cancellation and forged huge input', async () => {
   const ready = prepare(page(1))
   const point = (lng, lat) => ({ lng, lat })
