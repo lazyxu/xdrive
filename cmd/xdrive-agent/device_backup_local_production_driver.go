@@ -117,24 +117,27 @@ func (d *localPushFirstLeafDriver) Stage(ctx context.Context, s localpushrunner.
 	// A newly constructed owning Agent must durably claim this Source's
 	// first Stage slot BEFORE opening or transmitting original bytes.
 	// Crash, lost HTTP ACK and ambiguous Stage remain quarantined.
+	// The admission helper may create an O_EXCL Stage claim before it fails.
+	// Every failure FROM this attempted reservation onward is uncertain:
+	// absence of an ACK does not prove no Stage or HTTP bytes exist.
 	if err := reserveFreshLocalPushStageAdmission(ctx, d.configDir, d.requestScope, d.grant); err != nil {
-		return empty, errLocalPushDriverDenied
+		return empty, errors.Join(localpushrunner.ErrStageAdmissionUncertain, errLocalPushDriverDenied)
 	}
 	staged, err := localpushstage.StageVerifiedNativeOriginalBytes(d.api, ctx, d.configDir, d.grant,
 		s.Revision, d.proof, s.RelativePath, s.ContentSHA256)
 	if err != nil || staged.SourceID != s.SourceID || staged.Revision != s.Revision ||
 		staged.Size != s.Size || staged.SHA256 != s.ContentSHA256 ||
 		staged.StageID == "" || staged.SnapshotSHA256 == "" || staged.CurrentPathKey == "" {
-		return empty, errLocalPushDriverDenied
+		return empty, errors.Join(localpushrunner.ErrStageAdmissionUncertain, errLocalPushDriverDenied)
 	}
 	if err := d.Check(ctx, s); err != nil {
-		return empty, err
+		return empty, errors.Join(localpushrunner.ErrStageAdmissionUncertain, err)
 	}
 	// The stage helper has persisted an immutable, Root-bound recovery hint
 	// before reporting success. Never use only an HTTP staging ACK.
 	hint, err := localpushstage.ReadLocalOriginalRecoveryHint(ctx, d.configDir, d.grant, staged.StageID)
 	if err != nil || hint.Stage != staged || hint.RelativePath != s.RelativePath {
-		return empty, errLocalPushDriverDenied
+		return empty, errors.Join(localpushrunner.ErrStageAdmissionUncertain, errLocalPushDriverDenied)
 	}
 	d.stage = staged
 	return localpushrunner.Staged{StageID: staged.StageID, SourceID: s.SourceID, Revision: s.Revision,

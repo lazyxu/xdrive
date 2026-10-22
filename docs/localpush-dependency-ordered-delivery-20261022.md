@@ -37,6 +37,8 @@ At audit time the complete master was e5bf867b79dcb78d8a80e6194c971136eba12289, 
 
 **Stage 1 partial hardening (2026-10-22):** Once the bounded first-leaf coordinator attempts original Operation `Prepare`, a lost/rejected ACK, malformed original Operation response, or canceled caller after reservation is conservatively reported as `UNCERTAIN`. The in-memory Source remains quarantined, the original key/Stage stays in place, and no second Commit/generation is launched. Original error identity remains inspectable through `errors.Is`. This is only fail-closed reporting, **not** authenticated Agent→Server native proof, physical-COMMIT/CANCEL or cross-process replay, and does not unlock Stage/key retirement or file #2.
 
+**Stage 1 durable Stage admission fencing (2026-10-22):** The owning Agent must mark every error after attempting its original O_EXCL Stage reservation as `ErrStageAdmissionUncertain`, even if the Stage or its HTTP ACK was lost. The bounded Runner reports `UNCERTAIN` and quarantines the Source for that case, for a returned but mismatched Stage, and for cancellation or reauthorization failure after successful Staging; it never invokes Prepare/Commit or retries a new Stage in those cases. Only an explicitly definite pre-admission failure may leave the in-process Source unfenced, and independent OS/Server checks still apply. This classification does **not** prove remote physical writer quiescence, create a file-level terminal, retire Stage/Key/Writer or admit file #2.
+
 ## Stage 2 — Retire and re-admit Stage/Key/Writer (P0)
 
 - Design durable monotonic terminal → retirement eligibility → private key revocation → Stage/Writer claim cleanup → new-generation admission, with idempotent checkpoints and safe retry if any cleanup step crashes.
