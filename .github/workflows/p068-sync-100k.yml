@@ -1,0 +1,97 @@
+name: P068 Exact HEAD Real 100k Sync Change Feed Go Client
+
+on:
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  real-sync-client-changes-100k:
+    if: github.head_ref == 'perf/p068-physical-large-transfer-sync-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_NODE_CHANGES_CLIENT_100K_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Validate benchmark Go formatting
+        run: test -z "$(gofmt -l internal/api/node_changes_real_client_100k_performance_integration_test.go)"
+      - name: Measure three fresh native 100k Client HTTP change-feed passes
+        run: |
+          set -euo pipefail
+          root=perf-results/sync-client-changefeed-100k
+          mkdir -p "$root"
+          printf 'CHECKED_OUT_HEAD=%s\nGITHUB_EVENT_MERGE_SHA=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$root/source.txt"
+          for sample in 1 2 3; do
+            export XD_NODE_CHANGES_CLIENT_100K_SAMPLE="$sample"
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+              -o "$root/sample-$sample.time" \
+              go test -mod=readonly -run '^TestNodeChangesRealGoClient100K$' \
+                -timeout=8m -count=1 -v ./internal/api | tee "$root/sample-$sample.log"
+          done
+          python3 - "$root" <<'PY'
+          import json, pathlib, re, statistics, sys
+          root = pathlib.Path(sys.argv[1])
+          records = []
+          for sample in (1, 2, 3):
+              log = (root / f"sample-{sample}.log").read_text()
+              matching = re.findall(r"NODE_CHANGES_CLIENT_100K (\{[^\n]+\})", log)
+              if len(matching) != 1:
+                  raise AssertionError(f"sample {sample}: found {len(matching)} measurements")
+              row = json.loads(matching[0])
+              if row["sample"] != str(sample):
+                  raise AssertionError(f"sample id mismatch: {row['sample']} != {sample}")
+              if not (row["node_changes"] == row["items"] == 100000):
+                  raise AssertionError(f"sample {sample}: not 100k rows")
+              if row["upserts"] != 75000 or row["deleted_tombstones_with_paths"] != 25000:
+                  raise AssertionError(f"sample {sample}: incorrect signed changed-node content")
+              if row["pages"] != row["http_request_count"] or row["pages"] != 100:
+                  raise AssertionError(f"sample {sample}: failed 100 pages")
+              if row["http_error_count"] != 0 or row["http_response_bytes"] < 5000000:
+                  raise AssertionError(f"sample {sample}: HTTP content budget failed")
+              records.append(row)
+          summary = {
+              "source_commit": (root / "source.txt").read_text().splitlines()[0],
+              "status": "Measured unchanged production CURRENT",
+              "samples": records,
+              "elapsed_p50_ms": statistics.median(x["elapsed_ms"] for x in records),
+              "elapsed_max_ms": max(x["elapsed_ms"] for x in records),
+              "max_sampled_rss_growth_bytes": max(x["rss_peak_growth_bytes"] for x in records),
+              "pass_elapsed_budget_each": all(x["elapsed_ms"] <= 60000 for x in records),
+              "pass_rss_budget_each": all(x["rss_peak_growth_bytes"] <= 268435456 for x in records),
+          }
+          (root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(json.dumps(summary, separators=(",", ":")))
+          if not summary["pass_elapsed_budget_each"] or not summary["pass_rss_budget_each"]:
+              raise SystemExit("100k original Client feed exceeded frozen performance budget; do not accept unchanged production")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p068-sync-client-changefeed-100k-n3
+          path: perf-results/sync-client-changefeed-100k/
+          if-no-files-found: warn
+          retention-days: 14

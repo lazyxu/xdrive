@@ -1,5 +1,10 @@
 # 100k Node Change Feed Performance
 
+## P068 · 2026-10-22 exact-source 100k CURRENT (n=3)
+
+- **Measured baseline, production code unchanged, AFTER/speedup=N/A**. Real authenticated Go Client→Gin/PostgreSQL17 100,000 NodeChanges (75k upserts, 25k tombstones), exactly 100 HTTP pages per fixture and zero HTTP errors. Measured source `20ee9c596515d985e3918d5f93b8151435921afa`, [native CI #39625781574](https://github.com/lazyxu/xdrive/actions/runs/39625781574) SUCCESS. Elapsed P50 **6.444s**, 3 individual samples **6.444 / 6.625 / 6.251s**, RSS peak-growth max **11.37MiB**, actual response content 24,326,661B per fixture; frozen ≤60s and ≤256MiB budgets PASS. This is metadata-only, not 100k physical media bytes. [Source JSON](performance-evidence/p068-platform-current/sync-current-run-39625781574.json) / [P068 canonical](p068-platform-100k-4gib-current-baseline.md). Archive commit changes HEAD; rerun all applicable native CI + full Final Gate on archived HEAD before merge.
+
+
 **Merged handoff (2026-10-11):** #1401 request-scoped SQL cancellation is merged as GitHub master commit `54bcceccd8e478d365aa253ba49ecf2748eae4ec` after final exact-head native 3× paired and full CI/final-gate success; obsolete branch was removed by automated cleanup. The original #1401 sections below retain their source-exact pre-merge experiment wording as historical evidence. The new current performance track below is unrelated to changing durable sync control semantics.
 
 ## P0 · Real 100k signed Go Client full change-feed consumption baseline (2026-10-11)

@@ -1,3 +1,11 @@
+## P068 · 4 GiB Web/Desktop + 100k Sync 真正 CURRENT 基线（2026-10-22）
+
+- **Measured source** `20ee9c596515d985e3918d5f93b8151435921afa`；无生产代码优化，AFTER/speedup=N/A。真实高熵非稀疏 4,294,967,296B 物理不同 SHA-256 原件/512 PUT+1 GET，三组 Web OPFS P50 上传/下载 **47.878/17.515s**，Desktop Renderer→Main→Go Agent IPC **36.185/14.647s**；源/原件完整字节 SHA、PG17/CAS、RSS/工作集预算均通过。原始 Web [#39625778550](https://github.com/lazyxu/xdrive/actions/runs/39625778550)、Desktop [#39625778369](https://github.com/lazyxu/xdrive/actions/runs/39625778369)，均 SUCCESS。
+- 原生 Go Client→Gin/PostgreSQL17 **100k NodeChanges**（75k upserts/25k tombstones）100 页，三样本 P50 **6.444s**、RSS 最大增长 **11.37MiB**、0 HTTP 错误；真实 [#39625781574](https://github.com/lazyxu/xdrive/actions/runs/39625781574) SUCCESS。此项是**元数据变更流，不是 100k 物理媒体字节吞吐**。三项均在冻结阈值内，因此保留生产原实现。完整样本与资源/字节 [机器证据](performance-evidence/p068-platform-current/README.md)，[规范/当前结果](p068-platform-100k-4gib-current-baseline.md)。
+- **归档 HEAD 改变须重新 CI**：当前三项绿色仅证明上方测量源码；添加证据后必须在最后归档提交的准确 SHA 上重新通过所有适用专项+完整 CI/Final Gate 再合入。独立 iOS/Android/desktop 安装态 PWA、实际 WAN/中断/恢复、100k GUI 删除/同步、Live motion/HEVC/RAW **Not measured**，不跨 Runner 声称匹配 A/B。
+
+---
+
 ## SH-P018 · 真实100k同Runner配对BEFORE/AFTER有效结果（2026-10-21）
 
 - 实际源码 `c5c1dabef3170eb810b206bccc050013fccde44c` [配对CI #39576621816](https://github.com/lazyxu/xdrive/actions/runs/39576621816) **SUCCESS**：同一 Ubuntu Runner、相同真实生产 Web 编译器与 Go/Gin/PG17/LocalCAS 接口，三个独立真实100000 SHA-distinct JPEG物理源/arm，Web1440+CDP390 每个模式原版/候选各9次 next-page 取消，A-B/B-A/A-B 交替。同源源码 SHA：原版 `5b3432aa4191e8cab4d5c29a0a375fbb761bfbc8c438e232315a9b3b56b9ec9b`，候选 `8ba01caecc986b91ed8c0b19b58bb3cdfa2b532408459eb793dab25a501d765b`，保存原始每一事件、CPU/RSS及 CI URL 于 [原始数值 JSON](docs/performance-evidence/sh-p018-public-cached-thumbnail-go-cancel/ci-run-39576621816-paired.json)。
