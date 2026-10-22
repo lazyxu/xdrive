@@ -159,6 +159,7 @@ func (c *agentController) cloudStartLocalBoundBackupFirstFileOnce(
 	// Writer marker remaining checkable throughout those operations.
 	driver.liveWriter = writer
 	driver.liveWriterRequired = true
+	driver.liveWriterOriginalKey = digest.NativeIdentityKey
 	// Existing native Stage -> authenticated HTTP/CAS/SQL -> independently
 	// native-held historical SQL/physical CAS path. Ambiguity quarantines
 	// the original Stage/key; NO retry, key retirement or SourceRun.
