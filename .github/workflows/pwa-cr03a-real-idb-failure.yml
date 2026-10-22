@@ -1,0 +1,62 @@
+name: PWA CR03a Real Chromium IndexedDB Stale Corrupt Eviction
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-cr03a-idb-failure:
+    if: github.head_ref == 'test/pwa-cr03a-real-idb-failures-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install production Web and native Chrome driver
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/pwa-cr03a-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-cr03a-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-cr03a-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chromium required" >&2
+            exit 1
+          fi
+      - name: Check source contracts and build production PWA shell
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-cr03a-real-idb-failure.cjs
+          node --test desktop/tests/pwa-cr03a-real-idb-failure-source.cjs
+          node web/scripts/test-pwa-offline-directory.cjs
+          node web/scripts/test-pwa-offline-albums.cjs
+          npm --prefix web run build
+      - name: Native Chrome offline Shell and real IndexedDB expiry malformed eviction
+        env:
+          XD_PWA_CR03A_REAL_CHROME: '1'
+          XD_PWA_CR03A_OUTPUT: ${{ github.workspace }}/desktop/pwa-cr03a-results
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha }}"
+          node desktop/scripts/pwa-cr03a-real-idb-failure.cjs
+          node -e "const x=require(process.cwd()+'/desktop/pwa-cr03a-results/summary.json');if(!x.passed||x.head!==process.env.XD_PR_HEAD||!x.realChromium||!x.productionPublicSW||!x.realIndexedDB||!x.expiredSnapshotRejected||!x.corruptSchemaRejected||!x.evictionClearedHistory||!x.publicSWPrivateCacheAbsent||!x.crossProcessNoResurrection||x.actualGoACL||x.quotaExceededTested||x.blockedIDBOpenTested||x.actualNetwork429503Tested||x.physicalIOS||x.performanceAfter)process.exit(1);console.log('PWA_CR03A_IDB_FAILURES_SOURCE_EXACT_PASS')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr03a-anonymous-native-idb-expiry-corruption-eviction
+          path: desktop/pwa-cr03a-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
