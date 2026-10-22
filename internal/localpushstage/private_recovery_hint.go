@@ -113,34 +113,101 @@ func localStageRecoveryValidate(grant localpush.RootGrant, record localStageReco
 	return err == nil && key == record.CurrentPathKey
 }
 
-func localStageRecoveryReadFile(path string, grant localpush.RootGrant) (localStageRecoveryDisk, error) {
-	var empty localStageRecoveryDisk
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return empty, errLocalStageRecovery
+// localStageRecoveryWithPinnedRecord rechecks the SAME original file descriptor
+// and disk path before and after a callback. A swapped inode, even with the
+// same JSON bytes, cannot turn an old Stage hint into accepted recovery proof.
+// This is local fail-closed correlation, NOT a remote Writer attestation,
+// physical COMMIT/CANCEL, key retirement or permission to execute file #2.
+func localStageRecoveryWithPinnedRecord(
+	ctx context.Context, path string, grant localpush.RootGrant,
+	observe func(context.Context, localStageRecoveryDisk) error,
+) error {
+	if ctx == nil || ctx.Err() != nil || observe == nil ||
+		localStageRecoveryCheckDirs(filepath.Dir(path)) != nil {
+		return errLocalStageRecovery
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		return empty, errLocalStageRecovery
+	before, err := os.Lstat(path)
+	if err != nil || !before.Mode().IsRegular() ||
+		before.Size() < 1 || before.Size() > localStageRecoveryMaxBytes ||
+		(runtime.GOOS != "windows" && before.Mode().Perm()&0o077 != 0) {
+		return errLocalStageRecovery
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return empty, errLocalStageRecovery
+		return errLocalStageRecovery
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, localStageRecoveryMaxBytes+1))
-	if err != nil || len(data) > localStageRecoveryMaxBytes {
-		return empty, errLocalStageRecovery
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() ||
+		!os.SameFile(before, opened) || opened.Size() != before.Size() ||
+		(runtime.GOOS != "windows" && opened.Mode().Perm()&0o077 != 0) {
+		return errLocalStageRecovery
 	}
-	var result localStageRecoveryDisk
+	data, err := io.ReadAll(io.LimitReader(file, localStageRecoveryMaxBytes+1))
+	if err != nil || len(data) == 0 || len(data) > localStageRecoveryMaxBytes ||
+		int64(len(data)) != opened.Size() {
+		return errLocalStageRecovery
+	}
+	var record localStageRecoveryDisk
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&result); err != nil {
-		return empty, errLocalStageRecovery
+	if err := decoder.Decode(&record); err != nil {
+		return errLocalStageRecovery
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) ||
-		!localStageRecoveryValidate(grant, result) {
-		return empty, errLocalStageRecovery
+		!localStageRecoveryValidate(grant, record) {
+		return errLocalStageRecovery
+	}
+	verify := func() error {
+		if ctx.Err() != nil || localStageRecoveryCheckDirs(filepath.Dir(path)) != nil {
+			return errLocalStageRecovery
+		}
+		onPath, err := os.Lstat(path)
+		if err != nil || !onPath.Mode().IsRegular() ||
+			!os.SameFile(opened, onPath) ||
+			onPath.Size() != opened.Size() ||
+			!onPath.ModTime().Equal(opened.ModTime()) ||
+			(runtime.GOOS != "windows" && onPath.Mode().Perm()&0o077 != 0) {
+			return errLocalStageRecovery
+		}
+		now, err := file.Stat()
+		if err != nil || !now.Mode().IsRegular() ||
+			!os.SameFile(opened, now) ||
+			now.Size() != opened.Size() ||
+			!now.ModTime().Equal(opened.ModTime()) ||
+			(runtime.GOOS != "windows" && now.Mode().Perm()&0o077 != 0) {
+			return errLocalStageRecovery
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return errLocalStageRecovery
+		}
+		again, err := io.ReadAll(io.LimitReader(file, localStageRecoveryMaxBytes+1))
+		if err != nil || !bytes.Equal(again, data) || ctx.Err() != nil {
+			return errLocalStageRecovery
+		}
+		return nil
+	}
+	if err := verify(); err != nil {
+		return errLocalStageRecovery
+	}
+	if err := observe(ctx, record); err != nil {
+		return errLocalStageRecovery
+	}
+	return verify()
+}
+
+func localStageRecoveryReadFile(path string, grant localpush.RootGrant) (localStageRecoveryDisk, error) {
+	var result localStageRecoveryDisk
+	err := localStageRecoveryWithPinnedRecord(
+		context.Background(), path, grant,
+		func(_ context.Context, record localStageRecoveryDisk) error {
+			result = record
+			return nil
+		},
+	)
+	if err != nil {
+		return localStageRecoveryDisk{}, errLocalStageRecovery
 	}
 	return result, nil
 }
@@ -298,6 +365,51 @@ func ReadLocalOriginalRecoveryHint(ctx context.Context, configDir string,
 	grant localpush.RootGrant, stageID string,
 ) (LocalOriginalRecoveryHint, error) {
 	return localStageRecoveryLoad(ctx, configDir, grant, stageID)
+}
+
+// WithHeldLocalOriginalRecoveryHint pins the original private Stage hint
+// descriptor throughout a read callback and checks the same inode, path,
+// contents, permissions and bound Root again on return. A replaced hint
+// remains UNCERTAIN. This cannot independently attest a remote OS lock.
+func WithHeldLocalOriginalRecoveryHint(
+	ctx context.Context, configDir string, grant localpush.RootGrant,
+	stageID string, observe func(context.Context, LocalOriginalRecoveryHint) error,
+) error {
+	if ctx == nil || ctx.Err() != nil || observe == nil {
+		return errLocalStageRecovery
+	}
+	dir, err := localStageRecoveryScope(configDir, grant)
+	if err != nil || localStageRecoveryCheckDirs(dir) != nil {
+		return errLocalStageRecovery
+	}
+	path, err := localStageRecoveryFile(dir, stageID)
+	if err != nil {
+		return errLocalStageRecovery
+	}
+	return localStageRecoveryWithPinnedRecord(
+		ctx, path, grant,
+		func(heldCtx context.Context, disk localStageRecoveryDisk) error {
+			if disk.StageID != stageID ||
+				localStageRecoveryScopeStillCurrent(configDir, grant) != nil {
+				return errLocalStageRecovery
+			}
+			hint := LocalOriginalRecoveryHint{
+				Stage: LocalOriginalServerStage{
+					SourceID: disk.SourceID, Revision: disk.Revision,
+					StageID: disk.StageID, Size: disk.Size, SHA256: disk.SHA256,
+					SnapshotSHA256: disk.SnapshotSHA256,
+					CurrentPathKey: disk.CurrentPathKey,
+				},
+				RelativePath: disk.RelativePath, CreatedAt: disk.CreatedAt,
+			}
+			if err := observe(heldCtx, hint); err != nil ||
+				heldCtx.Err() != nil ||
+				localStageRecoveryScopeStillCurrent(configDir, grant) != nil {
+				return errLocalStageRecovery
+			}
+			return nil
+		},
+	)
 }
 
 func ListLocalOriginalRecoveryHints(ctx context.Context, configDir string,

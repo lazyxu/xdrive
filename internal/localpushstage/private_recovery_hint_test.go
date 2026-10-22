@@ -243,3 +243,113 @@ func TestLocalOriginalRecoveryHintNeverListsUnboundedCandidateQueue(t *testing.T
 		t.Fatal("Stage recovery could accumulate an unbounded local queue")
 	}
 }
+
+func TestLocalOriginalRecoveryHintHeldWindowKeepsExactDiskIdentity(t *testing.T) {
+	for _, mode := range []string{
+		"unchanged", "same-bytes-new-inode", "same-inode-modified",
+		"callback-denied", "canceled-during-callback",
+	} {
+		t.Run(mode, func(t *testing.T) {
+			if mode == "same-bytes-new-inode" && runtime.GOOS == "windows" {
+				t.Skip("Windows denies rename of a file with an open descriptor")
+			}
+			config, grant, stage := localRecoveryHintFixture(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if err := SaveLocalOriginalRecoveryHint(ctx, config, grant, stage, "photo.bin"); err != nil {
+				t.Fatal(err)
+			}
+			dir, err := localStageRecoveryDir(config, grant)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path, err := localStageRecoveryFile(dir, stage.StageID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entered := false
+			err = WithHeldLocalOriginalRecoveryHint(
+				ctx, config, grant, stage.StageID,
+				func(callbackCtx context.Context, pinned LocalOriginalRecoveryHint) error {
+					entered = true
+					if pinned.Stage != stage || pinned.RelativePath != "photo.bin" ||
+						callbackCtx.Err() != nil {
+						t.Fatal("held callback received foreign Stage or canceled scope")
+					}
+					switch mode {
+					case "same-bytes-new-inode":
+						data, readErr := os.ReadFile(path)
+						if readErr != nil {
+							t.Fatal(readErr)
+						}
+						if renameErr := os.Rename(path, path+".old"); renameErr != nil {
+							t.Fatal(renameErr)
+						}
+						if writeErr := os.WriteFile(path, data, 0o600); writeErr != nil {
+							t.Fatal(writeErr)
+						}
+					case "same-inode-modified":
+						data, readErr := os.ReadFile(path)
+						if readErr != nil {
+							t.Fatal(readErr)
+						}
+						if writeErr := os.WriteFile(path,
+							bytes.Repeat([]byte("x"), len(data)), 0o600); writeErr != nil {
+							t.Fatal(writeErr)
+						}
+					case "callback-denied":
+						return errLocalStageRecovery
+					case "canceled-during-callback":
+						cancel()
+					}
+					return nil
+				},
+			)
+			if !entered {
+				t.Fatal("valid original private hint did not reach callback")
+			}
+			if mode == "unchanged" {
+				if err != nil {
+					t.Fatalf("unchanged original hint rejected: %v", err)
+				}
+			} else if err == nil {
+				t.Fatalf("%s permitted stale or uncertain remote replay", mode)
+			}
+		})
+	}
+}
+
+func TestLocalOriginalRecoveryHintHeldWindowRejectsWrongScopeBeforeCallback(t *testing.T) {
+	config, grant, stage := localRecoveryHintFixture(t)
+	if err := SaveLocalOriginalRecoveryHint(
+		context.Background(), config, grant, stage, "photo.bin",
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, variant := range []string{"wrong-stage", "foreign-root", "canceled"} {
+		t.Run(variant, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			proof, stageID := grant, stage.StageID
+			switch variant {
+			case "wrong-stage":
+				stageID = uuid.NewString()
+			case "foreign-root":
+				proof.RootID = uuid.NewString()
+			case "canceled":
+				cancel()
+			}
+			entered := false
+			err := WithHeldLocalOriginalRecoveryHint(
+				ctx, config, proof, stageID,
+				func(context.Context, LocalOriginalRecoveryHint) error {
+					entered = true
+					return nil
+				},
+			)
+			if err == nil || entered {
+				t.Fatalf("%s admitted a foreign or canceled recovery", variant)
+			}
+		})
+	}
+}
