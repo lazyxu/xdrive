@@ -521,6 +521,7 @@ type MediaQuery struct {
 	Person             string
 	PersonIdentity     string
 	Place              string
+	PlaceHierarchy     string
 	Nearby             string
 	BBox               string
 }
@@ -597,6 +598,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Place); value != "" {
 		values.Set("place", value)
+	}
+	if value := strings.TrimSpace(q.PlaceHierarchy); value != "" {
+		values.Set("place_hierarchy", value)
 	}
 	if value := strings.TrimSpace(q.Nearby); value != "" {
 		values.Set("nearby", value)

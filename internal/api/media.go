@@ -561,6 +561,11 @@ func (s *Server) mediaItemsBaseQuery(
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		)
 	query = applyMediaQueryFilters(query, options, uid)
+	// B1-C: Range, Count, Anchor and Viewer share one original Owner SQL
+	// selection. A changed/unavailable resolver yields zero trusted members.
+	if options.PlaceHierarchy != nil {
+		query = applyMediaPlaceHierarchyFilter(query, *options.PlaceHierarchy, s.mediaPlaceHierarchyVersion())
+	}
 	if options.BaiduCell != nil {
 		// This membership is server-created after signed Owner/epoch checks.
 		// Do not convert native BD09 map geometry into WGS84 nearby filters.

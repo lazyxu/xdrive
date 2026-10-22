@@ -1694,6 +1694,14 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.place = input.place.trim()
   }
+  if (input.place_hierarchy !== undefined) {
+    if (typeof input.place_hierarchy !== 'string' ||
+      !/^(?:country:[A-Z]{2}|region:[A-Z]{2}:[A-Z0-9_-]{1,16}|city:[A-Z]{2}:[A-Z0-9_-]{1,16}:[1-9][0-9]*)$/.test(input.place_hierarchy) ||
+      input.place_hierarchy.length > 96) {
+      throw new AgentIPCError('invalid_input', 0, 'Place hierarchy identity is invalid.')
+    }
+    out.place_hierarchy = input.place_hierarchy
+  }
   // A4: main-process validation MUST preserve the selected original WGS84
   // scope. Silently dropping nearby/bbox would expose an unrestricted Gallery
   // Range in Desktop while Web/Mobile correctly filter by distance.
