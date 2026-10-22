@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/lazyxu/xdrive/internal/localpushwriter"
 )
@@ -41,6 +42,8 @@ func localFirstFileDurableClaimPaths(
 // localFirstFileDurableClaimPresent checks only existence of original OS
 // claims. Even a malformed, symlinked or incomplete file is uncertainty,
 // never proof of COMMIT, cancellation, key retirement or an allowed retry.
+// Unsafe claim types or private directory permissions produce an error and
+// therefore an uncertain status; even absence is not upload admission.
 // No file contents are opened, no directory is created and no secrets read.
 func localFirstFileDurableClaimPresent(
 	ctx context.Context, configDir string, key localPushFirstFileJobKey,
@@ -58,16 +61,24 @@ func localFirstFileDurableClaimPresent(
 			if errors.Is(statErr, os.ErrNotExist) {
 				continue
 			}
-			if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+				(runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 				return false, errLocalBackupFirstFileUnavailable
 			}
 		}
 		if ctx.Err() != nil {
 			return false, errLocalBackupFirstFileUnavailable
 		}
-		_, statErr := os.Lstat(path)
+		info, statErr := os.Lstat(path)
 		switch {
 		case statErr == nil:
+			// A directory, symlink/reparse point or permissive POSIX claim
+			// is tampered evidence, never proof that the original slot is free.
+			// This read remains non-authoritative even for a regular claim.
+			if !info.Mode().IsRegular() ||
+				(runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
+				return false, errLocalBackupFirstFileUnavailable
+			}
 			return true, nil
 		case errors.Is(statErr, os.ErrNotExist):
 			continue
