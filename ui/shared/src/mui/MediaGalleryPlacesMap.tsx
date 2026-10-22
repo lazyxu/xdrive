@@ -550,6 +550,7 @@ export function XDriveMediaGalleryPlacesMap({
             <XDriveMediaGalleryBaiduPrototypeMap
               key={diagnosticScope ?? ''}
               getPrototypeConfig={getBaiduJSAPIPrototype}
+              diagnosticScope={diagnosticScope}
               places={prototypePlaces}
               loadThumbnail={loadPhotoCoverThumbnail}
               initialNativeCamera={nativeRestoreRef.current ?? undefined}

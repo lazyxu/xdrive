@@ -420,7 +420,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 {probeResult && (
                   <XDriveStatusAlert tone={probeResult.loader_accepted ? 'good' : 'bad'}>
                     {probeResult.state === 'loader_accepted'
-                      ? 'Loader 响应校验通过；动态子资源与三端交互仍需验证。'
+                      ? 'Loader 响应校验通过；这是 Server 固定探针，不会验证图库原型在浏览器中直接发起的 JSAPI 请求、动态子资源或三端交互。'
                       : probeResult.state === 'denied'
                         ? '百度拒绝了 Loader 请求，请检查所配置权限和域名限制。'
                         : 'Loader 本次不可用，请查看 Server 网络与审计状态。'}
