@@ -72,6 +72,17 @@ function loadPublicShare(api) {
       if (name === './api') return { ApiError: TestApiError, XDriveApi: api }
       if (name === '../../ui/shared/src') return load('ui/shared/src/format.ts')
       if (name === '../../ui/shared/src/mui/useDeferredLoading') return load('ui/shared/src/mui/useDeferredLoading.ts')
+      // Resolve the REAL public-to-Core bridge; only the enormous MUI Owner
+      // presentation engine is a host-only unit substitute here. The source-
+      // exact Chromium/Go/PG17 suite verifies the real Grid/Details Core.
+      if (name === './PublicShareUnifiedDirectoryExplorer') {
+        return load('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
+      }
+      if (name === './FileExplorer') {
+        return { XDriveFileExplorer: require('./share-core-host.cjs')(
+          React, load('ui/shared/src/mui/FileExplorerItemPresentation.tsx').xDriveFileTypeLabel,
+        ) }
+      }
       if (name === './FileExplorerItemPresentation') return load('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
       // This renderer verifies public form/navigation/authorization, not image
       // decoding. Retain the neutral fallback visual; real thumbnail behavior
@@ -1161,7 +1172,7 @@ test('SH-P017 nested folder read-only context ZIP uses Share-only target ID and 
   assert.ok(row, 'share-scoped folder row missing')
   await act(async () => { row.props.onContextMenu({ preventDefault() {}, clientX: 80, clientY: 90 }) })
   const option = renderer.root.findAll(node => typeof node.type === 'string' &&
-    textContent(node.children).trim() === '下载该文件夹 ZIP' &&
+    textContent(node.children).trim() === '下载文件夹 ZIP' &&
     typeof node.props.onClick === 'function')[0]
   assert.ok(option, 'folder-only read-only context command missing')
   await act(async () => { option.props.onClick() })

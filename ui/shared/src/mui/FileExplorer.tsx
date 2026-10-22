@@ -879,6 +879,7 @@ export function XDriveFileExplorer({
   getItemStatus,
   getItemAvailability,
   externallySorted = false,
+  forceVirtualization = false,
   virtualCollection,
 }: {
   items: XDriveFileExplorerItem[]
@@ -1008,6 +1009,8 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
   ) => XDriveFileExplorerAvailability | undefined
   externallySorted?: boolean
+  /** Reuse the same viewport eviction/cancellation for bounded Share pages. */
+  forceVirtualization?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
   // The account and public Share data sources resolve one capability contract.
@@ -4672,7 +4675,7 @@ export function XDriveFileExplorer({
 
   const virtualizeDetails = (
     viewMode === 'details' &&
-    (virtualCollectionEnabled || visibleItems.length >= detailsVirtualizationThreshold)
+    (forceVirtualization || virtualCollectionEnabled || visibleItems.length >= detailsVirtualizationThreshold)
   )
   const detailsWindow = useMemo(() => {
     if (virtualCollectionEnabled) {
@@ -4814,7 +4817,7 @@ export function XDriveFileExplorer({
 
   const virtualizeGrid = (
     viewMode === 'grid' &&
-    (virtualCollectionEnabled || (viewportWidth > 0 && visibleItems.length >= gridVirtualizationThreshold))
+    (forceVirtualization || virtualCollectionEnabled || (viewportWidth > 0 && visibleItems.length >= gridVirtualizationThreshold))
   )
   const gridWindow = useMemo(() => {
     if (virtualCollectionEnabled) {

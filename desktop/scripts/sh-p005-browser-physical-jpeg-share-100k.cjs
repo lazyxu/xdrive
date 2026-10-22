@@ -110,15 +110,18 @@ async function dom(win, fn) {
 }
 function buttonsAndRows() {
   const labels = [...document.querySelectorAll('button')].map(x => x.textContent.trim())
-  const rows = [...document.querySelectorAll('[role="listitem"]')].map(x => x.textContent.trim())
+  const rows = [...document.querySelectorAll('[data-xdrive-file-explorer-item]')].map(x => x.textContent.trim())
   const explorer = document.querySelector('[data-xdrive-public-share-explorer-workspace]')
-  return { labels, rows, body: document.body.innerText.slice(0, 500),
+  const acceptedRows = Number(/当前页\s*(\d+)\s*项/.exec(document.body.innerText)?.[1] ?? rows.length)
+  return { labels, rows, acceptedRows, body: document.body.innerText.slice(0, 500),
     publicSlot: !!document.querySelector('[data-xdrive-public-share-read-slot]'),
     publicTitlebar: !!document.querySelector('[data-xdrive-public-share-titlebar]'),
     publicWorkspace: !!document.querySelector('[data-xdrive-public-share-workspace]'),
     publicExplorer: !!explorer,
+    unifiedCore: !!document.querySelector('[data-xdrive-public-share-unified-core="true"]') &&
+      !!document.querySelector('[data-xdrive-file-explorer-scroll-host]'),
     explorerWidth: explorer?.getBoundingClientRect().width || 0,
-    detailsHeader: !!document.querySelector('[data-xdrive-public-share-details-header]'),
+    detailsHeader: !!document.querySelector('[data-xdrive-public-share-details-header], [role="table"] > [role="row"][aria-rowindex="1"]'),
     pageFilter: !!document.querySelector('input[placeholder="筛选当前页"]'),
     width: innerWidth, touch: matchMedia('(pointer: coarse)').matches,
     horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 }
@@ -162,23 +165,66 @@ async function clickFirstDownload(win, expected, width, n, page) {
   // Exercise the real read-only FileExplorer context menu instead of a
   // legacy per-row fifth "操作" column. Context menu works in both desktop
   // pointer and 390px emulated touch viewports; no Owner API is used.
-  const targeted = await win.webContents.executeJavaScript(
-    '(() => {' +
-    'const row=document.querySelectorAll("[role=listitem]")[0];' +
-    'if(!row || !row.textContent.includes(' + JSON.stringify(expected.name) + ')) return false;' +
-    'row.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:80,clientY:80}));' +
-    'return true;' +
-    '})()', true)
-  assert.equal(targeted, true, 'native public row context action missing')
-  const clicked = await until(async () => win.webContents.executeJavaScript(
-    '(() => {' +
-    'const item=[...document.querySelectorAll("[role=menuitem]")].find(el=>' +
-    'el.textContent.trim()==="下载文件" && el.getAttribute("aria-disabled")!=="true");' +
-    'if(!item) return false;' +
-    'item.click();return true;' +
-    '})()', true),
-    3000, 'real public Share read-only context Download item')
-  assert.equal(clicked, true, 'real Share-only context download unavailable')
+  if (width === 390 && process.env.XD_SH_P021_UNIFIED_CORE === '1') {
+    // Mobile Files uses an explicit touch selection mode. A synthetic mouse
+    // contextmenu is not a valid substitute for its touch/selection action.
+    // Exercise a REAL CDP touch on a visible Share row, then use the real
+    // selection command with its actual browser-native download ticket.
+    assert(win.webContents.debugger.isAttached(), 'real CDP touch target missing')
+    const hasSelectionEntry = await dom(win, () => [...document.querySelectorAll('button')]
+      .some(button => button.textContent.trim() === '选择' && !button.disabled))
+    if (hasSelectionEntry) await click(win, '选择')
+    const point = await dom(win, () => {
+      const row = document.querySelector('[data-xdrive-file-explorer-item]')
+      if (!row) return null
+      const bounds = row.getBoundingClientRect()
+      return {
+        x: Math.round(bounds.left + Math.min(bounds.width / 2, 72)),
+        y: Math.round(bounds.top + Math.min(bounds.height / 2, 18)),
+        name: row.textContent,
+      }
+    })
+    assert(point && point.name.includes(expected.name), 'first visible mobile Share row wrong')
+    await win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', {
+      type: 'touchStart', touchPoints: [{ x: point.x, y: point.y, id: 1 }],
+    })
+    await pause(65) // Genuine short tap, not a synthetic contextmenu/long-press.
+    await win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', {
+      type: 'touchEnd', touchPoints: [],
+    })
+    const enabled = await until(async () => dom(win, () => {
+      const row = document.querySelector('[data-xdrive-file-explorer-item]')
+      const button = document.querySelector('button[aria-label="下载所选项目"]')
+      return row?.getAttribute('aria-selected') === 'true' &&
+        button && !button.disabled
+    }), 3000, 'real CDP390 Share row selection and authorized download action')
+    assert(enabled, 'mobile Share selection action unavailable')
+    const started = await dom(win, () => {
+      const button = document.querySelector('button[aria-label="下载所选项目"]')
+      if (!button || button.disabled) return false
+      button.click()
+      return true
+    })
+    assert(started, 'mobile selection did not hand off signed original to Chromium')
+  } else {
+    const targeted = await win.webContents.executeJavaScript(
+      '(() => {' +
+      'const row=document.querySelectorAll("[data-xdrive-file-explorer-item]")[0];' +
+      'if(!row || !row.textContent.includes(' + JSON.stringify(expected.name) + ')) return false;' +
+      'row.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:80,clientY:80}));' +
+      'return true;' +
+      '})()', true)
+    assert.equal(targeted, true, 'native public row context action missing')
+    const clicked = await until(async () => win.webContents.executeJavaScript(
+      '(() => {' +
+      'const item=[...document.querySelectorAll("[role=menuitem]")].find(el=>' +
+      'el.textContent.trim()==="下载文件" && el.getAttribute("aria-disabled")!=="true");' +
+      'if(!item) return false;' +
+      'item.click();return true;' +
+      '})()', true),
+      3000, 'real public Share read-only context Download item')
+    assert.equal(clicked, true, 'real Share-only context download unavailable')
+  }
   const response = await received
   assert(response.ms <= 5000, 'actual native original download exceeded 5s budget')
   return response
@@ -192,10 +238,10 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
   const loaded = await until(async () => {
     const remote = await readJSON(base + '/__perf/state')
     const view = await dom(win, () => {
-      const images = [...document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport] img[src^="blob:"]')]
+      const images = [...document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport] img[src^="blob:"], [data-xdrive-file-explorer-item-visual] img[src^="blob:"]')]
       return { decoded: images.filter(x => x.complete && x.naturalWidth > 0).length,
-        visibleSlots: document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport]').length,
-        rows: document.querySelectorAll('[data-xdrive-public-share-item-id]').length }
+        visibleSlots: document.querySelectorAll('[data-xdrive-public-share-thumbnail-viewport], [data-xdrive-file-explorer-item-visual]').length,
+        rows: document.querySelectorAll('[data-xdrive-file-explorer-item]').length }
     })
     return remote.thumbnail_held_starts >= number && view.decoded >= 2 &&
       view.visibleSlots > 0 ? {remote, view} : null
@@ -207,7 +253,7 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
   if (!pairedNextPage && sample === 1) {
     cause = 'scroll-out-of-viewport'
     const scrolled = await dom(win, () => {
-      const root = document.querySelector('[data-xdrive-public-share-scroll-host]')
+      const root = document.querySelector('[data-xdrive-file-explorer-scroll-host], [data-xdrive-public-share-scroll-host]')
       if (!root) return false
       root.scrollTop = root.scrollHeight
       root.dispatchEvent(new Event('scroll', { bubbles: true }))
@@ -222,7 +268,7 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
     await click(win, '下一页')
     const next = await until(async () => {
       const view = await dom(win,buttonsAndRows)
-      return view.rows.length === 100 && view.rows.some(x => x.includes('photo-000100.jpg')) ? view : null
+      return view.acceptedRows === 100 && view.rows.some(x => x.includes('photo-000100.jpg')) ? view : null
     }, 12000, 'Share next page after thumbnail request cancel')
     assert(!next.rows.some(x => x.includes('photo-000000.jpg')))
   }
@@ -306,23 +352,31 @@ async function main() {
         assert.equal(meta.publicTitlebar,true,'real full-width share titlebar missing')
         assert.equal(meta.publicWorkspace,true,'real public share workspace missing')
         assert.equal(meta.publicExplorer,true,'bounded shared Explorer missing')
+        if (process.env.XD_SH_P021_UNIFIED_CORE === '1') {
+          assert.equal(meta.unifiedCore, true, 'Share must mount actual Owner FileExplorer, not a duplicate renderer')
+        }
         assert(meta.explorerWidth >= (width === 1440 ? 1000 : 300),
           'public share is still a narrow login card')
         assert.equal(meta.labels.includes('浏览文件夹'),false,
           'unrestricted link must not require an extra Browse click')
         const first=await until(async()=>{
           const v=await dom(win,buttonsAndRows)
-          return v.rows.length===100&&v.rows.some(x=>x.includes('photo-000000.jpg'))?v:null
+          return v.acceptedRows===100&&v.rows.some(x=>x.includes('photo-000000.jpg'))?v:null
         },12000,'actual first 100 physical file list rows')
         const firstMs=performance.now()-firstStart
         assert(firstMs<=2000)
+        if (process.env.XD_SH_P021_UNIFIED_CORE === '1') {
+          assert(first.rows.length < first.acceptedRows && first.rows.length > 0,
+            'Share must virtualize and evict offscreen media, not mount all 100 rows')
+        }
         assert.equal(first.detailsHeader,true,'shared Details columns not mounted')
         assert.equal(first.pageFilter,true,'local page filter not available')
         assert.equal(first.publicExplorer,true,'shared Explorer remounted away during initial page')
+        if (process.env.XD_SH_P021_UNIFIED_CORE === '1') assert.equal(first.unifiedCore, true)
         assert(first.explorerWidth >= (width === 1440 ? 1000 : 300))
         if (shP018) {
           const observed = await probePublicCachedThumbnailCancellation(win,base,width,sample)
-          result.sessions.push({ ...observed, first_page_ms:firstMs, first_rows:first.rows.length,
+          result.sessions.push({ ...observed, first_page_ms:firstMs, first_rows:first.acceptedRows,
             horizontal_overflow:first.horizontalOverflow })
           console.log('SH_P018_BROWSER_GO_CANCEL_RESULT '+JSON.stringify(result.sessions.at(-1)))
           await closeWindow(win)
@@ -334,17 +388,17 @@ async function main() {
         await click(win,'下一页')
         const next=await until(async()=>{
           const v=await dom(win,buttonsAndRows)
-          return v.rows.length===100&&v.rows.some(x=>x.includes('photo-000100.jpg'))?v:null
+          return v.acceptedRows===100&&v.rows.some(x=>x.includes('photo-000100.jpg'))?v:null
         },12000,'actual next 100 physical file list rows')
         const nextMs=performance.now()-nextStart
         assert(nextMs<=2000)
-        assert.equal(next.rows.length,100)
+        assert.equal(next.acceptedRows,100)
         assert.equal(next.horizontalOverflow,false)
         assert(!next.rows.some(x=>x.includes('photo-000000.jpg')))
         const downloadB=await clickFirstDownload(win,cfg.downloads[1],width,sample,'next')
         result.sessions.push({
           width,sample,first_page_ms:firstMs,next_page_ms:nextMs,
-          first_rows:first.rows.length,next_rows:next.rows.length,
+          first_rows:first.acceptedRows,next_rows:next.acceptedRows,
           first_download_ms:downloadA.ms,next_download_ms:downloadB.ms,
           actual_original_bytes:downloadA.bytes+downloadB.bytes,
           original_sha_verified:downloadA.sha_ok&&downloadB.sha_ok,
