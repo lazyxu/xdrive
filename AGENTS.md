@@ -1,3 +1,13 @@
+## Gallery 地点原型 v0 · 全部 Owner GPS 直接上图、Web/Mobile/Desktop 同页（2026-10-22）
+
+- **用户本轮明确变更产品原型要求，优先于旧默认逐资产 opt-in 产品选择**：进入「图库 → 地点」直接显示当前账户已索引的所有有效 WGS84 GPS PhotoAsset 聚集，无需另行逐张授予百度地图 Consent；真正文件数据仍由原来的 Owner ACL/Server Range 验证。不得更改跨用户边界、开启匿名 API 或扩大公开分享范围。
+- 采用当前仓库已有的 Owner-authenticated `listPlacesPage`（Go Server、Web 和 Desktop Agent 已支持），按上限 100 分页逐步汇聚所有 GPS 地点，可信 React 中按相机动态分桶，最多 64 个聚集照片封面/数量角标。直接复用现有百度 Static Server API 的 WGS84 图像底图及 Gallery CoverPool，不加载百度 JSAPI 到特权图库 DOM、不要求独立 HTTPS Child，也不改变已有隔离 Child 生产代码。
+- 地图放大后显示更细地理范围；点击一个既有 0.01 度地点用原 Gallery place Range；点击多地点聚集以不超过 20 度的 WGS84 bbox 复用原 Owner Gallery sparse Range，宽聚集先放大。Viewer 仍为统一 Viewer，Web/Mobile/Desktop 共用地图交互组件。Desktop App 不再弹独立 HTTPS 地图窗口。
+- 原型行为不是 BMap 动态瓦片，不保证 BD-09 像素级点位精度（静态 WGS84 近似 Mercator 叠加）；高密度 100k 全量分页的性能、取消优化、真实跨端视觉及上游许可审计后续处理。百度静态底图仍需已有 Server Baidu Map AK；没有配置不能伪造可用底图。只发送静态底图中心到服务端百度 API，Owner 照片缩略图与身份永不发给第三方 SDK。
+- 旧 per-photo Consent/签名 BD09 路由仍留给未来独立安全地图方案，**当前原型绕过这些附加的地图产品流程但绝不绕过 Owner 文件访问鉴权**。不可触及的生产环境安全验收按用户决定跳过（未验收），不阻塞本原型源码/CI/合并。
+
+---
+
 ## G2c2d2b3c3b · real owning-Agent first-file native Writer lock held across HTTP CAS/SQL (2026-10-22)
 
 - The merged #2212 genuine owning Windows/Linux Desktop Backup-only one regular <=64 MiB first-file upload stays ENABLED. Every real owning-Desktop Commit and historical SQL/physical CAS readback must additionally carry the same native Writer *Claim from Begin* alive, with exact Agent-private marker/inode/mode/path contents checked before and after remote callback while Claim mutex prevents Close. Original native file fd is also held/posthashed; neither the scope nor source path may come from Renderer/Web.

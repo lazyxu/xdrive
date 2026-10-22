@@ -63,7 +63,7 @@ test('A3c17 permits one Origin and no unreviewed external map/CDN egress', () =>
   }
 })
 
-test('A3c17 Desktop segregates file Renderer and HTTPS Map with no token IPC', () => {
+test('A3c17 Desktop remains sandboxed while prototype Places stays in shared Gallery window', () => {
   const main = read('desktop/src/main/index.cts')
   const preload = read('desktop/src/preload/index.cts')
   const globals = read('desktop/src/renderer/global.d.ts')
@@ -86,7 +86,11 @@ test('A3c17 Desktop segregates file Renderer and HTTPS Map with no token IPC', (
   assert.match(main, /'账户已禁用'/)
   assert.match(preload, /openBaiduMapSecure: \(\) => ipcRenderer\.invoke\('desktop:open-baidu-map-secure'\)/)
   assert.match(globals, /openBaiduMapSecure:/)
-  assert.match(desktopApp, /onOpenSecureDesktopMap=/)
+  assert.doesNotMatch(desktopApp, /onOpenSecureDesktopMap=\{/)
+  // Legacy secure window remains available for a later hardened JSAPI
+  // release, but the prototype never invokes it or injects provider JS.
+  assert.match(desktopApp, /<XDriveMediaGalleryPage/)
+  assert.match(places, /const prototypeMap = Boolean\(listPlacesPage && loadBaiduStaticMap\)/)
   assert.match(gallery, /onOpenSecureDesktopMap=\{onOpenSecureDesktopMap\}/)
   assert.match(places, /在独立安全窗口打开地图/)
   assert.match(webApp, /initialSection=\{route\.app === 'gallery'/)
