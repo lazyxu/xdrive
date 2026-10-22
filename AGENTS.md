@@ -1,3 +1,9 @@
+## G2c2d2b3c4b · original physical terminal pinned replay foundation (2026-10-22)
+
+- Continue Stage 1 serially after merged #2354; implement only an INTERNAL read-only replay for the EXACT original Operation/Stage/request key and valid current Owner/Device/Root/Source, with original SQL locks, matching durable physical-COMMIT row, canonical ContentBlob lock and a genuine Local CAS pinned double-hash. Absent/mismatched proof, missing CAS, physical-CANCEL and unknown outcomes remain fail-closed.
+- Keep the replay unexposed to HTTP, Web, Renderer, Agent IPC and SourceRun until an independently authenticated genuine owning-Agent held Writer Claim + original OS fd transport is complete; the tests seed a SYNTHETIC witness and cannot authorize a production terminal or retry. No retirement, no second file, no automatic backup.
+- Preserve complete master history, one scoped commit, source-exact Linux/Windows/real PostgreSQL API Race/Web/Desktop/Final Gate. Unreachable production security acceptance remains **按用户决定跳过（未验收）**, never a development/CI/PR/merge blocker; code safety tests mandatory.
+
 ## G2c2d2b3c4a · original Operation pinned CAS/SQL private physical-COMMIT writer (2026-10-22)
 
 - Proceed **serially** after merged #2319/#2327/#2332 and seven-stage docs #2339. Add a Server-only, **UNROUTED** physical-commit INSERT primitive only inside the original Operation UPDATE, valid Owner/Device/Root/Stage/key, Source-wide empty terminal slot, genuine Local physical CAS precommit pin and the same SQL transaction. Construct terminal identity solely from canonical SQL COMMIT/Stage rows; reject contradictory reservation terminals, wrong key/witness/scope, missing physical CAS and duplicate decisions. Keep `SourceItem` PENDING and `SyncRun` count unchanged.
