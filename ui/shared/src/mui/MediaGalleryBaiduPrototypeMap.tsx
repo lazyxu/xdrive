@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Typography } from '@mui/material'
+import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import type { MediaThumbnailLoader } from './MediaGallery'
+import {
+  xDriveProjectBaiduPrototypeCoverPins,
+} from '../media-gallery-baidu-prototype-cover-pins'
+import type { XDriveBaiduPrototypeCoverPin } from '../media-gallery-baidu-prototype-cover-pins'
 import type { MediaPlaceFacet, XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveCaptureBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -28,6 +35,8 @@ type NativeMap = {
   removeEventListener(name: string, handler: () => void): void
   getCenter?(): Point
   getZoom?(): number
+  pointToPixel?(point: Point): { x: number; y: number }
+  getBounds?(): { getSouthWest(): Point; getNorthEast(): Point }
   destroy?(): void
 }
 type Namespace = {
@@ -36,6 +45,7 @@ type Namespace = {
   ClusterLayer: new (config: {
     clusterRadius: number; enablePicked: boolean
     fitViewOnClick: boolean; updateRealTime: boolean; idKey: string
+    clusterMaxZoom: number
   }) => Layer
   Convertor: new () => {
     translate(points: Point[], from: 1, to: 5,
@@ -51,6 +61,7 @@ type Runtime = {
     source: XDriveBaiduWGS84Marker
     feature: XDriveBaiduConvertedFeatureCollection['features'][number]
   }>
+  rendered: XDriveBaiduConvertedFeatureCollection
 }
 const loaded = new WeakMap<Document, {
   ak: string; promise: Promise<Namespace>
@@ -130,18 +141,22 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   initialNativeCamera,
   onNativeCameraChange,
   onOpenPlace,
+  loadThumbnail,
 }: {
   getPrototypeConfig: (signal: AbortSignal) => Promise<XDriveBaiduJSAPIPrototypeConfig>
   places: readonly MediaPlaceFacet[]
   initialNativeCamera?: XDriveBaiduNativeCameraSnapshot
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  loadThumbnail?: MediaThumbnailLoader
 }) {
   const container = useRef<HTMLDivElement | null>(null)
   const manualCamera = useRef(false)
   const openRef = useRef(onOpenPlace)
   const cameraRef = useRef(onNativeCameraChange)
   const placesRef = useRef(places)
+  const refreshCoversRef = useRef<() => void>(() => {})
+  const [coverPins, setCoverPins] = useState<XDriveBaiduPrototypeCoverPin[]>([])
   openRef.current = onOpenPlace
   cameraRef.current = onNativeCameraChange
   placesRef.current = places
@@ -186,7 +201,8 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       map.enableScrollWheelZoom?.(true)
       layer = new api.ClusterLayer({
         clusterRadius: 60, enablePicked: true,
-        fitViewOnClick: true, updateRealTime: false, idKey: 'id',
+        fitViewOnClick: true, updateRealTime: false,
+        clusterMaxZoom: 16, idKey: 'id',
       })
       const activeLayer = layer
       const activeMap = map
@@ -220,7 +236,8 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       activeMap.addEventListener('zoomend', saveCamera)
       if (abort.signal.aborted) return
       setRuntime({ namespace: api, map: activeMap, layer: activeLayer,
-        converted: new Map() })
+        converted: new Map(),
+        rendered: { type: 'FeatureCollection', features: [] } })
       setStatus('ready')
     }
     void start().catch(() => { if (!abort.signal.aborted) setStatus('failed') })
@@ -279,7 +296,12 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       if (abort.signal.aborted) return
       const features = [...runtime.converted.entries()]
         .filter(([id]) => seen.has(id)).map(([, entry]) => entry.feature)
-      runtime.layer.setData({ type: 'FeatureCollection', features })
+      const collection: XDriveBaiduConvertedFeatureCollection = {
+        type: 'FeatureCollection', features,
+      }
+      runtime.layer.setData(collection)
+      runtime.rendered = collection
+      refreshCoversRef.current()
       // Opening Places should show the photo distribution, not an arbitrary
       // hardcoded city. Defer all projection/fit calculations to Baidu JSAPI.
       // Progressive pages can expand the overview until the user takes over;
@@ -300,13 +322,86 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     return () => abort.abort()
   }, [runtime, places])
 
+  useEffect(() => {
+    if (!runtime || !loadThumbnail) {
+      setCoverPins([])
+      return
+    }
+    const refresh = () => {
+      const node = container.current
+      const map = runtime.map
+      if (!node || !map.getZoom || !map.pointToPixel) {
+        setCoverPins([])
+        return
+      }
+      setCoverPins(xDriveProjectBaiduPrototypeCoverPins(
+        runtime.rendered, places, {
+          getZoom: () => map.getZoom!(),
+          pointToPixel: (point) => map.pointToPixel!(point),
+          getBounds: map.getBounds ? () => map.getBounds!() : undefined,
+        }, runtime.namespace,
+        node.clientWidth, node.clientHeight,
+      ))
+    }
+    const hide = () => setCoverPins([])
+    refreshCoversRef.current = refresh
+    runtime.map.addEventListener('movestart', hide)
+    runtime.map.addEventListener('zoomstart', hide)
+    runtime.map.addEventListener('moveend', refresh)
+    runtime.map.addEventListener('zoomend', refresh)
+    refresh()
+    return () => {
+      refreshCoversRef.current = () => {}
+      runtime.map.removeEventListener('movestart', hide)
+      runtime.map.removeEventListener('zoomstart', hide)
+      runtime.map.removeEventListener('moveend', refresh)
+      runtime.map.removeEventListener('zoomend', refresh)
+    }
+  }, [runtime, places, loadThumbnail])
+
   return (
     <Box component="section" data-xdrive-gallery-baidu-prototype
       sx={{ px: { xs: 0, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
+      <Box sx={{ position: 'relative' }}>
       <Box ref={container} role="region" aria-label="百度动态照片地图"
         data-xdrive-gallery-baidu-prototype-canvas
         sx={{ width: '100%', height: { xs: 'calc(100dvh - 215px)', sm: 540 },
           minHeight: 370, borderRadius: { xs: 0, sm: 1.5 }, overflow: 'hidden' }} />
+      {loadThumbnail ? coverPins.map(pin => (
+        <Box component="button" type="button" key={pin.placeID}
+          data-xdrive-baidu-photo-cover={pin.placeID}
+          aria-label={pin.name + '，' + pin.photoCount + ' 张照片'}
+          title={pin.name}
+          onClick={() => {
+            const current = placesRef.current.find(p =>
+              p.id === pin.placeID && p.cover_node_id === pin.nodeID &&
+              p.item_count === pin.photoCount)
+            if (current) openRef.current?.(current)
+          }}
+          sx={{
+            position: 'absolute', zIndex: 4, left: pin.x - 30, top: pin.y - 66,
+            width: 60, height: 62, display: 'block', p: 0,
+            border: '3px solid white', borderRadius: '11px',
+            backgroundColor: 'background.paper', cursor: 'pointer',
+            boxShadow: 2, overflow: 'visible',
+          }}>
+          <Box sx={{ width: '100%', height: '100%', borderRadius: '8px',
+            overflow: 'hidden' }}>
+            <XDriveMediaGalleryCoverThumbnail
+              nodeID={pin.nodeID} alt={pin.name} loadThumbnail={loadThumbnail}
+              fallback={<PhotoLibraryOutlinedIcon color="disabled" />}
+            />
+          </Box>
+          <Box component="span" sx={{
+            position: 'absolute', bottom: -8, right: -10,
+            bgcolor: 'background.paper', border: 1,
+            borderColor: 'divider', borderRadius: '12px',
+            fontSize: 11, fontWeight: 700, px: 0.7, lineHeight: '20px',
+            minWidth: 22, textAlign: 'center',
+          }}>{pin.photoCount}</Box>
+        </Box>
+      )) : null}
+      </Box>
       {status === 'failed' ? (
         <Typography role="alert" variant="body2" sx={{ px: 1.5, py: 1 }}>
           百度动态地图不可用。请确认管理员已配置并启用 JSAPI 4.0 浏览器 AK，
