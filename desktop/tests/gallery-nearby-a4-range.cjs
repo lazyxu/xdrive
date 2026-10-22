@@ -52,6 +52,6 @@ test('A4 real WGS84 filtering reuses one Owner Media Range on Web/Mobile/Desktop
   // only the previous exact Place cell is removed.
   assert.match(gallery, /\.\.\.draftFilters, place: '', location: 'with'/)
   assert.match(map, /data-xdrive-gallery-bbox-photos/)
-  assert.match(gallery, /activePlaceID=\{query\.place \|\|/)
+  assert.match(gallery, /activePlaceID=\{(?:query\.place_hierarchy \|\| )?query\.place \|\|/)
   assert.doesNotMatch(backend, /http\.Get|baidu|_BMapService/)
 })

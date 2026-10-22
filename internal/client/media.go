@@ -1134,6 +1134,33 @@ func (c *Client) MediaPlacesPage(ctx context.Context, limit, offset int) (MediaP
 	return out, err
 }
 
+// B1-D: bounded, authenticated GeoNames hierarchy contract.
+type MediaPlaceHierarchyItem struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	PhotoCount  int64   `json:"photo_count"`
+	CoverNodeID *uint64 `json:"cover_node_id,omitempty"`
+	MatchKind   string  `json:"match_kind"`
+}
+
+type MediaPlaceHierarchyPage struct {
+	Items          []MediaPlaceHierarchyItem `json:"items"`
+	Level          string                    `json:"level"`
+	HasMore        bool                      `json:"has_more"`
+	NextCursor     string                    `json:"next_cursor,omitempty"`
+	DatasetVersion string                    `json:"dataset_version,omitempty"`
+	Available      bool                      `json:"available"`
+}
+
+func (c *Client) MediaPlaceHierarchy(ctx context.Context, query url.Values) (MediaPlaceHierarchyPage, error) {
+	var out MediaPlaceHierarchyPage
+	if len(query.Encode()) > 4096 {
+		return out, fmt.Errorf("invalid place hierarchy query")
+	}
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/hierarchy?"+query.Encode(), nil, &out)
+	return out, err
+}
+
 type MediaPlacesViewportBounds struct {
 	West  float64
 	South float64

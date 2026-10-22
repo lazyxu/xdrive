@@ -197,6 +197,8 @@ import {
   type AgentMediaAlbumFolder,
   type AgentMediaPlaceFacet,
   type AgentMediaPlacesPage,
+  type AgentMediaPlaceHierarchyPage,
+  type AgentMediaPlaceHierarchyRequest,
   type AgentMediaBaiduMapConsent,
   type AgentMediaBaiduMapIndexJob,
   type AgentMediaBaiduMapIndexJobInput,
@@ -3193,6 +3195,88 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().mediaPlacesPage(limit, offset)
     }, false))
+
+  ipcMain.handle('agent:get-media-place-hierarchy', (
+    event, request: unknown, filters: unknown = {}, requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaPlaceHierarchyPage>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!request || typeof request !== 'object' || Array.isArray(request)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy request.')
+      }
+      const item = request as Record<string, unknown>
+      const allowed = ['level', 'country', 'region', 'cursor', 'search', 'limit']
+      if (Object.keys(item).some(key => !allowed.includes(key)) ||
+          !['country', 'region', 'city'].includes(String(item.level)) ||
+          (item.country !== undefined && (typeof item.country !== 'string' ||
+            !/^[A-Z]{2}$/.test(item.country))) ||
+          (item.region !== undefined && (typeof item.region !== 'string' ||
+            !/^[A-Z0-9_-]{1,16}$/.test(item.region))) ||
+          (item.cursor !== undefined && (typeof item.cursor !== 'string' || item.cursor.length > 128)) ||
+          (item.search !== undefined && (typeof item.search !== 'string' || [...item.search].length > 80)) ||
+          (item.limit !== undefined && (typeof item.limit !== 'number' ||
+            !Number.isSafeInteger(item.limit) || item.limit < 1 || item.limit > 100)) ||
+          (item.level === 'country' && (item.country !== undefined || item.region !== undefined)) ||
+          (item.level === 'region' && (!item.country || item.region !== undefined)) ||
+          (item.level === 'city' && (!item.country || !item.region))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy identity.')
+      }
+      // Validate the stable cursor against this *exact* parent at the
+      // untrusted Renderer→Electron boundary, before the independent Agent.
+      if (typeof item.cursor === 'string' && item.cursor) {
+        const parts = item.cursor.split(':')
+        const validCursor = item.level === 'country'
+          ? parts.length === 2 && parts[0] === 'country' && /^[A-Z]{2}$/.test(parts[1])
+          : item.level === 'region'
+            ? parts.length === 3 && parts[0] === 'region' &&
+              parts[1] === item.country && /^[A-Z0-9_-]{1,16}$/.test(parts[2])
+            : parts.length === 4 && parts[0] === 'city' &&
+              parts[1] === item.country && parts[2] === item.region &&
+              /^[1-9][0-9]*$/.test(parts[3]) &&
+              Number.isSafeInteger(Number(parts[3])) &&
+              String(Number(parts[3])) === parts[3]
+        if (!validCursor) {
+          throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy cursor.')
+        }
+      }
+      if (typeof item.search === 'string' && item.search.includes('\u0000')) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy search.')
+      }
+      let boundedFilters = ''
+      try { boundedFilters = JSON.stringify(filters) } catch {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy filters.')
+      }
+      if (!filters || typeof filters !== 'object' || Array.isArray(filters) ||
+          boundedFilters.length > 4096) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy filters.')
+      }
+      const filter = filters as Record<string, unknown>
+      const allowedFilters = [
+        'time_zone', 'anchor_node_id', 'fold_duplicates', 'fold_member_ids',
+        'sort_by', 'sort_dir', 'search', 'asset_kind', 'category',
+        'cameras', 'formats', 'folder_id', 'include_descendants',
+        'captured_from', 'captured_to', 'has_location', 'favorite',
+        'tag', 'person', 'person_identity',
+      ]
+      if (Object.keys(filter).some(key => !allowedFilters.includes(key)) ||
+          Object.entries(filter).some(([key, value]) => (
+            typeof value !== 'string' &&
+            !(typeof value === 'number' && Number.isSafeInteger(value)) &&
+            typeof value !== 'boolean' &&
+            !(Array.isArray(value) && value.length <= 32 &&
+              (key === 'fold_member_ids'
+                ? value.every(entry => typeof entry === 'number' &&
+                    Number.isSafeInteger(entry) && entry > 0)
+                : (key === 'cameras' || key === 'formats') &&
+                    value.every(entry => typeof entry === 'string' && entry.length <= 160)))
+          ))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid hierarchy filters.')
+      }
+      return requireAgentClient().mediaPlaceHierarchy(
+        item as AgentMediaPlaceHierarchyRequest, filter as AgentMediaQuery, signal,
+      )
+    }), false))
 
   ipcMain.handle('agent:get-media-places-overview', (
     event, bounds: unknown, detail: unknown = false, requestID: unknown = undefined,

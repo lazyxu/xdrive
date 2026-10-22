@@ -1909,6 +1909,29 @@ export type AgentMediaPlacesPage = {
   has_more: boolean
 }
 
+export type AgentMediaPlaceHierarchyRequest = {
+  level: 'country' | 'region' | 'city'
+  country?: string
+  region?: string
+  cursor?: string
+  search?: string
+  limit?: number
+}
+export type AgentMediaPlaceHierarchyPage = {
+  items: Array<{
+    id: string
+    name: string
+    photo_count: number
+    cover_node_id?: number
+    match_kind: string
+  }>
+  level: 'country' | 'region' | 'city'
+  has_more: boolean
+  next_cursor?: string
+  dataset_version?: string
+  available: boolean
+}
+
 export type AgentMediaPlacesViewportBounds = {
   west: number
   south: number
@@ -2787,6 +2810,22 @@ export class AgentIPCClient {
   mediaPlacesPage(limit = 48, offset = 0) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<AgentMediaPlacesPage>('GET', `/v1/media/places/page?${query.toString()}`)
+  }
+
+  mediaPlaceHierarchy(
+    request: AgentMediaPlaceHierarchyRequest,
+    filters: AgentMediaQuery = {}, signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({ level: request.level })
+    if (request.country) query.set('country', request.country)
+    if (request.region) query.set('region', request.region)
+    if (request.cursor) query.set('cursor', request.cursor)
+    if (request.search) query.set('search', request.search)
+    query.set('limit', String(request.limit ?? 48))
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaPlaceHierarchyPage>(
+      'GET', `/v1/media/places/hierarchy?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   mediaPlacesMapOverview(
