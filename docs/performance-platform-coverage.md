@@ -1,3 +1,9 @@
+## P068 · 2026-10-22 真实客户端与 100k Sync CURRENT 覆盖
+
+- **Wide Web Chromium + OPFS**：真实 4 GiB 高熵 SHA/完整下载×3，P50 upload/download **47.878/17.515s**，PASS；**Native Electron Desktop Renderer→Main→Agent**：真实 4 GiB SHA/原件下载×3，P50 **36.185/14.647s**，PASS；**Go Client signed 100k Sync**：75k upserts/25k tombstones/100页 ×3，P50 **6.444s**，PASS。测量 `20ee9c596515d985e3918d5f93b8151435921afa`，[Web](https://github.com/lazyxu/xdrive/actions/runs/39625778550) / [Desktop](https://github.com/lazyxu/xdrive/actions/runs/39625778369) / [Sync](https://github.com/lazyxu/xdrive/actions/runs/39625781574)；[机器数据](performance-evidence/p068-platform-current/README.md)；无优化候选，AFTER=N/A。**未覆盖：**真实 iOS/Android 手机及 OS 安装态 PWA、Windows/macOS 原生 Desktop、本地慢网/WAN/断点恢复、100k 图库媒体播放/GUI 持久 Sync/Delete。归档新 HEAD 自己的完整 CI 仍必需。
+
+---
+
 ## SH-P018 · 已实测原版 100k Public Share 缓存 JPEG 可视取消（2026-10-21）
 
 - 原版 CURRENT 精确源码 1164d9e38535b5ad578554bf839d226f6964e99d；真实 [PG17/Gin/LocalCAS + Chromium 专项 #39549378966](https://github.com/lazyxu/xdrive/actions/runs/39549378966) **SUCCESS**。100000 个不同 SHA 的真实物理 JPEG Original，CAS 已分配 409604096 B；只有 16 个已缓存 JPEG 派生图，不是同时解码 100k 缩略图。Web1440 和 Chromium 模拟 Mobile390 各 n=3，均展示 100 条受限首屏行，实际解码缓存图 6/6/5 与 2/4/4。
