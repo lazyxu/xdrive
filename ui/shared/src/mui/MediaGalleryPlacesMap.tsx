@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import type {
   MediaPlaceFacet,
+  MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
   XDriveBaiduMapProviderInfo,
@@ -32,6 +33,7 @@ function sameViewport(a: MediaPlacesViewportBounds | null, b: MediaPlacesViewpor
 export function XDriveMediaGalleryPlacesMap({
   places,
   totalCount,
+  listPlacesPage,
   listPlacesViewport,
   initialCamera,
   onCameraChange,
@@ -62,6 +64,7 @@ export function XDriveMediaGalleryPlacesMap({
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
+  listPlacesPage?: (limit?: number,offset?: number) => Promise<MediaPlacesPage>
   listPlacesViewport?: (bounds: MediaPlacesViewportBounds, limit?: number, offset?: number,
     signal?: AbortSignal) => Promise<MediaPlacesViewportPage>
   initialCamera?: XDrivePlacesCameraSnapshot
@@ -94,6 +97,52 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
+  // Prototype v0: the existing Owner-authenticated Places pages already
+  // contain ALL valid-GPS PhotoAssets without per-photo Baidu opt-in.
+  // Load bounded pages progressively so no independent HTTPS Child is needed.
+  const prototypeMap = Boolean(listPlacesPage && loadBaiduStaticMap)
+  const [prototypeIndex, setPrototypeIndex] = useState<{
+    scope:string;items:MediaPlaceFacet[];total:number;complete:boolean;error:string
+  } | null>(null)
+  useEffect(() => {
+    if (!listPlacesPage || !prototypeMap) return
+    let cancelled = false
+    const scope = diagnosticScope ?? ''
+    setPrototypeIndex({scope,items:[],total:0,complete:false,error:''})
+    void (async () => {
+      const items: MediaPlaceFacet[] = []
+      let offset = 0
+      let total = 0
+      try {
+        for (;;) {
+          const page = await listPlacesPage(100,offset)
+          if (cancelled) return
+          if (!page || !Array.isArray(page.items) || page.items.length > 100 ||
+              page.offset !== offset || !Number.isSafeInteger(page.total_count) ||
+              page.total_count < 0 || typeof page.has_more !== 'boolean' ||
+              (page.has_more && page.items.length === 0)) throw Error('invalid_places_page')
+          total = page.total_count
+          items.push(...page.items)
+          offset += page.items.length
+          const complete = !page.has_more || offset >= total
+          if (items.length <= 100 || offset % 500 === 0 || complete) {
+            setPrototypeIndex({scope,items:items.slice(),total,complete,error:''})
+          }
+          if (complete) return
+          if (offset > 10_000_000) throw Error('places_index_too_large')
+        }
+      } catch {
+        if (!cancelled) setPrototypeIndex({
+          scope,items:items.slice(),total,complete:false,
+          error:'部分 GPS 地点暂时无法读取，可重进地点继续加载。',
+        })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [listPlacesPage, prototypeMap, diagnosticScope])
+  const currentPrototype = prototypeIndex?.scope === (diagnosticScope ?? '')
+    ? prototypeIndex : null
+  const prototypePlaces = currentPrototype?.items.length ? currentPrototype.items : places
   // Freeze the returning BD09 camera for THIS native mount. Parent state changes
   // on pan/zoom must never change initialCamera props and remount the SDK.
   const nativeRestoreRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
@@ -154,6 +203,12 @@ export function XDriveMediaGalleryPlacesMap({
     setIsolatedChildOrigin('')
     setNativeMapFailed(false)
     setNativeStatus('checking')
+    if (prototypeMap) {
+      // Same-origin Static Baidu API + trusted React markers: no Baidu SDK,
+      // signed release or independent Cookie/Child session in this prototype.
+      setNativeStatus('unsupported')
+      return
+    }
     if (!getBaiduJSAPI4Status || !mintBaiduIsolatedChildTicket || !listBaiduNativeCells ||
         !listBaiduNativeViewport || !onOpenBaiduNativePhoto) {
       // Desktop file: is intentionally denied the browser SDK and has its own
@@ -189,19 +244,20 @@ export function XDriveMediaGalleryPlacesMap({
     return () => signal.abort()
   }, [getBaiduJSAPI4Status, mintBaiduIsolatedChildTicket,
     listBaiduNativeCells, listBaiduNativeViewport, onOpenBaiduNativePhoto,
-    desktopHTTPSOnly, diagnosticScope])
+    desktopHTTPSOnly, diagnosticScope, prototypeMap])
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
     places.find((item) => item.id === focusPlaceID) ??
     places.find((item) => item.id === activePlaceID) ??
-    places[0]
+    places[0] ??
+    (prototypeMap ? prototypePlaces[0] : undefined)
   )
 
   // Normal entry uses the anonymous Owner-authorized worldwide BD-09 Cells,
   // not the first Places facet or any WGS84 grid center. Returning from Viewer
   // may restore only a separately validated BD-09 camera.
   const [nativeMapFailed, setNativeMapFailed] = useState(false)
-  const canMountNativePhoto = Boolean(!nativeMapFailed && serverNativeAuthorized && isolatedChildOrigin &&
+  const canMountNativePhoto = Boolean(!prototypeMap && !nativeMapFailed && serverNativeAuthorized && isolatedChildOrigin &&
     mintBaiduIsolatedChildTicket && listBaiduNativeCells &&
     onOpenBaiduNativeCell && !desktopHTTPSOnly)
   // The in-document third-party JSAPI port is permanently disabled for Gallery.
@@ -334,7 +390,9 @@ export function XDriveMediaGalleryPlacesMap({
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
           <Typography variant="caption" color="text.secondary">
-            聚集点代表已授权的定位照片，缩放展开并点击进入照片墙；仅使用百度地图 Server API。
+            {prototypeMap
+              ? '原型：当前账户所有有效 GPS 照片直接聚集，无需逐张授权；底图共用百度 Server API。'
+              : '聚集点代表已授权的定位照片，缩放展开并点击进入照片墙；仅使用百度地图 Server API。'}
           </Typography>
         </Box>
         <Chip size="small" label={totalCount === null || totalCount === undefined
@@ -413,7 +471,7 @@ export function XDriveMediaGalleryPlacesMap({
         </Stack>
       ) : null}
       </Box>
-      {onOpenSecureDesktopMap ? (
+      {!prototypeMap && onOpenSecureDesktopMap ? (
         <Box sx={{ px: 1.5, pb: 1.25 }}>
           <Button variant="outlined" size="small" onClick={onOpenSecureDesktopMap}
             sx={{ minHeight: 44 }}>
@@ -428,7 +486,7 @@ export function XDriveMediaGalleryPlacesMap({
           ) : null}
         </Box>
       ) : null}
-      {!desktopHTTPSOnly && !authorizedJSAPI4Runtime &&
+      {!prototypeMap && !desktopHTTPSOnly && !authorizedJSAPI4Runtime &&
         (nativeStatus === 'blocked' || nativeStatus === 'error' ||
           nativeStatus === 'unsupported' ||
           (nativeStatus === 'authorized' && !canMountNativePhoto)) ? (
@@ -472,6 +530,17 @@ export function XDriveMediaGalleryPlacesMap({
         ) : null}
       {!canMountNativePhoto ? (
         <>
+          {prototypeMap ? (
+            <Typography variant="caption" color="text.secondary"
+              data-xdrive-places-prototype-progress
+              sx={{display:'block',px:1.5,pb:0.5}}>
+              {currentPrototype?.complete
+                ? '已载入全部 ' + currentPrototype.total.toLocaleString('zh-CN') + ' 个 GPS 地点'
+                : '正在逐页汇总 GPS 地点…已载入 ' +
+                  (currentPrototype?.items.length ?? 0).toLocaleString('zh-CN') + ' 个'}
+              {currentPrototype?.error ? ' · ' + currentPrototype.error : ''}
+            </Typography>
+          ) : null}
           <XDriveMediaGalleryBaiduStaticMap
         place={selectedPlace}
         getProvider={getBaiduMapProvider}
@@ -479,6 +548,11 @@ export function XDriveMediaGalleryPlacesMap({
         onViewportChange={onCameraViewport}
         initialCamera={initialCamera}
         onCameraChange={onStaticCameraChange}
+        prototypeMap={prototypeMap}
+        prototypePlaces={prototypePlaces}
+        loadThumbnail={loadPhotoCoverThumbnail}
+        onOpenPlace={onOpenPlace}
+        onOpenViewportPhotos={onOpenViewportPhotos}
       />
       <Box component="section" data-xdrive-gallery-places-viewport
         sx={{ px: 1.5, pb: 1.5, minWidth: 0, position: 'relative' }}>

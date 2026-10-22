@@ -2833,11 +2833,6 @@ export default function App({
                 setBaiduDiagnosticLocation({ service: 'baidu-map', tab: 'verify' })
                 setView('admin-services')
               } : undefined}
-            onOpenSecureDesktopMap={() => {
-              void window.xdriveDesktop.openBaiduMapSecure().then((result) => {
-                if (!result.ok) setError(result.error.message)
-              }).catch(() => setError('无法打开独立 HTTPS 地图窗口。'))
-            }}
             uploadRevision={galleryUploadRevision}
             onUploadRequested={() => { void uploadGalleryFiles() }}
             fileOperations={cloudFileOperations}

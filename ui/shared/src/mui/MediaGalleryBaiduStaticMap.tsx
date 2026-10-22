@@ -8,6 +8,10 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import type { MediaThumbnailLoader } from './MediaGallery'
+import { xDrivePlacesPrototypeClusters } from '../media-gallery-places-prototype-clusters'
 import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds, xDriveBaiduStaticPinchZoom, xDriveBaiduStaticFocusCenter } from '../media-gallery-baidu-camera'
 import type { XDriveBaiduMapViewportBounds, XDriveBaiduMapCameraCenter, XDriveBaiduStaticGestureFocus } from '../media-gallery-baidu-camera'
 import { xDriveValidPlacesCameraPosition } from '../media-gallery-places-camera-session'
@@ -42,6 +46,11 @@ export function XDriveMediaGalleryBaiduStaticMap({
   onViewportChange,
   initialCamera,
   onCameraChange,
+  prototypePlaces,
+  prototypeMap = false,
+  loadThumbnail,
+  onOpenPlace,
+  onOpenViewportPhotos,
 }: {
   place?: MediaPlaceFacet
   /** Exact photo GPS supplied by Viewer, never a synthesized grid center. */
@@ -51,6 +60,12 @@ export function XDriveMediaGalleryBaiduStaticMap({
   onViewportChange?: (bounds: XDriveBaiduMapViewportBounds) => void
   initialCamera?: XDrivePlacesCameraPosition
   onCameraChange?: (camera: XDrivePlacesCameraPosition) => void
+  /** First-party prototype: all current Owner GPS place groups, no per-item Baidu consent. */
+  prototypePlaces?: readonly MediaPlaceFacet[]
+  prototypeMap?: boolean
+  loadThumbnail?: MediaThumbnailLoader
+  onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenViewportPhotos?: (bounds: XDriveBaiduMapViewportBounds) => void
 }) {
   // The legacy latitude/longitude pair is only a grid-cell CENTER. A missing
   // sample pair must not silently become a fake real photo GPS or combine a
@@ -69,7 +84,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const [imageFrame, setImageFrame] = useState<StaticMapFrame | null>(null)
   const imageFrameRef = useRef<StaticMapFrame | null>(null)
   const retiredURLs = useRef<string[]>([])
-  const [zoom, setZoom] = useState(() => restoredCamera?.zoom ?? 12)
+  const [zoom, setZoom] = useState(() => restoredCamera?.zoom ?? (prototypeMap ? 3 : 12))
   const [requestID, setRequestID] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -129,12 +144,14 @@ export function XDriveMediaGalleryBaiduStaticMap({
     if (!enabled || !loadStaticMap || !validCenter ||
         centerLatitude === undefined || centerLongitude === undefined) return
     const bounds = xDriveBaiduStaticViewportBounds(
-      { latitude: centerLatitude, longitude: centerLongitude }, zoom)
+      { latitude: centerLatitude, longitude: centerLongitude }, zoom,
+      prototypeMap ? 512 : 480, prototypeMap ? 512 : 280)
     if (bounds) {
       onViewportChange?.(bounds)
       onCameraChange?.({ latitude: centerLatitude, longitude: centerLongitude, zoom })
     }
-  }, [enabled, loadStaticMap, validCenter, centerLatitude, centerLongitude, zoom, onViewportChange, onCameraChange])
+  }, [enabled, loadStaticMap, validCenter, centerLatitude, centerLongitude, zoom,
+    prototypeMap, onViewportChange, onCameraChange])
 
   const pan = (eastPixels: number, southPixels: number) => {
     if (!enabled || !loadStaticMap || !validCenter ||
@@ -309,8 +326,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
       latitude: centerLatitude,
       longitude: centerLongitude,
       zoom,
-      width: 480,
-      height: 280,
+      width: prototypeMap ? 512 : 480,
+      height: prototypeMap ? 512 : 280,
     }, controller.signal).then((png) => {
       if (!active || controller.signal.aborted) return
       const objectURL = URL.createObjectURL(png)
@@ -330,7 +347,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
       if (active && !controller.signal.aborted) setBusy(false)
     })
     return () => { active = false; controller.abort() }
-  }, [enabled, hasRealPhotoGPS, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID, originKey])
+  }, [enabled, hasRealPhotoGPS, centerLatitude, centerLongitude,
+    loadStaticMap, zoom, requestID, originKey, prototypeMap])
 
   const displayFrame = enabled && loadStaticMap && hasLocation && validCenter &&
     imageFrame?.originKey === originKey && !error ? imageFrame : null
@@ -338,6 +356,26 @@ export function XDriveMediaGalleryBaiduStaticMap({
     displayFrame.latitude !== centerLatitude || displayFrame.longitude !== centerLongitude ||
     displayFrame.zoom !== zoom || displayFrame.requestID !== requestID
   ))
+
+  // All GPS data stays in the trusted Gallery/Agent; Baidu receives only the
+  // Server-side Static Map center, never media pixels or Owner file URLs.
+  const prototypePins = prototypeMap && validCenter &&
+    centerLatitude !== undefined && centerLongitude !== undefined
+    ? xDrivePlacesPrototypeClusters(prototypePlaces ?? [],
+        { latitude: centerLatitude, longitude: centerLongitude }, zoom)
+    : []
+  const openPrototypePin = (pin: (typeof prototypePins)[number]) => {
+    if (pin.place && onOpenPlace) {
+      onOpenPlace(pin.place)
+    } else if (pin.bbox && onOpenViewportPhotos) {
+      onOpenViewportPhotos(pin.bbox)
+    } else {
+      // A very wide cluster cannot enter the 20-degree Gallery bbox Range.
+      // Zoom into the actual representative photo position first.
+      setCamera({key:originKey, latitude:pin.latitude, longitude:pin.longitude})
+      setZoom(current => Math.min(18,current + 2))
+    }
+  }
 
   const message =
     provider.kind === 'checking' ? '正在检查百度地图服务…'
@@ -352,7 +390,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
     <Box component="section" data-xdrive-baidu-static-map sx={{ px: { xs: 1.25, sm: 1.5 }, pb: 1.5 }}>
       <Stack direction="row" alignItems="center" spacing={1}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2">百度地图{mapName ? ` · ${mapName}` : ''}</Typography>
+          <Typography variant="subtitle2">{prototypeMap ? '照片地图' : '百度地图' + (mapName ? ' · ' + mapName : '')}</Typography>
           <Typography variant="caption" color="text.secondary">
             百度地图 Server API · {provider.kind === 'available' ? provider.info.attribution : '© 百度地图'}
           </Typography>
@@ -416,8 +454,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
         mt: 1,
         mx: 'auto',
         width: '100%',
-        maxWidth: 480,
-        aspectRatio: '12 / 7',
+        maxWidth: prototypeMap ? 'min(100%, 800px)' : 480,
+        aspectRatio: prototypeMap ? '1 / 1' : '12 / 7',
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
@@ -437,6 +475,54 @@ export function XDriveMediaGalleryBaiduStaticMap({
               }}
               sx={{ width: '100%', height: '100%', objectFit: 'contain',
                 opacity: previousViewport ? 0.55 : 1 }} />
+            {prototypeMap && !previousViewport && prototypePins.length > 0 ? (
+              <Box data-xdrive-places-prototype-owner-gps-pins
+                sx={{position:'absolute',inset:0,pointerEvents:'none'}}>
+                {prototypePins.map(pin => (
+                  <Box key={pin.id} component="button" type="button"
+                    aria-label={`查看位置照片 ${pin.photoCount} 张`}
+                    data-xdrive-places-prototype-pin
+                    onPointerDown={event => event.stopPropagation()}
+                    onPointerUp={event => event.stopPropagation()}
+                    onClick={event => { event.stopPropagation(); openPrototypePin(pin) }}
+                    sx={{position:'absolute',
+                      left:(pin.x / 512 * 100) + '%', top:(pin.y / 512 * 100) + '%',
+                      transform:'translate(-50%,-50%)',
+                      width:55,height:55,p:0,cursor:'pointer',
+                      pointerEvents:'auto',isolation:'isolate',
+                      border:'3px solid white',borderRadius:1.5,
+                      bgcolor:'background.paper',boxShadow:3,
+                      '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',outlineOffset:3}}}>
+                    {pin.photoCount > 1 ? (
+                      <Box component="span" aria-hidden="true"
+                        sx={{position:'absolute',inset:0,transform:'translate(4px,4px) rotate(7deg)',
+                          border:'2px solid white',borderRadius:1.5,
+                          bgcolor:'background.paper',zIndex:-1,boxShadow:1}}/>
+                    ) : null}
+                    <Box sx={{height:'100%',width:'100%',borderRadius:1,overflow:'hidden'}}>
+                      {pin.coverNodeID && loadThumbnail ? (
+                        <XDriveMediaGalleryCoverThumbnail nodeID={pin.coverNodeID}
+                          loadThumbnail={loadThumbnail} alt="此位置代表照片"
+                          fallback={<Box sx={{height:'100%',display:'grid',placeItems:'center'}}>
+                            <PhotoLibraryOutlinedIcon fontSize="small"/>
+                          </Box>}/>
+                      ) : <Box sx={{height:'100%',display:'grid',placeItems:'center'}}>
+                        <PhotoLibraryOutlinedIcon fontSize="small"/>
+                      </Box>}
+                    </Box>
+                    {pin.photoCount > 1 ? (
+                      <Box component="span" sx={{position:'absolute',right:-12,top:-9,
+                        minWidth:25,height:24,px:0.5,border:'2px solid white',
+                        borderRadius:8,display:'grid',placeItems:'center',
+                        bgcolor:'primary.main',color:'primary.contrastText',
+                        fontSize:11,fontWeight:800,boxShadow:2}}>
+                        {pin.photoCount.toLocaleString('zh-CN')}
+                      </Box>
+                    ) : null}
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
             {previousViewport && busy ? (
               <Box sx={{ position: 'absolute', inset: 0, display: 'grid',
                 placeItems: 'center', pointerEvents: 'none' }}>
@@ -455,7 +541,9 @@ export function XDriveMediaGalleryBaiduStaticMap({
       </Box>
       {provider.kind === 'available' && provider.info.enabled ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          拖动或按方向键后才重新请求百度静态底图；不等同于 JSAPI 4.0 连续动态地图。{' '}
+          {prototypeMap
+            ? '原型模式：同一图库页面显示所有有效 GPS 的聚集封面，无需逐张百度授权；底图使用百度 Server API。'
+            : '拖动或按方向键后才重新请求百度静态底图；不等同于 JSAPI 4.0 连续动态地图。'}{' '}
           {provider.info.privacy}
         </Typography>
       ) : null}

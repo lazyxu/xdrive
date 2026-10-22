@@ -3448,6 +3448,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
+        listPlacesPage={source.listPlacesPage}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
@@ -3939,6 +3940,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
@@ -5655,6 +5657,7 @@ export function XDriveMediaGallery({
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
+  listPlacesPage,
   listPlacesViewport,
   listBaiduNativeViewport,
   listBaiduNativeCells,
@@ -6921,7 +6924,7 @@ export function XDriveMediaGallery({
             : section === 'people'
               ? '已确认人物、待审核建议与本地宠物类型集合'
               : section === 'places'
-                ? '按照片位置聚集浏览，点击标记查看此区域照片'
+                ? '全部有效 GPS 照片直接聚集，不需要逐张地图授权'
                 : section === 'favorites'
                   ? '你收藏的照片和视频'
                   : section === 'trash'
@@ -7876,13 +7879,14 @@ export function XDriveMediaGallery({
               地点
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              地图仅使用百度地图 Server API；已授权的照片在地图上聚集，放大查看并点按进入照片墙
+              地图仅使用百度地图 Server API；本账户全部有效 GPS 照片直接聚集，放大查看并点按进入照片墙
             </Typography>
           </Stack>
 
           <XDriveMediaGalleryPlacesMap
             places={places}
             totalCount={placesTotalCount}
+            listPlacesPage={listPlacesPage}
             listPlacesViewport={listPlacesViewport}
             listBaiduNativeViewport={listBaiduNativeViewport}
             listBaiduNativeCells={listBaiduNativeCells}
