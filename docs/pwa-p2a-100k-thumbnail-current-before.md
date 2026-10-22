@@ -18,3 +18,10 @@ No persistent thumbnail storage, Service Worker private-media interception, netw
 Only after a production P2-B implementation and same-runner / same dataset / same network source-exact n≥3 matched AFTER showing meaningful repeated-open gains **without worsening cold launch, network bytes, memory, Go cancellation, cross-Owner security or SW install**, retain the change; otherwise revert. If current in-memory thumbnails already make revisits cheap, do not falsely claim disk caching would accelerate them. The physical iOS Safari Home Screen/WAN condition remains untested; inaccessible production-only security acceptance **按用户决定跳过（未验收）**; mandatory source Owner/ACL/CI remain.
 
 Workflow: `.github/workflows/pwa-p2a-100k-thumbnail-before.yml`, source runner `desktop/scripts/pwa-p2a-100k-thumbnail-before.cjs`, negative contracts `desktop/tests/pwa-p2a-before-contract.cjs`. Retain full `AGENTS.md` history and other owners’ PRs. Do not claim real metrics before this PR’s own CI returns evidence.
+
+
+## 2026-10-22 · P2-A CURRENT 已验收（覆盖上方“待 CI”历史文字）
+
+- 原 HEAD `9b347cda8c809cbf421b5f99bdecbf96f492babe` 的真实 [Go+PG17+LocalCAS+Chromium 100k/115k 专项 #39704278344](https://github.com/lazyxu/xdrive/actions/runs/39704278344) 和 [77-job 全 CI #39704280120](https://github.com/lazyxu/xdrive/actions/runs/39704280120) 均 SUCCESS，Final Gate 通过。[PR #2325](https://github.com/lazyxu/xdrive/pull/2325) rebase merged 成 `ecaaae7243568705732d31d5870db320f062a944`；旧 P2-A branch 已自动移除。
+- 真实 n3×3 同进程 FIRST 4 thumbnail + 2 rAF p50/p95 **1528.098 / 1701.340ms**；重访相同四张图 **1498.226 / 1594.896ms**，九次重访新增 HTTP **0**、Go thumbnail response-body bytes **0**，Go 处理器峰值 6，未发现非取消失败。该指标不是 iOS、TCP wire bytes、跨进程重访、持久缓存的 AFTER。
+- 现在执行 [#2329](https://github.com/lazyxu/xdrive/issues/2329) 的真实 A 进程关闭→B 进程复用 user-data-dir 的跨进程 CURRENT。尚未完成，决定是否启动 P2-B 之前不得宣称持久存储可带来提速。
