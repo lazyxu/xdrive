@@ -65,7 +65,7 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		}
 		return user.ID, root.ID
 	}
-	addPoint := func(ownerID, rootID uint64, name string, lat, lon float64) {
+	addPoint := func(ownerID, rootID uint64, name string, lat, lon float64) uint64 {
 		t.Helper()
 		node := meta.Node{ParentID: &rootID, Name: name, Type: meta.NodeTypeFile,
 			OwnerID: ownerID, Revision: 1}
@@ -86,6 +86,7 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		if err := db.Create(&asset).Error; err != nil {
 			t.Fatal(err)
 		}
+		return node.ID
 	}
 	owner, root := makeOwner("jinhua-owner")
 	foreign, foreignRoot := makeOwner("jinhua-other-owner")
@@ -121,12 +122,12 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		}
 		ids[item.ID] = true
 		parts := strings.Split(item.ID, ":")
-		if len(parts) != 7 {
+		if len(parts) != 8 || parts[1] != "q" {
 			t.Fatalf("region ID lost real fitted bounds: %q", item.ID)
 		}
 		coords := make([]float64, 4)
 		for i := range coords {
-			coords[i], err = strconv.ParseFloat(parts[i+1], 64)
+			coords[i], err = strconv.ParseFloat(parts[i+2], 64)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,17 +138,27 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 			fitted.North-fitted.South >= 2 {
 			t.Fatalf("world-size bucket still masks actual locality: %+v", fitted)
 		}
-		row, err := strconv.Atoi(parts[5])
+		row, err := strconv.Atoi(parts[6])
 		if err != nil {
 			t.Fatal(err)
 		}
-		col, err := strconv.Atoi(parts[6])
+		col, err := strconv.Atoi(parts[7])
 		if err != nil {
 			t.Fatal(err)
 		}
-		if testMediaOverviewBucket(fitted, item.SampleLatitude, item.SampleLongitude) !=
-			[2]int{row, col} {
-			t.Fatalf("representative GPS outside its own server bucket: %+v", item)
+		if row < 0 || row > 7 || col < 0 || col > 7 ||
+			item.SampleLatitude < fitted.South || item.SampleLatitude > fitted.North ||
+			item.SampleLongitude < fitted.West || item.SampleLongitude > fitted.East {
+			t.Fatalf("ranked representative escaped genuine GPS extent: %+v", item)
+		}
+		// Coordinates and thumbnail must describe the SAME real media row.
+		var cover meta.MediaMetadata
+		if err := db.Where("node_id = ? AND owner_id = ?",
+			*item.CoverNodeID, owner).First(&cover).Error; err != nil ||
+			cover.Latitude == nil || cover.Longitude == nil ||
+			*cover.Latitude != item.SampleLatitude ||
+			*cover.Longitude != item.SampleLongitude {
+			t.Fatalf("cover Node and WGS84 sample are not paired: %+v err=%v", item, err)
 		}
 	}
 	if sum != 33 || len(positions) < 12 {
@@ -186,4 +197,105 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 	if err != nil || len(wrapped.Items) != 2 || wrapped.TotalPhotoCount != 2 {
 		t.Fatalf("date-line Owner GPS merged or lost: %+v err=%v", wrapped, err)
 	}
+	// A single dense city must not consume or hide geographically distant
+	// sparse cities. Reserve boundary rank slots, and never split duplicates
+	// sharing one GPS into separate map pins.
+	distributed, distributedRoot := makeOwner("distributed-owner")
+	videoNodes := make([]uint64, 0, 3)
+	firstImage := uint64(0)
+	for i := 0; i < 80; i++ {
+		latitude := 29.0 + float64(i)*0.0002
+		longitude := 119.0 + float64(i)*0.0002
+		if i == 4 {
+			// This video coordinate is INSIDE a latitude band and shares
+			// one longitude-rank cell with the following image coordinate.
+			// The image has fewer assets but must supply BOTH GPS and cover.
+			for n := 0; n < 3; n++ {
+				id := addPoint(distributed, distributedRoot,
+					fmt.Sprintf("video-%d.mp4", n), latitude, longitude)
+				if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", id).
+					Updates(map[string]interface{}{"mime_type": "video/mp4",
+						"media_kind": meta.MediaKindVideo}).Error; err != nil {
+					t.Fatal(err)
+				}
+				videoNodes = append(videoNodes, id)
+			}
+			continue
+		}
+		id := addPoint(distributed, distributedRoot, fmt.Sprintf("dense-%d.jpg", i),
+			latitude, longitude)
+		if i == 5 {
+			firstImage = id
+		}
+	}
+	addPoint(distributed, distributedRoot, "shanghai.jpg", 31.23, 121.47)
+	addPoint(distributed, distributedRoot, "new-york.jpg", 40.71, -74.0)
+	mixed, err := queryMediaPlacesMapOverview(context.Background(), db,
+		distributed, world, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mixed.Aggregated || mixed.TotalPhotoCount != 84 ||
+		len(mixed.Items) < 32 || len(mixed.Items) > mediaMapOverviewMaxPoints {
+		t.Fatalf("ranked 64-pin budget or exact photo total lost: %+v", mixed)
+	}
+	var pairFound, shanghaiFound, newYorkFound bool
+	var mixedSum int64
+	mixedKeys := map[string]bool{}
+	for _, item := range mixed.Items {
+		mixedSum += item.ItemCount
+		if mixedKeys[item.ID] || !strings.HasPrefix(item.ID, "map-region:q:") {
+			t.Fatalf("duplicate or unversioned coordinate-rank region: %+v", item)
+		}
+		mixedKeys[item.ID] = true
+		if item.SampleLatitude == 31.23 && item.SampleLongitude == 121.47 {
+			shanghaiFound = true
+		}
+		if item.SampleLatitude == 40.71 && item.SampleLongitude == -74.0 {
+			newYorkFound = true
+		}
+		if item.CoverNodeID == nil {
+			continue
+		}
+		var cover meta.MediaMetadata
+		if err := db.Where("node_id = ? AND owner_id = ?",
+			*item.CoverNodeID, distributed).First(&cover).Error; err != nil ||
+			cover.Latitude == nil || cover.Longitude == nil ||
+			*cover.Latitude != item.SampleLatitude ||
+			*cover.Longitude != item.SampleLongitude {
+			t.Fatalf("cover points at different GPS than its representative: %+v err=%v",
+				item, err)
+		}
+		if *item.CoverNodeID == firstImage && item.ItemCount >= 4 {
+			pairFound = true
+		}
+		for _, videoNode := range videoNodes {
+			if *item.CoverNodeID == videoNode {
+				t.Fatalf("video-only point must not be used as image cover: %+v", item)
+			}
+		}
+	}
+	if mixedSum != 84 || !shanghaiFound || !newYorkFound || !pairFound {
+		t.Fatalf("multi-city or mixed-media pairing regression: count=%d "+
+			"Shanghai=%t NYC=%t image-cover=%t", mixedSum, shanghaiFound, newYorkFound, pairFound)
+	}
+	onlyVideo, videoRoot := makeOwner("video-only-owner")
+	for i := 0; i < 3; i++ {
+		id := addPoint(onlyVideo, videoRoot, fmt.Sprintf("v%d.mp4", i), 30.0, 120.0)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", id).
+			Updates(map[string]interface{}{"mime_type": "video/mp4",
+				"media_kind": meta.MediaKindVideo}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	videoOverview, err := queryMediaPlacesMapOverview(context.Background(), db,
+		onlyVideo, world, false)
+	if err != nil || videoOverview.TotalPhotoCount != 3 ||
+		len(videoOverview.Items) != 1 || videoOverview.Items[0].CoverNodeID != nil ||
+		videoOverview.Items[0].SampleLatitude != 30.0 ||
+		videoOverview.Items[0].SampleLongitude != 120.0 {
+		t.Fatalf("video-only GPS must stay real with no invented image cover: %+v err=%v",
+			videoOverview, err)
+	}
+
 }

@@ -138,6 +138,38 @@ test('bounded server map-region samples use official conversion with exact 8x8 v
 })
 
 
+test('ranked multi-city map-region IDs keep real samples and strict bounds', async () => {
+  const markers = [
+    {placeID:'map-region:q:-180:-85:180:85:0:0', latitude:29.0,
+      longitude:119.0, photoCount:200},
+    {placeID:'map-region:q:-180:-85:180:85:6:7', latitude:31.23,
+      longitude:121.47, photoCount:3},
+    {placeID:'map-region:q:-180:-85:180:85:7:0', latitude:40.71,
+      longitude:-74.0, photoCount:1},
+  ]
+  const total=markers.reduce((sum,m)=>sum+m.photoCount,0)
+  const calls=[]
+  const convertor={translate(points,from,to,callback) {
+    calls.push({size:points.length,from,to})
+    callback({status:0,points:points.map(p=>({lng:p.lng+0.004,lat:p.lat+0.004}))})
+  }}
+  const converted=await convert({kind:'ready',markers,totalPhotoCount:total},
+    convertor,(lng,lat)=>({lng,lat}))
+  assert.deepEqual(calls,[{size:3,from:1,to:5}])
+  assert.equal(converted.features.length,3)
+  assert.equal(converted.features.reduce((sum,f)=>sum+f.properties.photo_count,0),total)
+  for(const bad of [
+    {...markers[0],placeID:'map-region:q:-180:-85:180:85:8:0'},
+    {...markers[0],placeID:'map-region:q:-180:-85:180:85:0:0:extra'},
+    {...markers[0],placeID:'map-region:q:119:20:120:30:0:0',longitude:-74},
+    {...markers[0],placeID:'map-region:q:119:20:120:30:0:0',latitude:31},
+    {...markers[0],placeID:'map-region:q:180:-85:-180:85:0:0'},
+    {...markers[0],photoCount:0},
+  ]) await assert.rejects(convert({kind:'ready',markers:[bad],
+    totalPhotoCount:bad.photoCount},convertor,(lng,lat)=>({lng,lat})),
+  /markers_unavailable/)
+})
+
 test('Jinhua adaptive Owner region IDs retain multiple real GPS positions in JSAPI', async () => {
   // The old global 8x8 encoded one 45-degree longitude bucket for all of
   // these locations. Only the SERVER chooses real fitted bounds; the client

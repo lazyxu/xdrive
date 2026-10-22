@@ -45,11 +45,16 @@ function canonicalPlaceID(value: unknown): value is string {
 // canonicalPlaceID-only; this never authorizes a new Owner API selection.
 function boundedPrototypeRegionMarker(marker: XDriveBaiduWGS84Marker): boolean {
   if (typeof marker.placeID !== 'string' || marker.placeID.length > 180) return false
-  const parts = /^map-region:(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):([0-7]):([0-7])$/.exec(marker.placeID)
+  // Legacy fixed-grid IDs are still accepted, including old deep links.
+  // q: means an Owner-authenticated *coordinate-rank* cell, not a geometric
+  // 8x8 rectangle: only the server knows membership; never use it as a
+  // Media Range identity or attempt to reconstruct members in JavaScript.
+  const parts = /^map-region:(q:)?(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):([0-7]):([0-7])$/.exec(marker.placeID)
   if (!parts) return false
-  const west=Number(parts[1]), south=Number(parts[2])
-  const east=Number(parts[3]), north=Number(parts[4])
-  const row=Number(parts[5]), col=Number(parts[6])
+  const quantile = parts[1] === 'q:'
+  const west=Number(parts[2]), south=Number(parts[3])
+  const east=Number(parts[4]), north=Number(parts[5])
+  const row=Number(parts[6]), col=Number(parts[7])
   const longitude=marker.longitude, latitude=marker.latitude
   if (![west,south,east,north,longitude,latitude].every(Number.isFinite) ||
       west < -180 || west > 180 || east < -180 || east > 180 ||
@@ -59,6 +64,7 @@ function boundedPrototypeRegionMarker(marker: XDriveBaiduWGS84Marker): boolean {
   const lonSpan = west < east ? east-west : 360-(west-east)
   const adjusted = west > east && longitude < west ? longitude+360 : longitude
   if (adjusted < west || adjusted > west+lonSpan) return false
+  if (quantile) return true
   const mappedRow = Math.min(7,Math.max(0,Math.floor((latitude-south)/(north-south)*8)))
   const mappedCol = Math.min(7,Math.max(0,Math.floor((adjusted-west)/lonSpan*8)))
   return mappedRow === row && mappedCol === col
