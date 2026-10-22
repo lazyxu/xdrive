@@ -148,6 +148,13 @@ else
     -count=1 -v -timeout=6m ./internal/api)
 fi
 
+# Optional CR01b6 genuine Files picker 1 MiB is a third independent CAS file.
+if [ "${XD_PWA_CR01B6_PICKER:-0}" = 1 ]; then
+  (cd "$B" && XD_PWA_CR01B6_REAL_PICKER_PHYSICAL=1 go test \
+    -run '^TestPWACR01B6RealFilesPickerPostflight$' \
+    -count=1 -v -timeout=6m ./internal/api)
+fi
+
 # Both full genuine physical LocalCAS readbacks passed; mark summary only NOW.
 node - "$OUT/summary.json" <<'NODE'
 const assert = require('node:assert/strict')
@@ -176,7 +183,7 @@ assert(!result.physicalIOS && result.oldSWWaitingVerified &&
   result.twoOldWindowsStayedControlled && result.oldDocumentStayedMounted &&
   result.realUploadSessionActiveWhileWaiting &&
   result.newSWActivatedOnlyAfterBothClosed &&
-  !result.productionFilePicker && result.physicalGoCASPostflight &&
+  (!result.productionFilePicker || process.env.XD_PWA_CR01B6_PICKER==='1') && result.physicalGoCASPostflight &&
   result.nativeInFlightPut && result.goReadPartialBytes &&
   result.waitingOverlappedInFlight && result.streamedChunkCommitted &&
   !result.bToARollbackProven && result.twoIndependentWindowUploadsProven &&
@@ -184,6 +191,9 @@ assert(!result.physicalIOS && result.oldSWWaitingVerified &&
   result.twoPartialGoCASFiles && result.secondOwnerSessionFinalized &&
   result.secondPhysicalGoCASPostflight &&
   !result.durableTaskCoactivityProven)
+if(process.env.XD_PWA_CR01B6_PICKER==='1')
+  assert(result.productionFilePicker && result.pickerDuringTwoStreamsWaiting &&
+    result.pickerRealFinalize && result.pickerGoOwnerNodeVisible)
 if (process.env.XD_PWA_CR01B5_CROSS_OWNER === '1') {
   assert(result.crossOwnerMode && result.crossOwnerDifferentUser &&
     result.crossOwnerACL404 && result.crossOwnerTwoPartitions)
