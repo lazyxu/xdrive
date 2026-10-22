@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -62,6 +63,13 @@ func TestLocalFirstFileDurableClaimSlotsMatchRealStableOriginal(t *testing.T) {
 
 func TestLocalFirstFileDurableClaimAlwaysQuarantinesAfterAgentRestart(t *testing.T) {
 	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		// Go testing.TempDir can be 0755. A genuine owning Agent uses a
+		// private config root, which the source probe deliberately enforces.
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	scope := localPushRequestFixture()
 	key := localPushFirstFileJobKey{
 		server: scope.server, account: scope.account, sessionID: scope.sessionID,
@@ -141,5 +149,87 @@ func TestLocalFirstFileClaimProbeRejectsCancellationAndUntrustedParents(t *testi
 	}
 	if found, err := localFirstFileDurableClaimPresent(context.Background(), dir, key); found || !errors.Is(err, errLocalBackupFirstFileUnavailable) {
 		t.Fatalf("unsafe claim parent pretended clean: %t %v", found, err)
+	}
+}
+
+func TestLocalFirstFileClaimProbeFailsClosedOnTamperedFileTypes(t *testing.T) {
+	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		// Go testing.TempDir can be 0755. A genuine owning Agent uses a
+		// private config root, which the source probe deliberately enforces.
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := localPushRequestFixture()
+	key := localPushFirstFileJobKey{
+		server: scope.server, account: scope.account, sessionID: scope.sessionID,
+		deviceID: scope.deviceID, sourceID: scope.sourceID,
+	}
+	paths, err := localFirstFileDurableClaimPaths(dir, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := paths[0]
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	deny := func() {
+		t.Helper()
+		found, err := localFirstFileDurableClaimPresent(context.Background(), dir, key)
+		if found || !errors.Is(err, errLocalBackupFirstFileUnavailable) {
+			t.Fatalf("untrusted physical claim became clean or authoritative: found=%t err=%v", found, err)
+		}
+		status := quarantineLocalFirstFileStatusByDurableClaim(
+			localBackupFirstFileJobStatus{SourceID: key.sourceID, Phase: "not-recorded"},
+			found, err)
+		if status.Phase != "uncertain" || status.PhysicalObserved ||
+			status.BackupComplete || status.RetirementSafe {
+			t.Fatalf("untrusted original claim asserted upload completion: %+v", status)
+		}
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	deny()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		// Symlink privileges and POSIX mode bits are not portable on Windows.
+		// A directory-shaped claim must still be denied on Windows.
+		return
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing-private-target"), path); err != nil {
+		t.Fatal(err)
+	}
+	deny()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("opaque persisted evidence"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	deny()
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o770); err != nil {
+		t.Fatal(err)
+	}
+	deny()
+	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := localFirstFileDurableClaimPresent(context.Background(), dir, key)
+	if err != nil || !found {
+		t.Fatalf("restored private regular claim invisible: found=%t err=%v", found, err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil || string(body) != "opaque persisted evidence" {
+		t.Fatalf("read-only probe modified original evidence: %v", err)
 	}
 }

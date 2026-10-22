@@ -1,3 +1,10 @@
+## G2c2d2b3c2b2d · fail-closed owning-Agent restart claim probe (2026-10-22)
+
+- Keep merged #2212 real owning Windows/Linux Desktop manual Backup-only one-file <=64 MiB upload enabled. After #2304/#2310, exact original Writer/Stage/Operation private slots are source-identical; do not rename them, retire keys, infer a physical CANCEL, enable repeat/multifile or claim SourceRun completion.
+- On read-only restart status, deny permissive POSIX claim parents/files and nonregular/symlink claim objects; tampered/unreadable evidence must only downgrade "not-recorded" to "uncertain". The original physical Writer O_EXCL, SQL/CAS/Agent authority remain unchanged. Native Linux mode and cross-platform file-type regressions must accompany code.
+- CI correction: Go t.TempDir() is not guaranteed private mode 0700, so private-root validation tests must explicitly chmod only their temporary directories rather than relaxing production mode enforcement. Earlier failed go-linux at 71c5268b is superseded; new one-work HEAD's exact CI/Final Gate must independently succeed.
+- Preserve every byte of previous current master AGENTS history below; one scoped work commit. Production environment safety acceptance: 按用户决定跳过（未验收）, never request secrets or manual production signoff; code security tests continue.
+
 ## G2c2d2b3c2b2c · unify durable Stage/Operation slots (2026-10-21)
 
 - Keep real owning-Desktop one-shot first-file Push (#2212) ENABLED in merged source. This targeted restart-correctness patch follows #2300/#2304: real Stage admission, original Operation SecretStore claim and read-only Agent status probe use one pure historically exact Server/account/Device/Source slot generator. Native Writer continues through production localpushwriter.OriginalClaimPath. No source-wide O_EXCL/key/Stage retirement, physical terminal, second file, SourceRun or scheduler is enabled.
