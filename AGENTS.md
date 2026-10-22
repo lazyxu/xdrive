@@ -1,3 +1,9 @@
+## SD-D2b-1b-c2 · fixed Host-private Docker sampler (2026-10-22)
+
+- Add only two unexported, host-private, read-only, fixed-name xdrive-caddy observation actions: bounded Docker inspect generation and localhost Caddy live /config/ JSON SHA-256 computed inside Caddy. Never accept arbitrary Docker path/container/args/script/URL/credentials from browser, Server, Agent IPC or admin state. Linux-only fixed-path command, sanitized env, 4s timeout, capped 256-byte output and one generic fail-closed error. Unsupported Docker installation/rootless/Windows is NOT silently accepted.
+- Real in-place reload and process-generation changes during the paired read-only observation must be rejected; malformed/multiple output lines, forged PID, failed/overlong hashes, canceled probe and unknown command rejected by synthetic tests. Mere before/after equality is NOT complete Host origin trust, A-B-A protection, disabled-ingress negative evidence, signed applied revision or operator authorization. Keep CandidateComplete/CanAdopt/ApplySupported=false.
+- Preserve all independent master/Owner files and complete cumulative AGENTS, one scoped commit stacked on #2323, then retarget to full master only after parent full source-exact CI/Final Gate and merge. New accurate-head full CI and fresh clean required for this security-sensitive stage. Production-only acceptance 按用户决定跳过（未验收）; no requests for production credentials/HAR/network captures/signoff.
+
 ## SD-D2b-1b-c1 · private Caddy process / live-config window binding (2026-10-22)
 
 - The five-field fixed-name Docker inspect sampling from Host Control and the live Caddy admin JSON SHA-256 are distinct observations; neither a saved DB target nor a browser/API-supplied Host status may create trusted Host identity. A future private collector must verify both are fresh and bound across the actual TLS/ingress probe window; mismatched container PID/start generation or in-process config reload fails closed.
