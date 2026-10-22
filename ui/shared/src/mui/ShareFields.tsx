@@ -7,6 +7,7 @@ import { InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveActionButton } from './ActionButton'
 import type { XDriveActionIntent } from './ActionButton'
+import { XDriveSensitiveField } from './SensitiveField'
 
 export type XDriveShareExpiryMode = 'datetime' | 'days'
 
@@ -143,25 +144,19 @@ export function XDriveShareCreateFields({
         slotProps={{ htmlInput: { min: 0, step: 1 } }}
         sx={{ minWidth: { md: 180 } }}
       />
-      <TextField
-        size="small"
-        type="password"
+      <XDriveSensitiveField
         label="密码（可选）"
         value={password}
-        error={passwordError}
+        error={Boolean(passwordError)}
         helperText={passwordHelperText}
         placeholder={passwordPlaceholder}
         autoComplete="new-password"
-        onChange={(event) => onPasswordChange(event.target.value)}
-        slotProps={{
-          input: {
-            startAdornment: (
-              <InputAdornment position="start">
-                <LockRoundedIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          },
-        }}
+        onChange={onPasswordChange}
+        startAdornment={
+          <InputAdornment position="start">
+            <LockRoundedIcon fontSize="small" />
+          </InputAdornment>
+        }
         sx={{ minWidth: { md: 220 } }}
       />
     </Stack>

@@ -28,6 +28,7 @@ import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
+import { XDriveSensitiveField } from './SensitiveField'
 import { XDriveTableSurface } from './TableSurface'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import type { AdminUser } from '../models'
@@ -607,18 +608,15 @@ export default function AdminUsersPanel({
                 if (createUsernameError) setCreateUsernameError('')
               }}
             />
-            <TextField
-              fullWidth
-              size="small"
-              type="password"
-              disabled={createSaving}
+            <XDriveSensitiveField
               label="临时密码"
-              autoComplete="new-password"
               value={createValues.password}
+              disabled={createSaving}
+              autoComplete="new-password"
               error={Boolean(createPasswordError)}
               helperText={createPasswordError || '至少 8 个字符'}
-              onChange={(event) => {
-                setCreateValues((current) => ({ ...current, password: event.target.value }))
+              onChange={(value) => {
+                setCreateValues((current) => ({ ...current, password: value }))
                 if (createPasswordError) setCreatePasswordError('')
               }}
             />
@@ -722,19 +720,16 @@ export default function AdminUsersPanel({
         />
         <XDriveDialogContent>
           <Stack component="form" spacing={2} onSubmit={(event) => void resetPassword(event)}>
-            <TextField
+            <XDriveSensitiveField
               autoFocus
-              fullWidth
-              size="small"
-              type="password"
-              disabled={resetSaving}
               label="新临时密码"
-              autoComplete="new-password"
               value={resetValues.password}
+              disabled={resetSaving}
+              autoComplete="new-password"
               error={Boolean(resetPasswordError)}
               helperText={resetPasswordError || '至少 8 个字符'}
-              onChange={(event) => {
-                setResetValues((current) => ({ ...current, password: event.target.value }))
+              onChange={(value) => {
+                setResetValues((current) => ({ ...current, password: value }))
                 if (resetPasswordError) setResetPasswordError('')
               }}
             />

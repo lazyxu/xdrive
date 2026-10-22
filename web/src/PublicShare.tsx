@@ -4,8 +4,8 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
-import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material'
-import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert } from '@xdrive/ui/mui'
+import { Box, InputAdornment, Stack, Typography } from '@mui/material'
+import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert, XDriveSensitiveField } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import { xDriveShareReadOnlyDefaultCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
@@ -430,25 +430,18 @@ export default function PublicShareView({ token }: { token: string }) {
               </Typography>
 
               {share.requires_password && (
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                <XDriveSensitiveField
                   label="分享密码"
+                  value={password}
+                  onChange={setPassword}
                   placeholder="分享密码"
                   autoComplete="current-password"
                   sx={{ maxWidth: 440 }}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <LockRoundedIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
+                  startAdornment={
+                    <InputAdornment position="start">
+                      <LockRoundedIcon fontSize="small" />
+                    </InputAdornment>
+                  }
                 />
               )}
 
