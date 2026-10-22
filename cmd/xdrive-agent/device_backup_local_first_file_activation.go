@@ -154,6 +154,11 @@ func (c *agentController) cloudStartLocalBoundBackupFirstFileOnce(
 		return empty, safeLocalBackupFirstFileError(err)
 	}
 	defer writer.Close()
+	// Never allow the actual owning-Desktop Runner to enter authenticated
+	// HTTP/CAS/SQL write/reconcile without the same original, live OS-locked
+	// Writer marker remaining checkable throughout those operations.
+	driver.liveWriter = writer
+	driver.liveWriterRequired = true
 	// Existing native Stage -> authenticated HTTP/CAS/SQL -> independently
 	// native-held historical SQL/physical CAS path. Ambiguity quarantines
 	// the original Stage/key; NO retry, key retirement or SourceRun.

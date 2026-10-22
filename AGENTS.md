@@ -1,3 +1,10 @@
+## G2c2d2b3c3b · real owning-Agent first-file native Writer lock held across HTTP CAS/SQL (2026-10-22)
+
+- The merged #2212 genuine owning Windows/Linux Desktop Backup-only one regular <=64 MiB first-file upload stays ENABLED. Every real owning-Desktop Commit and historical SQL/physical CAS readback must additionally carry the same native Writer *Claim from Begin* alive, with exact Agent-private marker/inode/mode/path contents checked before and after remote callback while Claim mutex prevents Close. Original native file fd is also held/posthashed; neither the scope nor source path may come from Renderer/Web.
+- A historical acquired OS Writer lock alone or a matching hash is NOT independent remote quiescence or physical COMMIT/CANCEL; this slice does not route any Server physical terminal, Stage/key retirement, SourceRun, scheduler or second-file upload. Native callback errors fail closed; do not remove original O_EXCL marker or infer safe repeat.
+- Linux/Windows live kernel-lock tests, POSIX tampered/same-byte replaced inode negative tests, existing Go/SQL API Race/Web/Desktop/rootless/artifact CI and new exact HEAD Final Gate before merge. Preserve complete master AGENTS and all unrelated PR work; exactly ONE source commit. Keep distinct #2319 postread and #2327 original Operation SQL/CAS precommit branches alive.
+- Per user, inaccessible production-only safety acceptance is permanently **按用户决定跳过（未验收）**, not a source, CI, PR or merge gate. Never request production access/accounts/AK/JWT/Cookie/HAR/packet captures/signoff; code-level Owner/Device/Root/native/SQL/CAS tests remain mandatory.
+
 ## Gallery Places · 真实照片封面独立地图聚集点（2026-10-22）
 
 - 继续已合并的大地图默认入口 #2345：可信 Gallery Parent 增加 Apple Photos 风格真实封面/叠放照片标记与已授权数量角标。最多 24 张非重叠可见封面通过原 Gallery CoverPool 加载，所有未加载的 Cell 仍保留百度 Child 原数字标签。
