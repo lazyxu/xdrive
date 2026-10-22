@@ -2,6 +2,20 @@
 
 > 当前执行依据：`lazyxu/xdrive`、根 `AGENTS.md` 及现有 PR/Issues。本文记录**源码事实、准确 HEAD CI、是否合入、浏览器实测、性能 BEFORE/AFTER**；旧的 `docs/pwa-delivery.md` 2026-10-12 表格是历史快照，不能将其“待做”直接当成当前事实。此文仅记录、验收，不代表步骤 1–5 已完成。
 
+## 2026-10-22 · 最新核验的准确合并与 P2-B 决策（优先于下文原任务状态）
+
+| 阶段 | 当前权威事实 |
+|---|---|
+| P0 | 公共 Shell、版本等待与旧 hashed lazy JS 持久已合入；旧资源自动 GC **故意未实施** |
+| P1 | 显式同意的有界目录与相册历史只读快照、实例/Owner 隔离及按需线上 ACL 重校验已合入 |
+| **步骤 1：P2-A2** | [#2337](https://github.com/lazyxu/xdrive/pull/2337) 准确 HEAD `22c932a2a981806b6cf9e6d3316966809a0f8d3f` 真 Chrome A 进程退出→B 进程同 profile + 真 Go/PG17/CAS 专项 [#39712342797](https://github.com/lazyxu/xdrive/actions/runs/39712342797) **SUCCESS**；[完整 CI #39712342546](https://github.com/lazyxu/xdrive/actions/runs/39712342546) **77 项：25 SUCCESS、52 SKIPPED，Final Gate SUCCESS**；已 rebase 合入 `master@1cf0df6b82158f45c61a93d5ac4c7facd4f45400`；分支已自动清理 |
+| **步骤 2：P2-B** | 在此真实 loopback 负载下**决定暂不实施私有持久缩略图缓存**，不是宣称不存在网络请求，也不宣称做过任何 P2 AFTER；高 RTT/弱网和“明确离线保留”必须另设有界需求和配对实验 |
+| **步骤 3：可靠性组合** | **尚未完成** 上传中 waiting/跨窗口升级/回滚+P1 重连/撤销/损坏的组合 E2E；优先新增真实自动化而非盲目修改生产 App |
+| **步骤 4：性能优化** | 对 100k 启动或 Gallery VirtualGrid/decode/render 先区分占比，按同一 Runner n≥3 BEFORE/AFTER 和成本门禁保留有明显收益的修改；当前此阶段没有 AFTER |
+| **步骤 5：旧资产与文档** | 历史 /assets 只追加与只读容量审计已交付；活跃旧客户端的安全引用证明、人工预览与长期保留策略未闭环，**禁止猜测式自动删除** |
+
+**真实同源 P2-A2 测量：**三组独立真实 Go/PG17/LocalCAS 100k 逻辑 / 115k 物理样本，原生 Chrome A 与 B 不同 OS PID、相同磁盘 Profile/Origin/Owner，每组 0/50/95% 的四个相同可见 Blob 图片，n=9。A 首次可见 4 张+2 rAF 的 p50/p95 为 **2417.266/2698.226 ms**；B 重启为 **2451.434/2626.517 ms**。A HTTP 缩略图请求 **110**、Go response-body **77,175 字节**；B **114 请求**、**80,730 字节**。这是**两个进程各自在三个视口上的聚合响应体**，不是独立每张图片的 TCP wire bytes 或其延迟占比；B 再次请求说明进程内缓存不持久，但测试没有隔离渲染/网络耗时，**不能由小幅 p50/p95 差异推断缓存收益，更不能将其标作 AFTER**。真实 iOS/Android 设备 `NOT RUN`、无法触及的生产安全验收 `按用户决定跳过（未验收）`，源码 Owner/ACL/撤销/CI 不能跳过。
+
 ## 0. 已验收、不重复开发
 
 | 范围 | 当前源码/PR 事实 | 自动化边界 |
@@ -18,7 +32,7 @@
 
 ## 1. 第一优先：P2-A2 真正跨 Chromium 进程 CURRENT/BEFORE
 
-**Issue [#2329](https://github.com/lazyxu/xdrive/issues/2329)；未实现、未测。**
+**该阶段已完成合并与准确 HEAD 源码级自动化验收：[#2329](https://github.com/lazyxu/xdrive/issues/2329)、[#2337](https://github.com/lazyxu/xdrive/pull/2337)。以下条款保留为已执行的实验契约与后续回归约束，不代表仍待首次实现。**
 
 - 按 `AGENTS.md` 先冻结当前完整 master、核对既有分支/PR；未合并优先继续旧 PR，已合入的临时分支不再新建重复 PR。
 - 在**同一**真实 Go/Gin + PostgreSQL17 + LocalCAS fixture（100k logical/115k physical）、同一 Owner token、同一 Origin、同一 user-data-dir 下，启动独立原生 Chromium 进程 A，滚动 0/50/95%，每处记录四张**真实可见相同 ID** Blob 缩略图 decode 与两次 rAF、Server started/response_bytes。
@@ -28,7 +42,7 @@
 
 ## 2. 第二优先：P2-B 是否值得实现的决定
 
-**必须在 P2-A2 AFTER 有可复核的 CURRENT 前，不改生产缩略图存储代码。**
+**P2-A2 CURRENT/BEFORE 已有可复核数据；当前决定不开发 P2-B**。以下内容只在高 RTT/弱网或明确离线访问新增需求并证明净收益时重新开启。P2-B AFTER=N/A，禁止宣称持久缓存已交付。
 
 - 若跨进程仍命中、额外请求和字节≈0，或主要开销为虚拟列表/JS 绘制，则优先定位绘制、不要为提速引入 IndexedDB。
 - 若跨进程重新下载真实缩略图且构成显著重复耗时/流量，再考虑 **默认关闭、单 Owner 明确 opt-in、只缓存已经授权且可见缩略图** 的有限 Blob store。32 MiB/128 张/单张 256 KiB 是待验证假设，不是已批准的优化参数或实测最优。

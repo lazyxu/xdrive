@@ -1,4 +1,4 @@
-> **2026-10-22 最新执行状态：** 本文件下方最初的 P0/P1/P2 表格为 **2026-10-12 历史审查快照**，大量“待做”已由后续 PR 合入，不能据此重复开发。最新阶段真相及固定处理顺序请先读 [PWA 五阶段执行/验收台账](pwa-five-stage-execution-20261022.md)。P0 App Shell/双版本与 P1 明确授权只读目录/相册快照均已合入；P2-A 同进程 100k 真实基线 [#2325](https://github.com/lazyxu/xdrive/pull/2325) 已合入，**P2-A2 真正跨进程 [#2329](https://github.com/lazyxu/xdrive/issues/2329) 尚未开发，P2-B 缓存未做，AFTER=N/A**。生产环境无法触达的安全验收一律“按用户决定跳过（未验收）”，不阻塞源码/CI 合并；物理 iOS/Android `NOT RUN`，源码 Owner/ACL/撤销测试不可跳过。
+> **2026-10-22 当前核实的权威状态：** P0 公共 App Shell/升级与 P1 按账号隔离的只读目录/相册快照已合入。P2-A 同进程 100k 基线 [#2325](https://github.com/lazyxu/xdrive/pull/2325) 和 **P2-A2 真跨 Chrome OS 进程 [#2337](https://github.com/lazyxu/xdrive/pull/2337)** 均合入（后者 `master@1cf0df6b`，准确 HEAD 专项与 77-job Final Gate 成功）。跨进程确实重新下载缩略图，但 loopback 场景尚无可归因的净加速证据，因此 **P2-B 持久私人 Blob 缓存暂不开发**。当前首要缺口是第三步上传中 SW waiting/跨窗口/离线历史撤销的组合 E2E；第四步 BEFORE/AFTER、第五步历史公开资源安全生命周期仍待完成。参见 [五阶段最新权威记录](pwa-five-stage-execution-20261022.md)。下方 P0/P1/P2 初版表格始于 2026-10-12，是历史记录，不应当作今日待办。实体 iOS/Android 仍 `NOT RUN`；不可访问的生产环境安全验收「按用户决定跳过（未验收）」、源码 Owner/ACL/撤销测试照常执行。
 
 # xDrive PWA 交付审查与强化路线图
 
