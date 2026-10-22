@@ -73,10 +73,10 @@ export default function PwaOfflineDirectoryBrowser({
           setSelectedID(read.directories[0]?.id ?? null)
         }
       } catch {
-        // Storage may be blocked or corrupted; never fall back to API caches.
-        if (active) setVerification('unavailable')
+        // A late IDB error must not overwrite a newer peer purge/reset.
+        if (active && readSequence === sequence.current) setVerification('unavailable')
       } finally {
-        if (active) setLoading(false)
+        if (active && readSequence === sequence.current) setLoading(false)
       }
     })()
     const markOnline = () => setOnline(true)
@@ -117,12 +117,16 @@ export default function PwaOfflineDirectoryBrowser({
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purged')
           }
         } catch {
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purge-failed')
           }
         }
@@ -139,12 +143,16 @@ export default function PwaOfflineDirectoryBrowser({
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purged')
           }
         } catch {
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purge-failed')
           }
         }
@@ -161,12 +169,16 @@ export default function PwaOfflineDirectoryBrowser({
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purged')
           }
         } catch {
           if (current === sequence.current) {
             setOwner(null)
             setSaved(null)
+            setAlbumSaved(null)
+            setSelectedID(null)
             setVerification('purge-failed')
           }
         }

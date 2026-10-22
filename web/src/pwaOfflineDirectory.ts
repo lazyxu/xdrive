@@ -253,13 +253,33 @@ function openDatabase(): Promise<IDBDatabase> {
   if (!offlineSupported()) return Promise.reject(new Error('Secure IndexedDB unavailable'))
   return new Promise((resolve, reject) => {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION)
+    let settled = false
     request.onupgradeneeded = () => {
+      // Blocked upgrade may resume after the caller has already failed.
+      if (settled) {
+        try { request.transaction?.abort() } catch { /* Already inactive. */ }
+        return
+      }
       const database = request.result
       if (!database.objectStoreNames.contains(STORE_NAME)) database.createObjectStore(STORE_NAME, { keyPath: 'key' })
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error || new Error('Offline metadata database open failed'))
-    request.onblocked = () => reject(new Error('Offline metadata database upgrade blocked'))
+    request.onsuccess = () => {
+      const database = request.result
+      if (settled) { database.close(); return }
+      settled = true
+      database.onversionchange = () => database.close()
+      resolve(database)
+    }
+    request.onerror = () => {
+      if (settled) return
+      settled = true
+      reject(request.error || new Error('Offline metadata database open failed'))
+    }
+    request.onblocked = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('Offline metadata database upgrade blocked'))
+    }
   })
 }
 
@@ -290,7 +310,9 @@ async function withStore<T>(
     }
     try { run(transaction.objectStore(STORE_NAME), next => { value = next }) }
     catch (error) {
-      transaction.abort()
+      // Quota/disk/version failures can leave an inactive transaction.
+      // Preserve the original failure instead of hanging in abort().
+      try { transaction.abort() } catch { /* Already inactive; fail closed below. */ }
       if (!finished) {
         finished = true
         database.close()
@@ -339,8 +361,11 @@ export async function xDrivePwaSetOfflineConsent(
       } satisfies OfflineRelaunchHint)
       done(undefined)
     }
+  }).finally(() => {
+    // Failure to persist consent revocation must still hide peer UI; caller
+    // receives the error and must not claim disk contents were wiped.
+    if (!enabled) xDrivePwaBroadcastOfflinePurge()
   })
-  if (!enabled) xDrivePwaBroadcastOfflinePurge()
 }
 
 export async function xDrivePwaCaptureVisitedDirectory(
@@ -523,12 +548,18 @@ export function xDrivePwaVerifiedIdentityMatches(owner: XDrivePwaOfflineOwner, m
 /** Invoke on sign-out/auth switch, including when offline; never clear the
  * browser's public App Shell CacheStorage or unrelated local preferences. */
 export async function xDrivePwaClearOfflineMetadata(): Promise<void> {
-  if (!offlineSupported()) return
+  if (!offlineSupported()) {
+    xDrivePwaBroadcastOfflinePurge()
+    return
+  }
   await withStore<void>('readwrite', (store, done) => {
     store.clear()
     done(undefined)
+  }).finally(() => {
+    // Tell all other tabs to hide stale historical data even if disk purge
+    // failed. Do NOT report a failed persistence operation as a successful wipe.
+    xDrivePwaBroadcastOfflinePurge()
   })
-  xDrivePwaBroadcastOfflinePurge()
 }
 
 function xDrivePwaBroadcastOfflinePurge(): void {
