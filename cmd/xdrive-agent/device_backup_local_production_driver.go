@@ -211,43 +211,49 @@ func (d *localPushFirstLeafDriver) Commit(ctx context.Context, s localpushrunner
 	if err := d.Check(ctx, s); err != nil {
 		return err
 	}
-	// Network SQL COMMIT happens WHILE the ORIGINAL OS fd is still open.
-	// Any native post-hash failure is uncertain, never an abort or rollback.
-	_, err := localpush.WithHeldCurrentOriginalFirstLeafCommitWindow(ctx, d.configDir, d.grant,
-		d.stage.SnapshotSHA256, s.RelativePath, s.ContentSHA256, s.Size,
-		func(heldCtx context.Context, original localpush.NativeHeldCurrentOriginal) error {
-			if !d.nativeMatches(s, original) {
-				return errLocalPushDriverDenied
-			}
-			if err := d.Check(heldCtx, s); err != nil {
-				return err
-			}
-			commitBound := func(writeCtx context.Context) error {
-				_, err := d.api.CommitLocalPushFirstLeafWithOperation(
-					writeCtx, s.SourceID, s.Revision, d.proof, st.StageID,
-					s.RelativePath, d.key.bytes, op.ID, op.Generation,
-				)
-				return err
-			}
-			if d.liveWriterRequired {
-				return d.withBoundOriginalLiveWriterWitness(
-					heldCtx, s, original, st, op,
-					func(writeCtx context.Context, witness localPushOriginalHeldWitness) error {
-						// This is Agent-local correlation, NOT a Server
-						// physical terminal or remote OS attestation.
-						if witness.operationID != op.ID ||
-							witness.generation != op.Generation ||
-							witness.stageID != st.StageID ||
-							!validLocalPushNativeWitnessDigest(witness.digest) {
-							return errLocalPushDriverDenied
-						}
-						return commitBound(writeCtx)
-					},
-				)
-			}
-			return commitBound(heldCtx)
-		})
-	return err
+	// Pin the ORIGINAL persisted Stage recovery hint through the entire
+	// native fd + live Writer Claim + authenticated HTTP CAS/SQL callback.
+	// Its post-callback inode/byte/Root check must also succeed; failure
+	// after HTTP may be committed remotely, so it remains UNCERTAIN.
+	return d.withOriginalStageHeldDuringCommit(
+		ctx, s, st, op, func(heldStageCtx context.Context) error {
+			_, err := localpush.WithHeldCurrentOriginalFirstLeafCommitWindow(heldStageCtx, d.configDir, d.grant,
+				d.stage.SnapshotSHA256, s.RelativePath, s.ContentSHA256, s.Size,
+				func(heldCtx context.Context, original localpush.NativeHeldCurrentOriginal) error {
+					if !d.nativeMatches(s, original) {
+						return errLocalPushDriverDenied
+					}
+					if err := d.Check(heldCtx, s); err != nil {
+						return err
+					}
+					commitBound := func(writeCtx context.Context) error {
+						_, err := d.api.CommitLocalPushFirstLeafWithOperation(
+							writeCtx, s.SourceID, s.Revision, d.proof, st.StageID,
+							s.RelativePath, d.key.bytes, op.ID, op.Generation,
+						)
+						return err
+					}
+					if d.liveWriterRequired {
+						return d.withBoundOriginalLiveWriterWitness(
+							heldCtx, s, original, st, op,
+							func(writeCtx context.Context, witness localPushOriginalHeldWitness) error {
+								// This is Agent-local correlation, NOT a Server
+								// physical terminal or remote OS attestation.
+								if witness.operationID != op.ID ||
+									witness.generation != op.Generation ||
+									witness.stageID != st.StageID ||
+									!validLocalPushNativeWitnessDigest(witness.digest) {
+									return errLocalPushDriverDenied
+								}
+								return commitBound(writeCtx)
+							},
+						)
+					}
+					return commitBound(heldCtx)
+				})
+			return err
+		},
+	)
 }
 
 func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrunner.Scope,
