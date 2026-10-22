@@ -459,6 +459,7 @@ export function XDriveMediaGalleryPlacesMap({
             childOrigin={isolatedChildOrigin}
             mintChildTicket={mintBaiduIsolatedChildTicket}
             listOwnerCells={listBaiduNativeCells}
+            loadThumbnail={loadPhotoCoverThumbnail}
             onOpenCell={onOpenBaiduNativeCell}
             onInvalidated={onBaiduNativeCellInvalidated}
             onCamera={onNativeCameraChange}

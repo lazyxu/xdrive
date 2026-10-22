@@ -22,6 +22,8 @@ function mountChild() {
       this.enableDoubleClickZoom=()=>{}
       this.enablePinchToZoom=()=>{}
       this.addEventListener=()=>{}
+      this.pointToPixel=p=>({x:Math.round(320+(p.lng-20)*0.3),
+        y:Math.round(240-(p.lat-20)*0.5)})
       this.addOverlay=label=>overlays.push(label)
       this.removeOverlay=label=>{const i=overlays.indexOf(label);if(i>=0)overlays.splice(i,1)}
       this.getBounds=()=>({getSouthWest:()=>new fakeSDK.Point(-180,-85),
@@ -30,7 +32,7 @@ function mountChild() {
       this.getZoom=()=>3
     }
   }
-  const status={textContent:''}
+  const status={textContent:'',clientWidth:640,clientHeight:480}
   const env={window:{location:{origin:'https://map-isolated.example.org'},parent,
       BMap:fakeSDK,addEventListener(name,handler){events.set(name,handler)}},
     document:{getElementById(){return status},
@@ -66,6 +68,13 @@ test('Places overview fits all approved world clusters once, rather than the fir
     {lat:35.68,lng:139.7},{lat:40.71,lng:-74.01}
   ])
   assert.equal(f.overlays.length,2,'both count markers should be displayed')
+  const screenProjections=f.sent.filter(x=>x.message.kind==='cell-projections')
+  assert.ok(screenProjections.length>=1,'SDK projection published')
+  assert.deepEqual(Object.keys(screenProjections.at(-1).message).sort(),
+    ['generation','height','kind','nonce','points','version','width'])
+  assert.equal(screenProjections.at(-1).message.points.length,2)
+  assert.deepEqual(Object.keys(screenProjections.at(-1).message.points[0]).sort(),
+    ['key','x','y'])
   assert.match(f.overlays[0].label,/15/)
   f.overlays[0].click()
   const selected=f.sent.filter(x=>x.message.kind==='activate-cell')

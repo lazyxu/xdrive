@@ -170,12 +170,15 @@ test('A3h shared Web/Mobile/Desktop secure HTTPS map uses Gallery pool + Owner R
   const docs=read('docs/gallery-places-ios27-roadmap.md')
   assert.match(gallery,/loadPhotoCoverThumbnail=\{loadThumbnail\}/)
   assert.match(places,/XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
-  assert.doesNotMatch(places,/loadThumbnail=\{loadPhotoCoverThumbnail\}/)
+  assert.match(places,/loadThumbnail=\{loadPhotoCoverThumbnail\}/)
   assert.match(isolated,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
   assert.match(isolated,/frame\.replaceAuthorizedCells\(cells\)/)
-  assert.doesNotMatch(isolated,/loadThumbnail|loadPhotoCoverThumbnail|XDriveMediaGalleryCoverThumbnail/)
-  // The previous trusted in-document thumbnail/pin component remains inert.
-  // Gallery/Viewer retain the normal authorized thumbnail transport.
+  assert.match(isolated,/XDriveMediaGalleryCoverThumbnail/)
+  assert.match(isolated,/data-xdrive-places-trusted-photo-cover-pins/)
+  // Private thumbnails are rendered ONLY in Gallery Parent, and never sent
+  // as image URLs, Blob bytes or sensitive identities to the Child SDK.
+  assert.doesNotMatch(read('deploy/baidu-isolated-child/child.js'),
+    /loadThumbnail|PhotoAsset|node_id|image_url|private_photo_url/)
   assert.match(surface,/XDriveMediaGalleryCoverThumbnail/)
   assert.match(surface,/data-xdrive-baidu-photo-cover-pins/)
   assert.match(surface,/onClick=\{\(\) => openTrustedCell\(cell\)\}/)

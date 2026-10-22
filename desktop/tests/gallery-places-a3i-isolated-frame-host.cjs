@@ -281,3 +281,34 @@ test('host rotates iframe challenge on reload, ignores ready replay, and bounds 
   assert.equal(received.ready,2,'new ready cannot be replayed')
   frame.dispose()
 })
+
+test('trusted Owner photo-cover projections never release media IDs to independent Child', () => {
+  const f=fixture()
+  const projected=[]
+  f.options.onProjectedCells=value=>projected.push(value)
+  const frame=xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  f.emit('ready')
+  const selection={node_id:42,node_revision:7,asset_id:90,jwt:'private'}
+  assert.equal(frame.replaceAuthorizedCells([{latitude:35,longitude:139,count:20,selection}]),true)
+  const packet=f.seen.at(-1).payload
+  const key=packet.cells[0].key
+  assert.equal(JSON.stringify(packet).includes('node_id'),false)
+  f.emit('cell-projections',{width:640,height:480,points:[{key,x:150,y:210}]})
+  assert.equal(projected.at(-1).cells.length,0,'before map-ready pixels are rejected')
+  f.emit('map-ready')
+  f.emit('cell-projections',{width:640,height:480,points:[{key,x:150,y:210}]})
+  assert.deepEqual(projected.at(-1),{width:640,height:480,
+    cells:[{selection,count:20,x:150,y:210}]})
+  const before=projected.length
+  f.emit('cell-projections',{width:640,height:480,points:[{key:'c'.repeat(32),x:10,y:10}]})
+  f.emit('cell-projections',{width:640,height:480,points:[{key,x:-1,y:20}]})
+  f.emit('cell-projections',{width:640,height:480,points:[{key,x:10,y:20,node_id:42}]})
+  assert.equal(projected.length,before,'forged stale IDs or pixels may not publish covers')
+  f.emit('cancel')
+  assert.deepEqual(projected.at(-1),{width:0,height:0,cells:[]})
+  f.emit('cell-projections',{width:640,height:480,points:[{key,x:150,y:210}]})
+  assert.equal(projected.at(-1).cells.length,0,'revoked keys never reactivate')
+  frame.dispose()
+})
