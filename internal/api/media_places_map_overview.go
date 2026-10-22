@@ -51,7 +51,7 @@ func parseMediaMapOverviewQuery(raw string) (mediaPlaceViewportBounds, bool, err
 	return bounds, detail, nil
 }
 
-// An 8x8 grid over the whole planet is NOT a useful photo overview:
+// An 8x8 grid over the whole planet was NOT a useful photo overview:
 // 460 different 0.01-degree places around Jinhua all fall inside the same
 // 45-degree longitude / 21.25-degree latitude world bucket. The map then
 // paints one sample with the entire combined photo count. Compute a bounded,
@@ -203,7 +203,26 @@ func queryMediaPlacesMapOverview(
 	if !found {
 		return mediaPlacesMapOverviewDTO{Items: []mediaPlaceDTO{}, Aggregated: true}, nil
 	}
-	rowExpr, colExpr := mediaMapOverviewBuckets(fitted)
+	// Stage 1: every representative coordinate and its cover must come
+	// from the SAME unique GPS record. Stage 2: rank distinct actual GPS
+	// positions, rather than partitioning an entire multi-city envelope
+	// into equal-angle squares. A repeated GPS remains one weighted point.
+	//
+	// PostgreSQL performs all grouping/ranking within the authenticated
+	// selection. Only the <=64 representatives cross Server -> Client.
+	// Stable rank boundary slots reserve geographically extreme samples;
+	// the other six slots adapt to the true coordinate distribution.
+	longitudeSort := "longitude"
+	if fitted.West > fitted.East {
+		longitudeSort = fmt.Sprintf(
+			"(CASE WHEN longitude < %s THEN longitude + 360 ELSE longitude END)",
+			strconv.FormatFloat(fitted.West, 'f', -1, 64))
+	}
+	ownerMedia := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+		Select("xd_media_metadata.latitude AS latitude, " +
+			"xd_media_metadata.longitude AS longitude, " +
+			"pa.id AS photo_asset_id, pa.primary_node_id AS node_id, " +
+			"lower(xd_media_metadata.mime_type) AS mime_type")
 	type row struct {
 		BucketRow       int
 		BucketCol       int
@@ -216,18 +235,65 @@ func queryMediaPlacesMapOverview(
 		"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
 		"image/tiff", "image/bmp", "image/heic", "image/heif", "image/x-adobe-dng",
 	}
+	// A position is first deduplicated; all PhotoAssets sharing that exact
+	// coordinate stay together, and its thumbnail Node belongs to THAT point.
+	// The final ROW_NUMBER chooses one of these indivisible positions,
+	// preferring a real image cover over a video-only representative.
+	// No independent MIN(cover_node_id) / ARRAY_AGG(sample_gps) pairing.
+	query := fmt.Sprintf(`WITH owner_media AS (?),
+gps_positions AS (
+	SELECT latitude, longitude, COUNT(DISTINCT photo_asset_id) AS photo_count,
+		MIN(node_id) AS fallback_node_id,
+		MIN(node_id) FILTER (WHERE mime_type IN ?) AS cover_node_id
+	FROM owner_media GROUP BY latitude, longitude
+),
+lat_order AS (
+	SELECT *, ROW_NUMBER() OVER (ORDER BY latitude, longitude) AS rank_lat,
+		COUNT(*) OVER () AS total_positions
+	FROM gps_positions
+),
+lat_buckets AS (
+	SELECT *, CASE
+		WHEN total_positions <= 8 THEN (rank_lat - 1)::int
+		WHEN rank_lat = 1 THEN 0
+		WHEN rank_lat = total_positions THEN 7
+		ELSE 1 + LEAST(5, FLOOR((rank_lat - 2)::numeric * 6 / (total_positions - 2))::int)
+	END AS bucket_row
+	FROM lat_order
+),
+lon_order AS (
+	SELECT *, ROW_NUMBER() OVER
+		(PARTITION BY bucket_row ORDER BY %s, latitude) AS rank_lon,
+		COUNT(*) OVER (PARTITION BY bucket_row) AS row_positions
+	FROM lat_buckets
+),
+quantile_buckets AS (
+	SELECT *, CASE
+		WHEN row_positions <= 8 THEN (rank_lon - 1)::int
+		WHEN rank_lon = 1 THEN 0
+		WHEN rank_lon = row_positions THEN 7
+		ELSE 1 + LEAST(5, FLOOR((rank_lon - 2)::numeric * 6 / (row_positions - 2))::int)
+	END AS bucket_col
+	FROM lon_order
+),
+ranked AS (
+	SELECT bucket_row, bucket_col, latitude, longitude, cover_node_id,
+		SUM(photo_count) OVER (PARTITION BY bucket_row, bucket_col) AS item_count,
+		ROW_NUMBER() OVER (
+			PARTITION BY bucket_row, bucket_col
+			ORDER BY CASE WHEN cover_node_id IS NULL THEN 1 ELSE 0 END,
+				photo_count DESC, COALESCE(cover_node_id, fallback_node_id),
+				latitude, longitude
+		) AS sample_rank
+	FROM quantile_buckets
+)
+SELECT bucket_row, bucket_col, latitude AS sample_latitude,
+	longitude AS sample_longitude, item_count, cover_node_id
+FROM ranked WHERE sample_rank = 1
+ORDER BY item_count DESC, bucket_row ASC, bucket_col ASC
+LIMIT 65`, longitudeSort)
 	var rows []row
-	err = mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
-		Select(rowExpr+" AS bucket_row, "+colExpr+" AS bucket_col, "+
-			"(ARRAY_AGG(xd_media_metadata.latitude ORDER BY pa.primary_node_id))[1] AS sample_latitude, "+
-			"(ARRAY_AGG(xd_media_metadata.longitude ORDER BY pa.primary_node_id))[1] AS sample_longitude, "+
-			"COUNT(DISTINCT pa.id) AS item_count, "+
-			"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id",
-			thumbnailMIMEs).
-		Group(rowExpr + ", " + colExpr).
-		Order("item_count DESC, bucket_row ASC, bucket_col ASC").
-		Limit(mediaMapOverviewMaxPoints + 1).
-		Scan(&rows).Error
+	err = db.WithContext(ctx).Raw(query, ownerMedia, thumbnailMIMEs).Scan(&rows).Error
 	if err != nil {
 		return mediaPlacesMapOverviewDTO{}, err
 	}
@@ -244,7 +310,7 @@ func queryMediaPlacesMapOverview(
 		}
 		out.TotalPhotoCount += item.ItemCount
 		out.Items = append(out.Items, mediaPlaceDTO{
-			ID: fmt.Sprintf("map-region:%s:%s:%s:%s:%d:%d",
+			ID: fmt.Sprintf("map-region:q:%s:%s:%s:%s:%d:%d",
 				strconv.FormatFloat(fitted.West, 'f', -1, 64),
 				strconv.FormatFloat(fitted.South, 'f', -1, 64),
 				strconv.FormatFloat(fitted.East, 'f', -1, 64),

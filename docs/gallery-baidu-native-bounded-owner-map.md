@@ -17,9 +17,19 @@ revision, cancellation and authorization tests still apply.
 GET /api/v1/media/places/overview?west&south&east&north&detail=0|1 is
 Owner-authenticated, strictly validates one finite WGS84 envelope and applies
 a 3-second database deadline. Its response contains at most 64 records.
-At wide zoom it partitions the current geographic envelope into 8×8 *Server*
-spatial summary buckets; each bucket contains the true distinct PhotoAsset
-count and an actual paired WGS84 sample from one media record. At local zoom,
+At wide zoom the Server groups **distinct genuine WGS84 GPS coordinates**
+first (all photos with the same coordinate remain indivisible), then chooses
+at most 8 latitude-rank bands × 8 longitude-rank bands. Edge ranks remain
+separate for sparse distant cities; dense neighborhoods consume more of the
+same 64-point budget than they did under equal-angle global grids.
+Each bucket contains an exact sum of distinct Owner PhotoAssets. The chosen
+cover Node and WGS84 representative are from the **same coordinate group**:
+prefer a real image cover, otherwise retain the real video GPS without a
+fabricated cover. Database grouping/ranking never ships 100k coordinates to JS.
+Ranked IDs use `map-region:q:<west>:<south>:<east>:<north>:<row>:<col>`.
+The `q` cells are bounded rank partitions, **not** geographic rectangles or
+valid Media Range identities. Old `map-region:` rectangular IDs remain
+parseable for compatibility. At local zoom,
 detail=1 returns the complete page of ordinary 0.01-degree Places cells ONLY
 if there are ≤64 cells. Otherwise it returns the same bounded buckets. Never
 interpret a bucket identifier as a historical place identity.
@@ -57,7 +67,8 @@ original Owner Gallery Range / Viewer.
   real photo-count sum, invalid bbox/Owner/revision fallback, date line,
   max 64 map points, native ClusterLayer event-before-data sequencing.
 - Server Go input/bucketing regression: query restrictions, date line, finite
-  boundaries, 8×8 SQL predicates. Web/Desktop/Agent builds and route contracts
+  boundaries, rank budgets, same-GPS dedupe, multi-city outliers, and cover
+  matching its exact GPS metadata. Web/Desktop/Agent builds and route contracts
   must pass on the exact submitted HEAD.
 - The prior 100k helper microbenchmark is NOT physical 100k acceptance; run
   independent real PostgreSQL mixed-media before/after and cross-client tests
