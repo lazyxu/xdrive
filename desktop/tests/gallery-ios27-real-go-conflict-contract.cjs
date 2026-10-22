@@ -16,7 +16,7 @@ const go = read('internal/api/media_manual_albums.go')
 test('P1-3c2c Mobile/Wide retain a single shared Gallery/DataSource/controller and Server CAS', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
   assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(gallery, /useXDriveVirtualCollection/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
   assert.match(gallery, /<MediaVirtualTimeline/)

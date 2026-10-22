@@ -17,7 +17,7 @@ const api = read('web/src/api.ts')
 test('P1-3c2a Mobile and wide actual controls share one Gallery, REST DataSource and selection owner', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
   assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(shared, /<XDriveMediaGallerySelectionToolbar/)
   assert.match(shared, /<XDriveMediaGallerySelectionReviewDialog/)
   assert.match(shared, /useXDriveVirtualCollection/)

@@ -218,7 +218,7 @@ test('P0-L6 mobile and wide Web reuse shared Live presentation, API and virtual 
   const adapter = read('web/src/mediaGalleryAdapter.ts')
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   assert.match(viewer, /<XDriveLivePhotoSurface/)
-  assert.match(webApp, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(webApp, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(adapter, /mediaLivePhotoMotionURL\(nodeID\)/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(gallery, /<MediaVirtualTileGrid/)

@@ -209,7 +209,7 @@ test('P1-2a does not fork Gallery data, virtual items, or media semantics', () =
   assert.match(pageSource, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
   assert.match(pageSource, /<MediaVirtualTileGrid/)
   assert.match(webSource, /<XDriveMediaGalleryPage/)
-  assert.match(webSource, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(webSource, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(adapterSource, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
 })
 
@@ -301,6 +301,6 @@ test('P1-2b edge-to-edge mode is owned only by the existing shared Gallery Viewe
   assert.match(viewerSource, /<XDriveMediaGalleryFilmstrip/)
   assert.match(viewerSource, /onSwipePrevious=\{canPrevious \? onPrevious : undefined\}/)
   assert.match(pageSource, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
-  assert.match(webSource, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(webSource, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(adapterSource, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
 })

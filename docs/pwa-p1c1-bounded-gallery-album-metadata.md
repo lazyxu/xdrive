@@ -1,0 +1,24 @@
+# PWA P1-C1: bounded, opt-in Gallery album metadata (not thumbnails)
+
+2026-10-22. P1-B2 #2314 is **merged** by rebase (`0978c5385b8991a02688d2cb95282ac3bb57f6c9`) after original exact-HEAD full CI #39632703278 completed SUCCESS (77 jobs; 25 successes, 52 conditional skips, Final Gate success). P1-C1 was safely restacked from its former parent `8823a8cb` onto this complete merged master with its tested production/test/workflow Blob SHAs preserved. Prior dedicated P1-C1 Chrome/Web success #39632898481 belongs to former HEAD `f29fa2a`, not this new work commit. **Require new exact-head full CI/Final Gate and fresh clean before merging P1-C1.**
+
+## Implementation boundary
+
+- Existing authorized Gallery `listAlbums` response only: `createWebMediaGalleryDataSource(api)` now accepts an optional `onAuthorizedAlbums` observer invoked after its original `api.mediaAlbums()` promise succeeds. No new automatic list request, media download, thumbnail preload or 100k traversal. Live Gallery errors and renders are unaffected by optional IDB failures.
+- Caller provides a current, authenticated `/me`-verified Owner scope (Origin, durable installation UUID, user ID, username). Consent must already be enabled in the existing shared IndexedDB transaction. A stale prior session, disabled consent, altered account/instance or non-Gallery app must never capture.
+- At most the first **24** already-returned `MediaAlbum` entries are projected using whitelisted fields only: `id`, `name`, `kind`, `item_count`, `revision`, bounded `updated_at`. Omit `cover_node_id`, `query`, media item IDs, location, EXIF, pixel/byte data, URLs and access tokens. Maximum dedicated snapshot 16 KiB and existing Owner record 192 KiB; preserve existing 10 directories/200 rows and 7-day TTL.
+- Offline browser renders static historical album labels and former item counts, clearly **unverified**. No thumbnail or content action. To revalidate, online account owners explicitly reopen the existing Gallery, which issues its normal authorized `/media/albums` request; an offline label is never passed back as a server-authorized Album object.
+- Existing logout, consent disable and account switch delete the entire consent record including album data. Read-time re-normalization prevents untrusted IDB fields from being rendered.
+- Chrome n2 persistent profile independently validates 100k generated album input projected to 24 items, first-20 files coexistence, Owner/instance separation, disconnected historical read and consent removal. This is not iOS Safari/Home Screen and not a genuine production Server ACL E2E; B2's real new-process SW shell validates that independently.
+- **AFTER speedup not claimed.** Before/after must be matched on same Chrome + 100k dataset, FCP, p50/p95, requests, transfer bytes, memory and cache quota; this increment adds no startup prefetch. Production-only unreachable security acceptance: **按用户决定跳过（未验收）**, never blocking source Owner/ACL tests or CI.
+
+## Required merge gates
+
+P1-C1 remains Draft until its restacked accurate HEAD passes projection + Chromium + Web compile/build, full 77+ Go/PostgreSQL17/API Race/Windows/Linux/Final Gate and fresh GitHub clean. Do not touch concurrent Push/Caddy/Share/performance changes or overwrite complete AGENTS history. P2 thumbnail cache remains deferred.
+
+## 2026-10-22 · Exact-head full-CI Desktop contract RED and repair
+
+- Former work HEAD `f420c358bff09d82f0872e5c366efdc4a7adc315` passed the authentic [Chromium/Web specialty #39700101884](https://github.com/lazyxu/xdrive/actions/runs/39700101884), while its [full CI #39700101890](https://github.com/lazyxu/xdrive/actions/runs/39700101890) reported a real `desktop-tests` failure: exactly **12 stale source assertions in 10 Desktop test files** required the literal one-argument `createWebMediaGalleryDataSource(api)` invocation.
+- The opt-in P1-C1 feature intentionally attaches only the named optional `onAuthorizedAlbums` side observer to the **same single shared Gallery adapter**. Repair exactly those source-contract matchers to accept the existing one-argument form or the explicitly named `onAuthorizedAlbums` form, **without loosening** Gallery virtualizer, shared REST data source, Live Photo/Viewer/mobile parity, or 52px frame requirements. One shared-Adapter contract now additionally asserts a single factory invocation.
+- All eight P1-C1 original feature/workflow/Chromium/source blobs remain untouched. Production media fetch and Service Worker behavior are unchanged. The prior CI RED is retained as evidence. The amended one-work-commit HEAD must pass its **own new** full CI and Final Gate, not reuse earlier SHA's status.
+- P2 thumbnail-cache production implementation remains blocked on P1-C1 merge; historical PWA/100k data are not a matched AFTER performance measurement.

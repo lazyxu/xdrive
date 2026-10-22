@@ -16,7 +16,7 @@ const navigation = read('ui/shared/src/mui/MediaGalleryNavigation.tsx')
 test('Web wide and Mobile Web mount one shared Gallery page and same REST DataSource', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
   assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(wide, /<XDriveMediaGalleryPage\s+source=\{mediaGallerySource\}/)
   assert.match(webAdapter, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
   assert.match(webAdapter, /listAlbumItemRange:\s*\(albumID, limit, offset, query\)\s*=>\s*api\.mediaAlbumItemRange/)

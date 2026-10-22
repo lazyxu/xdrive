@@ -126,7 +126,7 @@ test('P0-L5 common Web/Mobile Gallery virtualization and 52px App Frame remain i
   assert.match(page, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(page, /<MediaVirtualTileGrid/)
   assert.match(page, /<MediaVirtualTimeline/)
-  assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'), /calc\(52px \+ env\(safe-area-inset-top\)\)/)
   assert.doesNotMatch(original.slice(start, end), /(?:new Image|fetch\(|XMLHttpRequest)/)
 })
