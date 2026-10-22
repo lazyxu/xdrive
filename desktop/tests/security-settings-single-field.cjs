@@ -34,4 +34,6 @@ test('static-map and external source settings reuse one password-style editor', 
   assert.match(source, /XDriveSensitiveField label="一刻相册 Cookie"/)
   assert.doesNotMatch(source, /<XDriveStoredCredentialField/)
   assert.match(dsm, /XDriveSensitiveField label="DSM 密码"/)
+  assert.doesNotMatch(dsm, /export function XDriveStoredCredentialField/)
+  assert.doesNotMatch(read('ui/shared/src/mui/SourceManagerCreateDialog.tsx'), /Cookie 只会加密保存到服务器，之后不会回传到浏览器/)
 })

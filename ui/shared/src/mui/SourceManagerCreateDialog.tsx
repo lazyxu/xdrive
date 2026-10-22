@@ -296,7 +296,6 @@ export function XDriveSourceCreateDialog({
               <>
                 <XDriveSourceCookieField
                   value={values.cookie ?? ''}
-                  helperText="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
                   onChange={(value) => onCredentialChange({ cookie: value })}
                 />
                 <MuiBox>

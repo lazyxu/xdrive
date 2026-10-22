@@ -96,9 +96,10 @@ test('Baidu Server AK can be edited through admin-only API and Desktop Agent wit
   assert.equal(backendConfig.includes('c.JSON(http.StatusOK, input)'), false)
 })
 
-test('Baidu AK reveal reuses the Yike Cookie temporary reveal UI and a privileged audited route', () => {
+test('Baidu AK reveal uses one shared sensitive field and a privileged audited route', () => {
   const backend = read('internal', 'api', 'admin_baidu_map_config.go')
   const sharedCredentialField = read('ui', 'shared', 'src', 'mui', 'SourceCredentialFields.tsx')
+  const sensitiveField = read('ui', 'shared', 'src', 'mui', 'SensitiveField.tsx')
   const sourceSettings = read('ui', 'shared', 'src', 'mui', 'SourceManagerSettingsDialog.tsx')
   const webApi = read('web', 'src', 'api.ts')
   const desktopClient = read('desktop', 'src', 'main', 'agent_client.cts')
@@ -116,10 +117,11 @@ test('Baidu AK reveal reuses the Yike Cookie temporary reveal UI and a privilege
   assert.ok(backend.includes('sourceCredentialRevealSeconds'))
   assert.ok(backend.includes('Cache-Control", "no-store'))
   assert.ok(backend.includes('cfg.Revision != *req.Revision'))
-  assert.ok(sharedCredentialField.includes('export function XDriveStoredCredentialField'))
-  assert.ok(sharedCredentialField.includes('configuredDescription'))
-  assert.ok(sharedCredentialField.includes('expiresInSeconds'))
-  assert.ok(sharedCredentialField.includes('globalThis.setTimeout(onHide'))
+  assert.ok(!sharedCredentialField.includes('export function XDriveStoredCredentialField'))
+  assert.ok(sharedCredentialField.includes('XDriveSensitiveField'))
+  assert.ok(sensitiveField.includes('30_000'))
+  assert.ok(sensitiveField.includes('window.addEventListener(\'blur\', hide)'))
+  assert.ok(sensitiveField.includes('document.addEventListener(\'visibilitychange\', onVisibility)'))
   assert.ok(sourceSettings.includes('<XDriveSensitiveField label="一刻相册 Cookie"'))
   assert.ok(page.includes('<XDriveSensitiveField label="Server AK"'))
   assert.ok(page.includes('baiduReveal?.field ==='))

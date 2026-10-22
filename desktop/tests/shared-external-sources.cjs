@@ -870,7 +870,6 @@ test('Web and Desktop reuse shared source credential fields', () => {
   for (const token of [
     'XDriveSourceCookieField',
     'XDriveSourceTargetField',
-    'XDriveStoredCredentialField',
     'XDriveSynologyDsmCredentialFields',
     '一刻相册 Cookie',
     'DSM 地址',
@@ -895,6 +894,7 @@ test('Web and Desktop reuse shared source credential fields', () => {
   assert.equal((web.match(/<XDriveSensitiveField\b/g) || []).length, 1, 'Web settings should reuse shared stored-credential fields')
   assert.equal((desktop.match(/<XDriveSensitiveField\b/g) || []).length, 1, 'Desktop settings should reuse shared stored-credential fields')
   assert.ok(sharedFields.includes('XDriveSensitiveField'), 'DSM password must use one shared field')
+  assert.ok(!sharedFields.includes('XDriveStoredCredentialField'), 'obsolete duplicate saved credential display must stay removed')
   assert.ok(web.includes('revealSourceCredential'), 'Web settings should reveal credentials only on demand')
   assert.ok(desktop.includes('revealSourceCredential'), 'Desktop settings should reveal credentials only on demand')
 
