@@ -1,3 +1,11 @@
+## P073 · 真实100k Share 游标分页隐藏窗口→Go 取消（2026-10-22）
+
+- 原源码 `9fe9abbe034adbfbe005638e3e0f8fdb3074d6b8`，真实 [PG17/Gin/LocalCAS/Chromium专项 #39709412080](https://github.com/lazyxu/xdrive/actions/runs/39709412080) **SUCCESS**。6次实际 BrowserWindow.hide 保留 Share FileExplorer 同一 document、已接受100行和滚动节点、0 pagehide/unload；6/6真正第二页游标 POST 经原 Go Share 授权后进入 body，随后 Context.Done Handler 退出，最大 **30.476ms** < 冻结160ms，0泄漏 body、0遗留 Handler；物理源100000个不同SHA JPEG原件，不是 100k 同时解码的缩略图。
+- 原首屏六会话最快/最慢分开：Wide1440首屏最大 **360.405ms**，CDP390最大 **275.524ms**；旧页保留全部6/6。该值为**CURRENT/BEFORE**，生产无优化、AFTER/speedup=N/A；永久[原机器数据](performance-evidence/p073-share-hidden-list-go/ci-run-39709412080.json)与[专用测试合同](p073-mounted-hidden-share-cursor-list-go-100k.md)。
+- 首个 HEAD 格式RED无真实样本（n=0），按 runner gofmt 精确修复后获得上述有效源码结果。**归档文件/索引修改后新准确HEAD须重新100k专项 + 完整CI/Final Gate + clean** 才能合并；旧绿色不得跨HEAD挪用。Race、Owner权限、持久上传下载ZIP同步删除代码未改。生产不可触及安全验收：按用户决定跳过（未验收），代码级权限/CI不跳过。
+
+---
+
 ## P068 · 4 GiB Web/Desktop + 100k Sync 真正 CURRENT 基线（2026-10-22）
 
 - **Measured source** `20ee9c596515d985e3918d5f93b8151435921afa`；无生产代码优化，AFTER/speedup=N/A。真实高熵非稀疏 4,294,967,296B 物理不同 SHA-256 原件/512 PUT+1 GET，三组 Web OPFS P50 上传/下载 **47.878/17.515s**，Desktop Renderer→Main→Go Agent IPC **36.185/14.647s**；源/原件完整字节 SHA、PG17/CAS、RSS/工作集预算均通过。原始 Web [#39625778550](https://github.com/lazyxu/xdrive/actions/runs/39625778550)、Desktop [#39625778369](https://github.com/lazyxu/xdrive/actions/runs/39625778369)，均 SUCCESS。

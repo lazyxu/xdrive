@@ -1,0 +1,120 @@
+name: P073 Real Mounted Hidden 100k Share List Go Cancel
+on:
+  pull_request: {}
+permissions:
+  contents: read
+
+jobs:
+  real-mounted-hidden-share-list-go-100k:
+    if: github.head_ref == 'perf/p073-mounted-hidden-share-list-go-100k-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_SH_P005_BROWSER_PHYSICAL_PERF: '1'
+      XD_SH_P073_REAL_LIST_GO: '1'
+      XD_SH_P021_UNIFIED_CORE: '1'
+      XD_SH_P005_GO_TEST_BIN: ${{ github.workspace }}/desktop/p073-api-bin/api.test
+      XD_SH_P005_RESULTS: ${{ github.workspace }}/desktop/p073-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source-exact Go formatting and JavaScript parse
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          file=internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go
+          changes="$(gofmt -l "$file")"
+          if [ -n "$changes" ]; then gofmt -d "$file"; exit 1; fi
+          node --check desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs
+          # The contract test imports TypeScript; install declared desktop deps
+          # before asserting the unchanged real Go/browser cancellation gate.
+          npm --prefix desktop install --no-audit --no-fund
+          node --test desktop/tests/sh-p073-hidden-list-go-source.cjs desktop/tests/sh-p072-mounted-hidden-go-source.cjs desktop/tests/sh-p021-unified-explorer.cjs desktop/tests/sh-p018-public-cached-thumbnail-source.cjs
+      - name: Build production Web and actual Go PostgreSQL CAS test fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix web run build
+          mkdir -p desktop/p073-api-bin desktop/p073-results
+          go test -mod=readonly -c -o "$XD_SH_P005_GO_TEST_BIN" ./internal/api
+      - name: Six mounted hidden Share next-cursor POSTs reaching Go Context.Done
+        run: |
+          set -euo pipefail
+          printf 'EXACT_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_SH_P005_RESULTS/source.txt"
+          go version >> "$XD_SH_P005_RESULTS/source.txt"
+          node --version >> "$XD_SH_P005_RESULTS/source.txt"
+          /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+            -o "$XD_SH_P005_RESULTS/resources.txt" \
+            timeout --signal=TERM --kill-after=15s 18m \
+            xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox \
+              desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs \
+            | tee "$XD_SH_P005_RESULTS/run.log"
+          node - <<'NODE'
+          const fs=require('node:fs'), path=require('node:path')
+          const out=process.env.XD_SH_P005_RESULTS
+          const data=JSON.parse(fs.readFileSync(path.join(out,'summary.json'),'utf8'))
+          if(!data.all_passed||data.original_jpeg_cas!==100000||data.browser_sessions!==6)
+            throw Error('invalid genuine physical 100k or 6 actual browser sessions')
+          if(data.allocated_cas_bytes<100001*4096||data.original_bytes<50000000)
+            throw Error('test did not seed actual physical 100k originals')
+          if(data.sessions.length!==6||data.http_counts.list_held_starts!==6||
+             data.http_counts.list_cancelled_go!==6||
+             data.http_counts.list_active_held!==0||
+             data.http_counts.list_stale_body_bytes!==0||
+             data.http_counts.original_download_calls!==0)
+            throw Error('source-specific Go cancellation or read-only boundary failed')
+          for(const width of [1440,390]){
+            const rows=data.sessions.filter(x=>x.width===width)
+            if(rows.length!==3||rows.some(x=>x.first_rows!==100||
+               !x.first_page_retained||x.first_page_ms>2000||
+               x.go_cancel_max_ms<=0||x.go_cancel_max_ms>160||
+               x.abandoned_body_bytes!==0||x.horizontal_overflow))
+              throw Error('per-client actual Chromium viewport/cancel gate failed: '+width)
+            if(rows.some(x=>x.cause!=='mounted-hidden-share-cursor-page'||
+               !x.same_document_and_scroll||x.window_hidden_during_cancel!==true||
+               x.visibilitychange_events<1||x.pagehide_events!==0||
+               x.beforeunload_events!==0))
+              throw Error('P072 did not keep the actual same Share Core DOM mounted while hidden')
+          }
+          console.log('P073_REAL_100K_SHARE_PAGE_GO_CURRENT',JSON.stringify({
+            source:data.exact_source_head, physical_originals:data.original_jpeg_cas,
+            session_n:data.sessions.length,go_cancel_max_ms:data.cancel_max_ms,
+            Go_Context_Done:data.http_counts.list_cancelled_go,
+            discarded_bytes:data.http_counts.list_stale_body_bytes,
+            scope:'real authenticated Share cursor page POST, 100k physical CAS JPEG, mounted hidden document Go Context.Done, not thumbnail, no durable cancellation'
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p073-mounted-hidden-share-list-100k-go-cancel
+          path: desktop/p073-results/
+          if-no-files-found: warn
+          retention-days: 30

@@ -97,6 +97,7 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 	const count = 100000
 	const sample = "shared-browser-corpus"
 	cachedThumbnailCancel := os.Getenv("XD_SH_P018_REAL_CACHED_THUMBNAIL") == "1"
+	listHiddenCancel := os.Getenv("XD_SH_P073_REAL_LIST_GO") == "1"
 	gin.SetMode(gin.TestMode)
 	db := fileExplorerMediaPerfDatabase(t, os.Getenv("XD_TEST_DATABASE_URL"))
 	db = db.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
@@ -336,6 +337,9 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 	}
 	var pageCalls, ticketCalls, originalStreams atomic.Int64
 	thumbnailProof := &shP018ThumbnailProof{}
+	// P073 holds the real authorized Share cursor response body, test-only.
+	listProof := &shP018ThumbnailProof{}
+	var listHoldArmed atomic.Bool
 	stopped := make(chan struct{})
 	var stopOnce sync.Once
 	filesOnDisk := http.FileServer(http.Dir(dist))
@@ -371,7 +375,27 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 				"thumbnail_cancel_max_us":    thumbnailProof.cancelMaxMicros.Load(),
 				"thumbnail_cancel_last_us":   thumbnailProof.cancelLastMicros.Load(),
 				"thumbnail_stale_body_bytes": thumbnailProof.bodyBytesWasted.Load(),
+				"list_held_starts":           listProof.heldStarts.Load(),
+				"list_cancelled_go":          listProof.goCancelled.Load(),
+				"list_active_held":           listProof.active.Load(),
+				"list_cancel_max_us":         listProof.cancelMaxMicros.Load(),
+				"list_cancel_last_us":        listProof.cancelLastMicros.Load(),
+				"list_stale_body_bytes":      listProof.bodyBytesWasted.Load(),
 			})
+		case "/__perf/arm-list-hold":
+			if !listHiddenCancel || r.Method != http.MethodPost {
+				http.Error(w, "P073 only", http.StatusNotFound)
+				return
+			}
+			listHoldArmed.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case "/__perf/mark-list-hide":
+			if !listHiddenCancel || r.Method != http.MethodPost {
+				http.Error(w, "P073 only", http.StatusNotFound)
+				return
+			}
+			listProof.abortAtUnixNano.Store(time.Now().UnixNano())
+			w.WriteHeader(http.StatusNoContent)
 		case "/__perf/mark-thumbnail-eviction":
 			if !cachedThumbnailCancel || r.Method != http.MethodPost {
 				http.Error(w, "test-only mark disabled", http.StatusNotFound)
@@ -390,6 +414,15 @@ func TestSHP005RealBrowserPhysicalJPEG100KFixture(t *testing.T) {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				if r.URL.Path == "/api/v1/public/share/children" && r.Method == http.MethodPost {
 					pageCalls.Add(1)
+					if listHiddenCancel && listHoldArmed.CompareAndSwap(true, false) {
+						// Let the production Router enforce real Share token,
+						// password, expiry, Owner and bounded root/cursor.
+						// Intercept only actual response bytes after handler work.
+						router.ServeHTTP(&shP018HeldBodyWriter{
+							ResponseWriter: w, request: r, proof: listProof,
+						}, r)
+						return
+					}
 				}
 				if r.URL.Path == "/api/v1/public/share/download-ticket" && r.Method == http.MethodPost {
 					ticketCalls.Add(1)

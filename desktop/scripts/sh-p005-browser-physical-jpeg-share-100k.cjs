@@ -18,6 +18,10 @@ const readyPath = path.join(out, 'private-ready.json')
 const bin = process.env.XD_SH_P005_GO_TEST_BIN
 const shP018 = process.env.XD_SH_P018_REAL_CACHED_THUMBNAIL === '1'
 const mountedHidden = process.env.XD_SH_P072_MOUNTED_HIDDEN_GO === '1'
+const listHiddenMode = process.env.XD_SH_P073_REAL_LIST_GO === '1'
+if (listHiddenMode && (shP018 || mountedHidden ||
+    process.env.XD_SH_P018_PAIRED_NEXT_PAGE === '1'))
+  throw Error('P073 must stay independent of P072, signed thumbnail and A/B modes')
 if (mountedHidden && !shP018) throw Error('P072 requires genuine SH-P018 signed Go thumbnail workload')
 const pairedNextPage = process.env.XD_SH_P018_PAIRED_NEXT_PAGE === '1'
 const allowSlowOriginal = process.env.XD_SH_P018_ALLOW_SLOW_ORIGINAL === '1'
@@ -30,8 +34,10 @@ app.commandLine.appendSwitch('no-sandbox')
 // still-mounted hidden-window variant must permit Chromium's Page Visibility
 // lifecycle rather than globally suppressing renderer background behavior.
 if (!mountedHidden) {
-  app.commandLine.appendSwitch('disable-renderer-backgrounding')
-  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  if (!listHiddenMode) {
+    app.commandLine.appendSwitch('disable-renderer-backgrounding')
+    app.commandLine.appendSwitch('disable-background-timer-throttling')
+  }
 }
 
 async function until(fn, durationMs, label) {
@@ -81,7 +87,7 @@ async function createWindow(width, sample) {
       nodeIntegration: false,
       sandbox: false,
       webSecurity: true,
-      backgroundThrottling: mountedHidden,
+      backgroundThrottling: mountedHidden || listHiddenMode,
     },
   })
   win.webContents.on('render-process-gone', (_event, details) =>
@@ -360,6 +366,84 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
     pagehide_events:mountedHidden?hiddenLifecycle?.pagehideEvents:undefined,
     beforeunload_events:mountedHidden?hiddenLifecycle?.beforeunloadEvents:undefined }
 }
+
+async function probeRealMountedSharePageListCancel(win, base, width, sample) {
+  const number = (width === 1440 ? 0 : 3) + sample
+  const before = await dom(win, () => {
+    const scroll = document.querySelector('[data-xdrive-file-explorer-scroll-host]')
+    const core = document.querySelector('[data-xdrive-public-share-unified-core="true"]')
+    window.__p073Doc = document
+    window.__p073Scroll = scroll
+    window.__p073URL = location.href
+    window.__p073Visibility = 0
+    window.__p073Pagehide = 0
+    window.__p073BeforeUnload = 0
+    document.addEventListener('visibilitychange', () => { window.__p073Visibility++ })
+    window.addEventListener('pagehide', () => { window.__p073Pagehide++ })
+    window.addEventListener('beforeunload', () => { window.__p073BeforeUnload++ })
+    return {visible: !document.hidden && document.visibilityState === 'visible',
+      core: !!core?.isConnected, scroll: !!scroll?.isConnected,
+      originalRow: document.body.innerText.includes('photo-000000.jpg')}
+  })
+  assert(before.visible && before.core && before.scroll && before.originalRow,
+    'P073 requires a real first Share page in a mounted common FileExplorer')
+  const webContentsID = win.webContents.id
+  await post(base+'/__perf/arm-list-hold')
+  await click(win,'下一页')
+  const held = await until(async () => {
+    const state = await readJSON(base+'/__perf/state')
+    return state.list_held_starts >= number && state.list_active_held === 1 ? state : null
+  },12000,'real authorized next cursor POST held in actual Gin response writer')
+  assert.equal(held.list_held_starts,number,'one held Go Share cursor per session')
+  await post(base+'/__perf/mark-list-hide')
+  win.hide()
+  let lastHidden = null
+  const hidden = await until(async () => {
+    const v = await dom(win, () => ({
+      hidden: document.hidden && document.visibilityState === 'hidden',
+      sameDoc: document === window.__p073Doc,
+      sameScroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]') ===
+        window.__p073Scroll,
+      mounted: !!window.__p073Scroll?.isConnected &&
+        !!document.querySelector('[data-xdrive-public-share-unified-core="true"]')?.isConnected,
+      sameURL: location.href === window.__p073URL,
+      firstRow: document.body.innerText.includes('photo-000000.jpg'),
+      visibility: window.__p073Visibility,
+      pagehide: window.__p073Pagehide,
+      beforeunload: window.__p073BeforeUnload
+    }))
+    lastHidden = v
+    return v.hidden && v.sameDoc && v.sameScroll && v.mounted && v.sameURL &&
+      v.firstRow && v.visibility >= 1 && v.pagehide === 0 &&
+      v.beforeunload === 0 ? v : null
+  },1500,'P073 actual BrowserWindow.hide retains mounted Share first page')
+    .catch(error => {
+      console.error('P073_REAL_HIDDEN_LIST_DIAGNOSTIC '+JSON.stringify({
+        width,sample,lastHidden,windowVisible:win.isVisible(),
+        webContentsID:win.webContents.id}))
+      throw error
+    })
+  assert.equal(win.isVisible(),false)
+  assert.equal(win.webContents.id,webContentsID)
+  const cancelled = await until(async () => {
+    const st = await readJSON(base+'/__perf/state')
+    return st.list_cancelled_go >= number && st.list_active_held === 0 ? st : null
+  },2000,'P073 authorized Share list request reaches Go Request.Context.Done')
+  const maxMs = cancelled.list_cancel_max_us/1000
+  const eventMs = cancelled.list_cancel_last_us/1000
+  assert(maxMs>0 && maxMs<=160 && eventMs>0,'Go cursor cancellation exceeds frozen 160ms')
+  assert.equal(cancelled.list_stale_body_bytes,0,'cancelled cursor response leaked bytes')
+  return {width,sample,cause:'mounted-hidden-share-cursor-page',
+    first_page_retained:true,go_cancel_max_ms:maxMs,go_cancel_event_ms:eventMs,
+    abandoned_body_bytes:cancelled.list_stale_body_bytes,
+    go_handlers_remaining:cancelled.list_active_held,
+    visibilitychange_events:hidden.visibility,pagehide_events:hidden.pagehide,
+    beforeunload_events:hidden.beforeunload,
+    same_document_and_scroll:true,window_hidden_during_cancel:!win.isVisible(),
+    genuine_go_page_cancel_total:cancelled.list_cancelled_go,
+    real_page_post_count:cancelled.public_page_calls}
+}
+
 async function main() {
   assert.equal(process.env.XD_SH_P005_BROWSER_PHYSICAL_PERF, '1', 'explicit opt-in required')
   fs.mkdirSync(out, {recursive: true})
@@ -368,7 +452,7 @@ async function main() {
   const firstResource = process.resourceUsage()
   let base = '', win = null
   const result = {
-    workload: shP018
+    workload: listHiddenMode ? 'P073-real-100k-Share-cursor-page-mounted-hidden-Go-cancel' : shP018
       ? (mountedHidden
         ? 'P072-real-mounted-hidden-window-100k-Share-cached-JPEG-to-Go-cancel'
         : 'SH-P018-100k-real-CAS-public-cached-JPEG-viewport-to-Go-cancel')
@@ -380,7 +464,10 @@ async function main() {
     original_jpeg_cas:100000, browser_sessions:6,
     page_budget_ms:2000, original_download_budget_ms:5000,
     cached_thumbnail_go_cancel_budget_ms:shP018?160:undefined,
-    scope:shP018
+    page_list_go_cancel_budget_ms:listHiddenMode?160:undefined,
+    scope:listHiddenMode
+      ? 'Real PostgreSQL17/Gin/Share-root-scoped 100k distinct physical JPEG CAS; held authorized second cursor POST + actual mounted-window hidden → Go Context.Done'
+      : shP018
       ? (mountedHidden
         ? 'P072 real Chromium BrowserWindow.hide with SAME document, still-mounted unified Share Core, true document.hidden and actual Go Request.Context().Done; 100k SHA-distinct JPEG CAS originals and 16 decoded cached derivatives'
         : 'Production public Share 1440px/390px Chromium, real Gin/PG17 100k SHA-distinct physical JPEG originals; 16 real cached derivatives, first-page decoded previews and signed GET held by bounded TEST-ONLY response writer, actual scroll/next-page/pagehide -> Go Request.Context().Done; no fake fetch')
@@ -448,6 +535,15 @@ async function main() {
         assert.equal(first.publicExplorer,true,'shared Explorer remounted away during initial page')
         if (process.env.XD_SH_P021_UNIFIED_CORE === '1') assert.equal(first.unifiedCore, true)
         assert(first.explorerWidth >= (width === 1440 ? 1000 : 300))
+        if (listHiddenMode) {
+          const observed=await probeRealMountedSharePageListCancel(win,base,width,sample)
+          result.sessions.push({...observed,first_page_ms:firstMs,
+            first_rows:first.acceptedRows,horizontal_overflow:first.horizontalOverflow})
+          console.log('P073_REAL_100K_SHARE_LIST_CANCEL_SAMPLE '+JSON.stringify(result.sessions.at(-1)))
+          await closeWindow(win)
+          win=null
+          continue
+        }
         if (shP018) {
           const observed = await probePublicCachedThumbnailCancellation(win,base,width,sample)
           result.sessions.push({ ...observed, first_page_ms:firstMs, first_rows:first.acceptedRows,
@@ -484,6 +580,31 @@ async function main() {
       }
     }
     const server=await readJSON(base+'/__perf/state')
+    if (listHiddenMode) {
+      assert(server.public_page_calls>=12,'Share initial+second cursor POST absent')
+      assert.equal(server.list_held_starts,6,'not all 6 real Share list responses held')
+      assert.equal(server.list_cancelled_go,6,'not all six real Go list handlers canceled')
+      assert.equal(server.list_active_held,0,'stale Go list handler remained')
+      assert.equal(server.list_stale_body_bytes,0,'stale list body transmitted')
+      assert(server.list_cancel_max_us>0 && server.list_cancel_max_us<=160000,
+        'Share list cancellation exceeds immutable 160ms Go budget')
+      assert.equal(server.original_download_calls,0,'metadata scroll/hide canceled durable original')
+      result.http_counts=server
+      result.cancel_max_ms=server.list_cancel_max_us/1000
+      result.all_passed=result.sessions.length===6&&result.sessions.every(x=>
+        x.cause==='mounted-hidden-share-cursor-page'&&
+        x.first_rows===100&&x.first_page_ms<=2000&&
+        x.go_cancel_max_ms>0&&x.go_cancel_max_ms<=160&&
+        x.abandoned_body_bytes===0&&x.go_handlers_remaining===0&&
+        x.visibilitychange_events>=1&&x.pagehide_events===0&&
+        x.beforeunload_events===0&&x.same_document_and_scroll&&
+        x.first_page_retained&&x.window_hidden_during_cancel&&
+        !x.horizontal_overflow)
+      assert(result.all_passed,'P073 REAL mounted-hidden 100k list cancellation failed')
+      fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
+      console.log('P073_SHARE_CURSOR_HIDDEN_GO_CURRENT '+JSON.stringify(result))
+      return
+    }
     if (shP018) {
       assert(server.public_page_calls>=6,'no actual bounded Share page POST')
       assert(server.thumbnail_ticket_calls>=6,'no actual Share-only signed thumbnail POST')
