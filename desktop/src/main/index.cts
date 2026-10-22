@@ -203,6 +203,7 @@ import {
   type AgentMediaBaiduMapConsentInput,
   type AgentMediaPlacesViewportBounds,
   type AgentMediaPlacesViewportPage,
+  type AgentMediaPlacesMapOverview,
   type AgentBaiduNativeViewportBounds,
   type AgentBaiduNativeViewportPage,
   type AgentMediaMemory,
@@ -3184,6 +3185,34 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().mediaPlacesPage(limit, offset)
     }, false))
+
+  ipcMain.handle('agent:get-media-places-overview', (
+    event, bounds: unknown, detail: unknown = false, requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaPlacesMapOverview>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (bounds === null || typeof bounds !== 'object' || Array.isArray(bounds)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid map overview geometry.')
+      }
+      const obj = bounds as Record<string, unknown>
+      const names = ['west', 'south', 'east', 'north']
+      const valid = (key: string, lower: number, upper: number) => {
+        const v = obj[key]
+        return typeof v === 'number' && Number.isFinite(v) && v >= lower && v <= upper
+      }
+      if (Object.keys(obj).length !== 4 || Object.keys(obj).some(k => !names.includes(k)) ||
+          !valid('west', -180, 180) || !valid('east', -180, 180) ||
+          !valid('south', -90, 90) || !valid('north', -90, 90) ||
+          (obj.south as number) >= (obj.north as number) ||
+          obj.west === obj.east || (obj.west === 180 && obj.east === -180) ||
+          typeof detail !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid map overview window.')
+      }
+      return requireAgentClient().mediaPlacesMapOverview(
+        obj as unknown as AgentMediaPlacesViewportBounds, detail, signal,
+      )
+    }), false))
 
   ipcMain.handle('agent:get-media-places-viewport', (
     event, bounds: unknown, limit: unknown = 64, offset: unknown = 0,

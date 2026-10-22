@@ -33,6 +33,7 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaPlacesMapOverview,
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
   MediaBaiduNativeCellsPage,
@@ -150,6 +151,9 @@ export interface XDriveMediaGalleryPort {
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
   listPlacesPage?: (limit?: number, offset?: number) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesPage>>
+  listPlacesMapOverview?: (
+    bounds: MediaPlacesViewportBounds, detail?: boolean, signal?: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesMapOverview>>
   listPlacesViewport?: (
     bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesViewportPage>>
@@ -569,6 +573,11 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listPlacesPage: port.listPlacesPage
       ? (limit, offset) => resolveXDriveTransport(port.listPlacesPage!(limit, offset))
+      : undefined,
+    listPlacesMapOverview: port.listPlacesMapOverview
+      ? (bounds, detail, signal) => resolveXDriveTransport(
+          port.listPlacesMapOverview!(bounds, detail, signal),
+        )
       : undefined,
     listPlacesViewport: port.listPlacesViewport
       ? (bounds, limit, offset, signal) => resolveXDriveTransport(

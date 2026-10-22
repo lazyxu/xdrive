@@ -730,6 +730,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/places/page", h.mediaPlacesPage)
 	mux.HandleFunc("GET /v1/media/places/viewport", h.mediaPlacesViewport)
+	mux.HandleFunc("GET /v1/media/places/overview", h.mediaPlacesMapOverview)
 	mux.HandleFunc("GET /v1/media/places/baidu-native-viewport", h.mediaBaiduNativeViewport)
 	mux.HandleFunc("GET /v1/media/baidu-consent", h.mediaBaiduConsent)
 	mux.HandleFunc("PUT /v1/media/baidu-consent", h.mediaBaiduConsent)

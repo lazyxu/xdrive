@@ -1918,6 +1918,12 @@ export type AgentMediaPlacesViewportPage = AgentMediaPlacesPage & {
   total_photo_count: number
 }
 
+export type AgentMediaPlacesMapOverview = {
+  items: AgentMediaPlaceFacet[]
+  total_photo_count: number
+  aggregated: boolean
+}
+
 export type AgentBaiduNativeViewportBounds = AgentMediaPlacesViewportBounds & {
   coordinate_space: 'bd09ll'
 }
@@ -2779,6 +2785,19 @@ export class AgentIPCClient {
   mediaPlacesPage(limit = 48, offset = 0) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<AgentMediaPlacesPage>('GET', `/v1/media/places/page?${query.toString()}`)
+  }
+
+  mediaPlacesMapOverview(
+    bounds: AgentMediaPlacesViewportBounds, detail = false, signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      detail: detail ? '1' : '0',
+    })
+    return this.request<AgentMediaPlacesMapOverview>(
+      'GET', `/v1/media/places/overview?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   mediaPlacesViewport(

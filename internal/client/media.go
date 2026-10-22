@@ -1146,6 +1146,27 @@ type MediaPlacesViewportPage struct {
 	HasMore         bool              `json:"has_more"`
 }
 
+// Maximum 64 Owner-revalidated WGS84 representatives, never the entire gallery.
+type MediaPlacesMapOverview struct {
+	Items           []MediaPlaceFacet `json:"items"`
+	TotalPhotoCount int64             `json:"total_photo_count"`
+	Aggregated      bool              `json:"aggregated"`
+}
+
+func (c *Client) MediaPlacesMapOverview(ctx context.Context, bounds MediaPlacesViewportBounds, detail bool) (MediaPlacesMapOverview, error) {
+	values := url.Values{}
+	values.Set("west", strconv.FormatFloat(bounds.West, 'f', -1, 64))
+	values.Set("south", strconv.FormatFloat(bounds.South, 'f', -1, 64))
+	values.Set("east", strconv.FormatFloat(bounds.East, 'f', -1, 64))
+	values.Set("north", strconv.FormatFloat(bounds.North, 'f', -1, 64))
+	if detail {
+		values.Set("detail", "1")
+	}
+	var out MediaPlacesMapOverview
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/overview?"+values.Encode(), nil, &out)
+	return out, err
+}
+
 // A3b3a1 common authenticated transport. Desktop will expose it only
 // through its existing Agent IPC boundary; never embed a Browser AK.
 func (c *Client) MediaPlacesViewport(

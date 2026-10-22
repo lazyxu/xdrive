@@ -39,6 +39,31 @@ function canonicalPlaceID(value: unknown): value is string {
     value === 'place:' + latCell + ':' + lonCell
 }
 
+
+// The bounded prototype may feed an 8x8 *Server-originated* WGS84
+// region sample into official BMap.Convertor. Strict A1 place paging remains
+// canonicalPlaceID-only; this never authorizes a new Owner API selection.
+function boundedPrototypeRegionMarker(marker: XDriveBaiduWGS84Marker): boolean {
+  if (typeof marker.placeID !== 'string' || marker.placeID.length > 180) return false
+  const parts = /^map-region:(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?):([0-7]):([0-7])$/.exec(marker.placeID)
+  if (!parts) return false
+  const west=Number(parts[1]), south=Number(parts[2])
+  const east=Number(parts[3]), north=Number(parts[4])
+  const row=Number(parts[5]), col=Number(parts[6])
+  const longitude=marker.longitude, latitude=marker.latitude
+  if (![west,south,east,north,longitude,latitude].every(Number.isFinite) ||
+      west < -180 || west > 180 || east < -180 || east > 180 ||
+      south < -85 || north > 85 || south >= north ||
+      west === east || (west === 180 && east === -180) ||
+      latitude < south || latitude > north) return false
+  const lonSpan = west < east ? east-west : 360-(west-east)
+  const adjusted = west > east && longitude < west ? longitude+360 : longitude
+  if (adjusted < west || adjusted > west+lonSpan) return false
+  const mappedRow = Math.min(7,Math.max(0,Math.floor((latitude-south)/(north-south)*8)))
+  const mappedCol = Math.min(7,Math.max(0,Math.floor((adjusted-west)/lonSpan*8)))
+  return mappedRow === row && mappedCol === col
+}
+
 /** A paginated/top-N viewport must not masquerade as a complete ClusterLayer. */
 export function xDrivePrepareBaiduJSAPI4MarkerWindow(
   page: MediaPlacesViewportPage,
@@ -190,7 +215,8 @@ export async function xDriveConvertBaiduJSAPI4MarkerWindow(
   let sum = 0
   const seen = new Set<string>()
   for (const item of prepared.markers) {
-    if (!item || !canonicalPlaceID(item.placeID) || seen.has(item.placeID) ||
+    if (!item || !(canonicalPlaceID(item.placeID) || boundedPrototypeRegionMarker(item)) ||
+        seen.has(item.placeID) ||
         !Number.isFinite(item.latitude) || Math.abs(item.latitude) > 85 ||
         !Number.isFinite(item.longitude) || Math.abs(item.longitude) > 180 ||
         !safeCount(item.photoCount) || item.photoCount === 0 ||

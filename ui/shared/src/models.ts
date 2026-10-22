@@ -968,7 +968,7 @@ export interface MediaPlaceFacet {
   /** Exact GPS of ONE representative photo, distinct from the historical cell center. */
   sample_latitude?: number
   sample_longitude?: number
-  coordinate_kind?: 'grid_cell_center'
+  coordinate_kind?: 'grid_cell_center' | 'map_region_sample'
   name: string
   latitude: number
   longitude: number
@@ -999,6 +999,13 @@ export interface MediaPlacesViewportBounds {
  * only the bounded items window is returned. A cell center is not photo GPS. */
 export interface MediaPlacesViewportPage extends MediaPlacesPage {
   total_photo_count: number
+}
+
+/** At most 64 real Owner GPS cell/region representatives per camera frame. */
+export interface MediaPlacesMapOverview {
+  items: MediaPlaceFacet[]
+  total_photo_count: number
+  aggregated: boolean
 }
 
 /** Map viewport space is *derived* BD09LL, never source photo WGS84.

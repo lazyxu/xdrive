@@ -26,7 +26,8 @@ export type XDriveBaiduPrototypeCoverPin = {
 }
 
 function validPlace(place: MediaPlaceFacet): boolean {
-  return !!place && /^place:-?\d+:-?\d+$/.test(place.id) &&
+  return !!place && (/^place:-?\d+:-?\d+$/.test(place.id) ||
+    (place.id.startsWith('map-region:') && place.id.length <= 180)) &&
     Number.isSafeInteger(place.cover_node_id) && place.cover_node_id! > 0 &&
     Number.isSafeInteger(place.item_count) && place.item_count > 0
 }

@@ -63,8 +63,22 @@ const galleryMap = compile(uiFile,{
     },
   },
   './MediaGalleryBaiduPrototypeMap': {
-    XDriveMediaGalleryBaiduPrototypeMap: props =>
-      React.createElement('prototype-map-fixture', props),
+    XDriveMediaGalleryBaiduPrototypeMap: props => {
+      assert.equal(Object.prototype.hasOwnProperty.call(props, 'places'), false,
+        'unverified parent Owner GPS must not be passed to the SDK component')
+      // This fixture tests the REAL parent adapter/key lifecycle, and models
+      // only a child's abortable Owner request (never mocks a Provider proof).
+      const [confirmed, setConfirmed] = React.useState([])
+      React.useEffect(() => {
+        const request = new AbortController()
+        void props.listPlacesMapOverview({ west:-180, south:-85, east:180, north:85 },
+          false, request.signal).then(page => {
+            if (!request.signal.aborted) setConfirmed(page.items)
+          })
+        return () => request.abort()
+      }, [props.listPlacesMapOverview])
+      return React.createElement('prototype-map-fixture', { ...props, places: confirmed })
+    },
   },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
@@ -242,41 +256,58 @@ test('P112: an absolutely positioned error cannot be a MUI spaced Stack child', 
 })
 
 
-test('direct native map does not reuse stale GPS while a new Owner scope is loading', async () => {
-  const first = deferred(), next = deferred()
+test('bounded native map cancels a prior Owner generation before a new Owner appears', async () => {
+  const first = deferred(), second = deferred()
   const calls = []
-  const port = (limit, offset) => {
-    calls.push({ limit, offset })
-    return calls.length === 1 ? first.promise : next.promise
+  const port = (bounds, detail, signal) => {
+    const pending = calls.length === 0 ? first : second
+    calls.push({ bounds, detail, signal })
+    return pending.promise
   }
   const oldOwner = { id: 'place:1:1', name: 'old-owner', item_count: 1,
     sample_latitude: 0.01, sample_longitude: 0.01 }
   const newOwner = { id: 'place:2:2', name: 'new-owner', item_count: 2,
     sample_latitude: 0.02, sample_longitude: 0.02 }
   const config = async () => ({ provider: 'baidu-jsapi-4.0', browser_ak: 'test', revision: 1 })
-  let view
   const props = { places: [oldOwner], diagnosticScope: 'user-one',
-    listPlacesPage: port, getBaiduJSAPIPrototype: config, onOpenPlace: () => {} }
-  await act(async () => { view = TestRenderer.create(React.createElement(MapView, props)) })
-  const native = () => view.root.findByType('prototype-map-fixture')
-  assert.deepEqual(native().props.places, [],
-    'a not-yet-read scoped page must not render unconfirmed prior Owner GPS')
-  assert.equal(calls.length, 1)
-  await act(async () => {
-    first.resolve({ items: [oldOwner], offset: 0, limit: 100, total_count: 1, has_more: false })
-    await Promise.resolve()
-  })
-  assert.deepEqual(native().props.places.map(p => p.id), [oldOwner.id])
-  await act(async () => {
-    view.update(React.createElement(MapView, {...props,
-      diagnosticScope: 'user-two', places: [oldOwner]}))
-  })
-  assert.deepEqual(native().props.places, [],
-    'new Owner scope must clear SDK marker source before its first read')
-  await act(async () => {
-    next.resolve({ items: [newOwner], offset: 0, limit: 100, total_count: 1, has_more: false })
-    await Promise.resolve()
-  })
-  assert.deepEqual(native().props.places.map(p => p.id), [newOwner.id])
-  await act(async () => { view.unmount() })
+    listPlacesMapOverview: port, getBaiduJSAPIPrototype: config, onOpenPlace: () => {} }
+  let view
+  try {
+    await act(async () => { view = TestRenderer.create(React.createElement(MapView, props)) })
+    const native = () => view.root.findByType('prototype-map-fixture')
+    assert.deepEqual(native().props.places, [])
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].detail, false)
+    assert.deepEqual(calls[0].bounds, {west:-180,south:-85,east:180,north:85})
+    assert.ok(!Object.hasOwn(native().props, 'placesFromParent'),
+      'parent must never pass unverified Owner GPS points to Baidu SDK')
+    await act(async () => {
+      view.update(React.createElement(MapView, {
+        ...props, diagnosticScope: 'user-two', places: [oldOwner],
+      }))
+    })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal.aborted, true, 'old Owner request must be aborted')
+    assert.deepEqual(native().props.places, [], 'new Owner remount starts with no old GPS')
+    await act(async () => {
+      first.resolve({ items:[oldOwner], total_photo_count:1, aggregated:true })
+      await Promise.resolve()
+    })
+    assert.deepEqual(native().props.places, [],
+      'delayed first Owner reply must not repopulate the new native map')
+    await act(async () => {
+      second.resolve({ items:[newOwner], total_photo_count:2, aggregated:true })
+      await Promise.resolve()
+    })
+    assert.deepEqual(native().props.places.map(p => p.id), [newOwner.id])
+    const nativeSource = fs.readFileSync(path.join(root,
+      'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx'),'utf8')
+    assert.ok(nativeSource.includes('listPlacesMapOverview(bounds, detail, controller.signal)'))
+    assert.ok(nativeSource.includes('request?.abort()'))
+    assert.ok(nativeSource.includes('if (disposed || controller.signal.aborted) return'))
+    assert.ok(!source.includes('listPlacesPage(100,offset)'))
+
+  } finally {
+    if (view) await act(async () => { view.unmount() })
+  }
 })

@@ -296,6 +296,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/page", s.listMediaPlacesPage)
 	// A3b3a1: Owner-only bounded WGS84 viewport cells; no Baidu JSAPI proxy.
 	authed.GET("/media/places/viewport", s.listMediaPlacesViewport)
+	// Owner-scoped 8x8 native map data, not an all-place pagination API.
+	authed.GET("/media/places/overview", s.listMediaPlacesMapOverview)
 	authed.GET("/media/places/map-provider", s.mediaMapProviderStatus)
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
