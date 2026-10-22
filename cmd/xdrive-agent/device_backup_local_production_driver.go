@@ -9,6 +9,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/localpushrunner"
 	"github.com/lazyxu/xdrive/internal/localpushstage"
+	"github.com/lazyxu/xdrive/internal/localpushwriter"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
@@ -33,6 +34,11 @@ type localPushFirstLeafDriver struct {
 	key            localPushPrivateRequestKey
 	prepared       localPushPrivatePreparedReceipt
 	bound          bool
+	// The owning Desktop's real first-file path requires the same live
+	// kernel-locked Writer marker during HTTP SQL/CAS COMMIT and readback.
+	// Internal historical read tests are not given upload authority by this.
+	liveWriter         *localpushwriter.Claim
+	liveWriterRequired bool
 }
 
 var errLocalPushDriverDenied = errors.New("owning local first-file runner unavailable")
@@ -213,9 +219,17 @@ func (d *localPushFirstLeafDriver) Commit(ctx context.Context, s localpushrunner
 			if err := d.Check(heldCtx, s); err != nil {
 				return err
 			}
-			_, err := d.api.CommitLocalPushFirstLeafWithOperation(heldCtx, s.SourceID, s.Revision, d.proof,
-				st.StageID, s.RelativePath, d.key.bytes, op.ID, op.Generation)
-			return err
+			commitBound := func(writeCtx context.Context) error {
+				_, err := d.api.CommitLocalPushFirstLeafWithOperation(
+					writeCtx, s.SourceID, s.Revision, d.proof, st.StageID,
+					s.RelativePath, d.key.bytes, op.ID, op.Generation,
+				)
+				return err
+			}
+			if d.liveWriterRequired {
+				return d.withCurrentOriginalLiveWriterProof(heldCtx, s, original, commitBound)
+			}
+			return commitBound(heldCtx)
 		})
 	return err
 }
@@ -253,10 +267,25 @@ func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrun
 			if err := d.Check(heldCtx, s); err != nil {
 				return err
 			}
-			receipt, readErr := d.api.ReadLocalPushHistoricalOperationPhysicalReceipt(
-				heldCtx, s.SourceID, s.Revision, d.proof, st.StageID, s.RelativePath,
-				key.bytes, op.ID, op.Generation)
-			if readErr != nil || receipt.SourceID != s.SourceID || receipt.Revision != s.Revision ||
+			var receipt client.LocalPushHistoricalOperationPhysicalReceipt
+			readBound := func(readCtx context.Context) error {
+				var readErr error
+				receipt, readErr = d.api.ReadLocalPushHistoricalOperationPhysicalReceipt(
+					readCtx, s.SourceID, s.Revision, d.proof, st.StageID,
+					s.RelativePath, key.bytes, op.ID, op.Generation,
+				)
+				return readErr
+			}
+			if d.liveWriterRequired {
+				if err := d.withCurrentOriginalLiveWriterProof(
+					heldCtx, s, original, readBound,
+				); err != nil {
+					return err
+				}
+			} else if err := readBound(heldCtx); err != nil {
+				return err
+			}
+			if receipt.SourceID != s.SourceID || receipt.Revision != s.Revision ||
 				receipt.StageID != st.StageID || receipt.OperationID != op.ID ||
 				receipt.Generation != op.Generation || receipt.NodeID == 0 || receipt.SourceItemID == 0 ||
 				!receipt.CASObserved || receipt.NativeVerified || receipt.BackupComplete ||
