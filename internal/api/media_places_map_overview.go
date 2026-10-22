@@ -51,6 +51,100 @@ func parseMediaMapOverviewQuery(raw string) (mediaPlaceViewportBounds, bool, err
 	return bounds, detail, nil
 }
 
+// An 8x8 grid over the whole planet is NOT a useful photo overview:
+// 460 different 0.01-degree places around Jinhua all fall inside the same
+// 45-degree longitude / 21.25-degree latitude world bucket. The map then
+// paints one sample with the entire combined photo count. Compute a bounded,
+// Owner-filtered GPS envelope first, and bucket inside that REAL extent.
+//
+// All values below come only from the existing Owner/valid-GPS SQL predicate.
+// Never read photo bytes, fabricate a center or download all places to JS.
+type mediaMapOverviewExtent struct {
+	MinLatitude         *float64
+	MaxLatitude         *float64
+	MinLongitude        *float64
+	MaxLongitude        *float64
+	MinShiftedLongitude *float64
+	MaxShiftedLongitude *float64
+}
+
+func mediaMapOverviewPadAxis(minimum, maximum, lower, upper float64) (float64, float64) {
+	padding := math.Max(0.0001, (maximum-minimum)*0.01)
+	west := math.Max(lower, minimum-padding)
+	east := math.Min(upper, maximum+padding)
+	if west >= east {
+		return lower, upper
+	}
+	return west, east
+}
+
+// Longitude circles around the dateline. Unlike averaging WGS84 longitude,
+// this only chooses the shortest observed arc for the 8x8 partition.
+func mediaMapOverviewNormalizeLongitude(value float64) float64 {
+	if value > 180 {
+		value -= 360
+	}
+	if value < -180 {
+		value += 360
+	}
+	return value
+}
+
+// Pure, fail-closed helper; a small genuine photo envelope is NOT replaced
+// by the caller's often-worldwide viewport when creating aggregate regions.
+func mediaMapOverviewFittedBounds(
+	requested mediaPlaceViewportBounds, extent mediaMapOverviewExtent,
+) (mediaPlaceViewportBounds, bool, error) {
+	values := []*float64{
+		extent.MinLatitude, extent.MaxLatitude,
+		extent.MinLongitude, extent.MaxLongitude,
+		extent.MinShiftedLongitude, extent.MaxShiftedLongitude,
+	}
+	if values[0] == nil && values[1] == nil &&
+		values[2] == nil && values[3] == nil &&
+		values[4] == nil && values[5] == nil {
+		return requested, false, nil
+	}
+	for _, pointer := range values {
+		if pointer == nil || math.IsNaN(*pointer) || math.IsInf(*pointer, 0) {
+			return mediaPlaceViewportBounds{}, false, fmt.Errorf("invalid map GPS extent")
+		}
+	}
+	minLat, maxLat := *extent.MinLatitude, *extent.MaxLatitude
+	minLon, maxLon := *extent.MinLongitude, *extent.MaxLongitude
+	minShift, maxShift := *extent.MinShiftedLongitude, *extent.MaxShiftedLongitude
+	if minLat < requested.South || maxLat > requested.North ||
+		minLat > maxLat || minLon < -180 || maxLon > 180 || minLon > maxLon ||
+		minShift < 0 || maxShift > 360 || minShift > maxShift {
+		return mediaPlaceViewportBounds{}, false, fmt.Errorf("out-of-bounds map GPS extent")
+	}
+	fitted := requested
+	fitted.South, fitted.North = mediaMapOverviewPadAxis(
+		minLat, maxLat, requested.South, requested.North)
+	// Only world or a genuine anti-meridian viewport may use a circular
+	// longitude arc; normal finite viewports must remain inside their query.
+	canWrap := requested.West > requested.East ||
+		(requested.West == -180 && requested.East == 180)
+	if canWrap && maxShift-minShift+1e-10 < maxLon-minLon {
+		wrappedWest, wrappedEast := mediaMapOverviewPadAxis(
+			minShift, maxShift, -180, 540)
+		fitted.West = mediaMapOverviewNormalizeLongitude(wrappedWest)
+		fitted.East = mediaMapOverviewNormalizeLongitude(wrappedEast)
+	} else if requested.West < requested.East {
+		fitted.West, fitted.East = mediaMapOverviewPadAxis(
+			minLon, maxLon, requested.West, requested.East)
+	} else {
+		// An anti-meridian viewport with all points on one side may still
+		// use an ordinary, narrow longitude interval.
+		fitted.West, fitted.East = mediaMapOverviewPadAxis(
+			minLon, maxLon, -180, 180)
+	}
+	if !fitted.valid() {
+		return mediaPlaceViewportBounds{}, false, fmt.Errorf("invalid fitted map GPS extent")
+	}
+	return fitted, true, nil
+}
+
 // Only finite, parsed WGS84 viewport values become numeric SQL constants.
 // Eight longitudinal buckets handle west > east at the date line.
 func mediaMapOverviewBuckets(bounds mediaPlaceViewportBounds) (string, string) {
@@ -87,7 +181,29 @@ func queryMediaPlacesMapOverview(
 			}, nil
 		}
 	}
-	rowExpr, colExpr := mediaMapOverviewBuckets(bounds)
+	var extent mediaMapOverviewExtent
+	// This read uses the EXACT SAME Owner, live Node, index-state, media-kind,
+	// valid-WGS84 and viewport predicates as the following grouped photo query.
+	// No top-N cutoff, sample download, loose Owner authorization or client
+	// loop can influence the actual geographic display envelope.
+	if err := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+		Select("MIN(xd_media_metadata.latitude) AS min_latitude, " +
+			"MAX(xd_media_metadata.latitude) AS max_latitude, " +
+			"MIN(xd_media_metadata.longitude) AS min_longitude, " +
+			"MAX(xd_media_metadata.longitude) AS max_longitude, " +
+			"MIN(CASE WHEN xd_media_metadata.longitude < 0 THEN xd_media_metadata.longitude + 360 ELSE xd_media_metadata.longitude END) AS min_shifted_longitude, " +
+			"MAX(CASE WHEN xd_media_metadata.longitude < 0 THEN xd_media_metadata.longitude + 360 ELSE xd_media_metadata.longitude END) AS max_shifted_longitude").
+		Scan(&extent).Error; err != nil {
+		return mediaPlacesMapOverviewDTO{}, err
+	}
+	fitted, found, err := mediaMapOverviewFittedBounds(bounds, extent)
+	if err != nil {
+		return mediaPlacesMapOverviewDTO{}, err
+	}
+	if !found {
+		return mediaPlacesMapOverviewDTO{Items: []mediaPlaceDTO{}, Aggregated: true}, nil
+	}
+	rowExpr, colExpr := mediaMapOverviewBuckets(fitted)
 	type row struct {
 		BucketRow       int
 		BucketCol       int
@@ -101,7 +217,7 @@ func queryMediaPlacesMapOverview(
 		"image/tiff", "image/bmp", "image/heic", "image/heif", "image/x-adobe-dng",
 	}
 	var rows []row
-	err := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
+	err = mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
 		Select(rowExpr+" AS bucket_row, "+colExpr+" AS bucket_col, "+
 			"(ARRAY_AGG(xd_media_metadata.latitude ORDER BY pa.primary_node_id))[1] AS sample_latitude, "+
 			"(ARRAY_AGG(xd_media_metadata.longitude ORDER BY pa.primary_node_id))[1] AS sample_longitude, "+
@@ -129,10 +245,10 @@ func queryMediaPlacesMapOverview(
 		out.TotalPhotoCount += item.ItemCount
 		out.Items = append(out.Items, mediaPlaceDTO{
 			ID: fmt.Sprintf("map-region:%s:%s:%s:%s:%d:%d",
-				strconv.FormatFloat(bounds.West, 'f', -1, 64),
-				strconv.FormatFloat(bounds.South, 'f', -1, 64),
-				strconv.FormatFloat(bounds.East, 'f', -1, 64),
-				strconv.FormatFloat(bounds.North, 'f', -1, 64),
+				strconv.FormatFloat(fitted.West, 'f', -1, 64),
+				strconv.FormatFloat(fitted.South, 'f', -1, 64),
+				strconv.FormatFloat(fitted.East, 'f', -1, 64),
+				strconv.FormatFloat(fitted.North, 'f', -1, 64),
 				item.BucketRow, item.BucketCol),
 			Name:            fmt.Sprintf("照片区域 %d-%d", item.BucketRow+1, item.BucketCol+1),
 			Latitude:        item.SampleLatitude,
