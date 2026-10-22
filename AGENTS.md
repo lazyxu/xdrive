@@ -4,6 +4,14 @@
 - Real in-place reload and process-generation changes during the paired read-only observation must be rejected; malformed/multiple output lines, forged PID, failed/overlong hashes, canceled probe and unknown command rejected by synthetic tests. Mere before/after equality is NOT complete Host origin trust, A-B-A protection, disabled-ingress negative evidence, signed applied revision or operator authorization. Keep CandidateComplete/CanAdopt/ApplySupported=false.
 - Preserve all independent master/Owner files and complete cumulative AGENTS, one scoped commit stacked on #2323, then retarget to full master only after parent full source-exact CI/Final Gate and merge. New accurate-head full CI and fresh clean required for this security-sensitive stage. Production-only acceptance 按用户决定跳过（未验收）; no requests for production credentials/HAR/network captures/signoff.
 
+## P0-08 · 已授权地图计数与原 GPS 图库数量隔离的 PostgreSQL 回归（2026-10-22）
+
+- 在既有真实 PostgreSQL Owner/Consent/Revision 测试上补充 GPS-only 未授权 PhotoAsset：它保留可用 WGS84 元数据，但没有每照片地图授权；即使残留与来源完全匹配的 BD-09 派生索引行，也不得进入百度地图 Cell Count。
+- 同一实际 8x8 Cell 聚合在授权来源指纹失效、显式撤销、Node Revision 变动时，真实 Cell TotalCount 与成员必须同步下降；现有图库总 GPS 信息不被称作“已授权照片数”。保留原 Range/Count/Owner/跨用户和撤销测试，不添加第二地图 Provider、批量默认许可或外部网络访问。
+- 只修改 Go PostgreSQL 集成测试和追加式 AGENTS 历史；必须本分支准确 HEAD 的 Go/real PostgreSQL Race、Web/Desktop 和 CI Final Gate 通过才能合并。生产环境不可接触安全验收继续 **按用户决定跳过（未验收）**，源码 Owner/Consent/撤销测试强制。
+
+---
+
 ## SD-D2b-1b-c1 · private Caddy process / live-config window binding (2026-10-22)
 
 - The five-field fixed-name Docker inspect sampling from Host Control and the live Caddy admin JSON SHA-256 are distinct observations; neither a saved DB target nor a browser/API-supplied Host status may create trusted Host identity. A future private collector must verify both are fresh and bound across the actual TLS/ingress probe window; mismatched container PID/start generation or in-process config reload fails closed.
