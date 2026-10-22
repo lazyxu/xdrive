@@ -58,6 +58,18 @@ export interface PublicShareChildren {
   next_cursor: number
 }
 
+// Grants supplied by the Go Share metadata endpoint. The UI can only narrow
+// these grants; direct Go operations still validate password/revoke/quota/root.
+export interface PublicShareCapabilities {
+  list: boolean
+  preview: boolean
+  download: boolean
+  downloadZip: boolean
+  search: boolean
+  write: boolean
+  delete: boolean
+}
+
 export interface PublicShare {
   type?: NodeType
   name: string
@@ -65,6 +77,8 @@ export interface PublicShare {
   revision?: number
   updated_at?: string
   requires_password: boolean
+  /** Optional only for backward-compatible older Go Server deployments. */
+  capabilities?: PublicShareCapabilities
   expires_at?: string
   max_downloads: number
   download_count: number

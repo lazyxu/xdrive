@@ -65,8 +65,15 @@ test('Web public share keeps native download, password and eligibility feedback'
   ]) {
     assert.ok(publicShare.includes(token), `Public Share behavior missing: ${token}`)
   }
-  assert.ok(publicShare.includes('const canDownload = !!share && !exhausted'),
-    'download eligibility and browsing must remain independent of pending native handoff')
+  assert.ok(publicShare.includes('const grants = share?.capabilities ?? xDriveShareReadOnlyDefaultCapabilities'))
+  assert.ok(publicShare.includes('const canBrowse = shareEligible && grants.list'))
+  assert.ok(publicShare.includes('const canPreview = canBrowse && grants.preview'))
+  assert.ok(publicShare.includes('const canDownload = canBrowse && grants.download'),
+    'Go source grant independently narrows download without removing browse/preview')
+  assert.ok(publicShare.includes('const canDownloadZip = canDownload && grants.downloadZip'),
+    'Share folder ZIP requires server read-only download+ZIP grants')
+  assert.ok(publicShare.includes('const canStartDownload = canDownload && !downloading'),
+    'native handoff busy is independent of granted browse/preview')
   assert.ok(!publicShare.includes('!downloading && !exhausted'),
     'native handoff activity must not revoke the UI browse/preview grant')
 })
