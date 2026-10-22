@@ -59,6 +59,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlaceHierarchyPage,
+  MediaPlaceHierarchyRequest,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
   MediaPlacesMapOverview,
@@ -413,6 +415,7 @@ function appendMediaGalleryQuery(
     values.set('person_identity', query.person_identity.trim())
   }
   if (query.place?.trim()) values.set('place', query.place.trim())
+  if (query.place_hierarchy?.trim()) values.set('place_hierarchy', query.place_hierarchy.trim())
   if (query.nearby?.trim()) values.set('nearby', query.nearby.trim())
   if (query.bbox?.trim()) values.set('bbox', query.bbox.trim())
 }
@@ -1520,6 +1523,24 @@ export class XDriveApi {
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<MediaPlacesPage>(`/api/v1/media/places/page?${query.toString()}`)
+  }
+
+  /** GeoNames nearest-city hierarchy, bounded cursor paging; never loads all GPS. */
+  mediaPlaceHierarchy(
+    request: MediaPlaceHierarchyRequest,
+    filters: MediaGalleryQuery = {},
+    signal?: AbortSignal,
+  ) {
+    const params = new URLSearchParams({ level: request.level })
+    if (request.country) params.set('country', request.country)
+    if (request.region) params.set('region', request.region)
+    if (request.cursor) params.set('cursor', request.cursor)
+    if (request.search) params.set('search', request.search)
+    params.set('limit', String(Math.min(100, Math.max(1, Math.trunc(request.limit ?? 48)))))
+    appendMediaGalleryQuery(params, filters)
+    return this.request<MediaPlaceHierarchyPage>(
+      `/api/v1/media/places/hierarchy?${params.toString()}`, { signal },
+    )
   }
 
   /** At most 64 Owner place/region samples per native map camera. */

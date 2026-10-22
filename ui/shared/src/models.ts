@@ -810,6 +810,8 @@ export interface MediaGalleryQuery {
   person?: string
   person_identity?: string
   place?: string
+  /** Trusted GeoNames country / region / nearest-city identity. */
+  place_hierarchy?: string
   /** Original WGS84 latitude,longitude,radiusKm. */
   nearby?: string
   /** Original WGS84 west,south,east,north. */
@@ -985,6 +987,33 @@ export interface MediaPlacesPage {
   offset: number
   limit: number
   has_more: boolean
+}
+
+/** Source-bound GeoNames nearest-city identities, never arbitrary map pixels. */
+export interface MediaPlaceHierarchyItem {
+  id: string
+  name: string
+  photo_count: number
+  cover_node_id?: number
+  match_kind: 'nearest_city_geonames'
+}
+
+export interface MediaPlaceHierarchyPage {
+  items: MediaPlaceHierarchyItem[]
+  level: 'country' | 'region' | 'city'
+  has_more: boolean
+  next_cursor?: string
+  dataset_version?: string
+  available: boolean
+}
+
+export interface MediaPlaceHierarchyRequest {
+  level: MediaPlaceHierarchyPage['level']
+  country?: string
+  region?: string
+  cursor?: string
+  search?: string
+  limit?: number
 }
 
 /** Source coordinates are WGS84. West > East means antimeridian wrap. */
