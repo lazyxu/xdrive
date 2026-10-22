@@ -1,5 +1,7 @@
 # SH-P021 · One FileExplorer Core for Share folders (real 100k physical gate)
 
+> **当前统一架构合同（2026-10-22）：** [Owner/Share 共用 FileExplorer Core](unified-file-explorer-core.md)。它列明已合并的 Core/七项 Go grant、Owner 稀疏 Range/Share 游标页、临时 HTTP 与 durable Task 取消边界，以及仍未完成的 Share 单文件外层、全子树 Search/Sort 与真正 preview-only。以下原有段落保留历史阶段证据，不应当作新的当前状态。
+
 ## Why this slice
 
 There is already one common capability contract (SH-P020), but
