@@ -137,7 +137,7 @@ import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryPlaceHierarchyNavigator } from './MediaGalleryPlaceHierarchyNavigator'
-import type { MediaPlaceHierarchyItem } from './MediaGalleryPlaceHierarchyNavigator'
+import type { MediaPlaceHierarchyItem, MediaPlaceHierarchyNavigationSnapshot } from './MediaGalleryPlaceHierarchyNavigator'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCoverProvider, XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
@@ -705,6 +705,7 @@ export function XDriveMediaGalleryPage({
   const [placesPagePending, setPlacesPagePending] = useState(false)
   const [placesPageError, setPlacesPageError] = useState('')
   const placePageRequestID = useRef(0)
+  const hierarchyReturnNavigation = useRef<MediaPlaceHierarchyNavigationSnapshot | null>(null)
   const placesReturnPageRef = useRef<{
     items: MediaPlaceFacet[]
     offset: number
@@ -717,6 +718,7 @@ export function XDriveMediaGalleryPage({
   useEffect(() => {
     placeOpenedFromCollectionsRef.current = false
     placesReturnPageRef.current = null
+    hierarchyReturnNavigation.current = null
     setSelectedHierarchyName('')
     const restored = xDriveReadPlacesCamera(preferenceScope)
     placesCameraRef.current = restored
@@ -3501,6 +3503,8 @@ export function XDriveMediaGalleryPage({
         places={places}
         listPlacesPage={source.listPlacesPage}
         listPlacesHierarchy={source.listPlacesHierarchy}
+        initialHierarchyNavigation={hierarchyReturnNavigation.current ?? undefined}
+        onHierarchyNavigationChange={(snapshot) => { hierarchyReturnNavigation.current = snapshot }}
         listPlacesMapOverview={source.listPlacesMapOverview}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
@@ -3998,6 +4002,8 @@ export interface XDriveMediaGalleryProps {
   places?: MediaPlaceFacet[]
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
   listPlacesHierarchy?: MediaGalleryDataSource['listPlacesHierarchy']
+  initialHierarchyNavigation?: MediaPlaceHierarchyNavigationSnapshot
+  onHierarchyNavigationChange?: (snapshot: MediaPlaceHierarchyNavigationSnapshot) => void
   listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
@@ -5720,6 +5726,8 @@ export function XDriveMediaGallery({
   places = [],
   listPlacesPage,
   listPlacesHierarchy,
+  initialHierarchyNavigation,
+  onHierarchyNavigationChange,
   listPlacesMapOverview,
   listPlacesViewport,
   listBaiduNativeViewport,
@@ -7994,6 +8002,9 @@ export function XDriveMediaGallery({
               listPage={listPlacesHierarchy}
               loadThumbnail={loadThumbnail}
               onOpenCollection={onOpenPlaceHierarchy}
+              initialNavigation={initialHierarchyNavigation}
+              onNavigationChange={onHierarchyNavigationChange}
+              focusPlaceID={focusPlaceID}
             />
           ) : null}
 

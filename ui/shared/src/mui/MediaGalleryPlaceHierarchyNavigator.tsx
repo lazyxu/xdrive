@@ -38,7 +38,17 @@ export type MediaPlaceHierarchyLoader = (
   request: MediaPlaceHierarchyRequest, signal?: AbortSignal,
 ) => Promise<MediaPlaceHierarchyPage>
 
-type Parent = { level: MediaPlaceHierarchyLevel; country?: string; region?: string }
+export type MediaPlaceHierarchyParent = { level: MediaPlaceHierarchyLevel; country?: string; region?: string }
+export interface MediaPlaceHierarchyNavigationSnapshot {
+  expanded: boolean
+  parent: MediaPlaceHierarchyParent
+  search: string
+  draftSearch: string
+  cursor: string
+  previousCursors: string[]
+  datasetVersion: string
+}
+type Parent = MediaPlaceHierarchyParent
 type Receipt = {
   scope: string
   loader: MediaPlaceHierarchyLoader
@@ -96,6 +106,9 @@ export interface XDriveMediaGalleryPlaceHierarchyNavigatorProps {
   listPage?: MediaPlaceHierarchyLoader
   loadThumbnail: MediaThumbnailLoader
   onOpenCollection: (item: MediaPlaceHierarchyItem) => void
+  initialNavigation?: MediaPlaceHierarchyNavigationSnapshot
+  onNavigationChange?: (snapshot: MediaPlaceHierarchyNavigationSnapshot) => void
+  focusPlaceID?: string
 }
 
 /**
@@ -105,18 +118,24 @@ export interface XDriveMediaGalleryPlaceHierarchyNavigatorProps {
  */
 export function XDriveMediaGalleryPlaceHierarchyNavigator({
   accountScope, listPage, loadThumbnail, onOpenCollection,
+  initialNavigation, onNavigationChange, focusPlaceID,
 }: XDriveMediaGalleryPlaceHierarchyNavigatorProps) {
-  const [expanded, setExpanded] = useState(false)
-  const [parent, setParent] = useState<Parent>({ level: 'country' })
-  const [draftSearch, setDraftSearch] = useState('')
-  const [search, setSearch] = useState('')
-  const [cursor, setCursor] = useState('')
-  const [previousCursors, setPreviousCursors] = useState<string[]>([])
+  const [expanded, setExpanded] = useState(initialNavigation?.expanded ?? false)
+  const [parent, setParent] = useState<Parent>(initialNavigation?.parent ?? { level: 'country' })
+  const [draftSearch, setDraftSearch] = useState(initialNavigation?.draftSearch ?? '')
+  const [search, setSearch] = useState(initialNavigation?.search ?? '')
+  const [cursor, setCursor] = useState(initialNavigation?.cursor ?? '')
+  const [previousCursors, setPreviousCursors] = useState<string[]>(initialNavigation?.previousCursors ?? [])
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
-  const datasetVersion = useRef('')
+  const datasetVersion = useRef(initialNavigation?.datasetVersion ?? '')
   const [reload, setReload] = useState(0)
+  const focusButtonRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    onNavigationChange?.({ expanded, parent, search, draftSearch, cursor,
+      previousCursors: [...previousCursors], datasetVersion: datasetVersion.current })
+  }, [expanded, parent, search, draftSearch, cursor, previousCursors, onNavigationChange])
 
   const request = useMemo<MediaPlaceHierarchyRequest>(() => ({
     ...parent, limit: PAGE_LIMIT,
@@ -126,6 +145,14 @@ export function XDriveMediaGalleryPlaceHierarchyNavigator({
   const requestKey = JSON.stringify([request, reload])
   const current = receipt?.scope === accountScope && receipt.loader === listPage &&
     receipt.requestKey === requestKey ? receipt.page : null
+  useEffect(() => {
+    if (!current?.available || !focusPlaceID || !expanded ||
+        !current.items.some((item) => item.id === focusPlaceID)) return
+    const frame = window.requestAnimationFrame(() => {
+      focusButtonRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [current, expanded, focusPlaceID])
 
   useEffect(() => {
     if (!expanded || !listPage || !accountScope) return
@@ -246,6 +273,8 @@ export function XDriveMediaGalleryPlaceHierarchyNavigator({
               {current.items.map((item) => (
                 <Paper variant="outlined" key={item.id} sx={{ overflow: 'hidden' }}>
                   <Button size="small" fullWidth onClick={() => onOpenCollection(item)}
+                    ref={item.id === focusPlaceID ? focusButtonRef : undefined}
+                    data-xdrive-places-hierarchy-return-anchor={item.id === focusPlaceID ? 'true' : undefined}
                     sx={{ display: 'block', p: 0, textTransform: 'none', textAlign: 'left' }}
                     aria-label={item.name + ' · ' + item.photo_count + ' 张照片'}>
                     <Box sx={{ aspectRatio: '16 / 10', bgcolor: 'action.hover' }}>
@@ -284,7 +313,7 @@ export function XDriveMediaGalleryPlaceHierarchyNavigator({
               <Button size="small" variant="outlined"
                 disabled={pending || !current.has_more || !current.next_cursor}
                 onClick={() => {
-                  setPreviousCursors((keys) => [...keys, cursor])
+                  setPreviousCursors((keys) => [...keys.slice(-79), cursor])
                   setCursor(current.next_cursor || '')
                 }}>下一页</Button>
               <Typography variant="caption" color="text.secondary">
