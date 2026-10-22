@@ -13,6 +13,7 @@ const { spawnSync } = require('node:child_process')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const env = process.env
+const pickerMode = env.XD_PWA_CR01B6_PICKER === '1'
 const crossOwner = env.XD_PWA_CR01B5_CROSS_OWNER === '1'
 const fields = [
   'XD_PWA_HOT_UPLOAD_OUTPUT', 'XD_PWA_HOT_UPLOAD_CADDY_COMMON',
@@ -103,6 +104,8 @@ const summary = {
   first8MiBCommittedBeforeGoDeath: false, originalChunk0NeverReuploaded: false,
   chunkCount: 3, fileBytes: 17 * 1024 * 1024,
   actualHttpFileChunks: false, productionFilePicker: false,
+  pickerDuringTwoStreamsWaiting: false, pickerRealFinalize: false,
+  pickerGoOwnerNodeVisible: false,
   oldSWWaitingVerified: false, twoOldWindowsStayedControlled: false,
   oldDocumentStayedMounted: false, newSWActivatedOnlyAfterBothClosed: false,
   realUploadSessionActiveWhileWaiting: false, physicalGoCASPostflight: false,
@@ -508,6 +511,45 @@ async function finalizeIndependentPeer(peer) {
  })
 }
 
+async function realProductionFilesPickerWhileWaiting(page) {
+  // Open the actual built Mobile Web Files menu and native browser FileChooser.
+  // Never substitute an injected browser Blob or a direct synthetic upload fetch.
+  const tmp=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'xdrive-cr01b6-'))
+  const filename='pwa-cr01b6-picker-1m.bin'
+  const file=path.join(tmp,filename)
+  const data=Buffer.alloc(1024*1024)
+  for(let i=0;i<data.length;i++)data[i]=(i*13+(i>>6)+9)%251
+  fs.writeFileSync(file,data,{flag:'wx',mode:0o600})
+  const wanted=digest(data)
+  try {
+    await page.locator('[data-xdrive-mobile-files]').waitFor({state:'visible',timeout:30000})
+    await page.getByRole('button',{name:'文件操作菜单'}).click()
+    const [chooser]=await Promise.all([
+      page.waitForEvent('filechooser',{timeout:30000}),
+      page.getByRole('menuitem',{name:'上传文件',exact:true}).click()
+    ])
+    const finalized=page.waitForResponse(r=>
+      r.request().method()==='POST' &&
+      /\/api\/v1\/uploads\/[^/]+\/finalize$/.test(new URL(r.url()).pathname) &&
+      r.status()===200,{timeout:120000})
+    await chooser.setFiles(file)
+    const response=await finalized
+    const committed=await response.json()
+    if(committed.status!=='finalized'||committed.sha256!==wanted||
+       committed.result?.size!==data.length||!committed.result?.id)
+      throw Error('real Files picker did not finalize the expected bytes')
+    const ownerRead=await page.evaluate(async nodeID=>{
+      const token=localStorage.getItem('xdrive.access_token')
+      if(!token)throw Error('real picker Owner token absent')
+      const response=await fetch('/api/v1/nodes/'+nodeID,{
+        headers:{Authorization:'Bearer '+token},cache:'no-store'})
+      return response.status===200
+    },committed.result.id)
+    if(!ownerRead)throw Error('picker completed Node not readable by real Go Owner')
+    return {finalized:true,nodeVisible:true,bytes:data.length}
+  }finally{fs.rmSync(tmp,{recursive:true,force:true})}
+}
+
 async function phaseB(page) {
   return page.evaluate(async () => {
     const state = window.__pwaHotUpload
@@ -763,6 +805,22 @@ async function main() {
     summary.realUploadSessionActiveWhileWaiting = true
     summary.oldSWWaitingVerified = true
     summary.twoOldWindowsStayedControlled = true
+    if(pickerMode){
+      safePhase='real-Files-filechooser-during-two-active-streams-and-SW-waiting'
+      await requireInFlight(page)
+      await requirePeerInFlight(peer)
+      const picker=await realProductionFilesPickerWhileWaiting(page)
+      assert(picker.finalized&&picker.nodeVisible&&picker.bytes===1024*1024)
+      await requireInFlight(page)
+      await requirePeerInFlight(peer)
+      assert(twoDistinctGoPartials(),'picker unexpectedly terminated a different Go PUT')
+      assert(await oldWorkerStayed(page,true),'picker changed old SW controller or DOM')
+      assert(await oldWorkerStayed(peer,true),'picker changed peer SW controller or DOM')
+      summary.productionFilePicker=true
+      summary.pickerDuringTwoStreamsWaiting=true
+      summary.pickerRealFinalize=true
+      summary.pickerGoOwnerNodeVisible=true
+    }
     const privateResponse = await page.evaluate(async () =>
       (await fetch('/api/v1/nodes/root', { cache: 'no-store' })).status)
     assert.equal(privateResponse, 401, 'private API cannot leak past public SW')
