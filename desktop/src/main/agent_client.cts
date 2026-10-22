@@ -2056,6 +2056,12 @@ export type AgentMediaDescription = {
   description: string
 }
 
+export type AgentBaiduJSAPIPrototype = {
+  provider: 'baidu-jsapi-4.0'
+  browser_ak: string
+  revision: number
+}
+
 export type AgentBaiduMapProvider = {
   provider: 'baidu-server-static'
   enabled: boolean
@@ -2750,6 +2756,10 @@ export class AgentIPCClient {
 
   mediaBaiduMapProvider() {
     return this.request<AgentBaiduMapProvider>('GET', '/v1/media/map-provider')
+  }
+
+  mediaBaiduJSAPIPrototype() {
+    return this.request<AgentBaiduJSAPIPrototype>('GET', '/v1/media/baidu-jsapi-prototype')
   }
 
   mediaBaiduStaticMap(latitude: number, longitude: number, zoom: number, width: number, height: number, signal?: AbortSignal) {

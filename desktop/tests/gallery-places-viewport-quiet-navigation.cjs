@@ -62,6 +62,11 @@ const galleryMap = compile(uiFile,{
       throw new Error('isolated child must not mount without signed Server authority')
     },
   },
+  './MediaGalleryBaiduPrototypeMap': {
+    XDriveMediaGalleryBaiduPrototypeMap: () => {
+      throw new Error('legacy static viewport fixture must not mount the dynamic SDK')
+    },
+  },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
       React.createElement('map-fixture',{onViewportChange:props.onViewportChange}),

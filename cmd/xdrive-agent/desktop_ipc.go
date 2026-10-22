@@ -737,6 +737,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/media/baidu-index-job", h.mediaBaiduIndexJob)
 	mux.HandleFunc("DELETE /v1/media/baidu-index-job", h.mediaBaiduIndexJob)
 	mux.HandleFunc("GET /v1/media/map-provider", h.mediaBaiduMapProvider)
+	mux.HandleFunc("GET /v1/media/baidu-jsapi-prototype", h.mediaBaiduJSAPIPrototype)
 	mux.HandleFunc("GET /v1/media/baidu-static", h.mediaBaiduStaticMap)
 	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
 	mux.HandleFunc("GET /v1/media/memory-items", h.mediaMemoryItems)

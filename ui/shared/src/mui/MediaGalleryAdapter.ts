@@ -167,6 +167,8 @@ export interface XDriveMediaGalleryPort {
       provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
       isolated_child_origin?: string
     }>>
+  getBaiduJSAPIPrototype?: (signal: AbortSignal) => Promise<
+    XDriveMediaGalleryTransportResult<import('../models').XDriveBaiduJSAPIPrototypeConfig>>
   mintBaiduIsolatedChildTicket?: (signal: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; child_origin: string; ticket: string
@@ -588,6 +590,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
       ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))
+      : undefined,
+    getBaiduJSAPIPrototype: port.getBaiduJSAPIPrototype
+      ? (signal) => resolveXDriveTransport(port.getBaiduJSAPIPrototype!(signal))
       : undefined,
     mintBaiduIsolatedChildTicket: port.mintBaiduIsolatedChildTicket
       ? (signal) => resolveXDriveTransport(port.mintBaiduIsolatedChildTicket!(signal))

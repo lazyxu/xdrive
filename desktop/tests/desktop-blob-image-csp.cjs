@@ -10,7 +10,7 @@ const galleryAdapter = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src'
 
 test('Desktop CSP allows Blob-backed image thumbnails', () => {
   assert.ok(
-    html.includes("img-src 'self' data: blob: http://127.0.0.1:*;"),
+    /img-src\s+[^;]*blob:/.test(html),
     'Desktop img-src CSP must allow blob: URLs used by binary thumbnails',
   )
   assert.ok(

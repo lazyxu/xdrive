@@ -1,0 +1,322 @@
+import { useEffect, useRef, useState } from 'react'
+import { Box, Typography } from '@mui/material'
+import type { MediaPlaceFacet, XDriveBaiduJSAPIPrototypeConfig } from '../models'
+import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import { xDriveCaptureBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import {
+  xDriveConvertBaiduJSAPI4MarkerWindow,
+} from '../media-gallery-baidu-jsapi4-markers'
+import type { XDriveBaiduConvertedFeatureCollection, XDriveBaiduWGS84Marker } from '../media-gallery-baidu-jsapi4-markers'
+
+type Point = { lng: number; lat: number }
+type Layer = {
+  setData(data: XDriveBaiduConvertedFeatureCollection): void
+  addEventListener(name: 'click', handler: (event: unknown) => void): void
+  removeEventListener(name: 'click', handler: (event: unknown) => void): void
+}
+type NativeMap = {
+  centerAndZoom(point: Point, zoom: number): void
+  /** Official SDK camera framing; never calculate a pixel projection locally. */
+  setViewport?(points: Point[], options: {
+    margins: [number, number, number, number]
+    enableAnimation: boolean
+  }): void
+  addLayer(layer: Layer): void
+  removeLayer(layer: Layer): void
+  enableScrollWheelZoom?(enable: boolean): void
+  addEventListener(name: string, handler: () => void): void
+  removeEventListener(name: string, handler: () => void): void
+  getCenter?(): Point
+  getZoom?(): number
+  destroy?(): void
+}
+type Namespace = {
+  Map: new (container: HTMLElement) => NativeMap
+  Point: new (longitude: number, latitude: number) => Point
+  ClusterLayer: new (config: {
+    clusterRadius: number; enablePicked: boolean
+    fitViewOnClick: boolean; updateRealTime: boolean; idKey: string
+  }) => Layer
+  Convertor: new () => {
+    translate(points: Point[], from: 1, to: 5,
+      callback: (reply: unknown) => void): void
+  }
+}
+type Runtime = {
+  namespace: Namespace
+  map: NativeMap
+  layer: Layer
+  // Converted BD09 points are reused when the Owner's paged Places list grows.
+  converted: Map<string, {
+    source: XDriveBaiduWGS84Marker
+    feature: XDriveBaiduConvertedFeatureCollection['features'][number]
+  }>
+}
+const loaded = new WeakMap<Document, {
+  ak: string; promise: Promise<Namespace>
+}>()
+const validAK = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+  /^[\x21-\x7e]+$/.test(value)
+
+function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
+  if (!validAK(ak) || !doc.defaultView) return Promise.reject(new Error('invalid_browser_ak'))
+  const existing = loaded.get(doc)
+  if (existing) {
+    // One SDK revision per document. A rotated AK takes effect on full reload.
+    return existing.ak === ak ? existing.promise : Promise.reject(new Error('map_ak_rotated'))
+  }
+  const promise = new Promise<Namespace>((resolve, reject) => {
+    const script = doc.createElement('script')
+    let settled = false
+    let bootstrapLoaded = false
+    let poll: ReturnType<typeof setTimeout> | undefined
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const cleanup = (error?: Error, sdk?: Namespace) => {
+      if (settled) return
+      settled = true
+      if (poll) clearTimeout(poll)
+      if (timeout) clearTimeout(timeout)
+      script.onload = script.onerror = null
+      if (error || !sdk) {
+        script.remove()
+        reject(error ?? new Error('baidu_sdk_unavailable'))
+      } else resolve(sdk)
+    }
+    const ready = () => {
+      if (!bootstrapLoaded || settled) return
+      const namespace = (doc.defaultView as Window & { BMap?: unknown }).BMap
+      const candidate = namespace as Partial<Namespace> | undefined
+      if (candidate && typeof candidate.Map === 'function' &&
+          typeof candidate.Point === 'function' &&
+          typeof candidate.Convertor === 'function' &&
+          typeof candidate.ClusterLayer === 'function') {
+        cleanup(undefined, candidate as Namespace)
+      } else poll = setTimeout(ready, 100)
+    }
+    // The configured browser AK is expected to be public in the provider's
+    // script URL. Never use the encrypted Static/Server API credential.
+    script.src = 'https://api.map.baidu.com/api?v=4.0&ak=' + encodeURIComponent(ak)
+    script.async = true
+    script.referrerPolicy = 'strict-origin-when-cross-origin'
+    script.onload = () => { bootstrapLoaded = true; ready() }
+    script.onerror = () => cleanup(new Error('baidu_sdk_load_failed'))
+    timeout = setTimeout(() => cleanup(new Error('baidu_sdk_timeout')), 12000)
+    doc.head.appendChild(script)
+  })
+  loaded.set(doc, { ak, promise })
+  void promise.catch(() => {
+    if (loaded.get(doc)?.promise === promise) loaded.delete(doc)
+  })
+  return promise
+}
+
+function validMarker(place: MediaPlaceFacet): place is MediaPlaceFacet & {
+  sample_latitude: number; sample_longitude: number
+} {
+  return !!place && /^place:-?\d+:-?\d+$/.test(place.id) &&
+    Number.isFinite(place.sample_latitude) && Number.isFinite(place.sample_longitude) &&
+    Math.abs(place.sample_latitude!) <= 85 && Math.abs(place.sample_longitude!) <= 180 &&
+    Number.isSafeInteger(place.item_count) && place.item_count > 0
+}
+
+/** The map engine owns gestures, projection and ClusterLayer. xDrive owns only
+ * Owner-scoped GPS facets and opening the existing photo wall/Viewer.
+ * No static PNG overlay, CSS-pixel Mercator or separate HTTPS Child.
+ * Prototype: third-party JS runs in this Gallery document by user decision. */
+export function XDriveMediaGalleryBaiduPrototypeMap({
+  getPrototypeConfig,
+  places,
+  initialNativeCamera,
+  onNativeCameraChange,
+  onOpenPlace,
+}: {
+  getPrototypeConfig: (signal: AbortSignal) => Promise<XDriveBaiduJSAPIPrototypeConfig>
+  places: readonly MediaPlaceFacet[]
+  initialNativeCamera?: XDriveBaiduNativeCameraSnapshot
+  onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
+  onOpenPlace?: (place: MediaPlaceFacet) => void
+}) {
+  const container = useRef<HTMLDivElement | null>(null)
+  const manualCamera = useRef(false)
+  const openRef = useRef(onOpenPlace)
+  const cameraRef = useRef(onNativeCameraChange)
+  const placesRef = useRef(places)
+  openRef.current = onOpenPlace
+  cameraRef.current = onNativeCameraChange
+  placesRef.current = places
+  const [runtime, setRuntime] = useState<Runtime | null>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+
+  useEffect(() => {
+    const node = container.current
+    if (!node) return
+    const abort = new AbortController()
+    let map: NativeMap | null = null
+    let layer: Layer | null = null
+    let click: ((event: unknown) => void) | null = null
+    let saveCamera: (() => void) | null = null
+    // Only actual in-map gestures end automatic photo overview framing.
+    // SDK camera events also fire from setViewport, so they are not enough.
+    manualCamera.current = xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
+    const userGesture = () => { manualCamera.current = true }
+    node.addEventListener('pointerdown', userGesture)
+    node.addEventListener('touchstart', userGesture, { passive: true })
+    node.addEventListener('wheel', userGesture, { passive: true })
+    node.addEventListener('keydown', userGesture)
+    setRuntime(null)
+    setStatus('loading')
+    const start = async () => {
+      const config = await getPrototypeConfig(abort.signal)
+      if (abort.signal.aborted || !config || config.provider !== 'baidu-jsapi-4.0' ||
+          !validAK(config.browser_ak)) throw Error('baidu_prototype_not_configured')
+      const api = await loadBaiduJSAPI4(node.ownerDocument, config.browser_ak)
+      if (abort.signal.aborted) return
+      map = new api.Map(node)
+      // Camera returned from Viewer is already BD-09LL; never treat it as WGS84.
+      const restored = xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
+        ? initialNativeCamera : null
+      if (restored) {
+        map.centerAndZoom(new api.Point(restored.longitude, restored.latitude), restored.zoom)
+      } else {
+        // The JSAPI owns the projection. A default overview is a BD09 camera,
+        // not a fabricated coordinate for any photograph.
+        map.centerAndZoom(new api.Point(105, 35), 3)
+      }
+      map.enableScrollWheelZoom?.(true)
+      layer = new api.ClusterLayer({
+        clusterRadius: 60, enablePicked: true,
+        fitViewOnClick: true, updateRealTime: false, idKey: 'id',
+      })
+      const activeLayer = layer
+      const activeMap = map
+      click = (event: unknown) => {
+        if (abort.signal.aborted) return
+        const value = (event as { value?: unknown } | null)?.value
+        if (!value || typeof value !== 'object') return
+        const selected = value as {
+          isCluster?: unknown; pointCount?: unknown
+          properties?: { place_id?: unknown; photo_count?: unknown }
+        }
+        // Let fitViewOnClick expand a native cluster. Only an unclustered
+        // point with the exact current Owner count may open the photo wall.
+        if (selected.isCluster !== false || selected.pointCount !== 1 ||
+            !selected.properties ||
+            typeof selected.properties.place_id !== 'string' ||
+            !Number.isSafeInteger(selected.properties.photo_count) ||
+            (selected.properties.photo_count as number) < 1) return
+        const place = placesRef.current.find(p =>
+          p.id === selected.properties?.place_id &&
+          p.item_count === selected.properties?.photo_count)
+        if (place) openRef.current?.(place)
+      }
+      saveCamera = () => {
+        const snapshot = xDriveCaptureBaiduNativeCamera(activeMap)
+        if (!abort.signal.aborted && snapshot) cameraRef.current?.(snapshot)
+      }
+      activeLayer.addEventListener('click', click)
+      activeMap.addLayer(activeLayer)
+      activeMap.addEventListener('moveend', saveCamera)
+      activeMap.addEventListener('zoomend', saveCamera)
+      if (abort.signal.aborted) return
+      setRuntime({ namespace: api, map: activeMap, layer: activeLayer,
+        converted: new Map() })
+      setStatus('ready')
+    }
+    void start().catch(() => { if (!abort.signal.aborted) setStatus('failed') })
+    return () => {
+      abort.abort()
+      node.removeEventListener('pointerdown', userGesture)
+      node.removeEventListener('touchstart', userGesture)
+      node.removeEventListener('wheel', userGesture)
+      node.removeEventListener('keydown', userGesture)
+      if (map && saveCamera) {
+        map.removeEventListener('moveend', saveCamera)
+        map.removeEventListener('zoomend', saveCamera)
+      }
+      if (layer && click) layer.removeEventListener('click', click)
+      if (map && layer) { try { map.removeLayer(layer) } catch { /* disposed */ } }
+      try { map?.destroy?.() } catch { /* disposed */ }
+    }
+  }, [getPrototypeConfig])
+
+  useEffect(() => {
+    if (!runtime) return
+    const abort = new AbortController()
+    const update = async () => {
+      const source = places.filter(validMarker)
+      const seen = new Set<string>()
+      const pending: XDriveBaiduWGS84Marker[] = []
+      for (const item of source) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        const marker = { placeID: item.id, latitude: item.sample_latitude,
+          longitude: item.sample_longitude, photoCount: item.item_count }
+        const old = runtime.converted.get(item.id)
+        if (old && old.source.latitude === marker.latitude &&
+            old.source.longitude === marker.longitude &&
+            old.source.photoCount === marker.photoCount) continue
+        pending.push(marker)
+      }
+      // The existing official Convertor adapter batches 10 WGS84 points at a
+      // time, validates BD09 results and cancels on Gallery navigation.
+      const convertor = new runtime.namespace.Convertor()
+      for (let start = 0; start < pending.length; start += 100) {
+        if (abort.signal.aborted) return
+        const markers = pending.slice(start, start + 100)
+        const total = markers.reduce((sum, item) => sum + item.photoCount, 0)
+        const converted = await xDriveConvertBaiduJSAPI4MarkerWindow(
+          { kind: 'ready', markers, totalPhotoCount: total },
+          convertor,
+          (lng, lat) => new runtime.namespace.Point(lng, lat),
+          abort.signal,
+        )
+        if (abort.signal.aborted) return
+        converted.features.forEach((feature, i) => runtime.converted.set(
+          markers[i].placeID, { source: markers[i], feature },
+        ))
+      }
+      if (abort.signal.aborted) return
+      const features = [...runtime.converted.entries()]
+        .filter(([id]) => seen.has(id)).map(([, entry]) => entry.feature)
+      runtime.layer.setData({ type: 'FeatureCollection', features })
+      // Opening Places should show the photo distribution, not an arbitrary
+      // hardcoded city. Defer all projection/fit calculations to Baidu JSAPI.
+      // Progressive pages can expand the overview until the user takes over;
+      // a Viewer-return BD09 camera is already user-controlled and stays put.
+      if (!manualCamera.current && features.length) {
+        const points = features.map(f => new runtime.namespace.Point(
+          f.geometry.coordinates[0], f.geometry.coordinates[1]))
+        if (points.length === 1) {
+          runtime.map.centerAndZoom(points[0], 12)
+        } else {
+          runtime.map.setViewport?.(points, {
+            margins: [20, 20, 20, 20], enableAnimation: false,
+          })
+        }
+      }
+    }
+    void update().catch(() => { if (!abort.signal.aborted) setStatus('failed') })
+    return () => abort.abort()
+  }, [runtime, places])
+
+  return (
+    <Box component="section" data-xdrive-gallery-baidu-prototype
+      sx={{ px: { xs: 0, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
+      <Box ref={container} role="region" aria-label="百度动态照片地图"
+        data-xdrive-gallery-baidu-prototype-canvas
+        sx={{ width: '100%', height: { xs: 'calc(100dvh - 215px)', sm: 540 },
+          minHeight: 370, borderRadius: { xs: 0, sm: 1.5 }, overflow: 'hidden' }} />
+      {status === 'failed' ? (
+        <Typography role="alert" variant="body2" sx={{ px: 1.5, py: 1 }}>
+          百度动态地图不可用。请确认管理员已配置并启用 JSAPI 4.0 浏览器 AK，
+          且允许当前页面域名访问；地点列表和照片墙仍可使用。
+        </Typography>
+      ) : status === 'loading' ? (
+        <Typography role="status" variant="caption" sx={{ px: 1.5 }}>
+          正在加载百度动态地图…
+        </Typography>
+      ) : null}
+    </Box>
+  )
+}
