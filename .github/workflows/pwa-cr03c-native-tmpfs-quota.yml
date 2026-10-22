@@ -1,0 +1,74 @@
+name: PWA CR03c Genuine Native IndexedDB Quota On Bounded Tmpfs
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  native-browser-tmpfs-quota:
+    if: github.head_ref == 'test/pwa-cr03c-native-tmpfs-quota-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build exact source and check test scope
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          node --check desktop/scripts/pwa-cr03c-native-tmpfs-quota.cjs
+          node --test desktop/tests/pwa-cr03c-native-tmpfs-quota-contract.cjs
+          mkdir -p "$RUNNER_TEMP/pwa-cr03c-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-cr03c-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_CR03C_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_CR03C_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            echo "genuine system Chrome unavailable" >&2
+            exit 1
+          fi
+      - name: Real Chromium with OS-enforced small filesystem (not CDP quota override)
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          MOUNT="$RUNNER_TEMP/pwa-cr03c-private-tmpfs"
+          mkdir -p "$MOUNT"
+          sudo mount -t tmpfs -o size=2048m,mode=0700,nodev,nosuid tmpfs "$MOUNT"
+          sudo chown "$(id -u):$(id -g)" "$MOUNT"
+          cleanup() {
+            sudo umount "$MOUNT" || true
+            rmdir "$MOUNT" || true
+          }
+          trap cleanup EXIT
+          mountpoint -q "$MOUNT"
+          mkdir -p desktop/pwa-cr03c-results
+          XD_PWA_CR03C_REAL_FS=1 XD_PWA_CR03C_LIMITED_MOUNT="$MOUNT" \
+          XD_PWA_CR03C_OUTPUT="$GITHUB_WORKSPACE/desktop/pwa-cr03c-results" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CR03C_CHROME" \
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/pwa-cr03c-driver/node_modules/playwright-core" \
+            node desktop/scripts/pwa-cr03c-native-tmpfs-quota.cjs
+          node - <<'NODE'
+          const s=require('./desktop/pwa-cr03c-results/summary.json')
+          if(s.commit!==process.env.XD_PR_HEAD || !s.passed ||
+             !s.nativeChrome || !s.physicalFilesystemCap ||
+             !s.actualBrowserQuotaError || s.nativeError!=='QuotaExceededError' ||
+             !s.productRejected || !s.oldHistoryIntact || !s.explicitConsent ||
+             !s.publicSWOnly || s.physicalDevice || s.goACLTestedHere)process.exit(1)
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr03c-sanitized-native-quota-proof
+          path: desktop/pwa-cr03c-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
