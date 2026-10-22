@@ -29,8 +29,8 @@ test('Static Map config editing and authenticated online evidence are distinct i
   assert.match(parent, /验证当前 AK 在线生效/)
   assert.match(parent, /消耗一次 API 配额/)
   assert.match(parent, /currentTab === 'verify' && \(/)
-  assert.match(parent, /currentTab === 'config' && baiduConfig && \(\s*<XDriveStoredCredentialField/)
-  assert.doesNotMatch(parent, /currentTab === 'verify' && baiduConfig && \(\s*<XDriveStoredCredentialField/)
+  assert.match(parent, /XDriveSensitiveField label="Server AK"/)
+  assert.doesNotMatch(parent, /<XDriveStoredCredentialField/)
 })
 
 test('JSAPI Browser AK configuration is separate from signed production release evidence', () => {

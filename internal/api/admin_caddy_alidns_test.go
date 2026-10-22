@@ -189,12 +189,45 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 		t.Fatalf("AliDNS reveal v1.1 30-second response contract failed (ttl=%d, decode=%v)",
 			revealLease.ExpiresInSeconds, err)
 	}
-	cleared := call(http.MethodPut, path, adminToken, `{"revision":1,"clear":true}`)
+	// Each field rotates independently, while the other stays encrypted on
+	// the Server and the client never submits an unchanged plaintext value.
+	newID := "LTAIReplacementID99"
+	idOnly := call(http.MethodPut, path, adminToken,
+		fmt.Sprintf(`{"revision":1,"access_key_id":%q}`, newID))
+	if idOnly.Code != http.StatusOK || !strings.Contains(idOnly.Body.String(), `"revision":2`) ||
+		strings.Contains(idOnly.Body.String(), newID) {
+		t.Fatalf("independent ID replacement failed: %d", idOnly.Code)
+	}
+	newSecret := "ReplacementSecret123456+"
+	secretOnly := call(http.MethodPut, path, adminToken,
+		fmt.Sprintf(`{"revision":2,"access_key_secret":%q}`, newSecret))
+	if secretOnly.Code != http.StatusOK || !strings.Contains(secretOnly.Body.String(), `"revision":3`) ||
+		strings.Contains(secretOnly.Body.String(), newSecret) {
+		t.Fatalf("independent Secret replacement failed: %d", secretOnly.Code)
+	}
+	if err := db.Where("name = ?", caddyAliDNSSecretName).Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := ring.Open(caddyAliDNSSecretAADID, caddyAliDNSSecretKind, row.KeyVersion, row.Ciphertext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rotatedPair caddyAliDNSSecretPair
+	err = json.Unmarshal(rotated, &rotatedPair)
+	clear(rotated)
+	if err != nil || rotatedPair.AccessKeyID != newID || rotatedPair.AccessKeySecret != newSecret {
+		t.Fatal("partial AliDNS rotation corrupted the retained counterpart")
+	}
+	if stale := call(http.MethodPut, path, adminToken,
+		fmt.Sprintf(`{"revision":1,"access_key_secret":%q}`, newSecret)); stale.Code != http.StatusConflict {
+		t.Fatal("partial AliDNS update ignored revision fence")
+	}
+	cleared := call(http.MethodPut, path, adminToken, `{"revision":3,"clear":true}`)
 	if cleared.Code != 200 || !strings.Contains(cleared.Body.String(), `"configured":false`) ||
-		!strings.Contains(cleared.Body.String(), `"revision":2`) {
+		!strings.Contains(cleared.Body.String(), `"revision":4`) {
 		t.Fatalf("clear failed: %d", cleared.Code)
 	}
-	if r := call(http.MethodPost, path+"/reveal", adminToken, `{"revision":2}`); r.Code != 409 {
+	if r := call(http.MethodPost, path+"/reveal", adminToken, `{"revision":4}`); r.Code != 409 {
 		t.Fatalf("cleared secret should not be revealed: %d", r.Code)
 	}
 	if err := db.Where("name = ?", caddyAliDNSSecretName).First(&row).Error; err != nil {
@@ -207,8 +240,8 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 	if err := db.Order("id ASC").Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 3 {
-		t.Fatalf("expected save, reveal, clear audits; got %d", len(events))
+	if len(events) != 5 {
+		t.Fatalf("expected save, reveal, independent ID/Secret rotations, clear audits; got %d", len(events))
 	}
 	for _, event := range events {
 		raw, _ := json.Marshal(event)
@@ -221,11 +254,11 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := call(http.MethodPut, path, adminToken,
-		fmt.Sprintf(`{"revision":2,"access_key_id":%q,"access_key_secret":%q}`, id, secret))
+		fmt.Sprintf(`{"revision":4,"access_key_id":%q,"access_key_secret":%q}`, id, secret))
 	if res.Code != 503 {
 		t.Fatalf("unaudited AliDNS save must fail: %d", res.Code)
 	}
-	if err := db.Where("name = ?", caddyAliDNSSecretName).First(&row).Error; err != nil || row.Revision != 2 || len(row.Ciphertext) != 0 {
+	if err := db.Where("name = ?", caddyAliDNSSecretName).First(&row).Error; err != nil || row.Revision != 4 || len(row.Ciphertext) != 0 {
 		t.Fatalf("credential row changed despite audit failure: revision=%d err=%v", row.Revision, err)
 	}
 }

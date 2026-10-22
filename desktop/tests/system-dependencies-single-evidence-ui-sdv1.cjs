@@ -53,7 +53,7 @@ test('Baidu six authoritative Server fields are technical disclosure only in Ver
   }
   assert.match(state, /Server 实际状态/)
   assert.doesNotMatch(state, /onChange|TextField|Switch|browser_ak\s*:/)
-  assert.match(panel, /type="password"/)
+  assert.match(panel, /XDriveSensitiveField label="Browser AK"/)
   assert.match(panel, /if \(busy \|\| refreshing \|\| dirty/)
   assert.match(panel, /data-xdrive-baidu-jsapi4-live-probe/)
   assert.doesNotMatch(panel, /fetch\(|window\._BMapSecurityConfig|\.src\s*=/)
@@ -66,7 +66,7 @@ test('one real shared UI applies to Web/Mobile Web and Desktop without extra adm
   assert.match(web, /XDriveServiceDependenciesPage/)
   assert.match(desktop, /XDriveServiceDependenciesPage/)
   assert.match(page, /XDriveBaiduJSAPIDesiredPanel/)
-  assert.match(page, /XDriveStoredCredentialField/)
+  assert.match(page, /XDriveSensitiveField/)
   assert.doesNotMatch(page, /docker\.sock/)
 })
 

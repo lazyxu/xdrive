@@ -16,11 +16,10 @@ import {
   XDriveSourceSyncModeField,
 } from './SourceBasicFields'
 import {
-  XDriveSourceCookieField,
   XDriveSourceTargetField,
-  XDriveStoredCredentialField,
   XDriveSynologyDsmCredentialFields,
 } from './SourceCredentialFields'
+import { XDriveSensitiveField } from './SensitiveField'
 import {
   XDriveSynologyFileRootsField,
   XDriveSynologyPhotoSpacesField,
@@ -227,34 +226,14 @@ export function XDriveSourceSettingsDialog({
               {profile?.credential === 'cookie' ? (
                 <>
                   <XDriveSectionHeader level="h3" title="一刻相册凭据" />
-                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
-                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
-                    </MuiTypography>
-                    <MuiTypography variant="body2">
-                      Cookie 默认仅显示遮罩；点击“显示”后临时读取明文，30 秒后自动重新隐藏。
-                    </MuiTypography>
-                  </XDriveStatusAlert>
-                  <XDriveStoredCredentialField
-                    label="已保存 Cookie"
+                  <XDriveSensitiveField label="一刻相册 Cookie"
                     configured={Boolean(setting.credential?.configured)}
                     revealedValue={credentialReveal?.field === 'cookie' ? credentialReveal.value : ''}
-                    loading={revealingCredential}
-                    expiresInSeconds={credentialReveal?.expires_in_seconds ?? 30}
-                    updatedAtLabel={setting.credential?.updated_at ? new Date(setting.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                    onReveal={onRevealCredential}
-                    onHide={onHideCredential}
-                  />
-                  <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                  <XDriveSourceCookieField
-                    label="替换 Cookie"
+                    revealLoading={revealingCredential}
+                    onReveal={onRevealCredential} onHide={onHideCredential}
                     value={values.cookie ?? ''}
-                    placeholder={setting.credential?.configured ? '留空则保持当前 Cookie 不变' : '粘贴一刻相册 Cookie'}
-                    helperText={setting.credential?.configured
-                      ? '只在需要更换 Cookie 时填写；已显示的 Cookie 不会自动带入此输入框。'
-                      : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                    onChange={(value) => onCredentialChange({ cookie: value })}
-                  />
+                    onChange={(value) => onCredentialChange({ cookie: value })} />
+                  <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                   <MuiBox>
                     <XDriveYikeCookieHelp variant={cookieHelpVariant} />
                     <MuiBox sx={{ mt: 1 }}>
@@ -294,26 +273,13 @@ export function XDriveSourceSettingsDialog({
               {profile?.credential === 'synology_dsm' ? (
                 <>
                   <XDriveSectionHeader level="h3" title="Synology DSM 凭据" />
-                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
-                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
-                    </MuiTypography>
-                    <MuiTypography variant="body2">
-                      DSM 密码默认仅显示遮罩，可按需临时显示 30 秒；如需更新连接，请重新完整填写地址、用户名和密码。
-                    </MuiTypography>
-                  </XDriveStatusAlert>
-                  <XDriveStoredCredentialField
-                    label="已保存 DSM 密码"
-                    configured={Boolean(setting.credential?.configured)}
-                    revealedValue={credentialReveal?.field === 'password' ? credentialReveal.value : ''}
-                    loading={revealingCredential}
-                    expiresInSeconds={credentialReveal?.expires_in_seconds ?? 30}
-                    updatedAtLabel={setting.credential?.updated_at ? new Date(setting.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                    onReveal={onRevealCredential}
-                    onHide={onHideCredential}
-                  />
                   <XDriveSynologyDsmCredentialFields
                     mode="update"
+                    configured={Boolean(setting.credential?.configured)}
+                    revealedPassword={credentialReveal?.field === 'password' ? credentialReveal.value : ''}
+                    passwordRevealLoading={revealingCredential}
+                    onRevealPassword={onRevealCredential}
+                    onHidePassword={onHideCredential}
                     baseURL={values.base_url ?? ''}
                     username={values.username ?? ''}
                     password={values.password ?? ''}

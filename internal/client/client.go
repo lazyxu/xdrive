@@ -1076,6 +1076,20 @@ func (c *Client) UpdateAdminBaiduJSAPIConfig(ctx context.Context, input AdminBai
 	return out, err
 }
 
+type AdminBaiduJSAPIReveal struct {
+	Field            string `json:"field"`
+	Value            string `json:"value"`
+	Revision         uint64 `json:"revision"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+}
+
+func (c *Client) RevealAdminBaiduJSAPIAK(ctx context.Context, revision uint64) (AdminBaiduJSAPIReveal, error) {
+	var out AdminBaiduJSAPIReveal
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/baidu-jsapi/reveal",
+		map[string]uint64{"revision": revision}, &out)
+	return out, err
+}
+
 // Administrator-only fixed external Loader verification; never returns script bytes
 // or grants a signed dynamic map runtime release.
 type AdminBaiduJSAPI4LoaderProbe struct {

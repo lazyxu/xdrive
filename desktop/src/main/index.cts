@@ -98,6 +98,7 @@ import {
   type AgentAdminBaiduJSAPIConfig,
   type AgentAdminBaiduJSAPIUpdate,
   type AgentAdminBaiduJSAPI4LoaderProbe,
+  type AgentAdminBaiduJSAPIReveal,
   type AgentAdminCaddyHTTPSConfig,
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyConfigurationSaveInput,
@@ -5792,6 +5793,16 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'admin-services')
     return requireAgentClient().cloudAdminBaiduJSAPIConfig()
   }, false))
+  ipcMain.handle('agent:cloud-reveal-admin-baidu-jsapi-ak', (_event, revision: unknown) =>
+    runAgentAction<AgentAdminBaiduJSAPIReveal>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (typeof revision !== 'number' || !Number.isSafeInteger(revision) ||
+          revision <= 0 || revision > 2 ** 60) {
+        throw new AgentIPCError('invalid_input', 0, 'Valid Browser AK revision required.')
+      }
+      return requireAgentClient().cloudRevealAdminBaiduJSAPIAK(revision)
+    }, false))
   ipcMain.handle('agent:cloud-verify-admin-baidu-jsapi-loader', (_event, revision: unknown) =>
     runAgentAction<AgentAdminBaiduJSAPI4LoaderProbe>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

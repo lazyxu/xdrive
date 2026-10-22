@@ -64,6 +64,6 @@ test('Always-visible config retains atomic CAS, fail-closed deployment and secre
   assert.match(alidns, /Math\.min\(30, shown\.expires_in_seconds\)/)
   assert.match(alidns, /document\.addEventListener\('visibilitychange'/)
   assert.match(alidns, /window\.addEventListener\('blur'/)
-  assert.match(alidns, /type="password"/)
-  assert.match(alidns, /\{active && shown && \(/)
+  assert.match(alidns, /XDriveSensitiveField/)
+  assert.match(alidns, /revealedValue=\{active \? shown\?\.access_key_id/)
 })

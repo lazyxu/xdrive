@@ -288,6 +288,53 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("Synology reveal returned unsafe payload: headers=%v body=%s", synologyReveal.Header(), synologyReveal.Body.String())
 	}
 	request(t, router, http.MethodPost, synologyRevealPath, tokenB, nil, http.StatusNotFound)
+	// Each DSM parameter is editable independently. The Server merges the
+	// unchanged ciphertext locally, validates the resulting complete bundle
+	// through the existing real connector-test boundary, and never returns
+	// the preserved username or password to the settings form.
+	for _, change := range []struct {
+		patch string
+		want  string
+	}{
+		{
+			`{"payload":{"base_url":"https://nas2.example:5001"}}`,
+			`{"base_url":"https://nas2.example:5001","username":"alice","password":"secret"}`,
+		},
+		{
+			`{"payload":{"username":"new-alice"}}`,
+			`{"base_url":"https://nas2.example:5001","username":"new-alice","password":"secret"}`,
+		},
+		{
+			`{"payload":{"password":"rotated-secret"}}`,
+			`{"base_url":"https://nas2.example:5001","username":"new-alice","password":"rotated-secret"}`,
+		},
+	} {
+		saved := requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
+			strings.NewReader(change.patch), http.StatusOK,
+			map[string]string{"Content-Type": "application/json"})
+		if strings.Contains(saved.Body.String(), "rotated-secret") ||
+			strings.Contains(saved.Body.String(), "new-alice") {
+			t.Fatalf("partial DSM save leaked credential text: %s", saved.Body.String())
+		}
+		if testedKind != synologySourceKind || string(testedPayload) != change.want {
+			t.Fatalf("DSM partial update failed complete validation: kind=%q payload=%s", testedKind, testedPayload)
+		}
+		stored, err := sourcecredential.Get(context.Background(), db, server.ConnectorSecrets, synologyPull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(stored) != change.want {
+			clear(stored)
+			t.Fatal("DSM single-field update corrupted unchanged encrypted fields")
+		}
+		clear(stored)
+	}
+	finalDSMReveal := request(t, router, http.MethodPost, synologyRevealPath, tokenA, nil, http.StatusOK)
+	if !strings.Contains(finalDSMReveal.Body.String(), `"value":"rotated-secret"`) ||
+		strings.Contains(finalDSMReveal.Body.String(), "new-alice") {
+		t.Fatal("DSM reveal returned the wrong field or leaked the account name")
+	}
+	request(t, router, http.MethodPost, synologyRevealPath, tokenB, nil, http.StatusNotFound)
 	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
 	var pausedSynologyPull meta.Source
 	if err := db.First(&pausedSynologyPull, synologyPull.ID).Error; err != nil {
@@ -760,5 +807,22 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if strings.Contains(revealAudit.Metadata, "BDUSS") || strings.Contains(revealAudit.Metadata, "top-secret-cookie") ||
 		!strings.Contains(revealAudit.Metadata, `"field":"cookie"`) {
 		t.Fatalf("credential reveal audit metadata is unsafe: %s", revealAudit.Metadata)
+	}
+
+	// A privileged request must NOT receive plaintext when its audit INSERT
+	// cannot commit; the settings eye must fail closed instead of silently
+	// logging a warning and returning the saved login cookie.
+	const protectedCookie = "BDUSS=audit-required-cookie"
+	if err := sourcecredential.Put(context.Background(), db, server.ConnectorSecrets, source,
+		[]byte(`{"cookie":"`+protectedCookie+`"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	failedReveal := request(t, router, http.MethodPost, revealPath, tokenA, nil, http.StatusServiceUnavailable)
+	if strings.Contains(failedReveal.Body.String(), protectedCookie) ||
+		strings.Contains(failedReveal.Body.String(), `"field":"cookie"`) {
+		t.Fatalf("credential disclosed even though audit storage failed: %s", failedReveal.Body.String())
 	}
 }

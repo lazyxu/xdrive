@@ -836,6 +836,7 @@ const agent = Object.freeze({
   cloudVerifyAdminBaiduMap: (revision: number) => ipcRenderer.invoke('agent:cloud-verify-admin-baidu-map', revision),
   cloudRevealAdminBaiduMapAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-map-ak', revision),
   cloudAdminBaiduJSAPIConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-jsapi'),
+  cloudRevealAdminBaiduJSAPIAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-jsapi-ak', revision),
   cloudVerifyAdminBaiduJSAPI4Loader: (revision: number) =>
     ipcRenderer.invoke('agent:cloud-verify-admin-baidu-jsapi-loader', revision),
   cloudSetAdminBaiduJSAPIConfig: (input: {

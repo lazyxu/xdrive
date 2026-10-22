@@ -62,7 +62,7 @@ func (h *desktopIPCHandler) cloudSaveAdminCaddyConfiguration(w http.ResponseWrit
 	if input.AliDNS != nil {
 		switch input.AliDNS.Action {
 		case "replace":
-			if !validDesktopCaddyAliDNSPair(input.AliDNS.AccessKeyID, input.AliDNS.AccessKeySecret) {
+			if !validDesktopCaddyAliDNSChange(input.AliDNS.AccessKeyID, input.AliDNS.AccessKeySecret) {
 				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_atomic_alidns", "Provide both bounded AliDNS credentials")
 				return
 			}

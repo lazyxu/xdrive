@@ -1966,6 +1966,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    revealBaiduJSAPIAK: async (revision: number) => {
+      const result = await window.xdriveDesktop.agent.cloudRevealAdminBaiduJSAPIAK(revision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadBaiduJSAPIConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBaiduJSAPIConfig()
       if (!result.ok) throw new Error(result.error.message)

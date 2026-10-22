@@ -1050,6 +1050,13 @@ export class XDriveApi {
       { method: 'PUT', body: JSON.stringify(input), cache: 'no-store' },
     )
   }
+  adminRevealBaiduJSAPIAK(revision: number) {
+    return this.request<import('../../ui/shared/src').XDriveBaiduJSAPIReveal>(
+      '/api/v1/admin/services/baidu-jsapi/reveal', {
+        method: 'POST', body: JSON.stringify({ revision }), cache: 'no-store',
+      },
+    )
+  }
   adminVerifyBaiduJSAPI4Loader(revision: number) {
     return this.request<import('../../ui/shared/src').XDriveBaiduJSAPI4LoaderProbe>(
       '/api/v1/admin/services/baidu-jsapi/verify-loader',

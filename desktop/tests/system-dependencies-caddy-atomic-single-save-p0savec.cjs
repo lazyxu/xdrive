@@ -65,7 +65,7 @@ test('P0-SAVE-C: AliDNS explicit clear stages locally, does not fire its standal
   assert.match(alidns, /Math\.min\(30, shown\.expires_in_seconds\)/)
   assert.match(alidns, /document\.addEventListener\('visibilitychange'/)
   assert.match(alidns, /window\.addEventListener\('blur'/)
-  assert.match(alidns, /active && shown &&/)
+  assert.match(alidns, /revealedValue=\{active \? shown\?\.access_key_secret/)
   assert.match(alidns, /if \(atomicMode\) \{[\s\S]*?setPendingClear\(true\)/)
 })
 
@@ -96,7 +96,7 @@ test('P0-SAVE-C: in-flight atomic Save freezes both editors and secondary reques
   assert.match(alidns, /atomicSaving\?: boolean/)
   assert.match(alidns, /const canEdit = !!config\?\.editable && !busy && !loading && !revealing && !atomicSaving/)
   assert.match(alidns, /if \(!config\?\.configured \|\| !source\.revealCaddyAliDNS \|\| revealing \|\| busy \|\| atomicSaving\) return/)
-  assert.match(alidns, /disabled=\{!canEdit \|\| !config\.configured \|\| !source\.revealCaddyAliDNS/)
+  assert.match(alidns, /revealDisabled=\{!config\.configured \|\| !source\.revealCaddyAliDNS/)
   assert.match(alidns, /disabled=\{busy \|\| atomicSaving\}/)
 })
 

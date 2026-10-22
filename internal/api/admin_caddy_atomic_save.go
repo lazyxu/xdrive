@@ -83,27 +83,11 @@ func (s *Server) adminSaveCaddyConfiguration(c *gin.Context) {
 		action = input.AliDNS.Action
 		switch action {
 		case "replace":
-			pair := caddyAliDNSSecretPair{
-				AccessKeyID:     input.AliDNS.AccessKeyID,
-				AccessKeySecret: input.AliDNS.AccessKeySecret,
-			}
-			if !validCaddyAliDNSPair(pair) {
-				fail(c, http.StatusBadRequest, "valid AliDNS ID and Secret must both be supplied")
+			if !validCaddyAliDNSChange(input.AliDNS.AccessKeyID, input.AliDNS.AccessKeySecret) {
+				fail(c, http.StatusBadRequest, "invalid AliDNS changed fields")
 				return
 			}
 			if s.ConnectorSecrets == nil {
-				fail(c, http.StatusServiceUnavailable, "Caddy credential encryption unavailable")
-				return
-			}
-			plain, err := json.Marshal(pair)
-			if err != nil {
-				fail(c, http.StatusServiceUnavailable, "Caddy credential encoding unavailable")
-				return
-			}
-			keyVersion, ciphertext, err = s.ConnectorSecrets.Seal(
-				caddyAliDNSSecretAADID, caddyAliDNSSecretKind, plain)
-			clear(plain)
-			if err != nil {
 				fail(c, http.StatusServiceUnavailable, "Caddy credential encryption unavailable")
 				return
 			}
@@ -167,6 +151,15 @@ func (s *Server) adminSaveCaddyConfiguration(c *gin.Context) {
 		if input.AliDNS != nil && action == "clear" &&
 			(!haveAliDNS || len(credential.Ciphertext) == 0) {
 			return errCaddyAliDNSNotConfigured
+		}
+
+		if input.AliDNS != nil && action == "replace" {
+			var sealErr error
+			keyVersion, ciphertext, sealErr = s.sealCaddyAliDNSChange(
+				credential, input.AliDNS.AccessKeyID, input.AliDNS.AccessKeySecret)
+			if sealErr != nil {
+				return sealErr
+			}
 		}
 
 		if input.HTTPS != nil {
@@ -267,7 +260,7 @@ func (s *Server) adminSaveCaddyConfiguration(c *gin.Context) {
 	case errors.Is(err, errCaddyHostDBReservationBlocked):
 		fail(c, http.StatusConflict, "Unapplied Host reservation blocks Caddy configuration edits")
 	case errors.Is(err, errCaddyAliDNSNotConfigured):
-		fail(c, http.StatusConflict, "No staged AliDNS credentials to clear")
+		fail(c, http.StatusConflict, "No saved AliDNS credentials or counterpart available")
 	case err != nil:
 		fail(c, http.StatusServiceUnavailable, "Caddy configuration not persisted or audited")
 	default:

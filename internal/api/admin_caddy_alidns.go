@@ -146,7 +146,8 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 	}
 	pair := caddyAliDNSSecretPair{AccessKeyID: input.AccessKeyID, AccessKeySecret: input.AccessKeySecret}
 	if (input.Clear && (pair.AccessKeyID != "" || pair.AccessKeySecret != "")) ||
-		(!input.Clear && !validCaddyAliDNSPair(pair)) {
+		(!input.Clear && (!validCaddyAliDNSChange(pair.AccessKeyID, pair.AccessKeySecret) ||
+			(*input.Revision == 0 && !validCaddyAliDNSPair(pair)))) {
 		fail(c, http.StatusBadRequest, "provide both valid AliDNS credentials, or clear without credentials")
 		return
 	}
@@ -177,12 +178,8 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 		var ciphertext []byte
 		var keyVersion uint32
 		if !input.Clear {
-			plaintext, err := json.Marshal(pair)
-			if err != nil {
-				return err
-			}
-			keyVersion, ciphertext, err = s.ConnectorSecrets.Seal(caddyAliDNSSecretAADID, caddyAliDNSSecretKind, plaintext)
-			clear(plaintext)
+			keyVersion, ciphertext, err = s.sealCaddyAliDNSChange(
+				previous, pair.AccessKeyID, pair.AccessKeySecret)
 			if err != nil {
 				return err
 			}

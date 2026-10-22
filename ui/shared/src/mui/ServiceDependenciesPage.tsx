@@ -54,7 +54,7 @@ import type {
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
-import { XDriveStoredCredentialField } from './SourceCredentialFields'
+import { XDriveSensitiveField } from './SensitiveField'
 import { XDriveBaiduJSAPIDesiredPanel } from './BaiduJSAPIDesiredPanel'
 import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
 import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
@@ -77,6 +77,7 @@ export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMedia
   verifyBaiduMap?: (revision: number) => Promise<XDriveBaiduMapVerification>
   loadBaiduJSAPIConfig?: () => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
   saveBaiduJSAPIConfig?: (input: import('../service-dependencies').XDriveBaiduJSAPIUpdate) => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
+  revealBaiduJSAPIAK?: (revision: number) => Promise<import('../service-dependencies').XDriveBaiduJSAPIReveal>
   verifyBaiduJSAPI4Loader?: (revision: number) => Promise<import('../service-dependencies').XDriveBaiduJSAPI4LoaderProbe>
   loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
   savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
@@ -2097,21 +2098,6 @@ export function XDriveServiceDependenciesPage({
                         {' · '}{baiduConfig.requires_restart ? '需重启' : '无需重启'}
                       </Typography>
                     )}
-                    {currentTab === 'config' && baiduConfig && (
-                      <XDriveStoredCredentialField
-                        label="当前 Server AK"
-                        configured={baiduConfig.configured}
-                        revealedValue={baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
-                        loading={revealingAK}
-                        expiresInSeconds={Math.min(30, Math.max(1, baiduReveal?.expires_in_seconds ?? 30))}
-                        updatedAtLabel={baiduConfig.updated_at ? new Date(baiduConfig.updated_at).toLocaleString('zh-CN') : undefined}
-                        configuredDescription={baiduConfig.source === 'environment'
-                          ? 'AK 由部署环境提供；按权限审计读取。'
-                          : 'AK 已加密保存；按权限审计读取。'}
-                        onReveal={() => { void revealBaiduAK() }}
-                        onHide={hideBaiduAK}
-                      />
-                    )}
                     {currentTab === 'config' && (baiduConfig?.editable ? (
                       <>
                         <FormControlLabel
@@ -2121,19 +2107,18 @@ export function XDriveServiceDependenciesPage({
                               disabled={baiduBusy} />
                           }
                         />
-                        <TextField
-                          label="Server AK"
-                          type="password"
-                          size="small"
-                          fullWidth
-                          autoComplete="new-password"
-                          value={baiduAK}
-                          onChange={(event) => { ++baiduVerifyEpochRef.current; setBaiduVerification(null); setBaiduAK(event.target.value) }}
-                          placeholder={baiduConfig.configured ? '留空则保留当前 AK' : '请输入百度地图 Server 类型 AK'}
-                          inputProps={{ maxLength: 256 }}
-                          disabled={baiduBusy}
-                          helperText="只在保存时发送新 AK；主动显示的 AK 不会自动填入替换输入框。"
-                        />
+                        <XDriveSensitiveField label="Server AK" value={baiduAK}
+                          configured={baiduConfig.configured}
+                          revealedValue={baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
+                          onReveal={() => { void revealBaiduAK() }} onHide={hideBaiduAK}
+                          revealLoading={revealingAK}
+                          revealDisabled={!source.revealBaiduMapAK}
+                          disabled={baiduBusy} maxLength={256}
+                          onChange={(value) => {
+                            ++baiduVerifyEpochRef.current
+                            setBaiduVerification(null)
+                            setBaiduAK(value)
+                          }} />
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                           <Button variant="contained" size="small" disabled={baiduBusy}
                             onClick={() => { void applyBaiduMap() }}>

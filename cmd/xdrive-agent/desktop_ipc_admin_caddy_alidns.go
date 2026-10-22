@@ -46,7 +46,8 @@ func (h *desktopIPCHandler) cloudSetAdminCaddyAliDNS(w http.ResponseWriter, r *h
 	}
 	if input.Revision == nil || *input.Revision > 1<<60 ||
 		(input.Clear && (input.AccessKeyID != "" || input.AccessKeySecret != "")) ||
-		(!input.Clear && !validDesktopCaddyAliDNSPair(input.AccessKeyID, input.AccessKeySecret)) {
+		(!input.Clear && (!validDesktopCaddyAliDNSChange(input.AccessKeyID, input.AccessKeySecret) ||
+			(*input.Revision == 0 && !validDesktopCaddyAliDNSPair(input.AccessKeyID, input.AccessKeySecret)))) {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_alidns_input", "AliDNS requires current revision and both bounded credentials or explicit clear")
 		return
 	}
@@ -92,6 +93,29 @@ func validDesktopCaddyAliDNSPair(id, secret string) bool {
 		value    string
 		min, max int
 	}{{id, 8, 128}, {secret, 8, 256}} {
+		if len(field.value) < field.min || len(field.value) > field.max {
+			return false
+		}
+		for i := 0; i < len(field.value); i++ {
+			if field.value[i] < '!' || field.value[i] > '~' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validDesktopCaddyAliDNSChange(id, secret string) bool {
+	if id == "" && secret == "" {
+		return false
+	}
+	for _, field := range []struct {
+		value    string
+		min, max int
+	}{{id, 8, 128}, {secret, 8, 256}} {
+		if field.value == "" {
+			continue
+		}
 		if len(field.value) < field.min || len(field.value) > field.max {
 			return false
 		}

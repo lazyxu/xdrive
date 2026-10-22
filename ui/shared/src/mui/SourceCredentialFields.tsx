@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button, InputAdornment, Stack, TextField } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { externalSourceSavedCredentialMask, synologyDsmAddressHelp } from '../external-sources'
+import { XDriveSensitiveField } from './SensitiveField'
 
 export function XDriveSourceCookieField({
   value,
@@ -24,19 +25,10 @@ export function XDriveSourceCookieField({
   sx?: SxProps<Theme>
 }) {
   return (
-    <TextField
-      fullWidth
-      size="small"
-      type="password"
-      label={label}
-      autoComplete="off"
-      value={value}
-      placeholder={placeholder}
-      helperText={helperText}
-      required={required}
-      onFocus={onFocus}
-      onChange={(event) => onChange(event.target.value)}
-      sx={sx}
+    <XDriveSensitiveField
+      label={label} value={value} onChange={onChange}
+      placeholder={placeholder} helperText={helperText} required={required}
+      onFocus={onFocus} sx={sx} autoComplete="off"
     />
   )
 }
@@ -50,6 +42,11 @@ export function XDriveSynologyDsmCredentialFields({
   onPasswordChange,
   mode = 'create',
   required = false,
+  configured = false,
+  revealedPassword = '',
+  onRevealPassword,
+  onHidePassword,
+  passwordRevealLoading = false,
   sx,
 }: {
   baseURL: string
@@ -60,6 +57,11 @@ export function XDriveSynologyDsmCredentialFields({
   onPasswordChange: (value: string) => void
   mode?: 'create' | 'update'
   required?: boolean
+  configured?: boolean
+  revealedPassword?: string
+  onRevealPassword?: () => void
+  onHidePassword?: () => void
+  passwordRevealLoading?: boolean
   sx?: SxProps<Theme>
 }) {
   const updating = mode === 'update'
@@ -70,7 +72,7 @@ export function XDriveSynologyDsmCredentialFields({
       <TextField
         fullWidth
         size="small"
-        label={updating ? '更新 DSM 地址' : 'DSM 地址'}
+        label="DSM 地址"
         placeholder={updating ? retainedPlaceholder : 'https://nas.example.com:5001'}
         helperText={synologyDsmAddressHelp}
         autoComplete="off"
@@ -81,24 +83,19 @@ export function XDriveSynologyDsmCredentialFields({
       <TextField
         fullWidth
         size="small"
-        label={updating ? '更新 DSM 用户名' : 'DSM 用户名'}
+        label="DSM 用户名"
         placeholder={retainedPlaceholder}
         autoComplete="username"
         value={username}
         required={required}
         onChange={(event) => onUsernameChange(event.target.value)}
       />
-      <TextField
-        fullWidth
-        size="small"
-        type="password"
-        label={updating ? '更新 DSM 密码' : 'DSM 密码'}
-        placeholder={retainedPlaceholder}
-        autoComplete="new-password"
-        value={password}
-        required={required}
-        onChange={(event) => onPasswordChange(event.target.value)}
-      />
+      <XDriveSensitiveField label="DSM 密码"
+        value={password} onChange={onPasswordChange}
+        configured={configured} revealedValue={revealedPassword}
+        onReveal={onRevealPassword} onHide={onHidePassword}
+        revealLoading={passwordRevealLoading}
+        required={required} autoComplete="new-password" />
     </Stack>
   )
 }

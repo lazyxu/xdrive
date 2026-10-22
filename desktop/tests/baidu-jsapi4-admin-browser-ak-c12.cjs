@@ -38,6 +38,28 @@ test('A3c12 Desktop uses bounded Agent IPC, not Browser AK in Renderer', () => {
   assert.doesNotMatch(read('desktop/src/renderer/App.tsx'), /BrowserAK\s*:/)
 })
 
+test('Browser AK reveal is separate, revision-fenced, audited and restricted to admin', () => {
+  const backend = read('internal/api/baidu_jsapi_reveal.go')
+  const router = read('internal/api/router.go')
+  const ipc = read('cmd/xdrive-agent/desktop_ipc_admin_baidu_jsapi.go')
+  const web = read('web/src/api.ts')
+  const desktop = read('desktop/src/main/index.cts')
+  const panel = read('ui/shared/src/mui/BaiduJSAPIDesiredPanel.tsx')
+  assert.match(router, /admin\.Use\(s\.requireAdmin\(\)\)/)
+  assert.match(router, /admin\.POST\("\/services\/baidu-jsapi\/reveal"/)
+  assert.match(backend, /recordAuditTx\(/)
+  assert.match(backend, /expires_in_seconds": 30/)
+  assert.match(backend, /"Cache-Control", "no-store"/)
+  assert.match(backend, /row\.Revision != \*input\.Revision/)
+  assert.match(ipc, /decodeDesktopIPCJSONLimit\(w, r, &input, 128\)/)
+  assert.match(desktop, /requireAgentCapability\(hello, 'admin-services'\)/)
+  assert.match(web, /adminRevealBaiduJSAPIAK\(revision: number\)/)
+  assert.match(panel, /XDriveSensitiveField label="Browser AK"/)
+  assert.match(panel, /onReveal=\{\(\) => \{ void revealAK\(\) \}\}/)
+  assert.match(panel, /window\.addEventListener\('blur', onBlur\)/)
+  assert.doesNotMatch(backend, /docker|InsecureSkipVerify/)
+})
+
 test('A3c12 shared mobile/wide configuration never labels saved intent as entitlement', () => {
   const component = read('ui/shared/src/mui/BaiduJSAPIDesiredPanel.tsx')
   const parent = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
