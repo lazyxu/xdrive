@@ -252,9 +252,10 @@ func TestDurablePrepareQuarantinesSecondAttempt(t *testing.T) {
 	defer cancel()
 	r := &Runner{}
 	d := &testDriver{prepare: func(_ context.Context, s Scope, _ Staged) (Operation, error) { cancel(); return op(s), nil }}
-	_, err := r.RunFirstLeaf(ctx, request(), d)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancel before commit: %v", err)
+	got, err := r.RunFirstLeaf(ctx, request(), d)
+	if !got.Uncertain || got.Confirmed || !errors.Is(err, ErrUncertain) ||
+		!errors.Is(err, context.Canceled) {
+		t.Fatalf("durably prepared cancellation did not remain uncertain: %+v %v", got, err)
 	}
 	if _, err = r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
 		t.Fatalf("reused uncertain request key: %v", err)
@@ -265,8 +266,9 @@ func TestLostPrepareReplyQuarantinesBeforeHTTPAck(t *testing.T) {
 	d := &testDriver{prepare: func(context.Context, Scope, Staged) (Operation, error) {
 		return Operation{}, errors.New("server may have persisted reservation")
 	}}
-	if _, err := r.RunFirstLeaf(context.Background(), request(), d); err == nil {
-		t.Fatal("lost reply returned success")
+	if got, err := r.RunFirstLeaf(context.Background(), request(), d); !got.Uncertain ||
+		got.Confirmed || !errors.Is(err, ErrUncertain) {
+		t.Fatalf("lost Prepare ACK misclassified as definite failure: %+v %v", got, err)
 	}
 	if _, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
 		t.Fatalf("new operation admitted after lost prepare ACK: %v", err)
@@ -275,6 +277,51 @@ func TestLostPrepareReplyQuarantinesBeforeHTTPAck(t *testing.T) {
 		if s == "commit" {
 			t.Fatal("commit ran without verified prepare")
 		}
+	}
+}
+
+func TestPreparedOperationMismatchNeverCommitsOrUnquarantines(t *testing.T) {
+	r := &Runner{}
+	d := &testDriver{prepare: func(_ context.Context, s Scope, _ Staged) (Operation, error) {
+		prepared := op(s)
+		prepared.Generation = 0
+		return prepared, nil
+	}}
+	got, err := r.RunFirstLeaf(context.Background(), request(), d)
+	if !got.Uncertain || got.Confirmed || !errors.Is(err, ErrUncertain) ||
+		!errors.Is(err, ErrDenied) {
+		t.Fatalf("invalid returned Operation treated as safe retry: %+v %v", got, err)
+	}
+	for _, step := range d.stepsCopy() {
+		if step == "commit" || step == "reconcile" {
+			t.Fatalf("invalid Operation reached unsafe step: %v", d.stepsCopy())
+		}
+	}
+	if _, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
+		t.Fatalf("new generation admitted after invalid Prepare: %v", err)
+	}
+}
+
+func TestPrepareCanceledAfterReservationReportsUncertainWithoutCommit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &Runner{}
+	d := &testDriver{prepare: func(_ context.Context, s Scope, _ Staged) (Operation, error) {
+		cancel()
+		return op(s), nil
+	}}
+	got, err := r.RunFirstLeaf(ctx, request(), d)
+	if !got.Uncertain || got.Confirmed || !errors.Is(err, ErrUncertain) ||
+		!errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel after durable Prepare was treated as definite failure: %+v %v", got, err)
+	}
+	for _, step := range d.stepsCopy() {
+		if step == "commit" || step == "reconcile" {
+			t.Fatalf("canceled prepared Operation reached unsafe step: %v", d.stepsCopy())
+		}
+	}
+	if _, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
+		t.Fatalf("new generation admitted after Prepare cancellation: %v", err)
 	}
 }
 
