@@ -47,8 +47,12 @@ export const xDriveBaiduMapDiagnosticDetails = {
     title: "百度 JSAPI 启动脚本加载超时（12 秒）",
     action: "检查当前浏览器的百度 CDN、DNS、代理及 HTTPS；固定 Server Loader 成功不代表客户端直连成功。",
   },
+  prototype_sdk_callback_timeout: {
+    title: "百度启动脚本已加载，但官方异步就绪回调未触发",
+    action: "当前页面已请求 JSAPI4 的 callback 就绪通知，但在 12 秒内未收到；检查 SDK 后续资源、浏览器 CSP 与 Browser AK 授权，不能从 script.onload 推断 BMap 已就绪。固定 Server Loader 检测不代表浏览器初始化成功。",
+  },
   prototype_sdk_namespace_missing: {
-    title: "启动脚本已加载，但没有可用的 BMap 命名空间",
+    title: "官方回调已触发，但 BMap 命名空间仍不可用",
     action: "检查百度动态子资源、Browser AK 域名权限、浏览器 CSP 和控制台。",
   },
   prototype_sdk_script_injection_failed: {

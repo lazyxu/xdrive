@@ -36,7 +36,7 @@ test('Browser AK prototype route HTTP failures are correctly distinguished', () 
 })
 
 test('prototype stages are allowlisted, transient, scoped and secret-free', () => {
-  for (const code of ["prototype_config_unavailable","prototype_config_denied","prototype_config_unsupported","prototype_config_rate_limited","prototype_config_invalid","prototype_ak_rotated","prototype_document_unavailable","prototype_csp_script_blocked","prototype_sdk_script_failed","prototype_sdk_script_timeout","prototype_sdk_namespace_missing","prototype_sdk_script_injection_failed","prototype_sdk_map_init_failed","prototype_sdk_convert_failed","prototype_sdk_layer_update_failed"]) {
+  for (const code of ["prototype_config_unavailable","prototype_config_denied","prototype_config_unsupported","prototype_config_rate_limited","prototype_config_invalid","prototype_ak_rotated","prototype_document_unavailable","prototype_csp_script_blocked","prototype_sdk_script_failed","prototype_sdk_script_timeout","prototype_sdk_callback_timeout","prototype_sdk_namespace_missing","prototype_sdk_script_injection_failed","prototype_sdk_map_init_failed","prototype_sdk_convert_failed","prototype_sdk_layer_update_failed"]) {
     assert.equal(typeof details[code]?.title, 'string', code)
   }
   const scope = 'web:baidu-diagnostic-test'
@@ -65,6 +65,8 @@ test('exact Gallery runtime and Admin UI retain specific errors without raw prov
   assert.match(map, /xDriveClearBaiduMapDiagnostic\(diagnosticScope\)/)
   assert.match(map, /data-xdrive-baidu-prototype-error-code/)
   assert.match(map, /prototype_csp_script_blocked/)
+  assert.match(map, /prototype_sdk_callback_timeout/)
+  assert.match(map, /&callback=/)
   assert.match(map, /prototype_sdk_convert_failed/)
   assert.match(map, /script\.onerror = \(\) => cleanup/)
   assert.match(parent, /diagnosticScope=\{diagnosticScope\}/)

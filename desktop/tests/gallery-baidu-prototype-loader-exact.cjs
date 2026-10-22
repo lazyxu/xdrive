@@ -67,6 +67,19 @@ function fixture() {
 const namespace = () => ({
   Map: class {}, Point: class {}, Convertor: class {}, ClusterLayer: class {},
 })
+const callbackName = (fixture, index = 0) => {
+  const src = new URL(fixture.scripts[index].src)
+  assert.equal(src.searchParams.get('v'), '4.0')
+  const callback = src.searchParams.get('callback')
+  assert.match(callback, /^__xDriveBaiduJSAPI4Ready[0-9]+$/)
+  assert.equal(typeof fixture.window[callback], 'function')
+  return callback
+}
+const invokeProviderReady = (fixture, index = 0) => {
+  const name = callbackName(fixture, index)
+  fixture.window[name]()
+  return name
+}
 
 test('actual direct browser script failure is not misreported as Server Loader failure', async () => {
   const f = fixture()
@@ -116,6 +129,7 @@ test('bootstrap timeout and subsequent missing native capability have different 
   const loaded = load(g.document, 'KEY')
   g.window.BMap = { Map: class {}, Point: class {}, Convertor: class {} }
   g.scripts[0].onload()
+  invokeProviderReady(g)
   fire(12000)
   await assert.rejects(loaded, error => error.code === 'sdk_missing_cluster_layer')
 })
@@ -126,7 +140,9 @@ test('fully initialized SDK resolves and memoizes only within same document and 
   const api = namespace()
   f.window.BMap = api
   f.scripts[0].onload()
+  const callback = invokeProviderReady(f)
   assert.equal(await pending, api)
+  assert.equal(f.window[callback], undefined)
   assert.equal(await load(f.document, 'KEY'), api)
   await assert.rejects(load(f.document, 'ROTATED'), error =>
     error.code === 'prototype_ak_rotated')
@@ -148,6 +164,7 @@ test('bootstrap onload may precede deferred BMap capabilities and still succeed'
   const pending = load(f.document, 'KEY')
   const sdk = namespace()
   f.scripts[0].onload()
+  invokeProviderReady(f)
   assert.ok([...timers.values()].some(item => item.delay === 100))
   f.window.BMap = sdk
   fire(100)
@@ -160,6 +177,7 @@ test('successful bootstrap without any BMap produces namespace rather than scrip
   const f = fixture()
   const pending = load(f.document, 'KEY')
   f.scripts[0].onload()
+  invokeProviderReady(f)
   fire(12000)
   await assert.rejects(pending, error =>
     error.code === 'prototype_sdk_namespace_missing')
@@ -203,5 +221,66 @@ test('SDK failure is not sticky and may be retried with current Browser AK', asy
   const sdk = namespace()
   f.window.BMap = sdk
   f.scripts[1].onload()
+  invokeProviderReady(f, 1)
   assert.equal(await retry, sdk)
+})
+
+test('script.onload is not mistaken for SDK readiness; callback timeout is explicit', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY')
+  const callback = callbackName(f)
+  f.scripts[0].onload()
+  let resolved = false
+  pending.then(() => { resolved = true }, () => {})
+  f.window.BMap = namespace()
+  await Promise.resolve()
+  assert.equal(resolved, false)
+  fire(12000)
+  await assert.rejects(pending, error => error.code === 'prototype_sdk_callback_timeout')
+  assert.equal(f.window[callback], undefined)
+  assert.equal(f.handlers.has('securitypolicyviolation'), false)
+})
+
+test('provider callback may run before script.onload and resolves without waiting', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY')
+  const sdk = namespace()
+  f.window.BMap = sdk
+  const callback = invokeProviderReady(f)
+  assert.equal(await pending, sdk)
+  assert.equal(f.window[callback], undefined)
+  assert.equal(timers.size, 0)
+  // Browser may deliver onload after callback. The settled promise stays safe.
+})
+
+test('rejected scripts leave no callable global and stale provider callbacks cannot revive load', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY')
+  const callback = callbackName(f)
+  const stale = f.window[callback]
+  f.scripts[0].onerror({ detail: 'AK=PRIVATE' })
+  await assert.rejects(pending, error => error.code === 'prototype_sdk_script_failed')
+  assert.equal(f.window[callback], undefined)
+  stale()
+  assert.equal(f.handlers.has('securitypolicyviolation'), false)
+  assert.equal(timers.size, 0)
+})
+
+test('concurrent loads share one callback per document; other documents are independent', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY')
+  const coalesced = load(f.document, 'KEY')
+  assert.equal(f.scripts.length, 1)
+  const callback = callbackName(f)
+  const g = fixture()
+  const other = load(g.document, 'KEY')
+  assert.notEqual(callback, callbackName(g))
+  const a = namespace(), b = namespace()
+  f.window.BMap = a
+  g.window.BMap = b
+  invokeProviderReady(f)
+  invokeProviderReady(g)
+  assert.equal(await pending, a)
+  assert.equal(await coalesced, a)
+  assert.equal(await other, b)
 })
