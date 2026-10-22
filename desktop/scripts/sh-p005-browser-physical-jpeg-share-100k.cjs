@@ -17,6 +17,8 @@ const dist = path.join(root, 'web/dist')
 const readyPath = path.join(out, 'private-ready.json')
 const bin = process.env.XD_SH_P005_GO_TEST_BIN
 const shP018 = process.env.XD_SH_P018_REAL_CACHED_THUMBNAIL === '1'
+const mountedHidden = process.env.XD_SH_P072_MOUNTED_HIDDEN_GO === '1'
+if (mountedHidden && !shP018) throw Error('P072 requires genuine SH-P018 signed Go thumbnail workload')
 const pairedNextPage = process.env.XD_SH_P018_PAIRED_NEXT_PAGE === '1'
 const allowSlowOriginal = process.env.XD_SH_P018_ALLOW_SLOW_ORIGINAL === '1'
 if (allowSlowOriginal && (!pairedNextPage || process.env.XD_SH_P018_VARIANT !== 'original'))
@@ -24,8 +26,13 @@ if (allowSlowOriginal && (!pairedNextPage || process.env.XD_SH_P018_VARIANT !== 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 app.on('window-all-closed', () => {})
 app.commandLine.appendSwitch('no-sandbox')
-app.commandLine.appendSwitch('disable-renderer-backgrounding')
-app.commandLine.appendSwitch('disable-background-timer-throttling')
+// Preserve original SH-P018 scroll/pagehide fixture unchanged. The P072
+// still-mounted hidden-window variant must permit Chromium's Page Visibility
+// lifecycle rather than globally suppressing renderer background behavior.
+if (!mountedHidden) {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+}
 
 async function until(fn, durationMs, label) {
   const start = performance.now()
@@ -74,7 +81,7 @@ async function createWindow(width, sample) {
       nodeIntegration: false,
       sandbox: false,
       webSecurity: true,
-      backgroundThrottling: false,
+      backgroundThrottling: mountedHidden,
     },
   })
   win.webContents.on('render-process-gone', (_event, details) =>
@@ -250,7 +257,65 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
   assert(loaded.remote.thumbnail_stream_calls >= number, 'no real signed thumbnail GET')
   await post(base + '/__perf/mark-thumbnail-eviction')
   let cause
-  if (!pairedNextPage && sample === 1) {
+  let mountedHiddenVerified = false
+  let hiddenLifecycle = null
+  let lastHiddenProbe = null
+  if (mountedHidden) {
+    cause = 'mounted-hidden-visibilitychange'
+    // Prove that this is NOT a route/page unload, a fake React unmount, or
+    // a request never launched: a real signed thumbnail GET was held above.
+    const before = await dom(win, () => {
+      const scroll = document.querySelector('[data-xdrive-file-explorer-scroll-host]')
+      const core = document.querySelector('[data-xdrive-public-share-unified-core="true"]')
+      window.__p072RecordedDoc = document
+      window.__p072RecordedScroll = scroll
+      window.__p072VisibilityEvents = 0
+      window.__p072PagehideEvents = 0
+      window.__p072BeforeUnloadEvents = 0
+      document.addEventListener('visibilitychange', () => { window.__p072VisibilityEvents += 1 })
+      window.addEventListener('pagehide', () => { window.__p072PagehideEvents += 1 })
+      window.addEventListener('beforeunload', () => { window.__p072BeforeUnloadEvents += 1 })
+      return { visible: !document.hidden && document.visibilityState === 'visible',
+        mounted: !!core && !!scroll && scroll.isConnected,
+        location: location.href }
+    })
+    assert(before.visible && before.mounted,
+      'P072 must start in a visible mounted authenticated Share Core')
+    const webContentsID = win.webContents.id
+    win.hide()
+    hiddenLifecycle = await until(async () => {
+      const v = await dom(win, () => ({
+        hidden: document.hidden && document.visibilityState === 'hidden',
+        sameDocument: window.__p072RecordedDoc === document,
+        sameScrollHost: window.__p072RecordedScroll ===
+          document.querySelector('[data-xdrive-file-explorer-scroll-host]'),
+        stillMounted: !!window.__p072RecordedScroll?.isConnected,
+        visibilitychangeEvents: window.__p072VisibilityEvents,
+        pagehideEvents: window.__p072PagehideEvents,
+        beforeunloadEvents: window.__p072BeforeUnloadEvents,
+        location: location.href,
+      }))
+      lastHiddenProbe = v
+      return v.hidden && v.sameDocument && v.sameScrollHost && v.stillMounted &&
+        v.visibilitychangeEvents >= 1 && v.pagehideEvents === 0 &&
+        v.beforeunloadEvents === 0 ? v : null
+    }, 1500, 'real BrowserWindow.hide document.hidden without navigation/unmount')
+      .catch(error => {
+        console.error('P072_ACTUAL_HIDDEN_VISIBILITY_DIAGNOSTIC ' + JSON.stringify({
+          width, sample, lastHiddenProbe,
+          nativeWindowVisible: win.isVisible(),
+          webContentsID: win.webContents.id,
+          noSyntheticEvent: true,
+        }))
+        throw error
+      })
+    assert(!win.isDestroyed() && win.webContents.id === webContentsID,
+      'P072 BrowserWindow and renderer must remain alive while hidden')
+    assert.equal(win.isVisible(), false, 'P072 must genuinely hide the native window')
+    assert.equal(hiddenLifecycle.location, before.location,
+      'P072 may not fake cancellation by navigating away from the Share URL')
+    mountedHiddenVerified = true
+  } else if (!pairedNextPage && sample === 1) {
     cause = 'scroll-out-of-viewport'
     const scrolled = await dom(win, () => {
       const root = document.querySelector('[data-xdrive-file-explorer-scroll-host], [data-xdrive-public-share-scroll-host]')
@@ -288,7 +353,12 @@ async function probePublicCachedThumbnailCancellation(win, base, width, sample) 
     observed_go_cancelled_requests:stopped.thumbnail_cancelled_go,
     go_cancel_max_ms:latencyMs, go_cancel_event_ms:eventLatencyMs,
     abandoned_body_bytes:stopped.thumbnail_stale_body_bytes,
-    cancelled_active_handlers_at_observation:stopped.thumbnail_active_held }
+    cancelled_active_handlers_at_observation:stopped.thumbnail_active_held,
+    mounted_hidden_verified:mountedHidden?mountedHiddenVerified:undefined,
+    window_hidden_during_cancel:mountedHidden?!win.isVisible():undefined,
+    visibilitychange_events:mountedHidden?hiddenLifecycle?.visibilitychangeEvents:undefined,
+    pagehide_events:mountedHidden?hiddenLifecycle?.pagehideEvents:undefined,
+    beforeunload_events:mountedHidden?hiddenLifecycle?.beforeunloadEvents:undefined }
 }
 async function main() {
   assert.equal(process.env.XD_SH_P005_BROWSER_PHYSICAL_PERF, '1', 'explicit opt-in required')
@@ -299,7 +369,9 @@ async function main() {
   let base = '', win = null
   const result = {
     workload: shP018
-      ? 'SH-P018-100k-real-CAS-public-cached-JPEG-viewport-to-Go-cancel'
+      ? (mountedHidden
+        ? 'P072-real-mounted-hidden-window-100k-Share-cached-JPEG-to-Go-cancel'
+        : 'SH-P018-100k-real-CAS-public-cached-JPEG-viewport-to-Go-cancel')
       : 'SH-P005-real-physical-JPEG-100k-public-share-Web-and-MobileWeb',
     exact_source_head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),
     paired_next_page:pairedNextPage,
@@ -309,7 +381,9 @@ async function main() {
     page_budget_ms:2000, original_download_budget_ms:5000,
     cached_thumbnail_go_cancel_budget_ms:shP018?160:undefined,
     scope:shP018
-      ? 'Production public Share 1440px/390px Chromium, real Gin/PG17 100k SHA-distinct physical JPEG originals; 16 real cached derivatives, first-page decoded previews and signed GET held by bounded TEST-ONLY response writer, actual scroll/next-page/pagehide -> Go Request.Context().Done; no fake fetch'
+      ? (mountedHidden
+        ? 'P072 real Chromium BrowserWindow.hide with SAME document, still-mounted unified Share Core, true document.hidden and actual Go Request.Context().Done; 100k SHA-distinct JPEG CAS originals and 16 decoded cached derivatives'
+        : 'Production public Share 1440px/390px Chromium, real Gin/PG17 100k SHA-distinct physical JPEG originals; 16 real cached derivatives, first-page decoded previews and signed GET held by bounded TEST-ONLY response writer, actual scroll/next-page/pagehide -> Go Request.Context().Done; no fake fetch')
       : 'Production public share React / Chromium 1440px Web and 390px CDP Mobile Web on one 100k SHA-distinct physical JPEG CAS/PG17 corpus; real native downloads, not OS-installed PWA or Gallery thumbnails',
     excluded:'Native Desktop Agent IPC, installed PWA, real handset, WAN, H264/Live Motion; SH-P018 does not decode 100k thumbnails simultaneously and does not cancel durable ZIP/user tasks',
     sessions:[],
@@ -427,7 +501,9 @@ async function main() {
       result.all_passed=result.sessions.length===6&&result.sessions.every(x=>
         x.first_rows===100&&x.decoded_cached_jpegs>=2&&
         (allowSlowOriginal || x.go_cancel_max_ms<=160)&&x.go_cancel_event_ms>0&&
-        x.abandoned_body_bytes===0&&!x.horizontal_overflow)
+        x.abandoned_body_bytes===0&&!x.horizontal_overflow&&
+        (!mountedHidden||(x.cause==='mounted-hidden-visibilitychange'&&
+          x.mounted_hidden_verified===true&&x.window_hidden_during_cancel===true)))
       assert(result.all_passed,'SH-P018 original production Share request cancellation failed')
       fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
       console.log('SH_P018_SOURCE_EXACT_BASELINE '+JSON.stringify(result))
