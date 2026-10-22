@@ -112,15 +112,19 @@ func TestBaiduJSAPIBootstrapCandidateOwnerAndFailClosedRelease(t *testing.T) {
 	// These real Gin routes were added after the offline bootstrap candidate.
 	// A genuine signed Owner JWT plus desired Browser AK still cannot mint
 	// a map Cookie or access Loader bytes without the independently verified
-	// complete signed operator release. Default routes deny with 503.
+	// complete signed operator release. The old same-document mint route is
+	// permanently 403; the unapproved Loader remains 503.
 	router := srv.Router()
-	for _, blocked := range []*http.Request{
-		newRequest(token),
-		httptest.NewRequest(http.MethodGet, "/_BMapService/api?v=4.0", nil),
+	for _, blocked := range []struct {
+		req  *http.Request
+		want int
+	}{
+		{newRequest(token), http.StatusForbidden},
+		{httptest.NewRequest(http.MethodGet, "/_BMapService/api?v=4.0", nil), http.StatusServiceUnavailable},
 	} {
 		response := httptest.NewRecorder()
-		router.ServeHTTP(response, blocked)
-		if response.Code != http.StatusServiceUnavailable ||
+		router.ServeHTTP(response, blocked.req)
+		if response.Code != blocked.want ||
 			response.Header().Get("Set-Cookie") != "" ||
 			strings.Contains(response.Body.String(), token) {
 			t.Fatal("blocked JSAPI4 route became publicly usable or echoed a token")

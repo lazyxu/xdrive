@@ -40,7 +40,7 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 		inbound.Context().Err() != nil || send == nil ||
 		!gates.Ready() || !state.RuntimeAuthorized || !state.AccountActive ||
 		state.OwnerID == 0 || state.OwnerID > baiduJSAPIQuotaMaxOwnerID ||
-		!baidumapjsapi.SessionResourceRequest(inbound, s.AllowedOrigin) {
+		!baidumapjsapi.SessionResourceRequest(inbound, s.baiduJSAPI4ResourceOrigin()) {
 		return nil, nil, denied
 	}
 	review, err := baidumapjsapi.ReviewJSAPI4ResourceRequest(inbound)
@@ -49,7 +49,7 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 	}
 	// The Server-configured HTTPS origin is the only source for the provider
 	// required BMAP_PROXY_URL. Never consult Host, Origin or Forwarded input.
-	if _, err := baidumapjsapi.TrustedProxyBase(s.AllowedOrigin); err != nil {
+	if _, err := baidumapjsapi.TrustedProxyBase(s.baiduJSAPI4ResourceOrigin()); err != nil {
 		return nil, nil, denied
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -84,10 +84,10 @@ func (s *Server) baiduJSAPI4OfflineLoaderCandidate(
 	var outbound *http.Request
 	if review.Kind == baidumapjsapi.JSAPI4ResourceChild {
 		outbound, err = baidumapjsapi.NewApprovedJSAPI4ChildRequest(
-			runCtx, s.AllowedOrigin, ak, inbound, gates)
+			runCtx, s.baiduJSAPI4ResourceOrigin(), ak, inbound, gates)
 	} else if review.Kind == baidumapjsapi.JSAPI4ResourceLoader {
 		outbound, err = baidumapjsapi.NewLoaderRequest(
-			runCtx, s.AllowedOrigin, ak, gates)
+			runCtx, s.baiduJSAPI4ResourceOrigin(), ak, gates)
 	} else {
 		return nil, nil, denied
 	}

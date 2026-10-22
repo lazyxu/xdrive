@@ -57,6 +57,11 @@ const galleryMap = compile(uiFile,{
       throw new Error('native photo layer must not mount without signed Server status')
     },
   },
+  './MediaGalleryBaiduIsolatedPhotoSurface': {
+    XDriveMediaGalleryBaiduIsolatedPhotoSurface: () => {
+      throw new Error('isolated child must not mount without signed Server authority')
+    },
+  },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
       React.createElement('map-fixture',{onViewportChange:props.onViewportChange}),

@@ -1,18 +1,20 @@
 import {
   xDriveCreateBaiduIsolatedCellsMessage,
+  xDriveCreateBaiduIsolatedCameraMessage,
   xDriveParseBaiduIsolatedChildEvent,
   xDriveValidBaiduIsolatedBoundary,
 } from './media-gallery-baidu-isolated-origin-protocol'
 import type {
   XDriveBaiduIsolatedCamera,
+  XDriveBaiduIsolatedBounds,
   XDriveBaiduIsolationBoundary,
   XDriveBaiduParentCellsMessage,
 } from './media-gallery-baidu-isolated-origin-protocol'
 
 /**
- * A3i-Msg2. Parent-owned, fail-closed isolated-frame transport only.
- * This does NOT host the child, bootstrap the Baidu SDK, or activate a map.
- * Never mount the current same-document JSAPI Loader in the Gallery.
+ * A3i-Msg4. Trusted Parent owns authorization and bounds untrusted Child IPC.
+ * Only the independently hosted Child loads the Baidu SDK. No private Owner
+ * media, token, or same-document provider script is exposed by this adapter.
  */
 export type XDriveTrustedIsolatedMapCell<T> = Readonly<{
   // BD-09 already derived from the *current* authenticated Owner cell receipt.
@@ -32,12 +34,20 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   onActivateCell: (selection: T) => void
   onCamera?: (camera: XDriveBaiduIsolatedCamera) => void
   onCancel?: () => void
+  onViewport?: (bounds: XDriveBaiduIsolatedBounds) => void
+  onReady?: () => void
+  onMapReady?: () => void
+  onMapFailure?: () => void
 }
 
 export interface XDriveBaiduIsolatedFrameHost<T> {
   readonly element: HTMLIFrameElement
   /** Replace all current authorized cells, never append to old Owner cells. */
   replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
+  /** One-use map-only redeem ticket, NEVER a JWT, AK or Owner identity. */
+  bootstrapMapSession(ticket: string): boolean
+  /** BD-09 camera return hint after SDK map-ready; no original WGS84. */
+  restoreCamera(camera: XDriveBaiduIsolatedCamera): boolean
   /** Immediately invalidate the entire generation on logout/revoke/navigation. */
   dispose(): void
 }
@@ -122,13 +132,24 @@ export function xDriveMountBaiduIsolatedFrame<T>(
 
   let alive = true
   let ready = false
+  let mapReady = false
   let boundary: XDriveBaiduIsolationBoundary | null = null
   let published: XDriveBaiduParentCellsMessage | null = null
   let ownerSelection = new Map<string, T>()
+  // The Child (including provider JS) is untrusted: coalesce map camera bursts
+  // before they can create unbounded authenticated Owner /cells requests.
+  let pendingViewport: XDriveBaiduIsolatedBounds | null = null
+  let viewportTimer: ReturnType<typeof setTimeout> | null = null
+  const clearPendingViewport = () => {
+    pendingViewport = null
+    if (viewportTimer !== null) { clearTimeout(viewportTimer); viewportTimer = null }
+  }
   const detach = () => {
     if (!alive) return
     alive = false
     ready = false
+    mapReady = false
+    clearPendingViewport()
     boundary = null
     published = null
     ownerSelection.clear()
@@ -144,8 +165,15 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   }
   const onLoad = () => {
     if (!alive || !boundary) return
-    // Frame reload invalidates child-ready state and any previous authorization.
+    // Reload MUST rotate the challenge, not merely clear selections: a child
+    // script may have recorded the old nonce and try replaying old messages.
+    const freshNonce = randomHex(browser.crypto, 32)
+    const freshGeneration = ++nextGeneration
+    if (!freshNonce || !Number.isSafeInteger(freshGeneration)) { detach(); return }
+    boundary = { ...boundary, generation: freshGeneration, nonce: freshNonce }
     ready = false
+    mapReady = false
+    clearPendingViewport()
     published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
     ownerSelection.clear()
     if (!published) { detach(); return }
@@ -156,8 +184,29 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     const event = xDriveParseBaiduIsolatedChildEvent(raw, boundary)
     if (!event) return
     if (event.kind === 'ready') {
+      // Replayed ready packets must never mint another one-use map ticket.
+      if (ready) return
       ready = true
       if (published) post(published)
+      options.onReady?.()
+    } else if (event.kind === 'map-ready') {
+      if (ready && !mapReady) { mapReady = true; options.onMapReady?.() }
+    } else if (event.kind === 'map-failed') {
+      clearPendingViewport()
+      mapReady = false
+      if (ready) options.onMapFailure?.()
+    } else if (event.kind === 'viewport') {
+      if (ready && mapReady) {
+        pendingViewport = event.bounds
+        if (viewportTimer === null) {
+          viewportTimer = setTimeout(() => {
+            viewportTimer = null
+            const bounds = pendingViewport
+            pendingViewport = null
+            if (alive && ready && mapReady && bounds) options.onViewport?.(bounds)
+          }, 120)
+        }
+      }
     } else if (event.kind === 'camera') {
       if (ready) options.onCamera?.(event.camera)
     } else if (event.kind === 'activate-cell') {
@@ -166,6 +215,9 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       // signed Owner /cell-items Range before displaying any actual media.
       options.onActivateCell(ownerSelection.get(event.key)!)
     } else if (event.kind === 'cancel') {
+      clearPendingViewport()
+      ownerSelection.clear()
+      // Cancellation remains synchronous, even while viewport reads debounce.
       if (ready) options.onCancel?.()
     }
   }
@@ -182,6 +234,24 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     // Never send a real cell to a child before its validated ready packet.
     return {
       element: iframe,
+      bootstrapMapSession(ticket) {
+        if (!alive || !ready || !boundary || !iframe.contentWindow ||
+            typeof ticket !== 'string' || !/^[a-f0-9]{64}$/.test(ticket)) return false
+        try {
+          iframe.contentWindow.postMessage({version:1,generation:boundary.generation,
+            nonce:boundary.nonce,kind:'map-session',ticket},boundary.childOrigin)
+          return true
+        } catch { detach(); return false }
+      },
+      restoreCamera(camera) {
+        if (!alive || !ready || !mapReady || !boundary || !iframe.contentWindow) return false
+        const message = xDriveCreateBaiduIsolatedCameraMessage(boundary, camera)
+        if (!message) return false
+        try {
+          iframe.contentWindow.postMessage(message, boundary.childOrigin)
+          return true
+        } catch { detach(); return false }
+      },
       replaceAuthorizedCells(cells) {
         if (!alive || !boundary || !Array.isArray(cells) || cells.length > maxCells) {
           if (alive && boundary) {

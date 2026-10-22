@@ -5,8 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"net/http"
+	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/baidumapjsapi"
@@ -106,45 +106,26 @@ func baiduJSAPI4NoStore(c *gin.Context) {
 	c.Header("Cross-Origin-Resource-Policy", "same-origin")
 }
 
-// Authenticated Owner POST; same-origin Origin + Bearer + current JWT issued-at
-// /DB map epoch are independently checked by baiduJSAPIBootstrapCandidate.
-// No body, AK or GPS is accepted. Only a source-pinned signed runtime can mint.
+// Legacy Gallery-origin map Cookie mint is permanently denied. A trusted
+// Gallery document may mint only a single-use, short-lived MAP-ONLY ticket.
+// The separately hosted HTTPS Child redeems it; no same-document provider
+// JavaScript, Gallery Cookie or parent JWT can acquire a map session here.
+// Keep this route for explicit fail-closed responses to older clients.
 func (s *Server) baiduJSAPI4SessionHTTP(c *gin.Context) {
 	baiduJSAPI4NoStore(c)
-	authority, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_runtime_unavailable"})
-		return
-	}
-	now := time.Now().UTC()
-	state, err := s.baiduJSAPIBootstrapCandidate(c.Request.Context(), c.Request, now)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "map_session_denied"})
-		return
-	}
-	// Only a pinned, verified release and fresh authenticated Owner snapshot
-	// can turn the deliberately unauthorized bootstrap candidate into a
-	// map-only Cookie; browser-provided runtime_enabled cannot.
-	state.RuntimeAuthorized = true
-	cookie, err := baidumapjsapi.IssueMapSession(authority.cookieKey[:], state, now)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "map_session_denied"})
-		return
-	}
-	if s.baiduJSAPI4Authority.Load() != authority {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_runtime_unavailable"})
-		return
-	}
-	http.SetCookie(c.Writer, cookie)
-	c.JSON(http.StatusOK, gin.H{
-		"provider": "baidu-jsapi-4.0", "runtime_enabled": true,
-	})
+	c.JSON(http.StatusForbidden, gin.H{"error": "isolated_map_required"})
 }
 
 // Every JSAPI4 provider serviceHost request is dispatched to its independently
 // checked Loader or bounded child handler. The catch-all route itself grants
 // NO authority, no new provider Host and no unchecked response passthrough.
 func (s *Server) baiduJSAPI4RuntimeResourceHTTP(c *gin.Context) {
+	baiduJSAPI4NoStore(c)
+	child := s.approvedBaiduIsolatedChildOrigin()
+	if child == "" || c.Request.Host != strings.TrimPrefix(child, "https://") {
+		c.String(http.StatusServiceUnavailable, "map resource unavailable")
+		return
+	}
 	if c.Request.URL.Path == baidumapjsapi.LoaderPath {
 		s.baiduJSAPI4LoaderHTTP(c)
 		return

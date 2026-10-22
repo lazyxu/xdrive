@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/baidumapjsapi"
@@ -31,6 +32,10 @@ func (s *Server) baiduJSAPI4SignedLiveLoader(
 	currentScope baidumapjsapi.JSAPI4ReleaseScope,
 ) ([]byte, http.Header, error) {
 	denied := errBaiduJSAPIResourceDenied
+	if s == nil || s.approvedBaiduIsolatedChildOrigin() == "" || request == nil ||
+		request.Host != strings.TrimPrefix(s.BaiduJSAPIChildOrigin, "https://") {
+		return nil, nil, denied
+	}
 	if s == nil || ctx == nil || ctx.Err() != nil || request == nil ||
 		request.Context().Err() != nil || len(cookieKey) < 32 {
 		return nil, nil, denied
@@ -45,7 +50,7 @@ func (s *Server) baiduJSAPI4SignedLiveLoader(
 		return nil, nil, denied
 	}
 	state, err := s.baiduJSAPIResourceSnapshot(ctx, request,
-		s.AllowedOrigin, cookieKey, now)
+		s.baiduJSAPI4ResourceOrigin(), cookieKey, now)
 	if err != nil {
 		return nil, nil, denied
 	}
