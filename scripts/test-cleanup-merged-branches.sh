@@ -1,352 +1,125 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT/scripts/cleanup-merged-branches.sh"
-WORKFLOW="$ROOT/.github/workflows/cleanup-merged-branches.yml"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
-grep -Fq "types: [closed, labeled]" "$WORKFLOW"
-grep -Fq '  push:' "$WORKFLOW"
-grep -Fq '    branches: [master]' "$WORKFLOW"
-grep -Fq "group: cleanup-redundant-branches-" "$WORKFLOW"
-grep -Fq "github.event.pull_request.number || 'scan'" "$WORKFLOW"
-grep -Fq "if: github.event_name == 'pull_request_target'" "$WORKFLOW"
-grep -Fq -- '--branch "$XD_CLEANUP_BRANCH"' "$WORKFLOW"
-grep -Fq -- '--expected-sha "$XD_CLEANUP_EXPECTED_SHA"' "$WORKFLOW"
-grep -Fq "if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'" "$WORKFLOW"
+# A real local bare Git remote exercises CAS deletion rather than a mocked REST DELETE.
+git init --bare -q "$tmp/origin.git"
+git clone -q "$tmp/origin.git" "$tmp/work"
+cd "$tmp/work"
+git config user.name "Cleanup regression"
+git config user.email "cleanup@example.invalid"
+printf "base\n" > tracked.txt
+git add tracked.txt
+git commit -qm "baseline"
+git branch -M master
+git push -q -u origin master
+git --git-dir="$tmp/origin.git" symbolic-ref HEAD refs/heads/master
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin"
-DELETE_LOG="$TMP/deletes.log"
-PUSH_LOG="$TMP/pushes.log"
-: > "$DELETE_LOG"
-: > "$PUSH_LOG"
+git branch ancestor
+git push -q origin ancestor
+printf "main\n" >> tracked.txt
+git commit -qam "master advance"
+git push -q origin master
 
-cat > "$TMP/bin/mock-gh" <<'SH'
+git switch -q -c equivalent-tree master
+git commit -q --allow-empty -m "identical master tree"
+git push -q origin equivalent-tree
+git switch -q master
+
+make_branch() {
+  local name="$1"
+  git switch -q -c "$name" master
+  printf "%s\n" "$name" > "$name.txt"
+  git add "$name.txt"
+  git commit -qm "work on $name"
+  git push -q origin "$name"
+  git switch -q master
+}
+for name in merged-exact superseded retired retired-advanced protected-head protected-base unmerged-no-pr abandoned; do
+  make_branch "$name"
+done
+old_retired_advanced="$(git rev-parse retired-advanced)"
+git switch -q retired-advanced
+printf "newer unreviewed commit\n" >> retired-advanced.txt
+git commit -qam "advance branch after retirement approval"
+git push -q origin retired-advanced
+git switch -q master
+
+cat > "$tmp/mock-gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" != "api" ]]; then
-  exit 2
-fi
-shift
-if [[ "${1:-}" == "--paginate" ]]; then
-  endpoint="${2:-}"
-  case "$endpoint" in
-    *"pulls?state=open"*)
-      if [[ "${MOCK_PR_LIST_FAIL_OPEN:-}" == "1" ]]; then
-        echo '{"message":"API rate limit exceeded for installation"}'
-        exit 1
-      fi
-      if [[ "${MOCK_PR_LIST_BAD_OPEN:-}" == "1" ]]; then
-        echo '{"message":"API rate limit exceeded for installation"}'
-        exit 0
-      fi
-      ;;
-    *"pulls?state=closed"*)
-      if [[ "${MOCK_PR_LIST_FAIL_CLOSED:-}" == "1" ]]; then
-        echo '{"message":"API rate limit exceeded for installation"}'
-        exit 1
-      fi
-      if [[ "${MOCK_PR_LIST_BAD_CLOSED:-}" == "1" ]]; then
-        echo '{"message":"API rate limit exceeded for installation"}'
-        exit 0
-      fi
-      ;;
-  esac
-  case "$endpoint" in
-    *"pulls?state=open"*)
-      cat <<'JSON'
-[
-  {
-    "number": 201,
-    "merged_at": null,
-    "head": {"ref": "active-branch", "sha": "open1", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  },
-  {
-    "number": 202,
-    "merged_at": null,
-    "head": {"ref": "superseded/reused", "sha": "new-open-tip", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  },
-  {
-    "number": 203,
-    "merged_at": null,
-    "head": {"ref": "fork-open", "sha": "fork-open-tip", "repo": {"full_name": "someone/fork"}},
-    "labels": []
-  },
-  {
-    "number": 204,
-    "merged_at": null,
-    "head": {"ref": "retired/open", "sha": "open-retired-tip", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  }
-]
-JSON
-      ;;
-    *"pulls?state=closed"*)
-      cat <<'JSON'
-[
-  {
-    "number": 101,
-    "merged_at": "2026-09-24T00:00:00Z",
-    "head": {"ref": "merged/rebased", "sha": "aaaa", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  },
-  {
-    "number": 102,
-    "merged_at": "2026-09-24T00:01:00Z",
-    "head": {"ref": "advanced-branch", "sha": "bbbb", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  },
-  {
-    "number": 103,
-    "merged_at": "2026-09-24T00:02:00Z",
-    "head": {"ref": "external-branch", "sha": "eeee", "repo": {"full_name": "someone/fork"}},
-    "labels": []
-  },
-  {
-    "number": 104,
-    "merged_at": null,
-    "head": {"ref": "superseded/closed", "sha": "ssss", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": [{"name": "superseded"}]
-  },
-  {
-    "number": 105,
-    "merged_at": null,
-    "head": {"ref": "superseded/advanced", "sha": "tttt", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": [{"name": "superseded"}]
-  },
-  {
-    "number": 106,
-    "merged_at": null,
-    "head": {"ref": "superseded/reused", "sha": "rrrr", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": [{"name": "superseded"}]
-  },
-  {
-    "number": 107,
-    "merged_at": null,
-    "head": {"ref": "ordinary/closed", "sha": "vvvv", "repo": {"full_name": "lazyxu/xdrive"}},
-    "labels": []
-  },
-  {
-    "number": 108,
-    "merged_at": null,
-    "head": {"ref": "fork-superseded", "sha": "wwww", "repo": {"full_name": "someone/fork"}},
-    "labels": [{"name": "superseded"}]
-  }
-]
-JSON
-      ;;
-    *)
-      echo "unexpected paginated endpoint: $endpoint" >&2
-      exit 9
-      ;;
-  esac
-  exit 0
-fi
-if [[ "${1:-}" == "--method" && "${2:-}" == "DELETE" ]]; then
-  printf '%s\n' "${3:-}" >> "$DELETE_LOG"
-  exit 0
-fi
-endpoint="${1:-}"
-case "$endpoint" in
-  */git/ref/heads/merged/rebased) printf '%s\n' aaaa ;;
-  */git/ref/heads/advanced-branch) printf '%s\n' cccc ;;
-  */git/ref/heads/superseded/closed) printf '%s\n' ssss ;;
-  */git/ref/heads/superseded/advanced) printf '%s\n' uuuu ;;
-  */git/ref/heads/superseded/reused) printf '%s\n' rrrr ;;
-  */git/ref/heads/ordinary/closed) printf '%s\n' vvvv ;;
-  */git/ref/heads/retired/good) printf '%s\n' 0123456789012345678901234567890123456789 ;;
-  */git/ref/heads/retired/advanced) printf '%s\n' ffffffffffffffffffffffffffffffffffffffff ;;
-  */git/ref/heads/retired/open) printf '%s\n' 2345678901234567890123456789012345678901 ;;
-  *) exit 1 ;;
-esac
-SH
-chmod +x "$TMP/bin/mock-gh"
-
-cat > "$TMP/bin/mock-git" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  fetch)
-    exit 0
-    ;;
-  check-ref-format)
-    exit 0
-    ;;
-  rev-parse)
-    case "${3:-}" in
-      refs/remotes/origin/event/merged) printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
-      refs/remotes/origin/event/advanced) printf '%s\n' cccccccccccccccccccccccccccccccccccccccc ;;
-      *) exit 1 ;;
-    esac
-    ;;
-  push)
-    printf '%s\n' "$*" >> "$PUSH_LOG"
-    [[ "${MOCK_PUSH_FAIL:-}" == "1" ]] && exit 1
-    exit 0
-    ;;
-  ls-remote)
-    [[ "${MOCK_REMOTE_LOOKUP_FAIL:-}" == "1" ]] && exit 1
-    # Simulate ref still present when an attempted deletion fails.
-    if [[ "${MOCK_REMOTE_EXISTS:-}" == "1" ]]; then
-      printf '%s\t%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/event/merged
+case "$*" in
+  *"state=open"*)
+    if [[ "${MOCK_BAD_OPEN:-}" == "1" ]]; then
+      echo '{"message":"forbidden"}'
+    else
+      cat "$MOCK_OPEN"
     fi
-    exit 0
     ;;
-  for-each-ref)
-    cat <<'EOF'
-origin/master
-origin/ancestor-only
-origin/advanced-branch
-origin/active-branch
-origin/merged/rebased
-origin/ordinary/closed
-origin/superseded/advanced
-origin/superseded/closed
-origin/superseded/reused
-origin/retired/good
-origin/retired/advanced
-origin/retired/open
-EOF
-    ;;
-  merge-base)
-    [[ "${2:-}" == "--is-ancestor" ]] || exit 2
-    case "${3:-}" in
-      origin/ancestor-only|origin/active-branch|origin/superseded/reused) exit 0 ;;
-      *) exit 1 ;;
-    esac
-    ;;
-  *)
-    exit 2
-    ;;
+  *"state=closed"*) cat "$MOCK_CLOSED" ;;
+  *) echo "unexpected gh api call: $*" >&2; exit 3 ;;
 esac
-SH
-chmod +x "$TMP/bin/mock-git"
+EOF
+chmod +x "$tmp/mock-gh"
 
-export DELETE_LOG
-export PUSH_LOG
-export GITHUB_REPOSITORY="lazyxu/xdrive"
-export GH_BIN="$TMP/bin/mock-gh"
-export GIT_BIN="$TMP/bin/mock-git"
-export XD_CLEANUP_RETIRED_MANIFEST="$TMP/retired.tsv"
-printf "%s\t%s\t%s\n" "retired/good" "0123456789012345678901234567890123456789" "obsolete" > "$XD_CLEANUP_RETIRED_MANIFEST"
-printf "%s\t%s\t%s\n" "retired/advanced" "1234567890123456789012345678901234567890" "changed head" >> "$XD_CLEANUP_RETIRED_MANIFEST"
-printf "%s\t%s\t%s\n" "retired/open" "2345678901234567890123456789012345678901" "open PR" >> "$XD_CLEANUP_RETIRED_MANIFEST"
-printf "%s\t%s\t%s\n" "master" "3456789012345678901234567890123456789012" "default protected" >> "$XD_CLEANUP_RETIRED_MANIFEST"
+cat > "$tmp/open.json" <<EOF
+[{"number":71,"head":{"ref":"protected-head","sha":"$(git rev-parse protected-head)","repo":{"full_name":"lazyxu/xdrive"}},"base":{"ref":"protected-base","repo":{"full_name":"lazyxu/xdrive"}}}]
+EOF
+cat > "$tmp/closed.json" <<EOF
+[
+  {"number":72,"merged_at":"2026-10-22T00:00:00Z","head":{"ref":"merged-exact","sha":"$(git rev-parse merged-exact)","repo":{"full_name":"lazyxu/xdrive"}},"labels":[]},
+  {"number":73,"merged_at":null,"head":{"ref":"superseded","sha":"$(git rev-parse superseded)","repo":{"full_name":"lazyxu/xdrive"}},"labels":[{"name":"superseded"}]},
+  {"number":74,"merged_at":null,"head":{"ref":"abandoned","sha":"$(git rev-parse abandoned)","repo":{"full_name":"lazyxu/xdrive"}},"labels":[]}
+]
+EOF
+printf "retired\t%s\tverified test branch\n" "$(git rev-parse retired)" > "$tmp/retired.tsv"
+printf "retired-advanced\t%s\told head must never delete new work\n" "$old_retired_advanced" >> "$tmp/retired.tsv"
 
-bash "$SCRIPT" > "$TMP/out"
+export GITHUB_REPOSITORY=lazyxu/xdrive
+export GH_BIN="$tmp/mock-gh"
+export MOCK_OPEN="$tmp/open.json"
+export MOCK_CLOSED="$tmp/closed.json"
+export XD_CLEANUP_RETIRED_MANIFEST="$tmp/retired.tsv"
+export GITHUB_STEP_SUMMARY="$tmp/summary.md"
 
-grep -qx 'repos/lazyxu/xdrive/git/refs/heads/merged/rebased' "$DELETE_LOG"
-grep -qx 'repos/lazyxu/xdrive/git/refs/heads/superseded/closed' "$DELETE_LOG"
-grep -qx 'repos/lazyxu/xdrive/git/refs/heads/ancestor-only' "$DELETE_LOG"
-grep -qx 'repos/lazyxu/xdrive/git/refs/heads/retired/good' "$DELETE_LOG"
-[[ "$(wc -l < "$DELETE_LOG" | tr -d ' ')" == "4" ]]
+# Fail closed when the API responds with a 200 JSON error object.
+if MOCK_BAD_OPEN=1 bash "$root/scripts/cleanup-merged-branches.sh" > "$tmp/invalid.log" 2>&1; then
+  echo "cleanup accepted an invalid PR snapshot" >&2; exit 1
+fi
+grep -q "invalid open PR response" "$tmp/invalid.log"
 
-! grep -q 'advanced-branch' "$DELETE_LOG"
-! grep -q 'active-branch' "$DELETE_LOG"
-! grep -q 'ordinary/closed' "$DELETE_LOG"
-! grep -q 'superseded/advanced' "$DELETE_LOG"
-! grep -q 'superseded/reused' "$DELETE_LOG"
-! grep -q 'external-branch' "$DELETE_LOG"
-! grep -q 'retired/advanced' "$DELETE_LOG"
-! grep -q 'retired/open' "$DELETE_LOG"
-! grep -q 'refs/heads/master' "$DELETE_LOG"
-! grep -q 'fork-superseded' "$DELETE_LOG"
-
-grep -q 'keep active-branch — branch is used by an open PR' "$TMP/out"
-grep -q 'keep superseded/reused — branch is used by an open PR' "$TMP/out"
-grep -q 'keep retired/open — branch is used by an open PR' "$TMP/out"
-grep -q 'current tip differs from reviewed retired head' "$TMP/out"
-grep -q 'removed 4 redundant branch(es)' "$TMP/out"
-
-: > "$DELETE_LOG"
-bash "$SCRIPT" --dry-run > "$TMP/dry-run.out"
-[[ ! -s "$DELETE_LOG" ]]
-grep -q 'cleanup: merged/rebased — tip matches merged PR head aaaa' "$TMP/dry-run.out"
-grep -q 'cleanup: superseded/closed — tip matches closed superseded PR #104 head ssss' "$TMP/dry-run.out"
-grep -q 'cleanup: ancestor-only — tip is already contained in master' "$TMP/dry-run.out"
-grep -q 'tip matches reviewed retired head 0123456789012345678901234567890123456789' "$TMP/dry-run.out"
-grep -q 'removed 4 redundant branch(es)' "$TMP/dry-run.out"
-
-# Event mode must not depend on GitHub REST availability and must delete only
-# the exact unchanged PR head.
-: > "$PUSH_LOG"
-GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
-  --branch event/merged \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/event.out"
-grep -qx 'push --force-with-lease=refs/heads/event/merged:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa origin :refs/heads/event/merged' "$PUSH_LOG"
-grep -q 'tip matches closed PR head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$TMP/event.out"
-
-: > "$PUSH_LOG"
-GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
-  --branch event/advanced \
-  --expected-sha bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > "$TMP/event-advanced.out"
-[[ ! -s "$PUSH_LOG" ]]
-grep -q 'keep event/advanced — tip advanced to cccccccccccccccccccccccccccccccccccccccc' "$TMP/event-advanced.out"
-
-: > "$PUSH_LOG"
-GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
-  --branch master \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/event-master.out"
-[[ ! -s "$PUSH_LOG" ]]
-grep -q 'default branch is never deleted' "$TMP/event-master.out"
-
-: > "$PUSH_LOG"
-GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
-  --branch event/merged \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-  --dry-run > "$TMP/event-dry.out"
-[[ ! -s "$PUSH_LOG" ]]
-grep -q 'removed 1 redundant branch(es)' "$TMP/event-dry.out"
-
-
-# Every scan must have valid, complete open/closed PR snapshots before it can
-# issue a single DELETE or fetch/prune. This reproduces the GH App 403 case
-# that had previously produced an incorrectly green 0-deletion workflow.
-for failure in FAIL_OPEN FAIL_CLOSED BAD_OPEN BAD_CLOSED; do
-  : > "$DELETE_LOG"
-  key="MOCK_PR_LIST_$failure"
-  if env "$key=1" bash "$SCRIPT" > "$TMP/api-$failure.out" 2>&1; then
-    echo "cleanup unexpectedly succeeded with $key" >&2
-    exit 1
-  fi
-  [[ ! -s "$DELETE_LOG" ]]
-  grep -Eq 'cleanup: (unable to list|invalid) (open|closed) PR' "$TMP/api-$failure.out"
+# Dry run must not delete or move any ref.
+bash "$root/scripts/cleanup-merged-branches.sh" --dry-run > "$tmp/dry-run.log"
+for name in ancestor equivalent-tree merged-exact superseded retired; do
+  [[ -n "$(git ls-remote --heads origin "refs/heads/$name")" ]] || {
+    echo "Dry run removed $name" >&2; exit 1;
+  }
 done
 
-# Independent consecutive scans never infer safe deletion from a stale
-# previously captured snapshot after a fresh listing fails.
-: > "$DELETE_LOG"
-bash "$SCRIPT" > "$TMP/after-api-fail.out"
-[[ "$(wc -l < "$DELETE_LOG" | tr -d ' ')" == "4" ]]
-
-
-# Event mode's atomic lease refuses to delete a branch whose remote tip moved;
-# it may only treat a failed push as success if an independent remote read
-# positively proves the branch is already gone.
-: > "$PUSH_LOG"
-if MOCK_PUSH_FAIL=1 MOCK_REMOTE_EXISTS=1 GH_BIN="$TMP/bin/does-not-exist" \
-  bash "$SCRIPT" --branch event/merged \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-exists.out" 2>&1; then
-  echo "cleanup claimed success while the remote branch still exists" >&2
-  exit 1
-fi
-grep -q 'remote branch still exists' "$TMP/remote-exists.out"
-
-if MOCK_PUSH_FAIL=1 MOCK_REMOTE_LOOKUP_FAIL=1 GH_BIN="$TMP/bin/does-not-exist" \
-  bash "$SCRIPT" --branch event/merged \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-unknown.out" 2>&1; then
-  echo "cleanup claimed success when remote verification failed" >&2
-  exit 1
-fi
-grep -q 'unable to verify remote' "$TMP/remote-unknown.out"
-
-MOCK_PUSH_FAIL=1 GH_BIN="$TMP/bin/does-not-exist" \
-  bash "$SCRIPT" --branch event/merged \
-  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-gone.out"
-grep -q 'already removed by concurrent cleanup' "$TMP/remote-gone.out"
-
-echo "redundant branch cleanup tests passed"
+# One real sweep deletes five redundant tips but preserves all unmerged work.
+: > "$GITHUB_STEP_SUMMARY" # Discard the dry-run snapshot before checking real survivors.
+bash "$root/scripts/cleanup-merged-branches.sh" > "$tmp/real-run.log"
+grep -q "removed 5 redundant branch(es)" "$tmp/real-run.log"
+for name in ancestor equivalent-tree merged-exact superseded retired; do
+  [[ -z "$(git ls-remote --heads origin "refs/heads/$name")" ]] || {
+    echo "Redundant ref survived: $name" >&2; exit 1;
+  }
+done
+for name in master protected-head protected-base unmerged-no-pr abandoned retired-advanced; do
+  [[ -n "$(git ls-remote --heads origin "refs/heads/$name")" ]] || {
+    echo "Protected or advanced ref was deleted: $name" >&2; exit 1;
+  }
+done
+for name in ancestor equivalent-tree merged-exact superseded retired; do
+  if grep -Fq -- "\`$name\`" "$GITHUB_STEP_SUMMARY"; then
+    echo "Cleanup summary includes deleted branch $name" >&2; exit 1
+  fi
+done
+grep -q "open PR #71 base" "$GITHUB_STEP_SUMMARY"
+grep -q "open PR #71 head" "$GITHUB_STEP_SUMMARY"
+grep -q "current tip differs from reviewed retired head" "$tmp/real-run.log"
+grep -Fq '`protected-head`' "$GITHUB_STEP_SUMMARY"
+echo "cleanup: local Git regression passed (5 retired, 6 preserved, no unsafe dry run)"

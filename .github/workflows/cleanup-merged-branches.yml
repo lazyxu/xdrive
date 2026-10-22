@@ -14,7 +14,7 @@ permissions:
 concurrency:
   # Serialize repeated scans, but do not let a new master push evict a queued
   # merged-PR event. Exact-head deletion has an atomic Git force-with-lease.
-  group: cleanup-redundant-branches-${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || 'scan' }}
+  group: cleanup-redundant-branches
   cancel-in-progress: false
 
 jobs:
@@ -45,18 +45,13 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Delete exact closed-PR branch
-        if: github.event_name == 'pull_request_target'
-        env:
-          XD_CLEANUP_BRANCH: ${{ github.event.pull_request.head.ref }}
-          XD_CLEANUP_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
-        run: >-
-          bash scripts/cleanup-merged-branches.sh
-          --branch "$XD_CLEANUP_BRANCH"
-          --expected-sha "$XD_CLEANUP_EXPECTED_SHA"
+      - name: Validate cleanup script
+        run: bash -n scripts/cleanup-merged-branches.sh
 
-      - name: Scan redundant branches
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+      - name: Regression test against local Git refs
+        run: bash scripts/test-cleanup-merged-branches.sh
+
+      - name: One guarded scan for all stale branches
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/cleanup-merged-branches.sh
