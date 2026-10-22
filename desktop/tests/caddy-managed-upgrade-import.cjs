@@ -30,7 +30,7 @@ test('imported HTTPS and AliDNS are source-labeled and keep Host Apply blocked',
   const host = read('internal/api/admin_caddy_host_import.go')
   const model = read('internal/meta/admin_caddy_https_setting.go')
   assert.match(https, /旧宿主配置已导入/)
-  assert.match(alidns, /原 Caddy 凭据已加密导入/)
+  assert.match(alidns, /已加密导入旧宿主凭据/)
   assert.match(host, /caddyImportedHostOrigin/)
   assert.match(host, /host_applied": false/)
   assert.match(host, /OnConflict\{DoNothing: true\}/)

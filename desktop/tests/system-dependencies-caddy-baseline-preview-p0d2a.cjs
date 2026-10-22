@@ -72,32 +72,26 @@ test('P0-D2a: revision zero, stale preflight, missing Host witness and older Age
   assert.equal(pending.can_adopt,false)
 })
 
-test('P0-D2a: actual Caddy Config manually invokes only existing read-only preflight',()=>{
-  const page=read('ui/shared/src/mui/CaddyDetailV1.tsx')
-  const panel=read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
-  assert.match(page,/XDriveCaddyHostBaselinePreviewPanel/)
-  assert.match(page,/active=\{true\}/)
-  assert.match(panel,/onClick=\{\(\) => \{ void inspect\(\) \}\}/)
-  assert.match(panel,/verifyCaddyPreflightContract\(await source\.loadCaddyHTTPSPreflight\(\)\)/)
-  assert.match(panel,/<Dialog open=\{open && active && !hasUnsavedEdits\}/)
-  assert.match(panel,/hasUnsavedEdits/)
-  for(const prohibited of ['saveCaddyHTTPSConfig','rollbackCaddyHTTPS',
-    'verifyCaddyAliDNSRead','revealCaddyAliDNS','loadCaddyHTTPSHostPlan',
-    'InsecureSkipVerify','docker restart','applyCaddy']) {
-    assert.equal(panel.includes(prohibited),false,prohibited)
-  }
-  assert.equal(original.includes('can_adopt: true'),false)
-  assert.equal(original.includes('apply_supported = true'),false)
+test('P0-D2a: Caddy removes standalone baseline preview UI but keeps read-only evidence model', () => {
+  const owner = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const panel = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.doesNotMatch(owner, /XDriveCaddyHostBaselinePreviewPanel|data-xdrive-caddy-v1-runtime-desired-drift/)
+  assert.match(owner, /<XDriveCaddyPreflightPanel source=\{source\}/)
+  assert.match(panel, /onClick=\{\(\) => \{ void check\(\) \}\}/)
+  assert.match(panel, /verifyCaddyPreflightContract\(next\)/)
+  assert.equal(original.includes('can_adopt: true'), false)
+  assert.equal(original.includes('apply_supported = true'), false)
 })
 
 // Both in-flight and already displayed read-only Host evidence become invalid
 // as soon as an administrator modifies an unsaved HTTPS/AliDNS draft.
-test('P0-D2a: dirty draft immediately hides and invalidates stale Host evidence', () => {
-  const panel = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
-  const owner = read('ui/shared/src/mui/CaddyDetailV1.tsx')
-  assert.match(owner, /hasUnsavedEdits=\{hasUnsavedEdits\}/)
-  assert.match(panel, /\}, \[source, config, evidenceRevision, active, hasUnsavedEdits\]\)/)
-  assert.match(panel, /const current = !hasUnsavedEdits &&/)
-  assert.match(panel, /<Dialog open=\{open && active && !hasUnsavedEdits\}/)
-  assert.match(panel, /return \(\) => \{ \+\+epochRef\.current \}/)
+test('P0-D2a: preflight invalidates stale evidence on source/revision changes', () => {
+  const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const preflight = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(page, /refreshID=\{evidenceRevision\}/)
+  assert.match(preflight, /\}, \[source, refreshID\]\)/)
+  assert.match(preflight, /\+\+epochRef.current/)
+  assert.match(preflight, /setResult\(null\)/)
+  assert.match(preflight, /loadCaddyHTTPSPreflight\(\)/)
+  assert.doesNotMatch(page, /section="history"|配置历史|历史期望/)
 })

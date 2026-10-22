@@ -108,8 +108,8 @@ test('fixed Caddy container startup domain differs from desired domain and never
   assert.match(client, /HostRuntimeTLSAlignment/)
   assert.match(desktop, /host_runtime_tls_alignment\?:/)
   assert.match(shared, /host_runtime_tls_alignment\?:/)
-  assert.match(ui, /data-xdrive-caddy-host-runtime-tls-alignment/)
-  assert.match(ui, /不证明公网访问、AliDNS 生效或可以安全切换网关/)
+  assert.doesNotMatch(ui, /data-xdrive-caddy-host-runtime-tls-alignment/)
+  assert.match(ui, /loadCaddyHTTPSPreflight/)
   assert.match(preflight, /ApplySupported:\s+false/)
 })
 
@@ -161,7 +161,7 @@ test('live fixed Caddy active configuration is read-only and never a saved-revis
   assert.match(desktop, /host_live_config_state\?:/)
   assert.match(shared, /host_live_config_state\?:/)
   assert.match(panel, /data-xdrive-caddy-host-live-config-state/)
-  assert.match(panel, /不证明管理员期望修订已经应用/)
+  assert.match(panel, /result.host_live_config_state === 'observed-local'/)
   assert.match(preflight, /ApplySupported:\s+false/)
 })
 
@@ -222,7 +222,7 @@ test('fixed Caddy generation fences multiple read-only probes without claiming a
   assert.match(agent, /host_instance_generation\?:/)
   assert.match(shared, /host_instance_generation\?:/)
   assert.match(panel, /data-xdrive-caddy-instance-generation/)
-  assert.match(panel, /不证明 Caddy 配置从未热加载/)
+  assert.match(panel, /result.host_instance_generation === 'same-instance-local'/)
 })
 
 test('optional Caddy rescue is authenticated and independent in throwaway rootless E2E only', () => {
@@ -421,8 +421,8 @@ test('preflight read-window revision verification is optional for old agents and
   assert.match(client, /SnapshotStable/)
   assert.match(shared, /revision_snapshot_consistent\?:/)
   assert.match(desktop, /revision_snapshot_consistent\?:/)
-  assert.match(panel, /data-xdrive-caddy-preflight-revision-snapshot/)
-  assert.match(panel, /不代表宿主机已经应用/)
+  assert.doesNotMatch(panel, /data-xdrive-caddy-preflight-revision-snapshot/)
+  assert.match(panel, /verifyCaddyPreflightContract\(next\)/)
   assert.doesNotMatch(api + snapshot, /admin\.(?:POST|PUT|DELETE)\(".*services\/caddy\/https\/(?:apply|stop|restart)/)
 })
 
@@ -453,13 +453,13 @@ test('the expected domain is compared only to real host-local verified TLS, with
   assert.match(client, /IngressChangeRisk/)
   assert.match(desktop, /ingress_change_risk\?:/)
   assert.match(shared, /ingress_change_risk\?:/)
-  assert.match(panel, /data-xdrive-caddy-ingress-change-risk/)
-  assert.match(panel, /不是应用许可或公网 HTTPS 生效证明/)
+  assert.doesNotMatch(panel, /data-xdrive-caddy-ingress-change-risk/)
+  assert.match(panel, /onClick=\{\(\) => \{ void check\(\) \}\}/)
   assert.match(client, /DesiredDomainLocalMatch/)
   assert.match(desktop, /desired_domain_local_match\?:/)
   assert.match(shared, /desired_domain_local_match\?:/)
-  assert.match(panel, /data-xdrive-caddy-desired-domain-local-match/)
-  assert.match(panel, /不代表目标修订已应用或公网可用/)
+  assert.doesNotMatch(panel, /data-xdrive-caddy-desired-domain-local-match/)
+  assert.match(read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx'), /data-xdrive-caddy-domain-runtime/)
   // Branches can emit the same fixed row in pass/missing/blocked states.
   // Verify exact unique IDs, not the count of conditional add() branches.
   const observedIDs = [...api.matchAll(/\badd\("([^"]+)"/g)].map((match) => match[1])

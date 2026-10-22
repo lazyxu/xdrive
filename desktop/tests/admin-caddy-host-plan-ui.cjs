@@ -79,9 +79,10 @@ test('shared system dependencies exposes only authenticated readonly plan transp
   assert.match(renderer, /loadCaddyHTTPSHostPlan/)
   assert.match(web, /loadCaddyHTTPSHostPlan/)
   assert.match(api, /adminCaddyHTTPSHostPlan/)
-  assert.match(panel, /verifyCaddyHTTPSHostPlan\(next\)/)
-  assert.match(panel, /data-xdrive-caddy-host-plan/)
-  assert.match(panel, /安全应用、重启与自动回滚功能尚未开放/)
+  assert.doesNotMatch(panel, /verifyCaddyHTTPSHostPlan\(next\)|data-xdrive-caddy-host-plan/)
+  assert.match(panel, /loadCaddyHTTPSPreflight/)
+  // The strict nonsecret Host Plan API/validator remains available; only its
+  // duplicated Caddy detail card was removed by the flat-page UI contract.
   assert.doesNotMatch(panel, /启动 Docker|执行 Caddy Apply|重启服务端/)
   assert.doesNotMatch(controller + ipc + go, /docker\.sock|exec\.Command|docker compose/)
 })

@@ -1050,7 +1050,7 @@ test('Caddy HTTPS preflight is a read-only admin service contract without host a
   assert.ok(ipc.includes('desktopIPCAdminCaddyPreflightController'))
   assert.ok(agentRoutes.includes('"GET /v1/cloud/admin-caddy-https/preflight"'))
   assert.ok(shared.includes('XDriveCaddyHTTPSPreflight'))
-  assert.ok(panel.includes('预检配置（只读）'))
+  assert.ok(panel.includes('运行只读预检'))
   assert.ok(panel.includes('result.configuration_complete'))
   assert.ok(page.includes('XDriveCaddyPreflightPanel source={source}'))
   assert.ok(webAPI.includes('adminCaddyHTTPSPreflight()'))

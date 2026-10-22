@@ -83,9 +83,12 @@ test('Web/Mobile Web/PWA/Desktop share LAN ingress read-only proof without new D
     assert.match(contract, /local-lan-removal/)
   }
   assert.match(client, /IngressChangeRisk/)
-  assert.match(panel, /data-xdrive-caddy-desired-lan-local-match/)
-  assert.match(panel, /局域网 IP 本机 TLS：/)
-  assert.match(panel, /local-lan-switch/)
+  const editor = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  assert.match(editor, /data-xdrive-caddy-lan-runtime/)
+  assert.match(editor, /config.host_lan_tls_state === 'verified'/)
+  assert.doesNotMatch(panel, /data-xdrive-caddy-desired-lan-local-match|局域网 IP 本机 TLS：/)
+  // LAN change risk remains validated by the Server; this page no longer
+  // repeats a passive mismatch warning in the administrator's view.
   assert.doesNotMatch(backend, /adminStartCaddyApply|docker\.sock|docker compose/)
   assert.doesNotMatch(panel, /Restart Caddy|Docker Socket/)
 })

@@ -69,7 +69,7 @@ test('P0-SAVE-C: AliDNS explicit clear stages locally, does not fire its standal
   assert.match(alidns, /if \(atomicMode\) \{[\s\S]*?setPendingClear\(true\)/)
 })
 
-test('P0-SAVE-C: HTTPS draft includes full LAN and FQDN semantics while history stays desired-only', () => {
+test('P0-SAVE-C: HTTPS draft keeps LAN and FQDN semantics without Caddy history UI', () => {
   const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   assert.match(https, /onAtomicDraft\?\.\(config && section === 'config'/)
@@ -78,10 +78,11 @@ test('P0-SAVE-C: HTTPS draft includes full LAN and FQDN semantics while history 
   assert.match(https, /host_pending: config\.host_apply_pending === true/)
   assert.match(https, /validPrivateLANIP\(lanIP\)/)
   assert.match(https, /lanEnabled \|\| enabled/)
-  assert.match(page, /section="history" onConfigurationChanged=\{changed\}/)
-  assert.match(page, /component="fieldset" disabled=\{hasUnsavedEdits\}/)
+  assert.doesNotMatch(page, /section="history"|data-xdrive-caddy-v1-history-draft-fence/)
+  assert.match(page, /activeTab === 'config' \|\| activeTab === 'history' \? 'caddy-v1-config'/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
-  assert.match(page, /目前独立 Rescue、签名 Host Manager/)
+  assert.doesNotMatch(page, /applyCaddy|restartCaddy|source\.deploy/)
+
 })
 test('P0-SAVE-C: in-flight atomic Save freezes both editors and secondary requests', () => {
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')

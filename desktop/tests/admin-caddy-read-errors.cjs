@@ -54,6 +54,6 @@ test('Caddy HTTPS and AliDNS failures do not masquerade as API unsupported or ed
   assert.match(inventory, /未收到可信 Caddy Host Control 网关观测/)
   assert.match(https, /data-xdrive-caddy-draft-refresh-guard/)
   assert.match(https, /不允许同时关闭/)
-  assert.match(https, /期望配置未应用/)
+  assert.match(https, /旧宿主配置已导入/)
   assert.doesNotMatch(https + alidns, /adminRestartHost|docker.sock/)
 })
