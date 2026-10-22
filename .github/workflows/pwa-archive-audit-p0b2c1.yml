@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   public-archive-audit:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/pwa-public-archive-audit-b2c1-20261021'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/pwa-public-archive-audit-b2c1-20261021' || github.head_ref == 'docs/pwa-archive-references-b2c2-20261022'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,3 +27,12 @@ jobs:
           node --check scripts/pwa-archive-audit.mjs
           node --check desktop/tests/pwa-archive-audit.cjs
           node --test desktop/tests/pwa-archive-audit.cjs
+
+      - name: B2c2 exact-source public references, capacity and private-input negative tests
+        if: github.head_ref == 'docs/pwa-archive-references-b2c2-20261022'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/pwa-archive-reference-audit.mjs
+          node --check desktop/tests/pwa-archive-reference-audit.cjs
+          node --test desktop/tests/pwa-archive-reference-audit.cjs
