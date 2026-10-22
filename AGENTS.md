@@ -1,3 +1,9 @@
+## SD-D2b-1b-c1 · private Caddy process / live-config window binding (2026-10-22)
+
+- The five-field fixed-name Docker inspect sampling from Host Control and the live Caddy admin JSON SHA-256 are distinct observations; neither a saved DB target nor a browser/API-supplied Host status may create trusted Host identity. A future private collector must verify both are fresh and bound across the actual TLS/ingress probe window; mismatched container PID/start generation or in-process config reload fails closed.
+- Pure private binding and synthetic tests do not prove sampler provenance, A-B-A safety, independent negative ingress or an Applied Receipt. CandidateComplete/CanAdopt/ApplySupported remain false. Never interpret a failed TCP/TLS connection alone as accepted disabled-origin proof.
+- Preserve unrelated Owner source and entire cumulative AGENTS history; build one scoped work commit and require exact-head Go/real PostgreSQL Race/Web/Desktop/Linux/Windows/Host/Rootless/artifacts/Final Gate and clean before merge. Production-only acceptance 按用户决定跳过（未验收）; never require production secrets/access/HAR/signoff.
+
 ## G2c2d2b3c2b2d · fail-closed owning-Agent restart claim probe (2026-10-22)
 
 - Keep merged #2212 real owning Windows/Linux Desktop manual Backup-only one-file <=64 MiB upload enabled. After #2304/#2310, exact original Writer/Stage/Operation private slots are source-identical; do not rename them, retire keys, infer a physical CANCEL, enable repeat/multifile or claim SourceRun completion.
