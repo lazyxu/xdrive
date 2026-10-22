@@ -47,6 +47,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	}
 
 	gin.SetMode(gin.TestMode)
+	// CR-02b3 isolated real Go 429/503 faults; never enabled in production.
+	transientMode := os.Getenv("XD_PWA_CR02B3_TRANSIENT") == "1"
 	nativeDownloadMode := os.Getenv("XD_PWA_S4C3_NATIVE_DOWNLOAD") == "1"
 	nativeCancelMode := os.Getenv("XD_PWA_S4C3_CANCEL") == "1"
 	wakeMode := os.Getenv("XD_PWA_S4D2_WAKE") == "1"
@@ -140,7 +142,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	// CR-02b1 only: persist a genuine installation identity through the
 	// production PostgreSQL meta helper before building the real Gin Router.
 	// Keep legacy S2B3 fixture behavior unchanged without this explicit switch.
-	if os.Getenv("XD_PWA_CR02B1_REAL_ACL") == "1" {
+	if os.Getenv("XD_PWA_CR02B1_REAL_ACL") == "1" || transientMode {
 		if err := db.AutoMigrate(&meta.PWAOfflineInstance{}); err != nil {
 			t.Fatal(err)
 		}
@@ -294,6 +296,11 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	var lastChunkRequests atomic.Int64
 	var totalChunkRequests atomic.Int64
 	var injectedNetworkDrops atomic.Int64
+	var cr02b3Armed atomic.Bool
+	var cr02b3Target atomic.Int64
+	var cr02b3Me503 atomic.Bool
+	var cr02b3Node429 atomic.Bool
+	var cr02b3Range503 atomic.Bool
 	var nativeFirstDownloadPaced atomic.Bool
 	done := make(chan struct{})
 	var once sync.Once
@@ -317,6 +324,21 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 				"tcp_drops":        injectedNetworkDrops.Load(),
 			})
 			return
+		case transientMode && request.URL.Path == "/__test/pwa-cr02b3/arm":
+			if request.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var id int64
+			if n, err := fmt.Sscan(request.URL.Query().Get("node_id"), &id); err != nil || n != 1 || id <= 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			cr02b3Target.Store(id)
+			cr02b3Armed.Store(true)
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNoContent)
+			return
 		case wakeMode && request.URL.Path == "/__test/pwa-s4d2/advance":
 			wakeFixture.advance(w, request, db)
 			return
@@ -331,6 +353,28 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			once.Do(func() { close(done) })
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasPrefix(request.URL.Path, "/api/"):
+			// Genuine Gin fixture returns real HTTP 503/429 only AFTER the
+			// test explicitly arms it; all successful follow-ups reach the
+			// unchanged production auth/ACL Gin Router. No API interception in Chrome.
+			if transientMode && cr02b3Armed.Load() && request.Method == http.MethodGet {
+				uri := request.URL.Path
+				node := fmt.Sprintf("/api/v1/nodes/%d", cr02b3Target.Load())
+				status := 0
+				switch {
+				case uri == "/api/v1/me" && cr02b3Me503.CompareAndSwap(false, true):
+					status = http.StatusServiceUnavailable
+				case uri == node && cr02b3Node429.CompareAndSwap(false, true):
+					status = http.StatusTooManyRequests
+				case uri == node+"/children" && cr02b3Range503.CompareAndSwap(false, true):
+					status = http.StatusServiceUnavailable
+				}
+				if status != 0 {
+					w.Header().Set("Cache-Control", "no-store")
+					w.Header().Set("Retry-After", "0")
+					w.WriteHeader(status)
+					return
+				}
+			}
 			if request.Method != http.MethodGet && request.Method != http.MethodHead &&
 				(strings.Contains(request.URL.Path, "/background-tasks/control") ||
 					strings.HasPrefix(request.URL.Path, "/api/v1/uploads") ||

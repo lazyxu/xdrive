@@ -1,0 +1,113 @@
+name: PWA CR02b3 Genuine Go Owner ACL Offline Revalidation
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-cr02b3-real-owner:
+    if: github.head_ref == 'test/pwa-cr02b3-go-transient-owner-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build production Web and isolated authentic Gin fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          node --test desktop/tests/pwa-cr02b3-real-go-owner-source.cjs
+          go test -c -o "$RUNNER_TEMP/pwa-cr02b3-real-gin-api.test" ./internal/api
+          mkdir -p "$RUNNER_TEMP/pwa-cr02b3-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-cr02b3-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_CR02B3_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_CR02B3_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_CR02B3_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chrome missing" >&2
+            exit 1
+          fi
+      - name: Real Go Owner A/B JWT → P1 cold offline → authenticated ACL revoke
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          READY="$RUNNER_TEMP/pwa-cr02b3-private-ready.json"
+          OUT="$GITHUB_WORKSPACE/desktop/pwa-cr02b3-results"
+          mkdir -p "$OUT"
+          XD_PWA_CR02B3_TRANSIENT=1 \
+          XD_PWA_S2B3_REAL_GIN=1 \
+          XD_PWA_S2B3_READY_FILE="$READY" \
+          XD_PWA_S2B3_DIST="$GITHUB_WORKSPACE/web/dist" \
+            "$RUNNER_TEMP/pwa-cr02b3-real-gin-api.test" \
+              -test.run='^TestPWAS2B3RealGinAuthFixture$' \
+              -test.count=1 -test.v -test.timeout=4m \
+              > "$RUNNER_TEMP/pwa-cr02b3-private-gin.log" 2>&1 &
+          FIXTURE_PID=$!
+          cleanup() {
+            if kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              kill "$FIXTURE_PID" || true
+              wait "$FIXTURE_PID" || true
+            fi
+            rm -f "$READY"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 90); do
+            if [ -s "$READY" ]; then break; fi
+            if ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              echo "isolated real Gin fixture exited early"; exit 1
+            fi
+            sleep 1
+          done
+          test -s "$READY" || { echo "no private Go readiness signal"; exit 1; }
+          XD_PWA_S2B3_DIST="$GITHUB_WORKSPACE/web/dist" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CR02B3_CHROME" \
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/pwa-cr02b3-driver/node_modules/playwright-core" \
+            node desktop/scripts/pwa-cr02b3-real-go-owner-acl.cjs \
+              --ready="$READY" --output-dir="$OUT"
+          wait "$FIXTURE_PID" || { echo "real Go fixture validation failed"; exit 1; }
+          node -e "const r=require(process.cwd()+'/desktop/pwa-cr02b3-results/summary.json');if(!r.passed||r.sha!==process.env.XD_PR_HEAD||!r.realGin||!r.postgresql||!r.localCAS||r.interceptedAPI||!r.actualOwnerME||!r.actualOwnerNode||!r.actualOwnerRange||!r.genuineServerAlbum||!r.foreignOwner404||!r.postReconnectGoACL||!r.realGo503ThenRecovered||!r.realGo429OnceRetried||!r.realGo503RangeRetried||!r.realGoNodeRevoked||!r.revocationPurgedBothSnapshots||!r.revokedHistoryCannotResurrect||!r.publicSWOnly)process.exit(1);console.log('PWA_CR02B3_REAL_OWNER_ACL_PASS')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr02b3-anonymous-real-go-two-owner-revocation
+          # Never archive private ready file, JWT, Gin logs or browser profile.
+          path: desktop/pwa-cr02b3-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
