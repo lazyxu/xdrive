@@ -84,6 +84,7 @@ function fixture(adapter) {
   const context = {
     adapter,
     settingsSessionRef: { current: 0 },
+    settingsRevealRequestRef: { current: 0 },
     externalSourceConnectorProfile: profile,
     externalSourceDefaults: defaults,
     // Isolated controller handlers close over the app's UI noun and imported

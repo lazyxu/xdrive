@@ -517,6 +517,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)
 	admin.GET("/services/baidu-jsapi", s.adminBaiduJSAPIConfig)
 	admin.PUT("/services/baidu-jsapi", s.adminSaveBaiduJSAPIConfig)
+	admin.POST("/services/baidu-jsapi/reveal", s.adminRevealBaiduJSAPIAK)
 	// A3d1: fixed one-shot ADMIN probe; no JS body, Cookie or child proxy route.
 	admin.POST("/services/baidu-jsapi/verify-loader", s.adminVerifyBaiduJSAPI4Loader)
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)

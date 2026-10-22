@@ -924,6 +924,14 @@ func (c *agentController) CloudSetAdminBaiduJSAPIConfig(ctx context.Context, inp
 	return cli.UpdateAdminBaiduJSAPIConfig(ctx, input)
 }
 
+func (c *agentController) CloudRevealAdminBaiduJSAPIAK(ctx context.Context, revision uint64) (client.AdminBaiduJSAPIReveal, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduJSAPIReveal{}, err
+	}
+	return cli.RevealAdminBaiduJSAPIAK(ctx, revision)
+}
+
 func (c *agentController) CloudAdminServices(ctx context.Context) (client.ServiceDependenciesSnapshot, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

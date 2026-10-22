@@ -338,25 +338,34 @@ func (s *Server) revealSourceCredential(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
-	plaintext, err := sourcecredential.Get(c.Request.Context(), s.DB, s.ConnectorSecrets, source)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			fail(c, http.StatusConflict, "source_credential_not_configured")
-			return
+	// Plaintext may leave the Server only after the audit INSERT commits.
+	// A failed audit, canceled request, or stale owner/source read never
+	// falls back to an unaudited display.
+	var field, value string
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		plaintext, readErr := sourcecredential.Get(c.Request.Context(), tx, s.ConnectorSecrets, source)
+		if readErr != nil {
+			return readErr
 		}
-		fail(c, http.StatusInternalServerError, "load source credential failed")
+		defer clear(plaintext)
+		field, value, readErr = sourceCredentialRevealValue(source.Kind, plaintext)
+		if readErr != nil {
+			return readErr
+		}
+		return recordSourceCredentialRevealAudit(c, tx, source, field)
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		fail(c, http.StatusConflict, "source_credential_not_configured")
 		return
 	}
-	defer clear(plaintext)
-
-	field, value, err := sourceCredentialRevealValue(source.Kind, plaintext)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "reveal source credential failed")
+		fail(c, http.StatusServiceUnavailable, "source_credential_reveal_unavailable")
 		return
 	}
-	recordSourceCredentialRevealAudit(c, s.DB, source, field)
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.JSON(http.StatusOK, sourceCredentialRevealDTO{
 		Field: field, Value: value, ExpiresInSeconds: sourceCredentialRevealSeconds,
 	})
@@ -440,6 +449,17 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return
 	}
 
+	prepared, storedSnapshot, err := s.mergedDSMFields(c.Request.Context(), source, compact.Bytes())
+	if err != nil {
+		fail(c, http.StatusConflict, "stored_source_credential_unavailable")
+		return
+	}
+	compact.Reset()
+	if json.Compact(&compact, prepared) != nil || compact.Len() > maxSourceCredentialPayloadBytes {
+		fail(c, http.StatusBadRequest, "invalid_source_credential")
+		return
+	}
+
 	// Pull credentials grant the server worker remote access. Validate them
 	// again at the persistence boundary so non-UI/API callers cannot store an
 	// already invalid secret and leave a Source looking configured but unusable.
@@ -451,6 +471,9 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 
 	var row meta.SourceCredential
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := lockDSMFieldPatchSnapshot(tx, source.ID, storedSnapshot); err != nil {
+			return err
+		}
 		if source.Kind == yikeSourceKind {
 			if err := bindYikeManagedTargetTx(c.Request.Context(), tx, &source, identity); err != nil {
 				return fmt.Errorf("bind Yike managed target: %w", err)
@@ -475,6 +498,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return tx.Where("source_id = ?", source.ID).First(&row).Error
 	})
 	if err != nil {
+		if errors.Is(err, errDSMFieldPatchConflict) {
+			fail(c, http.StatusConflict, "stored_source_credential_changed")
+			return
+		}
 		if errors.Is(err, errYikeAccountAlreadyConfigured) {
 			fail(c, http.StatusConflict, "yike_account_already_configured")
 			return
@@ -537,10 +564,10 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func recordSourceCredentialRevealAudit(c *gin.Context, db *gorm.DB, source meta.Source, field string) {
+func recordSourceCredentialRevealAudit(c *gin.Context, db *gorm.DB, source meta.Source, field string) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return
+		return errors.New("missing authenticated source credential audit actor")
 	}
 	uid := user.ID
 	if err := auditpkg.Record(db, auditpkg.Event{
@@ -560,7 +587,9 @@ func recordSourceCredentialRevealAudit(c *gin.Context, db *gorm.DB, source meta.
 		},
 	}); err != nil {
 		slog.Warn("source_credential_audit_failed", "source_id", source.ID, "action", auditpkg.ActionSourceCredentialReveal, "error", err)
+		return err
 	}
+	return nil
 }
 
 func recordSourceCredentialAudit(c *gin.Context, db *gorm.DB, action string, source meta.Source, keyVersion uint32) {

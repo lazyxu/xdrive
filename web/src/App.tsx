@@ -1329,6 +1329,7 @@ function FileManager({
     loadBaiduJSAPIConfig: () => api.adminBaiduJSAPIConfig(),
     saveBaiduJSAPIConfig: (input: import('../../ui/shared/src').XDriveBaiduJSAPIUpdate) =>
       api.adminSaveBaiduJSAPIConfig(input),
+    revealBaiduJSAPIAK: (revision: number) => api.adminRevealBaiduJSAPIAK(revision),
     verifyBaiduJSAPI4Loader: (revision: number) => api.adminVerifyBaiduJSAPI4Loader(revision),
     loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
     saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),

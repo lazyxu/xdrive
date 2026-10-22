@@ -884,6 +884,7 @@ declare global {
         cloudAdminDeleteUser: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudAdminBaiduJSAPIConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveBaiduJSAPIConfig>>
+        cloudRevealAdminBaiduJSAPIAK: (revision: number) => Promise<DesktopResult<import('../../../ui/shared/src').XDriveBaiduJSAPIReveal>>
         cloudVerifyAdminBaiduJSAPI4Loader: (revision: number) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveBaiduJSAPI4LoaderProbe>>
         cloudSetAdminBaiduJSAPIConfig: (input: import('../../../ui/shared/src').XDriveBaiduJSAPIUpdate) =>

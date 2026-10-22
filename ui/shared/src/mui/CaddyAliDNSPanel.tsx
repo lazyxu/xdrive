@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Button, Paper, Stack, Typography } from '@mui/material'
+import { XDriveSensitiveField } from './SensitiveField'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 import { xDriveCaddyReadFailureMessage } from '../caddy-read-error'
@@ -112,7 +113,11 @@ export function XDriveCaddyAliDNSPanel({
     return () => { active = false; ++requestEpochRef.current; ++revealEpochRef.current }
   }, [source, refreshID, retryReadID])
 
-  const valid = validSecret(keyID, 8, 128) && validSecret(keySecret, 8, 256)
+  // Fields rotate independently. The Go transaction preserves the encrypted
+  // counterpart without reading it back into the browser.
+  const valid = !!(keyID || keySecret) &&
+    (keyID ? validSecret(keyID, 8, 128) : !!config?.configured) &&
+    (keySecret ? validSecret(keySecret, 8, 256) : !!config?.configured)
   const canEdit = !!config?.editable && !busy && !loading && !revealing && !atomicSaving
 
   const save = async (clear = false) => {
@@ -138,7 +143,7 @@ export function XDriveCaddyAliDNSPanel({
         : 'AliDNS 凭据已加密保存。')
       onConfigurationChanged?.() // A rotated or cleared key invalidates old proof.
     } catch (err) {
-      if (epoch === requestEpochRef.current) setError(err instanceof Error ? err.message : 'AliDNS 凭据保存失败。')
+      if (epoch === requestEpochRef.current) setError('AliDNS 保存结果未得到确认；请重新核对修订后再提交。')
     } finally {
       if (epoch === requestEpochRef.current) setBusy(false)
     }
@@ -159,7 +164,7 @@ export function XDriveCaddyAliDNSPanel({
       }
       setShown(next)
     } catch (err) {
-      if (epoch === revealEpochRef.current) setError(err instanceof Error ? err.message : '临时查看凭据失败。')
+      if (epoch === revealEpochRef.current) setError('AliDNS 凭据读取失败或当前修订已失效。')
     } finally {
       if (epoch === revealEpochRef.current) setRevealing(false)
     }
@@ -194,47 +199,29 @@ export function XDriveCaddyAliDNSPanel({
               color="text.secondary" data-xdrive-caddy-alidns-no-keyring>
               凭据加密服务未就绪，当前不可编辑。
             </Typography>}
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip size="small" variant="outlined"
-                label={pendingClear ? '清除待保存' :
-                  config.source === 'host-import' ? '已导入加密凭据' :
-                  config.configured ? '已加密保存' : '未配置凭据'} />
-              <Typography variant="caption" color="text.secondary">凭据修订 #{config.revision}</Typography>
-            </Stack>
-            <>
-            <TextField fullWidth size="small" label="AccessKey ID（新值）"
-              type="password" autoComplete="new-password" value={keyID}
-              onChange={(event) => { setPendingClear(false); setKeyID(event.target.value) }} disabled={!canEdit}
-              helperText="留空保持不变；更换需同时填写 ID 和 Secret。" />
-            <TextField fullWidth size="small" label="AccessKey Secret（新值）"
-              type="password" autoComplete="new-password" value={keySecret}
-              onChange={(event) => { setPendingClear(false); setKeySecret(event.target.value) }} disabled={!canEdit}
-              helperText="与 AccessKey ID 一同填写。" />
+            <XDriveSensitiveField label="AccessKey ID" value={keyID}
+              configured={config.configured}
+              revealedValue={active ? shown?.access_key_id : undefined}
+              onReveal={() => { void reveal() }} onHide={hide}
+              revealLoading={revealing} revealDisabled={!config.configured || !source.revealCaddyAliDNS || atomicSaving}
+              disabled={!canEdit} maxLength={128}
+              onChange={(value) => { setPendingClear(false); setKeyID(value) }} />
+            <XDriveSensitiveField label="AccessKey Secret" value={keySecret}
+              configured={config.configured}
+              revealedValue={active ? shown?.access_key_secret : undefined}
+              onReveal={() => { void reveal() }} onHide={hide}
+              revealLoading={revealing} revealDisabled={!config.configured || !source.revealCaddyAliDNS || atomicSaving}
+              disabled={!canEdit} maxLength={256}
+              onChange={(value) => { setPendingClear(false); setKeySecret(value) }} />
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {!atomicMode && <Button size="small" variant="outlined" disabled={!canEdit || !valid || !source.saveCaddyAliDNS}
-                onClick={() => setConfirmSave(true)}>加密保存凭据（不应用 Caddy）</Button>}
-
-              <Button size="small" variant="outlined"
-                disabled={!canEdit || !config.configured || !source.revealCaddyAliDNS}
-                onClick={() => { void reveal() }}>临时显示已保存凭据（审计）</Button>
+                onClick={() => setConfirmSave(true)}>保存凭据</Button>}
               <Button size="small" color="error" variant="text"
                 disabled={!canEdit || !config.configured || (!atomicMode && !source.saveCaddyAliDNS) || pendingClear}
-                onClick={() => setConfirmClear(true)}>{atomicMode ? '标记清除已保存凭据' : '清除已保存凭据'}</Button>
+                onClick={() => setConfirmClear(true)}>清除凭据</Button>
               {atomicMode && pendingClear && <Button size="small" variant="text"
-                onClick={() => setPendingClear(false)}>取消清除草稿</Button>}
+                onClick={() => setPendingClear(false)}>撤销清除</Button>}
             </Stack>
-            {active && shown && (
-              <Box>
-                <TextField size="small" fullWidth label="已保存 AccessKey ID · 临时显示"
-                  value={shown.access_key_id} slotProps={{ input: { readOnly: true } }} sx={{ mb: 1 }} />
-                <TextField size="small" fullWidth label="已保存 AccessKey Secret · 临时显示"
-                  value={shown.access_key_secret} slotProps={{ input: { readOnly: true } }} />
-                <Button size="small" onClick={hide}>立即隐藏凭据</Button>
-              </Box>
-            )}
-
-
-            </>
             {!atomicMode && <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="加密保存 AliDNS 凭据"
               description="保存新 ID/Secret 将创建审计修订，但不替换宿主机凭据，也不会操作 Caddy。"

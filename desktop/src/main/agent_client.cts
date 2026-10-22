@@ -1242,6 +1242,12 @@ export type AgentAdminBaiduJSAPIUpdate = {
   clear_ak?: boolean
 }
 
+export type AgentAdminBaiduJSAPIReveal = {
+  field: 'browser_ak'
+  value: string
+  revision: number
+  expires_in_seconds: number
+}
 export type AgentAdminBaiduJSAPI4LoaderProbe = {
   state: 'loader_accepted' | 'denied' | 'unavailable'
   revision: number
@@ -4021,6 +4027,11 @@ export class AgentIPCClient {
   }
   cloudSetAdminBaiduJSAPIConfig(input: AgentAdminBaiduJSAPIUpdate) {
     return this.request<AgentAdminBaiduJSAPIConfig>('PUT', '/v1/cloud/admin-baidu-jsapi', input)
+  }
+  cloudRevealAdminBaiduJSAPIAK(revision: number) {
+    return this.request<AgentAdminBaiduJSAPIReveal>(
+      'POST', '/v1/cloud/admin-baidu-jsapi/reveal', { revision }, 15_000,
+    )
   }
   cloudVerifyAdminBaiduJSAPI4Loader(revision: number) {
     return this.request<AgentAdminBaiduJSAPI4LoaderProbe>(

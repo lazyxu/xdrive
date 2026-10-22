@@ -876,10 +876,9 @@ test('Web and Desktop reuse shared source credential fields', () => {
     'DSM 地址',
     'DSM 用户名',
     'DSM 密码',
-    '更新 DSM 地址',
     '留空则保持当前配置不变',
     '目标目录',
-    'expiresInSeconds = 30',
+    'passwordRevealLoading',
     'onReveal',
     'onHide',
     'synologyDsmAddressHelp',
@@ -887,14 +886,15 @@ test('Web and Desktop reuse shared source credential fields', () => {
     assert.ok(sharedFields.includes(token), `shared Source credential fields missing: ${token}`)
   }
 
-  assert.equal((web.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Web create/settings should reuse shared Cookie field')
-  assert.equal((desktop.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Cookie field')
+  assert.equal((web.match(/<XDriveSourceCookieField\b/g) || []).length, 1, 'Web create/settings should reuse shared Cookie field')
+  assert.equal((desktop.match(/<XDriveSourceCookieField\b/g) || []).length, 1, 'Desktop create/settings should reuse shared Cookie field')
   assert.equal((web.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Web create/settings should reuse shared DSM field group')
   assert.equal((desktop.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared DSM field group')
   assert.equal((web.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Web settings should reuse shared target field')
   assert.equal((desktop.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Desktop settings should reuse shared target field')
-  assert.equal((web.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'Web settings should reuse shared stored-credential fields')
-  assert.equal((desktop.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'Desktop settings should reuse shared stored-credential fields')
+  assert.equal((web.match(/<XDriveSensitiveField\b/g) || []).length, 1, 'Web settings should reuse shared stored-credential fields')
+  assert.equal((desktop.match(/<XDriveSensitiveField\b/g) || []).length, 1, 'Desktop settings should reuse shared stored-credential fields')
+  assert.ok(sharedFields.includes('XDriveSensitiveField'), 'DSM password must use one shared field')
   assert.ok(web.includes('revealSourceCredential'), 'Web settings should reveal credentials only on demand')
   assert.ok(desktop.includes('revealSourceCredential'), 'Desktop settings should reveal credentials only on demand')
 

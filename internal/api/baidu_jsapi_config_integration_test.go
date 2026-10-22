@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,6 +137,61 @@ func TestBaiduJSAPISeparateBrowserAKEncryptedAndAdminScoped(t *testing.T) {
 	}
 	if stale := request(http.MethodPut, adminEndpoint, adminToken, payload); stale.Code != http.StatusConflict {
 		t.Fatalf("stale Browser AK revision accepted %d", stale.Code)
+	}
+	// Reveal is an explicit POST only. A saved revision, administrative
+	// authorization, successful audit and no-store are all required.
+	revealEndpoint := adminEndpoint + "/reveal"
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{
+		{"", http.StatusUnauthorized}, {userToken, http.StatusForbidden},
+	} {
+		response := request(http.MethodPost, revealEndpoint, tc.token, `{"revision":1}`)
+		if response.Code != tc.status || strings.Contains(response.Body.String(), "private-browser-ak-v4") {
+			t.Fatalf("unauthorized Browser AK reveal status=%d", response.Code)
+		}
+	}
+	if r := request(http.MethodGet, revealEndpoint, adminToken, ""); r.Code == http.StatusOK {
+		t.Fatal("Browser AK accessible via GET")
+	}
+	for _, body := range []string{
+		`{"revision":0}`, `{"revision":2}`, `{"revision":1,"extra":true}`,
+		`{"revision":1}{"revision":1}`, `{"revision":"1"}`,
+	} {
+		if r := request(http.MethodPost, revealEndpoint, adminToken, body); r.Code == http.StatusOK {
+			t.Fatal("accepted invalid Browser AK reveal input")
+		}
+	}
+	revealed := request(http.MethodPost, revealEndpoint, adminToken, `{"revision":1}`)
+	if revealed.Code != http.StatusOK ||
+		!strings.Contains(revealed.Body.String(), `"field":"browser_ak"`) ||
+		!strings.Contains(revealed.Body.String(), `"value":"private-browser-ak-v4"`) ||
+		!strings.Contains(revealed.Body.String(), `"revision":1`) ||
+		!strings.Contains(revealed.Body.String(), `"expires_in_seconds":30`) ||
+		revealed.Header().Get("Cache-Control") != "no-store" ||
+		revealed.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("Browser AK explicit reveal failed: %d", revealed.Code)
+	}
+	var audits []meta.AuditEvent
+	if err := db.Find(&audits).Error; err != nil {
+		t.Fatal(err)
+	}
+	foundReveal := false
+	for _, event := range audits {
+		serialized, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(serialized), "private-browser-ak-v4") {
+			t.Fatal("Browser AK leaked into audit")
+		}
+		if strings.Contains(string(serialized), "admin.service.baidu_jsapi.reveal") {
+			foundReveal = true
+		}
+	}
+	if !foundReveal {
+		t.Fatal("explicit Browser AK reveal was not audited")
 	}
 	cleared := request(http.MethodPut, adminEndpoint, adminToken,
 		`{"desired_enabled":false,"clear_ak":true,"revision":1}`)

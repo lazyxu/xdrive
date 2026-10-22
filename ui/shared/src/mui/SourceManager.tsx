@@ -905,30 +905,36 @@ export function XDriveSourceManager({
       const password = String(settingsValues.password ?? '')
       const anyPending = Boolean(baseURL || username || password)
       if (!anyPending) return null
-      return baseURL && username && password
-        ? { base_url: baseURL, username, password }
-        : undefined
+      if (!setting.credential?.configured && !(baseURL && username && password)) return undefined
+      return {
+        ...(baseURL ? { base_url: baseURL } : {}),
+        ...(username ? { username } : {}),
+        ...(password ? { password } : {}),
+      }
     }
     return null
   }
 
+  const settingsRevealRequestRef = useRef(0)
   const hideSettingsCredential = useCallback(() => {
+    ++settingsRevealRequestRef.current
     setSettingsCredentialReveal(null)
   }, [])
 
   const revealSettingsCredential = async () => {
     if (!setting?.credential?.configured) return
     const session = settingsSessionRef.current
+    const request = ++settingsRevealRequestRef.current
     setRevealingSettingsCredential(true)
     try {
       const revealed = await adapter.revealSourceCredential(setting.source.id)
-      if (session === settingsSessionRef.current) setSettingsCredentialReveal(revealed)
+      if (session === settingsSessionRef.current && request === settingsRevealRequestRef.current) setSettingsCredentialReveal(revealed)
     } catch (error) {
-      if (session !== settingsSessionRef.current) return
+      if (session !== settingsSessionRef.current || request !== settingsRevealRequestRef.current) return
       setSettingsCredentialReveal(null)
-      showActionError('显示凭据失败', error, '无法读取已保存凭据，请稍后重试。')
+      setErrorDialog({ title: '显示凭据失败', message: '凭据读取失败或当前权限已失效，请核对后重试。' })
     } finally {
-      if (session === settingsSessionRef.current) setRevealingSettingsCredential(false)
+      if (session === settingsSessionRef.current && request === settingsRevealRequestRef.current) setRevealingSettingsCredential(false)
     }
   }
 
@@ -940,7 +946,16 @@ export function XDriveSourceManager({
     const pending = settingsCredentialPayload()
     if (pending === undefined) {
       setSettingsCredentialTest(null)
-      setSettingsCredentialTestError('更新 DSM 凭据时请完整填写地址、用户名和密码')
+      setSettingsCredentialTestError('首次配置 DSM 时需要填写完整连接信息')
+      return null
+    }
+    // A partial DSM draft must be tested only after the owning Go Server
+    // merges unchanged encrypted fields. Never send a partial credential to
+    // the standalone connection-test endpoint or reveal its counterpart.
+    if (profile.credential === 'synology_dsm' && pending &&
+        (!('base_url' in pending) || !('username' in pending) || !('password' in pending))) {
+      setSettingsCredentialTest(null)
+      setSettingsCredentialTestError('单项修改将在保存时由服务端验证连接')
       return null
     }
     setTestingSettingsCredential(true)
@@ -1000,7 +1015,12 @@ export function XDriveSourceManager({
       return
     }
     setSavingSettings(true)
-    if (pendingCredential) {
+    const partialDSM = profile.credential === 'synology_dsm' && pendingCredential &&
+      (!('base_url' in pendingCredential) || !('username' in pendingCredential) ||
+        !('password' in pendingCredential))
+    // Full drafts retain the existing preflight; a partial draft is verified
+    // by the real Server before the resulting encrypted bundle is committed.
+    if (pendingCredential && !partialDSM) {
       const tested = await testSettingsCredential()
       if (!tested) {
         setSavingSettings(false)

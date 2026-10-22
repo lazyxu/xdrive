@@ -51,7 +51,7 @@ test('Go Agent transport enforces JSON bounds and never applies Caddy', () => {
   assert.match(ipc, /http\.MaxBytesReader\(w, r\.Body, 2048\)/)
   assert.match(ipc, /input\.HTTPSRevision == nil \|\| input\.AliDNSRevision == nil/)
   assert.match(ipc, /!\*cfg\.Enabled && !\*cfg\.LANEnabled/)
-  assert.match(ipc, /validDesktopCaddyAliDNSPair/)
+  assert.match(ipc, /validDesktopCaddyAliDNSChange/)
   assert.match(ipc, /http\.StatusNotImplemented/)
   assert.match(ipc, /Cache-Control", "no-store"/)
   for (const candidate of [client, agent, ipc]) {

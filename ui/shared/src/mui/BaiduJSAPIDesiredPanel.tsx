@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { Box, Button, FormControlLabel, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Box, Button, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material'
+import { XDriveSensitiveField } from './SensitiveField'
 import {
   xDriveValidBaiduJSAPI4LoaderProbe,
   type XDriveBaiduJSAPI4LoaderProbe,
   type XDriveBaiduJSAPIConfig,
   type XDriveBaiduJSAPIUpdate,
+  type XDriveBaiduJSAPIReveal,
 } from '../service-dependencies'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
@@ -39,6 +41,7 @@ const releaseBlockerIDs = Object.keys(releaseBlockerLabels)
 export type XDriveBaiduJSAPIDesiredPort = {
   loadBaiduJSAPIConfig?: () => Promise<XDriveBaiduJSAPIConfig>
   saveBaiduJSAPIConfig?: (input: XDriveBaiduJSAPIUpdate) => Promise<XDriveBaiduJSAPIConfig>
+  revealBaiduJSAPIAK?: (revision: number) => Promise<XDriveBaiduJSAPIReveal>
   verifyBaiduJSAPI4Loader?: (revision: number) => Promise<XDriveBaiduJSAPI4LoaderProbe>
 }
 
@@ -61,8 +64,8 @@ function validConfig(value: unknown): value is XDriveBaiduJSAPIConfig {
 }
 
 /** ONE shared admin UI across Web, Mobile Web/PWA and Desktop.
- * It never requests an existing Browser AK or treats a desired flag as signed
- * production authorization. No map script is loaded from this panel. */
+ * An existing Browser AK is retrieved ONLY on an explicit audited reveal action;
+ * the nonsecret configuration does not authorize a map runtime. No map script is loaded from this panel. */
 export function XDriveBaiduJSAPIDesiredPanel({
   source, mode, onDirtyChange, diagnosticScope,
 }: {
@@ -85,6 +88,55 @@ export function XDriveBaiduJSAPIDesiredPanel({
   const [probeResult, setProbeResult] = useState<XDriveBaiduJSAPI4LoaderProbe | null>(null)
   const [probeError, setProbeError] = useState('')
   const generation = useRef(0)
+  const [shownAK, setShownAK] = useState<XDriveBaiduJSAPIReveal | null>(null)
+  const [revealingAK, setRevealingAK] = useState(false)
+  const revealEpoch = useRef(0)
+  const hideAK = useCallback(() => {
+    ++revealEpoch.current
+    setShownAK(null)
+    setRevealingAK(false)
+  }, [])
+  useEffect(() => {
+    if (!shownAK) return
+    const seconds = Math.min(30, Math.max(1, shownAK.expires_in_seconds))
+    const timer = window.setTimeout(hideAK, seconds * 1000)
+    return () => window.clearTimeout(timer)
+  }, [shownAK, hideAK])
+  useEffect(() => {
+    const onBlur = () => hideAK()
+    const onHidden = () => {
+      if (document.visibilityState !== 'visible') hideAK()
+    }
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onHidden)
+    return () => {
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onHidden)
+    }
+  }, [hideAK])
+  useEffect(() => { hideAK() }, [source, mode, hideAK])
+  const revealAK = async () => {
+    if (!source.revealBaiduJSAPIAK || !config?.configured || busy || refreshing || revealingAK) return
+    const request = ++revealEpoch.current
+    const revision = config.revision
+    setShownAK(null)
+    setRevealingAK(true)
+    setError('')
+    try {
+      const next = await source.revealBaiduJSAPIAK(revision)
+      if (request !== revealEpoch.current) return
+      if (next?.field !== 'browser_ak' || next.revision !== revision ||
+          typeof next.value !== 'string' || !/^[!-~]{1,256}$/.test(next.value) ||
+          !Number.isFinite(next.expires_in_seconds) || next.expires_in_seconds <= 0 ||
+          next.expires_in_seconds > 30) throw new Error('invalid_reveal')
+      setShownAK(next)
+    } catch {
+      if (request === revealEpoch.current) setError('读取 Browser AK 失败或修订已变化，请重新核对配置。')
+    } finally {
+      if (request === revealEpoch.current) setRevealingAK(false)
+    }
+  }
+
   const [diagnosticState, setDiagnosticState] = useState<{
     scope: string; item: XDriveBaiduMapDiagnostic | null
   }>({ scope: diagnosticScope ?? '', item: null })
@@ -135,6 +187,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
     setConfig(null)
     setEnabled(false)
     setNewAK('')
+    hideAK()
     setError('')
     setNotice('')
     setBusy(false)
@@ -161,7 +214,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
       if (revision === generation.current) setReading(false)
     })
     return () => { ++generation.current }
-  }, [source])
+  }, [source, hideAK])
 
   // Read the Server's current saved state; never fabricate or edit release authority.
   // Preserve unsaved Browser AK and toggle drafts rather than silently discarding them.
@@ -197,6 +250,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
       return
     }
     const revision = generation.current
+    hideAK()
     setBusy(true)
     setError('')
     setNotice('')
@@ -331,11 +385,14 @@ export function XDriveBaiduJSAPIDesiredPanel({
             <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
               control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
                 disabled={busy || refreshing} />} />
-            <TextField fullWidth size="small" type="password" autoComplete="new-password"
-              label="设置或更换 Browser AK" inputProps={{ maxLength: 256 }}
-              placeholder={config.configured ? '留空保留当前 Browser AK' : '请输入独立的 Browser 类型 AK'}
-              helperText="仅提交新密钥；不会显示、回填或输出已保存的 Browser AK。"
-              value={newAK} disabled={busy || refreshing} onChange={event => setNewAK(event.target.value)} />
+            <XDriveSensitiveField label="Browser AK" value={newAK}
+              configured={config.configured}
+              revealedValue={shownAK?.field === 'browser_ak' ? shownAK.value : ''}
+              onReveal={() => { void revealAK() }} onHide={hideAK}
+              revealLoading={revealingAK}
+              revealDisabled={!source.revealBaiduJSAPIAK}
+              disabled={busy || refreshing || revealingAK} maxLength={256}
+              onChange={setNewAK} />
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
               <Button size="small" variant="contained" disabled={busy || refreshing}
                 onClick={() => { void apply(false) }}>保存并应用</Button>

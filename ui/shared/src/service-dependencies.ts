@@ -592,6 +592,13 @@ export function xDriveValidBaiduJSAPI4LoaderProbe(
     typeof v.detail === 'string' && v.detail.length <= 256
 }
 
+export type XDriveBaiduJSAPIReveal = {
+  field: 'browser_ak'
+  value: string
+  revision: number
+  expires_in_seconds: number
+}
+
 export type XDriveBaiduJSAPIUpdate = {
   desired_enabled: boolean
   revision: number
