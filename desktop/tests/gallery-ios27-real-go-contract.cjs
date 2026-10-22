@@ -58,7 +58,7 @@ test('P1-3c1 native Chromium four widths actually consume Go Range response', ()
 test('P1-3c1 both widths use the same Web Gallery business/controller/virtualizer', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
   assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(adapter, /listItemRange: \(limit, offset, query, signal\) => api\.mediaItemRange/)
   assert.match(gallery, /useXDriveVirtualCollection/)
   assert.match(gallery, /<MediaVirtualTileGrid/)

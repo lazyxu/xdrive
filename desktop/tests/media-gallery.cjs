@@ -1041,7 +1041,8 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
 
   assert.ok(webAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Web must consume the shared Gallery adapter factory')
   assert.ok(desktopAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Desktop must consume the shared Gallery adapter factory')
-  assert.ok(webApp.includes('createWebMediaGalleryDataSource(api)'), 'Web App must consume its thin Gallery transport adapter')
+  assert.ok(/createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/.test(webApp), 'Web App must consume its thin Gallery transport adapter')
+  assert.equal((webApp.match(/createWebMediaGalleryDataSource\s*\(/g) || []).length, 1, 'Web must use one Gallery adapter, not a second data source')
   assert.match(
     desktopApp,
     /createDesktopMediaGalleryDataSource\(\s*window\.xdriveDesktop\.agent,\s*mediaSelectionJobsSupported,\s*\)/,

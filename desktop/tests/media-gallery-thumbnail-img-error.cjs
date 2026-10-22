@@ -153,7 +153,7 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   const web = read('web/src/App.tsx')
   const adapter = read('web/src/mediaGalleryAdapter.ts')
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(page, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(page, /<MediaVirtualTileGrid/)
   assert.match(page, /<MediaVirtualTimeline/)
@@ -201,7 +201,7 @@ test('P0-L4c1 real thumbnail image onError reports its exact failed URL without 
   assert.match(gallery, /onImageDecodeError=\{thumbnailScheduler \? onThumbnailDecodeError : undefined\}/)
   assert.match(gallery, /thumbnailScheduler\?\.invalidateDecodedURL\(item\.node\.id, item\.node\.revision, failedURL\)/)
   assert.match(scheduler, /invalidateDecodedURL = \(nodeID: number, revision: number, failedURL: string\)/)
-  assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
 })
 

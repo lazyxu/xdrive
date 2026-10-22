@@ -1,0 +1,55 @@
+name: PWA P1-C1 Bounded Authorized Album Metadata
+on:
+  pull_request:
+    branches: [master, feat/pwa-p1b2-offline-readonly-history-20261022]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pwa-p1c1-albums:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/pwa-p1c1-bounded-album-summaries-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install exact Web tree and native Chromium driver
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-p1c1-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p1c1-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_P1C1_BROWSER=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_P1C1_BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_P1C1_BROWSER=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Real Chrome/Chromium missing" >&2
+            exit 1
+          fi
+      - name: P1-C1 projection, compatibility, privacy and Web compilation
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-p1c1-real-album-idb.cjs
+          node web/scripts/test-pwa-offline-directory.cjs
+          node web/scripts/test-pwa-offline-readonly.cjs
+          node web/scripts/test-pwa-offline-albums.cjs
+          npm --prefix web run lint
+          npm --prefix web run build
+      - name: Real persistent Chrome 100k-to-24 opt-in IndexedDB and revocation
+        env:
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XDRIVE_P1C1_BROWSER }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-p1c1-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node desktop/scripts/pwa-p1c1-real-album-idb.cjs

@@ -6,6 +6,7 @@ import {
   xDrivePwaClearOfflineMetadata,
   xDrivePwaObserveOfflinePurge,
   xDrivePwaReadOfflineDirectories,
+  xDrivePwaReadAlbumSummaries,
   xDrivePwaReadRelaunchOwner,
   xDrivePwaVerifiedIdentityMatches,
 } from './pwaOfflineDirectory'
@@ -13,6 +14,7 @@ import type {
   XDrivePwaOfflineDirectory,
   XDrivePwaOfflineOwner,
   XDrivePwaOfflineRead,
+  XDrivePwaOfflineAlbumsRead,
 } from './pwaOfflineDirectory'
 
 /**
@@ -21,14 +23,16 @@ import type {
  * A local hint is an opt-in locator, never proof of a current session.
  */
 export default function PwaOfflineDirectoryBrowser({
-  api, hasSession, onExit,
+  api, hasSession, onExit, onOpenGallery,
 }: {
   api: XDriveApi
   hasSession: boolean
   onExit: () => void
+  onOpenGallery: () => void
 }) {
   const [owner, setOwner] = useState<XDrivePwaOfflineOwner | null>(null)
   const [saved, setSaved] = useState<XDrivePwaOfflineRead | null>(null)
+  const [albumSaved, setAlbumSaved] = useState<XDrivePwaOfflineAlbumsRead | null>(null)
   const [selectedID, setSelectedID] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [online, setOnline] = useState(() => navigator.onLine)
@@ -45,6 +49,7 @@ export default function PwaOfflineDirectoryBrowser({
       validationController.current?.abort()
       setOwner(null)
       setSaved(null)
+      setAlbumSaved(null)
       setSelectedID(null)
       setVerification('purged')
       setLoading(false)
@@ -55,11 +60,16 @@ export default function PwaOfflineDirectoryBrowser({
       try {
         const hint = await xDrivePwaReadRelaunchOwner()
         if (!active || readSequence !== sequence.current || !hint) return
-        const read = await xDrivePwaReadOfflineDirectories(hint)
+        const [read, albumRead] = await Promise.all([
+          xDrivePwaReadOfflineDirectories(hint),
+          xDrivePwaReadAlbumSummaries(hint),
+        ])
         if (!active || readSequence !== sequence.current) return
-        if (read.consented && read.revalidated === false) {
+        if (read.consented && read.revalidated === false &&
+            albumRead.consented && albumRead.revalidated === false) {
           setOwner(hint)
           setSaved(read)
+          setAlbumSaved(albumRead)
           setSelectedID(read.directories[0]?.id ?? null)
         }
       } catch {
@@ -203,7 +213,8 @@ export default function PwaOfflineDirectoryBrowser({
           不代表文件仍存在、内容完整或账号仍有访问权限；这里不能下载、预览、修改或上传。
         </Alert>
         {loading ? <Typography role="status">正在读取本设备的历史摘要…</Typography> : null}
-        {!loading && (!owner || !saved?.directories.length) ? (
+        {!loading && (!owner || (!saved?.directories.length &&
+          !albumSaved?.snapshot?.albums.length)) ? (
           <Alert severity="info" data-xdrive-pwa-offline-empty>
             {verification === 'purged'
               ? '离线摘要已清除或当前权限不匹配。请联网登录后重新授权。'
@@ -212,13 +223,14 @@ export default function PwaOfflineDirectoryBrowser({
                 : '当前没有可用的已授权目录摘要。请联网登录，在设置中主动开启后访问目录。'}
           </Alert>
         ) : null}
-        {owner && saved?.directories.length ? (
+        {owner && (Boolean(saved?.directories.length) ||
+          Boolean(albumSaved?.snapshot?.albums.length)) ? (
           <Stack spacing={2} data-xdrive-pwa-offline-historical-only>
             <Typography variant="body2" color="text.secondary">
               保存账号：{owner.username} · 仅本机、仅历史记录 · {online ? '网络可能可用' : '设备处于离线状态'}
             </Typography>
             <Stack direction="row" flexWrap="wrap" gap={1}>
-              {saved.directories.map(directory => (
+              {(saved?.directories ?? []).map(directory => (
                 <Button key={directory.id} data-xdrive-pwa-offline-folder
                   variant={selectedID === directory.id ? 'contained' : 'outlined'}
                   sx={{ minHeight: 44 }}
@@ -246,6 +258,34 @@ export default function PwaOfflineDirectoryBrowser({
                     </Typography>
                   </Box>
                 ))}
+              </Box>
+            ) : null}
+            {albumSaved?.snapshot?.albums.length ? (
+              <Box data-xdrive-pwa-offline-albums>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  图库集合历史摘要（只读）
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  保存于 {new Date(albumSaved.snapshot.capturedAt).toLocaleString()} ·
+                  仅前 {albumSaved.snapshot.albums.length} 个集合 ·
+                  当时返回 {albumSaved.snapshot.totalAtCapture} 个集合。无封面、照片、视频或实况内容。
+                </Typography>
+                <Divider />
+                {albumSaved.snapshot.albums.map(album => (
+                  <Box key={album.id} data-xdrive-pwa-offline-album sx={{
+                    py: 1.5, minHeight: 44, borderBottom: 1, borderColor: 'divider',
+                  }}>
+                    <Typography variant="body2">{album.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      当时的集合 · {album.item_count} 个项目（历史值，未经重新确认）
+                    </Typography>
+                  </Box>
+                ))}
+                <Button data-xdrive-pwa-offline-reopen-gallery variant="outlined"
+                  sx={{ minHeight: 44, mt: 1 }} disabled={!online || !hasSession}
+                  onClick={onOpenGallery}>
+                  联网打开图库，重新获取当前已授权集合
+                </Button>
               </Box>
             ) : null}
             <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>

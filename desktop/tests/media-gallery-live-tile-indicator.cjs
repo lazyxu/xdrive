@@ -197,7 +197,7 @@ test('all layout modes and platforms still use the one Gallery tile/VirtualColle
   const adapter = read('web/src/mediaGalleryAdapter.ts')
   assert.equal((gallery.match(/<MediaTile\b/g) || []).length, 3)
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
-  assert.match(web, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(web, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
   assert.match(gallery, /<MediaVirtualTimeline/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)

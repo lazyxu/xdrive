@@ -4,8 +4,12 @@ import {
 } from '@xdrive/ui/mui'
 import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import type { MediaAlbum } from '../../ui/shared/src'
 
-export function createWebMediaGalleryDataSource(api: XDriveApi) {
+export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
+  /** Side channel only after original Owner /media/albums succeeded. */
+  onAuthorizedAlbums?: (albums: MediaAlbum[]) => void
+}) {
   return createXDriveMediaGalleryDataSource({
     loadMusicRoot: () => api.root(),
     listMusicChildren: (parentID) => api.list(parentID),
@@ -44,7 +48,12 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
         await api.permanentlyDeleteTrash(root.id, root.revision)
       }
     },
-    listAlbums: () => api.mediaAlbums(),
+    listAlbums: () => api.mediaAlbums().then(albums => {
+      // The optional bounded IndexedDB snapshot must never degrade Gallery
+      // availability or add a second API call / 100k media scan.
+      try { options?.onAuthorizedAlbums?.(albums) } catch { /* optional */ }
+      return albums
+    }),
     listAlbumFolders: () => api.mediaAlbumFolders(),
     createAlbumFolder: (name, parentID) => api.createMediaAlbumFolder(name, parentID),
     updateAlbumFolder: (folderID, revision, change) =>

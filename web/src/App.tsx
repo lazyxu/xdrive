@@ -109,7 +109,7 @@ import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVers
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
-import { xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
+import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
 import XDriveManualConnectionDialog from './ManualConnectionDialog'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
@@ -378,6 +378,12 @@ function App({
       hasSession={Boolean(session.accessToken)}
       onExit={() => {
         window.location.hash = '#/app/files'
+        setOfflineSnapshotRoute(false)
+      }}
+      onOpenGallery={() => {
+        // Current Gallery must re-fetch authorized /media/albums from Server.
+        // Never promote local historical labels to a live Gallery source.
+        window.location.hash = '#/app/gallery'
         setOfflineSnapshotRoute(false)
       }} />
   }
@@ -873,7 +879,27 @@ function FileManager({
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
 
-  const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api), [api])
+  // P1-C1: observe the Gallery's existing successful album-list response.
+  // Capture a whitelist of at most 24 labels under the currently authenticated
+  // Owner's explicit consent; do not add any independent list/read/prefetch.
+  // A mutable ref keeps the existing Gallery data source stable across changes
+  // to consent state and browser app route.
+  const albumCaptureContext = useRef({
+    api, owner: offlineOwner, consent: offlineConsent, app: route.app,
+  })
+  albumCaptureContext.current = {
+    api, owner: offlineOwner, consent: offlineConsent, app: route.app,
+  }
+  const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api, {
+    onAuthorizedAlbums: albums => {
+      const context = albumCaptureContext.current
+      if (context.api !== api || !context.consent ||
+          !context.owner || context.app !== 'gallery') return
+      void xDrivePwaCaptureAlbumSummaries(context.owner, albums).catch(() => {
+        // Optional IndexedDB quota errors cannot break live Gallery rendering.
+      })
+    },
+  }), [api])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
   const deviceBackupSource = useMemo(() => ({
     list: () => api.deviceBackups(),

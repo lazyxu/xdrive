@@ -10,6 +10,9 @@ export const XDRIVE_PWA_OFFLINE_MAX_ITEMS_PER_DIRECTORY = 20
 export const XDRIVE_PWA_OFFLINE_MAX_ITEMS = 200
 export const XDRIVE_PWA_OFFLINE_MAX_RECORD_BYTES = 192 * 1024
 export const XDRIVE_PWA_OFFLINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+// P1-C1: first already-authorized album list only; no media pixels or cover IDs.
+export const XDRIVE_PWA_OFFLINE_MAX_ALBUMS = 24
+export const XDRIVE_PWA_OFFLINE_MAX_ALBUM_BYTES = 16 * 1024
 
 const DB_NAME = 'xdrive-pwa-offline-metadata-v2'
 const STORE_NAME = 'owner-scopes'
@@ -54,6 +57,37 @@ export type XDrivePwaOfflineDirectory = {
   items: XDrivePwaOfflineItem[]
 }
 
+export type XDrivePwaOfflineAlbumCandidate = {
+  id: string
+  name: string
+  kind: string
+  item_count?: number
+  revision?: number
+  updated_at?: string
+}
+
+export type XDrivePwaOfflineAlbum = {
+  id: string
+  name: string
+  kind: 'manual' | 'smart' | 'imported' | 'folder'
+  item_count: number
+  revision: number
+  updated_at?: string
+}
+
+export type XDrivePwaOfflineAlbumSnapshot = {
+  capturedAt: number
+  partial: true
+  totalAtCapture: number
+  albums: XDrivePwaOfflineAlbum[]
+}
+
+export type XDrivePwaOfflineAlbumsRead = {
+  consented: boolean
+  revalidated: false
+  snapshot: XDrivePwaOfflineAlbumSnapshot | null
+}
+
 type OfflineRelaunchHint = {
   key: typeof RELAUNCH_HINT_KEY
   version: 1
@@ -66,6 +100,7 @@ type OwnerRecord = {
   version: 1
   consented: true
   directories: XDrivePwaOfflineDirectory[]
+  albumSnapshot?: XDrivePwaOfflineAlbumSnapshot
 }
 
 export type XDrivePwaOfflineRead = {
@@ -171,6 +206,45 @@ export function xDrivePwaBoundedDirectories(
   return collected
 }
 
+/** Album projection consumes the Gallery's already-successful authorized list.
+ * Never persist covers, queries, photo IDs, GPS or an arbitrary API object. */
+export function xDrivePwaNormalizeAlbumSummaries(
+  input: readonly XDrivePwaOfflineAlbumCandidate[],
+  capturedAt = Date.now(),
+): XDrivePwaOfflineAlbumSnapshot | null {
+  if (!Array.isArray(input)) return null
+  const seen = new Set<string>()
+  const albums: XDrivePwaOfflineAlbum[] = []
+  for (const raw of input.slice(0, XDRIVE_PWA_OFFLINE_MAX_ALBUMS)) {
+    if (!raw || typeof raw.id !== 'string' ||
+        !/^[^\u0000-\u001f\u007f]{1,96}$/.test(raw.id) ||
+        !raw.id.trim() || seen.has(raw.id) ||
+        (raw.kind !== 'manual' && raw.kind !== 'smart' &&
+          raw.kind !== 'imported' && raw.kind !== 'folder')) continue
+    const name = shortName(raw.name).trim()
+    if (!name) continue
+    seen.add(raw.id)
+    const album: XDrivePwaOfflineAlbum = {
+      id: raw.id,
+      name,
+      kind: raw.kind as XDrivePwaOfflineAlbum['kind'],
+      item_count: safeNonnegativeInt(raw.item_count),
+      revision: safeNonnegativeInt(raw.revision),
+    }
+    if (typeof raw.updated_at === 'string' &&
+        /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(raw.updated_at) &&
+        raw.updated_at.length <= 40) album.updated_at = raw.updated_at
+    albums.push(album)
+  }
+  const snapshot: XDrivePwaOfflineAlbumSnapshot = {
+    capturedAt: Number.isSafeInteger(capturedAt) && capturedAt > 0 ? capturedAt : Date.now(),
+    partial: true, totalAtCapture: input.length, albums,
+  }
+  if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength >
+      XDRIVE_PWA_OFFLINE_MAX_ALBUM_BYTES) return null
+  return snapshot
+}
+
 function offlineSupported(): boolean {
   return typeof window !== 'undefined' && window.isSecureContext && 'indexedDB' in window
 }
@@ -257,7 +331,9 @@ export async function xDrivePwaSetOfflineConsent(
       const existing = request.result as OwnerRecord | undefined
       const directories = existing?.version === 1 && existing?.consented === true &&
         Array.isArray(existing.directories) ? existing.directories : []
-      store.put({ key, version: 1, consented: true, directories } satisfies OwnerRecord)
+      const albumSnapshot = existing?.version === 1 && existing?.consented === true &&
+        existing.albumSnapshot?.partial === true ? existing.albumSnapshot : undefined
+      store.put({ key, version: 1, consented: true, directories, albumSnapshot } satisfies OwnerRecord)
       store.put({
         key: RELAUNCH_HINT_KEY, version: 1, savedAt: Date.now(), owner: { ...owner },
       } satisfies OfflineRelaunchHint)
@@ -283,7 +359,10 @@ export async function xDrivePwaCaptureVisitedDirectory(
       if (existing?.version !== 1 || existing.consented !== true ||
           !Array.isArray(existing.directories)) { done(false); return }
       const directories = xDrivePwaBoundedDirectories(snapshot, existing.directories)
-      const next: OwnerRecord = { key, version: 1, consented: true, directories }
+      const next: OwnerRecord = {
+        key, version: 1, consented: true, directories,
+        albumSnapshot: existing.albumSnapshot,
+      }
       if (new TextEncoder().encode(JSON.stringify(next)).byteLength > XDRIVE_PWA_OFFLINE_MAX_RECORD_BYTES) {
         done(false)
         return
@@ -304,6 +383,64 @@ export async function xDrivePwaCaptureVisitedDirectory(
         store.put(next)
         done(true)
       }
+    }
+  })
+}
+
+/** Persist only a bounded projection of the already-authorized album list.
+ * Never initiate a network read, upload or background Gallery scan here. */
+export async function xDrivePwaCaptureAlbumSummaries(
+  owner: XDrivePwaOfflineOwner,
+  albums: readonly XDrivePwaOfflineAlbumCandidate[],
+): Promise<boolean> {
+  const key = xDrivePwaOfflineScopeKey(owner)
+  const albumSnapshot = xDrivePwaNormalizeAlbumSummaries(albums)
+  if (!albumSnapshot) return false
+  return withStore<boolean>('readwrite', (store, done) => {
+    const read = store.get(key)
+    read.onsuccess = () => {
+      const existing = read.result as OwnerRecord | undefined
+      if (existing?.version !== 1 || existing.consented !== true ||
+          !Array.isArray(existing.directories)) { done(false); return }
+      const next: OwnerRecord = { ...existing, key, albumSnapshot }
+      if (new TextEncoder().encode(JSON.stringify(next)).byteLength >
+          XDRIVE_PWA_OFFLINE_MAX_RECORD_BYTES) { done(false); return }
+      store.put(next)
+      done(true)
+    }
+  })
+}
+
+/** Read-time sanitization is mandatory because IndexedDB is not a trust boundary.
+ * These are historical-only collection labels, never a current Gallery ACL. */
+export async function xDrivePwaReadAlbumSummaries(
+  owner: XDrivePwaOfflineOwner,
+): Promise<XDrivePwaOfflineAlbumsRead> {
+  const key = xDrivePwaOfflineScopeKey(owner)
+  return withStore<XDrivePwaOfflineAlbumsRead>('readonly', (store, done) => {
+    const read = store.get(key)
+    read.onsuccess = () => {
+      const record = read.result as OwnerRecord | undefined
+      if (record?.version !== 1 || record.consented !== true) {
+        done({ consented: false, revalidated: false, snapshot: null })
+        return
+      }
+      const original = record.albumSnapshot
+      const now = Date.now()
+      if (!original || !Number.isSafeInteger(original.capturedAt) ||
+          original.capturedAt > now || now - original.capturedAt > XDRIVE_PWA_OFFLINE_MAX_AGE_MS ||
+          !Array.isArray(original.albums)) {
+        done({ consented: true, revalidated: false, snapshot: null })
+        return
+      }
+      const snapshot = xDrivePwaNormalizeAlbumSummaries(
+        original.albums.slice(0, XDRIVE_PWA_OFFLINE_MAX_ALBUMS), original.capturedAt,
+      )
+      done({ consented: true, revalidated: false,
+        snapshot: snapshot ? { ...snapshot,
+          totalAtCapture: Number.isSafeInteger(original.totalAtCapture) &&
+            original.totalAtCapture >= 0 ? original.totalAtCapture : snapshot.totalAtCapture,
+        } : null })
     }
   })
 }
