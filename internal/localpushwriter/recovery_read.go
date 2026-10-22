@@ -47,5 +47,34 @@ func ReadOriginalWriterQuarantine(ctx context.Context, scope Scope) error {
 		ctx.Err() != nil {
 		return ErrUnavailable
 	}
+	// A same-content path replacement after Open must not allow the
+	// historical native marker read to be reported as original evidence.
+	// This is read-only correlation, NEVER physical COMMIT/CANCEL authority.
+	if !originalWriterPathMatchesOpenedAfterRead(ctx, scope, f, opened, int64(len(expected))) {
+		return ErrUnavailable
+	}
 	return nil
+}
+
+// originalWriterPathMatchesOpenedAfterRead rechecks both the private parent
+// and the exact on-disk identity after reading the original descriptor.
+// Same contents at a different inode/path are not the original claim.
+// This cannot prove anything about future replacements or remote writers.
+func originalWriterPathMatchesOpenedAfterRead(
+	ctx context.Context, scope Scope, f *os.File, opened os.FileInfo, expectedSize int64,
+) bool {
+	if ctx == nil || ctx.Err() != nil || f == nil || opened == nil ||
+		!privateDirsSafe(scope.configDir, filepath.Dir(scope.path())) {
+		return false
+	}
+	atPath, err := os.Lstat(scope.path())
+	if err != nil || !atPath.Mode().IsRegular() || atPath.Size() != expectedSize ||
+		(runtime.GOOS != "windows" && atPath.Mode().Perm()&0o077 != 0) ||
+		!os.SameFile(opened, atPath) {
+		return false
+	}
+	stillOpen, err := f.Stat()
+	return err == nil && stillOpen.Mode().IsRegular() &&
+		stillOpen.Size() == expectedSize && os.SameFile(opened, stillOpen) &&
+		ctx.Err() == nil
 }

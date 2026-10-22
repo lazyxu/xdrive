@@ -1,3 +1,8 @@
+## G2c2d2b3c2b2e · same-inode original Writer marker after-read fence (2026-10-22)
+
+- Real manual owning Windows/Linux Desktop Backup-only first-file <=64 MiB #2212 stays ENABLED in source. Original Agent-private Writer marker historical reader must recheck the same inode and private parent/path after reading; a replaced but byte-identical marker is not original identity evidence. The read never creates or retires Stage/key/Writer/SQL/CAS, authorizes a second file, or proves remote physical CANCEL/COMMIT.
+- Keep #2315 independent and source-exact. ONE scoped work commit with unchanged cumulative prior AGENTS history below. Require the new PR's own complete exact-head CI/Final Gate and fresh clean merge before cleanup. Production security acceptance 按用户决定跳过（未验收）, code-level Owner/Device/Root/native/SQL/CAS tests remain mandatory.
+
 ## SD-D2b-1b-c2 · fixed Host-private Docker sampler (2026-10-22)
 
 - Add only two unexported, host-private, read-only, fixed-name xdrive-caddy observation actions: bounded Docker inspect generation and localhost Caddy live /config/ JSON SHA-256 computed inside Caddy. Never accept arbitrary Docker path/container/args/script/URL/credentials from browser, Server, Agent IPC or admin state. Linux-only fixed-path command, sanitized env, 4s timeout, capped 256-byte output and one generic fail-closed error. Unsupported Docker installation/rootless/Windows is NOT silently accepted.
