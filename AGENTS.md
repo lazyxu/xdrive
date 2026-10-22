@@ -1,3 +1,9 @@
+## G2c2d2b3c4a · original Operation pinned CAS/SQL private physical-COMMIT writer (2026-10-22)
+
+- Proceed **serially** after merged #2319/#2327/#2332 and seven-stage docs #2339. Add a Server-only, **UNROUTED** physical-commit INSERT primitive only inside the original Operation UPDATE, valid Owner/Device/Root/Stage/key, Source-wide empty terminal slot, genuine Local physical CAS precommit pin and the same SQL transaction. Construct terminal identity solely from canonical SQL COMMIT/Stage rows; reject contradictory reservation terminals, wrong key/witness/scope, missing physical CAS and duplicate decisions. Keep `SourceItem` PENDING and `SyncRun` count unchanged.
+- Current independent owning native Writer Claim exists in Agent but is **NOT YET authenticated through a production Agent→Server terminal transport**. A private `originalClaimHeld` in tests is explicitly *synthetic*, not remote proof. Do not route this primitive to HTTP/Renderer/Web, or allow externally submitted booleans/digests to confer terminal authority. Next: genuine native Held Claim + OS fd evidence transport, original-operation lost-ACK idempotent readback, physical CANCEL quorum, then audited Stage/Key/Writer retirement and second file.
+- Retain the already enabled owning Desktop manual one-file Backup-only <=64MiB. No `backup_complete`, `retirement_safe`, second-file, multi-file Runner, SourceRun or scheduler claim. Mandatory source Go Linux/Windows, authentic PostgreSQL API Race, Web/Desktop/build/Final Gate and code-level security regressions. Production-environment-only safety acceptance: **按用户决定跳过（未验收）**; not a development/CI/merge gate.
+
 ## Push Runner 阶段 0 收尾（2026-10-22）
 
 - #2319、#2327、#2332 已按依赖顺序全部 Rebase 合入 master：`c5576bca`、`f52c3373`、`8292d156`；三者最终准确 HEAD 各自完整 77-Job CI / Final Gate 成功。原相关分支均不再保留。下一步先做可信 Agent→Server original Operation 的真实文件级 COMMIT/CANCEL 终态和崩溃回放，再做 Stage/Key/Writer 退休及第二文件安全再次入场。
