@@ -63,9 +63,8 @@ const galleryMap = compile(uiFile,{
     },
   },
   './MediaGalleryBaiduPrototypeMap': {
-    XDriveMediaGalleryBaiduPrototypeMap: () => {
-      throw new Error('legacy static viewport fixture must not mount the dynamic SDK')
-    },
+    XDriveMediaGalleryBaiduPrototypeMap: props =>
+      React.createElement('prototype-map-fixture', props),
   },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
@@ -240,4 +239,44 @@ test('P112: an absolutely positioned error cannot be a MUI spaced Stack child', 
     'the entire error element must close before the original Stack begins')
   assert.equal(source.slice(results, firstTile).includes('data-xdrive-places-viewport-error'), false,
     'MUI Stack sibling margin selectors must not see an absolutely positioned error child')
+})
+
+
+test('direct native map does not reuse stale GPS while a new Owner scope is loading', async () => {
+  const first = deferred(), next = deferred()
+  const calls = []
+  const port = (limit, offset) => {
+    calls.push({ limit, offset })
+    return calls.length === 1 ? first.promise : next.promise
+  }
+  const oldOwner = { id: 'place:1:1', name: 'old-owner', item_count: 1,
+    sample_latitude: 0.01, sample_longitude: 0.01 }
+  const newOwner = { id: 'place:2:2', name: 'new-owner', item_count: 2,
+    sample_latitude: 0.02, sample_longitude: 0.02 }
+  const config = async () => ({ provider: 'baidu-jsapi-4.0', browser_ak: 'test', revision: 1 })
+  let view
+  const props = { places: [oldOwner], diagnosticScope: 'user-one',
+    listPlacesPage: port, getBaiduJSAPIPrototype: config, onOpenPlace: () => {} }
+  await act(async () => { view = TestRenderer.create(React.createElement(MapView, props)) })
+  const native = () => view.root.findByType('prototype-map-fixture')
+  assert.deepEqual(native().props.places, [],
+    'a not-yet-read scoped page must not render unconfirmed prior Owner GPS')
+  assert.equal(calls.length, 1)
+  await act(async () => {
+    first.resolve({ items: [oldOwner], offset: 0, limit: 100, total_count: 1, has_more: false })
+    await Promise.resolve()
+  })
+  assert.deepEqual(native().props.places.map(p => p.id), [oldOwner.id])
+  await act(async () => {
+    view.update(React.createElement(MapView, {...props,
+      diagnosticScope: 'user-two', places: [oldOwner]}))
+  })
+  assert.deepEqual(native().props.places, [],
+    'new Owner scope must clear SDK marker source before its first read')
+  await act(async () => {
+    next.resolve({ items: [newOwner], offset: 0, limit: 100, total_count: 1, has_more: false })
+    await Promise.resolve()
+  })
+  assert.deepEqual(native().props.places.map(p => p.id), [newOwner.id])
+  await act(async () => { view.unmount() })
 })

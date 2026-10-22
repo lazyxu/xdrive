@@ -145,7 +145,9 @@ export function XDriveMediaGalleryPlacesMap({
   }, [listPlacesPage, prototypeMap, diagnosticScope])
   const currentPrototype = prototypeIndex?.scope === (diagnosticScope ?? '')
     ? prototypeIndex : null
-  const prototypePlaces = currentPrototype?.items.length ? currentPrototype.items : places
+  // Do not briefly draw a prior Owner's GPS list while the new scoped page
+  // is still loading. A direct SDK map needs its own confirmed Owner page.
+  const prototypePlaces = prototypeMap ? (currentPrototype?.items ?? []) : places
   // Freeze the returning BD09 camera for THIS native mount. Parent state changes
   // on pan/zoom must never change initialCamera props and remount the SDK.
   const nativeRestoreRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
@@ -549,6 +551,7 @@ export function XDriveMediaGalleryPlacesMap({
               key={diagnosticScope ?? ''}
               getPrototypeConfig={getBaiduJSAPIPrototype}
               places={prototypePlaces}
+              loadThumbnail={loadPhotoCoverThumbnail}
               initialNativeCamera={nativeRestoreRef.current ?? undefined}
               onNativeCameraChange={onNativeCameraChange}
               onOpenPlace={onOpenPlace}

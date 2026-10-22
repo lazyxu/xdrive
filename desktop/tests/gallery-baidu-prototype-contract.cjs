@@ -16,6 +16,8 @@ test('Places gallery defaults to native Baidu SDK for the prototype', () => {
   assert.match(entry, /prototypeMap && getBaiduJSAPIPrototype \? \(/)
   assert.match(entry, /<XDriveMediaGalleryBaiduPrototypeMap/)
   assert.match(entry, /onOpenPlace=\{onOpenPlace\}/)
+  assert.match(entry, /prototypeMap \? \(currentPrototype\?\.items \?\? \[\]\) : places/)
+  assert.match(entry, /loadThumbnail=\{loadPhotoCoverThumbnail\}/)
 })
 
 test('Baidu owns camera gestures, WGS84 conversion and geojson clustering', () => {
@@ -28,7 +30,10 @@ test('Baidu owns camera gestures, WGS84 conversion and geojson clustering', () =
   assert.match(map, /manualCamera\.current/)
   assert.match(map, /node\.addEventListener\('pointerdown', userGesture\)/)
   assert.match(map, /xDriveConvertBaiduJSAPI4MarkerWindow/)
-  assert.match(map, /runtime\.layer\.setData\(\{ type: 'FeatureCollection', features \}\)/)
+  assert.match(map, /runtime\.layer\.setData\(collection\)/)
+  assert.match(map, /clusterMaxZoom: 16/)
+  assert.match(map, /xDriveProjectBaiduPrototypeCoverPins/)
+  assert.match(map, /<XDriveMediaGalleryCoverThumbnail/)
   assert.match(map, /selected\.isCluster !== false/)
   assert.match(map, /openRef\.current\?\.\(place\)/)
   assert.doesNotMatch(map, /xDrivePlacesPrototypeClusters|xDriveBaiduStaticViewportBounds/)
