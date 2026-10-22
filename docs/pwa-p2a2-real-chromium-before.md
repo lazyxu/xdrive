@@ -20,3 +20,12 @@
 准确 HEAD 原生 Chrome/真实 Go+PostgreSQL17/CAS 专项、全 Web/Desktop/Go Linux/Windows/PostgreSQL API Race/Final Gate 与 GitHub fresh clean 成功方可合并。之后根据跨进程流量与显示延迟决定是否实施 P2-B。候选 32MiB/128 张/每张 256KiB 均尚非已测最佳值。不能因为同进程 0 HTTP 还假定加磁盘缓存会加速。
 
 生产安全验收按用户决定跳过（未验收）；源码级 Owner/ACL/撤销/Origin/CSP 和 CI 不跳过；保持 Web/Mobile 52px App Frame、Go 取消与持久任务独立。
+
+
+## 2026-10-22 · 准确 HEAD 验证及实际合并结论（覆盖上方早期“待跑”说明）
+
+- 真原生 Chromium 两独立 OS 进程、同一磁盘 Profile/Origin/JWT Owner 与 Go/Gin/PostgreSQL17/LocalCAS 100k/115k 混合图片，n=3×3=9 对。第一进程的 PID 必须已结束才启动第二进程；**已通过真实专项** [#39712342797](https://github.com/lazyxu/xdrive/actions/runs/39712342797)，准确工作 HEAD `22c932a2a981806b6cf9e6d3316966809a0f8d3f`。
+- 真实 Go response body：FIRST 三次进程总计 110 次缩略图 HTTP 请求/77,175 bytes，重新启动进程 114 次请求/80,730 bytes。由此确认同进程缓存不能防止真实进程重启后的重复读取；该数据不是整条网络 wire bytes，也未将请求耗时与渲染/React 编排耗时分开。
+- FIRST 四张可见 Blob JPEG/Live still 图像解码加两帧显示 p50/p95 **2417.266/2698.226 ms**，B RESTART **2451.434/2626.517 ms**。没有 P2-B 私人 IndexedDB 实施，没有任何匹配的缓存优化 AFTER；不因 p50/p95 差异宣称加速或退化。
+- 准确 HEAD [全 CI #39712342546](https://github.com/lazyxu/xdrive/actions/runs/39712342546) **SUCCESS**，77 项 25 success/52 conditional skipped、Final Gate success；PR [#2337](https://github.com/lazyxu/xdrive/pull/2337) 已 Ready/Rebase Merge 到 `master@1cf0df6b82158f45c61a93d5ac4c7facd4f45400`，其临时分支已清理。
+- 数据驱动决策：**P2-B 暂缓而非已完成**。需要未来同配置控制 RTT/带宽、网络性能归因及明确离线保留产品需求后才可考虑有界 Owner Blob Store。此阶段仍保持 App/SW/Go/媒体业务源码不变，物理 iOS/Android `NOT RUN`，不可访问生产安全验收「按用户决定跳过（未验收）」、源码权限安全测试必须保留。
