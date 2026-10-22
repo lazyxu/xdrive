@@ -137,6 +137,19 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		AllowedOrigin:  "http://localhost",
 		MaxUploadBytes: maxUploadBytes,
 	}
+	// CR-02b1 only: persist a genuine installation identity through the
+	// production PostgreSQL meta helper before building the real Gin Router.
+	// Keep legacy S2B3 fixture behavior unchanged without this explicit switch.
+	if os.Getenv("XD_PWA_CR02B1_REAL_ACL") == "1" {
+		if err := db.AutoMigrate(&meta.PWAOfflineInstance{}); err != nil {
+			t.Fatal(err)
+		}
+		instanceID, err := meta.EnsurePWAOfflineInstanceID(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv.PWAOfflineInstanceID = instanceID
+	}
 	router := srv.Router()
 	const ownerName = "pwa-s2b3-owner"
 	const ownerPassword = "PwaRealGin-TestOnly_2026!"
@@ -378,6 +391,26 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			// The product Service Worker itself remains public-offline-only.
 			if request.Method != http.MethodGet && request.Method != http.MethodHead {
 				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			// Go FileServer redirects literal /index.html to "./" (301).
+			// The real production SW precache requests /index.html with
+			// redirect:error, so this local Gin fixture must serve that
+			// public file directly, without weakening SW MIME/redirect checks.
+			if request.URL.Path == "/index.html" {
+				file, err := os.Open(filepath.Join(dist, "index.html"))
+				if err != nil {
+					http.NotFound(w, request)
+					return
+				}
+				defer file.Close()
+				info, err := file.Stat()
+				if err != nil || !info.Mode().IsRegular() {
+					http.NotFound(w, request)
+					return
+				}
+				w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+				http.ServeContent(w, request, "index.html", info.ModTime(), file)
 				return
 			}
 			if request.URL.Path == "/sw.js" ||
