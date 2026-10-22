@@ -1,5 +1,7 @@
 # FileExplorer design
 
+> **当前统一架构合同（2026-10-22）：** [Owner/Share 共用 FileExplorer Core](unified-file-explorer-core.md)。它列明已合并的 Core/七项 Go grant、Owner 稀疏 Range/Share 游标页、临时 HTTP 与 durable Task 取消边界，以及仍未完成的 Share 单文件外层、全子树 Search/Sort 与真正 preview-only。以下原有段落保留历史阶段证据，不应当作新的当前状态。
+
 This document is the canonical **non-performance** FileExplorer design contract for Web and Desktop. Performance-specific constraints and benchmarks live in `docs/file-explorer-performance.md`.
 
 ## Quiet navigation / loading feedback contract · 2026-10-17

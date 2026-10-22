@@ -1,3 +1,7 @@
+> **当前统一架构合同（2026-10-22）：** [Owner/Share 共用 FileExplorer Core](unified-file-explorer-core.md)。它列明已合并的 Core/七项 Go grant、Owner 稀疏 Range/Share 游标页、临时 HTTP 与 durable Task 取消边界，以及仍未完成的 Share 单文件外层、全子树 Search/Sort 与真正 preview-only。以下原有段落保留历史阶段证据，不应当作新的当前状态。
+
+---
+
 ## SH-P018 · 已实测原版 100k Public Share 缓存 JPEG 可视取消（2026-10-21）
 
 - 原版 CURRENT 精确源码 1164d9e38535b5ad578554bf839d226f6964e99d；真实 [PG17/Gin/LocalCAS + Chromium 专项 #39549378966](https://github.com/lazyxu/xdrive/actions/runs/39549378966) **SUCCESS**。100000 个不同 SHA 的真实物理 JPEG Original，CAS 已分配 409604096 B；只有 16 个已缓存 JPEG 派生图，不是同时解码 100k 缩略图。Web1440 和 Chromium 模拟 Mobile390 各 n=3，均展示 100 条受限首屏行，实际解码缓存图 6/6/5 与 2/4/4。

@@ -1,5 +1,7 @@
 # SH-P020 · Unified FileExplorer capability contract and 100k regression
 
+> **当前统一架构合同（2026-10-22）：** [Owner/Share 共用 FileExplorer Core](unified-file-explorer-core.md)。它列明已合并的 Core/七项 Go grant、Owner 稀疏 Range/Share 游标页、临时 HTTP 与 durable Task 取消边界，以及仍未完成的 Share 单文件外层、全子树 Search/Sort 与真正 preview-only。以下原有段落保留历史阶段证据，不应当作新的当前状态。
+
 ## Product decision
 
 An account read-only folder and a public shared folder should eventually use **one FileExplorer browsing core** (virtualization, Grid/Details, thumbnails, Viewer, filtering, sorting, properties, downloads) with **two separately authorized data adapters**:
