@@ -61,6 +61,7 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaPlacesMapOverview,
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
   MediaBaiduNativeCellsPage,
@@ -1519,6 +1520,19 @@ export class XDriveApi {
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<MediaPlacesPage>(`/api/v1/media/places/page?${query.toString()}`)
+  }
+
+  /** At most 64 Owner place/region samples per native map camera. */
+  mediaPlacesMapOverview(bounds: MediaPlacesViewportBounds, detail = false, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      detail: detail ? '1' : '0',
+    })
+    return this.request<MediaPlacesMapOverview>(
+      `/api/v1/media/places/overview?${query.toString()}`,
+      { signal, cache: 'no-store' },
+    )
   }
 
   // All viewport consumers, including compact Mobile Web and PWA, use the

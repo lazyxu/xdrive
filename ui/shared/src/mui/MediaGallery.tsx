@@ -271,6 +271,8 @@ export interface MediaGalleryDataSource {
   moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listPlacesPage?: (limit?: number, offset?: number) => Promise<MediaPlacesPage>
+  listPlacesMapOverview?: (bounds: MediaPlacesViewportBounds, detail?: boolean,
+    signal?: AbortSignal) => Promise<import('../models').MediaPlacesMapOverview>
   /** One shared, cancelable, Owner-authorized view for Web/Mobile Web/Desktop.
    * The component does not invoke it until A3 UI/authorization gates are met. */
   listPlacesViewport?: (
@@ -3451,6 +3453,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersError={syncFoldersError}
         places={places}
         listPlacesPage={source.listPlacesPage}
+        listPlacesMapOverview={source.listPlacesMapOverview}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
@@ -3944,6 +3947,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
+  listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
@@ -5662,6 +5666,7 @@ export function XDriveMediaGallery({
   syncFoldersError = '',
   places = [],
   listPlacesPage,
+  listPlacesMapOverview,
   listPlacesViewport,
   listBaiduNativeViewport,
   listBaiduNativeCells,
@@ -7892,6 +7897,7 @@ export function XDriveMediaGallery({
             places={places}
             totalCount={placesTotalCount}
             listPlacesPage={listPlacesPage}
+            listPlacesMapOverview={listPlacesMapOverview}
             listPlacesViewport={listPlacesViewport}
             listBaiduNativeViewport={listBaiduNativeViewport}
             listBaiduNativeCells={listBaiduNativeCells}

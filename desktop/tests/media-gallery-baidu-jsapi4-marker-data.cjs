@@ -112,6 +112,31 @@ test('A3b3a3a official WGS84(1) to BD09(5) conversion only, 10-cell chunks', asy
   assert.equal(source.items[0].latitude, 81, 'never use grid center for conversion')
 })
 
+test('bounded server map-region samples use official conversion with exact 8x8 validation', async () => {
+  const marker = { placeID:'map-region:-180:-85:180:85:4:1',
+    latitude:20, longitude:-100, photoCount:42 }
+  const convertor = { translate(points, from, to, callback) {
+    assert.equal(from,1);assert.equal(to,5)
+    callback({status:0, points:points.map(p=>({lng:p.lng+0.005,lat:p.lat+0.005}))})
+  } }
+  const output = await convert({kind:'ready',markers:[marker],totalPhotoCount:42},
+    convertor,(lng,lat)=>({lng,lat}))
+  assert.equal(output.features.length,1)
+  assert.equal(output.features[0].properties.photo_count,42)
+  assert.equal(output.features[0].id,marker.placeID)
+  for(const invalid of [
+    {...marker,placeID:'map-region:-180:-85:180:85:2:1'},
+    {...marker,placeID:'map-region:-180:-85:180:85:4:8'},
+    {...marker,placeID:'map-region:-180:-85:180:85:4:1:forged'},
+    {...marker,latitude:90},
+    {...marker,photoCount:0},
+  ]) await assert.rejects(
+    convert({kind:'ready',markers:[invalid],totalPhotoCount:invalid.photoCount},
+      convertor,(lng,lat)=>({lng,lat})),
+    /markers_unavailable/,
+  )
+})
+
 test('A3b3a3a converter fails closed on provider failure, cancellation and forged huge input', async () => {
   const ready = prepare(page(1))
   const point = (lng, lat) => ({ lng, lat })

@@ -12,11 +12,13 @@ function source(file) {
 
 test('Places gallery defaults to native Baidu SDK for the prototype', () => {
   const entry = source('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
-  assert.match(entry, /const prototypeMap = Boolean\(listPlacesPage && getBaiduJSAPIPrototype\)/)
-  assert.match(entry, /prototypeMap && getBaiduJSAPIPrototype \? \(/)
+  assert.match(entry, /const prototypeMap = Boolean\(listPlacesMapOverview && getBaiduJSAPIPrototype\)/)
+  assert.match(entry, /prototypeMap && getBaiduJSAPIPrototype && listPlacesMapOverview \? \(/)
   assert.match(entry, /<XDriveMediaGalleryBaiduPrototypeMap/)
   assert.match(entry, /onOpenPlace=\{onOpenPlace\}/)
-  assert.match(entry, /prototypeMap \? \(currentPrototype\?\.items \?\? \[\]\) : places/)
+  assert.match(entry, /const prototypePlaces = places/)
+  assert.match(entry, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
+  assert.doesNotMatch(entry, /listPlacesPage\(100,offset\)/)
   assert.match(entry, /loadThumbnail=\{loadPhotoCoverThumbnail\}/)
 })
 
@@ -31,6 +33,7 @@ test('Baidu owns camera gestures, WGS84 conversion and geojson clustering', () =
   assert.match(map, /node\.addEventListener\('pointerdown', userGesture\)/)
   assert.match(map, /xDriveConvertBaiduJSAPI4MarkerWindow/)
   assert.match(map, /runtime\.layer\.setData\(collection\)/)
+  assert.match(map, /listPlacesMapOverview\(bounds, detail, controller.signal\)/)
   assert.match(map, /clusterMaxZoom: 16/)
   assert.match(map, /xDriveProjectBaiduPrototypeCoverPins/)
   assert.match(map, /<XDriveMediaGalleryCoverThumbnail/)

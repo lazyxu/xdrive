@@ -7,7 +7,10 @@ import {
   xDriveProjectBaiduPrototypeCoverPins,
 } from '../media-gallery-baidu-prototype-cover-pins'
 import type { XDriveBaiduPrototypeCoverPin } from '../media-gallery-baidu-prototype-cover-pins'
-import type { MediaPlaceFacet, XDriveBaiduJSAPIPrototypeConfig } from '../models'
+import { xDriveProjectBaiduNativeClusterCovers } from '../media-gallery-baidu-native-cluster-covers'
+import type { XDriveBaiduClusterCover } from '../media-gallery-baidu-native-cluster-covers'
+import type { MediaPlaceFacet, MediaPlacesMapOverview, MediaPlacesViewportBounds, XDriveBaiduJSAPIPrototypeConfig } from '../models'
+import { xDriveBaiduConservativeOwnerQueryBounds, XDRIVE_BAIDU_WORLD_OVERVIEW } from '../media-gallery-baidu-native-query-bounds'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveBaiduMapDiagnosticDetails, xDriveRecordBaiduMapDiagnostic,
@@ -23,8 +26,8 @@ import type { XDriveBaiduConvertedFeatureCollection, XDriveBaiduWGS84Marker } fr
 type Point = { lng: number; lat: number }
 type Layer = {
   setData(data: XDriveBaiduConvertedFeatureCollection): void
-  addEventListener(name: 'click', handler: (event: unknown) => void): void
-  removeEventListener(name: 'click', handler: (event: unknown) => void): void
+  addEventListener(name: 'click' | 'change', handler: (event: unknown) => void): void
+  removeEventListener(name: 'click' | 'change', handler: (event: unknown) => void): void
 }
 type NativeMap = {
   centerAndZoom(point: Point, zoom: number): void
@@ -51,6 +54,7 @@ type Namespace = {
     clusterRadius: number; enablePicked: boolean
     fitViewOnClick: boolean; updateRealTime: boolean; idKey: string
     clusterMaxZoom: number
+    clusterIconSize?: () => [number, number]
   }) => Layer
   Convertor: new () => {
     translate(points: Point[], from: 1, to: 5,
@@ -74,7 +78,6 @@ const loaded = new WeakMap<Document, {
 const validAK = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 256 &&
   /^[\x21-\x7e]+$/.test(value)
-
 
 class XDriveBaiduPrototypeFailure extends Error {
   constructor(readonly code: XDriveBaiduMapDiagnosticCode) {
@@ -178,7 +181,8 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
 function validMarker(place: MediaPlaceFacet): place is MediaPlaceFacet & {
   sample_latitude: number; sample_longitude: number
 } {
-  return !!place && /^place:-?\d+:-?\d+$/.test(place.id) &&
+  return !!place && (/^place:-?\d+:-?\d+$/.test(place.id) ||
+    (place.id.startsWith('map-region:') && place.id.length <= 200)) &&
     Number.isFinite(place.sample_latitude) && Number.isFinite(place.sample_longitude) &&
     Math.abs(place.sample_latitude!) <= 85 && Math.abs(place.sample_longitude!) <= 180 &&
     Number.isSafeInteger(place.item_count) && place.item_count > 0
@@ -190,29 +194,65 @@ function validMarker(place: MediaPlaceFacet): place is MediaPlaceFacet & {
  * Prototype: third-party JS runs in this Gallery document by user decision. */
 export function XDriveMediaGalleryBaiduPrototypeMap({
   getPrototypeConfig,
-  places,
+  listPlacesMapOverview,
   initialNativeCamera,
   onNativeCameraChange,
   onOpenPlace,
+  onOpenViewportPhotos,
   loadThumbnail,
   diagnosticScope,
 }: {
   getPrototypeConfig: (signal: AbortSignal) => Promise<XDriveBaiduJSAPIPrototypeConfig>
-  places: readonly MediaPlaceFacet[]
+  listPlacesMapOverview: (bounds: MediaPlacesViewportBounds, detail?: boolean,
+    signal?: AbortSignal) => Promise<MediaPlacesMapOverview>
   initialNativeCamera?: XDriveBaiduNativeCameraSnapshot
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadThumbnail?: MediaThumbnailLoader
   diagnosticScope?: string
 }) {
   const container = useRef<HTMLDivElement | null>(null)
   const manualCamera = useRef(false)
   const openRef = useRef(onOpenPlace)
+  const viewportPhotosRef = useRef(onOpenViewportPhotos)
+  const openMapItemRef = useRef<(place: MediaPlaceFacet, map: NativeMap, api: Namespace) => void>(() => {})
   const cameraRef = useRef(onNativeCameraChange)
+  const [places, setPlaces] = useState<readonly MediaPlaceFacet[]>([])
+  const [dataError, setDataError] = useState('')
+  const [dataLoading, setDataLoading] = useState(true)
   const placesRef = useRef(places)
+  const renderedRef = useRef<XDriveBaiduConvertedFeatureCollection>({
+    type: 'FeatureCollection', features: [],
+  })
   const refreshCoversRef = useRef<() => void>(() => {})
+  const clusterFrameRef = useRef<unknown>(null)
   const [coverPins, setCoverPins] = useState<XDriveBaiduPrototypeCoverPin[]>([])
+  const [clusterCovers, setClusterCovers] = useState<XDriveBaiduClusterCover[]>([])
   openRef.current = onOpenPlace
+  viewportPhotosRef.current = onOpenViewportPhotos
+  openMapItemRef.current = (place, map, api) => {
+    if (!place.id.startsWith('map-region:')) {
+      openRef.current?.(place)
+      return
+    }
+    const feature = renderedRef.current.features.find(f =>
+      f.properties.place_id === place.id &&
+      f.properties.photo_count === place.item_count)
+    if (!feature) return
+    const [lng,lat] = feature.geometry.coordinates
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+    const zoom = map.getZoom?.() ?? 3
+    if (zoom >= 20 && viewportPhotosRef.current) {
+      // This is the *current viewport* Owner Range, not a fabricated exact
+      // historical place ID or an SDK-BD09 polygon passed to Gallery.
+      viewportPhotosRef.current(xDriveBaiduConservativeOwnerQueryBounds(
+        map.getBounds?.()))
+    } else {
+      map.centerAndZoom(new api.Point(lng,lat),
+        Math.min(21, Math.max(4, zoom + 3)))
+    }
+  }
   cameraRef.current = onNativeCameraChange
   placesRef.current = places
   const [runtime, setRuntime] = useState<Runtime | null>(null)
@@ -273,6 +313,9 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         clusterRadius: 60, enablePicked: true,
         fitViewOnClick: true, updateRealTime: false,
         clusterMaxZoom: 16, idKey: 'id',
+        // The full photo-card face must sit INSIDE the official 64px
+        // hit target; pointer passthrough then preserves native click-zoom.
+        clusterIconSize: () => [64, 64],
       })
       const activeLayer = layer
       const activeMap = map
@@ -294,7 +337,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         const place = placesRef.current.find(p =>
           p.id === selected.properties?.place_id &&
           p.item_count === selected.properties?.photo_count)
-        if (place) openRef.current?.(place)
+        if (place) openMapItemRef.current(place, activeMap, api)
       }
       saveCamera = () => {
         const snapshot = xDriveCaptureBaiduNativeCamera(activeMap)
@@ -335,6 +378,180 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       try { map?.destroy?.() } catch { /* disposed */ }
     }
   }, [getPrototypeConfig, diagnosticScope, reportFailure])
+
+  // One bounded Owner/Server map query per stable camera frame.
+  // Start with a WORLDWIDE 8x8 spatial summary, NOT an all-pages loop.
+  // Subsequent genuine user gestures query a conservative WGS84 envelope of
+  // the BD09 SDK camera. Bounds are never used for exact media membership.
+  useEffect(() => {
+    if (!runtime) return
+    let disposed = false
+    let request: AbortController | null = null
+    let delayed: ReturnType<typeof setTimeout> | undefined
+    let lastKey = ''
+    const update = (immediate = false) => {
+      if (disposed) return
+      if (delayed) clearTimeout(delayed)
+      const zoom = runtime.map.getZoom?.() ?? 3
+      const detail = manualCamera.current && zoom >= 15
+      const bounds = manualCamera.current
+        ? xDriveBaiduConservativeOwnerQueryBounds(runtime.map.getBounds?.())
+        : { ...XDRIVE_BAIDU_WORLD_OVERVIEW }
+      // Do not quantize the camera to 0.001 degrees: at zoom 20 that would
+      // conceal genuine movements across multiple photo cell boundaries.
+      const key = Object.values(bounds).join(':') +
+        ':' + (detail ? '1' : '0')
+      if (key === lastKey) return
+      request?.abort()
+      lastKey = key
+      // Invalidate prior camera data immediately, not only after a slow
+      // query succeeds. No old Owner/viewport markers survive a pan.
+      setPlaces([])
+      clusterFrameRef.current = null
+      setCoverPins([])
+      setClusterCovers([])
+      const empty: XDriveBaiduConvertedFeatureCollection = {
+        type: 'FeatureCollection', features: [],
+      }
+      runtime.converted.clear()
+      runtime.rendered = empty
+      renderedRef.current = empty
+      runtime.layer.setData(empty)
+      const load = () => {
+        const controller = new AbortController()
+        request = controller
+        setDataLoading(true)
+        setDataError('')
+        void listPlacesMapOverview(bounds, detail, controller.signal).then(page => {
+          if (disposed || controller.signal.aborted) return
+          const ids = new Set<string>()
+          if (!page || !Array.isArray(page.items) || page.items.length > 64 ||
+              !Number.isSafeInteger(page.total_photo_count) ||
+              page.total_photo_count < 0 || typeof page.aggregated !== 'boolean' ||
+              page.items.some(item => {
+                if (!item || typeof item.id !== 'string' || ids.has(item.id) ||
+                    !Number.isSafeInteger(item.item_count) || item.item_count <= 0) return true
+                ids.add(item.id)
+                return false
+              }) || page.items.reduce((n, item) => n + item.item_count, 0) !==
+                page.total_photo_count) {
+            throw Error('invalid_map_overview')
+          }
+          setPlaces(page.items)
+        }).catch(() => {
+          if (!disposed && !controller.signal.aborted) {
+            lastKey = ''
+            setDataError('当前地图区域加载失败，请移动或缩放后重试。')
+          }
+        }).finally(() => {
+          if (!disposed && !controller.signal.aborted) setDataLoading(false)
+        })
+      }
+      if (immediate) load()
+      else delayed = setTimeout(load, 200)
+    }
+    const refresh = () => update(false)
+    const stopOnGesture = () => {
+      // SDK may also move the camera programmatically at initial fit, when
+      // no user gesture has occurred. Don't cancel the first world summary.
+      if (!manualCamera.current) return
+      if (delayed) clearTimeout(delayed)
+      delayed = undefined
+      request?.abort()
+      lastKey = ''
+      setDataLoading(false)
+      // Never mutate ClusterLayer during its own click/fitViewOnClick.
+      // The low/high zoom cover observers hide stale thumbnails separately.
+    }
+    runtime.map.addEventListener('movestart', stopOnGesture)
+    runtime.map.addEventListener('zoomstart', stopOnGesture)
+    runtime.map.addEventListener('moveend', refresh)
+    runtime.map.addEventListener('zoomend', refresh)
+    update(true)
+    return () => {
+      disposed = true
+      if (delayed) clearTimeout(delayed)
+      request?.abort()
+      runtime.map.removeEventListener('movestart', stopOnGesture)
+      runtime.map.removeEventListener('zoomstart', stopOnGesture)
+      runtime.map.removeEventListener('moveend', refresh)
+      runtime.map.removeEventListener('zoomend', refresh)
+    }
+  }, [runtime, listPlacesMapOverview])
+
+  // Register the native ClusterLayer change observer before setData:
+  // some SDK builds publish the first aggregation synchronously.
+  useEffect(() => {
+    if (!runtime || !loadThumbnail) {
+      setCoverPins([])
+      setClusterCovers([])
+      clusterFrameRef.current = null
+      return
+    }
+    const refresh = () => {
+      const node = container.current
+      const map = runtime.map
+      if (!node || !map.getZoom || !map.pointToPixel) {
+        setCoverPins([])
+        setClusterCovers([])
+        return
+      }
+      const zoom = map.getZoom()
+      const projection = {
+        pointToPixel: (point: Point) => map.pointToPixel!(point),
+      }
+      if (zoom >= 17) {
+        setClusterCovers([])
+        setCoverPins(xDriveProjectBaiduPrototypeCoverPins(
+          runtime.rendered, places, {
+            getZoom: () => zoom,
+            pointToPixel: projection.pointToPixel,
+            getBounds: map.getBounds ? () => map.getBounds!() : undefined,
+          }, runtime.namespace,
+          node.clientWidth, node.clientHeight,
+        ))
+      } else {
+        setCoverPins([])
+        setClusterCovers(xDriveProjectBaiduNativeClusterCovers(
+          clusterFrameRef.current, runtime.rendered, places,
+          projection, runtime.namespace, node.clientWidth, node.clientHeight,
+        ))
+      }
+    }
+    const hide = () => {
+      setCoverPins([])
+      setClusterCovers([])
+      clusterFrameRef.current = null
+    }
+    // The official ClusterLayer change event is the ONLY source of
+    // low-zoom visible cluster coordinates and membership extents.
+    const onNativeClusters = (event: unknown) => {
+      clusterFrameRef.current = event
+      refresh()
+    }
+    const onCameraSettled = () => {
+      // SDK change and moveend ordering is not fixed. move/zoom START has
+      // already invalidated the old frame; refresh either the newly received
+      // native change or the safe empty state, never erase a fresh result.
+      refresh()
+    }
+    refreshCoversRef.current = refresh
+    runtime.layer.addEventListener('change', onNativeClusters)
+    runtime.map.addEventListener('movestart', hide)
+    runtime.map.addEventListener('zoomstart', hide)
+    runtime.map.addEventListener('moveend', onCameraSettled)
+    runtime.map.addEventListener('zoomend', onCameraSettled)
+    refresh()
+    return () => {
+      refreshCoversRef.current = () => {}
+      clusterFrameRef.current = null
+      runtime.layer.removeEventListener('change', onNativeClusters)
+      runtime.map.removeEventListener('movestart', hide)
+      runtime.map.removeEventListener('zoomstart', hide)
+      runtime.map.removeEventListener('moveend', onCameraSettled)
+      runtime.map.removeEventListener('zoomend', onCameraSettled)
+    }
+  }, [runtime, places, loadThumbnail])
 
   useEffect(() => {
     if (!runtime) return
@@ -379,9 +596,17 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       const collection: XDriveBaiduConvertedFeatureCollection = {
         type: 'FeatureCollection', features,
       }
+      // The previous SDK viewport clusters must never accompany a new Owner
+      // GeoJSON generation while Baidu is still recalculating the layer.
+      clusterFrameRef.current = null
+      setClusterCovers([])
+      runtime.rendered = collection
+      renderedRef.current = collection
+      for (const key of runtime.converted.keys()) {
+        if (!seen.has(key)) runtime.converted.delete(key)
+      }
       phase = 'layer'
       runtime.layer.setData(collection)
-      runtime.rendered = collection
       refreshCoversRef.current()
       // Opening Places should show the photo distribution, not an arbitrary
       // hardcoded city. Defer all projection/fit calculations to Baidu JSAPI.
@@ -407,43 +632,6 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     return () => abort.abort()
   }, [runtime, places, reportFailure])
 
-  useEffect(() => {
-    if (!runtime || !loadThumbnail) {
-      setCoverPins([])
-      return
-    }
-    const refresh = () => {
-      const node = container.current
-      const map = runtime.map
-      if (!node || !map.getZoom || !map.pointToPixel) {
-        setCoverPins([])
-        return
-      }
-      setCoverPins(xDriveProjectBaiduPrototypeCoverPins(
-        runtime.rendered, places, {
-          getZoom: () => map.getZoom!(),
-          pointToPixel: (point) => map.pointToPixel!(point),
-          getBounds: map.getBounds ? () => map.getBounds!() : undefined,
-        }, runtime.namespace,
-        node.clientWidth, node.clientHeight,
-      ))
-    }
-    const hide = () => setCoverPins([])
-    refreshCoversRef.current = refresh
-    runtime.map.addEventListener('movestart', hide)
-    runtime.map.addEventListener('zoomstart', hide)
-    runtime.map.addEventListener('moveend', refresh)
-    runtime.map.addEventListener('zoomend', refresh)
-    refresh()
-    return () => {
-      refreshCoversRef.current = () => {}
-      runtime.map.removeEventListener('movestart', hide)
-      runtime.map.removeEventListener('zoomstart', hide)
-      runtime.map.removeEventListener('moveend', refresh)
-      runtime.map.removeEventListener('zoomend', refresh)
-    }
-  }, [runtime, places, loadThumbnail])
-
   return (
     <Box component="section" data-xdrive-gallery-baidu-prototype
       sx={{ px: { xs: 0, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
@@ -452,6 +640,41 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         data-xdrive-gallery-baidu-prototype-canvas
         sx={{ width: '100%', height: { xs: 'calc(100dvh - 215px)', sm: 540 },
           minHeight: 370, borderRadius: { xs: 0, sm: 1.5 }, overflow: 'hidden' }} />
+      {loadThumbnail ? clusterCovers.map(pin => (
+        // A visual overlay only: pointer events pass THROUGH to the actual
+        // native ClusterLayer icon, preserving the SDK fitViewOnClick zoom.
+        <Box key={pin.id} data-xdrive-baidu-native-cluster-cover={pin.id}
+          aria-hidden="true"
+          sx={{
+            position: 'absolute', pointerEvents: 'none', zIndex: 4,
+            left: pin.x - 30, top: pin.y - 29,
+            width: 60, height: 58,
+          }}>
+          <Box sx={{
+            position: 'absolute', inset: '4px 2px 0 5px', borderRadius: 1.5,
+            bgcolor: 'background.paper', boxShadow: 2,
+            transform: 'rotate(-7deg)',
+          }} />
+          <Box sx={{
+            position: 'absolute', inset: '0 5px 4px 0',
+            border: '3px solid white', borderRadius: 1.5,
+            bgcolor: 'background.paper', boxShadow: 2, overflow: 'hidden',
+          }}>
+            <XDriveMediaGalleryCoverThumbnail
+              nodeID={pin.nodeID} alt="" loadThumbnail={loadThumbnail}
+              fallback={<PhotoLibraryOutlinedIcon color="disabled" />}
+            />
+          </Box>
+          <Box component="span" sx={{
+            position: 'absolute', right: -8, bottom: -7,
+            bgcolor: 'background.paper', color: 'text.primary',
+            border: 1, borderColor: 'divider',
+            borderRadius: '12px', px: 0.6, minWidth: 24,
+            fontSize: 11, fontWeight: 700, textAlign: 'center',
+            lineHeight: '19px', whiteSpace: 'nowrap',
+          }}>{pin.photoCount.toLocaleString('zh-CN')} 张</Box>
+        </Box>
+      )) : null}
       {loadThumbnail ? coverPins.map(pin => (
         <Box component="button" type="button" key={pin.placeID}
           data-xdrive-baidu-photo-cover={pin.placeID}
@@ -461,7 +684,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
             const current = placesRef.current.find(p =>
               p.id === pin.placeID && p.cover_node_id === pin.nodeID &&
               p.item_count === pin.photoCount)
-            if (current) openRef.current?.(current)
+            if (current && runtime) openMapItemRef.current(current, runtime.map, runtime.namespace)
           }}
           sx={{
             position: 'absolute', zIndex: 4, left: pin.x - 30, top: pin.y - 66,
@@ -487,6 +710,16 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         </Box>
       )) : null}
       </Box>
+      {dataLoading && status === 'ready' ? (
+        <Typography role="status" variant="caption" sx={{ px: 1.5 }}>
+          正在读取当前地图区域照片…
+        </Typography>
+      ) : null}
+      {dataError ? (
+        <Typography role="alert" variant="caption" sx={{ px: 1.5 }}>
+          {dataError}
+        </Typography>
+      ) : null}
       {status === 'failed' ? (
         <Box data-xdrive-baidu-prototype-error sx={{ px: 1.5, py: 1 }}>
           <Typography role="alert" variant="body2" color="error">

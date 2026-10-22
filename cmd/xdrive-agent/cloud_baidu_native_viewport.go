@@ -25,3 +25,12 @@ func (c *agentController) CloudBaiduJSAPIPrototype(ctx context.Context) (client.
 	}
 	return cli.MediaBaiduJSAPIPrototype(ctx)
 }
+
+// Forward the bounded map summary through the authenticated Agent only.
+func (c *agentController) CloudMediaPlacesMapOverview(ctx context.Context, bounds client.MediaPlacesViewportBounds, detail bool) (client.MediaPlacesMapOverview, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPlacesMapOverview{}, err
+	}
+	return cli.MediaPlacesMapOverview(ctx, bounds, detail)
+}

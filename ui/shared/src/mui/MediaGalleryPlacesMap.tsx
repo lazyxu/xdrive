@@ -35,6 +35,7 @@ export function XDriveMediaGalleryPlacesMap({
   places,
   totalCount,
   listPlacesPage,
+  listPlacesMapOverview,
   listPlacesViewport,
   initialCamera,
   onCameraChange,
@@ -67,6 +68,7 @@ export function XDriveMediaGalleryPlacesMap({
   places: MediaPlaceFacet[]
   totalCount?: number | null
   listPlacesPage?: (limit?: number,offset?: number) => Promise<MediaPlacesPage>
+  listPlacesMapOverview?: import('./MediaGallery').MediaGalleryDataSource['listPlacesMapOverview']
   listPlacesViewport?: (bounds: MediaPlacesViewportBounds, limit?: number, offset?: number,
     signal?: AbortSignal) => Promise<MediaPlacesViewportPage>
   initialCamera?: XDrivePlacesCameraSnapshot
@@ -100,54 +102,9 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
-  // Prototype v0: the existing Owner-authenticated Places pages already
-  // contain ALL valid-GPS PhotoAssets without per-photo Baidu opt-in.
-  // Load bounded pages progressively so no independent HTTPS Child is needed.
-  const prototypeMap = Boolean(listPlacesPage && getBaiduJSAPIPrototype)
-  const [prototypeIndex, setPrototypeIndex] = useState<{
-    scope:string;items:MediaPlaceFacet[];total:number;complete:boolean;error:string
-  } | null>(null)
-  useEffect(() => {
-    if (!listPlacesPage || !prototypeMap) return
-    let cancelled = false
-    const scope = diagnosticScope ?? ''
-    setPrototypeIndex({scope,items:[],total:0,complete:false,error:''})
-    void (async () => {
-      const items: MediaPlaceFacet[] = []
-      let offset = 0
-      let total = 0
-      try {
-        for (;;) {
-          const page = await listPlacesPage(100,offset)
-          if (cancelled) return
-          if (!page || !Array.isArray(page.items) || page.items.length > 100 ||
-              page.offset !== offset || !Number.isSafeInteger(page.total_count) ||
-              page.total_count < 0 || typeof page.has_more !== 'boolean' ||
-              (page.has_more && page.items.length === 0)) throw Error('invalid_places_page')
-          total = page.total_count
-          items.push(...page.items)
-          offset += page.items.length
-          const complete = !page.has_more || offset >= total
-          if (items.length <= 100 || offset % 500 === 0 || complete) {
-            setPrototypeIndex({scope,items:items.slice(),total,complete,error:''})
-          }
-          if (complete) return
-          if (offset > 10_000_000) throw Error('places_index_too_large')
-        }
-      } catch {
-        if (!cancelled) setPrototypeIndex({
-          scope,items:items.slice(),total,complete:false,
-          error:'部分 GPS 地点暂时无法读取，可重进地点继续加载。',
-        })
-      }
-    })()
-    return () => { cancelled = true }
-  }, [listPlacesPage, prototypeMap, diagnosticScope])
-  const currentPrototype = prototypeIndex?.scope === (diagnosticScope ?? '')
-    ? prototypeIndex : null
-  // Do not briefly draw a prior Owner's GPS list while the new scoped page
-  // is still loading. A direct SDK map needs its own confirmed Owner page.
-  const prototypePlaces = prototypeMap ? (currentPrototype?.items ?? []) : places
+  // One Server-bounded spatial summary replaces the all-pages GPS download.
+  const prototypeMap = Boolean(listPlacesMapOverview && getBaiduJSAPIPrototype)
+  const prototypePlaces = places
   // Freeze the returning BD09 camera for THIS native mount. Parent state changes
   // on pan/zoom must never change initialCamera props and remount the SDK.
   const nativeRestoreRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
@@ -539,23 +496,20 @@ export function XDriveMediaGalleryPlacesMap({
             <Typography variant="caption" color="text.secondary"
               data-xdrive-places-prototype-progress
               sx={{display:'block',px:1.5,pb:0.5}}>
-              {currentPrototype?.complete
-                ? '已载入全部 ' + currentPrototype.total.toLocaleString('zh-CN') + ' 个 GPS 地点'
-                : '正在逐页汇总 GPS 地点…已载入 ' +
-                  (currentPrototype?.items.length ?? 0).toLocaleString('zh-CN') + ' 个'}
-              {currentPrototype?.error ? ' · ' + currentPrototype.error : ''}
+              地图由 Server 返回最多 64 个当前视窗区域或真实地点；不会下载全部 GPS 地点。
             </Typography>
           ) : null}
-          {prototypeMap && getBaiduJSAPIPrototype ? (
+          {prototypeMap && getBaiduJSAPIPrototype && listPlacesMapOverview ? (
             <XDriveMediaGalleryBaiduPrototypeMap
               key={diagnosticScope ?? ''}
               getPrototypeConfig={getBaiduJSAPIPrototype}
               diagnosticScope={diagnosticScope}
-              places={prototypePlaces}
+              listPlacesMapOverview={listPlacesMapOverview}
               loadThumbnail={loadPhotoCoverThumbnail}
               initialNativeCamera={nativeRestoreRef.current ?? undefined}
               onNativeCameraChange={onNativeCameraChange}
               onOpenPlace={onOpenPlace}
+              onOpenViewportPhotos={onOpenViewportPhotos}
             />
           ) : (
           <XDriveMediaGalleryBaiduStaticMap
