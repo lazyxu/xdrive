@@ -8,8 +8,7 @@ import type {
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
-import { XDriveMediaGalleryBaiduJSAPI4Surface } from './MediaGalleryBaiduJSAPI4Surface'
-import { XDriveMediaGalleryBaiduJSAPI4PhotoSurface } from './MediaGalleryBaiduJSAPI4PhotoSurface'
+import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
 import type { XDriveBaiduJSAPI4AuthorizedMountPort, XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -46,6 +45,7 @@ export function XDriveMediaGalleryPlacesMap({
   loadPhotoCoverThumbnail,
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
+  mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
   onOpenBaiduNativeCell,
   selectedNativeCell,
@@ -76,6 +76,7 @@ export function XDriveMediaGalleryPlacesMap({
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
+  mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   onOpenBaiduNativeCell?: (selection: import('../models').MediaBaiduNativeCellSelection) => void
   selectedNativeCell?: import('../models').MediaBaiduNativeCellSelection
@@ -106,6 +107,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [nearbyRadiusKM, setNearbyRadiusKM] = useState(5)
   const [nativeMapReady, setNativeMapReady] = useState(false)
   const [serverNativeAuthorized, setServerNativeAuthorized] = useState(false)
+  const [isolatedChildOrigin,setIsolatedChildOrigin] = useState('')
   const desktopHTTPSOnly = Boolean(onOpenSecureDesktopMap)
   const [nativeStatus, setNativeStatus] = useState<'checking' | 'authorized' |
     'blocked' | 'error' | 'unsupported'>('checking')
@@ -149,8 +151,9 @@ export function XDriveMediaGalleryPlacesMap({
   }, [diagnosticScope, latestDiagnostic?.recordedAt])
   useEffect(() => {
     setServerNativeAuthorized(false)
+    setIsolatedChildOrigin('')
     setNativeStatus('checking')
-    if (!getBaiduJSAPI4Status || !mintBaiduJSAPI4Session ||
+    if (!getBaiduJSAPI4Status || !mintBaiduIsolatedChildTicket || !listBaiduNativeCells ||
         !listBaiduNativeViewport || !onOpenBaiduNativePhoto) {
       // Desktop file: is intentionally denied the browser SDK and has its own
       // HTTPS window. It is not a failed browser JSAPI request.
@@ -166,7 +169,9 @@ export function XDriveMediaGalleryPlacesMap({
     void getBaiduJSAPI4Status(signal.signal).then(status => {
       if (signal.signal.aborted) return
       if (status?.provider === 'baidu-jsapi-4.0' && status.enabled === true &&
-          status.activation_state === 'authorized_signed_release') {
+          status.activation_state === 'authorized_signed_release' &&
+          typeof status.isolated_child_origin === 'string' && status.isolated_child_origin.startsWith('https://')) {
+        setIsolatedChildOrigin(status.isolated_child_origin)
         setServerNativeAuthorized(true)
         setNativeStatus('authorized')
       } else {
@@ -181,8 +186,8 @@ export function XDriveMediaGalleryPlacesMap({
         diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
     })
     return () => signal.abort()
-  }, [getBaiduJSAPI4Status, mintBaiduJSAPI4Session,
-    listBaiduNativeViewport, onOpenBaiduNativePhoto,
+  }, [getBaiduJSAPI4Status, mintBaiduIsolatedChildTicket,
+    listBaiduNativeCells, listBaiduNativeViewport, onOpenBaiduNativePhoto,
     desktopHTTPSOnly, diagnosticScope])
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
@@ -208,12 +213,11 @@ export function XDriveMediaGalleryPlacesMap({
     }
   }, [nativeStatus, nativePhotoCamera?.latitude, nativePhotoCamera?.longitude, diagnosticScope])
 
-  const canMountNativePhoto = Boolean(serverNativeAuthorized &&
-    mintBaiduJSAPI4Session && listBaiduNativeViewport &&
-    onOpenBaiduNativePhoto && nativePhotoCamera)
-  const canMountLegacy = Boolean(authorizedJSAPI4Runtime && listPlacesViewport &&
-    onOpenPlace && nativeCamera)
-  const showingNative = (canMountNativePhoto || canMountLegacy) && nativeMapReady
+  const canMountNativePhoto = Boolean(serverNativeAuthorized && isolatedChildOrigin &&
+    mintBaiduIsolatedChildTicket && listBaiduNativeCells &&
+    onOpenBaiduNativeCell && nativePhotoCamera && !desktopHTTPSOnly)
+  // The in-document third-party JSAPI port is permanently disabled for Gallery.
+  const showingNative = canMountNativePhoto && nativeMapReady
 
   const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
   const viewportLongitudeSpan = viewportBounds ? (viewportBounds.east > viewportBounds.west
@@ -453,35 +457,20 @@ export function XDriveMediaGalleryPlacesMap({
           ) : null}
         </Box>
       ) : null}
-      {canMountNativePhoto && mintBaiduJSAPI4Session && listBaiduNativeViewport &&
-        onOpenBaiduNativePhoto && nativePhotoCamera ? (
-          <XDriveMediaGalleryBaiduJSAPI4PhotoSurface
-            key={selectedPlace?.id}
-            mintMapOnlySession={mintBaiduJSAPI4Session}
-            listOwnerViewport={listBaiduNativeViewport}
+      {canMountNativePhoto && mintBaiduIsolatedChildTicket && listBaiduNativeCells &&
+        onOpenBaiduNativeCell && nativePhotoCamera ? (
+          <XDriveMediaGalleryBaiduIsolatedPhotoSurface
+            key={(diagnosticScope??'')+':'+(selectedPlace?.id??'')}
+            childOrigin={isolatedChildOrigin}
+            mintChildTicket={mintBaiduIsolatedChildTicket}
             listOwnerCells={listBaiduNativeCells}
-            loadThumbnail={loadPhotoCoverThumbnail}
-            camera={nativePhotoCamera}
-            onOpenPhoto={onOpenBaiduNativePhoto}
             onOpenCell={onOpenBaiduNativeCell}
-            selectedCell={selectedNativeCell}
-            onCellInvalidated={onBaiduNativeCellInvalidated}
-            onNativeCameraChange={onNativeCameraChange}
-            onNativeCameraClear={clearNativeReturnCamera}
+            onInvalidated={onBaiduNativeCellInvalidated}
+            onCamera={onNativeCameraChange}
+            onCameraClear={clearNativeReturnCamera}
             onReady={setNativeMapReady}
-            diagnosticScope={diagnosticScope}
-            onOpenDiagnostics={onOpenDiagnostics}
-          />
-        ) : null}
-      {!canMountNativePhoto && canMountLegacy && authorizedJSAPI4Runtime && listPlacesViewport &&
-        onOpenPlace && nativeCamera ? (
-          <XDriveMediaGalleryBaiduJSAPI4Surface
-            key={selectedPlace?.id}
-            authorizedRuntime={authorizedJSAPI4Runtime}
-            listOwnerViewport={listPlacesViewport}
-            camera={nativeCamera}
-            onOpenPlace={onOpenPlace}
-            onReady={setNativeMapReady}
+            initialCamera={nativeRestoreRef.current??undefined}
+            scope={diagnosticScope}
           />
         ) : null}
       {!showingNative ? (

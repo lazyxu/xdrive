@@ -111,6 +111,8 @@ test('original shared mounted map wires selection only after Owner Range success
   const gallery = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
   const photoSurface = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryBaiduJSAPI4PhotoSurface.tsx'), 'utf8')
+  const isolated = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'), 'utf8')
   const map = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
   assert.match(gallery, /xDriveRememberBaiduCellReturn\(preferenceScope/)
   assert.match(gallery, /xDriveRememberBaiduCellAnchor\(preferenceScope/)
@@ -118,7 +120,10 @@ test('original shared mounted map wires selection only after Owner Range success
   const remembered = gallery.indexOf('xDriveRememberBaiduCellReturn(preferenceScope')
   assert.ok(verifiedRange >= 0 && remembered > verifiedRange)
   assert.match(gallery, /selectedBaiduNativeCell=\{selectedBaiduCell\}/)
-  assert.match(map, /selectedCell=\{selectedNativeCell\}/)
+  assert.match(map, /onOpenCell=\{onOpenBaiduNativeCell\}/)
+  assert.match(map, /listOwnerCells=\{listBaiduNativeCells\}/)
+  assert.match(isolated, /xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
+  assert.match(isolated, /opened\.current\(cell\.selection\)/)
   assert.match(photoSurface, /xDriveSelectBaiduNativeCell\(frame.page, frame.bounds/)
   assert.match(photoSurface, /xDriveBaiduCellReturnMatchesFreshSelection/)
   assert.match(photoSurface, /aria-pressed=\{isSelected/)

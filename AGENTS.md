@@ -17,6 +17,21 @@
 - CI correction: Go t.TempDir() is not guaranteed private mode 0700, so private-root validation tests must explicitly chmod only their temporary directories rather than relaxing production mode enforcement. Earlier failed go-linux at 71c5268b is superseded; new one-work HEAD's exact CI/Final Gate must independently succeed.
 - Preserve every byte of previous current master AGENTS history below; one scoped work commit. Production environment safety acceptance: 按用户决定跳过（未验收）, never request secrets or manual production signoff; code security tests continue.
 
+## 全局永久执行规则 · 生产安全验收只跳过不可接触的生产环境部分（2026-10-22）
+
+- **真实生产环境安全验收：按用户决定跳过（未验收）。** 本规则永久适用于 lazyxu/xdrive 地图、Push/Pull、PWA、系统依赖与全部后续开发。不得再请求生产账户、环境权限、AK/JWT/Cookie、HAR、生产抓包、人工生产签字，亦不得因这一不可接触事项阻塞源码实现、受控测试、CI、PR 或合并。不得将“跳过”表述为真实生产放行或测试通过。
+- **继续强制源码级安全门禁**：Owner/设备/目录及 Consent 撤销，真实权限与修订失效，独立 HTTPS Cookie Site 与 CSP/iframe，恶意 Provider JS 防读父 DOM/Storage/受限 API，精确 session/resource allowlist、AK/密钥保护、fail-closed、受控真实 Chromium 安全回归、跨平台构建与完整源码 CI。不可借生产验收跳过之名放宽这些约束。
+- **地图当前阶段**：#2299 的 Msg4 已接入 Child 专用地图会话、真实 Child SDK 装载与可信父端 Owner Cell 查询，仍需准确 HEAD 源码测试、三端与功能验证；下方 2026-10-21 Msg3a 的“无真实 SDK”文本是历史阶段记录，不再代表最新分支。
+
+---
+
+## P0-03 A3i-Msg3a · 单独 HTTPS 子文档的真实源码与受控安全证明（2026-10-21）
+
+- 已合入 Msg1 #2263 和 Msg2 #2287 只是严格跨 Origin 协议及未激活的 iframe 父端；**绝不可声称真正第三方百度 JSAPI 安全隔离已完成**。本阶段在原主线后新增独立的静态 HTTPS 子文档、仅匿名握手的 Child 运行代码、严格且默认禁止网络的 Caddy 单独虚拟站点模板、Host Cookie-site 保守检查、原始 child.js Node VM 恶意事件回归和独立双合成 HTTPS Origin 真实 Chromium 安全工作流。此阶段没有实际 SDK 子资源与地图、没有 Parent Gallery 激活，更不允许将模板接进现有部署默认 Caddy。
+- Child 静态资源固定于 /_xdrive_baidu_isolated/；不存储/回传 Owner/JWT/Cookie/AK/Node/PhotoAsset/像素或原始 GPS；部署配置必须为真正独立注册站点、无共享 Cookie Domain，可信 Parent Origin 不允许从请求参数或 Host/Referer 反射。父/子 CSP/frame-ancestors、受控恶意子脚本不能读取父 DOM/Storage/私有 API、父相机/Owner 签名 Range/Viewer 撤销、Caddy/真实 HTTPS 受控证明都是 P0-03 真正启用前的必需源码和回归，不可用「不同端口」冒充隔离。
+- 在独立 GitHub Actions 真 Chromium CI、完整原跨平台 Go/PostgreSQL/Web/Desktop/Final Gate 及 fresh GitHub clean 通过之前保留 Draft；本地无额外测试凭证权限，运行环境禁止合成非本地域名时不得伪称浏览器已实测。继续复用 AGENTS 对不冲突旧绿 CI 的规则，不做机械重测，也不得绕过实际要求的测试。
+- **生产环境专属安全验收依用户永久决定「按用户决定跳过（未验收）」**，绝不索取生产账号、AK/JWT/Cookie/HAR、真实抓包或人工生产签字，不作为源码/CI/PR/合并门槛；可控 Owner/Consent/revoke/Origin/CSP/恶意脚本测试照常强制。
+
 ## G2c2d2b3c2b2c · unify durable Stage/Operation slots (2026-10-21)
 
 - Keep real owning-Desktop one-shot first-file Push (#2212) ENABLED in merged source. This targeted restart-correctness patch follows #2300/#2304: real Stage admission, original Operation SecretStore claim and read-only Agent status probe use one pure historically exact Server/account/Device/Source slot generator. Native Writer continues through production localpushwriter.OriginalClaimPath. No source-wide O_EXCL/key/Stage retirement, physical terminal, second file, SourceRun or scheduler is enabled.

@@ -28,6 +28,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		// they require a separate revocable
 		// Server-signed map-only Cookie AND a source-pinned production release.
 		{method: "GET", path: "/_BMapService/*resource", suite: "baidu-jsapi4-map-cookie"},
+		// The Child redemption route has a ticket-based security model, not Bearer.
+		{method: "POST", path: "/_xdrive_baidu_isolated/session", suite: "baidu-jsapi4-map-cookie"},
 		{method: "POST", path: "/api/v1/auth/login", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/refresh", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/logout", suite: "auth"},
@@ -191,6 +193,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/media/places/baidu-static", suite: "media"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/status", suite: "media"},
 		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/session", suite: "baidu-jsapi4-session"},
+		// Parent Owner JWT is mandatory to mint a separate-site, one-use ticket.
+		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/child-ticket", suite: "baidu-jsapi4-session"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/viewport", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cells", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cell-items", suite: "media-places"},
@@ -426,7 +430,11 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		// *only* exempts the route from Bearer requirement; default 503, signed
 		// release, current map-only Cookie, quota and revocation are independently
 		// exercised in TestBaiduJSAPI4HTTPDenyByDefaultNoCredentialLeak.
-		"GET /_BMapService/*resource":                       {},
+		"GET /_BMapService/*resource": {},
+		// One-use map-only Ticket, exact Host, Origin and signed release take
+		// the place of Bearer on this one dedicated Child-origin endpoint.
+		// This exemption does not apply to any Owner /api/v1 route.
+		"POST /_xdrive_baidu_isolated/session":              {},
 		"GET /metrics":                                      {},
 		"GET /api/v1/healthz":                               {},
 		"GET /api/v1/readyz":                                {},
@@ -474,6 +482,39 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 			router.ServeHTTP(res, req)
 			if res.Code != http.StatusUnauthorized {
 				t.Fatalf("code=%d want=%d body=%s", res.Code, http.StatusUnauthorized, res.Body.String())
+			}
+		})
+	}
+}
+
+// This one public HTTP endpoint must still deny all unauthenticated map-session
+// attempts unless the verified one-use Child Ticket and signed runtime exist.
+func TestIsolatedChildRedeemNoProductionReleaseFailsClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{AllowedOrigin: "https://gallery.example.net",
+		BaiduJSAPIChildOrigin: "https://map-isolated.example.org"}
+	router := s.Router()
+	for _, tc := range []struct {
+		name, origin string
+		want         int
+	}{
+		{"absent origin", "", http.StatusForbidden},
+		{"Gallery origin", "https://gallery.example.net", http.StatusForbidden},
+		{"Child origin but no signed release", "https://map-isolated.example.org", http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/_xdrive_baidu_isolated/session", nil)
+			req.Host = "map-isolated.example.org"
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != tc.want || rec.Header().Get("Set-Cookie") != "" ||
+				rec.Header().Get("Cache-Control") != "private, no-store" {
+				t.Fatalf("Child session escaped deny contract: code=%d cookie=%q cache=%q",
+					rec.Code, rec.Header().Get("Set-Cookie"), rec.Header().Get("Cache-Control"))
 			}
 		})
 	}

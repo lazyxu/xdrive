@@ -593,7 +593,8 @@ test('Gallery Places renders only Baidu Server map with no offline fallback', ()
   assert.equal(sharedGalleryBaiduMap.includes('return null'), false)
   assert.equal(sharedGalleryBaiduMap.includes('本地地图'), false)
   assert.equal(sharedGalleryPlacesMap.includes('http://'), false)
-  assert.equal(sharedGalleryPlacesMap.includes('https://'), false)
+  // Only a trusted Server-returned HTTPS child Origin can arm the dynamic map.
+  assert.match(sharedGalleryPlacesMap, /status\.isolated_child_origin\.startsWith\('https:\/\/'\)/)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {

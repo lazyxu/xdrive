@@ -23,6 +23,7 @@ const {
   xDriveValidBaiduIsolatedBoundary,
   xDriveParseBaiduIsolatedChildEvent,
   xDriveCreateBaiduIsolatedCellsMessage,
+  xDriveCreateBaiduIsolatedCameraMessage,
   XDRIVE_BAIDU_ISOLATED_MAX_CELLS,
 } = m.exports
 
@@ -165,4 +166,17 @@ test('traps malicious getters and never treats the parser as actual isolation', 
   }, boundary()), null)
   // This contract is inert and cannot replace an independently hosted iframe.
   assert.equal(/appendChild\(script\)/.test(original), false)
+})
+
+test('one-time BD09 return camera cannot contain Owner or private EXIF', () => {
+  const valid={coordinate_space:'bd09ll',latitude:35.5,longitude:139.4,zoom:12}
+  const msg=xDriveCreateBaiduIsolatedCameraMessage(boundary(),valid)
+  assert.deepEqual(msg,{version:1,generation:7,nonce,kind:'restore-camera',camera:valid})
+  assert.deepEqual(Object.keys(msg.camera).sort(),['coordinate_space','latitude','longitude','zoom'])
+  for(const candidate of [
+    {...valid,coordinate_space:'wgs84'}, {...valid,photo_url:'/private/blob'},
+    {...valid,asset_id:90}, {...valid,latitude:NaN}, {...valid,zoom:19},
+    {...valid,zoom:3.5},
+  ]) assert.equal(xDriveCreateBaiduIsolatedCameraMessage(boundary(),candidate),null)
+  assert.equal(xDriveCreateBaiduIsolatedCameraMessage({...boundary(),nonce:'bad'},valid),null)
 })

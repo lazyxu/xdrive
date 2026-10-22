@@ -1536,6 +1536,7 @@ export class XDriveApi {
       provider: 'baidu-jsapi-4.0'
       enabled: boolean
       activation_state: string
+      isolated_child_origin?: string
     }>('/api/v1/media/places/baidu-jsapi/status',
       { signal, cache: 'no-store' }).then(status => {
       if (!status || status.provider !== 'baidu-jsapi-4.0' ||
@@ -1570,6 +1571,29 @@ export class XDriveApi {
       }
       return grant
     })
+  }
+
+  /** Only a signed Parent may mint a one-use ticket, redeemed on the
+   * independently hosted Child for a Partitioned map-only Cookie. Neither
+   * this method nor the response contains an Owner token or Browser AK. */
+  mediaBaiduIsolatedChildTicket(signal: AbortSignal) {
+    if (!signal || signal.aborted || typeof window==='undefined' ||
+        window.location.protocol!=='https:' ||
+        new URL(API_BASE+'/api/v1/media/places/baidu-jsapi/child-ticket',
+          window.location.href).origin!==window.location.origin) {
+      return Promise.reject(new Error('isolated_map_unavailable'))
+    }
+    return this.request<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>(
+      '/api/v1/media/places/baidu-jsapi/child-ticket',{
+        method:'POST',cache:'no-store',credentials:'same-origin',signal,
+      }).then(grant=>{
+        if(signal.aborted || grant?.provider!=='baidu-jsapi-4.0' ||
+            typeof grant.child_origin!=='string' || !/^https:\/\/[^/?#]+$/.test(grant.child_origin) ||
+            !/^[a-f0-9]{64}$/.test(grant.ticket)) {
+          throw new Error('isolated_map_unavailable')
+        }
+        return grant
+      })
   }
 
   // An authenticated native BD09LL viewport is *not* a WGS84 photo

@@ -1,0 +1,46 @@
+# A3i-Msg4 OPTIONAL, independently hosted map-only HTTPS virtual host.
+# NOT imported by deploy/Caddyfile or docker-compose. DO NOT enable until
+# validate-site.mjs confirms unrelated owned registrable DNS sites, host-only
+# Gallery cookies and an independently controlled static assets mount.
+# Operator must set XD_BAIDU_ISOLATED_CHILD_HOST and XD_BAIDU_GALLERY_ORIGIN
+# from trusted deployment config (never a browser header/query).
+# Replace HTML's REPLACE_WITH_TRUSTED_HTTPS_PARENT_ORIGIN with the exact
+# approved Gallery Origin. Only /_BMapService/* and isolated Session POST go to Go.
+# Go independently pins the host and validates the one-use redemption ticket.
+# Never expose /api/*, private resources, Gallery cookies or open proxy routes.
+{$XD_BAIDU_ISOLATED_CHILD_HOST} {
+  tls {
+    dns alidns {
+      access_key_id {env.ALIYUN_ACCESS_KEY_ID}
+      access_key_secret {env.ALIYUN_ACCESS_KEY_SECRET}
+    }
+  }
+  encode zstd gzip
+  header {
+    Content-Security-Policy "default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src 'none'; worker-src 'none'; frame-ancestors {$XD_BAIDU_GALLERY_ORIGIN}; sandbox allow-scripts allow-same-origin"
+    Referrer-Policy "no-referrer"
+    Cross-Origin-Resource-Policy "same-origin"
+    X-Content-Type-Options "nosniff"
+    Cache-Control "no-store"
+    Permissions-Policy "geolocation=(),camera=(),microphone=(),payment=()"
+  }
+  @child_asset path /_xdrive_baidu_isolated/index.html /_xdrive_baidu_isolated/child.js /_xdrive_baidu_isolated/child.css
+  handle @child_asset {
+    uri strip_prefix /_xdrive_baidu_isolated
+    root * /srv/xdrive-baidu-isolated-child
+    file_server
+  }
+  handle /_xdrive_baidu_isolated/session {
+    @child_session method POST
+    handle @child_session {
+      reverse_proxy server:8080
+    }
+    respond 405
+  }
+  handle /_BMapService/* {
+    reverse_proxy server:8080
+  }
+  handle {
+    respond 404
+  }
+}

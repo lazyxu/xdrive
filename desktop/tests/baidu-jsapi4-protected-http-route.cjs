@@ -33,11 +33,26 @@ test('A3 Go binds only one reviewed map resource and a Bearer-authenticated mint
     'InstallBaiduJSAPI4OperatorRelease',
     'ClearBaiduJSAPI4OperatorRelease',
     'currentBaiduJSAPI4OperatorRelease',
-    'baiduJSAPIBootstrapCandidate',
-    'baidumapjsapi.IssueMapSession',
     'baiduJSAPI4SignedLiveLoader',
     's.baiduJSAPI4Authority.Load() != authority',
   ]) assert.ok(handlers.includes(token), token)
+  const legacySession = handlers.match(
+    /func \(s \*Server\) baiduJSAPI4SessionHTTP\(c \*gin\.Context\) \{[\s\S]*?\n\}/
+  )?.[0]
+  assert.ok(legacySession, 'legacy session handler must exist as an explicit deny')
+  assert.match(legacySession, /http\.StatusForbidden/)
+  assert.match(legacySession, /isolated_map_required/)
+  assert.doesNotMatch(legacySession,
+    /IssueMapSession|SetCookie|BootstrapCandidate|currentBaiduJSAPI4OperatorRelease/,
+    'old Gallery-origin Cookie mint must be unconditionally unreachable')
+  const childTicket = read('internal/api/baidu_jsapi4_isolated_ticket.go')
+  assert.match(childTicket, /func \(s \*Server\) baiduJSAPI4ChildTicketHTTP/)
+  assert.match(childTicket, /func \(s \*Server\) baiduJSAPI4ChildRedeemHTTP/)
+  assert.match(childTicket, /baidumapjsapi\.IssueMapSession/)
+  assert.match(childTicket, /cookie\.Partitioned\s*=\s*true/)
+  assert.match(childTicket, /cookie\.SameSite\s*=\s*http\.SameSiteNoneMode/)
+  assert.match(router, /authed\.POST\("\/media\/places\/baidu-jsapi\/child-ticket",\s*s\.baiduJSAPI4ChildTicketHTTP\)/)
+  assert.match(router, /r\.POST\("\/_xdrive_baidu_isolated\/session",\s*s\.baiduJSAPI4ChildRedeemHTTP\)/)
   assert.doesNotMatch(handlers,
     /os\.Getenv|localhost|window|eval\(|\/\/api\.map\.baidu\.com/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')

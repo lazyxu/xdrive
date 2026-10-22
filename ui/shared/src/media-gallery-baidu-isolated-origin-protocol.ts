@@ -12,6 +12,7 @@ export type XDriveBaiduIsolatedCamera = Readonly<{
   longitude: number
   zoom: number
 }>
+export type XDriveBaiduIsolatedBounds = Readonly<{ coordinate_space: 'bd09ll'; west: number; south: number; east: number; north: number }>
 export type XDriveBaiduIsolatedCell = Readonly<{
   key: string
   latitude: number
@@ -21,6 +22,8 @@ export type XDriveBaiduIsolatedCell = Readonly<{
 export type XDriveBaiduChildEvent =
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'ready' }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'cancel' }>
+  | Readonly<{ version: 1; generation: number; nonce: string; kind: 'map-ready' | 'map-failed' }>
+  | Readonly<{ version: 1; generation: number; nonce: string; kind: 'viewport'; bounds: XDriveBaiduIsolatedBounds }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'camera'; camera: XDriveBaiduIsolatedCamera }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'activate-cell'; key: string }>
 export type XDriveBaiduParentCellsMessage = Readonly<{
@@ -29,6 +32,14 @@ export type XDriveBaiduParentCellsMessage = Readonly<{
   nonce: string
   kind: 'cells'
   cells: readonly XDriveBaiduIsolatedCell[]
+}>
+/** One-time return camera, never original WGS84 photo EXIF or Owner identity. */
+export type XDriveBaiduParentCameraMessage = Readonly<{
+  version: 1
+  generation: number
+  nonce: string
+  kind: 'restore-camera'
+  camera: XDriveBaiduIsolatedCamera
 }>
 export type XDriveBaiduIsolationBoundary = Readonly<{
   parentOrigin: string
@@ -84,6 +95,15 @@ function validKey(value: unknown): value is string {
   // encode PhotoAsset/Node IDs, filenames or GPS source identifiers in keys.
   return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value)
 }
+function boundsValid(value: unknown): value is XDriveBaiduIsolatedBounds {
+  if (!record(value) || !exactKeys(value, ['coordinate_space','west','south','east','north'])) return false
+  return value.coordinate_space === 'bd09ll' &&
+    [value.west,value.south,value.east,value.north].every(v => typeof v === 'number' && Number.isFinite(v)) &&
+    (value.west as number) >= -180 && (value.west as number) <= 180 &&
+    (value.east as number) >= -180 && (value.east as number) <= 180 &&
+    (value.south as number) >= -85 && (value.north as number) <= 85 &&
+    (value.south as number) < (value.north as number) && value.west !== value.east
+}
 function cameraValid(value: unknown): value is XDriveBaiduIsolatedCamera {
   if (!record(value) || !exactKeys(value,
       ['coordinate_space', 'latitude', 'longitude', 'zoom'])) return false
@@ -132,10 +152,17 @@ export function xDriveParseBaiduIsolatedChildEvent(
       data.nonce !== boundary.nonce) return null
   switch (data.kind) {
     case 'ready':
+    case 'map-ready':
+    case 'map-failed':
     case 'cancel':
       if (!exactKeys(data, ['version', 'generation', 'nonce', 'kind'])) return null
       return { version: 1, generation: boundary.generation,
         nonce: boundary.nonce, kind: data.kind }
+    case 'viewport':
+      if (!exactKeys(data, ['version','generation','nonce','kind','bounds']) ||
+          !boundsValid(data.bounds)) return null
+      return { version: 1, generation: boundary.generation, nonce: boundary.nonce,
+        kind: 'viewport', bounds: { ...data.bounds } }
     case 'camera':
       if (!exactKeys(data, ['version', 'generation', 'nonce', 'kind', 'camera']) ||
           !cameraValid(data.camera)) return null
@@ -185,4 +212,23 @@ export function xDriveCreateBaiduIsolatedCellsMessage(
     kind: 'cells', cells,
   }
   return stringBudget(message, XDRIVE_BAIDU_ISOLATED_PARENT_BYTES) ? message : null
+}
+
+/** Validated BD-09 return hint only: no JWT/Owner/photo/EXIF fields. */
+export function xDriveCreateBaiduIsolatedCameraMessage(
+  boundary: XDriveBaiduIsolationBoundary,
+  camera: unknown,
+): XDriveBaiduParentCameraMessage | null {
+  try {
+    if (!xDriveValidBaiduIsolatedBoundary(boundary) || !cameraValid(camera)) return null
+    const message: XDriveBaiduParentCameraMessage = {
+      version: 1, generation: boundary.generation, nonce: boundary.nonce,
+      kind: 'restore-camera',
+      camera: {
+        coordinate_space: 'bd09ll', latitude: camera.latitude,
+        longitude: camera.longitude, zoom: camera.zoom,
+      },
+    }
+    return stringBudget(message, XDRIVE_BAIDU_ISOLATED_PARENT_BYTES) ? message : null
+  } catch { return null }
 }

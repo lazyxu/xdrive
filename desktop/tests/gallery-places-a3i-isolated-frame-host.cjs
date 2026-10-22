@@ -212,3 +212,72 @@ test('A3i-Msg2 bounded randomized keys, no static credentials or same-document p
   assert.match(hostSource,/No user URL, no data\/blob\/file: iframe/)
   result.dispose()
 })
+
+test('isolated frame restores valid BD09 camera only after Child map-ready', () => {
+  const fixtureMap=fixture(),frame=xDriveMountBaiduIsolatedFrame(fixtureMap.options)
+  assert.ok(frame)
+  const camera={coordinate_space:'bd09ll',latitude:35.5,longitude:139.4,zoom:13}
+  assert.equal(frame.restoreCamera(camera),false,'no camera before handshake')
+  fixtureMap.childListeners.get('load')()
+  fixtureMap.emit('ready')
+  assert.equal(frame.restoreCamera(camera),false,'SDK must signal map-ready')
+  fixtureMap.emit('map-ready')
+  assert.equal(frame.restoreCamera(camera),true)
+  const packet=fixtureMap.seen.at(-1)
+  assert.equal(packet.targetOrigin,fixtureMap.options.childOrigin)
+  assert.deepEqual(packet.payload.camera,camera)
+  assert.equal(packet.payload.kind,'restore-camera')
+  assert.equal(JSON.stringify(packet).includes('owner'),false)
+  assert.equal(frame.restoreCamera({...camera,coordinate_space:'wgs84'}),false)
+  assert.equal(frame.restoreCamera({...camera,originalGPS:'private'}),false)
+  const sent=fixtureMap.seen.length
+  frame.dispose()
+  assert.equal(frame.restoreCamera(camera),false)
+  assert.equal(fixtureMap.seen.length,sent)
+})
+
+test('host rotates iframe challenge on reload, ignores ready replay, and bounds untrusted viewport bursts', async () => {
+  const f=fixture()
+  const received={ready:0,mapReady:0,cancel:0,viewports:[]}
+  f.options.onReady=()=>{ received.ready++ }
+  f.options.onMapReady=()=>{ received.mapReady++ }
+  f.options.onCancel=()=>{ received.cancel++ }
+  f.options.onViewport=bounds=>{ received.viewports.push(bounds) }
+  const frame=xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  const old=f.seen.at(-1).payload
+  f.emit('ready')
+  f.emit('ready')
+  assert.equal(received.ready,1,'replayed ready may not mint a second ticket')
+  const first={coordinate_space:'bd09ll',west:100,east:101,south:30,north:31}
+  const latest={coordinate_space:'bd09ll',west:105,east:107,south:35,north:36}
+  f.emit('viewport',{bounds:first})
+  assert.equal(received.viewports.length,0,'viewport before map-ready is not trusted')
+  f.emit('map-ready')
+  f.emit('map-ready')
+  assert.equal(received.mapReady,1,'duplicate SDK-ready events must be inert')
+  for(let i=0;i<20;i++)f.emit('viewport',{bounds:i===19?latest:first})
+  assert.equal(received.viewports.length,0,'no synchronous burst of Owner SQL reads')
+  await new Promise(resolve=>setTimeout(resolve,155))
+  assert.deepEqual(received.viewports,[latest],'only the final current viewport is queried')
+  f.emit('viewport',{bounds:first})
+  f.emit('cancel')
+  assert.equal(received.cancel,1,'Go Abort begins immediately, not after debounce')
+  await new Promise(resolve=>setTimeout(resolve,155))
+  assert.deepEqual(received.viewports,[latest],'cancel must discard queued viewport')
+  f.childListeners.get('load')()
+  const current=f.seen.at(-1).payload
+  assert.notEqual(current.nonce,old.nonce,'new iframe load must rotate nonce')
+  assert.notEqual(current.generation,old.generation,'old generation must be rejected')
+  const receive=f.listeners.get('message')
+  const packet=shape=>receive({origin:f.options.childOrigin,source:f.frame.contentWindow,
+    data:{version:1,kind:'ready',...shape}})
+  packet({generation:old.generation,nonce:old.nonce})
+  assert.equal(received.ready,1,'old child must not reenter after reload')
+  packet({generation:current.generation,nonce:current.nonce})
+  assert.equal(received.ready,2,'new challenge is permitted exactly once')
+  packet({generation:current.generation,nonce:current.nonce})
+  assert.equal(received.ready,2,'new ready cannot be replayed')
+  frame.dispose()
+})

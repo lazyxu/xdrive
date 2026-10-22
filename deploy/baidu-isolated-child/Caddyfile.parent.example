@@ -1,0 +1,11 @@
+# OPTIONAL: place this named snippet in the Gallery HTTPS Caddy configuration.
+# Import the snippet BEFORE the Gallery site block, and INSIDE the Gallery
+# block use: import xdrive_baidu_isolated_gallery_csp
+# Enable only together with deploy/baidu-isolated-child/Caddyfile.example.
+# XD_BAIDU_ISOLATED_CHILD_ORIGIN must be the exact independently audited
+# HTTPS origin, NEVER a Host/X-Forwarded-Host value from a browser request.
+(xdrive_baidu_isolated_gallery_csp) {
+  header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src {$XD_BAIDU_ISOLATED_CHILD_ORIGIN}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+  header Referrer-Policy "no-referrer"
+}
+# No unsafe-eval or third-party scripts in the trusted Gallery.

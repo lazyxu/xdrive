@@ -1,0 +1,47 @@
+name: Places A3i Msg3a Independent HTTPS Child Synthetic Chromium
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-map-child-chromium:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'sec/places-a3i-msg3a-child-boundary-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact commit and fail-closed child source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --check deploy/baidu-isolated-child/child.js
+          node --check desktop/scripts/baidu-isolated-child-chromium.cjs
+          node --test desktop/tests/gallery-baidu-isolated-child-runtime.cjs desktop/tests/gallery-baidu-isolated-child-config.cjs
+      - name: Locate a real installed Chromium and ephemeral synthetic CA tooling
+        run: |
+          set -euo pipefail
+          openssl version
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo 'Chromium is required for actual browser isolation evidence' >&2
+            exit 1
+          fi
+      - name: Actual isolated HTTPS independent registered sites with hostile child JS
+        run: |
+          set -euo pipefail
+          node desktop/scripts/baidu-isolated-child-chromium.cjs

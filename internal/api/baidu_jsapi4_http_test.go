@@ -53,13 +53,18 @@ func TestBaiduJSAPI4HTTPDenyByDefaultNoCredentialLeak(t *testing.T) {
 			want:   http.StatusServiceUnavailable,
 		},
 		{
+			name: "Legacy Gallery cookie mint always denied without Bearer", method: "POST",
+			target: "/api/v1/media/places/baidu-jsapi/session",
+			want:   http.StatusForbidden,
+		},
+		{
 			name: "Session cannot mint from bearer alone", method: "POST",
 			target: "/api/v1/media/places/baidu-jsapi/session",
 			headers: map[string]string{
 				"Authorization": "Bearer synthetic-does-not-grant-runtime",
 				"Origin":        "https://gallery.example.invalid",
 			},
-			want: http.StatusServiceUnavailable,
+			want: http.StatusForbidden,
 		},
 	}
 	for _, tc := range tests {
@@ -81,7 +86,7 @@ func TestBaiduJSAPI4HTTPDenyByDefaultNoCredentialLeak(t *testing.T) {
 				out.Header().Get("Set-Cookie") != "" {
 				t.Fatal("untrusted map request emitted credentials or Cookie")
 			}
-			if tc.want == http.StatusServiceUnavailable {
+			if tc.want == http.StatusServiceUnavailable || tc.want == http.StatusForbidden {
 				if out.Header().Get("Cache-Control") != "private, no-store" ||
 					out.Header().Get("Referrer-Policy") != "no-referrer" ||
 					out.Header().Get("X-Content-Type-Options") != "nosniff" {
@@ -92,6 +97,10 @@ func TestBaiduJSAPI4HTTPDenyByDefaultNoCredentialLeak(t *testing.T) {
 	}
 }
 
+// The legacy route is a hard-deny tombstone even if the Owner supplies
+// syntactically valid session headers. Map-only cookies must be minted by
+// the separate child redemption endpoint, never by trusted Gallery JS.
+//
 // A default Server cannot be armed by any test-style self-described authority
 // even if the adversary supplies a strong Cookie key and matching origin hash.
 // No public API accepts these arguments.

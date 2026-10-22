@@ -40,6 +40,7 @@ type Server struct {
 	Auth                           auth.Manager
 	RefreshTTL                     time.Duration
 	AllowedOrigin                  string
+	BaiduJSAPIChildOrigin          string
 	MaxUploadBytes                 int64
 	SourceRunFailureRetention      time.Duration
 	ConnectorSecrets               *connectorsecret.Keyring
@@ -133,6 +134,7 @@ func (s *Server) Router() *gin.Engine {
 	} else {
 		r.GET(baidumapjsapi.LoaderPath, s.baiduJSAPI4LoaderHTTP)
 	}
+	r.POST("/_xdrive_baidu_isolated/session", s.baiduJSAPI4ChildRedeemHTTP)
 	r.GET("/metrics", s.metrics)
 
 	v1 := r.Group("/api/v1")
@@ -306,6 +308,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-jsapi/cell-items", s.listBaiduNativeMapCellItems)
 	// A signed release is required before the authenticated Owner can mint a map Cookie.
 	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
+	authed.POST("/media/places/baidu-jsapi/child-ticket", s.baiduJSAPI4ChildTicketHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)

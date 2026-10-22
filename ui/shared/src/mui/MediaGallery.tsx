@@ -292,7 +292,11 @@ export interface MediaGalleryDataSource {
     signal: AbortSignal,
   ) => Promise<MediaItemRange>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
-    provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
+    provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string;
+    isolated_child_origin?: string
+  }>
+  mintBaiduIsolatedChildTicket?: (signal: AbortSignal) => Promise<{
+    provider: 'baidu-jsapi-4.0'; child_origin: string; ticket: string
   }>
   mintBaiduJSAPI4Session?: (signal: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; runtime_enabled: true
@@ -3448,6 +3452,7 @@ export function XDriveMediaGalleryPage({
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
+        mintBaiduIsolatedChildTicket={source.mintBaiduIsolatedChildTicket}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
         onOpenBaiduNativeCell={source.listBaiduNativeCellItems ? openBaiduNativeCell : undefined}
@@ -3943,6 +3948,7 @@ export interface XDriveMediaGalleryProps {
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
+  mintBaiduIsolatedChildTicket?: MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
@@ -5654,6 +5660,7 @@ export function XDriveMediaGallery({
   listBaiduNativeCells,
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
+  mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
   onOpenBaiduNativeCell,
   onBaiduNativeCellInvalidated,
@@ -7882,6 +7889,7 @@ export function XDriveMediaGallery({
             loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
+            mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
             onOpenBaiduNativeCell={onOpenBaiduNativeCell}
             selectedNativeCell={selectedBaiduNativeCell}

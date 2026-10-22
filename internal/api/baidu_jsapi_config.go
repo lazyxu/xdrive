@@ -82,8 +82,10 @@ func (s *Server) mediaBaiduJSAPIStatus(c *gin.Context) {
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
 	approved := false
-	if _, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); err == nil {
-		approved = true
+	if s.approvedBaiduIsolatedChildOrigin() != "" {
+		if _, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); err == nil {
+			approved = true
+		}
 	}
 	state := "blocked_pending_licence_and_proxy"
 	if approved {
@@ -94,6 +96,12 @@ func (s *Server) mediaBaiduJSAPIStatus(c *gin.Context) {
 		"enabled":          approved,
 		"activation_state": state,
 		"attribution":      "© 百度地图",
+		"isolated_child_origin": func() string {
+			if approved {
+				return s.approvedBaiduIsolatedChildOrigin()
+			}
+			return ""
+		}(),
 	})
 }
 

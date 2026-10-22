@@ -9,6 +9,7 @@ const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
 const app = read('ui/shared/src/web-app.ts')
 const webViewer = read('web/src/webViewerContext.ts')
 const surface = read('ui/shared/src/mui/MediaGalleryBaiduJSAPI4PhotoSurface.tsx')
+const isolated = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
 const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
 test('W2b2 keeps trusted BD09 cell as distinct Gallery and Viewer range', () => {
   assert.match(app, /\| 'baidu-cell'/)
@@ -35,7 +36,9 @@ test('W2b2 navigation and Refresh must never turn a cell into an unscoped all-it
 })
 test('W2b2 aborts pending map selection on camera invalidation or leaving collection', () => {
   assert.match(surface, /if \(!page\) latestInvalidation\.current\?\.\(\)/)
-  assert.match(map, /onCellInvalidated=\{onBaiduNativeCellInvalidated\}/)
+  assert.match(map, /onInvalidated=\{onBaiduNativeCellInvalidated\}/)
+  assert.match(isolated, /invalidated\.current\?\.\(\)/)
+  assert.match(isolated, /activeQuery\?\.abort\(\)/)
   assert.match(gallery, /onBaiduNativeCellInvalidated=\{\(\) => nativeCellOpenAbort\.current\?\.abort\(\)\}/)
   assert.match(gallery, /nativeCellOpenAbort\.current\?\.abort\(\)/)
   assert.match(gallery, /if \(collectionTargetRef\.current\?\.kind === 'baidu-cell'\)/)
