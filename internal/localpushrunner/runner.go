@@ -21,7 +21,11 @@ var (
 	ErrAlreadyRunning = errors.New("local push source already running")
 	ErrQuarantined    = errors.New("local push source requires durable recovery")
 	ErrUncertain      = errors.New("local push commit outcome uncertain")
-	ErrDenied         = errors.New("local push admission denied")
+	// Only a trusted native Driver may return this after it attempted the
+	// O_EXCL Stage admission. The Stage or its remote bytes may now persist,
+	// even when its HTTP response or local checkpoint was lost.
+	ErrStageAdmissionUncertain = errors.New("local push stage admission may be durable")
+	ErrDenied                  = errors.New("local push admission denied")
 )
 
 var canonicalUUID = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -220,29 +224,35 @@ func (r *Runner) RunFirstLeaf(ctx context.Context, scope Scope, d Driver) (First
 	}
 	stage, err := d.Stage(ctx, scope)
 	if err != nil {
+		if errors.Is(err, ErrStageAdmissionUncertain) {
+			// The native Stage claim and possibly remote bytes outlived the
+			// failed response. A second Stage/Operation would risk duplication.
+			r.quarantine(scope.SourceID)
+			return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)
+		}
+		// A trusted Driver may report a definite pre-admission refusal.
+		// It must NEVER use a plain error once Stage admission was attempted.
 		return empty, err
 	}
+	// A successful Stage creates a durable one-shot claim; quarantine now,
+	// BEFORE post-stage reauthorization, cancellation or original Prepare.
+	r.quarantine(scope.SourceID)
 	if !stage.matches(scope) {
-		return empty, ErrDenied
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, ErrDenied)
 	}
 	if err := ctx.Err(); err != nil {
-		return empty, err
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)
 	}
 	if err := d.Check(ctx, scope); err != nil {
-		return empty, ErrDenied
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, ErrDenied)
 	}
 	if err := ctx.Err(); err != nil {
-		return empty, err
+		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)
 	}
-	// Prepare can durably reserve an Operation and lose its HTTP ACK. Fence
-	// all new work BEFORE sending the first request, not after its response.
-	// Cross-process/crash recovery must additionally verify the OS-stored
-	// request-key claim and authoritative Server COMMIT evidence.
-	// Prepare can commit an original Operation before its HTTP ACK is lost.
-	// From this point forward, a failed response, invalid result, or canceled
-	// caller is UNCERTAIN, never proof that no durable Operation exists.
-	// Preserve the original claim and refuse another generation.
-	r.quarantine(scope.SourceID)
+	// The durable Stage is already quarantined. Prepare may reserve an
+	// Operation before the HTTP ACK; any later failure remains UNCERTAIN.
+	// Neither the Stage nor the SecretStore request key can be silently
+	// replaced or retired based on a success/error response.
 	op, err := d.Prepare(ctx, scope, stage)
 	if err != nil {
 		return FirstLeafResult{Uncertain: true}, errors.Join(ErrUncertain, err)

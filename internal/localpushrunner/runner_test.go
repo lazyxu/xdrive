@@ -325,6 +325,88 @@ func TestPrepareCanceledAfterReservationReportsUncertainWithoutCommit(t *testing
 	}
 }
 
+func TestStageAdmissionUnknownQuarantinesBeforeOperationPrepare(t *testing.T) {
+	r := &Runner{}
+	upstream := errors.New("staging response lost after OS reservation")
+	d := &testDriver{stage: func(context.Context, Scope) (Staged, error) {
+		return Staged{}, errors.Join(ErrStageAdmissionUncertain, upstream)
+	}}
+	got, err := r.RunFirstLeaf(context.Background(), request(), d)
+	if !got.Uncertain || got.Confirmed || !errors.Is(err, ErrUncertain) ||
+		!errors.Is(err, ErrStageAdmissionUncertain) || !errors.Is(err, upstream) {
+		t.Fatalf("durable Stage ambiguity was treated as a safe failure: %+v %v", got, err)
+	}
+	for _, step := range d.stepsCopy() {
+		if step == "prepare" || step == "commit" || step == "reconcile" {
+			t.Fatalf("unacknowledged Stage reached an unsafe step: %v", d.stepsCopy())
+		}
+	}
+	if _, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
+		t.Fatalf("new Stage admitted after lost original Stage ACK: %v", err)
+	}
+}
+
+func TestStagePreAdmissionFailureDoesNotPretendItWasDurable(t *testing.T) {
+	r := &Runner{}
+	upstream := errors.New("pre-admission Root unavailable")
+	d := &testDriver{stage: func(context.Context, Scope) (Staged, error) {
+		return Staged{}, upstream
+	}}
+	got, err := r.RunFirstLeaf(context.Background(), request(), d)
+	if got.Uncertain || got.Confirmed || !errors.Is(err, upstream) || errors.Is(err, ErrUncertain) {
+		t.Fatalf("definite pre-admission refusal was misclassified: %+v %v", got, err)
+	}
+	retry, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{})
+	if err != nil || !retry.Confirmed {
+		t.Fatalf("definite pre-admission refusal permanently fenced retry: %+v %v", retry, err)
+	}
+}
+
+func TestStagedOriginalCancellationAndBadReceiptStayQuarantined(t *testing.T) {
+	for _, tc := range []string{"cancel-after-stage", "invalid-staged-receipt", "post-stage-revocation"} {
+		t.Run(tc, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			r := &Runner{}
+			d := &testDriver{}
+			switch tc {
+			case "cancel-after-stage":
+				d.stage = func(_ context.Context, s Scope) (Staged, error) {
+					cancel()
+					return stage(s), nil
+				}
+			case "invalid-staged-receipt":
+				d.stage = func(_ context.Context, s Scope) (Staged, error) {
+					v := stage(s)
+					v.ContentSHA256 = "different"
+					return v, nil
+				}
+			case "post-stage-revocation":
+				checks := 0
+				d.check = func(context.Context, Scope) error {
+					checks++
+					if checks > 1 {
+						return ErrDenied
+					}
+					return nil
+				}
+			}
+			got, err := r.RunFirstLeaf(ctx, request(), d)
+			if !got.Uncertain || got.Confirmed || !errors.Is(err, ErrUncertain) {
+				t.Fatalf("%s lost durable Stage ambiguity: %+v %v", tc, got, err)
+			}
+			for _, step := range d.stepsCopy() {
+				if step == "prepare" || step == "commit" || step == "reconcile" {
+					t.Fatalf("%s advanced beyond uncertain Stage: %v", tc, d.stepsCopy())
+				}
+			}
+			if _, err := r.RunFirstLeaf(context.Background(), request(), &testDriver{}); !errors.Is(err, ErrQuarantined) {
+				t.Fatalf("%s admitted another native Stage: %v", tc, err)
+			}
+		})
+	}
+}
+
 func TestRequestBoundsAndIdentity(t *testing.T) {
 	s := request()
 	for _, bad := range []func(*Scope){func(v *Scope) { v.SourceID = 0 }, func(v *Scope) { v.Revision = 0 }, func(v *Scope) { v.RootFingerprint = "not-a-hash" }, func(v *Scope) { v.Size = MaxFirstLeafBytes + 1 }, func(v *Scope) { v.ContentSHA256 = "BAD" }, func(v *Scope) { v.DeviceID = "invalid" }, func(v *Scope) { v.RelativePath = "" }, func(v *Scope) { v.RelativePath = "../escape" }, func(v *Scope) { v.RelativePath = "C:\\private" }, func(v *Scope) { v.Server = "host\nspoof" }} {
