@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/x509"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,6 +65,12 @@ func readBoundedPrivateFile(root *os.Root, dir, name string, max int) ([]byte, s
 // Windows is deliberately unsupported until equivalent secure file ACL and
 // root-confinement acceptance exists; the Windows path fails closed.
 func ReadPrivateBundle(dir, keyDERPin, hostPin, serverPin string, now time.Time) (VerifiedReadOnly, error) {
+	return readPrivateBundle(dir, keyDERPin, hostPin, serverPin, now, false)
+}
+
+// readPrivateBundle is private: only the in-package publisher which already
+// owns the exclusive lock may bypass the public publication fence.
+func readPrivateBundle(dir, keyDERPin, hostPin, serverPin string, now time.Time, publisherOwnsLock bool) (VerifiedReadOnly, error) {
 	fail := func() (VerifiedReadOnly, error) { return VerifiedReadOnly{}, errUntrusted }
 	if runtime.GOOS == "windows" || dir == "" || !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
 		return fail()
@@ -82,6 +89,10 @@ func ReadPrivateBundle(dir, keyDERPin, hostPin, serverPin string, now time.Time)
 	openedDir, err := root.Stat(".")
 	if err != nil || !os.SameFile(beforeDir, openedDir) ||
 		openedDir.Mode() != beforeDir.Mode() {
+		return fail()
+	}
+	// Missing is the only admissible public writer-lock state.
+	if !publisherOwnsLock && !privateBundlePublisherLockAbsent(root) {
 		return fail()
 	}
 	publicDER, pubMeta, err := readBoundedPrivateFile(root, dir, privatePublicDERFile, 44)
@@ -129,5 +140,15 @@ func ReadPrivateBundle(dir, keyDERPin, hostPin, serverPin string, now time.Time)
 		!os.SameFile(openedDir, afterDir) || afterDir.Mode() != openedDir.Mode() {
 		return fail()
 	}
+	// A publisher might start after the first check. Fence again before
+	// exposing verified read-only evidence outside the Host writer.
+	if !publisherOwnsLock && !privateBundlePublisherLockAbsent(root) {
+		return fail()
+	}
 	return verified, nil
+}
+
+func privateBundlePublisherLockAbsent(root *os.Root) bool {
+	_, err := root.Lstat(privateBundlePublisherLock)
+	return errors.Is(err, os.ErrNotExist)
 }
