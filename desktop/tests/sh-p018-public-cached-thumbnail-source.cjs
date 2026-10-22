@@ -22,37 +22,39 @@ test('SH-P018 original 100k physical JPEG source and sixteen separately cached d
   assert.ok(!go.includes('test-only nil file') && !go.includes('fakeStore'),
     'real source must not be replaced by mocks')
 })
-test('SH-P018 signed cached GET is held after original Gin entry, not replaced by a mocked fetch or Owner URL', () => {
+
+test('SH-P018 signed cached GET is held after Gin entry, without mocked fetch or Owner URL', () => {
+  const facade = fs.readFileSync(path.join(root, 'ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'), 'utf8')
+  const bridge = fs.readFileSync(path.join(root, 'ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx'), 'utf8')
+  const core = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  const native = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorerThumbnail.tsx'), 'utf8')
   for (const token of [
     'type shP018HeldBodyWriter struct', '<-w.request.Context().Done()',
     'server.Auth.ParsePublicShareThumbnail', 'claims.NodeID == blockedNodeID',
-    'router.ServeHTTP(&shP018HeldBodyWriter',
-    'thumbnail_cancelled_go', 'thumbnail_active_held', 'thumbnail_stale_body_bytes',
-  ]) assert.ok(go.includes(token), 'missing true Go cancellation proof: ' + token)
-  for (const forbidden of ['window.fakeFetch', 'route.fulfill(', 'mockFetch(']) {
-    assert.ok(!driver.includes(forbidden), 'native Chromium must hit real server: ' + forbidden)
-  }
+    'router.ServeHTTP(&shP018HeldBodyWriter', 'thumbnail_cancelled_go',
+    'thumbnail_active_held', 'thumbnail_stale_body_bytes',
+  ]) assert.ok(go.includes(token), 'missing genuine Go cancellation proof: ' + token)
+  for (const forbidden of ['window.fakeFetch', 'route.fulfill(', 'mockFetch('])
+    assert.ok(!driver.includes(forbidden), 'native Chromium must hit Go server: ' + forbidden)
   assert.match(publicPage, /activeThumbnailRequests\.current/)
   assert.match(publicPage, /document\.addEventListener\('visibilitychange'/)
   assert.match(publicPage, /window\.addEventListener\('pagehide'/)
-  // A genuine next-page action must signal Go immediately, before awaiting
-  // the server's next-page metadata or the next React/thumbnail lifecycle.
   const loadFolderSource = publicPage.slice(publicPage.indexOf('const loadFolder = async'),
     publicPage.indexOf('const download = async'))
-  assert.ok(loadFolderSource.includes('folder.cursor !== cursor'),
-    'only navigation changing the accepted cursor/scope may force eviction')
-  assert.ok(loadFolderSource.includes('!refresh'),
-    'ordinary refresh must retain current visible thumbnail consumers')
-  assert.ok(loadFolderSource.includes('activeThumbnailRequests.current) request.abort()'),
-    'navigation must synchronously abort obsolete cached thumbnail HTTP GETs')
-  assert.ok(loadFolderSource.indexOf('request.abort()') <
-    loadFolderSource.indexOf('await shareFileAdapter.list('),
-    'server-side request cancellation must precede replacement-page network wait')
-  assert.ok(publicPage.includes('await api.publicShareChildren(token, password, parentID, pageCursor, signal)'),
-    'neutral list adapter must forward the actual scoped Share API request and AbortSignal')
-  assert.match(publicView, /IntersectionObserver/)
-  assert.doesNotMatch(publicView, /onDeleteItems|onMoveItemsTo|onUpload|onPaste|OwnerJWT/)
+  assert.ok(loadFolderSource.includes('folder.cursor !== cursor'))
+  assert.ok(loadFolderSource.includes('!refresh'))
+  assert.ok(loadFolderSource.includes('activeThumbnailRequests.current) request.abort()'))
+  assert.ok(loadFolderSource.indexOf('request.abort()') < loadFolderSource.indexOf('await shareFileAdapter.list('))
+  assert.ok(publicPage.includes('await api.publicShareChildren(token, password, parentID, pageCursor, signal)'))
+  assert.ok(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert.ok(bridge.includes('loadThumbnail={thumbnailLoader}'))
+  assert.ok(bridge.includes('forceVirtualization'))
+  assert.ok(core.includes('XDriveFileExplorerThumbnailProvider'))
+  assert.match(native, /IntersectionObserver/)
+  for (const forbidden of ['onDeleteItems=', 'onMoveItemsTo=', 'onUpload=', 'onPaste=',
+    'OwnerJWT']) assert.ok(!bridge.includes(forbidden))
 })
+
 test('SH-P018 real-browser sessions use three independent lifecycle cancellations per CSS width', () => {
   for(const token of [
     'probePublicCachedThumbnailCancellation', 'scroll-out-of-viewport',

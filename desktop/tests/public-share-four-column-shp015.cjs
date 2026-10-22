@@ -6,54 +6,40 @@ const path = require('node:path')
 const root = path.join(__dirname, '../..')
 const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 
+
 test('SH-P015 four-column Share Details follows Owner default, without a fifth operation column', () => {
   const owner = read('ui/shared/src/mui/FileExplorer.tsx')
-  const publicView = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
-  const shared = read('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   assert.ok(owner.includes("defaultDetailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = ["))
-  for (const token of ["  'name',", "  'updated',", "  'type',", "  'size',"]) assert.ok(owner.includes(token))
-  assert.ok(owner.includes("updated: { label: '修改时间', defaultWidth: 190"))
-  assert.ok(owner.includes("type: { label: '类型', defaultWidth: 150"))
-  assert.ok(owner.includes("size: { label: '大小', defaultWidth: 120"))
-  assert.match(publicView, /shareDetailsColumns = 'minmax\(0,1fr\) 190px 150px 120px'/)
-  assert.match(publicView, /xDriveFileExplorerDetailsHeaderGeometry\(shareDetailsColumns\)/)
-  assert.ok(publicView.includes("? shareDetailsColumns : undefined"))
-  assert.ok(publicView.includes("gridTemplateColumns: 'minmax(0,1fr)'"))
-  assert.ok(publicView.includes("'& > [role=\"cell\"]:not(:first-child)'"), 'compact viewport must hide entire extra columns, not just their text')
-  assert.doesNotMatch(publicView, />操作<\/Typography>/)
-  assert.doesNotMatch(publicView, /minmax\(0,1fr\) 92px/)
-  assert.match(shared, /export function XDriveFileExplorerDetailsRowCell\(/)
-  for (const col of ['name', 'updated', 'type', 'size'])
-    assert.ok(publicView.includes('columnKey="' + col + '"'))
+  for (const token of ["  'name',", "  'updated',", "  'type',", "  'size',"])
+    assert.ok(owner.includes(token))
+  for (const token of ["updated: { label: '修改时间', defaultWidth: 190",
+    "type: { label: '类型', defaultWidth: 150", "size: { label: '大小', defaultWidth: 120"])
+    assert.ok(owner.includes(token))
+  assert.ok(bridge.includes('<XDriveFileExplorer'))
+  assert.ok(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert.equal(facade.includes('shareDetailsColumns'), false)
+  assert.equal(bridge.includes('shareDetailsColumns'), false)
+  assert.equal(facade.includes('columnKey="name"'), false)
+  assert.equal(bridge.includes('columnKey="name"'), false)
 })
 
-test('SH-P015 selection actions stay in reserved toolbar and cannot double-trigger inline Share requests', () => {
-  const publicView = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
-  const start = publicView.indexOf('{visibleItems.map(entry => (')
-  const end = publicView.indexOf('      ))}', start)
-  assert.ok(start >= 0 && end > start, 'bounded Share page should render its own rows')
-  const row = publicView.slice(start, end)
-  assert.ok(!row.includes('<Button'), 'read-only Explorer file rows cannot contain always-visible command buttons')
-  assert.ok(!row.includes('<MenuItem'), 'Share row context items belong to the separate menu')
+
+test('SH-P015 selection actions stay in Core toolbar and cannot double-trigger inline Share requests', () => {
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
   for(const token of [
-    'data-xdrive-public-share-selection-slot',
-    "flex: '0 0 238px'", 'height: 36',
-    'data-xdrive-public-share-selected-open',
-    'data-xdrive-public-share-selected-preview',
-    'data-xdrive-public-share-selected-download',
-    'data-xdrive-public-share-selected-properties',
-    'visibleItems.find(entry => entry.id === selectedID)',
-    "if (compactShareViewport) openEntry(entry)",
-    "if (!compactShareViewport) openEntry(entry)",
-    'onDownloadItem?.(selectedEntry)',
-    'setPropertiesEntry(selectedEntry)',
-    'onContextMenu={(event) => openContextMenu(event, entry)}',
-    'items.slice(0, 100)',
-  ]) assert.ok(publicView.includes(token), 'missing bounded read-only behavior: ' + token)
-  for(const forbidden of [
-    'XDriveApi', 'OwnerJWT', 'ownerToken', 'onUpload', 'onDelete', 'onMove',
-    'onDropItemsToFolder', 'onPaste', 'onRename',
-  ]) assert.ok(!publicView.includes(forbidden), 'public link cannot borrow Owner account actions: ' + forbidden)
+    'getItemMenuItems={contextActions}', 'onDownloadItems={caps.download',
+    'getSelectionActionDisabledReason=', 'targets.length !== 1',
+    'onOpenItem={openItem}', 'onDownloadItem?.(entry)', 'onOpenFolder?.(entry)',
+    'items.slice(0, fileLink ? 1 : sharePageLimit)', 'fileLink ? 1 : sharePageLimit',
+  ]) assert.ok(bridge.includes(token), 'missing read-only Core behavior: ' + token)
+  assert.equal(facade.includes('visibleItems.map('), false)
+  assert.equal(bridge.includes('<XDriveFileExplorerItemSurface'), false)
+  for(const forbidden of ['XDriveApi', 'OwnerJWT', 'ownerToken', 'onUpload=', 'onDeleteItems=',
+    'onMoveItemsTo=', 'onDropItemsToFolder=', 'onPaste=', 'onRename='])
+    assert.ok(!bridge.includes(forbidden), 'public Core cannot borrow Owner actions: ' + forbidden)
 })
 
 test('SH-P015 real 100k JWT-free Chromium download uses authorized Share context menu', () => {

@@ -12,13 +12,14 @@ const core = read('ui/shared/src/mui/FileExplorer.tsx')
 const publicPage = read('web/src/PublicShare.tsx')
 const browser = read('desktop/scripts/sh-p005-browser-physical-jpeg-share-100k.cjs')
 
-test('authorized Share folder mounts the identical Owner FileExplorer Grid/Details/Viewer core', () => {
-  assert(facade.includes('if (folder && folderOpened)'))
-  assert(facade.includes('<XDrivePublicShareUnifiedDirectoryExplorer'))
+
+test('both authorized Share folders and single-file links mount the identical Owner FileExplorer core', () => {
+  assert(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
   assert(bridge.includes('<XDriveFileExplorer'))
   assert(bridge.includes('data-xdrive-public-share-unified-core="true"'))
-  assert(bridge.includes('loadThumbnail={thumbnailLoader}'))
-  assert(bridge.includes('loadPreviewURL={previewURLLoader}'))
+  assert(bridge.includes('data-xdrive-public-share-kind={kind}'))
+  assert(bridge.includes("const fileLink = kind === 'file'"))
+  assert(bridge.includes('!fileLink && !folderOpened && !pending'))
   assert(core.includes('XDriveFileExplorerThumbnailProvider'))
   assert(core.includes('XDriveFileQuickLookDialog'))
   assert(bridge.includes('forceVirtualization'))
@@ -28,9 +29,10 @@ test('authorized Share folder mounts the identical Owner FileExplorer Grid/Detai
   assert(bridge.includes('items={projectedItems}'))
 })
 
-test('Share reads are 100-row bounded, no synthetic Owner random-range or whole-tree search', () => {
+
+test('Share folder reads stay <=100 and single-file payload <=1, with no false whole-tree search', () => {
   assert(bridge.includes('const sharePageLimit = 100'))
-  assert(bridge.includes('items.slice(0, sharePageLimit)'))
+  assert(bridge.includes('items.slice(0, fileLink ? 1 : sharePageLimit)'))
   assert(bridge.includes('getItemMenuItems={contextActions}'))
   assert(bridge.includes('searchEnabled={false}'))
   assert(bridge.includes('groupingEnabled={false}'))

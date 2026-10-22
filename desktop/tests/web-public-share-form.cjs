@@ -197,6 +197,66 @@ async function mountShare(t, { share: overrides = {}, download = async () => {} 
   }
 }
 
+
+test('SH-P023 single-file share uses the same FileExplorer Core, bounded one item and native ticket', async (t) => {
+  const view = await mountShare(t, { share: {
+    type: 'file', name: 'photo.jpg', revision: 11,
+    updated_at: '2026-10-22T02:00:00Z', requires_password: false,
+    max_downloads: 2, download_count: 0,
+  } })
+  const host = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-folder-browser'] === true,
+  )
+  assert.equal(host.length, 1, 'a single-file link must actually mount the shared Core')
+  const rows = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-item-id'] === 0,
+  )
+  assert.equal(rows.length, 1, 'exactly one server-authorized file enters the common Core')
+  assert.ok(textContent(rows[0].children).includes('photo.jpg'))
+  await act(async () => { rows[0].props.onClick() })
+  const selected = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-selected-download'] === true,
+  )
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].props.disabled, false)
+  await act(async () => { selected[0].props.onClick() })
+  assert.deepEqual(view.downloads, [{
+    token: 'test-share-token', password: '', filename: 'photo.jpg',
+  }])
+  assert.ok(view.text().includes('剩余 1 / 2 次下载'))
+})
+
+test('SH-P023 Share server grants deny single-file native download independently of preview', async (t) => {
+  const view = await mountShare(t, { share: {
+    type: 'file', name: 'photo.jpg', revision: 11, requires_password: false,
+    capabilities: { list: true, preview: true, download: false, downloadZip: false,
+      search: false, write: false, delete: false },
+  } })
+  const host = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-folder-browser'] === true,
+  )
+  assert.equal(host.length, 1, 'browse and preview remain granted independently of download')
+  const rows = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-item-id'] === 0,
+  )
+  assert.equal(rows.length, 1)
+  assert.equal(view.button().props.disabled, true, 'native original handoff must be denied')
+  await view.submit()
+  assert.equal(view.downloads.length, 0, 'form submit must not bypass Go-issued grant')
+  await act(async () => { rows[0].props.onClick() })
+  const selected = view.renderer.root.findAll(
+    node => typeof node.type === 'string' &&
+      node.props['data-xdrive-public-share-selected-download'] === true,
+  )
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].props.disabled, true, 'Core action must also deny original download')
+})
+
 test('Public Share uses the shared AuthPanel native form and submit button', async (t) => {
   const view = await mountShare(t)
   const forms = view.renderer.root.findAllByType('form')
@@ -774,7 +834,8 @@ test('Public Share mounts a full-width read-only FileExplorer workspace, not a n
   assert.ok(view.text().includes('HEIC 图像'))
   assert.equal(view.renderer.root.findAllByType('form').length, 1)
   assert.equal(view.button().props.type, 'submit', 'native download form remains functional')
-  assert.equal(named('data-xdrive-public-share-details-header').length, 1)
+  assert.equal(named('data-xdrive-public-share-file-browser').length, 1,
+    'single-file Share must mount the shared Core, not a duplicate Details header')
   const source = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'), 'utf8')
   for (const forbidden of ['XDriveApi', 'ownerToken', 'onUpload', 'onDelete', 'onMove', 'onPaste']) {
     assert.equal(source.includes(forbidden), false, 'public presentation must not import Owner capability ' + forbidden)

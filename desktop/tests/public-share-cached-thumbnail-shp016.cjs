@@ -35,39 +35,36 @@ test('SH-P016 Share uses purpose-separated cached derivative only, no account JW
   ]) assert.ok(router.includes(route), route)
 })
 
-test('SH-P016 borrowed Owner-neutral thumbnail visual cancels viewport-evicted temporary GETs', () => {
-  const shared = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+
+test('SH-P016 common FileExplorer thumbnail scheduler cancels ephemeral Share media GETs', () => {
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   const native = read('ui/shared/src/mui/FileExplorerThumbnail.tsx')
+  const core = read('ui/shared/src/mui/FileExplorer.tsx')
   const publicView = read('web/src/PublicShare.tsx')
   const api = read('web/src/api.ts')
   const folder = read('internal/api/folder_shares.go')
-  for (const marker of [
-    'XDriveFileExplorerThumbnailProvider', 'XDriveFileExplorerThumbnail',
-    'XDrivePublicShareThumbnailSlot', 'data-xdrive-public-share-scroll-host',
-    'data-xdrive-public-share-thumbnail-viewport', 'observer.disconnect()',
-    "rootMargin: '80px 0px'", 'nearViewport',
-    'entry.thumbnail_candidate === true',
-    'items.slice(0, 100)', 'loadThumbnail?:',
-  ]) assert.ok(shared.includes(marker), marker)
   for (const token of [
-    'scheduled.cancel()', 'entry.controller.abort()', 'fileThumbnailConcurrency',
-    'IntersectionObserver',
-  ]) assert.ok(native.includes(token), token)
+    'items.slice(0, fileLink ? 1 : sharePageLimit)', 'entry.thumbnail_candidate === true',
+    'loadThumbnail={thumbnailLoader}', 'thumbnailLoader = useMemo(', '<XDriveFileExplorer',
+    'forceVirtualization',
+  ]) assert.ok(bridge.includes(token), token)
+  assert.ok(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert.ok(core.includes('XDriveFileExplorerThumbnailProvider'))
+  for (const token of ['scheduled.cancel()', 'entry.controller.abort()', 'fileThumbnailConcurrency',
+    'IntersectionObserver']) assert.ok(native.includes(token), token)
   assert.equal((publicView.match(/loadThumbnail=\{loadSharedThumbnail\}/g) || []).length, 2)
   assert.ok(publicView.includes('api.publicShareThumbnailURL(token, password, entry.id, entry.revision, controller.signal)'))
   assert.ok(publicView.includes("signal?.addEventListener('abort', cancelFromViewport, { once: true })"))
   assert.ok(publicView.includes('activeThumbnailRequests.current.add(controller)'))
-  for (const token of [
-    '/api/v1/public/share/thumbnail-ticket',
-    'xDriveThumbnailHasSafeImageEnvelope(blob, mime, signal)',
-    'signal?.throwIfAborted()',
-    "credentials: 'omit'", "cache: 'no-store'",
-  ]) assert.ok(api.includes(token), token)
+  for (const token of ['/api/v1/public/share/thumbnail-ticket',
+    'xDriveThumbnailHasSafeImageEnvelope(blob, mime, signal)', 'signal?.throwIfAborted()',
+    "credentials: 'omit'", "cache: 'no-store'"])
+    assert.ok(api.includes(token), token)
   assert.ok(folder.includes('node_id IN ?'))
   assert.ok(folder.includes('ThumbnailCandidate: eligible[item.ID]'))
-  assert.equal(shared.includes('onDropItemsToFolder'), false)
-  assert.equal(shared.includes('onDelete'), false)
-  assert.equal(shared.includes('onUpload'), false)
+  for (const forbidden of ['onDropItemsToFolder=', 'onDeleteItems=', 'onUpload='])
+    assert.equal(bridge.includes(forbidden), false)
 })
 
 test('SH-P016 page background synchronously aborts ephemeral thumbnails but not durable tasks', () => {

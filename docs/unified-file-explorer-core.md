@@ -27,7 +27,7 @@ XDriveFileExplorer Core（共享）
 
 - 已合入 [SH-P021 #2307](https://github.com/lazyxu/xdrive/pull/2307)：已授权的**分享文件夹**实际挂载和 Owner 同一个 `XDriveFileExplorer` Grid/Details Core，调用专属 Share 数据适配器，使用相同的虚拟滚动、缩略图调度、选择、预览和属性/菜单基件。原 Share facade 暂时管理分享密码、过期、次数、单文件显示及 ZIP 生命周期；它**不是**第三套可持续演进的文件夹浏览器。
 - Owner 大目录的稀疏 Range 保留按可视窗口取元数据的策略；Share `publicShareChildren` 使用 Go 端有界 keyset/cursor（当前页 **最多 100 项**），前端只保留当前窗口和必要的短游标历史，绝不能将 100k 子项加载为一个 JS 数组，也不得全量客户端排序/搜索。Share 的“筛选当前页”只筛当前已授权的最多 100 项，**不等于**全子树搜索。
-- 已授权的 Share 文件夹 Grid/Details 收敛完成；**单文件分享旧 facade、真正全子树搜索/排序、全格式媒体 Viewer 的完全一致性仍未完成**。不准把纯展示复用写成这些功能已交付。
+- 已授权的 Share 文件夹 Grid/Details 已复用 Core。后续 SH-P023 将单文件分享也直接交给同一 Core，仅保留不含独立行/网格/浏览逻辑的 facade。**Share 全子树搜索/排序、全格式媒体 Viewer 的完全一致性、可配置安全 preview-only 仍未完成**，不能因为单文件 UI 共用而谎称完成。
 
 ### 2. 服务端七项能力是上限，不是 bearer 授权
 
@@ -76,7 +76,7 @@ P072/P073 真实 Chromium 测量是 **Linux Xvfb 环境的 Web1440 / CDP390 模�
 
 1. 优先关闭/合并现有相关 PR，按依赖处理。已合并的 SH-P018/P020/P021/P022/P070/P072 与 P068/P071 **不得重做**；没有真实未合入分支不要制造重复分支。
 2. P073 **只处理当前真实 100k Share 列表隐藏取消证据与 CI**，前一 source-exact GREEN 不自动授权归档 HEAD。CI/Final Gate+clean 后即可收尾，不把无根据的优化嫁接进来。
-3. 完成真正剩余的单文件 Share Core 删除旧外层、Share-root 全子树搜索/排序和可配置 Preview-only Go 策略时，应分别做最小独立 PR，保留认证负例、100k 分页/媒体和持久任务隔离，不因为已复用文件夹 Core 就误称全部完成。
+3. SH-P023 单文件分享改走原 FileExplorer Core，只删独立展示行，不触碰 Owner/Go/ZIP 访问控制，附单文件密码/撤销/下载及权限/真实文件夹 100k 回归。Share-root 全子树搜索/排序与 Preview-only Go 策略须分别做最小独立 PR；不得因为统一 UI 而宣布这两项已经完成。
 4. 性能专项先测 **CURRENT/BEFORE**；达预算则保留现状。如果客观不达预算或有明显尾延迟，先定位瓶颈，之后在**同源码/同 Runner/同负载**独立 n≥3 做匹配 BEFORE/AFTER；收益显著且 CPU/RSS/I/O、网络字节、数据完整性和 Owner/Share 权限不退化才保留。Race 专项不改。
 5. 完整 Web/Desktop、Go Linux/Windows、真实 PostgreSQL API、源码安全负例和 Final Gate 不得跳过。无法接触的生产环境专属安全验收统一为 **“按用户决定跳过（未验收）”**，不索取 AK/JWT/Cookie/HAR/生产账号，也不将其作为源码/CI/合并门槛。
 
@@ -86,3 +86,4 @@ P072/P073 真实 Chromium 测量是 **Linux Xvfb 环境的 Web1440 / CDP390 模�
 - Grid/Details、虚拟离屏、缩略图 JPEG/H264/Live 静态图、视频 poster、Viewer 图片/PDF/视频首帧、搜索/排序/属性、单个文件和子文件夹下载/ZIP。
 - 大文件 Web/Desktop 1/4 GiB 真 SHA 上传/下载/断点/取消；100k Copy/Move/Delete/Undo/Sync 持久任务和入队尾延迟；后端 Root/Owner/Token/撤销/密码/配额负例。
 - 滚动/切目录/路由/窗口隐藏时，分别测已经实际建立的请求、Go Context.Done、Handler active=0、废弃响应字节和取消后 CPU/RSS 释放；同时实测 durable Task **不被这些展示生命周期错误取消**。Race 单列。
+- 本条 SH-P023 的验证必须在自身准确 HEAD 重跑 `desktop-tests` 与 Web 构建，并通过此分支启用的 SH-P021 原生 Chromium / PostgreSQL / CAS 物理 100k 和 P073 Share List → Go `Context.Done` 取消专项；失败时不得复用父分支绿色记录。
