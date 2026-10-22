@@ -95,3 +95,55 @@ func TestOriginalQuarantineReadOnlyRejectsSymlinkAndPublicPermissions(t *testing
 		t.Fatal("symlinked immutable writer marker accepted")
 	}
 }
+
+func TestOriginalQuarantinePostReadRejectsSameContentReplacedMarker(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows may deny renaming an open file. Native Windows writer
+		// crash/release tests independently cover the persistent O_EXCL slot.
+		t.Skip("renaming an open original descriptor is platform-specific")
+	}
+	s := testScope(t)
+	claim, err := Begin(context.Background(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = claim.Close() })
+	if err := claim.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(s.path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := int64(len(s.marker()))
+	if !originalWriterPathMatchesOpenedAfterRead(context.Background(), s, f, opened, size) {
+		t.Fatal("unchanged original marker was rejected")
+	}
+	oldPath := s.path() + ".previous"
+	if err := os.Rename(s.path(), oldPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.path(), []byte(s.marker()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Bytes and length are identical, but a new file is not the original
+	// held native writer claim. This must fail without changing either file.
+	if originalWriterPathMatchesOpenedAfterRead(context.Background(), s, f, opened, size) {
+		t.Fatal("same-content replaced marker passed original descriptor check")
+	}
+	if err := os.Remove(s.path()); err != nil {
+		t.Fatal(err)
+	}
+	if originalWriterPathMatchesOpenedAfterRead(context.Background(), s, f, opened, size) {
+		t.Fatal("missing original path passed post-read identity check")
+	}
+	body, err := os.ReadFile(oldPath)
+	if err != nil || string(body) != s.marker() {
+		t.Fatalf("original immutable marker was modified: %v", err)
+	}
+}
