@@ -69,6 +69,16 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 			!db.Migrator().HasIndex(&meta.LocalPushFileTerminal{}, "idx_xd_local_push_file_terminal_generation") {
 			t.Fatal("private file-terminal SQL schema/unique indexes missing")
 		}
+		if !db.Migrator().HasTable(&meta.LocalPushNativeTerminalChallenge{}) ||
+			!db.Migrator().HasIndex(&meta.LocalPushNativeTerminalChallenge{},
+				"idx_xd_local_push_native_terminal_challenge_stage") {
+			t.Fatal("private native terminal challenge schema and unique Stage index missing")
+		}
+		var challengeCount int64
+		if err := db.Model(&meta.LocalPushNativeTerminalChallenge{}).
+			Count(&challengeCount).Error; err != nil || challengeCount != 0 {
+			t.Fatalf("migration invented remote native attestation: %d %v", challengeCount, err)
+		}
 		var fileTerminals int64
 		if err := db.Model(&meta.LocalPushFileTerminal{}).
 			Count(&fileTerminals).Error; err != nil || fileTerminals != 0 {
