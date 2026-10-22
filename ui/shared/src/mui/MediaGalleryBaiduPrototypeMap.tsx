@@ -75,9 +75,13 @@ type Runtime = {
 const loaded = new WeakMap<Document, {
   ak: string; promise: Promise<Namespace>
 }>()
+// Each browser document receives a one-shot, collision-free SDK callback.
+// Baidu JSAPI4's async contract signals readiness via the callback query.
+let nextJSAPI4CallbackID = 0
 const validAK = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 256 &&
   /^[\x21-\x7e]+$/.test(value)
+
 
 class XDriveBaiduPrototypeFailure extends Error {
   constructor(readonly code: XDriveBaiduMapDiagnosticCode) {
@@ -105,6 +109,10 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
     }
     let settled = false
     let bootstrapLoaded = false
+    let callbackObserved = false
+    const browser = doc.defaultView as unknown as Window & Record<string, unknown> & { BMap?: Namespace }
+    const callbackName = '__xDriveBaiduJSAPI4Ready' + (++nextJSAPI4CallbackID)
+    let onProviderReady: () => void = () => {}
     let poll: ReturnType<typeof setTimeout> | undefined
     let timeout: ReturnType<typeof setTimeout> | undefined
     const missingCapability = (): XDriveBaiduMapDiagnosticCode | null => {
@@ -126,11 +134,16 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
       settled = true
       if (poll) clearTimeout(poll)
       if (timeout) clearTimeout(timeout)
+      // An AK-bearing provider request must not leave global callbacks behind
+      // after success, failure, timeout or a retry. Never remove another value.
+      try {
+        if (browser[callbackName] === onProviderReady) delete browser[callbackName]
+      } catch { /* an embedded WebView may reject property deletion */ }
       try { doc.removeEventListener('securitypolicyviolation', onPolicyViolation) }
       catch { /* some WebViews have no event API */ }
       script.onload = script.onerror = null
       if (error || !sdk) {
-        script.remove()
+        try { script.remove() } catch { /* detached or restricted document */ }
         reject(error ?? new XDriveBaiduPrototypeFailure('prototype_sdk_namespace_missing'))
       } else resolve(sdk)
     }
@@ -148,24 +161,43 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
     try { doc.addEventListener('securitypolicyviolation', onPolicyViolation) }
     catch { /* script.onerror still reports SDK load failure */ }
     const ready = () => {
-      if (!bootstrapLoaded || settled) return
+      if (!callbackObserved || settled) return
       if (missingCapability() === null) {
         try { cleanup(undefined, (doc.defaultView as Window & { BMap?: Namespace }).BMap) }
         catch { cleanup(new XDriveBaiduPrototypeFailure('prototype_sdk_namespace_missing')) }
       } else poll = setTimeout(ready, 100)
     }
+    // script.onload only proves that the bootstrap response was fetched, NOT
+    // that the asynchronous JSAPI runtime established window.BMap. Baidu's
+    // documented callback fires when its initialization has completed.
+    onProviderReady = () => {
+      if (settled || callbackObserved) return
+      callbackObserved = true
+      ready()
+    }
     // Public Browser AK goes only to Baidu SDK, never into diagnostics.
     // This direct browser request is NOT the Admin fixed Server Loader probe.
     try {
-      script.src = 'https://api.map.baidu.com/api?v=4.0&ak=' + encodeURIComponent(ak)
+      if (Object.prototype.hasOwnProperty.call(browser, callbackName)) {
+        throw new Error('callback_name_conflict')
+      }
+      // Register BEFORE setting src/inserting script; the SDK may invoke the
+      // callback synchronously or before script.onload in some browsers.
+      browser[callbackName] = onProviderReady
+      if (browser[callbackName] !== onProviderReady) {
+        throw new Error('callback_registration_failed')
+      }
+      script.src = 'https://api.map.baidu.com/api?v=4.0&ak=' +
+        encodeURIComponent(ak) + '&callback=' + callbackName
       script.async = true
       script.referrerPolicy = 'strict-origin-when-cross-origin'
-      script.onload = () => { bootstrapLoaded = true; ready() }
+      script.onload = () => { bootstrapLoaded = true }
       script.onerror = () => cleanup(
         new XDriveBaiduPrototypeFailure('prototype_sdk_script_failed'))
       timeout = setTimeout(() => cleanup(new XDriveBaiduPrototypeFailure(
-        bootstrapLoaded ? (missingCapability() ?? 'prototype_sdk_namespace_missing')
-          : 'prototype_sdk_script_timeout')), 12000)
+        !bootstrapLoaded && !callbackObserved ? 'prototype_sdk_script_timeout'
+          : !callbackObserved ? 'prototype_sdk_callback_timeout'
+            : (missingCapability() ?? 'prototype_sdk_namespace_missing'))), 12000)
       doc.head.appendChild(script)
     } catch {
       cleanup(new XDriveBaiduPrototypeFailure('prototype_sdk_script_injection_failed'))
