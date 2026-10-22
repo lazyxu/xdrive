@@ -53,6 +53,10 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	nativeCancelMode := os.Getenv("XD_PWA_S4C3_CANCEL") == "1"
 	wakeMode := os.Getenv("XD_PWA_S4D2_WAKE") == "1"
 	durableMode := os.Getenv("XD_PWA_S4D3_DURABLE") == "1"
+	cancelDurableMode := os.Getenv("XD_PWA_CR01B4_CANCEL_DURABLE") == "1"
+	if cancelDurableMode && !durableMode {
+		t.Fatal("CR01b4 requires genuine S4D3 durable worker")
+	}
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
 	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
 	folderResumeMode := os.Getenv("XD_PWA_S4B3_REAL_FOLDER") == "1"
@@ -301,6 +305,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	var cr02b3Me503 atomic.Bool
 	var cr02b3Node429 atomic.Bool
 	var cr02b3Range503 atomic.Bool
+	var cr01b4Probe pwaCR01b4ReadProbe
 	var nativeFirstDownloadPaced atomic.Bool
 	done := make(chan struct{})
 	var once sync.Once
@@ -339,6 +344,19 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusNoContent)
 			return
+		case cancelDurableMode && request.URL.Path == "/__test/pwa-cr01b4/proof":
+			if request.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]bool{
+				"read_started":           cr01b4Probe.started.Load(),
+				"read_context_cancelled": cr01b4Probe.cancelled.Load(),
+				"read_handler_exited":    cr01b4Probe.handlerExited.Load(),
+			})
+			return
 		case wakeMode && request.URL.Path == "/__test/pwa-s4d2/advance":
 			wakeFixture.advance(w, request, db)
 			return
@@ -353,6 +371,18 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			once.Do(func() { close(done) })
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasPrefix(request.URL.Path, "/api/"):
+			// CR01b4: the real authenticated Gin Handler starts its normal
+			// bounded read, writes genuine Go JSON, and pauses ONLY at a test-
+			// controlled ResponseWriter. Browser abort must propagate to the
+			// request Context; the Server worker uses a different lifetime.
+			if cancelDurableMode && request.Method == http.MethodGet &&
+				request.URL.Path == fmt.Sprintf("/api/v1/nodes/%d/children", folder.ID) &&
+				request.Header.Get("X-PWA-CR01B4-Slow-Read") == "real-go-context" {
+				writer := &pwaCR01b4PacedWriter{ResponseWriter: w, request: request, probe: &cr01b4Probe}
+				router.ServeHTTP(writer, request)
+				cr01b4Probe.handlerExited.Store(true)
+				return
+			}
 			// Genuine Gin fixture returns real HTTP 503/429 only AFTER the
 			// test explicitly arms it; all successful follow-ups reach the
 			// unchanged production auth/ACL Gin Router. No API interception in Chrome.
@@ -480,6 +510,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		ready["pwa_s4d2_wake"] = true
 		ready["wake_task_id"] = "sync-run:" + wakeFixture.ownerRunID
 	}
+	if cancelDurableMode {
+		ready["pwa_cr01b4_cancel_durable"] = true
+	}
 	if durableMode {
 		ready["pwa_s4d3_durable"] = true
 		ready["durable_task_id"] = "file-operation:" + durableFixture.operationID
@@ -532,6 +565,10 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		}
 		if durableMode {
 			durableFixture.verify(t, srv, db, router, ownerToken, foreignToken)
+		}
+		if cancelDurableMode && (!cr01b4Probe.started.Load() ||
+			!cr01b4Probe.cancelled.Load() || !cr01b4Probe.handlerExited.Load()) {
+			t.Fatal("CR01b4 real Go read Context cancellation and handler exit not established")
 		}
 		if nativeDownloadMode {
 			pwaS4C3VerifyPhysicalCAS(t, db, local, nativeSeed)
