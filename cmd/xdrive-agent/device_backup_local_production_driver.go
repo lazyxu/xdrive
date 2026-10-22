@@ -37,8 +37,9 @@ type localPushFirstLeafDriver struct {
 	// The owning Desktop's real first-file path requires the same live
 	// kernel-locked Writer marker during HTTP SQL/CAS COMMIT and readback.
 	// Internal historical read tests are not given upload authority by this.
-	liveWriter         *localpushwriter.Claim
-	liveWriterRequired bool
+	liveWriter            *localpushwriter.Claim
+	liveWriterRequired    bool
+	liveWriterOriginalKey string
 }
 
 var errLocalPushDriverDenied = errors.New("owning local first-file runner unavailable")
@@ -114,6 +115,11 @@ func (d *localPushFirstLeafDriver) Stage(ctx context.Context, s localpushrunner.
 	if err := d.Check(ctx, s); err != nil {
 		return empty, err
 	}
+	// A forged or previously released Writer cannot persist the first O_EXCL
+	// Stage admission. Denial here is definite: no Stage has been attempted.
+	if err := d.requireLiveOriginalWriter(ctx, s); err != nil {
+		return empty, err
+	}
 	// A newly constructed owning Agent must durably claim this Source's
 	// first Stage slot BEFORE opening or transmitting original bytes.
 	// Crash, lost HTTP ACK and ambiguous Stage remain quarantined.
@@ -147,6 +153,9 @@ func (d *localPushFirstLeafDriver) Stage(ctx context.Context, s localpushrunner.
 func (d *localPushFirstLeafDriver) Prepare(ctx context.Context, s localpushrunner.Scope, st localpushrunner.Staged) (localpushrunner.Operation, error) {
 	var empty localpushrunner.Operation
 	if err := d.Check(ctx, s); err != nil {
+		return empty, err
+	}
+	if err := d.requireLiveOriginalWriter(ctx, s); err != nil {
 		return empty, err
 	}
 	if st.StageID == "" || st.StageID != d.stage.StageID || st.SourceID != s.SourceID ||
@@ -211,6 +220,9 @@ func (d *localPushFirstLeafDriver) Commit(ctx context.Context, s localpushrunner
 	if err := d.Check(ctx, s); err != nil {
 		return err
 	}
+	if err := d.requireLiveOriginalWriter(ctx, s); err != nil {
+		return err
+	}
 	// Pin the ORIGINAL persisted Stage recovery hint through the entire
 	// native fd + live Writer Claim + authenticated HTTP CAS/SQL callback.
 	// Its post-callback inode/byte/Root check must also succeed; failure
@@ -233,23 +245,20 @@ func (d *localPushFirstLeafDriver) Commit(ctx context.Context, s localpushrunner
 						)
 						return err
 					}
-					if d.liveWriterRequired {
-						return d.withBoundOriginalLiveWriterWitness(
-							heldCtx, s, original, st, op,
-							func(writeCtx context.Context, witness localPushOriginalHeldWitness) error {
-								// This is Agent-local correlation, NOT a Server
-								// physical terminal or remote OS attestation.
-								if witness.operationID != op.ID ||
-									witness.generation != op.Generation ||
-									witness.stageID != st.StageID ||
-									!validLocalPushNativeWitnessDigest(witness.digest) {
-									return errLocalPushDriverDenied
-								}
-								return commitBound(writeCtx)
-							},
-						)
-					}
-					return commitBound(heldCtx)
+					return d.withBoundOriginalLiveWriterWitness(
+						heldCtx, s, original, st, op,
+						func(writeCtx context.Context, witness localPushOriginalHeldWitness) error {
+							// This is Agent-local correlation, NOT a Server
+							// physical terminal or remote OS attestation.
+							if witness.operationID != op.ID ||
+								witness.generation != op.Generation ||
+								witness.stageID != st.StageID ||
+								!validLocalPushNativeWitnessDigest(witness.digest) {
+								return errLocalPushDriverDenied
+							}
+							return commitBound(writeCtx)
+						},
+					)
 				})
 			return err
 		},
@@ -263,6 +272,9 @@ func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrun
 		return empty, errLocalPushDriverDenied
 	}
 	if err := d.Check(ctx, s); err != nil {
+		return empty, err
+	}
+	if err := d.requireLiveOriginalWriter(ctx, s); err != nil {
 		return empty, err
 	}
 	// Never infer the historical operation from a current reserved status.
@@ -302,13 +314,9 @@ func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrun
 						)
 						return readErr
 					}
-					if d.liveWriterRequired {
-						if err := d.withCurrentOriginalLiveWriterProof(
-							heldCtx, s, original, readBound,
-						); err != nil {
-							return err
-						}
-					} else if err := readBound(heldCtx); err != nil {
+					if err := d.withCurrentOriginalLiveWriterProof(
+						heldCtx, s, original, readBound,
+					); err != nil {
 						return err
 					}
 					if receipt.SourceID != s.SourceID || receipt.Revision != s.Revision ||
@@ -345,22 +353,11 @@ func (d *localPushFirstLeafDriver) Reconcile(ctx context.Context, s localpushrun
 		ContentSHA256: s.ContentSHA256, Size: s.Size, DurableSQL: true, PhysicalCAS: true, NativeOriginal: true}, nil
 }
 
-// runLocalPushFirstLeafPrivate is the FIRST Agent-only opt-in executor.
-// No UI, Desktop IPC, background scheduler, SourceRun or remote invocation
-// calls it. The native mutex remains held across the bounded reconciliation.
-// Selection is provisional and revalidated by the CURRENT journal + OS fd;
-// it never authorizes choosing a different source path from Web/Renderer.
+// runLocalPushFirstLeafPrivate is an obsolete unclaimed Agent-only selector.
+// It never performed the mandatory native Writer Begin and is now explicitly
+// denied before any physical Stage reservation or HTTP request. The owning
+// manual Backup-only CloudStart path is the sole enabled first-file executor.
 func (c *agentController) runLocalPushFirstLeafPrivate(ctx context.Context, sourceID uint64,
 	relativeLeaf, contentSHA256 string, size int64) (localpushrunner.FirstLeafResult, error) {
-	var empty localpushrunner.FirstLeafResult
-	if c == nil || ctx == nil || sourceID == 0 || !localPushFirstLeafNameValid(relativeLeaf) ||
-		!c.localFolderGrantMu.TryLock() {
-		return empty, errLocalPushDriverDenied
-	}
-	defer c.localFolderGrantMu.Unlock()
-	d, err := c.newLocalPushFirstLeafDriverPrivate(ctx, sourceID, relativeLeaf, contentSHA256, size)
-	if err != nil {
-		return empty, errLocalPushDriverDenied
-	}
-	return (&localpushrunner.Runner{}).RunFirstLeaf(ctx, d.scope, d)
+	return localpushrunner.FirstLeafResult{}, errLocalPushDriverDenied
 }
