@@ -139,7 +139,13 @@ test('C16 Web and Mobile share isolated Ticket/Owner Range while Desktop file re
   assert.match(surface, /listOwnerCells\(bounds,request\.signal\)/)
   assert.match(host, /onActivateCell\(ownerSelection\.get\(event\.key\)!\)/)
   assert.match(child, /script\.src = '\/_BMapService\/api\?v=4\.0'/)
-  assert.doesNotMatch(surface, /loadThumbnail|window\.BMap|BMapLoader|\bfetch\(/)
+  // Trusted Gallery Parent may render signed Owner photo covers over iframe;
+  // it MUST NOT execute provider JS or forward pixels, URL or Node IDs to it.
+  assert.match(places, /loadThumbnail=\{loadPhotoCoverThumbnail\}/)
+  assert.match(surface, /XDriveMediaGalleryCoverThumbnail/)
+  assert.match(surface, /data-xdrive-places-trusted-photo-cover-pins/)
+  assert.doesNotMatch(surface, /window\.BMap|BMapLoader|\bfetch\(/)
+  assert.doesNotMatch(child, /loadThumbnail|XDriveMediaGalleryCoverThumbnail|node_id|photo_url|document\.cookie/)
   assert.doesNotMatch(desktop, /mintBaiduIsolatedChildTicket:/)
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)

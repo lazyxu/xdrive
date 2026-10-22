@@ -1,3 +1,12 @@
+## Gallery Places · 真实照片封面独立地图聚集点（2026-10-22）
+
+- 继续已合并的大地图默认入口 #2345：可信 Gallery Parent 增加 Apple Photos 风格真实封面/叠放照片标记与已授权数量角标。最多 24 张非重叠可见封面通过原 Gallery CoverPool 加载，所有未加载的 Cell 仍保留百度 Child 原数字标签。
+- 百度独立 HTTPS Child 仅发出当前已授权匿名随机 Cell key 的 SDK 屏幕坐标（最多 64、最大 4096×4096、有界整数），不接收 Node/PhotoAsset/图片 URL/像素、原始 WGS84、浏览器 AK、JWT/Cookie。Parent 必须按精确 Origin/WindowProxy/nonce/generation 严格解析、以当前 Owner/Consent/Revision Cell 映射 key 后才读取私有缩略图，碰撞自动折叠。点击封面仍重新走同一 Server 签名 /cell-items Range 与 Viewer。
+- 视窗移动开始、Source 取消、权限撤销、账号切换、iframe 重载和释放都清除可信照片封面，不得显示旧 Owner 媒体。若 SDK 不提供 pointToPixel、私有缩略图不可用或当前受信 Origin 失败，继续原数字聚集点或静态地图回退，不能用第三方脚本直接渲染 Owner 图片。
+- 仍按用户决定先交付地图交互产品；完整非生产三端视觉、100k 量化与许可资源审计随后推进。生产不可触及安全验收继续按用户决定跳过（未验收），原代码级 Owner/Consent/Origin/CSP/恶意脚本回归不跳过。
+
+---
+
 ## SD-CADDY-UI-v1.1a · approved flat/no-history single Caddy page (2026-10-22)
 
 - The administrator explicitly approved all three UI changes: remove the standalone runtime-vs-desired drift notification, permanently lay out Caddy HTTPS/AliDNS/edit/checks (NO accordion/toggle for settings or diagnostics), remove the Caddy configuration history and baseline-diff UI, suppress persistent yellow/unverifiable/duplicative Applied/WAN/client-CA/credentials warnings. Preserve the original v1.0/v1.1 document as history, prepend the 2026-10-22 scoped amendment in docs/system-dependencies-ui-v1-https-8443.md. Delete UI only: PostgreSQL revision history/audit and authentic Host/read-only helpers/API are NOT deleted; legacy Caddy history deep links navigate to HTTPS config, other services remain unchanged.

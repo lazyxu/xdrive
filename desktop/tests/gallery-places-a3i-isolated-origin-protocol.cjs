@@ -180,3 +180,28 @@ test('one-time BD09 return camera cannot contain Owner or private EXIF', () => {
   ]) assert.equal(xDriveCreateBaiduIsolatedCameraMessage(boundary(),candidate),null)
   assert.equal(xDriveCreateBaiduIsolatedCameraMessage({...boundary(),nonce:'bad'},valid),null)
 })
+
+test('projected screen positions are bounded anonymous data, not Owner photo permission',()=>{
+  const key='a'.repeat(32)
+  const valid=input('cell-projections',{width:640,height:480,
+    points:[{key,x:200,y:120}]})
+  assert.deepEqual(xDriveParseBaiduIsolatedChildEvent(valid,boundary()),valid.data)
+  for(const points of [
+    [{key,x:-1,y:120}],
+    [{key,x:700,y:20}],
+    [{key,x:NaN,y:20}],
+    [{key,x:4.5,y:20}],
+    [{key,x:10,y:10,node_id:42}],
+    [{key,x:10,y:10},{key,x:30,y:40}],
+    [{key:'not-a-key',x:30,y:40}],
+  ]) assert.equal(xDriveParseBaiduIsolatedChildEvent(
+    input('cell-projections',{width:640,height:480,points}),boundary()),null)
+  assert.equal(xDriveParseBaiduIsolatedChildEvent(
+    input('cell-projections',{width:0,height:480,points:[{key,x:30,y:10}]}),boundary()),null)
+  assert.equal(xDriveParseBaiduIsolatedChildEvent(
+    input('cell-projections',{width:640,height:480,points:[],url:'/api/media/private'}),boundary()),null)
+  assert.equal(xDriveParseBaiduIsolatedChildEvent(
+    input('cell-projections',{width:640,height:480,
+      points:Array.from({length:65},(_,i)=>({key:i.toString(16).padStart(32,'0'),x:1,y:1}))}),
+    boundary()),null)
+})

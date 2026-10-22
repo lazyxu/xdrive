@@ -19,6 +19,18 @@ export type XDriveBaiduIsolatedCell = Readonly<{
   longitude: number
   count: number
 }>
+export type XDriveBaiduIsolatedProjectedCell = Readonly<{
+  key: string
+  x: number
+  y: number
+}>
+/** Child reports only ephemeral anonymous Cell positions, never media data. */
+export type XDriveBaiduIsolatedCellProjections = Readonly<{
+  version: 1; generation: number; nonce: string
+  kind: 'cell-projections'
+  width: number; height: number
+  points: readonly XDriveBaiduIsolatedProjectedCell[]
+}>
 export type XDriveBaiduChildEvent =
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'ready' }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'cancel' }>
@@ -26,6 +38,7 @@ export type XDriveBaiduChildEvent =
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'viewport'; bounds: XDriveBaiduIsolatedBounds }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'camera'; camera: XDriveBaiduIsolatedCamera }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'activate-cell'; key: string }>
+  | XDriveBaiduIsolatedCellProjections
 export type XDriveBaiduParentCellsMessage = Readonly<{
   version: 1
   generation: number
@@ -56,7 +69,7 @@ export type XDriveBaiduIsolatedMessageEvent = Readonly<{
 
 export const XDRIVE_BAIDU_ISOLATED_MESSAGE_VERSION = 1
 export const XDRIVE_BAIDU_ISOLATED_MAX_CELLS = 64
-export const XDRIVE_BAIDU_ISOLATED_CHILD_BYTES = 2048
+export const XDRIVE_BAIDU_ISOLATED_CHILD_BYTES = 8192
 export const XDRIVE_BAIDU_ISOLATED_PARENT_BYTES = 8192
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -171,6 +184,29 @@ export function xDriveParseBaiduIsolatedChildEvent(
         camera: { coordinate_space: 'bd09ll',
           latitude: data.camera.latitude, longitude: data.camera.longitude,
           zoom: data.camera.zoom } }
+    case 'cell-projections': {
+      // Untrusted SDK may suggest screen positions, never photo authorization.
+      if (!exactKeys(data, ['version','generation','nonce','kind','width','height','points']) ||
+          typeof data.width !== 'number' || !Number.isSafeInteger(data.width) ||
+          data.width < 1 || data.width > 4096 ||
+          typeof data.height !== 'number' || !Number.isSafeInteger(data.height) ||
+          data.height < 1 || data.height > 4096 ||
+          !Array.isArray(data.points) || data.points.length > XDRIVE_BAIDU_ISOLATED_MAX_CELLS) return null
+      const used = new Set<string>()
+      const points: XDriveBaiduIsolatedProjectedCell[] = []
+      for (const point of data.points) {
+        if (!record(point) || !exactKeys(point,['key','x','y']) ||
+            !validKey(point.key) || used.has(point.key) ||
+            typeof point.x !== 'number' || !Number.isSafeInteger(point.x) ||
+            typeof point.y !== 'number' || !Number.isSafeInteger(point.y) ||
+            point.x < 0 || point.x > data.width ||
+            point.y < 0 || point.y > data.height) return null
+        used.add(point.key)
+        points.push({key:point.key, x:point.x, y:point.y})
+      }
+      return {version:1,generation:boundary.generation,nonce:boundary.nonce,
+        kind:'cell-projections',width:data.width,height:data.height,points}
+    }
     case 'activate-cell':
       if (!exactKeys(data, ['version', 'generation', 'nonce', 'kind', 'key']) ||
           !validKey(data.key)) return null

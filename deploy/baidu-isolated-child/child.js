@@ -81,6 +81,26 @@
       }
     } catch { /* retain conservative global camera when SDK fitting fails */ }
   }
+  const emitCellProjections = () => {
+    if (!map || !sdk || !canvas || !active || disposed ||
+        typeof map.pointToPixel !== 'function') return
+    const width = Math.round(canvas.clientWidth)
+    const height = Math.round(canvas.clientHeight)
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width < 1 || height < 1 || width > 4096 || height > 4096) return
+    const points = []
+    for (const cell of cells) {
+      if (!allowedKeys.has(cell.key)) continue
+      try {
+        const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
+        const x = Math.round(position.x), y = Math.round(position.y)
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+            x < 0 || x > width || y < 0 || y > height) continue
+        points.push({key:cell.key,x,y})
+      } catch { /* old SDK: numerical cluster labels remain */ }
+    }
+    send('cell-projections',{width,height,points})
+  }
   const renderCells = () => {
     clearLabels()
     if (!map || !sdk || !active || disposed) return
@@ -101,6 +121,7 @@
         labelBindings.push({label,click})
       } catch { clearLabels(); send('map-failed'); return }
     }
+    emitCellProjections()
   }
   const emitViewport = () => {
     if (!map || !active || disposed) return
@@ -143,6 +164,7 @@
     renderCells()
     if (status) status.textContent = '百度地图'
     send('map-ready')
+    emitCellProjections()
     emitViewport()
   }
   const loadSDK = () => new Promise((resolve,reject) => {

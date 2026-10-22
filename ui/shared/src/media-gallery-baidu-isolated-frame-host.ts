@@ -25,6 +25,11 @@ export type XDriveTrustedIsolatedMapCell<T> = Readonly<{
   selection: T
 }>
 
+export type XDriveTrustedProjectedMapCells<T> = Readonly<{
+  width: number
+  height: number
+  cells: readonly Readonly<{selection:T; count:number; x:number; y:number}>[]
+}>
 export interface XDriveBaiduIsolatedFrameOptions<T> {
   parentWindow: Window
   host: HTMLElement
@@ -38,6 +43,9 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   onReady?: () => void
   onMapReady?: () => void
   onMapFailure?: () => void
+  /** Gallery-only callback: anonymous keys are rebound to fresh authorized
+   * Owner selections, without giving the Child thumbnails or Node IDs. */
+  onProjectedCells?: (projected: XDriveTrustedProjectedMapCells<T>) => void
 }
 
 export interface XDriveBaiduIsolatedFrameHost<T> {
@@ -140,6 +148,9 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   // before they can create unbounded authenticated Owner /cells requests.
   let pendingViewport: XDriveBaiduIsolatedBounds | null = null
   let viewportTimer: ReturnType<typeof setTimeout> | null = null
+  const clearProjected = () => {
+    options.onProjectedCells?.({width:0,height:0,cells:[]})
+  }
   const clearPendingViewport = () => {
     pendingViewport = null
     if (viewportTimer !== null) { clearTimeout(viewportTimer); viewportTimer = null }
@@ -150,6 +161,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     ready = false
     mapReady = false
     clearPendingViewport()
+    clearProjected()
     boundary = null
     published = null
     ownerSelection.clear()
@@ -174,6 +186,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     ready = false
     mapReady = false
     clearPendingViewport()
+    clearProjected()
     published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
     ownerSelection.clear()
     if (!published) { detach(); return }
@@ -195,6 +208,17 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       clearPendingViewport()
       mapReady = false
       if (ready) options.onMapFailure?.()
+    } else if (event.kind === 'cell-projections') {
+      if (!ready || !mapReady || !published) return
+      // Exact current Owner selection: no stale, forged or cross-Owner key.
+      const counts = new Map(published.cells.map(cell => [cell.key,cell.count]))
+      const cells: Array<{selection:T;count:number;x:number;y:number}> = []
+      for (const point of event.points) {
+        if (!ownerSelection.has(point.key) || !counts.has(point.key)) return
+        cells.push({selection:ownerSelection.get(point.key)!,
+          count:counts.get(point.key)!,x:point.x,y:point.y})
+      }
+      options.onProjectedCells?.({width:event.width,height:event.height,cells})
     } else if (event.kind === 'viewport') {
       if (ready && mapReady) {
         pendingViewport = event.bounds
@@ -216,6 +240,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       options.onActivateCell(ownerSelection.get(event.key)!)
     } else if (event.kind === 'cancel') {
       clearPendingViewport()
+      clearProjected()
       ownerSelection.clear()
       // Cancellation remains synchronous, even while viewport reads debounce.
       if (ready) options.onCancel?.()
@@ -255,6 +280,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       replaceAuthorizedCells(cells) {
         if (!alive || !boundary || !Array.isArray(cells) || cells.length > maxCells) {
           if (alive && boundary) {
+            clearProjected()
             ownerSelection.clear()
             published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
             if (ready && published) post(published)
@@ -277,6 +303,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
           if (ready && published) post(published)
           return false
         }
+        clearProjected()
         ownerSelection = next
         published = message
         if (ready) post(message)

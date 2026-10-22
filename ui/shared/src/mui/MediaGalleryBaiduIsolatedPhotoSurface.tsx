@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Typography } from '@mui/material'
+import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import type { MediaThumbnailLoader } from './MediaGallery'
+import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
@@ -21,6 +25,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   childOrigin,
   mintChildTicket,
   listOwnerCells,
+  loadThumbnail,
   onOpenCell,
   onInvalidated,
   onCamera,
@@ -33,6 +38,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   childOrigin: string
   mintChildTicket: (signal: AbortSignal) => Promise<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>
   listOwnerCells: (bounds: Bounds, signal: AbortSignal) => Promise<MediaBaiduNativeCellsPage>
+  loadThumbnail?: MediaThumbnailLoader
   onOpenCell: (selection: MediaBaiduNativeCellSelection) => void
   onInvalidated?: () => void
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
@@ -56,6 +62,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const [summary,setSummary] = useState<MediaBaiduNativeCellsPage | null>(null)
   const [accessible,setAccessible] = useState<Array<{label:string;selection:MediaBaiduNativeCellSelection}>>([])
   const [phase,setPhase] = useState<'loading'|'ready'|'unavailable'>('loading')
+  // Only the trusted Gallery Parent owns photo identity and Blob URLs.
+  const [projected,setProjected] = useState<
+    XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
   const [error,setError] = useState(false)
 
   useEffect(() => {
@@ -77,6 +86,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     setError(false)
     setSummary(null)
     setAccessible([])
+    setProjected(null)
     onReady(false)
 
     const cancel = () => {
@@ -85,6 +95,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       activeQuery = null
       setAccessible([])
       setSummary(null)
+      setProjected(null)
       invalidated.current?.()
     }
     const failure = () => {
@@ -117,6 +128,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         onReady(true)
       },
       onMapFailure:failure,
+      onProjectedCells:positions => {
+        if (!lifetime.signal.aborted) setProjected(positions)
+      },
       onViewport: bounds => { void queryCells(bounds) },
       onReady:() => {
         const world: Bounds = {coordinate_space:'bd09ll',west:-180,south:-85,east:180,north:85}
@@ -195,21 +209,84 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     }
   },[childOrigin,mintChildTicket,listOwnerCells,onReady,scope])
 
+  // Select the most informative visible covers and avoid overcrowding.
+  // All 64 map numbers remain in the provider map; only 24 thumbnails load.
+  const coverPins: Array<{selection:MediaBaiduNativeCellSelection;
+    count:number;x:number;y:number}> = []
+  if (projected?.width && projected.height && loadThumbnail && phase === 'ready') {
+    for (const candidate of [...projected.cells].sort((a,b) => b.count-a.count)) {
+      if (coverPins.length >= 24) break
+      if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 72)) continue
+      coverPins.push(candidate)
+    }
+  }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:{xs:1.25,sm:1.5},pb:1.5,minWidth:0}}>
-      <Box ref={mount} role="region" aria-label="定位照片聚集地图"
-        data-xdrive-places-cluster-overview
-        sx={{width:'100%',height:{
+      <Box data-xdrive-places-cluster-overview role="region" aria-label="定位照片聚集地图"
+        sx={{position:'relative',width:'100%',height:{
           xs:'max(460px, calc(100dvh - 190px))',
           sm:'max(540px, calc(100dvh - 185px))'},
           maxHeight:1024,borderRadius:1.5,
-          overflow:'hidden',backgroundColor:'background.default',
+          overflow:'hidden',backgroundColor:'background.default'}}>
+        <Box ref={mount} sx={{position:'absolute',inset:0,
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
+        {coverPins.length > 0 && projected ? (
+          <Box data-xdrive-places-trusted-photo-cover-pins
+            sx={{position:'absolute',inset:0,pointerEvents:'none',zIndex:2}}>
+            {coverPins.map((pin) => (
+              <Box key={pin.selection.node_id} component="button" type="button"
+                data-xdrive-places-trusted-photo-cover={pin.selection.node_id}
+                aria-label={`查看该区域 ${pin.count} 张照片`}
+                onClick={() => opened.current(pin.selection)}
+                sx={{position:'absolute',
+                  left:`${pin.x/projected.width*100}%`,
+                  top:`${pin.y/projected.height*100}%`,
+                  transform:'translate(-50%,-50%)',width:58,height:58,p:0,
+                  border:'3px solid white',borderRadius:1.5,overflow:'visible',
+                  cursor:'pointer',pointerEvents:'auto',
+                  bgcolor:'background.paper',boxShadow:'0 4px 14px rgba(0,0,0,.25)',
+                  isolation:'isolate',
+                  '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',
+                    outlineOffset:3}}}>
+                {pin.count > 1 ? (
+                  <Box component="span" aria-hidden="true" sx={{position:'absolute',
+                    inset:0,transform:'translate(4px,3px) rotate(9deg)',
+                    borderRadius:1.5,bgcolor:'background.paper',
+                    border:'2px solid white',boxShadow:2,zIndex:-1}}/>
+                ) : null}
+                <Box sx={{width:'100%',height:'100%',borderRadius:1,overflow:'hidden',
+                  bgcolor:'action.hover'}}>
+                  {loadThumbnail ? (
+                    <XDriveMediaGalleryCoverThumbnail
+                      nodeID={pin.selection.node_id}
+                      revision={pin.selection.node_revision}
+                      alt="地图聚集点代表照片" loadThumbnail={loadThumbnail}
+                      fallback={<Box sx={{width:'100%',height:'100%',display:'grid',
+                        placeItems:'center',color:'text.secondary'}}>
+                        <PhotoLibraryOutlinedIcon fontSize="small"/>
+                      </Box>}/>
+                  ) : null}
+                </Box>
+                {pin.count > 1 ? <Box component="span"
+                  sx={{position:'absolute',top:-9,right:-11,minWidth:25,height:23,
+                    px:0.6,display:'grid',placeItems:'center',borderRadius:3,
+                    bgcolor:'primary.main',color:'primary.contrastText',
+                    border:'2px solid white',boxShadow:1,
+                    fontSize:11,fontWeight:800,lineHeight:1}}>
+                  {pin.count.toLocaleString('zh-CN')}
+                </Box> : null}
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
       {summary ? (
         <Typography variant="caption" color="text.secondary">
-          当前授权地图区域 {summary.total_count.toLocaleString('zh-CN')} 张，
-          {summary.cells.length} 个匿名聚合标记；点击后由图库重新验证访问权限。
+          {summary.total_count > 0
+            ? `当前授权地图区域 ${summary.total_count.toLocaleString('zh-CN')} 张，`+
+              `${summary.cells.length} 个聚集标记；点击后由图库重新验证权限。`
+            : '当前没有获准在百度地图中显示的照片；照片具有 GPS 并不代表已授予地图使用许可。可在照片详情中授权后重新打开地点。'}
         </Typography>
       ):null}
       {phase==='unavailable' ? (
