@@ -1699,6 +1699,7 @@ export type AgentMediaQuery = {
   person?: string
   person_identity?: string
   place?: string
+  place_hierarchy?: string
   nearby?: string
   bbox?: string
 }
@@ -1744,6 +1745,7 @@ function appendAgentMediaQuery(
     query.set('person_identity', filters.person_identity.trim())
   }
   if (filters.place?.trim()) query.set('place', filters.place.trim())
+  if (filters.place_hierarchy?.trim()) query.set('place_hierarchy', filters.place_hierarchy.trim())
   if (filters.nearby?.trim()) query.set('nearby', filters.nearby.trim())
   if (filters.bbox?.trim()) query.set('bbox', filters.bbox.trim())
 }

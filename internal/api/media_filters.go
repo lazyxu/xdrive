@@ -49,7 +49,9 @@ type mediaQueryOptions struct {
 	Cameras            []string
 	Formats            []string
 	Place              *mediaPlaceCell
-	Geo                *geoquery.Selection
+	// B1-C: stable GeoNames identity, independent of historical GPS cell key.
+	PlaceHierarchy *mediaPlaceHierarchyKey
+	Geo            *geoquery.Selection
 	// Only the signed Owner cell-media endpoint constructs this server-private selection.
 	BaiduCell      *baiduPhotoMapCellSelection
 	PersonCluster  string
@@ -231,6 +233,21 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.Place = &value
+	}
+
+	// Unlike the old cell key, this stable Owner place identity is resolved
+	// again by Server against the current trusted GeoNames dataset in Range.
+	if values, present := c.Request.URL.Query()["place_hierarchy"]; present {
+		if len(values) != 1 {
+			fail(c, http.StatusBadRequest, "duplicate place_hierarchy")
+			return mediaQueryOptions{}, false
+		}
+		key, valid := parseMediaPlaceHierarchyKey(values[0])
+		if !valid {
+			fail(c, http.StatusBadRequest, "place_hierarchy is invalid")
+			return mediaQueryOptions{}, false
+		}
+		out.PlaceHierarchy = &key
 	}
 
 	params := c.Request.URL.Query()

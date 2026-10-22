@@ -294,6 +294,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)
 	authed.GET("/media/places/page", s.listMediaPlacesPage)
+	// B1-B: authentic Owner GeoNames country/region/nearby-city facets.
+	authed.GET("/media/places/hierarchy", s.listMediaPlaceHierarchy)
 	// A3b3a1: Owner-only bounded WGS84 viewport cells; no Baidu JSAPI proxy.
 	authed.GET("/media/places/viewport", s.listMediaPlacesViewport)
 	// Owner-scoped 8x8 native map data, not an all-place pagination API.

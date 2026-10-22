@@ -6188,6 +6188,18 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 		}
 		out.Place = raw
 	}
+	// A stable Owner hierarchy identity; Go Server validates exact selection
+	// and active resolver again, never trusting IPC for membership.
+	if values, exists := r.URL.Query()["place_hierarchy"]; exists {
+		if len(values) != 1 || len(values[0]) > 96 ||
+			!strings.HasPrefix(values[0], "country:") &&
+				!strings.HasPrefix(values[0], "region:") &&
+				!strings.HasPrefix(values[0], "city:") {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_hierarchy", "invalid hierarchy identity")
+			return client.MediaQuery{}, false
+		}
+		out.PlaceHierarchy = values[0]
+	}
 
 	nearValues, hasNear := r.URL.Query()["nearby"]
 	bboxValues, hasBBox := r.URL.Query()["bbox"]
