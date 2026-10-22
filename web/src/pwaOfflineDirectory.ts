@@ -20,6 +20,9 @@ const DB_VERSION = 1
 // Only a non-secret hint to locate the last explicitly opted-in scope after a
 // browser process restart. This is NOT an authentication token or ACL proof.
 const RELAUNCH_HINT_KEY = 'xdrive:pwa:offline-relaunch-owner:v1'
+// In-process invalidation fence for delayed IndexedDB opens and stale Owner
+// responses. The persisted consent check stays authoritative in each TX.
+let offlinePurgeEpoch = 0
 
 export type XDrivePwaOfflineOwner = {
   origin: string
@@ -331,7 +334,12 @@ export async function xDrivePwaSetOfflineConsent(
   owner: XDrivePwaOfflineOwner, enabled: boolean,
 ): Promise<void> {
   const key = xDrivePwaOfflineScopeKey(owner)
+  if (!enabled) offlinePurgeEpoch += 1
+  const intentEpoch = offlinePurgeEpoch
   await withStore<void>('readwrite', (store, done) => {
+    // A prior opt-in that waited for IndexedDB open cannot recreate consent
+    // after a logout/peer revocation cleared this origin's private history.
+    if (enabled && intentEpoch !== offlinePurgeEpoch) { done(undefined); return }
     if (!enabled) {
       store.delete(key)
       const last = store.get(RELAUNCH_HINT_KEY)
@@ -350,6 +358,7 @@ export async function xDrivePwaSetOfflineConsent(
     }
     const request = store.get(key)
     request.onsuccess = () => {
+      if (intentEpoch !== offlinePurgeEpoch) { done(undefined); return }
       const existing = request.result as OwnerRecord | undefined
       const directories = existing?.version === 1 && existing?.consented === true &&
         Array.isArray(existing.directories) ? existing.directories : []
@@ -375,9 +384,12 @@ export async function xDrivePwaCaptureVisitedDirectory(
   const key = xDrivePwaOfflineScopeKey(owner)
   const snapshot = xDrivePwaNormalizeVisitedDirectory(input)
   if (!snapshot) return false
+  const captureEpoch = offlinePurgeEpoch
   return withStore<boolean>('readwrite', (store, done) => {
+    if (captureEpoch !== offlinePurgeEpoch) { done(false); return }
     const request = store.get(key)
     request.onsuccess = () => {
+      if (captureEpoch !== offlinePurgeEpoch) { done(false); return }
       const existing = request.result as OwnerRecord | undefined
       // Consent check and replacement MUST share the same transaction.
       // Logout/disable deletes this record; in-flight writes cannot revive it.
@@ -397,6 +409,7 @@ export async function xDrivePwaCaptureVisitedDirectory(
       // over the currently selected offline identity.
       const hintRead = store.get(RELAUNCH_HINT_KEY)
       hintRead.onsuccess = () => {
+        if (captureEpoch !== offlinePurgeEpoch) { done(false); return }
         const hint = hintRead.result as OfflineRelaunchHint | undefined
         if (hint?.version === 1) {
           try {
@@ -421,9 +434,12 @@ export async function xDrivePwaCaptureAlbumSummaries(
   const key = xDrivePwaOfflineScopeKey(owner)
   const albumSnapshot = xDrivePwaNormalizeAlbumSummaries(albums)
   if (!albumSnapshot) return false
+  const captureEpoch = offlinePurgeEpoch
   return withStore<boolean>('readwrite', (store, done) => {
+    if (captureEpoch !== offlinePurgeEpoch) { done(false); return }
     const read = store.get(key)
     read.onsuccess = () => {
+      if (captureEpoch !== offlinePurgeEpoch) { done(false); return }
       const existing = read.result as OwnerRecord | undefined
       if (existing?.version !== 1 || existing.consented !== true ||
           !Array.isArray(existing.directories)) { done(false); return }
@@ -548,6 +564,9 @@ export function xDrivePwaVerifiedIdentityMatches(owner: XDrivePwaOfflineOwner, m
 /** Invoke on sign-out/auth switch, including when offline; never clear the
  * browser's public App Shell CacheStorage or unrelated local preferences. */
 export async function xDrivePwaClearOfflineMetadata(): Promise<void> {
+  // Reject every previously initiated, not-yet-committed opt-in/capture
+  // before waiting on another real IndexedDB connection or transaction.
+  offlinePurgeEpoch += 1
   if (!offlineSupported()) {
     xDrivePwaBroadcastOfflinePurge()
     return
@@ -575,7 +594,10 @@ export function xDrivePwaObserveOfflinePurge(listener: () => void): () => void {
   if (typeof BroadcastChannel === 'undefined') return () => {}
   const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
   channel.onmessage = event => {
-    if (event.data?.kind === 'xdrive-pwa-offline-purge') listener()
+    if (event.data?.kind === 'xdrive-pwa-offline-purge') {
+      offlinePurgeEpoch += 1
+      listener()
+    }
   }
   return () => channel.close()
 }
