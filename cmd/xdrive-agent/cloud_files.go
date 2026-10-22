@@ -2883,6 +2883,15 @@ func (c *agentController) CloudMediaPlacesPage(ctx context.Context, limit, offse
 	return cli.MediaPlacesPage(ctx, limit, offset)
 }
 
+// Owner identity and authentication remain with the Cloud Client.
+func (c *agentController) CloudMediaPlaceHierarchy(ctx context.Context, query url.Values) (client.MediaPlaceHierarchyPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPlaceHierarchyPage{}, err
+	}
+	return cli.MediaPlaceHierarchy(ctx, query)
+}
+
 func (c *agentController) CloudMediaPlacesViewport(
 	ctx context.Context, bounds client.MediaPlacesViewportBounds, limit, offset int,
 ) (client.MediaPlacesViewportPage, error) {

@@ -31,6 +31,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlaceHierarchyPage,
+  MediaPlaceHierarchyRequest,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
   MediaPlacesMapOverview,
@@ -151,6 +153,9 @@ export interface XDriveMediaGalleryPort {
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
   listPlacesPage?: (limit?: number, offset?: number) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesPage>>
+  listPlacesHierarchy?: (
+    request: MediaPlaceHierarchyRequest, filters?: MediaGalleryQuery, signal?: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceHierarchyPage>>
   listPlacesMapOverview?: (
     bounds: MediaPlacesViewportBounds, detail?: boolean, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesMapOverview>>
@@ -573,6 +578,11 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listPlacesPage: port.listPlacesPage
       ? (limit, offset) => resolveXDriveTransport(port.listPlacesPage!(limit, offset))
+      : undefined,
+    listPlacesHierarchy: port.listPlacesHierarchy
+      ? (request, filters, signal) => resolveXDriveTransport(
+          port.listPlacesHierarchy!(request, filters, signal),
+        )
       : undefined,
     listPlacesMapOverview: port.listPlacesMapOverview
       ? (bounds, detail, signal) => resolveXDriveTransport(

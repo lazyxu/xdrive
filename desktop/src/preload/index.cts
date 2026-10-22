@@ -218,6 +218,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:move-media-album-to-folder', albumID, revision, folderID),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaPlacesPage: (limit = 48, offset = 0) => ipcRenderer.invoke('agent:get-media-places-page', limit, offset),
+  getMediaPlaceHierarchy: (
+    request: { level: 'country' | 'region' | 'city'; country?: string; region?: string;
+      cursor?: string; search?: string; limit?: number },
+    filters: Record<string, unknown> = {},
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-place-hierarchy', request, filters, requestID),
   getMediaPlacesMapOverview: (
     bounds: { west: number; south: number; east: number; north: number },
     detail = false, requestID?: string,
