@@ -7,6 +7,66 @@ export const XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS = 15 * 60 * 1000
 const MAX_SCOPES = 8
 
 export const xDriveBaiduMapDiagnosticDetails = {
+  prototype_config_unavailable: {
+    title: "图库无法读取 Browser AK 原型配置",
+    action: "检查 /media/places/baidu-jsapi/prototype 的 Server/Agent 连通性和 HTTP 状态；HTTP 503 也可能是配置停用或服务不可用。固定 Loader 成功不能验证这个 Owner 接口。",
+  },
+  prototype_config_denied: {
+    title: "图库原型配置请求被拒绝（HTTP 401/403）",
+    action: "重新登录并检查 Owner 会话和 API 权限；不要使用分享令牌。",
+  },
+  prototype_config_unsupported: {
+    title: "图库原型路由不存在（HTTP 404/501）",
+    action: "检查 Server/Agent 与 Web/Desktop 版本及 HTTPS 网关路由。",
+  },
+  prototype_config_rate_limited: {
+    title: "图库原型配置请求被限流（HTTP 429）",
+    action: "检查 Server 限流并等待冷却后重试。",
+  },
+  prototype_config_invalid: {
+    title: "Server 返回的 Browser AK 原型配置无效",
+    action: "检查 Browser AK 已启用、配置版本和 provider 字段；勿显示 AK 值。",
+  },
+  prototype_ak_rotated: {
+    title: "同一页面已加载不同修订的 Browser AK",
+    action: "更换 AK 后请完整刷新图库；同一浏览器 document 内不能混用两把密钥。",
+  },
+  prototype_document_unavailable: {
+    title: "当前浏览器文档无法运行地图 SDK",
+    action: "检查浏览器 WebView/document 生命周期与脚本执行上下文。",
+  },
+  prototype_csp_script_blocked: {
+    title: "浏览器 CSP 明确阻止百度 JSAPI 脚本",
+    action: "实际浏览器阻止从 api.map.baidu.com 加载 script-src/script-src-elem；检查当前 CSP，勿关闭安全策略。诊断不存储带 AK 的 URL。",
+  },
+  prototype_sdk_script_failed: {
+    title: "百度 JSAPI 启动脚本在浏览器中加载失败（script.onerror）",
+    action: "原型实际直连 api.map.baidu.com，而管理员检查的是固定 Server Loader。查看浏览器 Network/CSP 与 Browser AK 域名设置；跨域 script.onerror 不能提供百度 HTTP 响应正文。",
+  },
+  prototype_sdk_script_timeout: {
+    title: "浏览器加载百度 JSAPI 启动脚本超时（12 秒）",
+    action: "检查浏览器 DNS、HTTPS、代理及百度 CDN；Server 侧 Loader 通过不能证明客户端可达。",
+  },
+  prototype_sdk_namespace_missing: {
+    title: "百度启动脚本已加载但 BMap 命名空间未就绪",
+    action: "检查 JSAPI 后续资源、CSP、浏览器控制台与 Browser AK 域名权限。",
+  },
+  prototype_sdk_script_injection_failed: {
+    title: "页面无法创建或插入百度地图脚本",
+    action: "检查当前 document、Trusted Types 及浏览器安全策略；不要禁用安全策略。",
+  },
+  prototype_sdk_map_init_failed: {
+    title: "百度原生地图或 ClusterLayer 初始化失败",
+    action: "确认 BMap.Map、centerAndZoom、addLayer 与 ClusterLayer 真正可用；检查地图容器和动态子资源。",
+  },
+  prototype_sdk_convert_failed: {
+    title: "百度官方 WGS84→BD-09 坐标转换失败",
+    action: "检查 BMap.Convertor、官方坐标转换服务、回调、限额及相关子资源。",
+  },
+  prototype_sdk_layer_update_failed: {
+    title: "百度原生聚合图层或地图视窗更新失败",
+    action: "检查 ClusterLayer.setData、setViewport 与 SDK 动态资源；Owner 地点读取成功不代表原生地图绘制成功。",
+  },
   client_transport_missing: {
     title: '当前客户端没有完整的动态照片地图接口',
     action: '检查当前 Web / Desktop Agent 与 Server 版本；Desktop 使用独立 HTTPS 地图窗口，不得将 file: 页面直接接入 JSAPI。',
@@ -210,4 +270,19 @@ export function xDriveClassifyBaiduMapRequestFailure(
   }
   return phase === 'status' ? 'status_unavailable'
     : phase === 'session' ? 'session_unavailable' : 'viewport_unavailable'
+}
+
+/** A browser/Agent API error is untrusted. Diagnose with its numeric HTTP
+ * status only; never retain or reflect response messages and credential URLs. */
+export function xDriveClassifyBaiduPrototypeConfigFailure(
+  error: unknown,
+): XDriveBaiduMapDiagnosticCode {
+  let status: unknown
+  try {
+    if (error && typeof error === 'object') status = (error as { status?: unknown }).status
+  } catch { /* invalid/untrusted accessor */ }
+  if (status === 401 || status === 403) return 'prototype_config_denied'
+  if (status === 404 || status === 501) return 'prototype_config_unsupported'
+  if (status === 429) return 'prototype_config_rate_limited'
+  return 'prototype_config_unavailable'
 }

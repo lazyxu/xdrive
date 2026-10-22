@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
@@ -9,6 +9,13 @@ import {
 import type { XDriveBaiduPrototypeCoverPin } from '../media-gallery-baidu-prototype-cover-pins'
 import type { MediaPlaceFacet, XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import {
+  xDriveBaiduMapDiagnosticDetails,
+  xDriveRecordBaiduMapDiagnostic,
+  xDriveClearBaiduMapDiagnostic,
+  xDriveClassifyBaiduPrototypeConfigFailure,
+} from '../media-gallery-baidu-diagnostics'
+import type { XDriveBaiduMapDiagnosticCode } from '../media-gallery-baidu-diagnostics'
 import { xDriveCaptureBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveConvertBaiduJSAPI4MarkerWindow,
@@ -70,50 +77,102 @@ const validAK = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 256 &&
   /^[\x21-\x7e]+$/.test(value)
 
+
+class XDriveBaiduPrototypeFailure extends Error {
+  constructor(readonly code: XDriveBaiduMapDiagnosticCode) {
+    // Never interpolate a Browser AK, third-party exception or URL.
+    super('baidu_prototype_runtime_failed')
+  }
+}
+
 function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
-  if (!validAK(ak) || !doc.defaultView) return Promise.reject(new Error('invalid_browser_ak'))
+  if (!validAK(ak)) return Promise.reject(
+    new XDriveBaiduPrototypeFailure('prototype_config_invalid'))
+  if (!doc.defaultView) return Promise.reject(
+    new XDriveBaiduPrototypeFailure('prototype_document_unavailable'))
   const existing = loaded.get(doc)
   if (existing) {
-    // One SDK revision per document. A rotated AK takes effect on full reload.
-    return existing.ak === ak ? existing.promise : Promise.reject(new Error('map_ak_rotated'))
+    // One SDK revision per document. A rotated AK requires a full reload.
+    return existing.ak === ak ? existing.promise : Promise.reject(
+      new XDriveBaiduPrototypeFailure('prototype_ak_rotated'))
   }
   const promise = new Promise<Namespace>((resolve, reject) => {
-    const script = doc.createElement('script')
+    let script: HTMLScriptElement
+    try { script = doc.createElement('script') }
+    catch {
+      reject(new XDriveBaiduPrototypeFailure('prototype_sdk_script_injection_failed'))
+      return
+    }
     let settled = false
     let bootstrapLoaded = false
     let poll: ReturnType<typeof setTimeout> | undefined
     let timeout: ReturnType<typeof setTimeout> | undefined
+    const missingCapability = (): XDriveBaiduMapDiagnosticCode | null => {
+      try {
+        const namespace = (doc.defaultView as Window & { BMap?: unknown }).BMap
+        if (!namespace || (typeof namespace !== 'object' &&
+          typeof namespace !== 'function')) return 'prototype_sdk_namespace_missing'
+        const candidate = namespace as Partial<Namespace>
+        if (typeof candidate.Map !== 'function') return 'sdk_missing_map'
+        if (typeof candidate.Point !== 'function') return 'sdk_missing_point'
+        if (typeof candidate.Convertor !== 'function') return 'sdk_missing_convertor'
+        if (typeof candidate.ClusterLayer !== 'function') return 'sdk_missing_cluster_layer'
+        return null
+      } catch { return 'prototype_sdk_namespace_missing' }
+    }
     const cleanup = (error?: Error, sdk?: Namespace) => {
       if (settled) return
       settled = true
       if (poll) clearTimeout(poll)
       if (timeout) clearTimeout(timeout)
+      try { doc.removeEventListener('securitypolicyviolation', onPolicyViolation) }
+      catch { /* unavailable in test or embedded contexts */ }
       script.onload = script.onerror = null
       if (error || !sdk) {
-        script.remove()
-        reject(error ?? new Error('baidu_sdk_unavailable'))
+        try { script.remove() } catch { /* detached DOM */ }
+        reject(error ?? new XDriveBaiduPrototypeFailure('prototype_sdk_namespace_missing'))
       } else resolve(sdk)
     }
+    // blockedURI may contain the Browser AK; inspect origin in memory only,
+    // never persist or display the raw URL, PolicyEvent or provider exception.
+    const onPolicyViolation = (event: Event) => {
+      const detail = event as SecurityPolicyViolationEvent
+      if (detail.disposition !== 'enforce' ||
+        !['script-src', 'script-src-elem'].includes(detail.effectiveDirective)) return
+      try {
+        if (new URL(detail.blockedURI).origin === 'https://api.map.baidu.com') {
+          cleanup(new XDriveBaiduPrototypeFailure('prototype_csp_script_blocked'))
+        }
+      } catch { /* opaque blockedURI */ }
+    }
+    try { doc.addEventListener('securitypolicyviolation', onPolicyViolation) }
+    catch { /* safe fallback to script.onerror */ }
     const ready = () => {
       if (!bootstrapLoaded || settled) return
-      const namespace = (doc.defaultView as Window & { BMap?: unknown }).BMap
-      const candidate = namespace as Partial<Namespace> | undefined
-      if (candidate && typeof candidate.Map === 'function' &&
-          typeof candidate.Point === 'function' &&
-          typeof candidate.Convertor === 'function' &&
-          typeof candidate.ClusterLayer === 'function') {
-        cleanup(undefined, candidate as Namespace)
+      if (missingCapability() === null) {
+        try {
+          cleanup(undefined, (doc.defaultView as Window & { BMap?: Namespace }).BMap)
+        } catch {
+          cleanup(new XDriveBaiduPrototypeFailure('prototype_sdk_namespace_missing'))
+        }
       } else poll = setTimeout(ready, 100)
     }
-    // The configured browser AK is expected to be public in the provider's
-    // script URL. Never use the encrypted Static/Server API credential.
-    script.src = 'https://api.map.baidu.com/api?v=4.0&ak=' + encodeURIComponent(ak)
-    script.async = true
-    script.referrerPolicy = 'strict-origin-when-cross-origin'
-    script.onload = () => { bootstrapLoaded = true; ready() }
-    script.onerror = () => cleanup(new Error('baidu_sdk_load_failed'))
-    timeout = setTimeout(() => cleanup(new Error('baidu_sdk_timeout')), 12000)
-    doc.head.appendChild(script)
+    // This prototype directly loads the public Browser-AK URL. The admin
+    // fixed Server-side Loader probe does not exercise this browser request.
+    try {
+      script.src = 'https://api.map.baidu.com/api?v=4.0&ak=' + encodeURIComponent(ak)
+      script.async = true
+      script.referrerPolicy = 'strict-origin-when-cross-origin'
+      script.onload = () => { bootstrapLoaded = true; ready() }
+      script.onerror = () => cleanup(
+        new XDriveBaiduPrototypeFailure('prototype_sdk_script_failed'))
+      timeout = setTimeout(() => cleanup(new XDriveBaiduPrototypeFailure(
+        bootstrapLoaded ? (missingCapability() ?? 'prototype_sdk_namespace_missing')
+          : 'prototype_sdk_script_timeout')), 12000)
+      doc.head.appendChild(script)
+    } catch {
+      cleanup(new XDriveBaiduPrototypeFailure('prototype_sdk_script_injection_failed'))
+    }
   })
   loaded.set(doc, { ak, promise })
   void promise.catch(() => {
@@ -142,6 +201,8 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   onNativeCameraChange,
   onOpenPlace,
   loadThumbnail,
+  diagnosticScope,
+  onOpenDiagnostics,
 }: {
   getPrototypeConfig: (signal: AbortSignal) => Promise<XDriveBaiduJSAPIPrototypeConfig>
   places: readonly MediaPlaceFacet[]
@@ -149,6 +210,8 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   loadThumbnail?: MediaThumbnailLoader
+  diagnosticScope?: string
+  onOpenDiagnostics?: () => void
 }) {
   const container = useRef<HTMLDivElement | null>(null)
   const manualCamera = useRef(false)
@@ -162,6 +225,12 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   placesRef.current = places
   const [runtime, setRuntime] = useState<Runtime | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [failureCode, setFailureCode] = useState<XDriveBaiduMapDiagnosticCode | null>(null)
+  const reportFailure = useCallback((code: XDriveBaiduMapDiagnosticCode) => {
+    setFailureCode(code)
+    setStatus('failed')
+    if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, code)
+  }, [diagnosticScope])
 
   useEffect(() => {
     const node = container.current
@@ -181,12 +250,21 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     node.addEventListener('keydown', userGesture)
     setRuntime(null)
     setStatus('loading')
+    setFailureCode(null)
     const start = async () => {
-      const config = await getPrototypeConfig(abort.signal)
-      if (abort.signal.aborted || !config || config.provider !== 'baidu-jsapi-4.0' ||
-          !validAK(config.browser_ak)) throw Error('baidu_prototype_not_configured')
+      let config: XDriveBaiduJSAPIPrototypeConfig
+      try { config = await getPrototypeConfig(abort.signal) }
+      catch (error) {
+        throw new XDriveBaiduPrototypeFailure(xDriveClassifyBaiduPrototypeConfigFailure(error))
+      }
+      if (abort.signal.aborted) return
+      if (!config || config.provider !== 'baidu-jsapi-4.0' ||
+          !validAK(config.browser_ak)) {
+        throw new XDriveBaiduPrototypeFailure('prototype_config_invalid')
+      }
       const api = await loadBaiduJSAPI4(node.ownerDocument, config.browser_ak)
       if (abort.signal.aborted) return
+      try {
       map = new api.Map(node)
       // Camera returned from Viewer is already BD-09LL; never treat it as WGS84.
       const restored = xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
@@ -238,9 +316,18 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       setRuntime({ namespace: api, map: activeMap, layer: activeLayer,
         converted: new Map(),
         rendered: { type: 'FeatureCollection', features: [] } })
+      setFailureCode(null)
+      if (diagnosticScope) xDriveClearBaiduMapDiagnostic(diagnosticScope)
       setStatus('ready')
+      } catch {
+        throw new XDriveBaiduPrototypeFailure('prototype_sdk_map_init_failed')
+      }
     }
-    void start().catch(() => { if (!abort.signal.aborted) setStatus('failed') })
+    void start().catch(error => {
+      if (abort.signal.aborted) return
+      reportFailure(error instanceof XDriveBaiduPrototypeFailure
+        ? error.code : 'prototype_sdk_map_init_failed')
+    })
     return () => {
       abort.abort()
       node.removeEventListener('pointerdown', userGesture)
@@ -255,11 +342,12 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       if (map && layer) { try { map.removeLayer(layer) } catch { /* disposed */ } }
       try { map?.destroy?.() } catch { /* disposed */ }
     }
-  }, [getPrototypeConfig])
+  }, [getPrototypeConfig, diagnosticScope, reportFailure])
 
   useEffect(() => {
     if (!runtime) return
     const abort = new AbortController()
+    let phase: 'convert' | 'layer' = 'convert'
     const update = async () => {
       const source = places.filter(validMarker)
       const seen = new Set<string>()
@@ -299,6 +387,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       const collection: XDriveBaiduConvertedFeatureCollection = {
         type: 'FeatureCollection', features,
       }
+      phase = 'layer'
       runtime.layer.setData(collection)
       runtime.rendered = collection
       refreshCoversRef.current()
@@ -318,9 +407,13 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         }
       }
     }
-    void update().catch(() => { if (!abort.signal.aborted) setStatus('failed') })
+    void update().catch(() => {
+      if (abort.signal.aborted) return
+      reportFailure(phase === 'convert'
+        ? 'prototype_sdk_convert_failed' : 'prototype_sdk_layer_update_failed')
+    })
     return () => abort.abort()
-  }, [runtime, places])
+  }, [runtime, places, reportFailure])
 
   useEffect(() => {
     if (!runtime || !loadThumbnail) {
@@ -403,10 +496,31 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       )) : null}
       </Box>
       {status === 'failed' ? (
-        <Typography role="alert" variant="body2" sx={{ px: 1.5, py: 1 }}>
-          百度动态地图不可用。请确认管理员已配置并启用 JSAPI 4.0 浏览器 AK，
-          且允许当前页面域名访问；地点列表和照片墙仍可使用。
-        </Typography>
+        <Box data-xdrive-baidu-prototype-error sx={{ px: 1.5, py: 1 }}>
+          <Typography role="alert" variant="body2" color="error">
+            百度动态地图不可用；地点列表和照片墙仍可使用。
+          </Typography>
+          {failureCode ? (
+            <>
+              <Typography data-xdrive-baidu-prototype-error-code variant="body2"
+                sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
+                原因：{xDriveBaiduMapDiagnosticDetails[failureCode].title}
+                {' · '}错误码：{failureCode}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                处理：{xDriveBaiduMapDiagnosticDetails[failureCode].action}
+              </Typography>
+              {onOpenDiagnostics ? (
+                <Box component="button" type="button" onClick={onOpenDiagnostics}
+                  data-xdrive-baidu-prototype-diagnostics-link
+                  sx={{ mt: 1, display: 'block', border: 0, p: 0,
+                    bgcolor: 'transparent', color: 'primary.main', cursor: 'pointer' }}>
+                  在系统依赖中查看相同错误
+                </Box>
+              ) : null}
+            </>
+          ) : null}
+        </Box>
       ) : status === 'loading' ? (
         <Typography role="status" variant="caption" sx={{ px: 1.5 }}>
           正在加载百度动态地图…
