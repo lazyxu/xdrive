@@ -84,8 +84,9 @@ test('Web/Mobile Web/PWA/Desktop share LAN ingress read-only proof without new D
   }
   assert.match(client, /IngressChangeRisk/)
   assert.match(panel, /data-xdrive-caddy-desired-lan-local-match/)
-  assert.match(panel, /局域网 IP 本机 TLS：/)
-  assert.match(panel, /local-lan-switch/)
+  assert.match(panel, /本机 IP HTTPS 与已保存的局域网入口不同/)
+  assert.match(panel, /data-xdrive-caddy-ingress-change-risk/)
+  assert.match(helper, /return "local-lan-switch"/)
   assert.doesNotMatch(backend, /adminStartCaddyApply|docker\.sock|docker compose/)
   assert.doesNotMatch(panel, /Restart Caddy|Docker Socket/)
 })

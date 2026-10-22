@@ -91,8 +91,8 @@ test('Both Web and Desktop invalidate sibling Caddy proof on all persisted revis
   const activeCaddy = page.slice(page.indexOf("selectedPage === 'caddy' && selectedItem ? ("),
     page.indexOf(') : (<>', page.indexOf("selectedPage === 'caddy' && selectedItem ? (")))
   assert.ok(activeCaddy.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
-  assert.equal((workspace.match(/onConfigurationChanged=\{changed\}/g) || []).length, 3,
-    'HTTPS save, AliDNS credential save, and history rollback all invalidate evidence')
+  assert.equal((workspace.match(/onConfigurationChanged=\{changed\}/g) || []).length, 2,
+    'HTTPS and AliDNS saves invalidate sibling evidence, while history UI stays absent')
   assert.ok(workspace.includes('onConfigurationChanged()'))
   assert.ok(workspace.includes('refreshID={evidenceRevision}'),
     'only persisted Caddy changes refresh sibling preflight, not inventory checks')
