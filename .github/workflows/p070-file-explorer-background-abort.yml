@@ -1,0 +1,43 @@
+name: P070 Matched Real HTTP Background Thumbnail Request Cancel
+
+on:
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  matched-background-thumbnail-abort:
+    if: github.head_ref == 'perf/p070-owner-background-thumbnail-cancel-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      XD_P070_BASE_SHA: '95ac411a9cf10fdfa6650be669ab381e5d7b5d18'
+      XD_P070_RESULT_DIR: ${{ github.workspace }}/desktop/p070-background-thumbnail-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual React, TypeScript and test renderer
+        run: |
+          cd desktop
+          npm install --no-audit --no-fund
+      - name: Freeze measured source and run same-runner n3 BEFORE/AFTER HTTP cancellation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          git cat-file -e "$XD_P070_BASE_SHA:ui/shared/src/mui/FileExplorerThumbnail.tsx"
+          node --check desktop/tests/file-explorer-thumbnail-background-abort-p070.cjs
+          node --test desktop/tests/file-explorer-thumbnail-background-abort-p070.cjs
+          test -s "$XD_P070_RESULT_DIR/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p070-thumbnail-background-n3-original-vs-candidate
+          path: desktop/p070-background-thumbnail-results/
+          if-no-files-found: warn
+          retention-days: 30
