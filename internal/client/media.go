@@ -1117,6 +1117,55 @@ func (c *Client) MediaBaiduStaticMap(
 	return data, nil
 }
 
+// MediaPlaceHierarchyRequest is the canonical bounded identity lookup.
+// No GPS coordinates or full-library scan are passed over the Agent boundary.
+type MediaPlaceHierarchyRequest struct {
+	Level   string
+	Country string
+	Region  string
+	Cursor  string
+	Search  string
+	Limit   int
+}
+
+type MediaPlaceHierarchyItem struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	PhotoCount  int64   `json:"photo_count"`
+	CoverNodeID *uint64 `json:"cover_node_id,omitempty"`
+	MatchKind   string  `json:"match_kind"`
+}
+
+type MediaPlaceHierarchyPage struct {
+	Items          []MediaPlaceHierarchyItem `json:"items"`
+	Level          string                    `json:"level"`
+	HasMore        bool                      `json:"has_more"`
+	NextCursor     string                    `json:"next_cursor,omitempty"`
+	DatasetVersion string                    `json:"dataset_version,omitempty"`
+	Available      bool                      `json:"available"`
+}
+
+func (c *Client) MediaPlacesHierarchy(ctx context.Context, request MediaPlaceHierarchyRequest) (MediaPlaceHierarchyPage, error) {
+	values := url.Values{}
+	values.Set("level", request.Level)
+	values.Set("limit", strconv.Itoa(request.Limit))
+	if request.Country != "" {
+		values.Set("country", request.Country)
+	}
+	if request.Region != "" {
+		values.Set("region", request.Region)
+	}
+	if request.Cursor != "" {
+		values.Set("cursor", request.Cursor)
+	}
+	if request.Search != "" {
+		values.Set("search", request.Search)
+	}
+	var out MediaPlaceHierarchyPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/hierarchy?"+values.Encode(), nil, &out)
+	return out, err
+}
+
 type MediaPlacesPage struct {
 	Items      []MediaPlaceFacet `json:"items"`
 	TotalCount int64             `json:"total_count"`

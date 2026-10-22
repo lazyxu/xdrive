@@ -2875,6 +2875,14 @@ func (c *agentController) CloudBaiduStaticMap(
 	return agentMediaThumbnail{ContentType: "image/png", Data: bytes}, nil
 }
 
+func (c *agentController) CloudMediaPlacesHierarchy(ctx context.Context, request client.MediaPlaceHierarchyRequest) (client.MediaPlaceHierarchyPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPlaceHierarchyPage{}, err
+	}
+	return cli.MediaPlacesHierarchy(ctx, request)
+}
+
 func (c *agentController) CloudMediaPlacesPage(ctx context.Context, limit, offset int) (client.MediaPlacesPage, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
