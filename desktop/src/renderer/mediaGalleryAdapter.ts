@@ -66,6 +66,9 @@ export function createDesktopMediaGalleryDataSource(
       agent.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
     listPlacesPage: (limit = 48, offset = 0) => agent.getMediaPlacesPage(limit, offset),
+    listPlacesHierarchy: (request, signal) => xDriveDesktopViewportRequest(
+      signal, requestID => agent.getMediaPlacesHierarchy(request, requestID),
+    ),
     listPlacesMapOverview: (bounds, detail = false, signal) =>
       xDriveDesktopViewportRequest(signal, requestID =>
         agent.getMediaPlacesMapOverview(bounds, detail, requestID),

@@ -61,6 +61,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlaceHierarchyRequest,
+  MediaPlaceHierarchyPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
   MediaPlacesMapOverview,
@@ -572,6 +574,7 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaPlacesPage: (limit?: number, offset?: number) => Promise<DesktopResult<MediaPlacesPage>>
+        getMediaPlacesHierarchy: (request: MediaPlaceHierarchyRequest, requestID?: string) => Promise<DesktopResult<MediaPlaceHierarchyPage>>
         getMediaPlacesMapOverview: (
           bounds: MediaPlacesViewportBounds, detail?: boolean, requestID?: string,
         ) => Promise<DesktopResult<MediaPlacesMapOverview>>

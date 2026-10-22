@@ -1901,6 +1901,29 @@ export type AgentMediaBaiduMapConsentInput = {
   consent_to_derived_index: true
 }
 
+export type AgentMediaPlaceHierarchyRequest = {
+  level: 'country' | 'region' | 'city'
+  country?: string
+  region?: string
+  cursor?: string
+  search?: string
+  limit?: number
+}
+export type AgentMediaPlaceHierarchyPage = {
+  items: Array<{
+    id: string
+    name: string
+    photo_count: number
+    cover_node_id?: number
+    match_kind: string
+  }>
+  level: AgentMediaPlaceHierarchyRequest['level']
+  has_more: boolean
+  next_cursor?: string
+  dataset_version?: string
+  available: boolean
+}
+
 export type AgentMediaPlacesPage = {
   items: AgentMediaPlaceFacet[]
   total_count: number
@@ -2782,6 +2805,20 @@ export class AgentIPCClient {
       width: String(width), height: String(height),
     })
     return this.requestBinary(`/v1/media/baidu-static?${query.toString()}`, 12_000, signal)
+  }
+
+  mediaPlacesHierarchy(request: AgentMediaPlaceHierarchyRequest, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      level: request.level,
+      limit: String(request.limit ?? 48),
+    })
+    if (request.country) query.set('country', request.country)
+    if (request.region) query.set('region', request.region)
+    if (request.cursor) query.set('cursor', request.cursor)
+    if (request.search) query.set('search', request.search)
+    return this.request<AgentMediaPlaceHierarchyPage>(
+      'GET', `/v1/media/places/hierarchy?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   mediaPlacesPage(limit = 48, offset = 0) {
