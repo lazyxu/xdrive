@@ -1,5 +1,8 @@
 # Local folder push — staged delivery contract
 
+> **2026-10-22 updated delivery status:** Follow [the seven-stage dependency-ordered Push Runner roadmap](./localpush-dependency-ordered-delivery-20261022.md). Earlier historical statements below asserting all execution disabled precede merged #2212: a real, explicit, owning Windows/Linux Desktop single 0–64 MiB first-level Backup-only upload is enabled, but is NOT a trusted file terminal, a second-file/multi-file runner, SourceRun, or automatic backup. Production-only security acceptance: **按用户决定跳过（未验收）**; source-level safety remains mandatory.
+
+
 ## Objective and status
 
 An ordinary **local folder** selected by the user on Windows or Linux should push original files to an owner-authorized xDrive Source target. Existing xDrive CfAPI/FUSE two-way mount synchronization, Synology NAS Push, and Pull connectors are separate products and remain unchanged.

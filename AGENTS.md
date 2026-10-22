@@ -1,3 +1,16 @@
+## Push Runner 阶段 0 收尾（2026-10-22）
+
+- #2319、#2327、#2332 已按依赖顺序全部 Rebase 合入 master：`c5576bca`、`f52c3373`、`8292d156`；三者最终准确 HEAD 各自完整 77-Job CI / Final Gate 成功。原相关分支均不再保留。下一步先做可信 Agent→Server original Operation 的真实文件级 COMMIT/CANCEL 终态和崩溃回放，再做 Stage/Key/Writer 退休及第二文件安全再次入场。
+- 这三个合并只完成身份复核、私有 SQL/CAS 锁窗口与本机活 Writer 锁观察；**生产物理 terminal INSERT / CANCEL、retirement_safe、第二文件、多文件 Runner、SourceRun、自动调度仍未完成**。不得将测试合成终态当作真实备份完成。当前交付顺序见 `docs/localpush-dependency-ordered-delivery-20261022.md`。
+- 真实生产环境不可接触的安全验收仍 **按用户决定跳过（未验收）**，不作为源码/CI/PR/合并门槛；源码级 Owner/Device/Root/native/SQL/CAS 测试不跳过。
+
+## Local Push Runner 七阶段串行交付顺序（2026-10-22）
+
+- 先处理 #2319 → #2327 → #2332 的实际 HEAD、兼容性、CI 和合并；再实现真实 Agent→Server 原 Operation 可信证据、SQL/CAS 同事务 physical-commit、可信 physical-cancel-quiesced 及丢 ACK/崩溃回放；随后 Stage/Key/Writer 退休与第二文件安全再次入场；最后依次推进多文件增量 Runner、SourceRun 本机控制、自动同步和非生产 E2E/性能/安全回归。禁止把约 50 个后续事项无依赖并行推进。
+- 已合入的 #2212 仅开启本机 Desktop 手动 0–64 MiB 首层单文件 Backup-only。#2319 身份复核、#2327 无生产调用方的私有 SQL/CAS 钩子、#2332 本地 Writer 原始锁窗口均不是完整远端终态；不得声称 backup_complete、retirement_safe、第二文件或调度可用。
+- 遵守现有通用 CI 复用规则：对比实际业务/依赖/SQL/Native 语义而非机械因 master 增长重测；不得把旧 SHA 的绿 CI 记到新 SHA；保留整个当前 master 和累计 AGENTS 历史、其他 Owner 的 PR 与源码；合并/废弃后才清理分支。详见 docs/localpush-dependency-ordered-delivery-20261022.md。
+- **生产环境安全验收：按用户决定跳过（未验收）**，不索取生产权限、账号、AK/JWT/Cookie/HAR/抓包或人工签字，也不作为源码、CI、PR、合并门槛。可控 Owner/Device/Root/Native OS/SQL/CAS 安全测试仍必须完成。
+
 ## Gallery 地点原型 v0 · 全部 Owner GPS 直接上图、Web/Mobile/Desktop 同页（2026-10-22）
 
 - **用户本轮明确变更产品原型要求，优先于旧默认逐资产 opt-in 产品选择**：进入「图库 → 地点」直接显示当前账户已索引的所有有效 WGS84 GPS PhotoAsset 聚集，无需另行逐张授予百度地图 Consent；真正文件数据仍由原来的 Owner ACL/Server Range 验证。不得更改跨用户边界、开启匿名 API 或扩大公开分享范围。
