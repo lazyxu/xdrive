@@ -9,6 +9,7 @@ import type {
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+import { XDriveMediaGalleryBaiduPrototypeMap } from './MediaGalleryBaiduPrototypeMap'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
 import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -28,8 +29,8 @@ function sameViewport(a: MediaPlacesViewportBounds | null, b: MediaPlacesViewpor
     a.east === b.east && a.north === b.north)
 }
 
-/** Only the Baidu Server API image is rendered here. The local GPS SVG map,
- * its map projection, and all offline fallback UI have been retired. */
+/** Gallery's direct prototype uses native Baidu JSAPI4 for all gestures,
+ * projection and clustering; the legacy Static map remains only as a fallback. */
 export function XDriveMediaGalleryPlacesMap({
   places,
   totalCount,
@@ -46,6 +47,7 @@ export function XDriveMediaGalleryPlacesMap({
   listBaiduNativeCells,
   loadPhotoCoverThumbnail,
   getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype,
   mintBaiduJSAPI4Session,
   mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
@@ -78,6 +80,7 @@ export function XDriveMediaGalleryPlacesMap({
   listBaiduNativeCells?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCells']
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
+  getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
   mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
@@ -100,7 +103,7 @@ export function XDriveMediaGalleryPlacesMap({
   // Prototype v0: the existing Owner-authenticated Places pages already
   // contain ALL valid-GPS PhotoAssets without per-photo Baidu opt-in.
   // Load bounded pages progressively so no independent HTTPS Child is needed.
-  const prototypeMap = Boolean(listPlacesPage && loadBaiduStaticMap)
+  const prototypeMap = Boolean(listPlacesPage && getBaiduJSAPIPrototype)
   const [prototypeIndex, setPrototypeIndex] = useState<{
     scope:string;items:MediaPlaceFacet[];total:number;complete:boolean;error:string
   } | null>(null)
@@ -391,7 +394,7 @@ export function XDriveMediaGalleryPlacesMap({
           <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
           <Typography variant="caption" color="text.secondary">
             {prototypeMap
-              ? '原型：当前账户所有有效 GPS 照片直接聚集，无需逐张授权；底图共用百度 Server API。'
+              ? '当前账户全部有效 GPS 地点直接聚集，无需逐张授权；底图由百度 JSAPI 绘制。'
               : '聚集点代表已授权的定位照片，缩放展开并点击进入照片墙；仅使用百度地图 Server API。'}
           </Typography>
         </Box>
@@ -541,6 +544,16 @@ export function XDriveMediaGalleryPlacesMap({
               {currentPrototype?.error ? ' · ' + currentPrototype.error : ''}
             </Typography>
           ) : null}
+          {prototypeMap && getBaiduJSAPIPrototype ? (
+            <XDriveMediaGalleryBaiduPrototypeMap
+              key={diagnosticScope ?? ''}
+              getPrototypeConfig={getBaiduJSAPIPrototype}
+              places={prototypePlaces}
+              initialNativeCamera={nativeRestoreRef.current ?? undefined}
+              onNativeCameraChange={onNativeCameraChange}
+              onOpenPlace={onOpenPlace}
+            />
+          ) : (
           <XDriveMediaGalleryBaiduStaticMap
         place={selectedPlace}
         getProvider={getBaiduMapProvider}
@@ -554,6 +567,8 @@ export function XDriveMediaGalleryPlacesMap({
         onOpenPlace={onOpenPlace}
         onOpenViewportPhotos={onOpenViewportPhotos}
       />
+          )}
+      {!prototypeMap ? (
       <Box component="section" data-xdrive-gallery-places-viewport
         sx={{ px: 1.5, pb: 1.5, minWidth: 0, position: 'relative' }}>
         <Typography variant="subtitle2" fontWeight={700}>当前地图视窗内的地点</Typography>
@@ -656,6 +671,7 @@ export function XDriveMediaGalleryPlacesMap({
           </>
         )}
       </Box>
+      ) : null}
         </>
       ) : null}
     </Paper>

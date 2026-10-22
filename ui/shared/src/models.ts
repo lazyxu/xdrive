@@ -910,6 +910,13 @@ export interface NodeLocation {
   sync_folders: NodeLocationSyncFolder[]
 }
 
+/** Public JSAPI browser AK for accepted in-Gallery prototype, not Server AK. */
+export type XDriveBaiduJSAPIPrototypeConfig = {
+  provider: 'baidu-jsapi-4.0'
+  browser_ak: string
+  revision: number
+}
+
 export type XDriveBaiduMapProviderInfo = {
   provider: 'baidu-server-static'
   enabled: boolean

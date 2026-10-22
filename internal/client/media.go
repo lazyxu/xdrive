@@ -1053,6 +1053,18 @@ func (c *Client) RevokeMediaBaiduConsent(
 	return out, err
 }
 
+type BaiduJSAPIPrototypeConfig struct {
+	Provider  string `json:"provider"`
+	BrowserAK string `json:"browser_ak"`
+	Revision  uint64 `json:"revision"`
+}
+
+func (c *Client) MediaBaiduJSAPIPrototype(ctx context.Context) (BaiduJSAPIPrototypeConfig, error) {
+	var result BaiduJSAPIPrototypeConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/baidu-jsapi/prototype", nil, &result)
+	return result, err
+}
+
 type BaiduMapProvider struct {
 	Provider    string `json:"provider"`
 	Enabled     bool   `json:"enabled"`

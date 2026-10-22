@@ -88,9 +88,12 @@ test('A3c17 Desktop remains sandboxed while prototype Places stays in shared Gal
   assert.match(globals, /openBaiduMapSecure:/)
   assert.doesNotMatch(desktopApp, /onOpenSecureDesktopMap=\{/)
   // Legacy secure window remains available for a later hardened JSAPI
-  // release, but the prototype never invokes it or injects provider JS.
+  // release; this prototype uses the shared Gallery direct SDK instead.
   assert.match(desktopApp, /<XDriveMediaGalleryPage/)
-  assert.match(places, /const prototypeMap = Boolean\(listPlacesPage && loadBaiduStaticMap\)/)
+  assert.match(places, /const prototypeMap = Boolean\(listPlacesPage && getBaiduJSAPIPrototype\)/)
+  assert.match(places, /<XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(preload, /getBaiduJSAPIPrototype/)
+  assert.match(main, /agent:get-baidu-jsapi-prototype/)
   assert.match(gallery, /onOpenSecureDesktopMap=\{onOpenSecureDesktopMap\}/)
   assert.match(places, /在独立安全窗口打开地图/)
   assert.match(webApp, /initialSection=\{route\.app === 'gallery'/)

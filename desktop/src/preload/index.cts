@@ -511,6 +511,7 @@ const agent = Object.freeze({
   revokeMediaBaiduConsent: (nodeID: number, revision: number) =>
     ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
   getBaiduMapProvider: () => ipcRenderer.invoke('agent:get-baidu-map-provider'),
+  getBaiduJSAPIPrototype: () => ipcRenderer.invoke('agent:get-baidu-jsapi-prototype'),
   getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) =>
     ipcRenderer.invoke('agent:get-baidu-static-map', lat, lng, zoom, width, height, requestID),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>

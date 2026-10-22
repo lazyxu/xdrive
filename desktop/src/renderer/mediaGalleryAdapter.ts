@@ -81,6 +81,7 @@ export function createDesktopMediaGalleryDataSource(
     enqueueBaiduMapIndexJob: (nodeID, input) => agent.enqueueMediaBaiduIndexJob(nodeID, input),
     cancelBaiduMapIndexJob: (nodeID, revision) => agent.cancelMediaBaiduIndexJob(nodeID, revision),
     getBaiduMapProvider: () => agent.getBaiduMapProvider(),
+    getBaiduJSAPIPrototype: (_signal) => agent.getBaiduJSAPIPrototype(),
     loadBaiduStaticMap: async (input, signal) => {
       const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
         agent.getBaiduStaticMap(input.latitude, input.longitude, input.zoom,

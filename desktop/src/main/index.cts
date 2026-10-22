@@ -224,6 +224,7 @@ import {
   type AgentMediaCreativeGeneration,
   type AgentMediaCreativeInput,
   type AgentBaiduMapProvider,
+  type AgentBaiduJSAPIPrototype,
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentDeviceBackupOverview,
@@ -4358,6 +4359,14 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'baidu-static-map')
       return requireAgentClient().mediaBaiduMapProvider()
+    }, false),
+  )
+
+  ipcMain.handle('agent:get-baidu-jsapi-prototype', () =>
+    runAgentAction<AgentBaiduJSAPIPrototype>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaBaiduJSAPIPrototype()
     }, false),
   )
   ipcMain.handle('agent:get-baidu-static-map', (

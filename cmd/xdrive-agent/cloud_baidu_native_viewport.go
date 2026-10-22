@@ -17,3 +17,11 @@ func (c *agentController) CloudBaiduNativeViewport(ctx context.Context,
 	}
 	return cli.BaiduNativeViewport(ctx, bounds, limit, offset)
 }
+
+func (c *agentController) CloudBaiduJSAPIPrototype(ctx context.Context) (client.BaiduJSAPIPrototypeConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.BaiduJSAPIPrototypeConfig{}, err
+	}
+	return cli.MediaBaiduJSAPIPrototype(ctx)
+}

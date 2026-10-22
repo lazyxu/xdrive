@@ -295,6 +295,8 @@ export interface MediaGalleryDataSource {
     provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string;
     isolated_child_origin?: string
   }>
+  getBaiduJSAPIPrototype?: (signal: AbortSignal) =>
+    Promise<import('../models').XDriveBaiduJSAPIPrototypeConfig>
   mintBaiduIsolatedChildTicket?: (signal: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; child_origin: string; ticket: string
   }>
@@ -3453,6 +3455,7 @@ export function XDriveMediaGalleryPage({
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
+        getBaiduJSAPIPrototype={source.getBaiduJSAPIPrototype}
         mintBaiduIsolatedChildTicket={source.mintBaiduIsolatedChildTicket}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
@@ -3950,6 +3953,7 @@ export interface XDriveMediaGalleryProps {
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
+  getBaiduJSAPIPrototype?: MediaGalleryDataSource['getBaiduJSAPIPrototype']
   mintBaiduIsolatedChildTicket?: MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
@@ -5662,6 +5666,7 @@ export function XDriveMediaGallery({
   listBaiduNativeViewport,
   listBaiduNativeCells,
   getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype,
   mintBaiduJSAPI4Session,
   mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
@@ -7879,7 +7884,7 @@ export function XDriveMediaGallery({
               地点
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              地图仅使用百度地图 Server API；本账户全部有效 GPS 照片直接聚集，放大查看并点按进入照片墙
+              使用百度 JSAPI 动态地图；当前账户有效 GPS 地点由 SDK 聚合，点击逐级放大直至打开照片墙
             </Typography>
           </Stack>
 
@@ -7892,6 +7897,7 @@ export function XDriveMediaGallery({
             listBaiduNativeCells={listBaiduNativeCells}
             loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
+            getBaiduJSAPIPrototype={getBaiduJSAPIPrototype}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
