@@ -1,3 +1,5 @@
+> **2026-10-22 最新执行状态：** 本文件下方最初的 P0/P1/P2 表格为 **2026-10-12 历史审查快照**，大量“待做”已由后续 PR 合入，不能据此重复开发。最新阶段真相及固定处理顺序请先读 [PWA 五阶段执行/验收台账](pwa-five-stage-execution-20261022.md)。P0 App Shell/双版本与 P1 明确授权只读目录/相册快照均已合入；P2-A 同进程 100k 真实基线 [#2325](https://github.com/lazyxu/xdrive/pull/2325) 已合入，**P2-A2 真正跨进程 [#2329](https://github.com/lazyxu/xdrive/issues/2329) 尚未开发，P2-B 缓存未做，AFTER=N/A**。生产环境无法触达的安全验收一律“按用户决定跳过（未验收）”，不阻塞源码/CI 合并；物理 iOS/Android `NOT RUN`，源码 Owner/ACL/撤销测试不可跳过。
+
 # xDrive PWA 交付审查与强化路线图
 
 **审查基线：2026-10-12，GitHub lazyxu/xdrive master@d7788fb73efc6d5f147b2ed53fd6c991004324ae。** 这是 PWA 专项唯一交付台账；已有移动任务以 docs/mobile-web-followups.md 的 M38–M49/M55/M56 和 docs/mobile-web-platform-matrix.md 为准，不重复实现业务逻辑。每条必须分别写清“实现、组件测试、CI、合并、浏览器验收、真机/物理测量”；未验证不得写完成。
