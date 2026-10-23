@@ -50,6 +50,30 @@ func TestBaiduNativeCellsParserRejectsUnreviewedGeometry(t *testing.T) {
 	}
 }
 
+func TestBaiduNativeCellsScopedFilterParser(t *testing.T) {
+	good := "west=179.9&south=-2&east=-179.9&north=3"
+	bounds, album, err := parseBaiduNativeMapCellsScope(good +
+		"&favorite=true&kind=image&captured_from=2026-01-01&sort_by=captured&sort_dir=desc&time_zone=UTC&album=manual%3Atest")
+	if err != nil || bounds.West != 179.9 || bounds.East != -179.9 || album != "manual:test" {
+		t.Fatalf("current filtered BD09 window rejected: %+v %q %v", bounds, album, err)
+	}
+	for _, bad := range []string{
+		good + "&owner_id=1",
+		good + "&bbox=116,39,117,40",
+		good + "&coordinate_space=wgs84",
+		good + "&ak=secret",
+		good + "&fold_duplicates=true",
+		good + "&favorite=true&favorite=false",
+		good + "&captured_to=",
+		good + "&album=secret",
+		good + "&time_zone=%20UTC",
+	} {
+		if _, _, err := parseBaiduNativeMapCellsScope(bad); err == nil {
+			t.Fatalf("accepted unsafe filtered BD09 cells: %q", bad)
+		}
+	}
+}
+
 func TestBaiduNativeCellsActualGinNoReleaseNoLeak(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := &Server{AllowedOrigin: "https://gallery.example.invalid"}

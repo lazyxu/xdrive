@@ -164,7 +164,8 @@ export interface XDriveMediaGalleryPort {
   listBaiduNativeViewport?: (
     bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeViewportPage>>
-  listBaiduNativeCells?: (bounds: MediaBaiduNativeViewportBounds, signal: AbortSignal) =>
+  listBaiduNativeCells?: (bounds: MediaBaiduNativeViewportBounds, signal: AbortSignal,
+    filters?: MediaGalleryQuery, albumKey?: string) =>
     Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeCellsPage>>
   listBaiduNativeViewportItems?: (
     bounds: MediaBaiduNativeViewportBounds, limit: number, offset: number,
@@ -601,7 +602,9 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listBaiduNativeCells: port.listBaiduNativeCells
-      ? (bounds, signal) => resolveXDriveTransport(port.listBaiduNativeCells!(bounds, signal))
+      ? (bounds, signal, filters, albumKey) => resolveXDriveTransport(
+          port.listBaiduNativeCells!(bounds, signal, filters, albumKey),
+        )
       : undefined,
     listBaiduNativeViewportItems: port.listBaiduNativeViewportItems
       ? (bounds, limit, offset, query, signal) => resolveXDriveTransport(
