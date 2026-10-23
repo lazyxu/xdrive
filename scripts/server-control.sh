@@ -1623,12 +1623,34 @@ caddy_env_deploy() {
   if (( ready == 1 )); then
     if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$expected" |
         XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+          XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" XD_CADDY_COMMIT_DURABLE=1 \
           python3 "$BIN_DIR/caddy-env-config.py" commit > /dev/null 2>&1; then
       flock -u 6
       exec 6>&-
       printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"%s","sha256":"%s"}\n' \
         "$id" "$expected" > "$result_file"
       return 0
+    fi
+    # A lost Python ACK or SIGKILL after durable commit publication must
+    # NEVER roll back an already committed target. Reconcile only the exact
+    # immutable success receipt while still holding the installer lock.
+    if [[ -e "$dir/caddy-deploy-results/$id.json" ||
+          -L "$dir/caddy-deploy-results/$id.json" ]]; then
+      if printf '{"operation":"reconcile-commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$expected" |
+          XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+            XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+            python3 "$BIN_DIR/caddy-env-config.py" reconcile-commit >/dev/null 2>&1; then
+        flock -u 6
+        exec 6>&-
+        printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"%s","sha256":"%s"}\n' \
+          "$id" "$expected" > "$result_file"
+        return 0
+      fi
+      # Ambiguous committed state: never restore, delete active, or invent
+      # a successful terminal if durable reconciliation cannot be proved.
+      flock -u 6
+      exec 6>&-
+      return 2
     fi
   fi
 
@@ -1694,7 +1716,17 @@ caddy_env_process() {
   [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
   tmp="$(mktemp "$dir/.caddy-env-result.XXXXXX")" || return 1
   if [[ -n "$request_id" && "$operation" == deploy ]] && request_time_is_fresh "$created_at"; then
-    if ! caddy_env_deploy "$request_id" "$active" "$tmp"; then
+    if caddy_env_deploy "$request_id" "$active" "$tmp"; then
+      :
+    else
+      local deploy_rc="$?"
+      if [[ "$deploy_rc" == 2 ]]; then
+        # The durable success decision exists, but recovery is unresolved.
+        # Preserve the active slot without terminating the Host sampling
+        # loop. A restarted Host may finish the exact durable decision safely.
+        rm -f -- "$tmp"
+        return 0
+      fi
       if [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
         printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","error":"deploy-refused"}\n' "$request_id" "$expected" > "$tmp"
       else
@@ -1722,7 +1754,14 @@ caddy_env_process() {
   # Otherwise immediate UI reload could still read the previous .env digest
   # even though the mutation response already said "saved".
   rm -f "$active"
-  if [[ "$operation" == deploy && "$(json_value "$tmp" error)" == installer-busy ]]; then
+  if [[ "$operation" == deploy &&
+        ( "$(json_value "$tmp" error)" == installer-busy ||
+          "$(json_value "$tmp" state)" == deployed ) ]]; then
+    # Busy refusal cannot snapshot under installer.lock. A completed deploy
+    # already published a durable terminal BEFORE its Host journal cleanup;
+    # snapshot failure must never overwrite either trustworthy terminal.
+    # The ordinary sampler will reconcile runtime observations afterwards.
+    caddy_env_refresh || true
     # A server upgrade owns install.lock, so Python snapshot must fail closed.
     # The busy deploy did not alter .env or Caddy. Do not overwrite its
     # trustworthy, fixed error code with host-env-observation-unavailable.
@@ -1735,7 +1774,10 @@ caddy_env_process() {
     printf '{"state":"failed","request_id":"%s","error":"host-env-observation-unavailable"}\n' \
       "$request_id" > "$tmp"
   fi
-  if [[ "$operation" == deploy && "$request_id" =~ ^[0-9a-f]{24}$ ]]; then
+  if [[ "$operation" == deploy && "$request_id" =~ ^[0-9a-f]{24}$ &&
+        "$(json_value "$tmp" state)" != deployed ]]; then
+    # Successful Deploy was archived atomically INSIDE Python commit before
+    # removing the rollback journal; never overwrite its O_EXCL decision.
     if ! caddy_env_archive_final "$dir" "$tmp"; then
       # This operation may have physically completed, but must NOT pretend
       # its per-request terminal receipt was durably archived.
@@ -1774,6 +1816,33 @@ caddy_env_recover_interrupted() {
   # recreating Caddy. An updater cannot interleave between these two effects.
   exec 6>"$STATE_DIR/install.lock"
   if flock -n 6; then
+    # A physical commit can outlive its shell process. If Python durably
+    # published the precise SUCCESS decision before crashing during cleanup,
+    # finish the cleanup rather than restoring the old running configuration.
+    if [[ -e "$dir/caddy-deploy-results/$request_id.json" ||
+          -L "$dir/caddy-deploy-results/$request_id.json" ]]; then
+      if printf '{"operation":"reconcile-commit","request_id":"%s","expected_sha256":"%s"}\n' "$request_id" "$expected" |
+          XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+            XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+            python3 "$BIN_DIR/caddy-env-config.py" reconcile-commit >/dev/null 2>&1; then
+        local terminal
+        terminal="$(mktemp "$dir/.caddy-committed-recovery.XXXXXX")" || return 1
+        printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"%s","sha256":"%s"}\n' \
+          "$request_id" "$expected" > "$terminal"
+        chmod 0660 "$terminal"
+        mv -f "$terminal" "$dir/caddy-env-result.json"
+        rm -f -- "$active"
+        flock -u 6
+        exec 6>&-
+        caddy_env_refresh || true
+        return 0
+      fi
+      # A conflicting or unreadable success receipt is UNCERTAIN. Preserve
+      # the active slot and never silently roll back a committed candidate.
+      flock -u 6
+      exec 6>&-
+      return 1
+    fi
     if printf '{"operation":"restore","request_id":"%s","expected_sha256":"%s"}\n' "$request_id" "$expected" |
         XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
           python3 "$BIN_DIR/caddy-env-config.py" restore > /dev/null 2>&1; then

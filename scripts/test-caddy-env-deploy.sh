@@ -260,4 +260,138 @@ if printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id
 fi
 [[ ! -e "$archive_dir/aaaaaaaaaaaaaaaaaaaaaaaa.json" ]]
 
+
+# A physical Caddy check can succeed and Host Python can publish a durable
+# commit decision before Bash receives an ACK. SIGKILL in either half of the
+# cleanup MUST preserve that exact success rather than restore older ingress.
+# Only these test-only environments can inject the forced Python _exit.
+simulate_committed_host_crash() {
+  local mode="$1" id="$2" name="$3" dir sha before
+  save_domain "$name"
+  sha="$(fingerprint)"
+  dir="$(prepare_dir)"
+  printf '{"operation":"deploy","request_id":"%s","expected_sha256":"%s"}\n' \
+    "$id" "$sha" > "$dir/caddy-env-active.json"
+  chmod 0600 "$dir/caddy-env-active.json"
+  before="$(wc -l < "$MOCK_DOCKER_LOG")"
+  # The fake Docker/Ready and local TLS checks intentionally model the
+  # operation's already-verified physical entry, never public/WAN proof.
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+    up -d --no-deps --force-recreate caddy >/dev/null
+  [[ "$(caddy_local_tls_state "$name")" == verified ]]
+  exec 6>"$XD_CONFIG_DIR/state/install.lock"
+  flock -n 6
+  local crash_after_archive=0 crash_after_marker=0 crash_after_link=0
+  [[ "$mode" != after-link ]] || crash_after_link=1
+  [[ "$mode" != after-archive ]] || crash_after_archive=1
+  [[ "$mode" != after-marker ]] || crash_after_marker=1
+  if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$sha" |
+      XD_CONFIG_DIR="$XD_CONFIG_DIR" XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+      XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 XD_CADDY_COMMIT_DURABLE=1 \
+      XD_CADDY_TEST_COMMIT_CRASH_AFTER_LINK="$crash_after_link" \
+      XD_CADDY_TEST_COMMIT_CRASH_AFTER_ARCHIVE="$crash_after_archive" \
+      XD_CADDY_TEST_COMMIT_CRASH_AFTER_MARKER="$crash_after_marker" \
+      python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" commit >/dev/null; then
+    [[ "$mode" == after-completed ]] || {
+      echo "missing expected interrupted Python commit" >&2
+      exit 1
+    }
+  else
+    [[ "$mode" != after-completed ]] || {
+      echo "completed Python commit unexpectedly failed" >&2
+      exit 1
+    }
+  fi
+  flock -u 6
+  exec 6>&-
+  [[ -f "$dir/caddy-env-active.json" ]]
+  local receipt="$dir/caddy-deploy-results/$id.json"
+  python3 - "$receipt" "$id" "$sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r=={"protocol":"xdrive.caddy.host-env.v1","state":"deployed",
+          "request_id":sys.argv[2],"sha256":sys.argv[3]}
+PY
+  # This is the precise crash window between the durable decision and Host
+  # journal cleanup. Neither wrong rollback nor a second recreate is allowed.
+  if [[ "$mode" == after-archive || "$mode" == after-link ]]; then
+    [[ -f "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+    [[ -f "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+  elif [[ "$mode" == after-marker ]]; then
+    [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+    [[ -f "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+  else
+    [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+    [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+  fi
+  if [[ "$mode" == after-link ]]; then
+    [[ "$(stat -c '%h' "$receipt")" == 2 ]]
+  fi
+  local calls_after_commit="$(wc -l < "$MOCK_DOCKER_LOG")"
+  [[ "$calls_after_commit" == "$((before + 1))" ]]
+  caddy_env_recover_interrupted "$dir"
+  python3 - "$dir/caddy-env-result.json" "$id" "$sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r == {"protocol":"xdrive.caddy.host-env.v1","state":"deployed",
+             "request_id":sys.argv[2],"sha256":sys.argv[3]}
+PY
+  [[ ! -e "$dir/caddy-env-active.json" ]]
+  [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+  [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+  [[ "$(stat -c '%h' "$receipt")" == 1 ]]
+  [[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$calls_after_commit" ]]
+  grep -Fxq "XD_DOMAIN=$name" "$XD_CONFIG_DIR/config/.env"
+  grep -Fxq "POSTGRES_PASSWORD=unmodified-example" "$XD_CONFIG_DIR/config/.env"
+  [[ "$(fingerprint)" == "$sha" ]]
+}
+
+simulate_committed_host_crash after-link "050505050505050505050505" "crash-after-publish-link.example.com"
+simulate_committed_host_crash after-archive "101010101010101010101010" "crash-before-cleanup.example.com"
+simulate_committed_host_crash after-marker "202020202020202020202020" "crash-after-marker.example.com"
+simulate_committed_host_crash after-completed "303030303030303030303030" "crash-after-python-ack.example.com"
+
+# A lost Python commit ACK within an uninterrupted Host process also must
+# return one credible success, never roll back or send a false failure.
+save_domain missing-commit-ack.example.com
+sha="$(fingerprint)"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+export XD_CADDY_TEST_COMMIT_CRASH_AFTER_ARCHIVE=1
+deploy "$sha" "454545454545454545454545"
+unset XD_CADDY_TEST_COMMIT_CRASH_AFTER_ARCHIVE
+python3 - "$TMP/result.json" "$sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r["state"] == "deployed" and r["sha256"] == sys.argv[2]
+PY
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 1))" ]]
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+
+# A record that is not the exact terminal SUCCESS must never authorize
+# commit cleanup, revert a possibly committed candidate or clear active.
+save_domain forged-receipt.example.com
+dir="$(prepare_dir)"
+sha="$(fingerprint)"
+id="404040404040404040404040"
+printf '{"operation":"deploy","request_id":"%s","expected_sha256":"%s"}\n' \
+  "$id" "$sha" > "$dir/caddy-env-active.json"
+chmod 0600 "$dir/caddy-env-active.json"
+printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","error":"installer-busy"}\n' \
+  "$id" "$sha" |
+  XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+    python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" archive-deploy
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+if caddy_env_recover_interrupted "$dir"; then
+  echo "non-success Host receipt silently finalized a Caddy deployment" >&2
+  exit 1
+fi
+[[ -f "$dir/caddy-env-active.json" ]]
+[[ -f "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before" ]]
+rm -f "$dir/caddy-deploy-results/$id.json"
+caddy_env_recover_interrupted "$dir"
+[[ ! -e "$dir/caddy-env-active.json" ]]
+grep -Fxq "XD_DOMAIN=missing-commit-ack.example.com" "$XD_CONFIG_DIR/config/.env"
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 1))" ]]
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"
