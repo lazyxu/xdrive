@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -160,66 +158,20 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 	}
 	clear(decoded)
 
-	upstreamCalls := 0
-	server.BaiduMapHTTPClient = &http.Client{Transport: baiduMapRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		upstreamCalls++
-		if req.URL.Query().Get("ak") != firstAK {
-			t.Fatal("subsequent map requests did not use the newly saved AK")
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"image/png"}},
-			Body:       bytesReadCloser(baiduMapPNG(t)),
-		}, nil
-	})}
-	mapResponse := request(http.MethodGet,
-		"/api/v1/media/places/baidu-static?lat=1&lng=103&zoom=12&width=400&height=240",
-		adminToken, "")
-	if mapResponse.Code != http.StatusOK || upstreamCalls != 1 {
-		t.Fatalf("map request must use the saved AK immediately, got status=%d calls=%d", mapResponse.Code, upstreamCalls)
-	}
 	// The original deployment variable is still present but the saved record wins.
 	if server.BaiduMapAK != "environment-original-ak" {
 		t.Fatal("runtime editing unexpectedly mutated the deployment environment")
 	}
 
-	// Verified by an admin only, on the current saved AK. The audit is durable.
-	probeEndpoint := endpoint + "/verify"
-	for _, token := range []string{"", memberToken} {
-		want := http.StatusUnauthorized
-		if token != "" {
-			want = http.StatusForbidden
+	// Neither retired Owner image routes nor the old PNG verifier can consume map quota.
+	for _, retired := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/media/places/map-provider"},
+		{http.MethodGet, "/api/v1/media/places/baidu-static?lat=1&lng=103&zoom=12&width=400&height=240"},
+		{http.MethodPost, "/api/v1/admin/services/baidu-map/verify"},
+	} {
+		if got := request(retired.method, retired.path, adminToken, `{"revision":1}`); got.Code != http.StatusNotFound {
+			t.Fatalf("retired map-image route %s %s must be 404, got %d", retired.method, retired.path, got.Code)
 		}
-		if got := request(http.MethodPost, probeEndpoint, token, `{"revision":1}`); got.Code != want {
-			t.Fatalf("non-admin map verification HTTP %d want %d", got.Code, want)
-		}
-	}
-	var pngBuffer bytes.Buffer
-	if err := png.Encode(&pngBuffer, image.NewRGBA(image.Rect(0, 0, 128, 128))); err != nil {
-		t.Fatal(err)
-	}
-	probeCalls := 0
-	server.BaiduMapHTTPClient = &http.Client{Transport: baiduMapRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		probeCalls++
-		if req.URL.Host != "api.map.baidu.com" || req.URL.Scheme != "https" ||
-			req.URL.Query().Get("ak") != firstAK || req.URL.Query().Get("width") != "128" {
-			t.Fatal("Baidu verifier must use fixed route and saved current AK")
-		}
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/png"}},
-			Body: bytesReadCloser(pngBuffer.Bytes())}, nil
-	})}
-	if got := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":0}`); got.Code != http.StatusConflict || probeCalls != 0 {
-		t.Fatalf("stale map probe must reject before cloud: HTTP %d calls %d", got.Code, probeCalls)
-	}
-	probe := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":1}`)
-	if probe.Code != http.StatusOK || probeCalls != 1 ||
-		!strings.Contains(probe.Body.String(), `"state":"verified"`) ||
-		!strings.Contains(probe.Body.String(), `"image_verified":true`) ||
-		strings.Contains(probe.Body.String(), firstAK) {
-		t.Fatalf("online map proof failed safely: HTTP %d calls %d", probe.Code, probeCalls)
-	}
-	if got := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":1}`); got.Code != http.StatusTooManyRequests || probeCalls != 1 {
-		t.Fatalf("map probe rate limit failed: HTTP %d calls %d", got.Code, probeCalls)
 	}
 
 	stale := request(http.MethodPut, endpoint, adminToken,
@@ -232,13 +184,6 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 	if disable.Code != http.StatusOK || !strings.Contains(disable.Body.String(), `"revision":2`) {
 		t.Fatalf("disable response=%d %s", disable.Code, disable.Body.String())
 	}
-	mapResponse = request(http.MethodGet,
-		"/api/v1/media/places/baidu-static?lat=1&lng=103&zoom=12&width=400&height=240",
-		adminToken, "")
-	if mapResponse.Code != http.StatusServiceUnavailable || upstreamCalls != 1 {
-		t.Fatalf("disabling map must not use fallback map or call upstream: %d %d", mapResponse.Code, upstreamCalls)
-	}
-
 	disabledReveal := request(http.MethodPost, revealEndpoint, adminToken, `{"revision":2}`)
 	if disabledReveal.Code != http.StatusOK || !strings.Contains(disabledReveal.Body.String(), firstAK) {
 		t.Fatalf("disabled-but-stored AK should remain explicitly revealable, got %d", disabledReveal.Code)
@@ -267,8 +212,8 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 	if err := db.Order("id ASC").Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 7 {
-		t.Fatalf("expected three updates, three reveals and one real verification audit, got %d", len(events))
+	if len(events) != 6 {
+		t.Fatalf("expected three updates and three reveals; PNG verification retired, got %d", len(events))
 	}
 	var revealCount int
 	for _, event := range events {
@@ -285,8 +230,8 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 			verifyCount++
 		}
 	}
-	if verifyCount != 1 {
-		t.Fatalf("expected one audit before online map verification, got %d", verifyCount)
+	if verifyCount != 0 {
+		t.Fatalf("retired static PNG verification must never produce an audit, got %d", verifyCount)
 	}
 	for _, event := range events {
 		raw, _ := json.Marshal(event)

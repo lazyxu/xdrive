@@ -473,7 +473,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       ) : result && result !== 'rendered' && result !== 'aggregated' && result !== 'cancelled' ? (
         <Box data-xdrive-baidu-map-fallback sx={{ px: 0.5, mt: 0.5 }}>
           <Typography role="status" variant="caption" color="text.secondary">
-            百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
+            百度动态照片地图暂不可用；地点列表和照片墙仍可使用。
           </Typography>
           {latestDiagnostic ? (
             <Typography variant="body2" role="alert" color="text.secondary"

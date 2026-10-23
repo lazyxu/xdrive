@@ -87,12 +87,13 @@ test('map has one short user hint; debug throughput and duplicate counters are n
   const parent=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   assert.doesNotMatch(page,/使用百度 JSAPI 动态地图；当前账户有效 GPS 地点/)
   assert.doesNotMatch(parent,/data-xdrive-places-prototype-progress/)
-  assert.match(parent,/缩放地图浏览照片/)
-  assert.match(parent,/!prototypeMap && !hasIsolatedChildPorts \? <Chip/)
+  assert.match(parent,/缩放百度动态地图浏览照片/)
+  assert.match(parent,/data-xdrive-places-map-options/)
+  assert.doesNotMatch(parent,/prototypeMap|BaiduStaticMap/)
   assert.match(parent,/data-xdrive-places-map-options/)
 })
 
-test('signed isolated Child and prototype use neutral photo-style markers with verified counts',()=>{
+test('signed isolated Child uses neutral photo-style markers with verified counts',()=>{
   const child=read('deploy/baidu-isolated-child/child.js')
   const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   const places=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
@@ -104,7 +105,7 @@ test('signed isolated Child and prototype use neutral photo-style markers with v
   assert.match(parent,/\{pin.count.toLocaleString\('zh-CN'\)\}张/)
   assert.match(parent,/bgcolor:'rgba\(15,23,42,\.94\)'/)
   assert.doesNotMatch(parent,/rotate\(9deg\)/)
-  assert.match(places,/const hasIsolatedChildPorts = Boolean\(/)
-  assert.match(places,/const prototypeMap = xDriveBaiduPlacesRuntime\(/)
+  assert.match(places,/const hasChildPorts = Boolean\(/)
+  assert.match(places,/activation_state === 'authorized_signed_release'/)
   assert.match(parent,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
 })

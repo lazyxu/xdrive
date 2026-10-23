@@ -58,14 +58,10 @@ type Server struct {
 	geoNamesSnapshotMu             sync.Mutex
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
-	BaiduMapHTTPClient             *http.Client
 	BaiduJSAPIProbeHTTPClient      *http.Client
 	baiduJSAPIProbeMu              sync.Mutex
 	baiduJSAPIProbeAt              time.Time
 	baiduJSAPI4Authority           atomic.Pointer[baiduJSAPI4LiveAuthority]
-	baiduMapLimiter                baiduMapLimiter
-	baiduMapVerifyMu               sync.Mutex
-	baiduMapVerifyAt               time.Time
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
@@ -303,8 +299,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/viewport", s.listMediaPlacesViewport)
 	// Owner-scoped 8x8 native map data, not an all-place pagination API.
 	authed.GET("/media/places/overview", s.listMediaPlacesMapOverview)
-	authed.GET("/media/places/map-provider", s.mediaMapProviderStatus)
-	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
 	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
 	// Shared Gallery prototype; returns only configured browser-type AK.
@@ -531,7 +525,6 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
-	admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)
 	admin.GET("/services/baidu-jsapi", s.adminBaiduJSAPIConfig)
 	admin.PUT("/services/baidu-jsapi", s.adminSaveBaiduJSAPIConfig)
 	admin.POST("/services/baidu-jsapi/reveal", s.adminRevealBaiduJSAPIAK)

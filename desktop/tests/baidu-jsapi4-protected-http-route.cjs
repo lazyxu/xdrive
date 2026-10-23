@@ -72,5 +72,5 @@ test('A3 shared Web/Mobile/Desktop media backend remains intact', () => {
   assert.match(read('ui/shared/src/mui/MediaGallery.tsx'),
     /XDriveMediaGalleryPlacesMap/)
   assert.match(read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),
-    /XDriveMediaGalleryBaiduStaticMap/)
+    /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
 })

@@ -249,7 +249,9 @@ test('A3b3a3a no JSAPI runtime, alternate basemap, AK leak or unauthorized data 
   assert.match(policy, /return ErrGateClosed/)
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(pageSource, /listPlacesViewport=\{source\.listPlacesViewport\}/)
-  assert.match(mapSource, /listPlacesViewport\(viewportBounds, 24, viewportOffset, controller\.signal\)/)
+  assert.match(mapSource, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(mapSource, /listOwnerCells=\{listBaiduNativeCells\}/)
+  assert.doesNotMatch(mapSource, /listPlacesViewport\(|BaiduStaticMap/)
   assert.doesNotMatch(code, /BMAP_PROXY_URL|api\.map\.baidu\.com|new BMap\.|localStorage|fetch\(/)
   const prepOnly = code.slice(code.indexOf('export function xDrivePrepare'),
     code.indexOf('export interface XDriveBaiduOfficialPoint'))

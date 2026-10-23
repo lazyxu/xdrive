@@ -882,14 +882,6 @@ func (c *agentController) CloudRollbackAdminGeoNames(ctx context.Context, input 
 	return cli.RollbackAdminGeoNames(ctx, input)
 }
 
-func (c *agentController) CloudVerifyAdminBaiduMap(ctx context.Context, revision uint64) (client.AdminBaiduMapVerification, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.AdminBaiduMapVerification{}, err
-	}
-	return cli.VerifyAdminBaiduMap(ctx, revision)
-}
-
 func (c *agentController) CloudAdminBaiduMapConfig(ctx context.Context) (client.AdminBaiduMapConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
@@ -2851,28 +2843,6 @@ func (c *agentController) CloudRevokeMediaBaiduConsent(ctx context.Context, node
 		return client.MediaBaiduMapConsent{}, err
 	}
 	return cli.RevokeMediaBaiduConsent(ctx, nodeID, revision)
-}
-
-func (c *agentController) CloudBaiduMapProvider(ctx context.Context) (client.BaiduMapProvider, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.BaiduMapProvider{}, err
-	}
-	return cli.MediaBaiduMapProvider(ctx)
-}
-
-func (c *agentController) CloudBaiduStaticMap(
-	ctx context.Context, lat, lng float64, zoom, width, height int,
-) (agentMediaThumbnail, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return agentMediaThumbnail{}, err
-	}
-	bytes, err := cli.MediaBaiduStaticMap(ctx, lat, lng, zoom, width, height)
-	if err != nil {
-		return agentMediaThumbnail{}, err
-	}
-	return agentMediaThumbnail{ContentType: "image/png", Data: bytes}, nil
 }
 
 func (c *agentController) CloudMediaPlacesPage(ctx context.Context, limit, offset int) (client.MediaPlacesPage, error) {

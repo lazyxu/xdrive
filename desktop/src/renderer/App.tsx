@@ -1970,11 +1970,6 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    verifyBaiduMap: async (revision: number) => {
-      const result = await window.xdriveDesktop.agent.cloudVerifyAdminBaiduMap(revision)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
     revealBaiduMapAK: async (revision: number) => {
       const result = await window.xdriveDesktop.agent.cloudRevealAdminBaiduMapAK(revision)
       if (!result.ok) throw new Error(result.error.message)
@@ -2852,6 +2847,12 @@ export default function App({
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
             preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
+            onOpenSecureDesktopMap={() => {
+              void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure())
+                .catch((openError) => setError(
+                  openError instanceof Error ? openError.message : String(openError),
+                ))
+            }}
             onOpenBaiduMapDiagnostics={status?.role === 'admin' &&
               agent.hello?.capabilities.includes('admin-services') ? () => {
                 setBaiduDiagnosticLocation({ service: 'baidu-map', tab: 'verify' })

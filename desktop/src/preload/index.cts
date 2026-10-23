@@ -520,10 +520,7 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:save-media-baidu-consent', nodeID, input),
   revokeMediaBaiduConsent: (nodeID: number, revision: number) =>
     ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
-  getBaiduMapProvider: () => ipcRenderer.invoke('agent:get-baidu-map-provider'),
   getBaiduJSAPIPrototype: () => ipcRenderer.invoke('agent:get-baidu-jsapi-prototype'),
-  getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) =>
-    ipcRenderer.invoke('agent:get-baidu-static-map', lat, lng, zoom, width, height, requestID),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
@@ -846,7 +843,6 @@ const agent = Object.freeze({
   cloudAdminGeoNamesRevisions: () => ipcRenderer.invoke('agent:cloud-admin-geonames-revisions'),
   cloudRollbackAdminGeoNames: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-geonames', input),
-  cloudVerifyAdminBaiduMap: (revision: number) => ipcRenderer.invoke('agent:cloud-verify-admin-baidu-map', revision),
   cloudRevealAdminBaiduMapAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-map-ak', revision),
   cloudAdminBaiduJSAPIConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-jsapi'),
   cloudRevealAdminBaiduJSAPIAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-jsapi-ak', revision),

@@ -1,47 +1,32 @@
+'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', '..', ...parts), 'utf8')
+const root = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 
-test('One manual audited Baidu live PNG probe is revisioned and fixed; Web/Desktop share it', () => {
-  const router=read('internal','api','router.go')
-  const api=read('internal','api','admin_baidu_map_verify.go')
-  const shared=read('ui','shared','src','service-dependencies.ts')
-  const page=read('ui','shared','src','mui','ServiceDependenciesPage.tsx')
-  const webAPI=read('web','src','api.ts')
-  const web=read('web','src','App.tsx')
-  const goClient=read('internal','client','client.go')
-  const agent=read('cmd','xdrive-agent','cloud_files.go')
-  const agentRoutes=read('cmd','xdrive-agent','desktop_ipc.go')
-  const agentIPC=read('cmd','xdrive-agent','desktop_ipc_admin_baidu_verify.go')
-  const desktopClient=read('desktop','src','main','agent_client.cts')
-  const desktopMain=read('desktop','src','main','index.cts')
-  const desktopPreload=read('desktop','src','preload','index.cts')
-  const desktopDts=read('desktop','src','renderer','global.d.ts')
-  const desktop=read('desktop','src','renderer','App.tsx')
-  assert.ok(router.includes('admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)'))
-  for(const term of [
-    'baiduStaticMapURL', 'image/png', 'png.Decode(', 'recordAuditTx(',
-    'subtle.ConstantTimeCompare(', 'baiduMapVerifyDelay', 'http.ErrUseLastResponse',
-    'Proxy: nil', 'baiduMapVerifyMaxBytes', 'c.JSON(http.StatusOK',
-  ]) assert.ok(api.includes(term), term)
-  assert.ok(!api.includes('os.WriteFile'))
-  assert.ok(!api.includes('docker.sock'))
-  assert.ok(shared.includes('XDriveBaiduMapVerification'))
-  assert.ok(page.includes('验证当前 AK 在线生效'))
-  assert.ok(page.includes('++baiduVerifyEpochRef.current'))
-  assert.ok(page.includes('result.revision !== baiduConfig.revision'))
-  assert.ok(webAPI.includes('adminVerifyBaiduMap('))
-  assert.ok(web.includes('verifyBaiduMap: (revision: number)'))
-  assert.ok(goClient.includes('VerifyAdminBaiduMap('))
-  assert.ok(agent.includes('CloudVerifyAdminBaiduMap('))
-  assert.ok(agentRoutes.includes('"POST /v1/cloud/admin-baidu-map/verify"'))
-  assert.ok(agentIPC.includes('cloudVerifyAdminBaiduMap('))
-  assert.ok(desktopClient.includes('cloudVerifyAdminBaiduMap('))
-  assert.ok(desktopMain.includes("'agent:cloud-verify-admin-baidu-map'"))
-  assert.ok(desktopPreload.includes("'agent:cloud-verify-admin-baidu-map'"))
-  assert.ok(desktopDts.includes('cloudVerifyAdminBaiduMap:'))
-  assert.ok(desktop.includes('verifyBaiduMap: async'))
-  assert.ok(!page.includes('openSyncFolders'))
+test('retired Baidu static PNG and live PNG verification have no accessible routes or clients', () => {
+  const router = read('internal/api/router.go')
+  const ipc = read('cmd/xdrive-agent/desktop_ipc.go')
+  const client = read('internal/client/client.go')
+  const dts = read('desktop/src/renderer/global.d.ts')
+  const web = read('web/src/api.ts')
+  const preload = read('desktop/src/preload/index.cts')
+  const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
+  for (const filename of [
+    'internal/api/baidu_map.go',
+    'internal/api/admin_baidu_map_verify.go',
+    'cmd/xdrive-agent/desktop_ipc_admin_baidu_verify.go',
+    'ui/shared/src/media-gallery-baidu-camera.ts',
+    'ui/shared/src/mui/MediaGalleryBaiduStaticMap.tsx',
+  ]) assert.equal(fs.existsSync(path.join(root, filename)), false, filename)
+  assert.doesNotMatch(router, /\/media\/places\/(?:baidu-static|map-provider)|\/services\/baidu-map\/verify/)
+  assert.doesNotMatch(ipc, /\/v1\/media\/(?:baidu-static|map-provider)|\/v1\/cloud\/admin-baidu-map\/verify/)
+  assert.doesNotMatch(client, /MediaBaiduStaticMap|MediaBaiduMapProvider|VerifyAdminBaiduMap/)
+  assert.doesNotMatch(dts, /getBaiduMapProvider|getBaiduStaticMap|cloudVerifyAdminBaiduMap/)
+  assert.doesNotMatch(web, /mediaBaiduStaticMap|mediaBaiduMapProvider|adminVerifyBaiduMap/)
+  assert.doesNotMatch(preload, /getBaiduStaticMap|getBaiduMapProvider|cloudVerifyAdminBaiduMap/)
+  assert.match(map, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.doesNotMatch(map, /StaticMap|loadStaticMap|static fallback/)
 })

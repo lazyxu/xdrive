@@ -1,4 +1,3 @@
-import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import type {
   MediaAlbum,
   MediaAlbumFolder,
@@ -190,8 +189,6 @@ export interface XDriveMediaGalleryPort {
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; runtime_enabled: true
     }>>
-  getBaiduMapProvider?: () => Promise<XDriveMediaGalleryTransportResult<XDriveBaiduMapProviderInfo>>
-  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<Blob>>
   getBaiduMapConsent?: (nodeID: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
@@ -627,12 +624,6 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     mintBaiduJSAPI4Session: port.mintBaiduJSAPI4Session
       ? (signal) => resolveXDriveTransport(port.mintBaiduJSAPI4Session!(signal))
-      : undefined,
-    getBaiduMapProvider: port.getBaiduMapProvider
-      ? () => resolveXDriveTransport(port.getBaiduMapProvider!())
-      : undefined,
-    loadBaiduStaticMap: port.loadBaiduStaticMap
-      ? (input, signal) => resolveXDriveTransport(port.loadBaiduStaticMap!(input, signal))
       : undefined,
     getBaiduMapConsent: port.getBaiduMapConsent
       ? (nodeID) => resolveXDriveTransport(port.getBaiduMapConsent!(nodeID))

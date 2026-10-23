@@ -1,10 +1,10 @@
 # xDrive 百度 JSAPI 4.0：操作员私有许可与流量取证指南
 
-**2026-10-16 · A3 未完成 / JSAPI4 生产 NO-GO。** 当前 `runtime_enabled=false`，尚无公开 JSAPI4 Loader、地图 Cookie 签发或子资源代理。拥有 AK 或运行模拟测试都不能解除该门禁。百度是唯一地图 Provider；静态地图和动态地图使用独立 AK。Web/Mobile Web/Desktop 共用 Gallery REST/Agent、Range、VirtualCollection、Viewer，继续保留全屏 App Frame 与 52px 标题栏。
+**2026-10-23 · 动态地图唯一运行路径（PR #2441）。** xDrive 地点地图仅挂载由 Server 签名放行的独立 HTTPS 百度 JSAPI 4.0 Child。`server_release_blocked` 或 Child 加载失败时，地图呈现不可用状态，不回退其他地图；正常地点索引和照片墙继续可用。Browser AK 保存成功不等于动态地图已获准启动。旧静态 PNG、地图相机估算、静态 Provider 与在线 PNG 验证已经退休。原有 Server AK 若仍启用，只用于单独授权和限额的 Server API 坐标转换，不用于渲染底图。Web/Mobile Web/Desktop 共用 Gallery、Owner Range、Viewer 和隔离式地图权限边界。
 
 ## 1. 你先在百度开放平台完成的手续
 
-1. 打开 [百度地图 AK 控制台](https://lbs.baidu.com/apiconsole/key)，确认现有 Static Map v2 使用 **Server 类型 AK**，JSAPI 4.0 使用**单独的 Browser 类型 AK**，并按百度要求限制使用域名、用途和配额。在 xDrive 管理员「系统依赖 → 百度地图」仅保存适用的加密配置。**不要**把 AK 发到聊天、GitHub、截图、CI 日志、命令行参数或 HAR 附件。
+1. 打开 [百度地图 AK 控制台](https://lbs.baidu.com/apiconsole/key)，确认 JSAPI 4.0 使用 **Browser 类型 AK**，并按百度要求限制使用域名、用途和配额。Server 类型 AK 仅在确有 Server API 坐标转换需求且通过配额审计时独立配置。在 xDrive 管理员「系统依赖 → 百度地图」仅保存适用的加密配置。**不要**把 AK 发到聊天、GitHub、截图、CI 日志、命令行参数或 HAR 附件。
 2. 向百度官方客服、开放平台工单或商务渠道询问并保存**账户适用的书面结论**：是否允许 JSAPI 4.0、`serviceHost` + `BMAP_PROXY_URL` Server 注入 Browser AK、多个登录用户的自托管 HTTPS 服务、Web、iOS Safari/安装 PWA、Android 浏览器/PWA、Electron Desktop；是否覆盖你实际的个人或商业模式；域名、地图署名、SKU、费用和请求配额；**是否允许持久保存由原始 WGS84 官方正向转换得到的 BD-09 派生坐标索引**、保留期限与删除义务。没有明确答复的范围一律仍为 NO-GO。
 3. 许可原文及账号信息只存放你的私有资料库。[Issue #1798](https://github.com/lazyxu/xdrive/issues/1798) 只记录不含身份、账户编号、合同正文或 AK 的范围结论、日期和待确认项。
 

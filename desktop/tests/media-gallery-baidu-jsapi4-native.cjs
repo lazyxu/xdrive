@@ -101,7 +101,7 @@ test('A3 official adapter cannot serve as a licence, release proof, loader or se
     'ui/shared/src/media-gallery-baidu-jsapi4-viewport.ts'), 'utf8')
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
-  assert.match(sharedMap, /XDriveMediaGalleryBaiduStaticMap/)
+  assert.match(sharedMap, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.doesNotMatch(sharedMap, /media-gallery-baidu-jsapi4-native/)
   assert.match(bridge, /listOwnerViewport\(bounds, maxViewportCells, 0, request.signal\)/)
   assert.doesNotMatch(source,

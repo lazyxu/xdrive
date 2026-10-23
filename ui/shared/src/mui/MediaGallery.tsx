@@ -1,7 +1,6 @@
-import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
-import { xDriveReadPlacesCamera, xDriveRememberPlacesCamera, xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
-import type { XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
+import { xDriveReadPlacesReturn, xDriveRememberPlacesReturn, xDriveValidPlacesReturnSnapshot } from '../media-gallery-places-return-session'
+import type { XDrivePlacesReturnSnapshot } from '../media-gallery-places-return-session'
 import {
   xDriveReadBaiduNativeCamera, xDriveRememberBaiduNativeCamera,
   xDriveClearBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot,
@@ -326,8 +325,6 @@ export interface MediaGalleryDataSource {
   mintBaiduJSAPI4Session?: (signal: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; runtime_enabled: true
   }>
-  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
-  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
@@ -667,28 +664,18 @@ export function XDriveMediaGalleryPage({
   const [currentFolderView, setCurrentFolderView] = useState<MediaFolderView | null>(null)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
-  // Exactly one tiny in-memory camera/anchor snapshot across Viewer routes.
-  const [placesCameraSnapshot, setPlacesCameraSnapshot] = useState<XDrivePlacesCameraSnapshot | undefined>(
-    () => xDriveReadPlacesCamera(preferenceScope),
+  // Owner-scoped list/selection return anchor only; the native map camera is BD-09LL.
+  const placesReturnRef = useRef<XDrivePlacesReturnSnapshot | undefined>(
+    xDriveReadPlacesReturn(preferenceScope),
   )
-  const placesCameraRef = useRef(placesCameraSnapshot)
-  const persistPlacesCamera = useCallback((next: XDrivePlacesCameraSnapshot) => {
-    if (!xDriveValidPlacesCameraSnapshot(next)) return
-    placesCameraRef.current = next
-    xDriveRememberPlacesCamera(preferenceScope, next)
-    setPlacesCameraSnapshot(next)
+  const persistPlacesReturn = useCallback((next: XDrivePlacesReturnSnapshot) => {
+    if (!xDriveValidPlacesReturnSnapshot(next)) return
+    placesReturnRef.current = next
+    xDriveRememberPlacesReturn(preferenceScope, next)
   }, [preferenceScope])
-  const rememberPlacesCamera = useCallback((camera: XDrivePlacesViewportCamera) => {
-    const prior = placesCameraRef.current
-    persistPlacesCamera({
-      ...camera,
-      placesPageOffset: prior?.placesPageOffset ?? 0,
-      ...(prior?.focusPlaceID ? { focusPlaceID: prior.focusPlaceID } : {}),
-    })
-  }, [persistPlacesCamera])
   // The Baidu SDK camera is BD09LL, not original WGS84. Keep a separate
-  // short-lived per-owner memory snapshot so native pan/zoom never corrupts
-  // static map / original EXIF GPS or leaks across account switches.
+  // short-lived per-owner memory snapshot so native pan/zoom never changes
+  // original EXIF GPS or leaks across account switches.
   const [baiduCameraOwner, setBaiduCameraOwner] = useState<{
     scope: string; camera?: XDriveBaiduNativeCameraSnapshot
   }>(() => ({ scope: preferenceScope,
@@ -730,15 +717,14 @@ export function XDriveMediaGalleryPage({
     totalCount: number
   } | null>(null)
   const [lastOpenedPlaceID, setLastOpenedPlaceID] = useState<string | null>(
-    () => placesCameraSnapshot?.focusPlaceID ?? null,
+    () => placesReturnRef.current?.focusPlaceID ?? null,
   )
   const placeOpenedFromCollectionsRef = useRef(false)
   useEffect(() => {
     placeOpenedFromCollectionsRef.current = false
     placesReturnPageRef.current = null
-    const restored = xDriveReadPlacesCamera(preferenceScope)
-    placesCameraRef.current = restored
-    setPlacesCameraSnapshot(restored)
+    const restored = xDriveReadPlacesReturn(preferenceScope)
+    placesReturnRef.current = restored
     setLastOpenedPlaceID(restored?.focusPlaceID ?? null)
   }, [preferenceScope])
   const [memories, setMemories] = useState<MediaMemory[]>([])
@@ -1155,7 +1141,7 @@ export function XDriveMediaGalleryPage({
             total_count: retainedPlacePage.totalCount,
             offset: retainedPlacePage.offset,
           }) : placesExpandedRef.current && source.listPlacesPage
-            ? source.listPlacesPage(48, placesCameraRef.current?.placesPageOffset ?? 0)
+            ? source.listPlacesPage(48, placesReturnRef.current?.placesPageOffset ?? 0)
             : source.listPlaces
               ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
               : source.listPlacesPage
@@ -1825,7 +1811,7 @@ export function XDriveMediaGalleryPage({
     }
     placesReturnPageRef.current = null
     placeOpenedFromCollectionsRef.current = false
-    setLastOpenedPlaceID(nextSection === 'places' ? placesCameraRef.current?.focusPlaceID ?? null : null)
+    setLastOpenedPlaceID(nextSection === 'places' ? placesReturnRef.current?.focusPlaceID ?? null : null)
     placePageRequestID.current += 1
     setPlacesPagePending(false)
     setPlacesPageError('')
@@ -1892,9 +1878,7 @@ export function XDriveMediaGalleryPage({
       setPlaces(page.items)
       setPlacesPageOffset(nextOffset)
       setPlacesTotalCount(page.total_count)
-      if (placesCameraRef.current) {
-        persistPlacesCamera({ ...placesCameraRef.current, placesPageOffset: nextOffset })
-      }
+      persistPlacesReturn({ placesPageOffset: nextOffset })
     } catch (loadError) {
       if (generation !== placePageRequestID.current ||
           rangeGeneration !== requestID.current) return
@@ -1902,7 +1886,7 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (generation === placePageRequestID.current) setPlacesPagePending(false)
     }
-  }, [persistPlacesCamera, placesPagePending, placesStatus, placesTotalCount, section, source])
+  }, [persistPlacesReturn, placesPagePending, placesStatus, placesTotalCount, section, source])
 
   const requestIndexStatus = useCallback(async () => {
     if (!source.getIndexStatus) return
@@ -2537,9 +2521,7 @@ export function XDriveMediaGalleryPage({
         placesReturnPageRef.current = { items: [...places], offset: placesPageOffset, totalCount: placesTotalCount }
       }
       setLastOpenedPlaceID(place.id)
-      if (placesCameraRef.current) {
-        persistPlacesCamera({ ...placesCameraRef.current, focusPlaceID: place.id, placesPageOffset })
-      }
+      persistPlacesReturn({ focusPlaceID: place.id, placesPageOffset })
       placesExpandedRef.current = true
       setSection('places')
       setActiveMediaType('')
@@ -2561,7 +2543,7 @@ export function XDriveMediaGalleryPage({
       commitPlace()
       void loadFirstPage(null, nextQuery)
     }
-  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesReturn, places, placesPageOffset, placesTotalCount, query.place, section])
 
   // B1-D: stable identity opens the *same* Owner Range, sparse virtual wall
   // and Viewer as other Gallery collections. No client-side GPS grouping.
@@ -2609,11 +2591,7 @@ export function XDriveMediaGalleryPage({
         }
       }
       setLastOpenedPlaceID(focusPlace ?? null)
-      if (placesCameraRef.current) {
-        persistPlacesCamera({
-          ...placesCameraRef.current, focusPlaceID: focusPlace ?? undefined, placesPageOffset,
-        })
-      }
+      persistPlacesReturn({ focusPlaceID: focusPlace ?? undefined, placesPageOffset })
       placesExpandedRef.current = true
       setSection('places')
       setActiveMediaType('')
@@ -2628,7 +2606,7 @@ export function XDriveMediaGalleryPage({
       commitGeoRange()
       void loadFirstPage(null, nextQuery)
     }
-  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places,
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesReturn, places,
     placesPageOffset, placesTotalCount, query.bbox, query.nearby, query.place, section])
 
   const openPet = useCallback((pet: MediaPetFacet, fromCollections = false) => {
@@ -3632,14 +3610,10 @@ export function XDriveMediaGalleryPage({
         onBaiduNativeCellInvalidated={() => nativeCellOpenAbort.current?.abort()}
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         onOpenBaiduMapDiagnostics={onOpenBaiduMapDiagnostics}
-        placesCameraSnapshot={placesCameraSnapshot}
-        onPlacesCameraChange={rememberPlacesCamera}
         baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
         onBaiduNativeCameraChange={rememberBaiduNativeCamera}
         onBaiduNativeCameraClear={clearBaiduNativeCamera}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
-        getBaiduMapProvider={source.getBaiduMapProvider}
-        loadBaiduStaticMap={source.loadBaiduStaticMap}
         getBaiduMapConsent={source.getBaiduMapConsent}
         saveBaiduMapConsent={source.saveBaiduMapConsent}
         revokeBaiduMapConsent={source.revokeBaiduMapConsent}
@@ -4120,8 +4094,6 @@ export interface XDriveMediaGalleryProps {
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
   listPlacesHierarchy?: MediaGalleryDataSource['listPlacesHierarchy']
   listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
-  placesCameraSnapshot?: XDrivePlacesCameraSnapshot
-  onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
   onBaiduNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onBaiduNativeCameraClear?: () => void
@@ -4139,8 +4111,6 @@ export interface XDriveMediaGalleryProps {
   onOpenSecureDesktopMap?: () => void
   onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string
-  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
-  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']
   saveBaiduMapConsent?: MediaGalleryDataSource['saveBaiduMapConsent']
   revokeBaiduMapConsent?: MediaGalleryDataSource['revokeBaiduMapConsent']
@@ -5856,14 +5826,10 @@ export function XDriveMediaGallery({
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
   onOpenBaiduMapDiagnostics,
-  placesCameraSnapshot,
-  onPlacesCameraChange,
   baiduNativeCameraSnapshot,
   onBaiduNativeCameraChange,
   onBaiduNativeCameraClear,
   focusPlaceID,
-  getBaiduMapProvider,
-  loadBaiduStaticMap,
   getBaiduMapConsent,
   saveBaiduMapConsent,
   revokeBaiduMapConsent,
@@ -8092,36 +8058,23 @@ export function XDriveMediaGallery({
             compact={compactGallery}
             places={places}
             totalCount={placesTotalCount}
-            listPlacesPage={listPlacesPage}
-            listPlacesMapOverview={listPlacesMapOverview}
-            listPlacesViewport={listPlacesViewport}
-            listBaiduNativeViewport={listBaiduNativeViewport}
             listBaiduNativeCells={listBaiduNativeCells}
             loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
-            getBaiduJSAPIPrototype={getBaiduJSAPIPrototype}
-            mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}
-            onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
             onOpenBaiduNativeCell={onOpenBaiduNativeCell}
             onOpenBaiduNativeViewport={onOpenBaiduNativeViewport}
-            selectedNativeCell={selectedBaiduNativeCell}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             diagnosticScope={preferenceScope}
             onOpenDiagnostics={onOpenBaiduMapDiagnostics}
-            initialCamera={placesCameraSnapshot}
-            onCameraChange={onPlacesCameraChange}
             initialNativeCamera={baiduNativeCameraSnapshot}
             onNativeCameraChange={onBaiduNativeCameraChange}
             onNativeCameraClear={onBaiduNativeCameraClear}
-            getBaiduMapProvider={getBaiduMapProvider}
-            loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}
             focusPlaceID={focusPlaceID}
             onOpenPlace={onOpenPlace}
             onOpenNearby={onOpenNearby}
-            onOpenViewportPhotos={onOpenViewportPhotos}
           />
           ) : null}
 
@@ -8984,6 +8937,12 @@ export function XDriveMediaGallery({
 
       <XDriveMediaGalleryViewer
         item={previewItem}
+        onOpenDynamicMap={() => {
+          closeMediaPreview()
+          setPlacesMobileMode('map')
+          if (onShowMap) onShowMap()
+          else onSectionChange?.('places')
+        }}
         positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < logicalItemCount - 1}
@@ -8992,8 +8951,6 @@ export function XDriveMediaGallery({
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPreviewURL={loadPreviewURL}
-        getBaiduMapProvider={getBaiduMapProvider}
-        loadBaiduStaticMap={loadBaiduStaticMap}
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}
         revokeBaiduMapConsent={revokeBaiduMapConsent}

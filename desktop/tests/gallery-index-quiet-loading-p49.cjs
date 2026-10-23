@@ -53,10 +53,10 @@ test('Places page changes never inject an in-flow progress caption, keep last ac
   assert.ok(code.slice(code.indexOf('地点列表'),pagination).includes('places.map((place) => ('))
   assert.equal(section.includes('<Typography role="status" variant="caption">正在加载地点…</Typography>'),false)
   assert.ok(code.includes('disabled={placesPagePending || placesPageOffset === 0}'))
-  assert.ok(map.includes("useXDriveDeferredLoading"),
-    'the existing camera/map viewport uses the generation-scoped hook independently')
-  assert.ok(map.includes('viewportLoading, loadFeedbackGeneration,'),
-    'camera/viewport must use its own true request generation')
+  assert.ok(map.includes("status === 'checking'"),
+    'the independent JSAPI release gate preserves its own pending state')
+  assert.ok(map.includes('getBaiduJSAPI4Status(controller.signal)'),
+    'status requests must abort without mounting a denied map')
   assert.ok(hook.includes('visibleCycle === cycle') &&
     hook.includes('cycleRef.current.requestGeneration !== requestGeneration') &&
     hook.includes('cycleRef.current.pending !== pending') &&

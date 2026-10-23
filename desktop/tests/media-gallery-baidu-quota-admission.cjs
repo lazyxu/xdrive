@@ -25,14 +25,18 @@ test('A3d2m1b2b2b1 accounts are checked BEFORE claim and AGAIN before quota, nev
   assert.doesNotMatch(quota, /http\.Get\(|http\.Post\(|ForwardWGS84ToBD09|BrowserAK|BMAP_PROXY_URL/)
 })
 
-test('A3 quota is not a JSAPI4 release; preserve static map and same Gallery data source', () => {
+test('A3 Geoconv quota never authorizes a second map renderer; retain signed JSAPI4 and Owner Gallery data source', () => {
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const placesMap = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const web = read('web/src/mediaGalleryAdapter.ts')
   const mobile = read('web/src/App.tsx')
   const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   const roadmap = read('docs/gallery-places-ios27-roadmap.md')
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
+  assert.match(placesMap, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(placesMap, /activation_state === 'authorized_signed_release'/)
+  assert.doesNotMatch(placesMap, /MediaGalleryBaiduStaticMap|MediaGalleryBaiduPrototypeMap|loadBaiduStaticMap/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(gallery, /getBaiduMapIndexJob/)
   assert.match(web, /getBaiduMapIndexJob/)
@@ -126,7 +130,7 @@ test('A3 private Owner one-shot demand selects only queued/retry-ready or expire
   for (const source of [router, server, web, native, desktop]) {
     assert.doesNotMatch(source, /executeOneBaiduPhotoMapIndexOwnerDemand|executeOneBaiduPhotoMapIndexWithTrustedForward/)
   }
-  assert.match(gallery, /XDriveMediaGalleryBaiduStaticMap/)
+  assert.match(gallery, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
 })

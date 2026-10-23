@@ -17,8 +17,6 @@ import type {
   MediaCreativeGeneration,
   MediaCreativeInput,
   MediaItem,
-  XDriveBaiduMapProviderInfo,
-  XDriveBaiduStaticMapRequest,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -57,14 +55,13 @@ export function XDriveMediaGalleryViewer({
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
-  getBaiduMapProvider,
-  loadBaiduStaticMap,
   getBaiduMapConsent,
   saveBaiduMapConsent,
   revokeBaiduMapConsent,
   getBaiduMapIndexJob,
   enqueueBaiduMapIndexJob,
   cancelBaiduMapIndexJob,
+  onOpenDynamicMap,
   onPrevious,
   onNext,
   onFilmstripSelect,
@@ -91,14 +88,13 @@ export function XDriveMediaGalleryViewer({
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
-  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
-  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
   getBaiduMapIndexJob?: (nodeID: number) => Promise<MediaBaiduMapIndexJob>
   enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<MediaBaiduMapIndexJob>
   cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
+  onOpenDynamicMap?: () => void
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
@@ -246,7 +242,7 @@ export function XDriveMediaGalleryViewer({
           </IconButton>
         </Tooltip>
       ) : null}
-      {hasPhotoGPS && getBaiduMapProvider && loadBaiduStaticMap ? (
+      {hasPhotoGPS ? (
         <Tooltip title="在地图上查看照片">
           <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
             <MapOutlinedIcon fontSize="small" />
@@ -365,8 +361,7 @@ export function XDriveMediaGalleryViewer({
       <XDriveMediaGalleryViewerLocationDialog
         open={locationOpen}
         item={item}
-        getBaiduMapProvider={getBaiduMapProvider}
-        loadBaiduStaticMap={loadBaiduStaticMap}
+        onOpenDynamicMap={onOpenDynamicMap}
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}
         revokeBaiduMapConsent={revokeBaiduMapConsent}

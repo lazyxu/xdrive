@@ -81,8 +81,6 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     getBaiduJSAPIPrototype: signal => api.mediaBaiduJSAPIPrototype(signal),
     mintBaiduJSAPI4Session: signal => api.mediaBaiduJSAPI4Session(signal),
     mintBaiduIsolatedChildTicket: signal => api.mediaBaiduIsolatedChildTicket(signal),
-    getBaiduMapProvider: () => api.mediaBaiduMapProvider(),
-    loadBaiduStaticMap: (input, signal) => api.mediaBaiduStaticMap(input, signal),
     getBaiduMapConsent: (nodeID) => api.mediaBaiduMapConsent(nodeID),
     saveBaiduMapConsent: (nodeID, input) => api.saveMediaBaiduMapConsent(nodeID, input),
     revokeBaiduMapConsent: (nodeID, revision) => api.revokeMediaBaiduMapConsent(nodeID, revision),
