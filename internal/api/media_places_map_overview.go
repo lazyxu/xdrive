@@ -221,7 +221,7 @@ func queryMediaPlacesMapOverview(
 	ownerMedia := mediaPlacesWithinViewport(mediaPlacesBaseQuery(ctx, db, ownerID), bounds).
 		Select("xd_media_metadata.latitude AS latitude, " +
 			"xd_media_metadata.longitude AS longitude, " +
-			"pa.id AS photo_asset_id, pa.primary_node_id AS node_id, " +
+			"pa.primary_node_id AS node_id, " +
 			"lower(xd_media_metadata.mime_type) AS mime_type")
 	type row struct {
 		BucketRow       int
@@ -235,22 +235,38 @@ func queryMediaPlacesMapOverview(
 		"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
 		"image/tiff", "image/bmp", "image/heic", "image/heif", "image/x-adobe-dng",
 	}
-	// A position is first deduplicated; all PhotoAssets sharing that exact
-	// coordinate stay together, and its thumbnail Node belongs to THAT point.
-	// The final ROW_NUMBER chooses one of these indivisible positions,
-	// preferring a real image cover over a video-only representative.
-	// No independent MIN(cover_node_id) / ARRAY_AGG(sample_gps) pairing.
+	// Group one-to-one Owner PhotoAsset/primary-metadata rows into tiny
+	// 0.0002-degree (~22m latitude) working cells before 8x8 ranking.
+	// One real image Node supplies BOTH sample GPS and image cover; a
+	// video-only cell keeps genuine fallback GPS without inventing a cover.
+	// This reduces expensive ranking work for 100k scattered photo GPS.
+	// Exact source GPS duplicates remain in the same cell and all photos
+	// contribute to an authoritative Owner count. This is a display-only
+	// microcell, never a persisted location or a Media Range identity.
+	// One pa per (owner_id, primary_node_id) and one metadata row per
+	// node_id make COUNT(*) equivalent to COUNT(DISTINCT pa.id).
 	query := fmt.Sprintf(`WITH owner_media AS (?),
-gps_positions AS (
-	SELECT latitude, longitude, COUNT(DISTINCT photo_asset_id) AS photo_count,
+spatial_cells AS (
+	SELECT FLOOR(latitude * 5000)::bigint AS lat_cell,
+		FLOOR(longitude * 5000)::bigint AS lon_cell,
+		COUNT(*) AS photo_count,
 		MIN(node_id) AS fallback_node_id,
 		MIN(node_id) FILTER (WHERE mime_type IN ?) AS cover_node_id
-	FROM owner_media GROUP BY latitude, longitude
+	FROM owner_media
+	GROUP BY 1, 2
+),
+cell_representatives AS (
+	SELECT picked.latitude, picked.longitude, cells.photo_count,
+		cells.fallback_node_id, cells.cover_node_id
+	FROM spatial_cells AS cells
+	JOIN xd_media_metadata AS picked
+		ON picked.node_id = COALESCE(cells.cover_node_id, cells.fallback_node_id)
+		AND picked.owner_id = ?
 ),
 lat_order AS (
 	SELECT *, ROW_NUMBER() OVER (ORDER BY latitude, longitude) AS rank_lat,
 		COUNT(*) OVER () AS total_positions
-	FROM gps_positions
+	FROM cell_representatives
 ),
 lat_buckets AS (
 	SELECT *, CASE
@@ -293,7 +309,7 @@ FROM ranked WHERE sample_rank = 1
 ORDER BY item_count DESC, bucket_row ASC, bucket_col ASC
 LIMIT 65`, longitudeSort)
 	var rows []row
-	err = db.WithContext(ctx).Raw(query, ownerMedia, thumbnailMIMEs).Scan(&rows).Error
+	err = db.WithContext(ctx).Raw(query, ownerMedia, thumbnailMIMEs, ownerID).Scan(&rows).Error
 	if err != nil {
 		return mediaPlacesMapOverviewDTO{}, err
 	}
