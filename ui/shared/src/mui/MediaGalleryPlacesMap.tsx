@@ -12,12 +12,13 @@ import {
   xDriveBaiduMapDiagnosticDetails, XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS,
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
+import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
 
 /** Two user-selected dynamic SDK runtimes. A denied signed release never
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduJSAPI4Status,
+  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, onOpenViewportPhotos,
   mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
@@ -33,6 +34,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
+  getBaiduMapCoverage?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverage']
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
@@ -210,6 +212,8 @@ export function XDriveMediaGalleryPlacesMap({
             : '隔离版仅显示当前账户已授权的 GPS 媒体；照片数量和 Viewer 使用同一 Server Range。'}
         </Typography>
       </Box>
+      <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
+        getCoverage={getBaiduMapCoverage} ownerScope={diagnosticScope}/></Box>
       {nativeEnabled && !mapReady ? (
         <Typography variant="caption" role="status" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
           正在初始化百度动态地图…

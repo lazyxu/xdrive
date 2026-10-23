@@ -218,6 +218,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:move-media-album-to-folder', albumID, revision, folderID),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaPlacesPage: (limit = 48, offset = 0) => ipcRenderer.invoke('agent:get-media-places-page', limit, offset),
+  getMediaBaiduMapCoverage: (requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-baidu-map-coverage', requestID),
   getMediaPlaceHierarchy: (
     request: { level: 'country' | 'region' | 'city'; country?: string; region?: string;
       cursor?: string; search?: string; limit?: number },

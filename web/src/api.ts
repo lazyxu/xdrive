@@ -1570,6 +1570,12 @@ export class XDriveApi {
     })
   }
 
+  /** Owner-only read-only map coverage; no raw coordinates or provider action. */
+  mediaBaiduMapCoverage(signal: AbortSignal) {
+    return this.request<import('../../ui/shared/src/models').MediaBaiduMapCoverage>(
+      '/api/v1/media/places/baidu-jsapi/coverage', {signal,cache:'no-store'})
+  }
+
   /** Runtime comes only from Server's current signed, revocable release. */
   mediaBaiduJSAPI4Status(signal?: AbortSignal) {
     return this.request<{

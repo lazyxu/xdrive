@@ -70,6 +70,7 @@ import type {
   MediaPlacesMapOverview,
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
+  MediaBaiduMapCoverage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -573,6 +574,7 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaPlacesPage: (limit?: number, offset?: number) => Promise<DesktopResult<MediaPlacesPage>>
+        getMediaBaiduMapCoverage: (requestID?: string) => Promise<DesktopResult<MediaBaiduMapCoverage>>
         getMediaPlaceHierarchy: (
           request: MediaPlaceHierarchyRequest, filters?: MediaGalleryQuery, requestID?: string,
         ) => Promise<DesktopResult<MediaPlaceHierarchyPage>>
