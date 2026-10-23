@@ -1,0 +1,134 @@
+name: PWA P4F Genuine Chromium 100k Go Release A-B-B-A
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [test/pwa-p4f-genuine-chromium-abba-20261023]
+permissions:
+  contents: read
+jobs:
+  pwa-p4f-genuine-browser-abba:
+    if: github.head_ref == 'test/pwa-p4f-genuine-chromium-abba-20261023' || github.ref == 'refs/heads/test/pwa-p4f-genuine-chromium-abba-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 135
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      XD_P4F_BEFORE_SHA: 81ef48612bb8140016b9b1690249588ac8a27688
+      XD_P4F_AFTER_SHA: dba1a9d25d1c13f5e986bce4f29cbb76d3ed9fd4
+      XD_PWA_P4A_BEFORE: '1'
+      XD_PWA_P4B_RESOURCE_WATERFALL: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Lock both genuine production Go releases and identical Web source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          git fetch --no-tags origin "$XD_P4F_BEFORE_SHA" "$XD_P4F_AFTER_SHA"
+          test "$(git rev-list --parents -n1 "$XD_P4F_AFTER_SHA")" = "$XD_P4F_AFTER_SHA $XD_P4F_BEFORE_SHA"
+          expected="$(printf '%s\n' \
+            .github/workflows/pwa-p4e-narrow-owner-page.yml \
+            docs/pwa-p4e-narrow-owner-page.md \
+            internal/api/media.go \
+            internal/api/media_page_narrow.go \
+            internal/api/pwa_p4e_owner_narrow_page_100k_integration_test.go | sort)"
+          actual="$(git diff --name-only "$XD_P4F_BEFORE_SHA" "$XD_P4F_AFTER_SHA" | sort)"
+          test "$actual" = "$expected"
+          for subpath in web ui desktop/scripts/pwa-p4a-100k-phase-attribution.cjs desktop/scripts/pwa-p4b-resource-waterfall.cjs; do
+            test "$(git rev-parse "$XD_P4F_BEFORE_SHA:$subpath")" = "$(git rev-parse "$XD_P4F_AFTER_SHA:$subpath")"
+          done
+          test "$(git rev-parse HEAD:desktop/scripts/pwa-p4a-100k-phase-attribution.cjs)" = "$(git rev-parse "$XD_P4F_BEFORE_SHA:desktop/scripts/pwa-p4a-100k-phase-attribution.cjs")"
+          test "$(git rev-parse HEAD:desktop/scripts/pwa-p4b-resource-waterfall.cjs)" = "$(git rev-parse "$XD_P4F_BEFORE_SHA:desktop/scripts/pwa-p4b-resource-waterfall.cjs")"
+          echo "XD_P4F_WEB_TREE=$(git rev-parse "$XD_P4F_BEFORE_SHA:web")" >> "$GITHUB_ENV"
+          git worktree add --detach "$RUNNER_TEMP/xdrive-p4f-A" "$XD_P4F_BEFORE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/xdrive-p4f-B" "$XD_P4F_AFTER_SHA"
+          node --check desktop/scripts/pwa-p4f-chromium-abba-summary.cjs
+          node --test desktop/tests/pwa-p4f-chromium-abba-contract.cjs
+          node --test desktop/tests/pwa-p4a-phase-attribution-contract.cjs desktop/tests/pwa-p2a-before-contract.cjs
+      - name: Build one frozen Web release and two exact Go/Gin/PG17 fixtures
+        run: |
+          set -euo pipefail
+          npm --prefix "$RUNNER_TEMP/xdrive-p4f-A/web" ci --no-audit --no-fund
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix "$RUNNER_TEMP/xdrive-p4f-A/web" run build
+          mkdir -p web/dist
+          cp -a "$RUNNER_TEMP/xdrive-p4f-A/web/dist/." web/dist/
+          (cd "$RUNNER_TEMP/xdrive-p4f-A" && go test -c -o "$RUNNER_TEMP/xdrive-p4f-A-api.test" ./internal/api)
+          (cd "$RUNNER_TEMP/xdrive-p4f-B" && go test -c -o "$RUNNER_TEMP/xdrive-p4f-B-api.test" ./internal/api)
+          mkdir -p "$RUNNER_TEMP/xdrive-p4f-playwright"
+          npm install --prefix "$RUNNER_TEMP/xdrive-p4f-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-p4f-playwright/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Genuine Chromium binary required, no mock" >&2
+            exit 1
+          fi
+          command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y postgresql-client)
+      - name: Four frozen A-B-B-A 100k browser runs (n=3 per run)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          mkdir -p desktop/pwa-p4f-results
+          for spec in 01-A 02-B 03-B 04-A; do
+            mode="${spec#*-}"
+            dbname="p4f_${spec%%-*}"
+            dbname="${dbname//-/_}"
+            PGPASSWORD=xdrive psql -h localhost -U xdrive -d postgres -v ON_ERROR_STOP=1 \
+              -c "CREATE DATABASE $dbname"
+            export XD_TEST_DATABASE_URL="postgres://xdrive:xdrive@localhost:5432/$dbname?sslmode=disable"
+            export XD_PWA_P4A_RESULTS="$GITHUB_WORKSPACE/desktop/pwa-p4f-results/$spec"
+            if [[ "$mode" == A ]]; then
+              export XD_GALLERY_WEB_PHYSICAL_GO_BINARY="$RUNNER_TEMP/xdrive-p4f-A-api.test"
+            else
+              export XD_GALLERY_WEB_PHYSICAL_GO_BINARY="$RUNNER_TEMP/xdrive-p4f-B-api.test"
+            fi
+            mkdir -p "$XD_PWA_P4A_RESULTS"
+            node desktop/scripts/pwa-p4a-100k-phase-attribution.cjs
+            test "$(find "$XD_PWA_P4A_RESULTS" -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+          done
+          node desktop/scripts/pwa-p4f-chromium-abba-summary.cjs \
+            desktop/pwa-p4f-results/01-A desktop/pwa-p4f-results/02-B \
+            desktop/pwa-p4f-results/03-B desktop/pwa-p4f-results/04-A \
+            desktop/pwa-p4f-results/summary.json
+          printf 'P4F_HEAD=%s\nBEFORE_GO=%s\nAFTER_GO=%s\nWEB_TREE=%s\nRUN=%s\n' \
+            "$XD_PR_HEAD" "$XD_P4F_BEFORE_SHA" "$XD_P4F_AFTER_SHA" "$XD_P4F_WEB_TREE" \
+            "$GITHUB_RUN_ID" > desktop/pwa-p4f-results/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p4f-native-100k-go-abba-numeric-summary
+          path: |
+            desktop/pwa-p4f-results/summary.json
+            desktop/pwa-p4f-results/source.txt
+          if-no-files-found: warn
+          retention-days: 14
