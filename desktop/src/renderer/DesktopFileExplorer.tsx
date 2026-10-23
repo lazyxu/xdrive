@@ -357,6 +357,7 @@ export default function DesktopFileExplorer({
   )
   const [availabilityReadFailure, setAvailabilityReadFailure] = useState<string | null>(null)
   const [navigationAvailabilityItems, setNavigationAvailabilityItems] = useState<readonly XDriveFileExplorerItem[]>([])
+  const [columnAvailabilityItems, setColumnAvailabilityItems] = useState<readonly XDriveFileExplorerItem[]>([])
   const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0)
   const availabilityRequestRef = useRef(0)
 
@@ -365,6 +366,7 @@ export default function DesktopFileExplorer({
     setAvailabilityByID(new Map())
     setAvailabilityReadFailure(null)
     setNavigationAvailabilityItems([])
+    setColumnAvailabilityItems([])
   }, [navigationSessionStorageKey])
 
   const actionIntentRef = useRef(0)
@@ -1143,6 +1145,17 @@ export default function DesktopFileExplorer({
     })
   }, [])
 
+  const handleColumnAvailabilityItemsChange = useCallback((
+    items: readonly XDriveFileExplorerItem[],
+  ) => {
+    setColumnAvailabilityItems((currentItems) => (
+      currentItems.length === items.length &&
+      currentItems.every((item, index) => (
+        item.id === items[index]?.id && item.path === items[index]?.path
+      ))
+    ) ? currentItems : items)
+  }, [])
+
   const availabilityRequests = useMemo(() => {
     const byNodeID = new Map<number, string>()
     for (const node of nodeByID.values()) {
@@ -1157,11 +1170,19 @@ export default function DesktopFileExplorer({
     for (const item of navigationAvailabilityItems) {
       if (item.path) byNodeID.set(Number(item.id), item.path)
     }
+    // Reuse the existing Agent batch instead of probing each column row.
+    for (const item of columnAvailabilityItems) {
+      const nodeID = Number(item.id)
+      if (item.path && Number.isSafeInteger(nodeID) && nodeID > 0) {
+        byNodeID.set(nodeID, item.path)
+      }
+    }
     return [...byNodeID].map(([nodeID, path]) => ({ nodeID, path }))
   }, [
     crumbs,
     favorites.items,
     navigationAvailabilityItems,
+    columnAvailabilityItems,
     nodeByID,
     quickAccess.items,
     recent.items,
@@ -2047,6 +2068,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
           ? startNativeDragOut
           : undefined}
         loadColumnPage={trashActive || searchStatusText ? undefined : loadColumnPage}
+        onColumnAvailabilityItemsChange={
+          fileAvailabilitySupported ? handleColumnAvailabilityItemsChange : undefined
+        }
         onColumnNavigate={trashActive || searchStatusText ? undefined : (nextCrumbs) => {
           onCloseTrash()
           void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))

@@ -8,7 +8,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
 import { XDriveFileExplorerItemIcon } from './FileExplorerItemPresentation'
 import type {
@@ -63,6 +63,8 @@ export function XDriveFileExplorerColumnView({
   onSelect,
   onOpenFile,
   onItemContextMenu,
+  renderItemAvailability,
+  onAvailabilityItemsChange,
 }: {
   lifecycleKey?: string
   crumbs: readonly XDriveFileExplorerCrumb[]
@@ -72,6 +74,8 @@ export function XDriveFileExplorerColumnView({
   onSelect: (item: XDriveFileExplorerItem) => void
   onOpenFile: (item: XDriveFileExplorerItem) => void
   onItemContextMenu?: (event: ReactMouseEvent<HTMLElement>, item: XDriveFileExplorerItem) => void
+  renderItemAvailability?: (item: XDriveFileExplorerItem) => ReactNode
+  onAvailabilityItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
 }) {
   const [columns, setColumns] = useState<Record<string, ColumnState>>({})
   const [columnNavigation, setColumnNavigation] = useState<ColumnNavigation | null>(null)
@@ -264,6 +268,32 @@ export function XDriveFileExplorerColumnView({
     controllersRef.current.clear()
   }, [])
 
+  // Only verified current-Owner pages may join the existing availability batch.
+  const acceptedAvailabilityItems = useMemo(() => {
+    if (!onAvailabilityItemsChange || !ownerCurrent) return []
+    const accepted: XDriveFileExplorerItem[] = []
+    for (let index = 0; index < crumbs.length; index += 1) {
+      const column = columns[String(crumbs[index].id)]
+      if (!column?.loaded) continue
+      const parentParts = crumbs.slice(1, index + 1).map((crumb) => crumb.name)
+      for (const item of column.items) {
+        accepted.push({
+          ...item,
+          path: item.path || [...parentParts, item.name].join('/'),
+        })
+      }
+    }
+    return accepted
+  }, [columns, crumbs, onAvailabilityItemsChange, ownerCurrent])
+
+  useEffect(() => {
+    onAvailabilityItemsChange?.(acceptedAvailabilityItems)
+  }, [acceptedAvailabilityItems, onAvailabilityItemsChange])
+
+  useEffect(() => () => {
+    onAvailabilityItemsChange?.([])
+  }, [onAvailabilityItemsChange])
+
   const selected = useMemo(() => new Set(selectedIDs.map(String)), [selectedIDs])
   const activeColumnNavigation = columnNavigation?.lifecycleKey === lifecycleKey &&
     columnNavigation.crumbSignature === crumbSignature ? columnNavigation : null
@@ -340,7 +370,18 @@ export function XDriveFileExplorerColumnView({
                     onContextMenu={(event) => onItemContextMenu?.(event, item)}
                     sx={{ minHeight: 30, py: 0.25, px: 1, gap: 0.75 }}
                   >
-                    <XDriveFileExplorerItemIcon item={item} size={18} folderSize={19} />
+                    <Box
+                      component="span"
+                      data-xdrive-file-explorer-column-icon
+                      sx={{
+                        position: 'relative', display: 'inline-flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        width: 24, height: 24, flexShrink: 0,
+                      }}
+                    >
+                      <XDriveFileExplorerItemIcon item={item} size={18} folderSize={19} />
+                      {renderItemAvailability?.(item)}
+                    </Box>
                     <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1 }}>{item.name}</Typography>
                     {directory ? <ChevronRightRoundedIcon sx={{ fontSize: 17, color: 'text.secondary', flexShrink: 0 }} /> : null}
                   </ListItemButton>
