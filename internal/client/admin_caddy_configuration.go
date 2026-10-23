@@ -50,6 +50,7 @@ type AdminCaddyDeployState struct {
 	State      string `json:"state"`
 	SHA256     string `json:"sha256"`
 	RolledBack bool   `json:"rolled_back,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (c *Client) StartAdminCaddyDeploy(ctx context.Context) (AdminCaddyDeployState, error) {

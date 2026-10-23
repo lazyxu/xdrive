@@ -1713,7 +1713,14 @@ caddy_env_process() {
   # Otherwise immediate UI reload could still read the previous .env digest
   # even though the mutation response already said "saved".
   rm -f "$active"
-  if ! caddy_env_refresh; then
+  if [[ "$operation" == deploy && "$(json_value "$tmp" error)" == installer-busy ]]; then
+    # A server upgrade owns install.lock, so Python snapshot must fail closed.
+    # The busy deploy did not alter .env or Caddy. Do not overwrite its
+    # trustworthy, fixed error code with host-env-observation-unavailable.
+    # The prior projection may remain stale until the upgrade releases the
+    # installer lock and Host Control resumes normal sampling.
+    :
+  elif ! caddy_env_refresh; then
     # The file may have changed even when observation fails. Do not fabricate
     # success: callers must reconcile the actual Host state before retry.
     printf '{"state":"failed","request_id":"%s","error":"host-env-observation-unavailable"}\n' \

@@ -7,8 +7,9 @@ import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort, type XDriveCaddyAli
 import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { caddyHostDeployFailureMessage } from './caddyHostDeployFailure'
 
-// Only PostgreSQL desired state is saved. No Host/Docker/ACME/DNS Apply.
+// Host .env is authoritative in v1; DB desired is legacy compatibility only.
 type AtomicDesiredSave = {
   host_env_sha256?: string
   https_revision: number
@@ -248,7 +249,7 @@ export function XDriveCaddyDetailV1({
         setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
         changed()
       } else if (status.state === 'failed') {
-        setDeployError('重新部署失败；请先核对宿主机恢复结果，再决定是否重试。')
+        setDeployError(caddyHostDeployFailureMessage(status))
         changed()
       }
     } catch {
@@ -280,9 +281,7 @@ export function XDriveCaddyDetailV1({
           if (next.state === 'deployed') {
             setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
           } else {
-            setDeployError(next.rolled_back
-              ? '重新部署失败，已尝试恢复旧 Caddy；请重新检测。'
-              : '重新部署失败，原网关恢复未确认；请从宿主机检查。')
+            setDeployError(caddyHostDeployFailureMessage(next))
           }
           changed()
         } else {

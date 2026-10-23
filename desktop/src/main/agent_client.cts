@@ -846,6 +846,7 @@ export type AgentAdminCaddyDeployState = {
   state: 'deploying' | 'deployed' | 'failed'
   sha256: string
   rolled_back?: boolean
+  error?: string // Fixed Host code; never arbitrary subprocess diagnostics.
 }
 
 
