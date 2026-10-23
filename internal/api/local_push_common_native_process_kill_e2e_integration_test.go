@@ -85,12 +85,20 @@ func TestLocalPushCommonNativeCrashChild(t *testing.T) {
 	fmt.Printf("LOCAL_COMMON_CRASH_REPLAY_COMMITTED=%s\n", receipt.OperationID)
 }
 
-// The parent provides real PostgreSQL, physical LocalCAS, an authenticated Gin
-// router and a verified native original. Finalize runs to completion but the
-// HTTP reply is withheld. The actual client process is SIGKILL/TerminateProcess
-// killed before receiving an ACK. A NEW process must reuse the on-disk Plan
-// and read the identical immutable original SQL receipt without reupload.
+// A genuine SQL/CAS COMMIT without its HTTP ACK must replay only the original
+// immutable receipt after the native uploader process is killed.
 func TestLocalPushCommonActualProcessKillAfterSQLCommitReplay(t *testing.T) {
+	runLocalPushCommonActualProcessKillReplay(t, false)
+}
+
+// If the first HTTP admission committed its RESERVED operation but its ACK
+// was lost, a new native process must resume that SAME journaled Operation.
+// No chunk, binding or Finalize is allowed before the first process dies.
+func TestLocalPushCommonActualProcessKillBeforeAdmissionACKReplay(t *testing.T) {
+	runLocalPushCommonActualProcessKillReplay(t, true)
+}
+
+func runLocalPushCommonActualProcessKillReplay(t *testing.T, crashBeforeAdmitACK bool) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(
 		&meta.ClientDevice{}, &meta.LocalSourceBinding{},
@@ -137,15 +145,42 @@ func TestLocalPushCommonActualProcessKillAfterSQLCommitReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed := make(chan struct{}, 1)
+	admitted := make(chan struct{}, 1)
 	failed := make(chan int, 1)
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	var admits atomic.Int32
 	var chunks atomic.Int32
 	var binds atomic.Int32
 	var finalizes atomic.Int32
 	router := server.Router()
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/local-common-upload/admit") {
+			if admits.Add(1) == 1 && crashBeforeAdmitACK {
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, r) // REAL SQL RESERVED before withholding the first ACK
+				if rec.Code < 200 || rec.Code >= 300 {
+					select {
+					case failed <- rec.Code:
+					default:
+					}
+					w.WriteHeader(rec.Code)
+					_, _ = w.Write(rec.Body.Bytes())
+					return
+				}
+				select {
+				case admitted <- struct{}{}:
+				default:
+				}
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+				http.Error(w, "simulated lost admission response", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/chunks/") {
 			chunks.Add(1)
 		}
@@ -241,12 +276,22 @@ func TestLocalPushCommonActualProcessKillAfterSQLCommitReplay(t *testing.T) {
 			_ = first.Wait()
 		}
 	})
-	select {
-	case <-committed:
-	case code := <-failed:
-		t.Fatalf("genuine first Finalize rejected original upload: HTTP %d", code)
-	case <-time.After(50 * time.Second):
-		t.Fatal("native child did not reach physical CAS/SQL commit")
+	if crashBeforeAdmitACK {
+		select {
+		case <-admitted:
+		case code := <-failed:
+			t.Fatalf("genuine original Admission rejected: HTTP %d", code)
+		case <-time.After(50 * time.Second):
+			t.Fatal("native child did not persist original RESERVED Admission")
+		}
+	} else {
+		select {
+		case <-committed:
+		case code := <-failed:
+			t.Fatalf("genuine first Finalize rejected original upload: HTTP %d", code)
+		case <-time.After(50 * time.Second):
+			t.Fatal("native child did not reach physical CAS/SQL commit")
+		}
 	}
 	if err := first.Process.Kill(); err != nil {
 		t.Fatal(err)
@@ -262,27 +307,42 @@ func TestLocalPushCommonActualProcessKillAfterSQLCommitReplay(t *testing.T) {
 	releaseAll()
 
 	var ops []meta.LocalPushCommonUploadOperation
-	if err := db.Where("source_id = ?", source.ID).Find(&ops).Error; err != nil ||
-		len(ops) != 1 || ops[0].State != meta.LocalPushCommonUploadCommitted ||
+	if err := db.Where("source_id = ?", source.ID).Find(&ops).Error; err != nil || len(ops) != 1 {
+		t.Fatalf("original durable Operation missing after process death: rows=%d err=%v", len(ops), err)
+	}
+	if crashBeforeAdmitACK {
+		if ops[0].State != meta.LocalPushCommonUploadReserved ||
+			ops[0].ResultNodeID != nil || chunks.Load() != 0 ||
+			binds.Load() != 0 || finalizes.Load() != 0 {
+			t.Fatalf("pre-byte crash fabricated COMMIT or sent bytes: state=%s chunks=%d binds=%d finalizes=%d",
+				ops[0].State, chunks.Load(), binds.Load(), finalizes.Load())
+		}
+	} else if ops[0].State != meta.LocalPushCommonUploadCommitted ||
 		ops[0].ResultNodeID == nil || *ops[0].ResultNodeID == 0 {
-		t.Fatalf("original remote operation did not commit before kill: rows=%d err=%v", len(ops), err)
+		t.Fatal("original remote Operation did not commit before kill")
 	}
-	var file meta.File
-	if err := db.Where("node_id = ?", *ops[0].ResultNodeID).Take(&file).Error; err != nil {
-		t.Fatal(err)
+	assertPhysicalOriginal := func(nodeID uint64) {
+		t.Helper()
+		var file meta.File
+		if err := db.Where("node_id = ?", nodeID).Take(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		wantSHA := sha256.Sum256(bytesOnDisk)
+		if file.SHA256 != hex.EncodeToString(wantSHA[:]) || file.Size != int64(len(bytesOnDisk)) {
+			t.Fatal("durable File metadata differs from original native bytes")
+		}
+		stream, err := localCAS.Open(context.Background(), file.StorageKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		physical, readErr := io.ReadAll(stream)
+		closeErr := stream.Close()
+		if readErr != nil || closeErr != nil || !bytes.Equal(physical, bytesOnDisk) {
+			t.Fatalf("actual original CAS bytes invalid: read=%v close=%v", readErr, closeErr)
+		}
 	}
-	wantSHA := sha256.Sum256(bytesOnDisk)
-	if file.SHA256 != hex.EncodeToString(wantSHA[:]) || file.Size != int64(len(bytesOnDisk)) {
-		t.Fatal("durable File metadata differs from original native bytes")
-	}
-	stream, err := localCAS.Open(context.Background(), file.StorageKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	physical, readErr := io.ReadAll(stream)
-	closeErr := stream.Close()
-	if readErr != nil || closeErr != nil || !bytes.Equal(physical, bytesOnDisk) {
-		t.Fatalf("actual original CAS bytes invalid after native process kill: read=%v close=%v", readErr, closeErr)
+	if !crashBeforeAdmitACK {
+		assertPhysicalOriginal(*ops[0].ResultNodeID)
 	}
 	var versionsBefore int64
 	if err := db.Model(&meta.FileVersion{}).Count(&versionsBefore).Error; err != nil {
@@ -296,9 +356,18 @@ func TestLocalPushCommonActualProcessKillAfterSQLCommitReplay(t *testing.T) {
 	if strings.Contains(result.String(), jwt) || strings.Contains(result.String(), deviceSecret) {
 		t.Fatal("restarted native uploader leaked owning credentials")
 	}
-	if chunks.Load() != 1 || binds.Load() != 1 || finalizes.Load() != 1 {
-		t.Fatalf("restarted child performed duplicate upload: chunks=%d binds=%d finalizes=%d",
-			chunks.Load(), binds.Load(), finalizes.Load())
+	if admits.Load() != 2 || chunks.Load() != 1 || binds.Load() != 1 || finalizes.Load() != 1 {
+		t.Fatalf("restarted child repeated original physical write: admits=%d chunks=%d binds=%d finalizes=%d",
+			admits.Load(), chunks.Load(), binds.Load(), finalizes.Load())
+	}
+	if crashBeforeAdmitACK {
+		var completed meta.LocalPushCommonUploadOperation
+		if err := db.Where("operation_id = ?", ops[0].OperationID).Take(&completed).Error; err != nil ||
+			completed.State != meta.LocalPushCommonUploadCommitted ||
+			completed.ResultNodeID == nil || *completed.ResultNodeID == 0 {
+			t.Fatalf("original RESERVED Operation failed to commit on replay: %v", err)
+		}
+		assertPhysicalOriginal(*completed.ResultNodeID)
 	}
 	var operationsAfter, filesAfter, versionsAfter int64
 	db.Model(&meta.LocalPushCommonUploadOperation{}).Where("source_id = ?", source.ID).Count(&operationsAfter)
