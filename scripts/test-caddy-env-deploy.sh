@@ -11,6 +11,7 @@ export XD_CONFIG_DIR="$TMP/xd"
 export XD_HOST_CONTROL_SOURCE_ONLY=1
 export MOCK_DOCKER_LOG="$TMP/docker.log"
 export MOCK_FAIL_NEW=0
+export MOCK_FAIL_OLD=0
 mkdir -p "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state" "$XD_CONFIG_DIR/bin" "$TMP/fakebin"
 chmod 0700 "$XD_CONFIG_DIR" "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state"
 cp "$ROOT/scripts/caddy-env-config.py" "$XD_CONFIG_DIR/bin/caddy-env-config.py"
@@ -33,6 +34,10 @@ if [[ "$1" == compose ]]; then
   printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
   if [[ "$MOCK_FAIL_NEW" == 1 ]] &&
       grep -q '^XD_DOMAIN=broken.example.com$' "$XD_CONFIG_DIR/config/.env"; then
+    exit 1
+  fi
+  if [[ "$MOCK_FAIL_OLD" == 1 ]] &&
+      grep -q '^XD_DOMAIN=missing-commit-ack.example.com$' "$XD_CONFIG_DIR/config/.env"; then
     exit 1
   fi
   exit 0
@@ -393,5 +398,53 @@ caddy_env_recover_interrupted "$dir"
 [[ ! -e "$dir/caddy-env-active.json" ]]
 grep -Fxq "XD_DOMAIN=missing-commit-ack.example.com" "$XD_CONFIG_DIR/config/.env"
 [[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 1))" ]]
+
+# P0-01 double failure: restoring .env does NOT verify the previous Caddy.
+export MOCK_FAIL_NEW=1 MOCK_FAIL_OLD=1
+save_domain broken.example.com
+sha="$(fingerprint)"
+dir="$(prepare_dir)"
+id="515151515151515151515151"
+printf '{"operation":"deploy","request_id":"%s","created_at":"%s","expected_sha256":"%s"}\n' \
+  "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" > "$dir/caddy-env-request.json"
+chmod 0660 "$dir/caddy-env-request.json"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+caddy_env_process
+python3 - "$dir/caddy-env-result.json" "$dir/caddy-deploy-results/$id.json" "$sha" <<'PY'
+import json,sys
+for path in sys.argv[1:3]:
+    r=json.load(open(path))
+    assert r["state"] == "failed" and r.get("rolled_back", False) is False
+    assert r["error"] == "caddy-deploy-or-verify-failed" and r["sha256"] == sys.argv[3]
+PY
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 2))" ]]
+grep -Fxq 'XD_DOMAIN=missing-commit-ack.example.com' "$XD_CONFIG_DIR/config/.env"
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+[[ -f "$dir/caddy-env-active.json" && ! -L "$dir/caddy-env-active.json" ]]
+[[ ! -e "$dir/caddy-env-request.json" ]]
+# No queued Save may run while the previous instance remains unverified.
+printf '{"operation":"save","request_id":"525252525252525252525252","created_at":"%s","expected_sha256":"%s","https":{"enabled":true,"domain":"must-not-run.example.com","lan_enabled":true,"lan_ip":"192.168.1.9"}}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(fingerprint)" > "$dir/caddy-env-request.json"
+chmod 0660 "$dir/caddy-env-request.json"
+caddy_env_process
+[[ ! -e "$dir/caddy-env-request.json" && -f "$dir/caddy-env-active.json" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 2))" ]]
+grep -Fxq 'XD_DOMAIN=missing-commit-ack.example.com' "$XD_CONFIG_DIR/config/.env"
+# The queued request was discarded; a later recovery must not replay it.
+# A restart must not upgrade the immutable FAILED result into SUCCESS.
+export MOCK_FAIL_NEW=0 MOCK_FAIL_OLD=0
+if caddy_env_recover_interrupted "$dir"; then
+  echo "unknown previous gateway falsely recovered" >&2
+  exit 1
+fi
+[[ -f "$dir/caddy-env-active.json" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 2))" ]]
+python3 - "$dir/caddy-env-result.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r["state"] == "failed" and r["error"] == "caddy-deploy-or-verify-failed"
+assert r.get("rolled_back", False) is False
+PY
 
 echo "Caddy-only Host deploy and rollback fixtures: OK"

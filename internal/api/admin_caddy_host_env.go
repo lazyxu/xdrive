@@ -124,6 +124,14 @@ func (s *Server) runCaddyHostEnv(ctx context.Context, request caddyHostEnvReques
 	if _, err := s.readCaddyHostEnv(); err != nil {
 		return zero, errCaddyHostEnvUnavailable
 	}
+	// A failed physical rollback retains the original active Host operation.
+	// Never queue a Save/Deploy/Reveal behind it: otherwise a request that
+	// already timed out could execute unexpectedly after a later recovery.
+	if _, err := os.Lstat(filepath.Join(s.HostControlDir, "caddy-env-active.json")); err == nil {
+		return zero, errCaddyHostEnvConflict
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return zero, errCaddyHostEnvUnavailable
+	}
 	id, err := randomServerUpdateRequestID()
 	if err != nil {
 		return zero, errCaddyHostEnvUnavailable

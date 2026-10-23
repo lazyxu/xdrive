@@ -1705,7 +1705,17 @@ caddy_env_process() {
   request="$dir/caddy-env-request.json"
   active="$dir/caddy-env-active.json"
   result="$dir/caddy-env-result.json"
-  [[ -f "$request" && ! -L "$request" && ! -e "$active" ]] || return 0
+  # A separate Server replica can pass its preflight just before this
+  # runner takes the Active slot. Never retain a second queued request that
+  # could run unexpectedly after the unresolved operation is recovered.
+  # Drop only a regular Host request file, never follow an unsafe symlink.
+  if [[ -e "$active" || -L "$active" ]]; then
+    if [[ -f "$request" && ! -L "$request" ]]; then
+      rm -f -- "$request"
+    fi
+    return 0
+  fi
+  [[ -f "$request" && ! -L "$request" ]] || return 0
   mv -n "$request" "$active" || return 0
   [[ -f "$active" && ! -L "$active" ]] || return 0
   rm -f -- "$dir/caddy-env-secret-result.json"
@@ -1750,10 +1760,18 @@ caddy_env_process() {
     # Do not echo raw JSON, .env values, provider error text or request payload.
     printf '{"state":"failed","request_id":"%s","error":"host-env-operation-failed"}\n' "$request_id" > "$tmp"
   fi
+  # Restored .env bytes are NOT evidence the previous gateway is running.
+  # A failed old-Caddy recreate / TLS/Ready check must retain the exact
+  # active deployment as a durable Host fence until trusted recovery.
+  if [[ "$operation" != deploy ||
+        "$(json_value "$tmp" state)" != failed ||
+        "$(json_value "$tmp" error)" != caddy-deploy-or-verify-failed ||
+        "$(json_bool_value "$tmp" rolled_back)" == true ]]; then
+    rm -f "$active"
+  fi
   # Publish the new non-secret Host projection BEFORE acknowledging Save.
   # Otherwise immediate UI reload could still read the previous .env digest
   # even though the mutation response already said "saved".
-  rm -f "$active"
   if [[ "$operation" == deploy &&
         ( "$(json_value "$tmp" error)" == installer-busy ||
           "$(json_value "$tmp" state)" == deployed ) ]]; then

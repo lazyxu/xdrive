@@ -48,3 +48,12 @@
 - **运行环境尚未变更**：源代码合并不会修改已有宿主机 `.env` 或重新创建生产 Caddy。生产环境专属安全验收：**按用户决定跳过（未验收）**；不得据此宣称公网可达、终端 CA 已信任或实际 Caddy 已部署。
 - Host 返回的 `installer-busy`、`deploy-refused`、`interrupted-deploy`、`caddy-deploy-or-verify-failed` 是固定诊断代码；管理员 UI 仅将已知代码映射为安全的中文提示。未知字段、主机路径、环境变量值、Docker/TLS/供应商原始日志不得传给浏览器。
 - 第二版如需配置历史、回退和修改审计，可在 PostgreSQL 记录经严格脱敏或加密的受限修订及操作记录，**但不得把 PostgreSQL 恢复为 Caddy 当前配置权威**；任何版本回退应先经受限 Host Control 的四字段 CAS 写入 `.env`，再单独执行 Caddy-only 重新部署。
+
+## P0-01 · 回退网关未验证时保持 Host 操作隔离（2026-10-23）
+
+- 新 Caddy 失败后，即使 Python 已恢复旧 `.env` 并清除 Pending/Backup，旧 Caddy recreate、Ready 或 TLS 未通过便不是可信物理回退。保留相同 Request ID 的 `caddy-env-active.json`；历史失败回执仍只返回 `rolled_back=false` 和固定错误码，不宣称 `deployed`。
+- Active 留存期间 Host Control 拒绝后续请求；Server 在新 Save/Deploy/Reveal 提交前检查 Active，避免超时后迟到执行。只读配置和失败历史查询不受影响。
+- 重启时缺少可信证据就保持 fail-closed 隔离；本轮不允许靠清除 Active 或仅检查旧 `.env` 伪造恢复。独立 Rescue/Watchdog 后续实施。
+- 离线故障注入覆盖新旧双重失败、原 ID 失败归档、Active 留存、请求队列隔离和重启后仍隔离。Go 测试覆盖正常及符号链接 Active。生产环境专属验收：**按用户决定跳过（未验收）**。
+
+- 多副本竞态补充：Server 检查 Active 与发布队列并非原子事务；即使第二个请求在这一间隙入队，Host 发现 Active 后会删除该普通队列文件，防止稍后解除隔离时执行早已超时的请求。符号链接或异常 Active 保持保守隔离。
