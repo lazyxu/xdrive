@@ -4381,8 +4381,11 @@ export class AgentIPCClient {
     }, 6 * 60 * 60 * 1000)
   }
 
-  cloudFileTextPreview(id: number) {
-    return this.request<AgentCloudFileTextPreview>('GET', `/v1/cloud/text-preview?id=${encodeURIComponent(String(id))}`)
+  cloudFileTextPreview(id: number, signal?: AbortSignal) {
+    return this.request<AgentCloudFileTextPreview>(
+      'GET', `/v1/cloud/text-preview?id=${encodeURIComponent(String(id))}`,
+      undefined, 10_000, signal,
+    )
   }
 
   cloudFilePreviewTicket(nodeID: number) {

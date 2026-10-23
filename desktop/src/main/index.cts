@@ -6375,15 +6375,22 @@ function registerIPCHandlers() {
     }
   })
 
-  ipcMain.handle('agent:cloud-text-preview', (_event, id: unknown) => runAgentAction<{ text: string; truncated: boolean; size: number }>(async () => {
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
-      throw new AgentIPCError('invalid_input', 0, 'File id is required.')
-    }
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    requireAgentCapability(hello, 'file-text-preview')
-    return requireAgentClient().cloudFileTextPreview(id)
-  }, false))
+  ipcMain.handle('agent:cloud-text-preview', (event, id: unknown, requestID: unknown) =>
+    runAgentAction<{ text: string; truncated: boolean; size: number }>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+          throw new AgentIPCError('invalid_input', 0, 'File id is required.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'File text preview was cancelled.')
+        const hello = await requireAgentLifecycle().ensureRunning()
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'File text preview was cancelled.')
+        requireAgentCapability(hello, 'cloud-files')
+        requireAgentCapability(hello, 'file-text-preview')
+        return requireAgentClient().cloudFileTextPreview(id, signal)
+      }),
+      false,
+    ),
+  )
 
   ipcMain.handle('agent:cloud-file-preview-url', (_event, id: unknown) => runAgentAction<string>(async () => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {

@@ -913,9 +913,14 @@ export default function DesktopFileExplorer({
     if (allowSelectionAction('cut', selected)) cutWorkspaceItems(selected)
   }
 
-  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (!textPreviewSupported || item.kind !== 'file') return null
-    const result = await window.xdriveDesktop.agent.cloudTextPreview(Number(item.id))
+  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (!textPreviewSupported || item.kind !== 'file' || signal?.aborted) return null
+    // Reuse the sender-scoped viewport cancel protocol. Abort promptly on
+    // Inspector/Quick Look close, navigation or Owner session replacement.
+    const result = await xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => window.xdriveDesktop.agent.cloudTextPreview(Number(item.id), requestID),
+    )
     return result.ok ? result.data : null
   }, [textPreviewSupported])
 
