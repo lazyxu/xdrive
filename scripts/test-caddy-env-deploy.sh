@@ -18,6 +18,8 @@ export MOCK_LIVE_COUNTER_PATH="$TMP/live-count"
 mkdir -p "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state" "$XD_CONFIG_DIR/bin" "$TMP/fakebin"
 chmod 0700 "$XD_CONFIG_DIR" "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state"
 cp "$ROOT/scripts/caddy-env-config.py" "$XD_CONFIG_DIR/bin/caddy-env-config.py"
+cp "$ROOT/scripts/caddy-admission.py" "$XD_CONFIG_DIR/bin/caddy-admission.py"
+chmod 0700 "$XD_CONFIG_DIR/bin/caddy-admission.py"
 chmod 0700 "$XD_CONFIG_DIR/bin/caddy-env-config.py"
 cat > "$XD_CONFIG_DIR/config/.env" <<'ENV'
 XD_DOMAIN=original.example.com
@@ -76,6 +78,7 @@ DOCKER
 chmod 0700 "$TMP/fakebin/docker"
 export PATH="$TMP/fakebin:$PATH"
 
+python3 "$ROOT/scripts/test-caddy-admission.py"
 source "$ROOT/scripts/server-control.sh"
 # Only the transport is under test: existing independent tests verify the
 # REAL TLS/CA/SAN helper implementations. Never weaken production probes.
@@ -516,6 +519,50 @@ assert r.get("rolled_back", False) is False
 PY
 
 
+
+# After the double-failed rollback, the original FAILED terminal stays
+# immutable, but an explicit Host operator may verify a currently stable
+# restored gateway and release Sticky Active without another Docker rebuild.
+# This fixture stubs only the independently covered startup XD_DOMAIN observer.
+caddy_container_runtime_tls_alignment() { printf 'matched-local\n'; }
+dir="$(prepare_dir)"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+caddy_rescue_manual "515151515151515151515151" --confirm
+[[ ! -e "$dir/caddy-env-active.json" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before" ]]
+[[ -f "$dir/caddy-rescue-results/515151515151515151515151.json" ]]
+python3 - "$dir/caddy-deploy-results/515151515151515151515151.json" "$dir/caddy-rescue-results/515151515151515151515151.json" <<'PY_RESCUE_CHECK'
+import json,sys
+old=json.load(open(sys.argv[1]))
+new=json.load(open(sys.argv[2]))
+assert old["state"]=="failed" and old.get("rolled_back",False) is False
+assert new["state"]=="recovered-local" and new["request_id"]==old["request_id"]
+assert new["failed_sha256"]==old["sha256"]
+assert new["current_sha256"]!=old["sha256"]
+assert "applied" not in new and "access_key" not in new
+PY_RESCUE_CHECK
+# Crash after immutable rescue receipt publication but before Active
+# retirement leaves the exact same failed Host operation fenced. The next
+# explicitly confirmed operator action must reconcile the matching receipt
+# and remove only its precise hard-linked source-only temporary sibling.
+id="515151515151515151515151"
+receipt="$dir/caddy-rescue-results/$id.json"
+temp="$dir/caddy-rescue-results/.$id.tmp.0123456789abcdef"
+ln "$receipt" "$temp"
+[[ "$(stat -c '%h' "$receipt")" == 2 ]]
+previous="$(wc -l < "$MOCK_DOCKER_LOG")"
+printf '{"operation":"deploy","request_id":"%s","expected_sha256":"%s"}\n' \
+  "$id" "$(json_value "$dir/caddy-deploy-results/$id.json" sha256)" > "$dir/caddy-env-active.json"
+chmod 0600 "$dir/caddy-env-active.json"
+caddy_rescue_manual "$id" --confirm
+[[ ! -e "$dir/caddy-env-active.json" && ! -e "$temp" ]]
+[[ "$(stat -c '%h' "$receipt")" == 1 ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$previous" ]]
+if caddy_rescue_manual "$id" --confirm; then
+  echo "operator rescue reused original failed operation" >&2
+  exit 1
+fi
+
 # P0-02B1: the interrupted Host recovery path must NOT bypass the
 # generation/Live-Config window already used for normal rollback.
 # Each test explicitly resets the PREVIOUS offline fixture's Sticky Active;
@@ -560,4 +607,53 @@ simulate_interrupted_unstable_window generation "565656565656565656565656" "reco
 simulate_interrupted_unstable_window live "575757575757575757575757" "recovery-live-reload.example.com"
 simulate_interrupted_unstable_window missing "585858585858585858585858" "recovery-live-unavailable.example.com"
 
+
+# The independent source-only Watchdog MUST refuse an immutable failed
+# terminal and never clear unresolved Active just because Docker is healthy.
+dir="$(prepare_dir)"
+# A real Host runner has already published this long-lived lock inode.
+# The source-only fixture does not start serve_cmd, so seed it explicitly.
+: > "$dir/runner.lock"
+chmod 0660 "$dir/runner.lock"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+id="585858585858585858585858"
+sha="$(fingerprint)"
+printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","rolled_back":false,"error":"interrupted-deploy"}\n' \
+  "$id" "$sha" | XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+  python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" archive-deploy >/dev/null
+caddy_watchdog_once
+[[ -f "$dir/caddy-env-active.json" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before" ]]
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-watchdog-attempts/$id" ]]
+
+# A new interrupted operation WITH a private original backup can be
+# recovered EXACTLY ONCE, without replaying the new candidate.
+rm -f -- "$dir/caddy-env-active.json"  # disposable fixture only
+save_domain watchdog-crash.example.com
+sha="$(fingerprint)"
+id="606060606060606060606060"
+printf '{"operation":"deploy","request_id":"%s","created_at":"%s","expected_sha256":"%s"}\n' \
+  "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" > "$dir/caddy-env-active.json"
+chmod 0600 "$dir/caddy-env-active.json"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+caddy_watchdog_once
+[[ ! -e "$dir/caddy-env-active.json" ]]
+[[ -f "$XD_CONFIG_DIR/state/caddy-watchdog-attempts/$id" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 1))" ]]
+after="$(wc -l < "$MOCK_DOCKER_LOG")"
+caddy_watchdog_once
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$after" ]]
+
+
+# Local privileged operator rescue is deliberately not a Web/Server API. A
+# previous immutable FAILED deploy may be independently verified against
+# currently restored .env and SAME Caddy generation before releasing Active.
+# It never rewrites the historical failed terminal or replays the candidate.
+dir="$(prepare_dir)"
+before="$(wc -l < "$MOCK_DOCKER_LOG")"
+if caddy_rescue_manual "606060606060606060606060"; then
+  echo "operator rescue accepted missing explicit confirmation" >&2
+  exit 1
+fi
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before" ]]
 echo "Caddy-only Host deploy and rollback fixtures: OK"

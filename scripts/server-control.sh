@@ -1781,19 +1781,13 @@ caddy_env_process() {
   request="$dir/caddy-env-request.json"
   active="$dir/caddy-env-active.json"
   result="$dir/caddy-env-result.json"
-  # A separate Server replica can pass its preflight just before this
-  # runner takes the Active slot. Never retain a second queued request that
-  # could run unexpectedly after the unresolved operation is recovered.
-  # Drop only a regular Host request file, never follow an unsafe symlink.
-  if [[ -e "$active" || -L "$active" ]]; then
-    if [[ -f "$request" && ! -L "$request" ]]; then
-      rm -f -- "$request"
-    fi
+  # Shared kernel flock + no-follow fixed-name promotion makes
+  # Server publication and Host queue->Active admission one transaction.
+  # The helper never follows a path supplied by the browser.
+  [[ -f "$BIN_DIR/caddy-admission.py" && ! -L "$BIN_DIR/caddy-admission.py" ]] || return 0
+  if ! XD_CADDY_CONTROL_DIR="$dir" python3 "$BIN_DIR/caddy-admission.py" claim >/dev/null 2>&1; then
     return 0
   fi
-  [[ -f "$request" && ! -L "$request" ]] || return 0
-  mv -n "$request" "$active" || return 0
-  [[ -f "$active" && ! -L "$active" ]] || return 0
   rm -f -- "$dir/caddy-env-secret-result.json"
   operation="$(json_value "$active" operation)"
   request_id="$(json_value "$active" request_id)"
@@ -2018,6 +2012,306 @@ caddy_compat_observe_cmd() {
       sleep 1
     done
   done
+}
+
+# Explicit privileged Host-local operator recovery. This is deliberately
+# NEVER a Server/Agent/browser route and is not called by the Watchdog.
+# It resolves Sticky Active only after a fresh physical SAME-generation
+# check against restored host .env, with a separate immutable local record.
+caddy_rescue_manual() (
+  [[ $# -eq 2 && "$2" == --confirm && "$1" =~ ^[0-9a-f]{24}$ ]] || return 2
+  local id="$1" dir active archived original expected snapshot current
+  local before after domain lan
+  dir="$(prepare_dir)"
+  active="$dir/caddy-env-active.json"
+  archived="$dir/caddy-deploy-results/$id.json"
+  # Admission excludes other Server publishers while investigating and
+  # releasing the fence. The installer lock excludes upgrade/Deploy.
+  [[ -f "$active" && ! -L "$active" &&
+     -f "$archived" && ! -L "$archived" ]] || return 1
+  # The shared Host bridge is writable by Server replicas. Never truncate
+  # a planted symlink while taking the rescue lock; open an existing
+  # regular inode read-only, then bind the held FD to the current pathname.
+  [[ -f "$dir/caddy-env-admission.lock" &&
+     ! -L "$dir/caddy-env-admission.lock" ]] || return 1
+  exec 5<"$dir/caddy-env-admission.lock" || return 1
+  flock -n 5 || return 1
+  local admission_inode
+  admission_inode="$(stat -Lc '%d:%i' /proc/self/fd/5)" || return 1
+  [[ "$admission_inode" == "$(stat -c '%d:%i' "$dir/caddy-env-admission.lock")" ]] || return 1
+  exec 6>"$STATE_DIR/install.lock"
+  flock -n 6 || return 1
+  [[ -f "$active" && ! -L "$active" &&
+     "$(json_value "$active" operation)" == deploy &&
+     "$(json_value "$active" request_id)" == "$id" &&
+     "$(json_value "$archived" request_id)" == "$id" &&
+     "$(json_value "$archived" state)" == failed ]] || return 1
+  expected="$(json_value "$active" expected_sha256)"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ &&
+     "$expected" == "$(json_value "$archived" sha256)" ]] || return 1
+  case "$(json_value "$archived" error)" in
+    interrupted-deploy|caddy-deploy-or-verify-failed) ;;
+    *) return 1 ;;
+  esac
+  [[ "$(json_bool_value "$archived" rolled_back)" != true ]] || return 1
+  # No unknown pending write, preserved original rollback file or new queue
+  # may be bypassed by a manual rescue request.
+  [[ ! -e "$STATE_DIR/caddy-env/pending.json" &&
+     ! -L "$STATE_DIR/caddy-env/pending.json" &&
+     ! -e "$STATE_DIR/caddy-env/previous.env" &&
+     ! -L "$STATE_DIR/caddy-env/previous.env" &&
+     ! -e "$dir/caddy-env-request.json" &&
+     ! -L "$dir/caddy-env-request.json" ]] || return 1
+  snapshot="$(mktemp "$dir/.caddy-rescue-snapshot.XXXXXX")" || return 1
+  if ! XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+      python3 "$BIN_DIR/caddy-env-config.py" snapshot > "$snapshot" 2>/dev/null; then
+    rm -f -- "$snapshot"
+    return 1
+  fi
+  [[ "$(json_bool_value "$snapshot" pending_redeploy)" != true ]] || {
+    rm -f -- "$snapshot"
+    return 1
+  }
+  original="$(json_value "$snapshot" sha256)"
+  rm -f -- "$snapshot"
+  [[ "$original" =~ ^[0-9a-f]{64}$ && "$original" != "$expected" ]] || return 1
+  domain="$(env_value XD_DOMAIN)"
+  lan="$(env_value XD_LAN_HTTPS_IP)"
+  [[ -n "$domain" || -n "$lan" ]] || return 1
+  caddy_env_verify_local_runtime_window "$domain" "$lan" || return 1
+  before="$CADDY_LOCAL_WINDOW_GENERATION_SHA256"
+  after="$CADDY_LOCAL_WINDOW_LIVE_SHA256"
+  [[ "$before" =~ ^[0-9a-f]{64}$ && "$after" =~ ^[0-9a-f]{64}$ ]] || return 1
+  if [[ -n "$domain" &&
+        "$(caddy_container_runtime_tls_alignment "$domain")" != matched-local ]]; then
+    return 1
+  fi
+  # Recheck .env+original Request ID while both trusted locks are held.
+  snapshot="$(mktemp "$dir/.caddy-rescue-recheck.XXXXXX")" || return 1
+  if ! XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+      python3 "$BIN_DIR/caddy-env-config.py" snapshot > "$snapshot" 2>/dev/null; then
+    rm -f -- "$snapshot"
+    return 1
+  fi
+  current="$(json_value "$snapshot" sha256)"
+  [[ "$current" == "$original" &&
+     "$(json_bool_value "$snapshot" pending_redeploy)" != true &&
+     "$(json_value "$active" request_id)" == "$id" ]] || {
+    rm -f -- "$snapshot"
+    return 1
+  }
+  rm -f -- "$snapshot"
+  # The original failure remains immutable and visible; record a separate
+  # fixed nonsecret Host-local operator rescue event BEFORE clearing Active.
+  # Both journal publication and fence deletion are fsynced, no overwrite.
+  XD_CADDY_RESCUE_DIR="$dir" \
+  XD_CADDY_RESCUE_ID="$id" XD_CADDY_RESCUE_FAILED_SHA="$expected" \
+  XD_CADDY_RESCUE_CURRENT_SHA="$original" \
+  XD_CADDY_RESCUE_GENERATION_SHA="$before" \
+  XD_CADDY_RESCUE_CONFIG_SHA="$after" \
+  python3 - <<'PY_RESCUE'
+import json, os, stat, sys, secrets
+from pathlib import Path
+try:
+    root = Path(os.environ["XD_CADDY_RESCUE_DIR"])
+    if not root.is_dir() or root.is_symlink():
+        raise OSError("unsafe-dir")
+    receipts = root / "caddy-rescue-results"
+    if receipts.is_symlink():
+        raise OSError("unsafe-receipts")
+    receipts.mkdir(mode=0o700, exist_ok=True)
+    if receipts.stat().st_mode & 0o077:
+        raise OSError("bad-mode")
+    data = dict(protocol="xdrive.caddy.host-rescue.v1",
+                state="recovered-local", request_id=os.environ["XD_CADDY_RESCUE_ID"],
+                failed_sha256=os.environ["XD_CADDY_RESCUE_FAILED_SHA"],
+                current_sha256=os.environ["XD_CADDY_RESCUE_CURRENT_SHA"],
+                host_local_generation_sha256=os.environ["XD_CADDY_RESCUE_GENERATION_SHA"],
+                host_local_live_config_sha256=os.environ["XD_CADDY_RESCUE_CONFIG_SHA"])
+    folder = os.open(receipts, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        name = data["request_id"] + ".json"
+        encoded = (json.dumps(data, sort_keys=True, separators=(",", ":"))+"\n").encode()
+
+        def reconcile_existing():
+            # Exactly the SAME immutable Host result may outlive a crash
+            # between publication and removal of Sticky Active. Never
+            # create another result or accept a mismatched old success.
+            st = os.stat(name, dir_fd=folder, follow_symlinks=False)
+            if (not stat.S_ISREG(st.st_mode) or st.st_nlink not in (1, 2) or
+                    st.st_uid != os.geteuid() or st.st_mode & 0o077 or
+                    st.st_size != len(encoded)):
+                raise OSError("unsafe-rescue-receipt")
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder)
+            try:
+                pinned = os.fstat(fd)
+                if (pinned.st_dev, pinned.st_ino) != (st.st_dev, st.st_ino):
+                    raise OSError("changed-rescue-receipt")
+                stored = os.read(fd, len(encoded)+1)
+            finally:
+                os.close(fd)
+            if stored != encoded:
+                raise OSError("different-rescue-receipt")
+            if st.st_nlink == 2:
+                # A power loss after link publication can leave its precise
+                # Host-owned temporary hardlink. Remove only that sibling.
+                prefix = "." + data["request_id"] + ".tmp."
+                matched = []
+                for candidate in os.listdir(folder):
+                    if not candidate.startswith(prefix):
+                        continue
+                    suffix = candidate[len(prefix):]
+                    if len(suffix) != 16 or any(c not in "0123456789abcdef" for c in suffix):
+                        continue
+                    member = os.stat(candidate, dir_fd=folder, follow_symlinks=False)
+                    if ((member.st_dev, member.st_ino) == (st.st_dev, st.st_ino)
+                            and stat.S_ISREG(member.st_mode)):
+                        matched.append(candidate)
+                if len(matched) != 1:
+                    raise OSError("unrecognized-rescue-link")
+                os.unlink(matched[0], dir_fd=folder)
+                os.fsync(folder)
+
+        try:
+            reconcile_existing()
+        except FileNotFoundError:
+            # Exact one-time, durable first publication. An old unmatched
+            # or forged record is NEVER overwritten or silently repaired.
+            temp = f".{data['request_id']}.tmp.{secrets.token_hex(8)}"
+            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=folder)
+            try:
+                os.write(fd, encoded)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.link(temp, name, src_dir_fd=folder, dst_dir_fd=folder,
+                    follow_symlinks=False)
+            os.fsync(folder)
+            os.unlink(temp, dir_fd=folder)
+            os.fsync(folder)
+    finally:
+        os.close(folder)
+except OSError:
+    sys.exit(1)
+PY_RESCUE
+  [[ $? -eq 0 ]] || return 1
+  # No shell 'rm Active' after a mere .env restore. Remove only the exact
+  # previously verified regular inode, fsyncing the bridge directory.
+  # Do not release a fence after another Server replaced the shared
+  # admission pathname while this operator held the original FD.
+  [[ "$admission_inode" == "$(stat -c '%d:%i' "$dir/caddy-env-admission.lock")" ]] || return 1
+  XD_CADDY_RESCUE_DIR="$dir" XD_CADDY_RESCUE_ID="$id" python3 - <<'PY_UNFENCE'
+import json, os, stat, sys
+try:
+    root = os.open(os.environ["XD_CADDY_RESCUE_DIR"],
+                   os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open("caddy-env-active.json", os.O_RDONLY | os.O_NOFOLLOW,
+                     dir_fd=root)
+        try:
+            s = os.fstat(fd)
+            if not stat.S_ISREG(s.st_mode) or s.st_nlink != 1 or s.st_size > 4096:
+                raise OSError("unsafe-active")
+            obj = json.loads(os.read(fd, 4097))
+            if obj.get("request_id") != os.environ["XD_CADDY_RESCUE_ID"]:
+                raise OSError("different-active")
+        finally:
+            os.close(fd)
+        os.unlink("caddy-env-active.json", dir_fd=root)
+        os.fsync(root)
+    finally:
+        os.close(root)
+except (OSError, ValueError, json.JSONDecodeError):
+    sys.exit(1)
+PY_UNFENCE
+)
+
+# Independent cron-invoked watcher. This is a SEPARATE process from the Host
+# runner and only invokes the existing exact-request recovery ONCE. It cannot
+# retry a known failed rollback, clear Sticky Active, or deploy a candidate.
+caddy_watchdog_once() {
+  [[ $# -eq 0 ]] || return 2
+  local dir active id expected receipt archive_state
+  command -v flock >/dev/null 2>&1 || return 1
+  dir="$(prepare_dir)"
+  active="$dir/caddy-env-active.json"
+  [[ -f "$active" && ! -L "$active" ]] || return 0
+  id="$(json_value "$active" request_id)"
+  expected="$(json_value "$active" expected_sha256)"
+  [[ "$id" =~ ^[0-9a-f]{24}$ && "$expected" =~ ^[0-9a-f]{64}$ &&
+     "$(json_value "$active" operation)" == deploy ]] || return 1
+  # The watchdog's own lock belongs in Host-private state, never in
+  # the Server-group-writable control bridge.
+  [[ -d "$STATE_DIR" && ! -L "$STATE_DIR" &&
+     ! -L "$STATE_DIR/caddy-watchdog.lock" ]] || return 1
+  exec 7>"$STATE_DIR/caddy-watchdog.lock"
+  flock -n 7 || return 0
+  # No Watchdog action while the Host runner or an upgrade is alive.
+  # A PID file is not a trustworthy process-lifetime proof.
+  # The existing runner uses this file for its lifetime. Observe its
+  # lock read-only; the watchdog must not create/truncate Host bridge paths.
+  [[ -f "$dir/runner.lock" && ! -L "$dir/runner.lock" ]] || return 0
+  exec 8<"$dir/runner.lock"
+  flock -n 8 || return 0
+  exec 4>"$STATE_DIR/install.lock"
+  flock -n 4 || return 0
+  flock -u 4
+  exec 4>&-
+  receipt="$dir/caddy-deploy-results/$id.json"
+  if [[ -e "$receipt" || -L "$receipt" ]]; then
+    [[ -f "$receipt" && ! -L "$receipt" ]] || return 1
+    archive_state="$(json_value "$receipt" state)"
+    # An immutable FAILED outcome is terminal. Never give it a physical
+    # retry even if the Docker mock becomes healthy later.
+    [[ "$archive_state" == deployed ]] || return 0
+  else
+    # Without a precise committed success, normal recovery is permitted
+    # only while BOTH original Host rollback journal files remain intact.
+    [[ -f "$STATE_DIR/caddy-env/pending.json" &&
+       ! -L "$STATE_DIR/caddy-env/pending.json" &&
+       -f "$STATE_DIR/caddy-env/previous.env" &&
+       ! -L "$STATE_DIR/caddy-env/previous.env" ]] || return 0
+  fi
+  # Persist one durable, private attempt marker *before* recovery. A crash
+  # between publishing it and restoring Caddy remains fenced, never replayed.
+  if ! XD_CADDY_WATCHDOG_ID="$id" XD_CADDY_WATCHDOG_STATE="$STATE_DIR" python3 - <<'PY_WATCHDOG'
+import os, stat, sys
+from pathlib import Path
+try:
+    root = Path(os.environ["XD_CADDY_WATCHDOG_STATE"])
+    if root.is_symlink() or not root.is_dir():
+        raise OSError("unsafe-state")
+    folder = root / "caddy-watchdog-attempts"
+    if folder.is_symlink():
+        raise OSError("unsafe-attempts")
+    folder.mkdir(mode=0o700, exist_ok=True)
+    if folder.stat().st_mode & 0o077:
+        raise OSError("untrusted-mode")
+    parent = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open(os.environ["XD_CADDY_WATCHDOG_ID"],
+                     os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=parent)
+        try:
+            os.write(fd, b"attempted\n")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+except OSError:
+    sys.exit(1)
+PY_WATCHDOG
+  then
+    # Existing/uncertain attempt means NO automatic retry. No unlink.
+    return 0
+  fi
+  # This is the preexisting exact-ID, install.lock-bound recovery path.
+  # It validates the private backup/commit journal and the old Caddy
+  # generation+Live Config+Ready/TLS, otherwise retains Sticky Active.
+  caddy_env_recover_interrupted "$dir" || return 1
 }
 
 start_caddy_compat_observer() {
@@ -2246,6 +2540,9 @@ install_cmd() {
     printf '%s\n' "$existing" | grep -v '# xdrive-managed-control$' > "$tmp" || true
     printf '@reboot XD_CONFIG_DIR=%q %q serve >> %q 2>&1 # xdrive-managed-control\n' \
       "$XDRIVE_HOME" "$BIN_DIR/server-control.sh" "$LOG_DIR/host-control.log" >> "$tmp"
+    # Once per minute, independently of the long-running Host process.
+    printf '* * * * * XD_CONFIG_DIR=%q %q caddy-watchdog-once >> %q 2>&1 # xdrive-managed-control\n' \
+      "$XDRIVE_HOME" "$BIN_DIR/server-control.sh" "$LOG_DIR/caddy-watchdog.log" >> "$tmp"
     crontab "$tmp"
     rm -f "$tmp"
   fi
@@ -2263,8 +2560,10 @@ case "$cmd" in
   start) start_cmd "$@" ;;
   serve) serve_cmd "$@" ;;
   caddy-observe) caddy_compat_observe_cmd "$@" ;;
+  caddy-watchdog-once) caddy_watchdog_once "$@" ;;
+  caddy-rescue) caddy_rescue_manual "$@" ;;
   stop) stop_cmd "$@" ;;
   status) status_cmd "$@" ;;
   remove-schedule) remove_schedule ;;
-  *) echo "usage: server-control.sh <install|start|serve|caddy-observe|stop|status|remove-schedule>" >&2; exit 2 ;;
+  *) echo "usage: server-control.sh <install|start|serve|caddy-observe|caddy-watchdog-once|caddy-rescue|stop|status|remove-schedule>" >&2; exit 2 ;;
 esac

@@ -124,6 +124,19 @@ func (s *Server) runCaddyHostEnv(ctx context.Context, request caddyHostEnvReques
 	if _, err := s.readCaddyHostEnv(); err != nil {
 		return zero, errCaddyHostEnvUnavailable
 	}
+	// Shared Linux Host admission serializes the Active check and O_EXCL
+	// queue publication across all Server replicas. Never hold it during
+	// the HTTP acknowledgement wait.
+	unlock, err := caddyHostAdmissionLock(s.HostControlDir)
+	if err != nil {
+		return zero, errCaddyHostEnvUnavailable
+	}
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 	// A failed physical rollback retains the original active Host operation.
 	// Never queue a Save/Deploy/Reveal behind it: otherwise a request that
 	// already timed out could execute unexpectedly after a later recovery.
@@ -169,6 +182,23 @@ func (s *Server) runCaddyHostEnv(ctx context.Context, request caddyHostEnvReques
 		}
 		return zero, errCaddyHostEnvUnavailable
 	}
+	// os.Link publishes a second inode name while the .tmp name still
+	// exists. Retire it before the Host's strict nlink=1 promotion check:
+	// otherwise every real Server-issued request would be rejected.
+	if err := os.Remove(temp.Name()); err != nil {
+		return zero, errCaddyHostEnvUnavailable
+	}
+	bridgeDir, err := os.Open(dir)
+	if err != nil {
+		return zero, errCaddyHostEnvUnavailable
+	}
+	commitErr := bridgeDir.Sync()
+	closeErr := bridgeDir.Close()
+	if commitErr != nil || closeErr != nil {
+		return zero, errCaddyHostEnvUnavailable
+	}
+	unlock()
+	locked = false
 	deadline := time.NewTimer(12 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(100 * time.Millisecond)
