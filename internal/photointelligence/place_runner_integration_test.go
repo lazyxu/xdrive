@@ -256,4 +256,120 @@ func TestPlaceRunnerPersistsAndInvalidatesDerivedLabels(t *testing.T) {
 		label.CityGeoNameID != 1796236 || label.DistanceKM == nil || *label.DistanceKM != 3.75 {
 		t.Fatalf("backfilled label=%+v", label)
 	}
+
+	// The original B1 Facet/Range trust predicate hides these stale rows.
+	// Verify their Owner is actually scheduled, each row heals once, and an
+	// already-correct label does not keep consuming the analysis queue.
+	for _, regression := range []struct {
+		name    string
+		corrupt func(*testing.T)
+	}{
+		{"analysis fingerprint mismatch", func(t *testing.T) {
+			t.Helper()
+			if err := db.Model(&meta.PhotoAnalysisState{}).
+				Where("asset_id = ? AND kind = ?", asset.ID, meta.PhotoAnalysisKindPlaceLabel).
+				Update("input_fingerprint", "gps:old-analysis").Error; err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"label fingerprint mismatch", func(t *testing.T) {
+			t.Helper()
+			if err := db.Model(&meta.PhotoPlaceLabel{}).
+				Where("asset_id = ?", asset.ID).
+				Update("input_fingerprint", "gps:old-label").Error; err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"both fingerprints match each other but not current GPS", func(t *testing.T) {
+			t.Helper()
+			outdated := placeInputFingerprint(11.5, 109.1)
+			if err := db.Model(&meta.PhotoAnalysisState{}).
+				Where("asset_id = ? AND kind = ?", asset.ID, meta.PhotoAnalysisKindPlaceLabel).
+				Update("input_fingerprint", outdated).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&meta.PhotoPlaceLabel{}).
+				Where("asset_id = ?", asset.ID).
+				Update("input_fingerprint", outdated).Error; err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"resolved legacy record has no distance", func(t *testing.T) {
+			t.Helper()
+			if err := db.Model(&meta.PhotoPlaceLabel{}).
+				Where("asset_id = ?", asset.ID).
+				Update("distance_km", nil).Error; err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"invalid negative persisted distance", func(t *testing.T) {
+			t.Helper()
+			if err := db.Model(&meta.PhotoPlaceLabel{}).
+				Where("asset_id = ?", asset.ID).
+				Update("distance_km", -3.0).Error; err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(regression.name, func(t *testing.T) {
+			current = current.Add(time.Minute)
+			regression.corrupt(t)
+			owners, err := runner.CandidateOwnerIDs(context.Background(), 10)
+			if err != nil || len(owners) != 1 || owners[0] != owner.ID {
+				t.Fatalf("stale Owner absent from queue: owners=%v err=%v", owners, err)
+			}
+			previousCalls := resolver.calls
+			processed, err := runner.RunOwnerBatch(context.Background(), owner.ID, 10)
+			if err != nil || processed != 1 || resolver.calls != previousCalls+1 {
+				t.Fatalf("stale provenance not repaired: processed=%d calls=%d err=%v",
+					processed, resolver.calls, err)
+			}
+			var newLabel meta.PhotoPlaceLabel
+			if err := db.First(&newLabel, "asset_id = ?", asset.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			var newState meta.PhotoAnalysisState
+			if err := db.First(&newState,
+				"asset_id = ? AND kind = ?", asset.ID, meta.PhotoAnalysisKindPlaceLabel).Error; err != nil {
+				t.Fatal(err)
+			}
+			fingerprint := placeInputFingerprint(latitude, longitude)
+			if newState.State != meta.PhotoAnalysisStateReady ||
+				newState.InputFingerprint != fingerprint ||
+				newLabel.InputFingerprint != fingerprint ||
+				newLabel.DistanceKM == nil || *newLabel.DistanceKM != 3.75 {
+				t.Fatalf("stale provenance not healed: state=%+v label=%+v", newState, newLabel)
+			}
+			processed, err = runner.RunOwnerBatch(context.Background(), owner.ID, 10)
+			if err != nil || processed != 0 || resolver.calls != previousCalls+1 {
+				t.Fatalf("repaired label scheduled again: processed=%d calls=%d err=%v",
+					processed, resolver.calls, err)
+			}
+		})
+	}
+	// No city can be resolved for a legitimate negative latitude in this
+	// fixture. Its empty label/distance is a durable result, NOT a legacy
+	// resolved row requiring endless attempts.
+	current = current.Add(time.Minute)
+	unresolvedLatitude := -1.2
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", asset.ID).
+		Update("latitude", unresolvedLatitude).Error; err != nil {
+		t.Fatal(err)
+	}
+	processed, err = runner.RunOwnerBatch(context.Background(), owner.ID, 10)
+	if err != nil || processed != 1 {
+		t.Fatalf("unresolved GPS should be handled once: processed=%d err=%v", processed, err)
+	}
+	if err := db.First(&label, "asset_id = ?", asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if label.Formatted != "" || label.CountryCode != "" || label.DistanceKM != nil ||
+		label.InputFingerprint != placeInputFingerprint(unresolvedLatitude, longitude) {
+		t.Fatalf("invalid unresolved GPS evidence: %+v", label)
+	}
+	processed, err = runner.RunOwnerBatch(context.Background(), owner.ID, 10)
+	if err != nil || processed != 0 {
+		t.Fatalf("unknown city must not cause retry storm: processed=%d err=%v", processed, err)
+	}
 }

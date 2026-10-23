@@ -1,0 +1,55 @@
+name: Places B1-A Provenance Reanalysis PostgreSQL
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/photointelligence/place_runner.go
+      - internal/photointelligence/place_runner_integration_test.go
+      - .github/workflows/places-b1a-reanalysis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-b1a-reanalysis-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-reanalysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify exact checkout and formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          test -z "$(gofmt -l internal/photointelligence/place_runner.go internal/photointelligence/place_runner_integration_test.go)"
+      - name: Run actual PostgreSQL 17 owner reanalysis regression
+        run: go test -race -count=1 -timeout=12m -v ./internal/photointelligence -run '^TestPlaceRunnerPersistsAndInvalidatesDerivedLabels$'
