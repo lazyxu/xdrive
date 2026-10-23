@@ -18,8 +18,10 @@ function loadTs(file, modules={}) {
   return mod.exports
 }
 const cells=loadTs('ui/shared/src/media-gallery-baidu-jsapi4-cells.ts')
+const viewport=loadTs('ui/shared/src/media-gallery-baidu-jsapi4-viewport-range.ts')
 const lib=loadTs('ui/shared/src/media-gallery-baidu-jsapi4-cell-range.ts',{
   './media-gallery-baidu-jsapi4-cells':cells,
+  './media-gallery-baidu-jsapi4-viewport-range':viewport,
 })
 const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:41}
 const p={cell_x:1,cell_y:1,asset_id:9,node_id:19,node_revision:3,
@@ -65,6 +67,39 @@ test('W2a bounded signed Owner URL has exact allowed names and no credential',()
     [s,50,0,{by:'captured',dir:'asc',anchorNodeID:0}],
   ]) assert.equal(lib.xDriveBaiduNativeCellRangeParams(bad,l,o,by),null)
 })
+test('filtered map Cell click cannot widen the accepted Owner Gallery scope',()=>{
+  const selection=lib.xDriveSelectBaiduNativeCell(page,bounds,p)
+  const filters={sort_by:'added',sort_dir:'asc',favorite:true,
+    asset_kind:'video',captured_from:'2026-01-01',
+    captured_to:'2026-12-31',time_zone:'Asia/Tokyo'}
+  const map=viewport.xDriveBaiduNativeCellsFilterParams(bounds,filters,'manual:trip')
+  const range=lib.xDriveBaiduNativeCellRangeParams(selection,48,0,{
+    by:'added',dir:'asc',filters,albumKey:'manual:trip',anchorNodeID:19,
+  })
+  assert.ok(map && range)
+  for(const [name,value] of map.entries()) assert.equal(range.get(name),value,name)
+  assert.equal(range.get('range'),'true')
+  assert.equal(range.get('photo_count'),'2')
+  assert.equal(range.get('anchor_node_id'),'19')
+  assert.equal(range.get('coordinate_space'),null)
+  for(const bad of [
+    {search:'private'}, {bbox:'116,39,117,41'},
+    {fold_duplicates:true}, {anchor_node_id:20},
+    {asset_kind:'live_photo'}, {sort_by:'captured'},
+  ]) {
+    assert.equal(lib.xDriveBaiduNativeCellRangeParams(selection,48,0,{
+      by:'added',dir:'asc',filters:{...filters,...bad},albumKey:'manual:trip',
+    }),null)
+  }
+  assert.equal(lib.xDriveBaiduNativeCellRangeParams(selection,48,0,{
+    by:'added',dir:'asc',filters,albumKey:'invalid-album',
+  }),null)
+  assert.equal(lib.xDriveBaiduNativeCellRangeParams(selection,48,0,{
+    by:'added',dir:'asc',filters,albumKey:'manual:trip',
+    anchorNodeID:0,
+  }),null)
+})
+
 test('W2a sparse Range rejects fabricated count and invalid identity',()=>{
   const first={items:[{node:{id:19}}],total_count:2,offset:0,limit:100}
   assert.equal(lib.xDriveValidBaiduNativeCellRangePage(first,100,0),true)

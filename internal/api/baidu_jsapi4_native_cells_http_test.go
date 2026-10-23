@@ -66,6 +66,7 @@ func TestBaiduNativeCellsScopedFilterParser(t *testing.T) {
 		good + "&favorite=true&favorite=false",
 		good + "&captured_to=",
 		good + "&album=secret",
+		good + "&album=manual:" + strings.Repeat("x", 600),
 		good + "&time_zone=%20UTC",
 	} {
 		if _, _, err := parseBaiduNativeMapCellsScope(bad); err == nil {

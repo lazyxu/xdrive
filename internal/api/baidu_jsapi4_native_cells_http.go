@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -74,7 +75,8 @@ func parseBaiduNativeMapCellsScope(raw string) (baiduPhotoMapBounds, string, err
 		return deny()
 	}
 	album := vals.Get("album")
-	if album != "" && !validMediaAlbumKey(album) {
+	if album != "" && (!validMediaAlbumKey(album) ||
+		utf8.RuneCountInString(album) > 512) {
 		return deny()
 	}
 	return bounds, album, nil

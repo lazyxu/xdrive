@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -43,7 +44,7 @@ func parseBaiduNativeMapCellItems(raw string) (baiduPhotoMapCellSelection, int, 
 		return baiduPhotoMapCellSelection{}, 0, 0, mediaQueryOptions{}, errBaiduJSAPIResourceDenied
 	}
 	values, err := url.ParseQuery(raw)
-	if err != nil || len(values) < 13 || len(values) > 16 {
+	if err != nil || len(values) < 13 || len(values) > 22 {
 		return fail()
 	}
 	required := []string{
@@ -51,20 +52,28 @@ func parseBaiduNativeMapCellItems(raw string) (baiduPhotoMapCellSelection, int, 
 		"asset_id", "node_id", "node_revision", "photo_count",
 		"limit", "offset", "range",
 	}
-	allowed := make(map[string]bool, len(required)+3)
+	allowed := make(map[string]bool, len(required)+9)
 	for _, name := range required {
 		allowed[name] = true
 		if len(values[name]) != 1 || strings.TrimSpace(values[name][0]) == "" {
 			return fail()
 		}
 	}
-	for _, name := range []string{"sort_by", "sort_dir", "anchor_node_id"} {
+	for _, name := range []string{
+		"sort_by", "sort_dir", "anchor_node_id",
+		"favorite", "kind", "captured_from", "captured_to", "time_zone", "album",
+	} {
 		allowed[name] = true
 	}
 	for key, value := range values {
-		if !allowed[key] || len(value) != 1 {
+		if !allowed[key] || len(value) != 1 || value[0] == "" ||
+			strings.TrimSpace(value[0]) != value[0] {
 			return fail()
 		}
+	}
+	if album := values.Get("album"); album != "" &&
+		(!validMediaAlbumKey(album) || utf8.RuneCountInString(album) > 512) {
+		return fail()
 	}
 	if values.Get("range") != "true" {
 		return fail()
@@ -182,6 +191,32 @@ func baiduPhotoMapCellSelectionCurrent(
 	return false
 }
 
+// Revalidate a selected Cell against the exact same filtered Owner/Album
+// membership that produced its Map /cells representative and count. Never
+// compare a filtered selection against the unfiltered 8x8 summary: that
+// either breaks the click or re-enters an unrelated photo collection.
+func (s *Server) baiduMapCellFilteredSummary(
+	ctx context.Context, ownerID uint64, selection baiduPhotoMapCellSelection,
+	options mediaQueryOptions, album string,
+) (baiduPhotoMapCellPage, error) {
+	if ctx == nil || ctx.Err() != nil || s == nil || s.DB == nil ||
+		ownerID == 0 || !selection.valid() {
+		return baiduPhotoMapCellPage{}, fmt.Errorf("invalid filtered map cell scope")
+	}
+	// Media Range alone may bind BaiduCell. Its inverse cannot be used to
+	// authorize the 8x8 map aggregate, which needs all bins for this Owner
+	// and optional standard Gallery filter set.
+	plain := options
+	plain.BaiduCell = nil
+	plain.BaiduViewport = nil
+	gallery, err := s.mediaItemsBaseQuery(ctx, ownerID, plain, album)
+	if err != nil {
+		return baiduPhotoMapCellPage{}, err
+	}
+	return queryBaiduPhotoMapCellsScoped(ctx, s.DB, ownerID,
+		selection.Bounds, gallery.Select("n.id"), plain)
+}
+
 // W1 exposes a map-scoped *original Gallery Range DTO*, NOT a new media byte
 // route or a second collection implementation. Every request is already
 // authenticated by authed Router and rechecks the signed Owner after SQL.
@@ -207,14 +242,25 @@ func (s *Server) listBaiduNativeMapCellItems(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "map_cell_denied"})
 		return
 	}
-	selection, limit, offset, options, err := parseBaiduNativeMapCellItems(c.Request.URL.RawQuery)
+	selection, limit, offset, parsed, err := parseBaiduNativeMapCellItems(c.Request.URL.RawQuery)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_map_cell_range"})
 		return
 	}
+	// Ordinary Gallery filters are server-validated after the strict Cell
+	// allowlist. Missing support is never interpreted as an unfiltered Wall.
+	options, valid := mediaQueryFromRequest(c)
+	if !valid {
+		return
+	}
+	options.BaiduCell = parsed.BaiduCell
+	options.SortBy, options.SortDir = parsed.SortBy, parsed.SortDir
+	options.AnchorNodeID = parsed.AnchorNodeID
+	album := c.Query("album")
 	ctx, stop := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer stop()
-	sourcePage, err := queryBaiduPhotoMapCells(ctx, s.DB, before.UserID, selection.Bounds)
+	sourcePage, err := s.baiduMapCellFilteredSummary(ctx, before.UserID,
+		selection, options, album)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cell_unavailable"})
 		return
@@ -224,7 +270,7 @@ func (s *Server) listBaiduNativeMapCellItems(c *gin.Context) {
 		return
 	}
 	// Same original Gallery Count/Anchor/VirtualCollection/Viewer paging.
-	page, err := s.queryMediaItemRange(ctx, before.UserID, options, "", limit, offset)
+	page, err := s.queryMediaItemRange(ctx, before.UserID, options, album, limit, offset)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cell_unavailable"})
 		return
@@ -235,7 +281,8 @@ func (s *Server) listBaiduNativeMapCellItems(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "map_cell_changed"})
 		return
 	}
-	freshPage, err := queryBaiduPhotoMapCells(ctx, s.DB, before.UserID, selection.Bounds)
+	freshPage, err := s.baiduMapCellFilteredSummary(ctx, before.UserID,
+		selection, options, album)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cell_unavailable"})
 		return
