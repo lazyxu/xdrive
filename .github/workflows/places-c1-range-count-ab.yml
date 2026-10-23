@@ -1,0 +1,136 @@
+name: Places C1 B1-C First Range Count Paired PostgreSQL
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/api/media.go
+      - internal/api/media_places_hierarchy_integration_test.go
+      - .github/workflows/places-c1-range-count-ab.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-c1-range-count-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  real-postgres-before-after:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify exact source and format
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          test -z "$(gofmt -l internal/api/media.go internal/api/media_places_hierarchy_integration_test.go)"
+      - name: Paired production Go SQL 10k/100k BEFORE and AFTER on one PG17 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/c1-range-ab
+          git worktree add --detach "$RUNNER_TEMP/c1-range-before" "$BASE_SHA"
+          # Alternating order: avoid treating different CI hosts as paired
+          # and reduce direction-only cache/runner warm-up bias.
+          for label in before1 after1 after2 before2; do
+            if [[ "$label" == before* ]]; then
+              source_dir="$RUNNER_TEMP/c1-range-before"
+              source_sha="$BASE_SHA"
+            else
+              source_dir="$GITHUB_WORKSPACE"
+              source_sha="$HEAD_SHA"
+            fi
+            (
+              cd "$source_dir"
+              XD_C1_PLACES_BASELINE=1 \
+                XD_C1_PLACES_SOURCE_HEAD="$source_sha" \
+                XD_C1_PLACES_OUTPUT="$GITHUB_WORKSPACE/artifacts/c1-range-ab/$label.json" \
+                go test -count=1 -run '^TestC1PlacesPostgresBaseline$' \
+                -timeout=20m -v ./internal/api 2>&1
+            ) | tee "artifacts/c1-range-ab/$label.log"
+          done
+      - name: Verify exact counts, one saved SQL scan, meaningful paired 100k gain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, statistics
+          from pathlib import Path
+          root = Path("artifacts/c1-range-ab")
+          labels = ("before1", "after1", "after2", "before2")
+          samples = {}
+          for label in labels:
+              p = root / (label + ".json")
+              assert p.is_file() and p.stat().st_size > 1000, "missing measured " + label
+              data = json.loads(p.read_text())
+              assert [int(x["owner_assets"]) for x in data] == [10000, 100000]
+              expected = os.environ["BASE_SHA"] if label.startswith("before") else os.environ["HEAD_SHA"]
+              assert all(x["ci_git_head"] == expected for x in data), label + " wrong source"
+              samples[label] = {x["owner_assets"]: {m["operation"]: m for m in x["metrics"]} for x in data}
+          names = ("range_country:JP", "range_region:JP:13", "range_city:JP:13:1850000")
+          output = {}
+          for size in (10000, 100000):
+              for name in names:
+                  for round_num in (1, 2):
+                      before = samples["before"+str(round_num)][size][name]
+                      after = samples["after"+str(round_num)][size][name]
+                      assert before["count"] == after["count"], (size, name, "count drift")
+                      assert len(before["statement_plans"]) == len(after["statement_plans"])+1, (
+                          size, name, "first Range must remove exactly one Count read")
+                      assert all(x["explain_analyze_buffers"] for x in after["statement_plans"])
+                  before_median = statistics.median(
+                      samples[label][size][name]["p50_ms"] for label in ("before1", "before2"))
+                  after_median = statistics.median(
+                      samples[label][size][name]["p50_ms"] for label in ("after1", "after2"))
+                  output[f"{size}:{name}"] = dict(before_p50_ms=before_median,
+                      after_p50_ms=after_median,
+                      improvement_pct=round(100*(before_median-after_median)/before_median, 2))
+                  if size == 100000 and name in ("range_country:JP", "range_region:JP:13"):
+                      assert after_median <= before_median*0.90, (
+                          name, "insufficient genuine 100k query improvement", output[f"{size}:{name}"])
+          (root/"comparison.json").write_text(json.dumps({
+              "source_before":os.environ["BASE_SHA"],
+              "source_after":os.environ["HEAD_SHA"],
+              "measurements":output,
+              "notes":"100k indexed PostgreSQL synthetic metadata; no real CAS, browser or Baidu"
+          }, ensure_ascii=False, indent=2)+"\n")
+          print(json.dumps(output, ensure_ascii=False, indent=2))
+          PY
+      - name: Preserve BEFORE and AFTER source-exact SQL plans and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-c1-range-count-ab-${{ github.run_id }}
+          path: artifacts/c1-range-ab/
+          if-no-files-found: warn
+          retention-days: 30
