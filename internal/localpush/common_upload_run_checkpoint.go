@@ -36,6 +36,7 @@ type CommonBatchCheckpoint struct {
 	UnsupportedFiles   int64     `json:"unsupported_files"`
 	UncertainFiles     int64     `json:"uncertain_files"`
 	ConfirmedBytes     int64     `json:"confirmed_bytes"`
+	StartedAt          time.Time `json:"started_at,omitempty"`
 	UpdatedAt          time.Time `json:"updated_at"`
 	BackupComplete     bool      `json:"backup_complete"`
 	RetirementSafe     bool      `json:"retirement_safe"`
@@ -49,7 +50,8 @@ func (p CommonBatchCheckpoint) valid(grant RootGrant, session string, revision u
 		p.RootFingerprint != grant.Fingerprint ||
 		p.SessionDigest != commonUploadSessionDigest(session) ||
 		p.BackupComplete || p.RetirementSafe || p.CurrentCASVerified ||
-		p.UpdatedAt.IsZero() || revision == 0 {
+		p.UpdatedAt.IsZero() || revision == 0 ||
+		(!p.StartedAt.IsZero() && p.StartedAt.After(p.UpdatedAt)) {
 		return false
 	}
 	if p.State != "running" && p.State != "partial" && p.State != "uncertain" &&

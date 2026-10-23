@@ -243,6 +243,7 @@ import {
   type AgentLocalBackupFirstFile,
   type AgentLocalBackupFirstFileJobStatus,
   type AgentLocalBackupCommonBatch,
+  type AgentLocalBackupCommonBatchHistoryPage,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
@@ -2453,6 +2454,15 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'device-backup-local-common-batch')
       return requireAgentClient().localBoundBackupCommonBatchStatus(sourceID)
+    }, false))
+  ipcMain.handle('agent:get-device-backup-local-common-batch-history', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBackupCommonBatchHistoryPage>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local backup history Source.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-common-batch')
+      return requireAgentClient().localBoundBackupCommonBatchHistory(sourceID)
     }, false))
   ipcMain.handle('agent:control-device-backup-local-common-batch', (_event, sourceID: unknown, action: unknown) =>
     runAgentAction<AgentLocalBackupCommonBatch>(async () => {
