@@ -822,6 +822,7 @@ export function XDriveFileExplorer({
   loadColumnPage,
   onColumnNavigate,
   onColumnOpenItem,
+  onColumnAvailabilityItemsChange,
   onManageTags,
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
@@ -929,6 +930,7 @@ export function XDriveFileExplorer({
   ) => Promise<XDriveFileExplorerColumnPage>
   onColumnNavigate?: (crumbs: XDriveFileExplorerCrumb[]) => void | Promise<void>
   onColumnOpenItem?: (item: XDriveFileExplorerItem) => void
+  onColumnAvailabilityItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
   onManageTags?: (items: XDriveFileExplorerItem[]) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
@@ -3537,10 +3539,11 @@ export function XDriveFileExplorer({
   const availabilityIndicator = (
     item: XDriveFileExplorerItem,
     overlay = false,
+    compact = false,
   ) => {
     const availability = availabilityForItem(item)
     return availability
-      ? <XDriveFileExplorerAvailabilityBadge availability={availability} overlay={overlay} />
+      ? <XDriveFileExplorerAvailabilityBadge availability={availability} overlay={overlay} compact={compact} />
       : null
   }
 
@@ -6490,6 +6493,8 @@ export function XDriveFileExplorer({
             crumbs={crumbs}
             selectedIDs={selectedIDs}
             loadPage={loadColumnPage}
+            renderItemAvailability={(item) => availabilityIndicator(item, true, true)}
+            onAvailabilityItemsChange={onColumnAvailabilityItemsChange}
             onNavigate={onColumnNavigate}
             onSelect={(item) => {
               setActiveItemID(item.id)

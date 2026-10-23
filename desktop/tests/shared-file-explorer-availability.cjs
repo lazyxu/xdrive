@@ -11,6 +11,7 @@ const sharedItemVisual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPre
 const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
+const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.tsx')
 const mountState = read('internal', 'mount', 'state.go')
 const mountStateWindows = read('internal', 'mount', 'state_windows.go')
 const availabilitySearch = read('cmd', 'xdrive-agent', 'file_availability_search.go')
@@ -57,6 +58,24 @@ test('shared FileExplorer owns canonical item icons and availability badges', ()
   assert.ok(navigationPane.includes('XDriveFileExplorerAvailabilityBadge'), 'navigation must reuse shared availability badges')
   assert.ok(navigationPane.includes('onAvailabilityItemsChange?.(navigationAvailabilityItems)'), 'loaded tree directories must join availability batching')
   assert.ok(sharedExplorer.includes('CircularProgress'), 'syncing badge should support determinate progress when available')
+})
+
+test('Column View overlays canonical compact badges and joins the Desktop batch', () => {
+  assert.ok(sharedExplorer.includes('renderItemAvailability={(item) => availabilityIndicator(item, true, true)}'))
+  assert.ok(sharedExplorer.includes('onAvailabilityItemsChange={onColumnAvailabilityItemsChange}'))
+  for (const token of [
+    'data-xdrive-file-explorer-column-icon',
+    'renderItemAvailability?.(item)',
+    'const acceptedAvailabilityItems = useMemo',
+    'if (!onAvailabilityItemsChange || !ownerCurrent) return []',
+    'onAvailabilityItemsChange?.([])',
+  ]) assert.ok(columnView.includes(token), 'Column View parity missing: ' + token)
+  for (const token of [
+    'const [columnAvailabilityItems, setColumnAvailabilityItems]',
+    'for (const item of columnAvailabilityItems)',
+    'onColumnAvailabilityItemsChange={',
+    'fileAvailabilitySupported ? handleColumnAvailabilityItemsChange : undefined',
+  ]) assert.ok(desktopExplorer.includes(token), 'Desktop column batch missing: ' + token)
 })
 
 test('Desktop batches local availability instead of issuing one request per row', () => {

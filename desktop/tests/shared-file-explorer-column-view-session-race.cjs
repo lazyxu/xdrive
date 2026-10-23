@@ -245,3 +245,73 @@ test('Web and Desktop bind shared FileExplorer interaction scope to account life
     'Web must bind FileExplorer interaction state to username navigation lifecycle',
   )
 })
+
+test('Column View status overlays use accepted per-Owner pages only', async () => {
+  const runtime = createHookRuntime()
+  const ColumnView = loadColumnView(runtime)
+  const published = []
+  const requests = []
+  let account = 'A'
+  const crumbs = [{ id: 1, name: '根目录' }, { id: 22, name: '照片' }]
+  const onAvailabilityItemsChange = (items) => published.push(
+    items.map(({ id, name, path, availability }) => ({
+      id, name, path, kind: availability?.kind,
+    })),
+  )
+  const loadPage = async (parentID, _cursor, signal) => {
+    requests.push({ account, parentID, signal })
+    if (parentID === 1) {
+      return { items: [{ id: 22, kind: 'dir', name: '照片',
+        availability: { kind: 'cloud', label: '云端' } }], nextCursor: '' }
+    }
+    if (parentID === 22) {
+      return { items: account === 'A' ? [
+        { id: 31, kind: 'file', name: '混合.jpg',
+          availability: { kind: 'mixed', label: '混合' } },
+        { id: 32, kind: 'file', name: '普通.txt' },
+      ] : [{ id: 44, kind: 'file', name: 'B-only.txt' }], nextCursor: '' }
+    }
+    throw new Error('Unexpected column page ' + parentID)
+  }
+  const renderItemAvailability = (item) => item.availability
+    ? { type: 'availability-badge', props: { kind: item.availability.kind } }
+    : null
+  const render = (lifecycleKey) => runtime.render(() => ColumnView({
+    lifecycleKey, crumbs, selectedIDs: [], loadPage,
+    onAvailabilityItemsChange, renderItemAvailability,
+    onNavigate: () => {}, onSelect: () => {}, onOpenFile: () => {},
+  }))
+  const collect = (node, predicate, results = []) => {
+    if (Array.isArray(node)) {
+      for (const child of node) collect(child, predicate, results)
+    } else if (node && typeof node === 'object') {
+      if (predicate(node)) results.push(node)
+      collect(node.props?.children, predicate, results)
+    }
+    return results
+  }
+  const slots = (view) => collect(view, (node) =>
+    node.props?.['data-xdrive-file-explorer-column-icon'] === true)
+  const badges = (view) => collect(view, (node) => node.type === 'availability-badge')
+
+  render('owner-A')
+  await flushAsync()
+  const a = render('owner-A')
+  assert.equal(slots(a).length, 3, 'folder and file kinds retain canonical icons')
+  assert.deepEqual(badges(a).map((badge) => badge.props.kind), ['cloud', 'mixed'])
+  assert.deepEqual(published.at(-1).map(({ id, path }) => [id, path]), [
+    [22, '照片'], [31, '照片/混合.jpg'], [32, '照片/普通.txt'],
+  ], 'accepted nested columns publish relative paths for the existing batch')
+  assert.equal(requests.length, 2, 'badges never initiate per-row file page requests')
+
+  account = 'B'
+  const firstBFrame = render('owner-B')
+  assert.equal(slots(firstBFrame).length, 0, 'new Owner hides stale rows before effects run')
+  assert.deepEqual(published.at(-1), [], 'old paths cannot enter the new Owner batch')
+  await flushAsync()
+  const b = render('owner-B')
+  assert.equal(slots(b).length, 2)
+  assert.equal(badges(b).length, 1)
+  assert.ok(published.at(-1).every((item) => item.id !== 31 && item.id !== 32))
+  assert.equal(requests.length, 4, 'only the new Owner authorized columns are requested')
+})
