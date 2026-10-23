@@ -28,6 +28,28 @@ func canonicalStreamSHA256(value string) bool {
 func (c *Client) UploadStreamResumableVerifiedResult(ctx context.Context,
 	init UploadInit, open UploadStreamOpen, progress UploadProgress,
 ) (UploadResult, error) {
+	return c.uploadStreamResumableVerifiedResult(ctx, init, open, progress, nil)
+}
+
+// UploadStreamResumableVerifiedBoundResult preserves the EXACT ordinary upload
+// engine, but requires an authenticated per-file Operation->Session binding
+// after StartUpload and BEFORE any chunk, CAS or finalize request. A finalized
+// generic Session is intentionally rejected; use immutable Operation readback
+// instead of projecting the current mutable Node as an original receipt.
+func (c *Client) UploadStreamResumableVerifiedBoundResult(ctx context.Context,
+	init UploadInit, open UploadStreamOpen,
+	gate func(context.Context, UploadSession) error, progress UploadProgress,
+) (UploadResult, error) {
+	if gate == nil {
+		return UploadResult{}, fmt.Errorf("verified upload requires a binding gate")
+	}
+	return c.uploadStreamResumableVerifiedResult(ctx, init, open, progress, gate)
+}
+
+func (c *Client) uploadStreamResumableVerifiedResult(ctx context.Context,
+	init UploadInit, open UploadStreamOpen, progress UploadProgress,
+	gate func(context.Context, UploadSession) error,
+) (UploadResult, error) {
 	if c == nil || ctx == nil || ctx.Err() != nil || init.Size < 0 ||
 		!canonicalStreamSHA256(init.SHA256) || init.ResumeKey == "" ||
 		len(init.ResumeKey) > 128 || strings.TrimSpace(init.ResumeKey) != init.ResumeKey ||
@@ -50,7 +72,7 @@ func (c *Client) UploadStreamResumableVerifiedResult(ctx context.Context,
 	if init.ChunkSize < 4<<20 || init.ChunkSize > 16<<20 {
 		return UploadResult{}, fmt.Errorf("invalid verified upload chunk size")
 	}
-	result, err := c.uploadStreamResult(ctx, init, open, progress)
+	result, err := c.uploadStreamResultWithSessionGate(ctx, init, open, progress, gate)
 	if err != nil {
 		return UploadResult{}, err
 	}

@@ -281,11 +281,24 @@ func (c *Client) OverwriteStreamResumableDigestResult(
 	}, open, progress)
 }
 
+// uploadStreamResult preserves ordinary upload behavior. A dedicated
+// session gate lets a trusted local Push Operation bind the SAME generic
+// UploadSession after StartUpload and BEFORE a byte or Finalize is sent.
 func (c *Client) uploadStreamResult(
 	ctx context.Context,
 	init UploadInit,
 	open UploadStreamOpen,
 	progress UploadProgress,
+) (UploadResult, error) {
+	return c.uploadStreamResultWithSessionGate(ctx, init, open, progress, nil)
+}
+
+func (c *Client) uploadStreamResultWithSessionGate(
+	ctx context.Context,
+	init UploadInit,
+	open UploadStreamOpen,
+	progress UploadProgress,
+	gate func(context.Context, UploadSession) error,
 ) (UploadResult, error) {
 	if init.Size < 0 {
 		return UploadResult{}, fmt.Errorf("upload stream size must be zero or greater")
@@ -300,6 +313,20 @@ func (c *Client) uploadStreamResult(
 	session, err := c.StartUpload(ctx, init)
 	if err != nil {
 		return UploadResult{}, err
+	}
+	if gate != nil {
+		// A generic finalized-session DTO projects the CURRENT mutable Node,
+		// not the immutable historical Push result. A bound upload must NOT
+		// infer Push success from it; reconcile by original Operation instead.
+		if session.ID == "" || session.Status != "active" {
+			return UploadResult{}, fmt.Errorf("cannot bind inactive upload session")
+		}
+		if err := gate(ctx, session); err != nil {
+			return UploadResult{}, fmt.Errorf("verified upload session binding denied: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return UploadResult{}, err
+		}
 	}
 	result := UploadResult{}
 	if session.Status == "finalized" && session.Result != nil {
