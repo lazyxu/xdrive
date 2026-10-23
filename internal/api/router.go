@@ -315,6 +315,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-jsapi/cells", s.listBaiduNativeMapCells)
 	// A3h-W1: map-cell-scoped version/consent-fenced authenticated sparse Gallery Range.
 	authed.GET("/media/places/baidu-jsapi/cell-items", s.listBaiduNativeMapCellItems)
+	// An exact BD09 viewport -> original sparse Owner Gallery Range; never a WGS84 reinterpretation.
+	authed.GET("/media/places/baidu-jsapi/viewport-items", s.listBaiduNativeMapViewportItems)
 	// A signed release is required before the authenticated Owner can mint a map Cookie.
 	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
 	authed.POST("/media/places/baidu-jsapi/child-ticket", s.baiduJSAPI4ChildTicketHTTP)

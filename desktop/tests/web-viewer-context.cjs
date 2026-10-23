@@ -422,3 +422,34 @@ test('selected neighbor preserves a mutation acknowledged while another item was
     await act(async () => release())
   } finally { await act(async () => renderer.unmount()) }
 })
+
+
+test('Viewer current-camera BD09 photos paginate only through the signed Owner viewport Range', async () => {
+  const f = fixture(100000)
+  const bounds = { coordinate_space: 'bd09ll', west: 116, south: 39, east: 117, north: 40 }
+  const expected = { sort_by: 'captured', sort_dir: 'desc' }
+  const reads = []
+  f.context.target = { kind: 'baidu-viewport', baiduViewport: bounds, query: expected }
+  f.source.listItemRange = async () => { throw Error('unscoped Gallery range is forbidden') }
+  f.source.listBaiduNativeViewportItems = async (scope, limit, offset, query, signal) => {
+    assert.deepEqual(scope, bounds)
+    assert.equal(limit, 100)
+    assert.deepEqual(query, expected)
+    assert.ok(!signal.aborted)
+    reads.push(offset)
+    return { offset, limit, total_count: 100000,
+      items: Array.from({ length: limit }, (_, i) => ({
+        node: node(offset + i + 1), metadata: {}, favorite: false,
+      })),
+    }
+  }
+  const reader = session(f.api, f.source, f.context)
+  assert.equal((await reader.candidateAt(99)).node.id, 100)
+  assert.equal((await reader.candidateAt(100)).node.id, 101)
+  assert.deepEqual(reads, [0, 100], 'Viewer must cross 100-item signed Range boundaries')
+  const unavailable = fixture(100000)
+  unavailable.context.target = f.context.target
+  unavailable.source.listItemRange = async () => { throw Error('must not be reached') }
+  await assert.rejects(session(unavailable.api, unavailable.source, unavailable.context).candidateAt(1),
+    /不支持地图视窗照片范围加载/)
+})

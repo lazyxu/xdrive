@@ -53,7 +53,9 @@ type mediaQueryOptions struct {
 	PlaceHierarchy *mediaPlaceHierarchyKey
 	Geo            *geoquery.Selection
 	// Only the signed Owner cell-media endpoint constructs this server-private selection.
-	BaiduCell      *baiduPhotoMapCellSelection
+	BaiduCell *baiduPhotoMapCellSelection
+	// A3h: only the signed Owner viewport handler can bind this BD09 selection.
+	BaiduViewport  *baiduPhotoMapBounds
 	PersonCluster  string
 	PersonIdentity string
 }

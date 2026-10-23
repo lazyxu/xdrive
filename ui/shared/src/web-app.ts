@@ -1,4 +1,4 @@
-import type { MediaGalleryQuery, MediaBaiduNativeCellSelection } from './models'
+import type { MediaGalleryQuery, MediaBaiduNativeCellSelection, MediaBaiduNativeViewportBounds } from './models'
 import { xDriveNormalizeSystemDependenciesLocation } from './system-dependencies-navigation'
 import type { XDriveSystemDependenciesLocation } from './system-dependencies-navigation'
 import type { XDriveFileExplorerGrouping } from './file-explorer-grouping'
@@ -56,9 +56,12 @@ export type XDriveWebAppGalleryTarget = {
     | 'pet'
     | 'trash'
     | 'baidu-cell'
+    | 'baidu-viewport'
   id?: string
   /** Only an Owner-verified /cells selection, never arbitrary provider GPS. */
   baiduCell?: MediaBaiduNativeCellSelection
+  /** Ephemeral BD09 camera scope from one verified Owner /cells response. */
+  baiduViewport?: MediaBaiduNativeViewportBounds
   query: MediaGalleryQuery
 }
 

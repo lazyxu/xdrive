@@ -271,6 +271,37 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	if !ids[n1.ID] || !ids[n2.ID] || ids[n3.ID] {
 		t.Fatalf("cross-cell or missing image/video: %+v", ids)
 	}
+	// Full camera view is ONE sparse original Gallery Range, not 64 client
+	// Cell requests or a full 100k media-ID list. Both primary media kinds and
+	// different cities are admitted only within the exact trusted BD09 camera.
+	viewportFirst, err := ownerServer.queryMediaItemRange(context.Background(), alice.ID,
+		mediaQueryOptions{BaiduViewport: &bounds}, "", 2, 0)
+	if err != nil || viewportFirst.TotalCount != 3 || len(viewportFirst.Items) != 2 {
+		t.Fatalf("first complete camera Range incorrect: %+v %v", viewportFirst, err)
+	}
+	viewportNext, err := ownerServer.queryMediaItemRange(context.Background(), alice.ID,
+		mediaQueryOptions{BaiduViewport: &bounds}, "", 2, 2)
+	if err != nil || viewportNext.TotalCount != 3 || len(viewportNext.Items) != 1 {
+		t.Fatalf("second complete camera Range incorrect: %+v %v", viewportNext, err)
+	}
+	cameraNodes := map[uint64]bool{}
+	for _, item := range append(viewportFirst.Items, viewportNext.Items...) {
+		cameraNodes[item.Node.ID] = true
+	}
+	if len(cameraNodes) != 3 || !cameraNodes[n1.ID] || !cameraNodes[n2.ID] ||
+		!cameraNodes[n3.ID] {
+		t.Fatalf("wrong Owner map-camera membership: %+v", cameraNodes)
+	}
+	if authorized, err := baiduMapViewportPageMembersStillAuthorized(
+		context.Background(), db, alice.ID, bounds, viewportFirst); err != nil || !authorized {
+		t.Fatalf("current camera range unexpectedly denied: %v", err)
+	}
+	peerViewport, err := ownerServer.queryMediaItemRange(context.Background(), bob.ID,
+		mediaQueryOptions{BaiduViewport: &bounds}, "", 100, 0)
+	if err != nil || peerViewport.TotalCount != 1 || len(peerViewport.Items) != 1 ||
+		peerViewport.Items[0].Node.ID == n1.ID {
+		t.Fatalf("cross-Owner BD09 camera membership leaked: %+v %v", peerViewport, err)
+	}
 	peer, err := ownerServer.queryMediaItemRange(context.Background(), bob.ID,
 		mediaQueryOptions{BaiduCell: &target}, "", 100, 0)
 	if err != nil || peer.TotalCount != 1 || peer.Items[0].Node.ID == n1.ID {
@@ -283,6 +314,10 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", a2.ID).
 		Update("revoked_at", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
+	}
+	if authorized, err := baiduMapViewportPageMembersStillAuthorized(
+		context.Background(), db, alice.ID, bounds, viewportFirst); err != nil || authorized {
+		t.Fatalf("revoked map media survived an in-flight page: allowed=%t err=%v", authorized, err)
 	}
 	if next, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, bounds); err != nil || baiduPhotoMapCellSelectionCurrent(target, next) {
 		t.Fatalf("revoked cell proof remained current: %+v %v", next, err)

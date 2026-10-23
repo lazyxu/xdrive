@@ -30,7 +30,7 @@ test('W2b2 atomically commits a real Owner first page before showing photo wall'
 })
 test('W2b2 navigation and Refresh must never turn a cell into an unscoped all-items Range', () => {
   assert.match(gallery, /const selectSection = useCallback\([^\n]*\n\s*\/\/[^\n]*\n\s*nativeCellOpenAbort\.current\?\.abort\(\)/)
-  assert.match(gallery, /const refreshGallery = \(\) => \{\n\s*if \(collectionTargetRef\.current\?\.kind === 'baidu-cell'\)/)
+  assert.match(gallery, /const refreshGallery = \(\) => \{\n\s*if \(collectionTargetRef\.current\?\.kind === 'baidu-cell' \|\|\n\s*collectionTargetRef\.current\?\.kind === 'baidu-viewport'\)/)
   assert.match(gallery, /const showCollectionFilters =\s*showPhotoCollection &&\s*!nativeCellWall/)
   assert.match(gallery, /const leaveBaiduCellWall = useCallback/)
 })
@@ -41,7 +41,7 @@ test('W2b2 aborts pending map selection on camera invalidation or leaving collec
   assert.match(isolated, /activeQuery\?\.abort\(\)/)
   assert.match(gallery, /onBaiduNativeCellInvalidated=\{\(\) => nativeCellOpenAbort\.current\?\.abort\(\)\}/)
   assert.match(gallery, /nativeCellOpenAbort\.current\?\.abort\(\)/)
-  assert.match(gallery, /if \(collectionTargetRef\.current\?\.kind === 'baidu-cell'\)/)
+  assert.match(gallery, /if \(collectionTargetRef\.current\?\.kind === 'baidu-cell' \|\|\n\s*collectionTargetRef\.current\?\.kind === 'baidu-viewport'\)/)
 })
 
 test('W2b2 Viewer pages respect the signed Owner Cell 100-item hard limit', async () => {

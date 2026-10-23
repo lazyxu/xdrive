@@ -575,6 +575,21 @@ func (s *Server) mediaItemsBaseQuery(
 		}
 		query = query.Where("n.id IN (?)", memberNodes)
 	}
+	if options.BaiduViewport != nil {
+		// The current-map photo wall shares the EXACT consent/source/revision
+		// predicate with /cells. Never send native BD09 bounds to WGS84 filters.
+		b := *options.BaiduViewport
+		if options.BaiduCell != nil || b.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL || !b.valid() {
+			return nil, fmt.Errorf("invalid Owner map viewport selection")
+		}
+		projection, ok := meta.BaiduPhotoMapProjectionForSpace(b.CoordinateSpace)
+		if !ok {
+			return nil, fmt.Errorf("invalid map viewport projection")
+		}
+		members := baiduPhotoMapOwnerEligibleQuery(ctx, s.DB, uid, b, projection).
+			Select("p.primary_node_id")
+		query = query.Where("n.id IN (?)", members)
+	}
 
 	if albumKey == "" {
 		return s.applyVerifiedMediaFolding(ctx, query, options), nil

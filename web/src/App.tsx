@@ -98,7 +98,7 @@ import PublicShareView from './PublicShare'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
-import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
+import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
@@ -388,6 +388,7 @@ function App({
     // Local derived GPS coordinates are revoked at user intent, not after
     // a possibly slow or failed remote logout acknowledgement.
     xDriveClearBaiduConversionSession()
+    xDriveClearPrivateMapBrowseSessions()
     void api.logout().finally(() => clearSession())
   }
 
@@ -622,6 +623,7 @@ function FileManager({
     // Retained session cache must never cross account/server identity, even
     // when authenticated FileManager remounts inside the same browser tab.
     xDriveClearBaiduConversionSession()
+    xDriveClearPrivateMapBrowseSessions()
   }, [baiduDiagnosticScope])
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
