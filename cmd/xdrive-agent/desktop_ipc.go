@@ -963,7 +963,7 @@ func (h *desktopIPCHandler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.ctrl.Authenticate(input.Server, input.Username, input.Password, input.MountPath); err != nil {
-		writeDesktopIPCControllerError(w, err)
+		writeDesktopIPCLoginError(w, err)
 		return
 	}
 	h.writeStatus(w)
