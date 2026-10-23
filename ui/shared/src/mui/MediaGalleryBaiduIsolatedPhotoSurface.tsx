@@ -29,6 +29,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   loadThumbnail,
   edgeToEdge = false,
   onOpenCell,
+  onOpenViewport,
   onInvalidated,
   onCamera,
   onCameraClear,
@@ -43,6 +44,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   loadThumbnail?: MediaThumbnailLoader
   edgeToEdge?: boolean
   onOpenCell: (selection: MediaBaiduNativeCellSelection) => void
+  onOpenViewport?: (bounds: Bounds) => void
   onInvalidated?: () => void
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onCameraClear?: () => void
@@ -55,14 +57,18 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
+  const openViewport = useRef(onOpenViewport)
+  const latestAcceptedViewport = useRef<Bounds | null>(null)
   const invalidated = useRef(onInvalidated)
   const cameraUpdate = useRef(onCamera)
   const cameraClear = useRef(onCameraClear)
   opened.current = onOpenCell
+  openViewport.current = onOpenViewport
   invalidated.current = onInvalidated
   cameraUpdate.current = onCamera
   cameraClear.current = onCameraClear
   const [summary,setSummary] = useState<MediaBaiduNativeCellsPage | null>(null)
+  const [acceptedViewport, setAcceptedViewport] = useState<Bounds | null>(null)
   const [accessible,setAccessible] = useState<Array<{label:string;selection:MediaBaiduNativeCellSelection}>>([])
   const [phase,setPhase] = useState<'loading'|'ready'|'unavailable'>('loading')
   // Only the trusted Gallery Parent owns photo identity and Blob URLs.
@@ -88,6 +94,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     setPhase('loading')
     setError(false)
     setSummary(null)
+    setAcceptedViewport(null)
+    latestAcceptedViewport.current = null
     setAccessible([])
     setProjected(null)
     onReady(false)
@@ -98,6 +106,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       activeQuery = null
       setAccessible([])
       setSummary(null)
+      setAcceptedViewport(null)
+      latestAcceptedViewport.current = null
       setProjected(null)
       invalidated.current?.()
     }
@@ -134,7 +144,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       onProjectedCells:positions => {
         if (!lifetime.signal.aborted) setProjected(positions)
       },
-      onViewport: bounds => { void queryCells(bounds) },
+      onViewport: bounds => { void queryCells(bounds, true) },
       onReady:() => {
         const world: Bounds = {coordinate_space:'bd09ll',west:-180,south:-85,east:180,north:85}
         // An initial viewport request must not race away the worldwide
@@ -148,7 +158,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     })
     if (!frame) { failure(); return }
 
-    const queryCells = async (bounds: Bounds): Promise<boolean> => {
+    const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
       cancel()
       frame.replaceAuthorizedCells([])
@@ -178,11 +188,18 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           selection:item.selection,
         })))
         setSummary(page)
+        // Only a live, Owner-verified SDK viewport can open the full photo
+        // wall. The bootstrapping worldwide /cells query is not a camera.
+        const accepted = liveCamera ? { ...bounds } : null
+        latestAcceptedViewport.current = accepted
+        setAcceptedViewport(accepted)
         return true
       } catch {
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation) {
           frame.replaceAuthorizedCells([])
           setSummary(null)
+          latestAcceptedViewport.current = null
+          setAcceptedViewport(null)
           setAccessible([])
         }
         return false
@@ -333,11 +350,30 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ) : null}
       </Box>
       {summary ? (
-        <Typography variant="caption" color="text.secondary">
-          {summary.total_count > 0
-            ? `当前地图可查看 ${summary.total_count.toLocaleString('zh-CN')} 张照片`
-            : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
-        </Typography>
+        <Box sx={{ px:edgeToEdge ? 1 : 0, display:'flex',alignItems:'center',
+          justifyContent:'space-between',gap:1,flexWrap:'wrap',mt:0.75 }}>
+          <Typography variant="caption" color="text.secondary">
+            {summary.total_count > 0
+              ? `当前地图可查看 ${summary.total_count.toLocaleString('zh-CN')} 张照片`
+              : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
+          </Typography>
+          {acceptedViewport && phase === 'ready' && openViewport.current && summary.total_count > 0 ? (
+            <Button size="small" variant="outlined"
+              data-xdrive-places-full-camera-wall
+              sx={{minHeight:44,textTransform:'none'}}
+              onClick={() => {
+                const accepted = latestAcceptedViewport.current
+                if (accepted && accepted.west===acceptedViewport.west &&
+                    accepted.east===acceptedViewport.east &&
+                    accepted.south===acceptedViewport.south &&
+                    accepted.north===acceptedViewport.north) {
+                  openViewport.current?.({...accepted})
+                }
+              }}>
+              查看此地图的全部照片
+            </Button>
+          ) : null}
+        </Box>
       ):null}
       {phase==='unavailable' ? (
         <Typography role="alert" variant="caption" color="text.secondary">

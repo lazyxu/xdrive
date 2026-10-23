@@ -62,6 +62,15 @@ async function loadGalleryRange(
     case 'suggested-person':
       if (!target.id || !source.listSuggestedPersonItemRange) throw new Error('当前客户端不支持人物建议范围加载。')
       return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+    case 'baidu-viewport': {
+      if (!target.baiduViewport || !source.listBaiduNativeViewportItems)
+        throw new Error('当前客户端不支持地图视窗照片范围加载。')
+      // Viewer pages must retain EXACTLY the current authenticated BD09 scope.
+      // Falling back to /media/items here would silently reveal other photos.
+      return source.listBaiduNativeViewportItems(
+        target.baiduViewport, limit, offset, target.query, signal,
+      )
+    }
     case 'baidu-cell': {
       if (!target.baiduCell || !source.listBaiduNativeCellItems)
         throw new Error('当前客户端不支持地图区域照片范围加载。')
@@ -187,7 +196,8 @@ export function createXDriveWebViewerSession(
   // The signed Owner-only BD09 /cell-items API limits each page to <=100.
   // The Viewer cache must use the same offset grid, including boundaries:
   // page index 100 is on offset 100, not a rejected offset 0/128 request.
-  const pageSize = context?.kind === 'gallery' && context.target.kind === 'baidu-cell'
+  const pageSize = context?.kind === 'gallery' &&
+    (context.target.kind === 'baidu-cell' || context.target.kind === 'baidu-viewport')
     ? 100 : 128
   const nodeLimit = 32
   // One cancellation scope per Viewer route/index: the Owner Cell Range

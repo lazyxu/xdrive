@@ -54,6 +54,7 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
   onOpenBaiduNativeCell,
+  onOpenBaiduNativeViewport,
   selectedNativeCell,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
@@ -89,6 +90,7 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   onOpenBaiduNativeCell?: (selection: import('../models').MediaBaiduNativeCellSelection) => void
+  onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds) => void
   selectedNativeCell?: import('../models').MediaBaiduNativeCellSelection
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
@@ -489,6 +491,7 @@ export function XDriveMediaGalleryPlacesMap({
             loadThumbnail={loadPhotoCoverThumbnail}
             edgeToEdge={compact}
             onOpenCell={onOpenBaiduNativeCell}
+            onOpenViewport={onOpenBaiduNativeViewport}
             onInvalidated={onBaiduNativeCellInvalidated}
             onCamera={onNativeCameraChange}
             onCameraClear={clearNativeReturnCamera}

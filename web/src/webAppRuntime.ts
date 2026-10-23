@@ -11,6 +11,28 @@ import {
 
 const WEB_APP_SESSION_PREFIX = 'xdrive.web_app.session.v1:'
 
+/** Provider-derived map coordinates are temporary Owner context, not durable
+ * browser state. A reload invalidates this privileged Viewer selection. */
+const PRIVATE_MAP_SESSION_TTL_MS = 10 * 60 * 1000
+const MAX_PRIVATE_MAP_SESSIONS = 16
+const privateMapSessions = new Map<string, {
+  context: XDriveWebAppBrowseContext; seen: number
+}>()
+function isPrivateMapContext(value: XDriveWebAppBrowseContext): boolean {
+  return value?.kind === 'gallery' &&
+    (value.target?.kind === 'baidu-cell' || value.target?.kind === 'baidu-viewport')
+}
+/** Immediately drop sensitive coordinates on logout, account switch or unmount. */
+export function xDriveClearPrivateMapBrowseSessions(): void {
+  privateMapSessions.clear()
+}
+
+function sweepPrivateMapSessions(now = Date.now()) {
+  for (const [key, item] of privateMapSessions)
+    if (item.seen > now || now - item.seen >= PRIVATE_MAP_SESSION_TTL_MS)
+      privateMapSessions.delete(key)
+}
+
 type XDriveWebAppHistoryState = {
   xdriveWebApp?: true
   viewerReturn?: true
@@ -57,19 +79,48 @@ export function xDriveCreateWebAppBrowseSession(context: XDriveWebAppBrowseConte
 }
 
 export function xDriveWriteWebAppBrowseSession(id: string, context: XDriveWebAppBrowseContext) {
-  window.sessionStorage.setItem(
-    sessionKey(id),
-    JSON.stringify({ version: 1, context }),
-  )
+  if (isPrivateMapContext(context)) {
+    const now = Date.now()
+    sweepPrivateMapSessions(now)
+    privateMapSessions.delete(id)
+    privateMapSessions.set(id, {
+      context: JSON.parse(JSON.stringify(context)) as XDriveWebAppBrowseContext,
+      seen: now,
+    })
+    while (privateMapSessions.size > MAX_PRIVATE_MAP_SESSIONS) {
+      const first = privateMapSessions.keys().next().value
+      if (first === undefined) break
+      privateMapSessions.delete(first)
+    }
+    // Also scrub any coordinate context left by a previously installed client.
+    try { window.sessionStorage.removeItem(sessionKey(id)) } catch {}
+    return
+  }
+  privateMapSessions.delete(id)
+  window.sessionStorage.setItem(sessionKey(id),
+    JSON.stringify({ version: 1, context }))
 }
 
 export function xDriveReadWebAppBrowseSession(id?: string) {
   if (!id) return null
+  sweepPrivateMapSessions()
+  const cached = privateMapSessions.get(id)
+  if (cached) {
+    privateMapSessions.delete(id)
+    privateMapSessions.set(id, cached) // LRU, but not a TTL extension
+    return cached.context
+  }
   try {
     const raw = window.sessionStorage.getItem(sessionKey(id))
     if (!raw) return null
     const value = JSON.parse(raw) as { version?: number; context?: XDriveWebAppBrowseContext }
-    return value.version === 1 && value.context ? value.context : null
+    if (value.version !== 1 || !value.context) return null
+    if (isPrivateMapContext(value.context)) {
+      // Old builds used to persist these temporary map selectors. Fail closed.
+      try { window.sessionStorage.removeItem(sessionKey(id)) } catch {}
+      return null
+    }
+    return value.context
   } catch {
     return null
   }

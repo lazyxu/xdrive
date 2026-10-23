@@ -101,7 +101,7 @@ test('W3b2b source reauthorizes signed Cell and Node before priming the wall', (
   assert.ok(original.indexOf('source.listBaiduNativeCellItems(') <
     original.indexOf('virtualCollection.primePage('))
   assert.match(gallery, /xDriveMarkBaiduCellViewerReturn\(preferenceScope, item\.node\.id, activeIndex\)/)
-  assert.match(gallery, /const previous = xDriveTakeBaiduCellViewerReturn\(preferenceScope\)/)
+  assert.match(gallery, /const previous = source\.listBaiduNativeCellItems\s*\?\s*xDriveTakeBaiduCellViewerReturn\(preferenceScope\) : undefined/)
   assert.match(gallery, /openBaiduNativeCell\(previous\.selection, previous\)/)
   assert.match(gallery, /xDriveClearBaiduCellViewerReturn\(preferenceScope\)/)
   const server = fs.readFileSync(path.join(root, 'internal/api/baidu_photo_map_cell_range.go'), 'utf8')

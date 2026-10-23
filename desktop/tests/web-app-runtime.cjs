@@ -96,7 +96,7 @@ test('Web FileExplorer launches Web programs while Desktop ordinary Open uses th
 
 test('Preview and media viewers preserve collection navigation without materializing huge lists', () => {
   assert.ok(viewerContext.includes('xDriveFindWebViewerNeighbor'))
-  assert.ok(viewerContext.includes("const pageSize = context?.kind === 'gallery' && context.target.kind === 'baidu-cell'"))
+  assert.match(viewerContext, /const pageSize = context\?\.kind === 'gallery' &&\s*\(context\.target\.kind === 'baidu-cell' \|\| context\.target\.kind === 'baidu-viewport'\)/)
   assert.ok(viewerContext.includes('? 100 : 128'), 'signed Cell pages use 100; ordinary Viewer stays 128')
   assert.ok(viewerContext.includes('api.listRange('))
   assert.ok(viewerContext.includes('api.searchRange('))
@@ -149,4 +149,54 @@ test('Web App Runtime design document records the navigation and platform bounda
   ]) {
     assert.ok(docs.includes(token), 'Web App Runtime documentation missing: ' + token)
   }
+})
+
+test('temporary BD09 Viewer context is memory-only, not stored in browser session', () => {
+  const ts = require('typescript')
+  const built = ts.transpileModule(runtime, {
+    fileName:'web/src/webAppRuntime.ts',reportDiagnostics:true,
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  })
+  assert.deepEqual((built.diagnostics||[]).filter(x=>x.category===ts.DiagnosticCategory.Error),[])
+  const mod={exports:{}}
+  new Function('module','exports','require',built.outputText)(mod,mod.exports,name=>{
+    if(name==='react')return require('react')
+    if(name==='../../ui/shared/src')return {
+      xDriveParseWebAppHash:()=>null,xDriveWebAppHash:()=>'',xDriveWebAppViewer:()=>false,
+    }
+    throw Error('unexpected dependency '+name)
+  })
+  const stored=new Map(),original=global.window
+  global.window={sessionStorage:{
+    getItem:k=>stored.get(k)??null,setItem:(k,v)=>stored.set(k,v),
+    removeItem:k=>stored.delete(k),
+  }}
+  try {
+    const {xDriveWriteWebAppBrowseSession:write,xDriveReadWebAppBrowseSession:read}=mod.exports
+    const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:40}
+    const viewport={kind:'gallery',target:{kind:'baidu-viewport',
+      baiduViewport:bounds,query:{sort_by:'captured'}},
+      totalCount:100000,activeIndex:5}
+    const cell={kind:'gallery',target:{kind:'baidu-cell',
+      baiduCell:{bounds,cell_x:0,cell_y:0,asset_id:10,node_id:11,
+        node_revision:3,photo_count:40},query:{}},totalCount:40,activeIndex:5}
+    write('viewport',viewport);write('cell',cell)
+    assert.equal(stored.size,0)
+    assert.equal(read('viewport').target.baiduViewport.west,116)
+    assert.equal(read('cell').target.baiduCell.node_id,11)
+    const ordinary={kind:'gallery',target:{kind:'all',query:{}},totalCount:20,activeIndex:3}
+    write('ordinary',ordinary)
+    assert.ok([...stored.keys()].some(key=>key.endsWith('ordinary')))
+    assert.equal(read('ordinary').target.kind,'all')
+    // Account logout revokes all private map handoffs immediately,
+    // without deleting ordinary library navigation.
+    mod.exports.xDriveClearPrivateMapBrowseSessions()
+    assert.equal(read('viewport'),null)
+    assert.equal(read('cell'),null)
+    assert.equal(read('ordinary').target.kind,'all')
+    const legacy='xdrive.web_app.session.v1:legacy'
+    stored.set(legacy,JSON.stringify({version:1,context:viewport}))
+    assert.equal(read('legacy'),null)
+    assert.equal(stored.has(legacy),false)
+  } finally { global.window=original }
 })

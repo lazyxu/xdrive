@@ -1,3 +1,4 @@
+import { xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
   xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
@@ -1713,6 +1714,26 @@ export class XDriveApi {
     ).then(page => {
       if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page,bounds))
         throw new Error('Invalid BD09 cell response')
+      return page
+    })
+  }
+
+
+  /** Complete current-camera Media Range. BD09 only; signed Owner/Consent gate
+   * lives on the Server. Never use an SDK URL or an unscoped Gallery query. */
+  mediaBaiduNativeViewportItems(
+    bounds: MediaBaiduNativeViewportBounds,
+    limit: number, offset: number, query: MediaGalleryQuery, signal: AbortSignal,
+  ) {
+    const params = xDriveBaiduNativeViewportRangeParams(bounds, limit, offset, query)
+    if (!params || !signal || signal.aborted)
+      return Promise.reject(new Error('Invalid or cancelled BD09 map Range'))
+    return this.request<MediaItemRange>(
+      '/api/v1/media/places/baidu-jsapi/viewport-items?' + params.toString(),
+      { signal, cache: 'no-store' },
+    ).then(page => {
+      if (signal.aborted || !xDriveValidBaiduNativeViewportRangePage(page, limit, offset))
+        throw new Error('Invalid or cancelled BD09 map Range')
       return page
     })
   }

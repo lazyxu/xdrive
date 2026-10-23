@@ -10,7 +10,10 @@ import type { MediaGalleryQuery } from './models'
  * still invalidate selected items before any file mutation is issued.
  */
 export function xDriveMediaGallerySelectionScopeKey(
-  target: { kind: string; id?: string; query: MediaGalleryQuery; requestID?: number } | null,
+  target: {
+    kind: string; id?: string; query: MediaGalleryQuery; requestID?: number;
+    baiduViewport?: unknown; baiduCell?: unknown;
+  } | null,
   accountScope: string,
 ): string {
   if (!target) return JSON.stringify(['media-gallery:selection:idle', accountScope])
@@ -23,5 +26,10 @@ export function xDriveMediaGallerySelectionScopeKey(
       key !== 'anchor_node_id' &&
       key !== 'initial_position')
     .sort(([left], [right]) => left.localeCompare(right))
-  return JSON.stringify(['media-gallery:selection', accountScope, target.kind, target.id ?? '', logicalQuery])
+  // A different map camera/Cell must never inherit the previous collection's
+  // selected media IDs, even if its sort and ordinary query are unchanged.
+  const location = target.kind === 'baidu-viewport' ? target.baiduViewport
+    : target.kind === 'baidu-cell' ? target.baiduCell : undefined
+  return JSON.stringify(['media-gallery:selection', accountScope, target.kind,
+    target.id ?? '', logicalQuery, ...(location ? [location] : [])])
 }
