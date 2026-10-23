@@ -1,0 +1,52 @@
+name: PWA CR03f Genuine Linux Kernel Block EIO Capability
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-cr03f-kernel-eio-capability:
+    if: github.head_ref == 'test/pwa-cr03f-kernel-eio-capability-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      XD_PWA_CR03F_CAPABILITY: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source negative contract and native device tools
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          bash -n scripts/pwa-cr03f-kernel-eio-capability.sh
+          node --test desktop/tests/pwa-cr03f-kernel-eio-capability-contract.cjs
+          sudo apt-get update -qq
+          sudo apt-get install -y dmsetup util-linux
+      - name: Genuine kernel dm-error on a temporary loopback mapping
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_PWA_CR03F_OUT: ${{ github.workspace }}/desktop/pwa-cr03f-capability-results/summary.json
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          bash scripts/pwa-cr03f-kernel-eio-capability.sh
+          node - <<'NODE'
+          const x=require('./desktop/pwa-cr03f-capability-results/summary.json')
+          const ok=x.sha===process.env.XD_PR_HEAD && x.kernelDirectReadBefore &&
+            x.kernelBlockEIO && x.mappingRestored && x.kernelDirectReadAfter &&
+            x.privateDeviceOnly && !x.chromiumIndexedDBTested && !x.physicalIOS &&
+            !x.productionModified
+          if(!ok)process.exit(1)
+          console.log('PWA_CR03F_TRUE_LINUX_KERNEL_BLOCK_EIO_PROVEN')
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr03f-sanitized-native-block-eio-capability
+          path: desktop/pwa-cr03f-capability-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
