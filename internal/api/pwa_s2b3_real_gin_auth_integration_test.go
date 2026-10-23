@@ -49,6 +49,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// CR-02b3 isolated real Go 429/503 faults; never enabled in production.
 	transientMode := os.Getenv("XD_PWA_CR02B3_TRANSIENT") == "1"
+	// CR04 is an opt-in, isolated real Gin/PWA concurrency fixture only.
+	cr04Mode := os.Getenv("XD_PWA_CR04_RANGE_REVOKE") == "1"
 	nativeDownloadMode := os.Getenv("XD_PWA_S4C3_NATIVE_DOWNLOAD") == "1"
 	nativeCancelMode := os.Getenv("XD_PWA_S4C3_CANCEL") == "1"
 	wakeMode := os.Getenv("XD_PWA_S4D2_WAKE") == "1"
@@ -146,7 +148,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	// CR-02b1 only: persist a genuine installation identity through the
 	// production PostgreSQL meta helper before building the real Gin Router.
 	// Keep legacy S2B3 fixture behavior unchanged without this explicit switch.
-	if os.Getenv("XD_PWA_CR02B1_REAL_ACL") == "1" || transientMode {
+	if os.Getenv("XD_PWA_CR02B1_REAL_ACL") == "1" || transientMode || cr04Mode {
 		if err := db.AutoMigrate(&meta.PWAOfflineInstance{}); err != nil {
 			t.Fatal(err)
 		}
@@ -306,6 +308,12 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	var cr02b3Node429 atomic.Bool
 	var cr02b3Range503 atomic.Bool
 	var cr01b4Probe pwaCR01b4ReadProbe
+	// Real authenticated one-row Range is paced only after CR04 explicitly arms
+	// the exact Owner-scoped directory. Other API requests are unchanged.
+	var cr04Probe pwaCR01b4ReadProbe
+	var cr04Armed atomic.Bool
+	var cr04Node atomic.Int64
+	var cr04SWB atomic.Bool
 	var nativeFirstDownloadPaced atomic.Bool
 	done := make(chan struct{})
 	var once sync.Once
@@ -344,6 +352,78 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusNoContent)
 			return
+		case cr04Mode && request.URL.Path == "/__test/pwa-cr04/arm":
+			if request.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var nodeID int64
+			if n, err := fmt.Sscan(request.URL.Query().Get("node_id"), &nodeID); err != nil || n != 1 || nodeID <= 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			var checked meta.Node
+			if err := db.Where("owner_id = ? AND id = ? AND type = ? AND deleted_at IS NULL",
+				owner.ID, nodeID, "dir").First(&checked).Error; err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if cr04Armed.Load() || cr04Probe.started.Load() {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			cr04Node.Store(nodeID)
+			cr04Armed.Store(true)
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case cr04Mode && request.URL.Path == "/__test/pwa-cr04/release-b":
+			if request.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !cr04Probe.started.Load() || cr04Probe.handlerExited.Load() {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			cr04SWB.Store(true)
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case cr04Mode && request.URL.Path == "/__test/pwa-cr04/proof":
+			if request.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]bool{
+				"read_started":           cr04Probe.started.Load(),
+				"read_context_cancelled": cr04Probe.cancelled.Load(),
+				"read_handler_exited":    cr04Probe.handlerExited.Load(),
+				"sw_b_published":         cr04SWB.Load(),
+			})
+			return
+		case cr04Mode && cr04SWB.Load() && request.URL.Path == "/sw.js":
+			// Only in an explicitly gated test fixture: exact built production SW
+			// plus an inert release marker. Do not mock its install/fetch/activate.
+			if request.Method != http.MethodGet && request.Method != http.MethodHead {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			original, err := os.ReadFile(filepath.Join(dist, "sw.js"))
+			if err != nil {
+				http.NotFound(w, request)
+				return
+			}
+			publicB := append(original, []byte("\n// CR04 isolated real public SW release B\n")...)
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			if request.Method == http.MethodGet {
+				_, _ = w.Write(publicB)
+			}
+			return
 		case cancelDurableMode && request.URL.Path == "/__test/pwa-cr01b4/proof":
 			if request.Method != http.MethodGet {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -371,6 +451,14 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			once.Do(func() { close(done) })
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasPrefix(request.URL.Path, "/api/"):
+			if cr04Mode && request.Method == http.MethodGet &&
+				request.URL.Path == fmt.Sprintf("/api/v1/nodes/%d/children", cr04Node.Load()) &&
+				cr04Armed.CompareAndSwap(true, false) {
+				writer := &pwaCR01b4PacedWriter{ResponseWriter: w, request: request, probe: &cr04Probe}
+				router.ServeHTTP(writer, request) // unchanged production Gin + Owner ACL
+				cr04Probe.handlerExited.Store(true)
+				return
+			}
 			// CR01b4: the real authenticated Gin Handler starts its normal
 			// bounded read, writes genuine Go JSON, and pauses ONLY at a test-
 			// controlled ResponseWriter. Browser abort must propagate to the
@@ -510,6 +598,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		ready["pwa_s4d2_wake"] = true
 		ready["wake_task_id"] = "sync-run:" + wakeFixture.ownerRunID
 	}
+	if cr04Mode {
+		ready["pwa_cr04_range_revoke"] = true
+	}
 	if cancelDurableMode {
 		ready["pwa_cr01b4_cancel_durable"] = true
 	}
@@ -565,6 +656,21 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		}
 		if durableMode {
 			durableFixture.verify(t, srv, db, router, ownerToken, foreignToken)
+		}
+		if cr04Mode && (!cr04Probe.started.Load() || !cr04Probe.cancelled.Load() ||
+			!cr04Probe.handlerExited.Load() || !cr04SWB.Load()) {
+			t.Fatal("CR04 authentic paced Range, cancellation, exit or SW release B missing")
+		}
+		if cr04Mode {
+			var revoked meta.Node
+			if err := db.Unscoped().Where("owner_id = ? AND id = ?", owner.ID, cr04Node.Load()).First(&revoked).Error; err != nil {
+				t.Fatal("CR04 real revoked Owner Node missing from durable PostgreSQL")
+			}
+			if revoked.DeletedAt == nil {
+				t.Fatal("CR04 in-flight Go response never overlapped a genuine SQL soft deletion")
+			}
+			request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/nodes/%d", cr04Node.Load()), ownerToken, nil, http.StatusNotFound)
 		}
 		if cancelDurableMode && (!cr01b4Probe.started.Load() ||
 			!cr01b4Probe.cancelled.Load() || !cr01b4Probe.handlerExited.Load()) {
