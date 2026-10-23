@@ -107,14 +107,18 @@
     if (!map || !sdk || !active || disposed) return
     for (const cell of cells) {
       try {
-        const label = new sdk.Label(cell.count > 1 ? '▣ ' + cell.count.toLocaleString('zh-CN') : '▣', {
+        const label = new sdk.Label(cell.count > 1
+          ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {
           position: new sdk.Point(cell.longitude,cell.latitude),
+          // Native offset centers the fallback on the trusted Parent's SDK point.
+          ...(typeof sdk.Size === 'function' ? {offset:new sdk.Size(-28,-28)} : {}),
         })
-        label.setStyle({color:'#fff',backgroundColor:'#1677e9',
-          borderColor:'rgba(255,255,255,.96)',borderWidth:'3px',
-          padding:cell.count>1?'9px 12px':'9px 11px',borderRadius:'24px',
-          boxShadow:'0 3px 12px rgba(0,0,0,.24)',
-          cursor:'pointer',fontWeight:'600',fontSize:'14px'})
+        label.setStyle({color:'#334155',backgroundColor:'#ffffff',
+          borderColor:'#ffffff',borderWidth:'2px',
+          padding:'9px 11px',borderRadius:'12px',
+          boxShadow:'0 3px 12px rgba(15,23,42,.20)',
+          cursor:'pointer',fontWeight:'700',fontSize:'12px',
+          whiteSpace:'nowrap'})
         const key = cell.key
         const click = () => { if (!disposed && active && allowedKeys.has(key)) send('activate-cell',{key}) }
         label.addEventListener('click',click)

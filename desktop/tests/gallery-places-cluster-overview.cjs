@@ -12,7 +12,9 @@ function mountChild() {
   const parent={postMessage(message,origin){sent.push({message,origin})}}
   const fakeSDK={
     Point:function Point(lng,lat){this.lng=lng;this.lat=lat},
-    Label:function Label(label){this.label=label;this.setStyle=()=>{}
+    Size:function Size(x,y){this.x=x;this.y=y},
+    Label:function Label(label,options){this.label=label;this.options=options
+      this.setStyle=style=>{this.style=style}
       this.addEventListener=(event,callback)=>{if(event==='click')this.click=callback}
       this.removeEventListener=()=>{}},
     Map:function Map(){
@@ -75,7 +77,12 @@ test('Places overview fits all approved world clusters once, rather than the fir
   assert.equal(screenProjections.at(-1).message.points.length,2)
   assert.deepEqual(Object.keys(screenProjections.at(-1).message.points[0]).sort(),
     ['key','x','y'])
-  assert.match(f.overlays[0].label,/15/)
+  assert.match(f.overlays[0].label,/15张/)
+  assert.equal(f.overlays[0].style.backgroundColor,'#ffffff')
+  assert.equal(f.overlays[0].style.color,'#334155')
+  assert.equal(f.overlays[0].style.borderRadius,'12px')
+  assert.equal(f.overlays[0].options.offset.x,-28)
+  assert.equal(f.overlays[0].options.offset.y,-28)
   f.overlays[0].click()
   const selected=f.sent.filter(x=>x.message.kind==='activate-cell')
   assert.equal(selected.length,1)

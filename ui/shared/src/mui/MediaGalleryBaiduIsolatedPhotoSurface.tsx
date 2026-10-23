@@ -244,19 +244,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 sx={{position:'absolute',
                   left:`${pin.x/projected.width*100}%`,
                   top:`${pin.y/projected.height*100}%`,
-                  transform:'translate(-50%,-50%)',width:58,height:58,p:0,
-                  border:'3px solid white',borderRadius:1.5,overflow:'visible',
+                  transform:'translate(-50%,-50%)',width:60,height:60,p:0,
+                  border:'2px solid white',borderRadius:2,overflow:'visible',
                   cursor:'pointer',pointerEvents:'auto',
-                  bgcolor:'background.paper',boxShadow:'0 4px 14px rgba(0,0,0,.25)',
+                  bgcolor:'background.paper',boxShadow:'0 3px 12px rgba(15,23,42,.28)',
                   isolation:'isolate',
                   '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',
                     outlineOffset:3}}}>
-                {pin.count > 1 ? (
-                  <Box component="span" aria-hidden="true" sx={{position:'absolute',
-                    inset:0,transform:'translate(4px,3px) rotate(9deg)',
-                    borderRadius:1.5,bgcolor:'background.paper',
-                    border:'2px solid white',boxShadow:2,zIndex:-1}}/>
-                ) : null}
+
                 <Box sx={{width:'100%',height:'100%',borderRadius:1,overflow:'hidden',
                   bgcolor:'action.hover'}}>
                   {loadThumbnail ? (
@@ -270,14 +265,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                       </Box>}/>
                   ) : null}
                 </Box>
-                {pin.count > 1 ? <Box component="span"
-                  sx={{position:'absolute',top:-9,right:-11,minWidth:25,height:23,
-                    px:0.6,display:'grid',placeItems:'center',borderRadius:3,
-                    bgcolor:'primary.main',color:'primary.contrastText',
-                    border:'2px solid white',boxShadow:1,
-                    fontSize:11,fontWeight:800,lineHeight:1}}>
-                  {pin.count.toLocaleString('zh-CN')}
-                </Box> : null}
+                <Box component="span"
+                  sx={{position:'absolute',bottom:-6,right:-6,minWidth:27,
+                    maxWidth:100,px:0.75,display:'grid',placeItems:'center',
+                    borderRadius:'999px',bgcolor:'rgba(15,23,42,.94)',
+                    color:'#fff',boxShadow:1,fontSize:11,fontWeight:700,
+                    lineHeight:'21px',whiteSpace:'nowrap',overflow:'hidden',
+                    textOverflow:'ellipsis'}}>
+                  {pin.count.toLocaleString('zh-CN')}张
+                </Box>
               </Box>
             ))}
           </Box>
@@ -286,9 +282,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       {summary ? (
         <Typography variant="caption" color="text.secondary">
           {summary.total_count > 0
-            ? `当前授权地图区域 ${summary.total_count.toLocaleString('zh-CN')} 张，`+
-              `${summary.cells.length} 个聚集标记；点击后由图库重新验证权限。`
-            : '当前没有获准在百度地图中显示的照片；照片具有 GPS 并不代表已授予地图使用许可。可在照片详情中授权后重新打开地点。'}
+            ? `当前地图可查看 ${summary.total_count.toLocaleString('zh-CN')} 张照片`
+            : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
         </Typography>
       ):null}
       {phase==='unavailable' ? (

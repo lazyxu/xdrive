@@ -7948,9 +7948,6 @@ export function XDriveMediaGallery({
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75}
               alignItems={{ xs: 'flex-start', sm: 'baseline' }}>
               <Typography variant="subtitle1" fontWeight={700}>地点</Typography>
-              <Typography variant="caption" color="text.secondary">
-                使用百度 JSAPI 动态地图；当前账户有效 GPS 地点由 SDK 聚合，点击逐级放大直至打开照片墙
-              </Typography>
             </Stack>
           )}
 

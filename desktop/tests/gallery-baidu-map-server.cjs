@@ -32,7 +32,9 @@ test('Baidu map is a server-only bounded PNG source using WGS84 without exposing
 test('Gallery Places uses only Baidu maps and never renders an offline substitute', () => {
   assert.ok(places.includes('data-xdrive-gallery-places-map'))
   assert.ok(places.includes('<XDriveMediaGalleryBaiduStaticMap'))
-  assert.ok(places.includes('仅使用百度地图 Server API'))
+  // Assert actual Baidu-only runtime paths, not removed technical UI copy.
+  assert.ok(places.includes('<XDriveMediaGalleryBaiduIsolatedPhotoSurface'))
+  assert.ok(places.includes('<XDriveMediaGalleryBaiduPrototypeMap'))
   assert.ok(places.includes('选择地图地点'))
   assert.ok(gallery.includes('getBaiduMapProvider={source.getBaiduMapProvider}'))
   assert.ok(web.includes('loadBaiduStaticMap:'))

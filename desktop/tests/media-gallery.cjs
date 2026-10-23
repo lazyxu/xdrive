@@ -558,13 +558,13 @@ test('Gallery Places renders only Baidu Server map with no offline fallback', ()
     'placesExpandedRef.current && source.listPlacesPage',
     'places.map((place) => (',
     '地点列表',
-    '使用百度 JSAPI 动态地图',
+    'listPlacesMapOverview={listPlacesMapOverview}',
   ]) {
     assert.ok(sharedGalleryMain.includes(token), `Gallery map wiring missing: ${token}`)
   }
   for (const token of [
     'data-xdrive-gallery-places-map',
-    '底图由百度 JSAPI 绘制',
+    '缩放地图浏览照片，点击标记查看照片墙。',
     '<XDriveMediaGalleryBaiduPrototypeMap',
     'getBaiduMapProvider',
     'loadBaiduStaticMap',
@@ -1003,7 +1003,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /face_count: number/)
   assert.match(sharedModels, /attribution\?: string/)
   assert.match(sharedModels, /attribution_url\?: string/)
-  assert.match(sharedGallery, /使用百度 JSAPI 动态地图/)
+  assert.match(sharedGallery, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
   assert.match(sharedGallery, /待确认建议/)
   assert.match(sharedGallery, /本地人脸聚类快照；确认后成为长期人物/)
   assert.match(sharedGallery, /暂不处理/)

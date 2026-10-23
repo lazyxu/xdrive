@@ -360,22 +360,19 @@ export function XDriveMediaGalleryPlacesMap({
         sx={{ display: compact ? 'none' : undefined, px: 1.5, pt: 1.5, pb: 1 }}
       >
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
           <Typography variant="caption" color="text.secondary">
-            {prototypeMap
-              ? '当前账户全部有效 GPS 地点直接聚集，无需逐张授权；底图由百度 JSAPI 绘制。'
-              : '聚集点代表已授权的定位照片，缩放展开并点击进入照片墙；仅使用百度地图 Server API。'}
+            缩放地图浏览照片，点击标记查看照片墙。
           </Typography>
         </Box>
-        <Chip size="small" label={totalCount === null || totalCount === undefined
+        {!prototypeMap && !hasIsolatedChildPorts ? <Chip size="small" label={totalCount === null || totalCount === undefined
           ? `本页 ${places.length.toLocaleString('zh-CN')} 个地点`
-          : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} />
+          : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} /> : null}
       </Stack>
       <Box component="details" data-xdrive-places-map-options
         sx={{ px: 1.5, pb: 1 }}>
         <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
-          typography: 'caption', minHeight: 36 }}>
-          地点筛选与更多操作
+          typography: 'caption', minHeight: 28 }}>
+          筛选与操作
         </Box>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -503,13 +500,7 @@ export function XDriveMediaGalleryPlacesMap({
         ) : null}
       {!canMountNativePhoto ? (
         <>
-          {prototypeMap ? (
-            <Typography variant="caption" color="text.secondary"
-              data-xdrive-places-prototype-progress
-              sx={{display:'block',px:1.5,pb:0.5}}>
-              地图由 Server 返回最多 64 个当前视窗区域或真实地点；不会下载全部 GPS 地点。
-            </Typography>
-          ) : null}
+
           {prototypeMap && getBaiduJSAPIPrototype && listPlacesMapOverview ? (
             <XDriveMediaGalleryBaiduPrototypeMap
               key={diagnosticScope ?? ''}

@@ -132,7 +132,7 @@ export function xDriveProjectBaiduNativeClusterCovers(
     } catch { continue }
     if (!pixel || !safeNumber(pixel.x) || !safeNumber(pixel.y) ||
         pixel.x < 38 || pixel.x > width - 38 ||
-        pixel.y < 75 || pixel.y > height - 12) continue
+        pixel.y < 38 || pixel.y > height - 38) continue
     const projected: Candidate = {
       id: data.id, x: pixel.x, y: pixel.y,
       bbox: data.bbox, placeCount: data.count,
@@ -249,7 +249,7 @@ export function xDriveProjectBaiduNativeClusterCovers(
     catch { continue }
     if (!pixel || !safeNumber(pixel.x) || !safeNumber(pixel.y) ||
         pixel.x < 38 || pixel.x > width - 38 ||
-        pixel.y < 75 || pixel.y > height - 12 ||
+        pixel.y < 38 || pixel.y > height - 38 ||
         projected.some(p => Math.hypot(p.x-pixel.x, p.y-pixel.y) < minimumSeparation)) continue
     projected.push({
       id: 'single:' + id, placeID: id,
