@@ -90,7 +90,11 @@ test('A3c17 Desktop remains sandboxed while prototype Places stays in shared Gal
   // Legacy secure window remains available for a later hardened JSAPI
   // release; this prototype uses the shared Gallery direct SDK instead.
   assert.match(desktopApp, /<XDriveMediaGalleryPage/)
-  assert.match(places, /const prototypeMap = Boolean\(listPlacesMapOverview && getBaiduJSAPIPrototype\)/)
+  // Web has both ports; the signed isolated Child supersedes direct prototype.
+  // Desktop without the Child ports keeps its existing bounded prototype.
+  assert.match(places,/const hasIsolatedChildPorts = Boolean\(/)
+  assert.match(places,/const prototypeMap = xDriveBaiduPlacesRuntime\(/)
+  assert.match(places,/hasIsolatedChildPorts, Boolean\(listPlacesMapOverview && getBaiduJSAPIPrototype\)/)
   assert.doesNotMatch(places, /listPlacesPage\(100,offset\)/)
   assert.match(places, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
   assert.match(places, /<XDriveMediaGalleryBaiduPrototypeMap/)

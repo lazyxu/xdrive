@@ -10,6 +10,7 @@ import type {
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
 import { XDriveMediaGalleryBaiduPrototypeMap } from './MediaGalleryBaiduPrototypeMap'
+import { xDriveBaiduPlacesRuntime } from '../media-gallery-places-runtime'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
 import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -64,6 +65,7 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenPlace,
   onOpenNearby,
   onOpenViewportPhotos,
+  compact = false,
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -100,10 +102,18 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
+  compact?: boolean
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
-  // One Server-bounded spatial summary replaces the all-pages GPS download.
-  const prototypeMap = Boolean(listPlacesMapOverview && getBaiduJSAPIPrototype)
+  // Web adapters offer both transports. Prefer the signed isolated Child,
+  // never fall back to unsandboxed JS after Server release denial.
+  const hasIsolatedChildPorts = Boolean(
+    getBaiduJSAPI4Status && mintBaiduIsolatedChildTicket &&
+    listBaiduNativeCells && listBaiduNativeViewport &&
+    onOpenBaiduNativePhoto && onOpenBaiduNativeCell && !onOpenSecureDesktopMap)
+  const prototypeMap = xDriveBaiduPlacesRuntime(
+    hasIsolatedChildPorts, Boolean(listPlacesMapOverview && getBaiduJSAPIPrototype),
+  ) === 'prototype'
   const prototypePlaces = places
   // Freeze the returning BD09 camera for THIS native mount. Parent state changes
   // on pan/zoom must never change initialCamera props and remount the SDK.
@@ -341,13 +351,13 @@ export function XDriveMediaGalleryPlacesMap({
     <Paper
       variant="outlined"
       data-xdrive-gallery-places-map
-      sx={{ borderRadius: { xs: 0, sm: 2 }, overflow: 'hidden' }}
+      sx={{ borderRadius: compact ? 0 : { xs: 0, sm: 2 }, borderWidth: compact ? 0 : 1, overflow: 'hidden' }}
     >
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={1}
-        sx={{ px: 1.5, pt: 1.5, pb: 1 }}
+        sx={{ display: compact ? 'none' : undefined, px: 1.5, pt: 1.5, pb: 1 }}
       >
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
@@ -480,6 +490,7 @@ export function XDriveMediaGalleryPlacesMap({
             mintChildTicket={mintBaiduIsolatedChildTicket}
             listOwnerCells={listBaiduNativeCells}
             loadThumbnail={loadPhotoCoverThumbnail}
+            edgeToEdge={compact}
             onOpenCell={onOpenBaiduNativeCell}
             onInvalidated={onBaiduNativeCellInvalidated}
             onCamera={onNativeCameraChange}

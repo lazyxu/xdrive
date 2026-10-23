@@ -139,6 +139,7 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
 import { xDriveKeepMediaPlaceHierarchyQuery } from '../media-gallery-places-hierarchy-query'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
@@ -5854,6 +5855,8 @@ export function XDriveMediaGallery({
   )
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
   const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
+  const [placesMobileMode, setPlacesMobileMode] = useState<'map' | 'list'>('map')
+  const placesPanels = xDrivePlacesVisiblePanels(compactGallery, placesMobileMode)
   useEffect(() => () => {
     thumbnailScheduler.dispose()
   }, [thumbnailScheduler])
@@ -7922,21 +7925,38 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPlacesIndex ? (
-        <Stack spacing={2}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={0.75}
-            alignItems={{ xs: 'flex-start', sm: 'baseline' }}
-          >
-            <Typography variant="subtitle1" fontWeight={700}>
-              地点
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              使用百度 JSAPI 动态地图；当前账户有效 GPS 地点由 SDK 聚合，点击逐级放大直至打开照片墙
-            </Typography>
-          </Stack>
+        <Stack spacing={compactGallery ? 1 : 2} data-xdrive-places-index>
+          {compactGallery ? (
+            <Stack direction="row" alignItems="center" justifyContent="space-between"
+              spacing={1} data-xdrive-places-mobile-switch sx={{ px: 1, py: 0.25 }}>
+              <Typography variant="subtitle1" fontWeight={700}>地点</Typography>
+              <Stack direction="row" alignItems="center" spacing={0.25}
+                role="group" aria-label="地点查看方式">
+                <Button size="small" aria-pressed={placesMobileMode === 'map'}
+                  variant={placesMobileMode === 'map' ? 'contained' : 'text'}
+                  onClick={() => setPlacesMobileMode('map')} sx={{ minHeight: 44 }}>
+                  地图
+                </Button>
+                <Button size="small" aria-pressed={placesMobileMode === 'list'}
+                  variant={placesMobileMode === 'list' ? 'contained' : 'text'}
+                  onClick={() => setPlacesMobileMode('list')} sx={{ minHeight: 44 }}>
+                  列表
+                </Button>
+              </Stack>
+            </Stack>
+          ) : (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75}
+              alignItems={{ xs: 'flex-start', sm: 'baseline' }}>
+              <Typography variant="subtitle1" fontWeight={700}>地点</Typography>
+              <Typography variant="caption" color="text.secondary">
+                使用百度 JSAPI 动态地图；当前账户有效 GPS 地点由 SDK 聚合，点击逐级放大直至打开照片墙
+              </Typography>
+            </Stack>
+          )}
 
+          {placesPanels.map ? (
           <XDriveMediaGalleryPlacesMap
+            compact={compactGallery}
             places={places}
             totalCount={placesTotalCount}
             listPlacesPage={listPlacesPage}
@@ -7969,8 +7989,9 @@ export function XDriveMediaGallery({
             onOpenNearby={onOpenNearby}
             onOpenViewportPhotos={onOpenViewportPhotos}
           />
+          ) : null}
 
-          {listPlacesHierarchy && onOpenPlaceHierarchy ? (
+          {placesPanels.list && listPlacesHierarchy && onOpenPlaceHierarchy ? (
             <XDriveMediaGalleryPlacesHierarchy
               key={preferenceScope || 'gallery-default'}
               scope={preferenceScope}
@@ -7981,11 +8002,12 @@ export function XDriveMediaGallery({
             />
           ) : null}
 
-          <Box component="details" data-xdrive-places-list sx={{
+          {placesPanels.list ? (
+          <Box component={compactGallery ? 'section' : 'details'} data-xdrive-places-list sx={{
             border: 1, borderColor: 'divider', borderRadius: 2, px: 1.5, py: 1,
           }}>
-            <Box component="summary" sx={{
-              cursor: 'pointer', fontWeight: 700, minHeight: 40, alignContent: 'center',
+            <Box component={compactGallery ? 'div' : 'summary'} sx={{
+              cursor: compactGallery ? 'default' : 'pointer', fontWeight: 700, minHeight: 40, alignContent: 'center',
             }}>地点列表 · {(placesTotalCount ?? places.length).toLocaleString('zh-CN')} 个地点</Box>
             <Box
               sx={{
@@ -8087,6 +8109,7 @@ export function XDriveMediaGallery({
               ) : null}
             </Stack>
           </Box>
+          ) : null}
         </Stack>
       ) : null}
 
