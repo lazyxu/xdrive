@@ -1,0 +1,70 @@
+name: PWA CR03d Actual Linux IndexedDB POSIX Permission Denial
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-cr03d-native-idb-eacces:
+    if: github.head_ref == 'test/pwa-cr03d-native-idb-eacces-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build production App Shell and original P1 failure contracts
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          npm --prefix web ci --no-audit --no-fund
+          node --check desktop/scripts/pwa-cr03d-posix-native-idb-failure.cjs
+          node --test desktop/tests/pwa-cr03d-posix-native-idb-contract.cjs
+          node web/scripts/test-pwa-offline-directory.cjs
+          node web/scripts/test-pwa-offline-readonly.cjs
+          npm --prefix web run build
+          mkdir -p "$RUNNER_TEMP/pwa-cr03d-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-cr03d-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-cr03d-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Real Linux Chrome binary required" >&2; exit 1
+          fi
+      - name: Native Chrome cold process EACCES and cross-tab purge fail closed
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_PWA_CR03D_POSIX: '1'
+          XD_PWA_CR03D_OUTPUT: ${{ github.workspace }}/desktop/pwa-cr03d-results
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          node desktop/scripts/pwa-cr03d-posix-native-idb-failure.cjs
+          node - <<'NODE'
+          const fs=require('node:fs')
+          const s=JSON.parse(fs.readFileSync('./desktop/pwa-cr03d-results/summary.json'))
+          const yes=['passed','realChrome','nativeFilePermissionDenied','originalConsentPersisted',
+           'originalP1Directory','originalP1Album','nativeIDBReadFailed',
+           'offlineOwnerUIHidden','crossTabPurgeNotified','restoredPermissions',
+           'postRestoreHistoricalOnly','postRestoreNoFabricatedAuthorization']
+          if(s.sha!==process.env.XD_PR_HEAD||yes.some(k=>s[k]!==true)||
+            s.physicalDevice||s.syntheticExceptions||s.physicalDiskEIOTested||
+            s.publicCachePrivateBytes)process.exit(1)
+          console.log('PWA_CR03D_NATIVE_POSIX_EACCES_PASS '+s.sha.slice(0,12))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr03d-anonymous-native-posix-eacces
+          path: desktop/pwa-cr03d-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
