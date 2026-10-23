@@ -1,0 +1,175 @@
+name: PWA P1E Real Owner 100k Route Transition T-S-S-T Attribution
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p1e-owner-100k-tsst:
+    if: github.head_ref == 'test/pwa-p1e-route-transition-attribution-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: probe
+      - uses: actions/checkout@v4
+        with:
+          ref: 7515c421412666893e4b0519e4b5869d988bf8e1
+          path: with-transition
+      - uses: actions/checkout@v4
+        with:
+          ref: 7515c421412666893e4b0519e4b5869d988bf8e1
+          path: without-transition
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: with-transition/web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: with-transition/go.sum
+      - name: Verify immutable source and generate deterministic disposable sync-route only
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_PWA_P1E_TEST_VARIANT: '1'
+          XD_PWA_P1E_FINGERPRINT: ${{ github.workspace }}/probe/desktop/pwa-p1e-results/variant-fingerprint.json
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "$XD_PR_HEAD"
+          test "$(git -C with-transition rev-parse HEAD)" = "7515c421412666893e4b0519e4b5869d988bf8e1"
+          test "$(git -C without-transition rev-parse HEAD)" = "7515c421412666893e4b0519e4b5869d988bf8e1"
+          cmp with-transition/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs without-transition/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          cmp with-transition/internal/api/gallery_real_web_cold_performance_integration_test.go without-transition/internal/api/gallery_real_web_cold_performance_integration_test.go
+          node --check probe/desktop/scripts/pwa-p1e-patch-route-variant.cjs
+          node --check probe/desktop/scripts/pwa-p1e-summarize-tsst.cjs
+          (cd probe && node --test desktop/tests/pwa-p1e-route-transition-contract.cjs)
+          node probe/desktop/scripts/pwa-p1e-patch-route-variant.cjs
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix with-transition/web ci --no-audit --no-fund
+          npm --prefix without-transition/web ci --no-audit --no-fund
+          npm --prefix with-transition/desktop install --no-audit --no-fund
+          # The original navigation browser uses Playwright, not Electron's
+          # own imports. Install one isolated test driver only; no product dep.
+          mkdir -p "$RUNNER_TEMP/pwa-p1e-navigation-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-p1e-navigation-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-p1e-navigation-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chromium is required for original Files/Gallery navigation" >&2
+            exit 1
+          fi
+          ln -s "$GITHUB_WORKSPACE/with-transition/desktop/node_modules" without-transition/desktop/node_modules
+          npm --prefix with-transition/web run build
+          npm --prefix without-transition/web run build
+          mkdir -p with-transition/desktop/pwa-p1e-go-bin
+          (cd with-transition && go test -c -o "$GITHUB_WORKSPACE/with-transition/desktop/pwa-p1e-go-bin/api.test" ./internal/api)
+          test -x with-transition/desktop/pwa-p1e-go-bin/api.test
+      - name: Original true Go Owner 100k T-S-S-T cancellation and RSS / CPU measurements
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_GALLERY_MOBILE_NATIVE_GO_BINARY: ${{ github.workspace }}/with-transition/desktop/pwa-p1e-go-bin/api.test
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "$XD_PR_HEAD"
+          OUT="$GITHUB_WORKSPACE/probe/desktop/pwa-p1e-results"
+          mkdir -p "$OUT"
+          run_release() {
+            local release="$1" label="$2"
+            (cd "$release" && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+              "$GITHUB_WORKSPACE/with-transition/desktop/node_modules/.bin/electron" --no-sandbox \
+              desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs)
+            test -s "$release/desktop/pwa-p0c2-spa-go-results/summary.json"
+            mkdir -p "$OUT/$label"
+            cp "$release/desktop/pwa-p0c2-spa-go-results/summary.json" "$OUT/$label/summary.json"
+            for n in 1 2 3; do
+              cp "$release/desktop/pwa-p0c2-spa-go-results/sample-$n.json" "$OUT/$label/sample-$n.json"
+            done
+          }
+          run_release with-transition t1
+          run_release without-transition s1
+          run_release without-transition s2
+          run_release with-transition t2
+          node probe/desktop/scripts/pwa-p1e-summarize-tsst.cjs \
+            "$OUT/t1" "$OUT/s1" "$OUT/s2" "$OUT/t2" "$OUT/paired.json"
+          node - <<'NODE'
+          const s=require('./probe/desktop/pwa-p1e-results/paired.json')
+          if(s.sourceHEAD!==process.env.XD_PR_HEAD || s.order!=='T-S-S-T' ||
+             s.run.length!==4 || s.run.some(r=>r.n!==3||r.goCancelMaxMs>160) ||
+             !s.sameRunner || !s.genuineOwnerGoPG17CAS ||
+             !s.testOnlyTransitionVariant ||
+             s.causalConclusion!=='NOT_ESTABLISHED'||s.physicalIOS||
+             s.distinctPhysical100k||s.productionOptimizationImplemented)process.exit(1)
+          NODE
+      - name: Genuine 390px three-session navigation and separate Viewer-return gate on test variant
+        env:
+          XDRIVE_BROWSER_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "$XD_PR_HEAD"
+          mkdir -p probe/desktop/pwa-p1e-navigation probe/desktop/pwa-p1e-viewer
+          # The original P0C2 scenario measures three OS sessions ONLY when
+          # this explicit source-gated flag is present. Never accept ordinary
+          # gallery-ios27-chrome's single-session summary as n3 evidence.
+          (cd without-transition && XD_PWA_P0C2_NAV_BEFORE=1 node desktop/scripts/mobile-web-app-browser.cjs \
+            --scenario=gallery-ios27-chrome --output-dir="$GITHUB_WORKSPACE/probe/desktop/pwa-p1e-navigation")
+          test -s probe/desktop/pwa-p1e-navigation/p0c2-summary.json
+          node - <<'NODE'
+          const s=require('./probe/desktop/pwa-p1e-navigation/p0c2-summary.json')
+          if(s.source_commit_sha!==process.env.XD_PR_HEAD||
+             s.independent_browser_sessions!==3||s.transitions_per_direction!==9||
+             s.samples.length!==18||s.physical_ios||s.authenticated_go_backend||
+             !s.metrics['files-to-gallery']||!s.metrics['gallery-to-files'])process.exit(1)
+          NODE
+          # Viewer test is a different original scenario and must not inherit
+          # the P0C2 navigation-specific switch. Preserve actual Viewer return.
+          (cd without-transition && node desktop/scripts/mobile-web-app-browser.cjs \
+            --scenario=gallery-ios27-viewer --output-dir="$GITHUB_WORKSPACE/probe/desktop/pwa-p1e-viewer")
+          node - <<'NODE'
+          const s=require('./probe/desktop/pwa-p1e-viewer/results.json')
+          if(!s.passed||s.failures.length!==0||s.checks.length<10||
+             s.unknownRequests.length||s.pageErrors.length||s.consoleErrors.length)
+            process.exit(1)
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1e-anonymous-tsst-owner-100k-intent-attribution
+          path: |
+            probe/desktop/pwa-p1e-results/variant-fingerprint.json
+            probe/desktop/pwa-p1e-results/t1/summary.json
+            probe/desktop/pwa-p1e-results/s1/summary.json
+            probe/desktop/pwa-p1e-results/s2/summary.json
+            probe/desktop/pwa-p1e-results/t2/summary.json
+            probe/desktop/pwa-p1e-results/paired.json
+            probe/desktop/pwa-p1e-navigation/p0c2-summary.json
+          if-no-files-found: warn
+          retention-days: 14
