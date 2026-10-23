@@ -35,6 +35,13 @@
 - 记录存于 Host Control 内仅 Host 可写、Server 组只读的目录；断电前必须 fsync 文件与目录。管理员已有 GET 状态接口先查询原请求的终态记录，未命中时兼容原 15 秒单槽状态；过期、符号链接、损坏或未知状态必须保守拒绝。
 - 这**不等于**可信签名 Applied Receipt、WAN 可达证明、服务端任务中心、完整部署历史 UI 或自动恢复/重试；后续仍需补足跨代际运行身份、审计与可靠性加固。
 
+## P1：Caddy 本机提交与崩溃回执的一致性收敛（新增待验证源码）
+
+- 本机固定 Ready + 可信 TLS 验证成功后，Host 在**同一安装锁**中先把对应原始 Request ID、四字段 SHA256 和 `deployed` 写成**原子、不可覆盖、fsync 的本地终态决议**，然后才清除旧配置备份与 Pending 标记；避免“已提交 .env/Caddy，但成功回执还没有持久化”的丢 ACK 窗口。
+- 在落盘前退出或没有可信同 ID 终态决议：仍按旧的受限恢复路径处理；在终态决议落盘后进程中断：重启 Host 检查**原 ID + 指纹 + 当前 .env 一致性**，只完成 Pending/Backup 清理并补发旧单槽回执，**绝不因失去 Shell ACK 而回滚已成功提交的 Caddy**。
+- 若归档有错误、硬链接/权限不可信、SHA 不符或清理失败：保持原 Active 操作隔离，不发虚假 `deployed`，不自动再次运行 Caddy。原子写期间若在 hard-link 发布后、临时链接删除前被 SIGKILL，只接受具有确切 Host 私有临时 inode 身份的情况。
+- 离线回归分别注入：物理检查后、决议落盘前（保守回滚）、决议链接已发布但临时链接尚未删、决议落盘后/删除 Pending 后/清理完成但 Shell ACK 丢失，以及恶意非成功同 ID 回执。**回执只证明历史上的一次本机验证/提交事务，仍不等于当前运行代际、签名 Applied Receipt、公网可达、DNS 成功或终端 CA 信任。**
+
 ## 合并后的限制与第二版边界
 
 - **源码验收已完成**：PR #2382 及其准确 HEAD 的 Go Linux/Windows、PostgreSQL API Race（整仓兼容）、Web/Desktop、Host/Rootless、制品与 Final Gate 全部通过。

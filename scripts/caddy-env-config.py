@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
 import sys
 import tempfile
@@ -242,9 +243,28 @@ def finish(data, env, backup, marker, commit):
         _, before = parse(read_secure(backup))
         replace_atomic(env, render(raw, before))
         _, old = parse(read_secure(env))
+    if commit and os.environ.get("XD_CADDY_COMMIT_DURABLE") == "1":
+        # The local Ready + trusted TLS checks happened under the inherited
+        # installer lock BEFORE this commit. The archive is the durable
+        # decision point: without it, restart may roll back the candidate;
+        # after it, restart must NEVER undo a completed deploy.
+        archive_deploy({
+            "protocol": "xdrive.caddy.host-env.v1", "state": "deployed",
+            "request_id": data["request_id"], "sha256": data["expected_sha256"],
+        })
+        # Offline fault injection: power loss after durable decision, before
+        # marker/backup cleanup. Never reachable from browser input.
+        if (os.environ.get("XD_HOST_CONTROL_SOURCE_ONLY") == "1" and
+                os.environ.get("XD_CADDY_TEST_COMMIT_CRASH_AFTER_ARCHIVE") == "1"):
+            os._exit(86)
     if marker.exists():
         marker.unlink()
+    if (commit and os.environ.get("XD_HOST_CONTROL_SOURCE_ONLY") == "1" and
+            os.environ.get("XD_CADDY_TEST_COMMIT_CRASH_AFTER_MARKER") == "1"):
+        os._exit(87)
     backup.unlink()
+    if commit:
+        sync_directory(marker.parent)
     return {"request_id": data["request_id"], "state": "committed" if commit else "restored",
             **visible(old, False)}
 
@@ -286,26 +306,36 @@ DEPLOY_ERRORS = frozenset((
 ))
 
 
-def archive_deploy():
+def sync_directory(directory):
+    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
+                         getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def archive_deploy(receipt=None):
     home_dir = os.environ.get("XD_CADDY_DEPLOY_RECEIPT_DIR", "")
     if not home_dir or not os.path.isabs(home_dir):
         raise Restricted("invalid-receipt-directory")
-    data = sys.stdin.buffer.read(1025)
-    if len(data) > 1024:
-        raise Restricted("oversized-receipt")
+    if receipt is None:
+        data = sys.stdin.buffer.read(1025)
+        if len(data) > 1024:
+            raise Restricted("oversized-receipt")
 
-    def unique_pairs(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise Restricted("duplicate-receipt-field")
-            result[key] = value
-        return result
+        def unique_pairs(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise Restricted("duplicate-receipt-field")
+                result[key] = value
+            return result
 
-    try:
-        receipt = json.loads(data, object_pairs_hook=unique_pairs)
-    except (ValueError, UnicodeError) as exc:
-        raise Restricted("invalid-receipt") from exc
+        try:
+            receipt = json.loads(data, object_pairs_hook=unique_pairs)
+        except (ValueError, UnicodeError) as exc:
+            raise Restricted("invalid-receipt") from exc
     allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error"}
     if not isinstance(receipt, dict) or set(receipt) - allowed:
         raise Restricted("unexpected-receipt-field")
@@ -362,8 +392,14 @@ def archive_deploy():
             if stat.S_IMODE(os.fstat(folder).st_mode) != 0o2750:
                 raise Restricted("receipt-directory-permissions-unavailable")
             filename = request_id + ".json"
+            # Never expose a partially written filename as a completed
+            # decision. fsync the private temporary inode, publish once by
+            # no-overwrite hard link, then fsync the directory. SIGKILL
+            # before the link leaves NO terminal. A killed writer after the
+            # link leaves either the full prior result or no result.
+            temporary = ".caddy-terminal-" + secrets.token_hex(12) + ".tmp"
             wflags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(filename, wflags, 0o600, dir_fd=folder)
+            fd = os.open(temporary, wflags, 0o600, dir_fd=folder)
             try:
                 os.fchmod(fd, 0o640)
                 with os.fdopen(fd, "wb", closefd=False) as dest:
@@ -372,7 +408,18 @@ def archive_deploy():
                     os.fsync(fd)
             finally:
                 os.close(fd)
-            os.fsync(folder)
+            try:
+                os.link(temporary, filename, src_dir_fd=folder, dst_dir_fd=folder,
+                        follow_symlinks=False)
+                os.fsync(folder)
+                # Simulate SIGKILL between durable publish and removing the
+                # temporary hard link. Reconciliation must handle this nlink=2
+                # state by matching the one Host-owned temporary inode.
+                if (os.environ.get("XD_HOST_CONTROL_SOURCE_ONLY") == "1" and
+                        os.environ.get("XD_CADDY_TEST_COMMIT_CRASH_AFTER_LINK") == "1"):
+                    os._exit(88)
+            finally:
+                os.unlink(temporary, dir_fd=folder)
 
             # Bounded storage: seven days / at most 64 *terminal* receipts.
             # Never follow symlinks, traverse subdirectories or touch other
@@ -398,11 +445,109 @@ def archive_deploy():
         os.close(parent)
 
 
+def reconcile_committed(data, env, backup, marker):
+    # This action is private to the Host runner while it holds install.lock.
+    # It only finishes cleanup AFTER a durable and exact terminal has been
+    # written. Absence, corruption or a mismatched SHA fail closed.
+    if set(data) != {"operation", "request_id", "expected_sha256"} or \
+            data["operation"] != "reconcile-commit":
+        raise Restricted("invalid-commit-reconcile")
+    home_dir = os.environ.get("XD_CADDY_DEPLOY_RECEIPT_DIR", "")
+    if not home_dir or not os.path.isabs(home_dir):
+        raise Restricted("invalid-receipt-directory")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    parent = os.open(home_dir, flags)
+    try:
+        p = os.fstat(parent)
+        if not stat.S_ISDIR(p.st_mode) or p.st_uid != os.geteuid() or p.st_mode & 0o007:
+            raise Restricted("unsafe-receipt-parent")
+        folder = os.open(DEPLOY_ARCHIVE_DIR, flags, dir_fd=parent)
+        try:
+            f = os.fstat(folder)
+            if not stat.S_ISDIR(f.st_mode) or f.st_uid != os.geteuid() or \
+                    f.st_gid != p.st_gid or stat.S_IMODE(f.st_mode) != 0o2750:
+                raise Restricted("unsafe-receipt-directory")
+            descriptor = os.open(data["request_id"] + ".json",
+                                 os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=folder)
+            try:
+                record = os.fstat(descriptor)
+                if (not stat.S_ISREG(record.st_mode) or record.st_nlink not in (1, 2) or
+                        record.st_uid != os.geteuid() or record.st_gid != f.st_gid or
+                        stat.S_IMODE(record.st_mode) != 0o640 or record.st_size > 512 or
+                        record.st_size == 0 or
+                        time.time() - record.st_mtime > DEPLOY_ARCHIVE_TTL or
+                        record.st_mtime - time.time() > 15):
+                    raise Restricted("unsafe-commit-receipt")
+                raw = os.read(descriptor, 513)
+            finally:
+                os.close(descriptor)
+            if record.st_nlink == 2:
+                # Crash between hard-link publication and temporary-unlink.
+                # Accept only the *one* expected Host-owned sibling inode.
+                candidates = []
+                for name in os.listdir(folder):
+                    if re.fullmatch(r"\.caddy-terminal-[0-9a-f]{24}\.tmp", name) is None:
+                        continue
+                    info = os.stat(name, dir_fd=folder, follow_symlinks=False)
+                    if (stat.S_ISREG(info.st_mode) and info.st_dev == record.st_dev and
+                            info.st_ino == record.st_ino and info.st_uid == record.st_uid and
+                            info.st_gid == record.st_gid and stat.S_IMODE(info.st_mode) == 0o640):
+                        candidates.append(name)
+                if len(candidates) != 1:
+                    raise Restricted("unrecognized-commit-hardlink")
+                os.unlink(candidates[0], dir_fd=folder)
+                os.fsync(folder)
+        finally:
+            os.close(folder)
+    finally:
+        os.close(parent)
+    def no_duplicate_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise Restricted("duplicate-commit-field")
+            result[key] = value
+        return result
+
+    try:
+        receipt = json.loads(raw, object_pairs_hook=no_duplicate_pairs)
+    except (ValueError, UnicodeError) as exc:
+        raise Restricted("invalid-commit-receipt") from exc
+    if (not isinstance(receipt, dict) or
+            receipt != {
+                "protocol": "xdrive.caddy.host-env.v1",
+                "state": "deployed", "request_id": data["request_id"],
+                "sha256": data["expected_sha256"],
+            }):
+        raise Restricted("mismatched-commit-receipt")
+    _, present = parse(read_secure(env))
+    if fingerprint(present) != data["expected_sha256"]:
+        raise Restricted("changed-host-env")
+    for filename in (marker, backup):
+        if filename.is_symlink():
+            raise Restricted("unsafe-commit-journal")
+    if marker.exists():
+        state = json.loads(read_secure(marker))
+        if state.get("target_sha256") != data["expected_sha256"]:
+            raise Restricted("pending-target-mismatch")
+    if backup.exists():
+        parse(read_secure(backup))
+    # Some unlink operations may already have completed before SIGKILL.
+    if marker.exists():
+        marker.unlink()
+    if backup.exists():
+        backup.unlink()
+    sync_directory(marker.parent)
+    return {"request_id": data["request_id"], "state": "committed",
+            **visible(present, False)}
+
+
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == "archive-deploy":
         archive_deploy()
         return
-    if len(sys.argv) != 2 or sys.argv[1] not in ("snapshot", "save", "commit", "restore", "reveal"):
+    if len(sys.argv) != 2 or sys.argv[1] not in ("snapshot", "save", "commit", "restore",
+                                                "reveal", "reconcile-commit"):
         raise Restricted("unsupported-command")
     home = Path(os.environ.get("XD_CONFIG_DIR") or Path.home() / ".xd")
     config = home / "config"
@@ -433,6 +578,9 @@ def main():
                 (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino)):
             raise Restricted("untrusted-inherited-lock")
         lock_file = os.fdopen(os.dup(6), "a+b")
+    if (sys.argv[1] == "reconcile-commit" or
+            os.environ.get("XD_CADDY_COMMIT_DURABLE") == "1") and inherited != "6":
+        raise Restricted("host-commit-lock-required")
     with lock_file as lock:
         mode = fcntl.LOCK_EX | fcntl.LOCK_NB if inherited is not None else (
             (fcntl.LOCK_SH | fcntl.LOCK_NB) if sys.argv[1] in ("snapshot", "reveal") else fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -452,6 +600,8 @@ def main():
                 result = save(request, env, backup, marker)
             elif sys.argv[1] == "reveal":
                 result = reveal(request, env, backup, marker)
+            elif sys.argv[1] == "reconcile-commit":
+                result = reconcile_committed(request, env, backup, marker)
             else:
                 result = finish(request, env, backup, marker, sys.argv[1] == "commit")
         print(json.dumps(result, ensure_ascii=True, separators=(",", ":")))
