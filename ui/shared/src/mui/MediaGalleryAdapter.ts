@@ -175,6 +175,8 @@ export interface XDriveMediaGalleryPort {
     selection: MediaBaiduNativeCellSelection, limit: number, offset: number,
     sort: XDriveBaiduCellRangeSort, signal: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  getBaiduMapCoverage?: (signal: AbortSignal) => Promise<
+    XDriveMediaGalleryTransportResult<import('../models').MediaBaiduMapCoverage>>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
@@ -614,6 +616,9 @@ export function createXDriveMediaGalleryDataSource(
       ? (selection, limit, offset, sort, signal) => resolveXDriveTransport(
           port.listBaiduNativeCellItems!(selection, limit, offset, sort, signal),
         )
+      : undefined,
+    getBaiduMapCoverage: port.getBaiduMapCoverage
+      ? (signal) => resolveXDriveTransport(port.getBaiduMapCoverage!(signal))
       : undefined,
     getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
       ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))

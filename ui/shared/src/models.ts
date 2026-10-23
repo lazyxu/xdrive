@@ -914,6 +914,16 @@ export interface NodeLocation {
 
 // Privacy-only state: authorized DOES NOT imply JSAPI4 is enabled. Never
 // serialize original WGS84, SourceNode fingerprint, AK or provider URLs.
+/** Read-only Owner aggregates; valid original GPS and eligible BD09 are different sets. */
+export type MediaBaiduMapCoverage = {
+  scope: 'indexed_ready_photoassets'
+  valid_gps_assets: number
+  eligible_bd09_assets: number
+  not_eligible_bd09_assets: number
+  source_outside_camera_latitude_assets: number
+  map_runtime_verified: false
+}
+
 export type MediaBaiduMapConsent = {
   status: 'not_granted' | 'authorized' | 'revoked' | 'expired' | 'source_changed'
   revision: number

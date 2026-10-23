@@ -1946,6 +1946,15 @@ export type AgentMediaBaiduMapConsentInput = {
   consent_to_derived_index: true
 }
 
+export type AgentMediaBaiduMapCoverage = {
+  scope: 'indexed_ready_photoassets'
+  valid_gps_assets: number
+  eligible_bd09_assets: number
+  not_eligible_bd09_assets: number
+  source_outside_camera_latitude_assets: number
+  map_runtime_verified: false
+}
+
 export type AgentMediaPlacesPage = {
   items: AgentMediaPlaceFacet[]
   total_count: number
@@ -2826,6 +2835,11 @@ export class AgentIPCClient {
   revokeMediaBaiduConsent(nodeID: number, revision: number) {
     const query = new URLSearchParams({ node_id: String(nodeID), revision: String(revision) })
     return this.request<AgentMediaBaiduMapConsent>('DELETE', `/v1/media/baidu-consent?${query.toString()}`)
+  }
+
+  mediaBaiduMapCoverage(signal?: AbortSignal) {
+    return this.request<AgentMediaBaiduMapCoverage>(
+      'GET', '/v1/media/places/baidu-coverage', undefined, 10_000, signal)
   }
 
   mediaPlacesPage(limit = 48, offset = 0) {

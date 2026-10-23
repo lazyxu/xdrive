@@ -57,6 +57,12 @@ function loadSharedMap() {
       XDriveMediaGalleryBaiduIsolatedPhotoSurface: props =>
         React.createElement('isolated-child', props),
     },
+    // P0-01 extracted an opt-in diagnostic. Keep this map-lifecycle test
+    // scoped to the map: coverage is exercised by its own contract tests.
+    './MediaGalleryMapGPSCoverage': {
+      XDriveMediaGalleryMapGPSCoverage: props =>
+        React.createElement('gps-coverage', props),
+    },
   }
   mod.require = name => Object.hasOwn(injected, name) ? injected[name] : requireOriginal(name)
   mod._compile(output, mapFile)
