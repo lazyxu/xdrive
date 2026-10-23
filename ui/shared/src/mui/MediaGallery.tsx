@@ -1,4 +1,5 @@
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
+import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import { xDriveReadPlacesReturn, xDriveRememberPlacesReturn, xDriveValidPlacesReturnSnapshot } from '../media-gallery-places-return-session'
 import type { XDrivePlacesReturnSnapshot } from '../media-gallery-places-return-session'
 import {
@@ -2546,6 +2547,59 @@ export function XDriveMediaGalleryPage({
     }
   }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesReturn, places, placesPageOffset, placesTotalCount, query.place, section])
 
+  // P0-07: only the original Owner GPS place (not a synthetic map-region)
+  // may open a singleton directly. Map counts and cover IDs are hints;
+  // the CURRENT authenticated sparse Range authorizes Viewer membership.
+  const openPrototypeMapPlace = useCallback((place: MediaPlaceFacet) => {
+    // A new map selection invalidates any pending Viewer intention, even if
+    // this selection is malformed or should open the ordinary photo wall.
+    nativePhotoOpenAbort.current?.abort()
+    nativePhotoOpenAbort.current = null
+    // Only Server canonical original GPS places can become Viewer targets.
+    if (!xDrivePrototypeCanonicalPlaceID(place?.id)) return
+    if (!onOpenViewer || place.item_count !== 1) {
+      openPlace(place)
+      return
+    }
+    const owner = preferenceScope
+    const generation = requestID.current
+    const viewerQuery: MediaGalleryQuery = {
+      ...mediaGalleryQueryFromDraft({ ...draftFilters, location: 'with', place: place.id }),
+      sort_by: gallerySortRef.current.by,
+      sort_dir: gallerySortRef.current.dir,
+      fold_duplicates: false,
+    }
+    if (!xDrivePrototypeSingletonScopeValid(place, viewerQuery)) {
+      setError('该地点筛选已变化，请刷新地图后重试')
+      return
+    }
+    const controller = new AbortController()
+    nativePhotoOpenAbort.current = controller
+    void source.listItemRange(1, 0, viewerQuery, controller.signal).then(range => {
+      if (controller.signal.aborted || generation !== requestID.current ||
+          owner !== deletePreferenceScopeRef.current) return
+      const item = xDrivePrototypeTrustedSingleton(place, range)
+      if (!item) {
+        setError('该地点照片已变化，请刷新地图后重试')
+        return
+      }
+      // WGS84 source-place Range, never a guessed BD09 Camera membership.
+      // Viewer Back restores the mounted map; do not install a wall target.
+      onOpenViewer(item, {
+        target: { kind: 'all', query: { ...viewerQuery } },
+        activeIndex: 0,
+        totalCount: 1,
+      })
+    }).catch(() => {
+      if (!controller.signal.aborted && generation === requestID.current &&
+          owner === deletePreferenceScopeRef.current) {
+        setError('该地点照片暂不可用，请刷新地图后重试')
+      }
+    }).finally(() => {
+      if (nativePhotoOpenAbort.current === controller) nativePhotoOpenAbort.current = null
+    })
+  }, [draftFilters, onOpenViewer, openPlace, preferenceScope, source])
+
   // B1-D: stable identity opens the *same* Owner Range, sparse virtual wall
   // and Viewer as other Gallery collections. No client-side GPS grouping.
   const openHierarchyPlace = useCallback((place: MediaPlaceHierarchyItem) => {
@@ -3609,7 +3663,10 @@ export function XDriveMediaGalleryPage({
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
         onOpenBaiduNativeCell={source.listBaiduNativeCellItems ? openBaiduNativeCell : undefined}
         onOpenBaiduNativeViewport={source.listBaiduNativeViewportItems ? openBaiduNativeViewport : undefined}
-        onBaiduNativeCellInvalidated={() => nativeCellOpenAbort.current?.abort()}
+        onBaiduNativeCellInvalidated={() => {
+          nativeCellOpenAbort.current?.abort()
+          nativePhotoOpenAbort.current?.abort()
+        }}
         onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         onOpenBaiduMapDiagnostics={onOpenBaiduMapDiagnostics}
         baiduNativeCameraSnapshot={baiduNativeCameraSnapshot}
@@ -3856,6 +3913,7 @@ export function XDriveMediaGalleryPage({
             }
           : undefined}
         onOpenPlace={(place) => openPlace(place, mobileCollectionsOverview)}
+        onOpenPrototypePlace={openPrototypeMapPlace}
         onOpenPlaceHierarchy={openHierarchyPlace}
         onOpenNearby={(place, radiusKM) => {
           const lat = place.sample_latitude, lng = place.sample_longitude
@@ -4227,6 +4285,7 @@ export interface XDriveMediaGalleryProps {
   onOpenFolder?: (folder: MediaFolderEntry) => void
   onOpenFolderBreadcrumb?: (breadcrumb: MediaFolderBreadcrumb) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenPrototypePlace?: (place: MediaPlaceFacet) => void
   onOpenPlaceHierarchy?: (place: MediaPlaceHierarchyItem) => void
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
   onOpenViewportPhotos?: (bounds: import('../models').MediaPlacesViewportBounds) => void
@@ -5932,6 +5991,7 @@ export function XDriveMediaGallery({
   onOpenFolder,
   onOpenFolderBreadcrumb,
   onOpenPlace,
+  onOpenPrototypePlace,
   onOpenPlaceHierarchy,
   onOpenNearby,
   onOpenViewportPhotos,
@@ -8081,6 +8141,7 @@ export function XDriveMediaGallery({
             activePlaceID={activePlaceID}
             focusPlaceID={focusPlaceID}
             onOpenPlace={onOpenPlace}
+            onOpenPrototypePlace={onOpenPrototypePlace}
             onOpenNearby={onOpenNearby}
             onOpenViewportPhotos={onOpenViewportPhotos}
           />

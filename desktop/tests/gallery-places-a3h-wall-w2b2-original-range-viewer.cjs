@@ -39,7 +39,9 @@ test('W2b2 aborts pending map selection on camera invalidation or leaving collec
   assert.match(map, /onInvalidated=\{onBaiduNativeCellInvalidated\}/)
   assert.match(isolated, /invalidated\.current\?\.\(\)/)
   assert.match(isolated, /activeQuery\?\.abort\(\)/)
-  assert.match(gallery, /onBaiduNativeCellInvalidated=\{\(\) => nativeCellOpenAbort\.current\?\.abort\(\)\}/)
+  // Invalidated secure BD09 Cells and unisolated prototype camera both cancel
+  // their own in-flight Owner reads; never drop the existing cell cancellation.
+  assert.match(gallery, /onBaiduNativeCellInvalidated=\{\(\) => \{\s*nativeCellOpenAbort\.current\?\.abort\(\)\s*nativePhotoOpenAbort\.current\?\.abort\(\)\s*\}\}/)
   assert.match(gallery, /nativeCellOpenAbort\.current\?\.abort\(\)/)
   assert.match(gallery, /if \(collectionTargetRef\.current\?\.kind === 'baidu-cell' \|\|\n\s*collectionTargetRef\.current\?\.kind === 'baidu-viewport'\)/)
 })

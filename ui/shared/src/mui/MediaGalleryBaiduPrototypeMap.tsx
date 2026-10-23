@@ -240,6 +240,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   onNativeCameraChange,
   onOpenPlace,
   onOpenViewportPhotos,
+  onInvalidated,
   loadThumbnail,
   diagnosticScope,
 }: {
@@ -250,6 +251,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
+  onInvalidated?: () => void
   loadThumbnail?: MediaThumbnailLoader
   diagnosticScope?: string
 }) {
@@ -257,6 +259,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   const manualCamera = useRef(false)
   const openRef = useRef(onOpenPlace)
   const viewportPhotosRef = useRef(onOpenViewportPhotos)
+  const invalidateRef = useRef(onInvalidated)
   const openMapItemRef = useRef<(place: MediaPlaceFacet, map: NativeMap, api: Namespace) => void>(() => {})
   const cameraRef = useRef(onNativeCameraChange)
   // Session-local opt-in. Do not persist raw GPS permission across Gallery
@@ -284,6 +287,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   const [clusterCovers, setClusterCovers] = useState<XDriveBaiduClusterCover[]>([])
   openRef.current = onOpenPlace
   viewportPhotosRef.current = onOpenViewportPhotos
+  invalidateRef.current = onInvalidated
   openMapItemRef.current = (place, map, api) => {
     if (!committedOwnerFrame.current) return
     if (!place.id.startsWith('map-region:')) {
@@ -330,7 +334,11 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     // Only actual in-map gestures end automatic photo overview framing.
     // SDK camera events also fire from setViewport, so they are not enough.
     manualCamera.current = xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera)
-    const userGesture = () => { manualCamera.current = true; setCanBrowseNearby(false) }
+    const userGesture = () => {
+      manualCamera.current = true
+      setCanBrowseNearby(false)
+      invalidateRef.current?.()
+    }
     node.addEventListener('pointerdown', userGesture)
     node.addEventListener('touchstart', userGesture, { passive: true })
     node.addEventListener('wheel', userGesture, { passive: true })
@@ -404,7 +412,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         if (abort.signal.aborted) return
         const snapshot = xDriveCaptureBaiduNativeCamera(activeMap)
         if (snapshot) cameraRef.current?.(snapshot)
-        setCanBrowseNearby(Boolean(manualCamera.current &&
+        setCanBrowseNearby(Boolean(committedOwnerFrame.current && manualCamera.current &&
           xDriveBaiduPrototypeNearbyActionBounds(
             activeMap.getBounds?.(), activeMap.getZoom?.() ?? NaN)))
       }
@@ -472,6 +480,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       // Invalidate prior camera data immediately, not only after a slow
       // query succeeds. No old Owner/viewport markers survive a pan.
       committedOwnerFrame.current = false
+      setCanBrowseNearby(false)
       setPlaces([])
       clusterFrameRef.current = null
       setCoverPins([])
@@ -528,10 +537,14 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       // SDK may also move the camera programmatically at initial fit, when
       // no user gesture has occurred. Don't cancel the first world summary.
       if (!manualCamera.current) return
+      invalidateRef.current?.()
       if (delayed) clearTimeout(delayed)
       delayed = undefined
       request?.abort()
       conversionAbort.current?.abort()
+      // SDK-driven cluster/fitView moves are not always preceded by a DOM
+      // pointer gesture; cancel the old Owner singleton Viewer intention too.
+      invalidateRef.current?.()
       committedOwnerFrame.current = false
       setCanBrowseNearby(false)
       lastKey = ''
@@ -694,6 +707,11 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       runtime.layer.setData(collection)
       if (abort.signal.aborted) return
       committedOwnerFrame.current = true
+      // A gesture's moveend can precede the Owner overview + official
+      // Convertor. Enable the nearby Range action only after BOTH succeed.
+      setCanBrowseNearby(Boolean(manualCamera.current && features.length > 0 &&
+        xDriveBaiduPrototypeNearbyActionBounds(
+          runtime.map.getBounds?.(), runtime.map.getZoom?.() ?? NaN)))
       refreshCoversRef.current()
       // Opening Places should show the photo distribution, not an arbitrary
       // hardcoded city. Defer all projection/fit calculations to Baidu JSAPI.
@@ -840,9 +858,10 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
           sx={{ px: { xs: 1, sm: 1.5 }, py: 1, flexWrap: 'wrap' }}>
           <Button size="small" variant="outlined"
             data-xdrive-baidu-prototype-nearby
-            disabled={!prototypeConsent || !canBrowseNearby || !runtime}
+            disabled={!prototypeConsent || !canBrowseNearby || !runtime ||
+              !committedOwnerFrame.current}
             onClick={() => {
-              if (!runtime || !manualCamera.current) return
+              if (!runtime || !manualCamera.current || !committedOwnerFrame.current) return
               const bounds = xDriveBaiduPrototypeNearbyActionBounds(
                 runtime.map.getBounds?.(), runtime.map.getZoom?.() ?? NaN,
               )
