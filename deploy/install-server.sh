@@ -2386,7 +2386,9 @@ elif [[ -z "$(env_value XD_DOMAIN)" && "$(env_value XD_LEGACY_HTTP_ONLY)" == "1"
   echo "Legacy HTTP-only deployment retained on the loopback Web port $(env_value XD_WEB_PORT)."
 fi
 if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
-  echo "LAN IP requires explicit browser trust of the Caddy local CA; never bypass the certificate warning to sign in."
+  echo "LAN IP requires explicit client trust of the Caddy local CA; never bypass the certificate warning to sign in."
+  echo "On this trusted host: xdrive-server lan-ca export /absolute/path/root.crt"
+  echo "Transfer through a trusted channel, compare SHA256, then explicitly approve client trust."
 fi
 echo "Backup now:      $BIN_DIR/server-backup.sh"
 echo "Restore:         $BIN_DIR/server-restore.sh"

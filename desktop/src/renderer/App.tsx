@@ -331,7 +331,9 @@ export default function App({
     key: 'idle' | 'checking' | 'ok' | 'error'
     version?: string
     detail?: string
+    code?: string
   }>({ key: 'idle' })
+  const [serverProbeRetry, setServerProbeRetry] = useState(0)
   const [loginDiagnosticsOpen, setLoginDiagnosticsOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -1292,7 +1294,7 @@ export default function App({
           setServerProbe({ key: 'ok', version: result.data.version })
           return
         }
-        setServerProbe({ key: 'error', detail: result.error.message })
+        setServerProbe({ key: 'error', code: result.error.code, detail: result.error.message })
       }).catch(() => {
         if (active) setServerProbe({ key: 'error', detail: '服务器探测暂时失败，请重试。' })
       })
@@ -1301,7 +1303,7 @@ export default function App({
       active = false
       window.clearTimeout(timer)
     }
-  }, [configured, server])
+  }, [configured, server, serverProbeRetry])
 
   useEffect(() => {
     if (!agent.connected || !(agent.hello?.capabilities.includes('client-update') ?? false)) {
@@ -2331,6 +2333,29 @@ export default function App({
                 )}
               />
             </XDriveAuthField>
+
+            {serverProbe.key === 'error' && serverProbe.code === 'server_tls_trust' ? (
+              <XDriveStatusAlert tone="warning">
+                <Stack spacing={0.75}>
+                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                    当前设备无法验证服务器 HTTPS 身份。这通常是 Caddy 本地根 CA 未受信任，
+                    并非 IP 登录功能未实现。请在可信的 xDrive Linux 服务端运行
+                    <strong> xdrive-server lan-ca export /absolute/path/root.crt </strong>
+                    ，通过独立可信渠道传输证书并核对 SHA-256 后，
+                    在本机证书管理器中明确批准信任；不要从报错网页下载 CA，也不要忽略 TLS 错误。
+                  </Typography>
+                  <MuiBox>
+                    <XDriveActionButton
+                      compact
+                      disabled={!!busy}
+                      onClick={() => setServerProbeRetry((current) => current + 1)}
+                    >
+                      重新检查 HTTPS
+                    </XDriveActionButton>
+                  </MuiBox>
+                </Stack>
+              </XDriveStatusAlert>
+            ) : null}
 
             <XDriveAuthField
               label="用户名"
