@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 SCRIPT = Path(__file__).with_name("caddy-env-config.py")
@@ -200,6 +201,61 @@ class TestCaddyHostEnv(unittest.TestCase):
         code, _ = self.run_command("snapshot")
         self.assertNotEqual(code, 0)
 
+
+
+class TestCaddyDeployArchiveBounded(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.control = Path(self.tmp.name) / "control"
+        self.control.mkdir(mode=0o700)
+        self.control.chmod(0o2770)
+
+    def archive(self, n, extra=None):
+        data = dict(protocol="xdrive.caddy.host-env.v1", state="deployed",
+                    request_id=f"{n:024x}", sha256="b" * 64)
+        if extra:
+            data.update(extra)
+        env = dict(os.environ, XD_CADDY_DEPLOY_RECEIPT_DIR=str(self.control))
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "archive-deploy"],
+            input=json.dumps(data).encode(), capture_output=True,
+            env=env, timeout=8,
+        )
+
+    def test_seven_day_ttl_and_max_64_immutable_results(self):
+        # Archive retention is bounded even when the Host does many deploys.
+        for n in range(1, 69):
+            result = self.archive(n)
+            self.assertEqual(result.returncode, 0, f"{n}: {result.stdout!r}")
+        folder = self.control / "caddy-deploy-results"
+        records = list(folder.glob("*.json"))
+        self.assertEqual(len(records), 64)
+        self.assertEqual(folder.stat().st_mode & 0o7777, 0o2750)
+        self.assertFalse((folder / f"{1:024x}.json").exists())
+        self.assertTrue((folder / f"{68:024x}.json").exists())
+        self.assertTrue(all((f.stat().st_mode & 0o777) == 0o640 for f in records))
+        stale = folder / f"{6:024x}.json"
+        day8 = time.time() - 8 * 24 * 60 * 60
+        os.utime(stale, (day8, day8))
+        self.assertEqual(self.archive(69).returncode, 0)
+        self.assertFalse(stale.exists())
+        self.assertEqual(len(list(folder.glob("*.json"))), 64)
+        for receipt in folder.glob("*.json"):
+            content = receipt.read_text()
+            self.assertNotIn("ALIYUN_ACCESS_KEY", content)
+            self.assertNotIn("POSTGRES_PASSWORD", content)
+
+    def test_duplicate_and_secret_injection_refused_without_overwrite(self):
+        self.assertEqual(self.archive(1).returncode, 0)
+        receipt = self.control / "caddy-deploy-results" / f"{1:024x}.json"
+        original = receipt.read_bytes()
+        self.assertNotEqual(self.archive(1).returncode, 0)
+        self.assertEqual(receipt.read_bytes(), original)
+        injected = self.archive(2, {"access_key_secret": "DONT-STORE"})
+        self.assertNotEqual(injected.returncode, 0)
+        self.assertFalse((receipt.parent / f"{2:024x}.json").exists())
+        self.assertNotIn(b"DONT-STORE", injected.stdout + injected.stderr)
 
 if __name__ == "__main__":
     unittest.main()
