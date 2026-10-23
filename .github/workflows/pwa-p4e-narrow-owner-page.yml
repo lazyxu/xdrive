@@ -1,0 +1,114 @@
+name: PWA P4E Production Owner 100k Narrow Page AFTER
+on:
+  push:
+    branches: [perf/pwa-p4e-narrow-gallery-page-20261023]
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p4e-owner-abba:
+    if: github.head_ref == 'perf/pwa-p4e-narrow-gallery-page-20261023' || github.ref == 'refs/heads/perf/pwa-p4e-narrow-gallery-page-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P4E_OWNER_100K: '1'
+      XD_PWA_P4E_RESULTS: ${{ github.workspace }}/desktop/pwa-p4e-results/summary.json
+      XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact Git SHA, formatted Go, genuine API compilation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          if [[ -n "$(gofmt -l internal/api/pwa_p4e_owner_narrow_page_100k_integration_test.go)" ]]; then
+            gofmt -d internal/api/pwa_p4e_owner_narrow_page_100k_integration_test.go
+            exit 1
+          fi
+          for path in internal/api/media.go internal/api/media_page_narrow.go; do
+            if [[ -n "$(gofmt -l "$path")" ]]; then
+              gofmt -d "$path"
+              exit 1
+            fi
+          done
+          go test -c -o "$RUNNER_TEMP/xdrive-p4e-api.test" ./internal/api
+      - name: Original vs candidate SQL ABBA with real PostgreSQL17
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          mkdir -p desktop/pwa-p4e-results
+          "$RUNNER_TEMP/xdrive-p4e-api.test" -test.run '^TestPwaP4EOwner100kReadOnlyQueryCandidates$' -test.v -test.timeout 70m
+          node - <<'NODE'
+          const fs=require('node:fs'), assert=require('node:assert/strict')
+          const x=JSON.parse(fs.readFileSync(process.env.XD_PWA_P4E_RESULTS, 'utf8'))
+          assert.equal(x.schema,'xdrive-pwa-p4e-owner-narrow-page-v1')
+          assert.equal(x.optimization_implemented,true)
+          assert.equal(x.after,null)
+          assert.equal(x.causal_conclusion,'NOT_ESTABLISHED')
+          assert.equal(x.pairs.length,9)
+          assert.equal(x.probes.length,3)
+          const stages=['full_a1_ms','narrow_b1_ms','narrow_b2_ms','full_a2_ms']
+          const keys=['round','viewport','offset','rows',...stages].sort()
+          for(let r=1;r<=3;r++) {
+            const rows=x.pairs.filter(p=>p.round===r)
+            assert.deepEqual(rows.map(p=>p.viewport).sort(),['middle','tail','top'])
+            for(const p of rows) {
+              assert.deepEqual(Object.keys(p).sort(),keys)
+              assert([0,50000,95000].includes(p.offset))
+              assert.equal(p.rows,48)
+              for(const k of stages) assert(Number.isFinite(p[k]) && p[k]>=0,k)
+            }
+          }
+          for(const p of x.probes) {
+            assert.equal(p.both_report_no_stale,true)
+            assert(Number.isFinite(p.ordered_probe_ms) && p.ordered_probe_ms>=0)
+            assert(Number.isFinite(p.unordered_probe_ms) && p.unordered_probe_ms>=0)
+          }
+          const paired=Object.fromEntries(['top','middle','tail'].map(label=>{
+            const rows=x.pairs.filter(p=>p.viewport===label)
+            const mean=key=>rows.reduce((sum,p)=>sum+p[key],0)/rows.length
+            return [label,{fullAMs:(mean('full_a1_ms')+mean('full_a2_ms'))/2,
+              narrowBMs:(mean('narrow_b1_ms')+mean('narrow_b2_ms'))/2}]
+          }))
+          const benefited=Object.values(paired).filter(v=>v.narrowBMs <= 0.85*v.fullAMs).length
+          assert(benefited>=2,'narrow page must improve >=15% at 2 of 3 depths')
+          console.log('PWA_P4E_ANONYMOUS_CANDIDATE_ABBA '+JSON.stringify({
+            sha:process.env.XD_PR_HEAD, samples:9, productionNarrowPage:true, fullHttpBefore:null,
+            causalConclusion:'NOT_ESTABLISHED', paired
+          }))
+          NODE
+          printf 'SHA=%s\nRUN=%s\n' "$XD_PR_HEAD" "$GITHUB_RUN_ID" > desktop/pwa-p4e-results/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p4e-owner-sql-candidates-abba
+          path: |
+            desktop/pwa-p4e-results/summary.json
+            desktop/pwa-p4e-results/source.txt
+          if-no-files-found: warn
+          retention-days: 14

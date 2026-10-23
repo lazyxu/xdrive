@@ -655,14 +655,8 @@ func (s *Server) materializeMediaItems(
 	if len(sorts) > 0 {
 		options = sorts[0]
 	}
-	var metadata []meta.MediaMetadata
-	for _, clause := range mediaGallerySortClauses(options) {
-		query = query.Order(clause)
-	}
-	if err := query.
-		Limit(limit).
-		Offset(offset).
-		Find(&metadata).Error; err != nil {
+	metadata, err := s.loadNarrowMediaMetadataPage(ctx, uid, query, options, limit, offset)
+	if err != nil {
 		return nil, err
 	}
 	if len(metadata) == 0 {
