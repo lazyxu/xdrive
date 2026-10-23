@@ -74,7 +74,7 @@ test('isolated Child projects bounded cells; only trusted Parent loads photo cov
   assert.match(parent,/pin\.count\.toLocaleString\('zh-CN'\)/)
   assert.doesNotMatch(child,/loadThumbnail|Bearer/)
   assert.equal(fs.existsSync(path.join(root,
-    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),false)
+    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),true)
 })
 
 test('map has one short user hint; debug throughput and duplicate counters are not shown',()=>{
@@ -84,7 +84,8 @@ test('map has one short user hint; debug throughput and duplicate counters are n
   assert.doesNotMatch(parent,/data-xdrive-places-prototype-progress/)
   assert.match(parent,/缩放百度动态地图浏览照片/)
   assert.match(parent,/data-xdrive-places-map-options/)
-  assert.doesNotMatch(parent,/prototypeMap|BaiduStaticMap/)
+  assert.doesNotMatch(parent,/BaiduStaticMap/)
+  assert.match(parent,/data-xdrive-places-map-mode/)
   assert.match(parent,/data-xdrive-places-map-options/)
 })
 

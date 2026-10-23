@@ -125,7 +125,7 @@ test('A3 fails closed on malformed camera, absent original GPS and SDK failure',
   assert.deepEqual(calls, [['native-dispose']])
   runtime.dispose()
 })
-test('A3 strictly no new Browser AK, SDK/network injection or client-specific Gallery fork', () => {
+test('A3 signed Child loader remains free of Browser AK and injection despite optional Web prototype', () => {
   assert.doesNotMatch(source,
     /\bfetch\(|document\.createElement|BMapLoader|window\.BMap|localStorage|indexedDB|BMAP_PROXY_URL|serviceHost/)
   const places = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
@@ -133,7 +133,10 @@ test('A3 strictly no new Browser AK, SDK/network injection or client-specific Ga
   const isolated = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(places, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.doesNotMatch(places, /XDriveMediaGalleryBaiduJSAPI4Surface/)
-  assert.doesNotMatch(places, /XDriveMediaGalleryBaiduStaticMap|XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.doesNotMatch(places, /XDriveMediaGalleryBaiduStaticMap/)
+  assert.match(places, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(places, /mapMode === 'prototype' && !desktopOnly/)
+  assert.match(places, /mapMode === 'isolated' && status === 'authorized'/)
   assert.match(places, /activation_state === 'authorized_signed_release'/)
   assert.match(places, /listOwnerCells=\{listBaiduNativeCells\}/)
   assert.match(isolated, /xDriveMountBaiduIsolatedFrame/)

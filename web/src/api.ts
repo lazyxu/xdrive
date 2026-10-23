@@ -1553,6 +1553,23 @@ export class XDriveApi {
     )
   }
 
+  /** Authenticated Browser AK for the intentionally unsandboxed prototype. */
+  mediaBaiduJSAPIPrototype(signal: AbortSignal) {
+    if (!signal || signal.aborted) return Promise.reject(new Error('prototype_cancelled'))
+    return this.request<import('../../ui/shared/src/models').XDriveBaiduJSAPIPrototypeConfig>(
+      '/api/v1/media/places/baidu-jsapi/prototype',
+      { signal, cache: 'no-store' },
+    ).then(value => {
+      if (signal.aborted || value?.provider !== 'baidu-jsapi-4.0' ||
+          typeof value.browser_ak !== 'string' || value.browser_ak.length < 1 ||
+          value.browser_ak.length > 256 || !/^[!-~]+$/.test(value.browser_ak) ||
+          !Number.isSafeInteger(value.revision) || value.revision < 1) {
+        throw new Error('invalid_prototype_config')
+      }
+      return value
+    })
+  }
+
   /** Runtime comes only from Server's current signed, revocable release. */
   mediaBaiduJSAPI4Status(signal?: AbortSignal) {
     return this.request<{

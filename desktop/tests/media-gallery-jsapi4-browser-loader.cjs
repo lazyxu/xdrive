@@ -283,7 +283,7 @@ test('A3c22 a script without onload/onerror expires and can be retried', async (
   }
 })
 
-test('dynamic-only contract: signed Baidu Child, original WGS84, no alternate map source', () => {
+test('signed Baidu Child loader remains private while Web legacy prototype is a separate explicit mode', () => {
   for (const value of [
     '/_BMapService/api?v=4.0', 'mintMapOnlySession(signal)',
     'translate([original], 1, 5', 'trustedWGS84Bounds',
@@ -295,7 +295,10 @@ test('dynamic-only contract: signed Baidu Child, original WGS84, no alternate ma
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
   assert.match(current, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(current, /activation_state === 'authorized_signed_release'/)
-  assert.doesNotMatch(current, /XDriveMediaGalleryBaiduStaticMap|BaiduPrototypeMap/)
+  assert.doesNotMatch(current, /XDriveMediaGalleryBaiduStaticMap/)
+  assert.match(current, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(current, /mapMode === 'isolated' && status === 'authorized'/)
+  assert.match(current, /window.location.replace\(href\)/)
   for (const platform of [
     'web/src/mediaGalleryAdapter.ts',
     'desktop/src/renderer/mediaGalleryAdapter.ts',

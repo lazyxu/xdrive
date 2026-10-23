@@ -39,6 +39,20 @@ function loadSharedMap() {
       xDriveBaiduMapDiagnosticDetails: {},
       XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS: 10_000,
     },
+    '../media-gallery-places-map-mode': {
+      xDrivePlacesMapModeFromHref: href => href.includes('places_map_mode=isolated')
+        ? 'isolated' : 'prototype',
+      xDrivePlacesMapModeNavigationURL: (href, mode) => {
+        const url = new URL(href)
+        if (mode === 'isolated') url.searchParams.set('places_map_mode', 'isolated')
+        else url.searchParams.delete('places_map_mode')
+        return url.href
+      },
+    },
+    './MediaGalleryBaiduPrototypeMap': {
+      XDriveMediaGalleryBaiduPrototypeMap: props =>
+        React.createElement('old-prototype', props),
+    },
     './MediaGalleryBaiduIsolatedPhotoSurface': {
       XDriveMediaGalleryBaiduIsolatedPhotoSurface: props =>
         React.createElement('isolated-child', props),
@@ -47,6 +61,10 @@ function loadSharedMap() {
   mod.require = name => Object.hasOwn(injected, name) ? injected[name] : requireOriginal(name)
   mod._compile(output, mapFile)
   return mod.exports.XDriveMediaGalleryPlacesMap
+}
+global.window = {
+  location: { href: 'https://gallery.example.test/gallery', replace(href) { this.href = href } },
+  addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout,
 }
 const PlacesMap = loadSharedMap()
 const place = { id:'place:40:-120', name:'GPS Photo Place',
@@ -58,6 +76,8 @@ const base = {
   mintBaiduIsolatedChildTicket:async () => ({ provider:'baidu-jsapi-4.0',
     child_origin:'https://map.example.test', ticket:'dummy' }),
   onOpenBaiduNativeCell:() => {},
+  getBaiduJSAPIPrototype:async () => ({provider:'baidu-jsapi-4.0',browser_ak:'public-browser-ak',revision:1}),
+  listPlacesMapOverview:async () => ({items:[],total_photo_count:0,aggregated:false}),
 }
 async function render(props) {
   let view
@@ -68,17 +88,28 @@ async function render(props) {
   return view
 }
 
-test('Server release denial does not mount native SDK or any static/legacy fallback', async () => {
+test('default Web runtime mounts old same-document prototype without requiring signed release', async () => {
+  global.window.location.href = 'https://gallery.example.test/gallery'
+  const view = await render({})
+  assert.equal(view.root.findAllByType('old-prototype').length, 1)
+  assert.equal(view.root.findAllByType('isolated-child').length, 0)
+  await act(async () => view.unmount())
+})
+
+test('Server release denial in selected isolation never automatically mounts prototype', async () => {
+  global.window.location.href = 'https://gallery.example.test/?places_map_mode=isolated'
   const view = await render({ getBaiduJSAPI4Status: async () => ({
     provider:'baidu-jsapi-4.0', enabled:true, activation_state:'server_release_blocked',
   }) })
   assert.equal(view.root.findAllByType('isolated-child').length, 0)
   assert.equal(view.root.findAll(node => node.props['data-xdrive-baidu-map-unavailable'] !== undefined).length, 1)
-  assert.doesNotMatch(original, /MediaGalleryBaiduStaticMap|MediaGalleryBaiduPrototypeMap/)
+  assert.equal(view.root.findAllByType('old-prototype').length, 0)
+  assert.doesNotMatch(original, /MediaGalleryBaiduStaticMap/)
   await act(async () => view.unmount())
 })
 
 test('Only authorized_signed_release mounts independently isolated HTTPS JSAPI4 child', async () => {
+  global.window.location.href = 'https://gallery.example.test/?places_map_mode=isolated'
   const view = await render({ getBaiduJSAPI4Status: async () => ({
     provider:'baidu-jsapi-4.0', enabled:true, activation_state:'authorized_signed_release',
     isolated_child_origin:'https://map.example.test',
@@ -94,6 +125,7 @@ test('Only authorized_signed_release mounts independently isolated HTTPS JSAPI4 
 })
 
 test('GPS place wall navigation remains available when SDK is blocked', async () => {
+  global.window.location.href = 'https://gallery.example.test/gallery'
   let opened = ''
   const view = await render({
     getBaiduJSAPI4Status: async () => ({
@@ -110,9 +142,11 @@ test('GPS place wall navigation remains available when SDK is blocked', async ()
 })
 
 test('Desktop file renderer offers HTTPS-only map action but never injects third party scripts', async () => {
+  global.window.location.href = 'https://gallery.example.test/gallery'
   let opened = 0
   const view = await render({ onOpenSecureDesktopMap: () => { opened++ } })
   assert.equal(view.root.findAllByType('isolated-child').length, 0)
+  assert.equal(view.root.findAllByType('old-prototype').length, 0)
   const links = view.root.findAll(node => node.type === 'button' &&
     String(node.props.children).includes('独立 HTTPS 安全窗口'))
   assert.equal(links.length, 1)

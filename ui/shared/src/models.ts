@@ -994,6 +994,13 @@ export interface MediaPlaceHierarchyRequest {
   limit?: number
 }
 
+/** Public JSAPI browser AK for accepted in-Gallery prototype, not Server AK. */
+export type XDriveBaiduJSAPIPrototypeConfig = {
+  provider: 'baidu-jsapi-4.0'
+  browser_ak: string
+  revision: number
+}
+
 /** Source coordinates are WGS84. West > East means antimeridian wrap. */
 export interface MediaPlacesViewportBounds {
   west: number
