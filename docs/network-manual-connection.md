@@ -1,3 +1,9 @@
+## Desktop 局域网 IP 登录探测（2026-10-23）
+
+Desktop 登录前的 `/api/v1/version` 检查现使用 Electron Main 的 Chromium `net.fetch` 和平台 TLS 验证，不再使用 Node 默认 `fetch` 的内置 CA 列表。探测只请求所填的 HTTP(S) 根 Origin，不发送 Cookie / 用户名 / 密码 / Bearer，不跟随重定向，不跳过证书校验。失败时区分证书链未信任、IP SAN 不匹配、TLS 协议、端口拒绝连接、网络不可达和超时。探测成功仅表示**版本 API 可达**，不能证明账户登录或当前管理员 Caddy Desired 已应用。
+
+`https://192.168.2.4:8443` 无法连接时，先确认当前 Caddy Host **实际**启用了 `XD_LAN_HTTPS_IP=192.168.2.4`、`XD_HTTPS_PORT=8443`，并且 `XD_HTTPS_BIND` 允许 LAN IP 访问；仅保存系统依赖期望值不代表当前 Host 生效。Windows 上可用 `Test-NetConnection 192.168.2.4 -Port 8443` 只读确认 TCP，再从可信独立渠道取得**当前服务器的** Caddy `root.crt` 并核验指纹，使用 `curl.exe --noproxy "*" --cacert <受信任的root.crt> https://192.168.2.4:8443/api/v1/version` 验证 TLS 证书链和 IP SAN。成功后，再按 OS 证书管理策略安全配置本机信任；**不要**通过 `-k`、忽略证书错误或在网页自动安装 CA 来登录。生产环境现场验收按用户决定跳过（未验收）；不影响代码级测试和合并。
+
 **NET-M5-B2 Host 变更计划：** 管理员已保存的 IP/域名入口可经只读 Host Plan API 导出为规范候选配置，再由独立操作员在宿主机离线复核；它尚未执行 Caddy 重启。参阅 [Caddy HTTPS Host Plan](caddy-https-host-plan.md)，完成受控应用/回滚验收前必须保留至少一个可恢复的管理入口。私网 CA 信任仍需每台客户端安全配置。
 
 **NET-M4 首次部署默认值说明：** 当 DB 还没有管理员 Caddy 修订时，已通过规范 RFC1918 校验的 `XD_LAN_HTTPS_IP` 作为“系统依赖”页面**未保存的默认启用 IP**显示。它来自 Server 配置声明，只用于降低首次配置混淆；仍显示 `revision=0`、`apply_state=unmanaged`、`apply_supported=false`，不表示 Caddy 重启、TLS 验证、浏览器 CA 信任或已保存的宿主修订。

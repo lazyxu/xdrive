@@ -28,6 +28,7 @@ import {
 } from './baidu_map_secure_view.cjs'
 import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
+import { probeDesktopServer as probeDesktopServerWithChromium } from './server_probe.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import {
@@ -551,50 +552,8 @@ async function persistLoginHistoryBestEffort() {
 }
 
 async function probeDesktopServer(serverValue: string): Promise<DesktopResult<{ version?: string }>> {
-  const normalized = serverValue.trim().replace(/\/+$/, '')
-  let parsed: URL
-  try {
-    parsed = new URL(normalized)
-  } catch {
-    return { ok: false, error: { code: 'invalid_server', message: '服务器地址格式无效。' } }
-  }
-  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) {
-    return { ok: false, error: { code: 'invalid_server', message: '服务器地址必须是 http(s) 地址，且不能包含用户名或密码。' } }
-  }
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5_000)
-  try {
-    const response = await fetch(normalized + '/api/v1/version', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: {
-          code: 'server_unreachable',
-          message: `服务器返回 HTTP ${response.status}。`,
-          status: response.status,
-        },
-      }
-    }
-    const payload = await response.json().catch(() => ({})) as { version?: unknown }
-    return {
-      ok: true,
-      data: typeof payload.version === 'string' && payload.version.trim()
-        ? { version: payload.version.trim() }
-        : {},
-    }
-  } catch (error) {
-    const message = error instanceof Error && error.name === 'AbortError'
-      ? '连接服务器超时。'
-      : formatLifecycleError(error)
-    return { ok: false, error: { code: 'server_unreachable', message } }
-  } finally {
-    clearTimeout(timer)
-  }
+  return probeDesktopServerWithChromium(serverValue, (url, options) =>
+    net.fetch(url, { ...options, bypassCustomProtocolHandlers: true }))
 }
 
 function quoteDesktopExec(value: string) {

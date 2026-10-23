@@ -1288,6 +1288,8 @@ export default function App({
           return
         }
         setServerProbe({ key: 'error', detail: result.error.message })
+      }).catch(() => {
+        if (active) setServerProbe({ key: 'error', detail: '服务器探测暂时失败，请重试。' })
       })
     }, 450)
     return () => {
@@ -2291,7 +2293,7 @@ export default function App({
                     : serverProbe.key === 'ok'
                       ? `服务器可访问${serverProbe.version ? ` · ${serverProbe.version}` : ''}`
                       : serverProbe.key === 'error'
-                        ? '暂时无法连接此服务器；请检查地址、端口或证书。'
+                        ? (serverProbe.detail || '暂时无法连接此服务器；请检查地址、端口或证书。')
                         : '支持自建 xDrive 服务器；连接会在登录时再次验证。'}
                 </XDriveAuthFieldStatus>
               )}
