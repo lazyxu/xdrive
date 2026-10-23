@@ -39,8 +39,12 @@ const hook = compile(hookPath,{})
 // foreign Owner, SDK, or credential data.
 const diagnosticsPath = path.join(root,'ui/shared/src/media-gallery-baidu-diagnostics.ts')
 const diagnostics = compile(diagnosticsPath,{})
+// Load the actual pure runtime choice helper; never mock Owner authorization.
+const runtimePath = path.join(root,'ui/shared/src/media-gallery-places-runtime.ts')
+const placesRuntime = compile(runtimePath,{})
 const galleryMap = compile(uiFile,{
   '@mui/material':stub,
+  '../media-gallery-places-runtime':placesRuntime,
   './useDeferredLoading':hook,
   '../media-gallery-baidu-diagnostics':diagnostics,
   // A3 adds an optional shared native Map, but this existing Places

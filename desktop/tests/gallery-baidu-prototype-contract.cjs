@@ -10,9 +10,10 @@ function source(file) {
   return fs.readFileSync(path.join(root, file), 'utf8')
 }
 
-test('Places gallery defaults to native Baidu SDK for the prototype', () => {
+test('Places retains native SDK as a prototype-only fallback', () => {
   const entry = source('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
-  assert.match(entry, /const prototypeMap = Boolean\(listPlacesMapOverview && getBaiduJSAPIPrototype\)/)
+  assert.match(entry, /const hasIsolatedChildPorts = Boolean\(/)
+  assert.match(entry, /const prototypeMap = xDriveBaiduPlacesRuntime\(/)
   assert.match(entry, /prototypeMap && getBaiduJSAPIPrototype && listPlacesMapOverview \? \(/)
   assert.match(entry, /<XDriveMediaGalleryBaiduPrototypeMap/)
   assert.match(entry, /onOpenPlace=\{onOpenPlace\}/)

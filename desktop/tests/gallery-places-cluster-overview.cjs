@@ -94,7 +94,9 @@ test('Gallery Places mounts its map without waiting for Facets and preserves Own
   const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const surface=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(gallery,/\{showPlacesIndex \? \(/)
-  assert.match(gallery,/component="details" data-xdrive-places-list/)
+  // The wide view keeps details; compact iOS Places uses a flat section.
+  assert.match(gallery,/component=\{compactGallery \? 'section' : 'details'\} data-xdrive-places-list/)
+  assert.match(gallery,/\{placesPanels\.list \? \(/)
   assert.match(map,/data-xdrive-places-map-options/)
   assert.match(surface,/data-xdrive-places-cluster-overview/)
   assert.match(surface,/queryCells\(world\)\.then\(ok =>/)
