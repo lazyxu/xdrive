@@ -9,7 +9,7 @@ module.exports = function createShareCoreHost(React, typeLabel) {
     items, crumbs, loading, interactionLifecycleKey, viewMode,
     onViewModeChange, onOpenItem, onRefresh, canGoUp, onUp,
     getItemMenuItems, onDownloadItems, getSelectionActionDisabledReason,
-    commandBarEnd,
+    commandBarEnd, loadPreviewURL, statusText,
   }) {
     const [selected, setSelected] = React.useState(null)
     const [context, setContext] = React.useState(null)
@@ -38,7 +38,12 @@ module.exports = function createShareCoreHost(React, typeLabel) {
       }, '下载'),
       chosen && h('button', {
         key: 'preview', 'data-xdrive-public-share-selected-preview': true,
-        disabled: false,
+        disabled: !loadPreviewURL || chosen.kind !== 'file' ||
+          !/\.(?:jpe?g|png|webp|gif)$/i.test(chosen.name),
+        onClick: () => {
+          if (loadPreviewURL && chosen.kind === 'file' &&
+              /\.(?:jpe?g|png|webp|gif)$/i.test(chosen.name)) onOpenItem?.(chosen)
+        },
       }, '预览'),
     ]
     const menuActions = context && [
@@ -77,6 +82,8 @@ module.exports = function createShareCoreHost(React, typeLabel) {
             action.onSelect()
           },
         }, action.label))),
+      statusText && h('div', { key: 'status',
+        'data-xdrive-public-share-status-text': true }, statusText),
       properties && h('dialog', { key: 'properties', open: true }, [
         h('div', { key: 'name' }, '名称：', properties.name),
         h('div', { key: 'type' }, '类型：', typeLabel(properties.name, properties.kind)),

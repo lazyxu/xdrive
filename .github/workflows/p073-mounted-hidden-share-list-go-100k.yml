@@ -6,7 +6,9 @@ permissions:
 
 jobs:
   real-mounted-hidden-share-list-go-100k:
-    if: github.head_ref == 'perf/p073-mounted-hidden-share-list-go-100k-20261022'
+    if: >-
+      github.head_ref == 'perf/p073-mounted-hidden-share-list-go-100k-20261022' ||
+      github.head_ref == 'refactor/share-single-file-unified-core-shp023-20261022'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:

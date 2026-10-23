@@ -29,13 +29,16 @@ test('P115: public share live status cannot be inserted among normal Explorer la
   assert.ok(originalStack.includes('data-xdrive-public-share-zip-status-slot'))
   assert.ok(originalStack.includes('height: 24, minHeight: 24'))
 })
-test('P115: accepted current share page identity, not fresh array, resets before paint', () => {
-  assert.ok(explorer.includes('const acceptedPageIdentity = useMemo('))
-  assert.ok(explorer.includes('[currentFolderID, items]'))
-  assert.ok(explorer.includes('useLayoutEffect(() => {'))
-  assert.ok(explorer.includes('}, [acceptedPageIdentity])'))
-  assert.equal(explorer.includes('}, [items, currentFolderID])'),false)
-  assert.ok(explorer.includes('items.slice(0, 100)'))
+
+test('P115: common Core page identity, not fresh array, resets controls before paint', () => {
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
+  assert.ok(explorer.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert.ok(bridge.includes('const pageIdentity = useMemo('))
+  assert.ok(bridge.includes('[kind, currentFolderID, acceptedPage]'))
+  assert.ok(bridge.includes('useLayoutEffect(() => {'))
+  assert.ok(bridge.includes('}, [pageIdentity])'))
+  assert.ok(bridge.includes('items.slice(0, fileLink ? 1 : sharePageLimit)'))
+  assert.ok(bridge.includes('<XDriveFileExplorer'))
   assert.ok(page.includes('pendingPage.current?.abort()'))
   assert.ok(page.includes('api.publicShareChildren('))
 })

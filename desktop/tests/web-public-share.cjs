@@ -79,42 +79,32 @@ test('Web public share keeps native download, password and eligibility feedback'
 })
 
 
-test('Web folder share stays bounded, read-only and cancels stale page requests', () => {
+
+test('Web folder Share stays bounded, read-only and cancels stale page requests', () => {
+  const unified = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui',
+    'PublicShareUnifiedDirectoryExplorer.tsx'), 'utf8')
   for (const token of [
-    "share.type === 'dir'",
-    'api.publicShareChildren(',
-    'pendingPage.current?.abort()',
-    "document.visibilityState === 'hidden'",
-    "document.addEventListener('visibilitychange', onVisibilityChange)",
-    'const controller = new AbortController()',
-    'items: page.items',
-    'next: Number(page.nextCursor ?? 0)',
-    'await shareFileAdapter.list(',
-    'hasPreviousPage={Boolean(folder?.history.length)}',
-    'hasNextPage={Boolean(folder && folder.next > 0)}',
-    'onPreviousPage={() => {',
+    "share.type === 'dir'", 'api.publicShareChildren(', 'pendingPage.current?.abort()',
+    "document.visibilityState === 'hidden'", "document.addEventListener('visibilitychange', onVisibilityChange)",
+    'const controller = new AbortController()', 'items: page.items', 'next: Number(page.nextCursor ?? 0)',
+    'await shareFileAdapter.list(', 'hasPreviousPage={Boolean(folder?.history.length)}',
+    'hasNextPage={Boolean(folder && folder.next > 0)}', 'onPreviousPage={() => {',
     'onNextPage={() => {',
-  ]) {
-    assert.ok(publicShare.includes(token), `Shared folder pagination missing: ${token}`)
+  ]) assert.ok(publicShare.includes(token), 'folder paging missing: ' + token)
+  assert.ok(publicReadOnlyExplorer.includes(
+    'return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  for (const token of ['<XDriveFileExplorer', 'data-xdrive-public-share-explorer-workspace',
+    'data-xdrive-public-share-explorer-view', 'forceVirtualization',
+    'items.slice(0, fileLink ? 1 : sharePageLimit)', 'onOpenFolder?.(entry)',
+    'onDownloadItem?.(entry)', 'onPreviousPage', 'onNextPage']) {
+    assert.ok(unified.includes(token), 'common Share Core missing: ' + token)
   }
-  for (const token of [
-    'const pageItems = items.slice(0, 100)',
-    'visibleItems.map(entry => (',
-    'data-xdrive-public-share-explorer-workspace',
-    'data-xdrive-public-share-details-header',
-    'anchorPosition={contextMenu',
-    'data-xdrive-public-share-folder-browser',
-    'data-xdrive-public-share-explorer-view',
-    'onOpenFolder?.(entry)',
-    'onDownloadItem?.(entry)',
-    'role="listitem"',
-  ]) {
-    assert.ok(publicReadOnlyExplorer.includes(token), 'shared read-only Explorer presentation missing: ' + token)
+  for (const forbidden of ['onUpload=', 'onDeleteItems=', 'onRenameItem=',
+    'onMoveItemsTo=', 'onCopyItemsTo=']) {
+    assert.equal(unified.includes(forbidden), false, 'Share may not delegate Owner command: ' + forbidden)
   }
-  for (const forbidden of ['onUpload', 'onDeleteItems', 'onRenameItem', 'onMoveItemsTo', 'onCopyItemsTo']) {
-    assert.equal(publicReadOnlyExplorer.includes(forbidden), false, 'public share must not delegate Owner command: ' + forbidden)
-  }
-  assert.equal(publicShare.includes('items: [...old.items'), false, '100k folder must not accumulate every page in the DOM')
+  assert.equal(publicShare.includes('items: [...old.items'), false,
+    '100k folder may not accumulate every page into the DOM')
 })
 
 test('Web public share delegates the file stream to a short-lived native ticket', () => {

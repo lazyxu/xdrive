@@ -54,37 +54,37 @@ test('public Share never gets mutating operations or full-subtree search from it
     'search requires a granted list capability')
 })
 
-test('both views consume the same shared neutral capability contract without cross-auth', () => {
+
+test('both views consume same shared neutral capability contract without cross-auth', () => {
   const owner = read('ui/shared/src/mui/FileExplorer.tsx')
-  const shared = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   const web = read('web/src/PublicShare.tsx')
   assert(owner.includes("xDriveResolveFileExplorerCapabilities('account'"))
-  assert(shared.includes("xDriveResolveFileExplorerCapabilities('share'"))
-  assert(shared.includes('canBrowse?: boolean'))
-  assert(shared.includes('canPreview?: boolean'))
-  assert(shared.includes('canDownloadZip?: boolean'))
-  assert(shared.includes('showDownloadOption && ('))
-  assert(shared.includes('disabled={!canStartDownload || pending}'))
-  assert(shared.includes('const canStartDownload = capabilities.download && !downloadPending'))
+  assert(bridge.includes("xDriveResolveFileExplorerCapabilities('share'"))
+  assert(facade.includes('canBrowse?: boolean'))
+  assert(facade.includes('canPreview?: boolean'))
+  assert(facade.includes('canDownloadZip?: boolean'))
+  assert(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert(bridge.includes('const canStartDownload = caps.download && !downloadPending'))
   assert(web.includes('const canStartDownload = canDownload && !downloading'))
   assert(web.includes('downloadPending={downloading}'))
-  assert(!web.includes('!downloading && !exhausted'), 'temporary download cannot revoke list and preview')
-  assert(shared.includes('canPreview !== false && loadThumbnail'),
-    'temporary download state must not evict already-loaded thumbnail consumers')
-  assert(shared.includes('capabilities.preview &&'))
-  assert(shared.includes("search: false"))
-  assert(shared.includes('items.slice(0, 100)'),
-    'current-page filter is not full-subtree search')
-  for(const forbidden of [
-    'XDriveApi', 'OwnerJWT', 'onUpload', 'onDeleteItems', 'onMoveItemsTo',
-    'onPaste', 'onRenameItem', 'onDropItemsToFolder',
-  ]) assert.equal(shared.includes(forbidden), false, 'public view cannot import owner mutation: '+forbidden)
-  assert(web.includes("api.publicShareChildren("), 'Share data adapter remains Share-scoped')
-  assert(web.includes('createPublicShareFileExplorerAdapter('), 'production Share must actually instantiate the neutral adapter')
-  assert(web.includes('await shareFileAdapter.list('), 'navigation must consume adapter list, not a separate page fetch')
-  assert(web.includes("source: 'share'"), 'Share adapter must never disguise itself as the Owner source')
-  assert(web.includes('canDownload={canDownload}'),
-    'existing default-allow-download Share recipient flow must not be broken')
+  assert(!web.includes('!downloading && !exhausted'))
+  assert(bridge.includes('caps.preview && loadThumbnail'))
+  assert(bridge.includes('caps.preview && loadImagePreview'))
+  assert(bridge.includes("search: false, write: false, delete: false"))
+  assert(bridge.includes('items.slice(0, fileLink ? 1 : sharePageLimit)'))
+  assert(bridge.includes('getItemMenuItems={contextActions}'))
+  for(const forbidden of ['XDriveApi', 'OwnerJWT', 'onUpload=', 'onDeleteItems=',
+    'onMoveItemsTo=', 'onPaste=', 'onRenameItem=', 'onDropItemsToFolder=']) {
+    assert.equal(bridge.includes(forbidden), false, 'Share Core cannot call Owner mutation: ' + forbidden)
+    assert.equal(facade.includes(forbidden), false, 'Share wrapper cannot call Owner mutation: ' + forbidden)
+  }
+  assert(web.includes('api.publicShareChildren('))
+  assert(web.includes('createPublicShareFileExplorerAdapter('))
+  assert(web.includes('await shareFileAdapter.list('))
+  assert(web.includes("source: 'share'"))
+  assert(web.includes('canDownload={canDownload}'))
 })
 
 test('owners derive mutability from callbacks, not from Share credentials', () => {

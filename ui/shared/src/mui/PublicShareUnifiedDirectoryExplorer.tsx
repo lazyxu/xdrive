@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material'
@@ -17,13 +17,14 @@ const shareThumbnailPattern = /\.(?:jpe?g|png|webp|gif|bmp|heic|heif|avif|tiff?|
 // used by Owner. It never imports JWT/Owner APIs, FileOperation or Agent IPC.
 // Share requests and every signed media/download URL remain server-authorized.
 export function XDrivePublicShareUnifiedDirectoryExplorer({
-  items, path = [], folderOpened = false, pending = false,
+  kind, items, path = [], folderOpened = false, pending = false,
   canBrowse, canPreview, canDownload = false, canDownloadZip,
   downloadPending = false, hasPreviousPage = false, hasNextPage = false,
   toolbarActions, onBrowse, onCrumbClick, onOpenFolder, onDownloadItem,
   onDownloadFolder, folderZIPPreparing = false, loadThumbnail, loadImagePreview,
   onPreviousPage, onNextPage, onRefresh,
 }: XDrivePublicShareReadOnlyExplorerProps) {
+  const fileLink = kind === 'file'
   const [view, setView] = useState<'details' | 'grid'>('details')
   const [pageFilter, setPageFilter] = useState('')
   const [previewEntry, setPreviewEntry] = useState<PublicShareChild | null>(null)
@@ -40,14 +41,15 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
   // The renderer may not retain visible children after Share eligibility is
   // revoked. It is still the Go Share API that enforces expiry/revocation.
   const acceptedPage = useMemo(
-    () => caps.list ? items.slice(0, sharePageLimit) : [],
-    [items, caps.list],
+    () => caps.list ? items.slice(0, fileLink ? 1 : sharePageLimit) : [],
+    [items, caps.list, fileLink],
   )
   const pageIdentity = useMemo(
-    () => currentFolderID + ':' + acceptedPage.map(item => item.id).join(','),
-    [currentFolderID, acceptedPage],
+    () => kind + ':' + currentFolderID + ':' + acceptedPage.map(item =>
+      item.id + ':' + (item.revision ?? 0) + ':' + item.name).join(','),
+    [kind, currentFolderID, acceptedPage],
   )
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPageFilter('')
     setPreviewEntry(null)
   }, [pageIdentity])
@@ -141,6 +143,8 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
   return (
     <Box data-xdrive-public-share-explorer-workspace
       data-xdrive-public-share-unified-core="true"
+      data-xdrive-public-share-file-browser={fileLink || undefined}
+      data-xdrive-public-share-kind={kind}
       data-xdrive-public-share-explorer-view={view}
       sx={{
         height: 'clamp(520px, calc(100dvh - 290px), 900px)',
@@ -148,8 +152,11 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         border: 1, borderColor: 'divider', borderRadius: 2,
       }}>
-      {!folderOpened && !pending ? (
-        <Button onClick={onBrowse} disabled={!caps.list}>浏览文件夹</Button>
+      {!fileLink && !folderOpened && !pending ? (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Button onClick={onBrowse} disabled={!caps.list}>浏览文件夹</Button>
+          {toolbarActions}
+        </Stack>
       ) : (
         <XDriveFileExplorer
           items={projectedItems}
@@ -158,7 +165,7 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
           loading={pending}
           presentation="workspace"
           forceVirtualization
-          emptyMessage={normalizedFilter ? '当前页没有匹配的文件' : '此文件夹为空'}
+          emptyMessage={fileLink ? '当前文件不可访问' : normalizedFilter ? '当前页没有匹配的文件' : '此文件夹为空'}
           searchEnabled={false}
           groupingEnabled={false}
           viewMode={view}
@@ -168,12 +175,12 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
           onCrumbClick={(_crumb, index) => {
             if (index >= 0 && index < path.length) onCrumbClick?.(index)
           }}
-          onRefresh={caps.list ? onRefresh : undefined}
+          onRefresh={caps.list && !fileLink ? onRefresh : undefined}
           onOpenItem={openItem}
           onDownloadItems={caps.download ? targets => {
             if (targets.length === 1) startDownload(targets[0])
           } : undefined}
-          folderDownloadSupported={caps.downloadZip}
+          folderDownloadSupported={!fileLink && caps.downloadZip}
           getSelectionActionDisabledReason={(action, targets) => (
             action === 'download' && (targets.length !== 1 || downloadPending || folderZIPPreparing)
               ? '请一次下载一项，或完成当前下载。' : null
@@ -183,17 +190,17 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
           loadPreviewURL={previewURLLoader}
           commandBarEnd={
             <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap flexWrap="wrap">
-              <TextField size="small" label="筛选当前页" placeholder="筛选当前页" value={pageFilter}
+              {!fileLink && <TextField size="small" label="筛选当前页" placeholder="筛选当前页" value={pageFilter}
                 disabled={!caps.list} onChange={event => setPageFilter(event.target.value)}
-                sx={{ width: 150 }} />
-              <Button size="small" disabled={pending || !caps.list || !hasPreviousPage}
-                onClick={onPreviousPage}>上一页</Button>
-              <Button size="small" disabled={pending || !caps.list || !hasNextPage}
-                onClick={onNextPage}>下一页</Button>
+                sx={{ width: 150 }} />}
+              {!fileLink && <Button size="small" disabled={pending || !caps.list || !hasPreviousPage}
+                onClick={onPreviousPage}>上一页</Button>}
+              {!fileLink && <Button size="small" disabled={pending || !caps.list || !hasNextPage}
+                onClick={onNextPage}>下一页</Button>}
               {toolbarActions}
             </Stack>
           }
-          statusText={'当前页 ' + acceptedPage.length + ' 项' +
+          statusText={fileLink ? '只读访问 · 单文件分享' : '当前页 ' + acceptedPage.length + ' 项' +
             (normalizedFilter ? ' · 匹配 ' + projectedItems.length + ' 项' : '') +
             ' · 排序仅影响当前页'}
         />

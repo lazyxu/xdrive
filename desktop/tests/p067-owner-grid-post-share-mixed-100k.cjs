@@ -33,13 +33,16 @@ test('P067 validates the actual Owner grid and media, not public-share-only orig
   const owner = read('ui/shared/src/mui/FileExplorer.tsx')
   const leaf = read('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
   const share = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const shareBridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   const web = read('web/src/FileExplorerRealScrollPerformanceHarness.tsx')
   const wide = read('desktop/scripts/file-explorer-wide-mixed-100k-main.cjs')
   const mobile = read('desktop/scripts/file-explorer-real-physical-100k-main.cjs')
   const desktop = read('desktop/scripts/file-explorer-desktop-mixed-100k-runner.cjs')
   assert.match(leaf, /export function XDriveFileExplorerGridTileContent\(/)
   assert.match(owner, /<XDriveFileExplorerGridTileContent/)
-  assert.match(share, /<XDriveFileExplorerGridTileContent/)
+  assert.match(share, /return <XDrivePublicShareUnifiedDirectoryExplorer/)
+  assert.match(shareBridge, /<XDriveFileExplorer/)
+  assert.doesNotMatch(share, /<XDriveFileExplorerGridTileContent/)
   assert.match(owner, /visual=\{thumbnailForItem\(item\)\}/)
   for (const token of [
     'XDriveFileExplorer', 'virtualCollection={virtualCollection}',

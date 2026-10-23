@@ -6,7 +6,9 @@ permissions:
   contents: read
 jobs:
   real-shared-core-physical-100k:
-    if: github.head_ref == 'refactor/sh-p021-single-explorer-core-20261021'
+    if: >-
+      github.head_ref == 'refactor/sh-p021-single-explorer-core-20261021' ||
+      github.head_ref == 'refactor/share-single-file-unified-core-shp023-20261022'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     services:

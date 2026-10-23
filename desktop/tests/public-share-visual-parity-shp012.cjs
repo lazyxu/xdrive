@@ -7,28 +7,22 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 
+
 test('SH-P012: public and Owner Details actually mount one neutral name/visual renderer', () => {
   const pure = read('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
   const owner = read('ui/shared/src/mui/FileExplorer.tsx')
-  const publicView = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   for (const name of ['XDriveFileExplorerItemName', 'XDriveFileExplorerDetailsNameCell']) {
     assert.match(pure, new RegExp('export function ' + name + '\\('))
     assert.match(owner, new RegExp('<' + name + '\\b'))
-    assert.match(publicView, new RegExp('<' + name + '\\b'))
   }
   assert.match(pure, /WebkitLineClamp: 2/)
   assert.match(pure, /width: 24, height: 24/)
-  assert.match(pure, /width: thumbnailWidth, height: thumbnailHeight/)
-  assert.match(publicView, /thumbnailWidth=\{72\}[\s\S]*?thumbnailHeight=\{72\}/)
-  assert.match(owner, /thumbnailWidth=\{gridMetrics\.thumbnailWidth\}/)
-  assert.match(owner, /<XDriveFileExplorerGridTileContent/)
-  assert.match(publicView, /<XDriveFileExplorerGridTileContent/)
-  // Grid still renders the shared 52px fallback through the dedicated slot;
-  // Details keeps the 21px version without duplicating the presenter.
-  assert.match(publicView, /const size = grid \? 52 : 21/)
-  assert.match(publicView, /folderSize=\{grid \? 52 : 22\}/)
-  assert.match(publicView, /visual=\{<XDrivePublicShareThumbnailSlot entry=\{entry\} grid/)
-  assert.match(publicView, /XDriveFileExplorerThumbnailProvider/)
+  assert.ok(bridge.includes('<XDriveFileExplorer'))
+  assert.ok(facade.includes('return <XDrivePublicShareUnifiedDirectoryExplorer {...props} />'))
+  assert.equal(facade.includes('<XDriveFileExplorerGridTileContent'), false)
+  assert.ok(owner.includes('<XDriveFileExplorerGridTileContent'))
   assert.doesNotMatch(pure, /\/api\/v1|sessionToken|onDeleteItems|onMoveItemsTo/)
 })
 
@@ -56,17 +50,17 @@ test('SH-P012: share root and descendant metadata are strictly authorized and bo
   assert.doesNotMatch(web, /new XDriveFileExplorer\(/)
 })
 
-test('SH-P012: Share workspace offers no Owner mutations; a compact row directly opens a permitted target', () => {
-  const publicView = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
-  assert.match(publicView, /useMediaQuery\('\(max-width:620px\)'\)/)
-  assert.match(publicView, /if \(compactShareViewport\) openEntry\(entry\)/)
-  assert.ok(publicView.includes("closest?.('button, a, input, [role=\"button\"]')"),
-    'explicit Download and Preview controls must not initiate a second Share request')
-  assert.match(publicView, /onContextMenu=\{\(event\) => openContextMenu\(event, entry\)\}/)
-  assert.match(publicView, /onDoubleClick=\{\(\) => \{ if \(!compactShareViewport\) openEntry\(entry\) \}\}/)
-  assert.match(publicView, /修改时间/)
-  assert.match(publicView, /entry\.updated_at/)
-  for (const forbidden of ['onDeleteItems', 'onMoveItemsTo', 'onPaste', 'onUpload', 'OwnerApi', 'Authorization: Bearer']) {
-    assert.ok(!publicView.includes(forbidden), 'Share shell must not carry Owner action: ' + forbidden)
+
+test('SH-P012: Share workspace offers no Owner mutations; compact taps use the shared Core', () => {
+  const facade = read('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx')
+  const bridge = read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
+  const core = read('ui/shared/src/mui/FileExplorer.tsx')
+  assert.match(bridge, /onOpenItem=\{openItem\}/)
+  assert.match(bridge, /getItemMenuItems=\{contextActions\}/)
+  assert.ok(core.includes('onOpenItem'))
+  assert.ok(bridge.includes('if (entry.type === \'dir\') onOpenFolder?.(entry)'))
+  for (const forbidden of ['onDeleteItems=', 'onMoveItemsTo=', 'onPaste=', 'onUpload=', 'OwnerApi', 'Authorization: Bearer']) {
+    assert.ok(!bridge.includes(forbidden), 'Share bridge may not expose: ' + forbidden)
+    assert.ok(!facade.includes(forbidden), 'Share facade may not expose: ' + forbidden)
   }
 })
