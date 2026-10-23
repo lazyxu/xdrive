@@ -96,6 +96,10 @@ function createHarness() {
     },
     useRef(value) { return { current: value } },
     useCallback(fn) { return fn },
+    // React 18 startTransition schedules the update; this deterministic
+    // history state harness commits it synchronously, without weakening
+    // URL/Back/Forward/dirty-form behavior assertions.
+    startTransition(callback) { callback() },
     useEffect(effect) { effect() },
   }
   const fakeShared = {
