@@ -284,6 +284,66 @@ func TestMediaPlaceHierarchyGenuinePostgresOwnerAndCursor(t *testing.T) {
 	if err != nil || foreignRange.TotalCount != 0 || len(foreignRange.Items) != 0 {
 		t.Fatalf("city cannot resolve foreign owner's photos=%+v err=%v", foreignRange, err)
 	}
+	// B1 C1 first-page Count may be derived from the existing day groups:
+	// it must remain identical to second-page DISTINCT Count under Owner,
+	// country/region/city, sorting, favorites, album and zero-member scope.
+	// One known capture date plus an unknown date exercise both partitions.
+	captured := time.Date(2026, 10, 23, 23, 55, 0, 0, time.UTC)
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", one.node).
+		Update("captured_at", captured).Error; err != nil {
+		t.Fatal(err)
+	}
+	countryKey, _ := parseMediaPlaceHierarchyKey("country:JP")
+	regionKey, _ := parseMediaPlaceHierarchyKey("region:JP:13")
+	for _, tt := range []struct {
+		name  string
+		owner uint64
+		opts  mediaQueryOptions
+		album string
+		want  int64
+	}{
+		{"country", a.ID, mediaQueryOptions{PlaceHierarchy: &countryKey}, "", 4},
+		{"region", a.ID, mediaQueryOptions{PlaceHierarchy: &regionKey}, "", 3},
+		{"city_captured_unknown", a.ID, mediaQueryOptions{PlaceHierarchy: &cityKey}, "", 2},
+		{"city_added_ascending", a.ID, mediaQueryOptions{PlaceHierarchy: &cityKey,
+			SortBy: "added", SortDir: "asc", TimeZone: "Asia/Tokyo"}, "", 2},
+		{"city_unknown_first", a.ID, mediaQueryOptions{PlaceHierarchy: &cityKey,
+			SortBy: "captured", SortDir: "asc", UnknownFirst: true, TimeZone: "Asia/Tokyo"}, "", 2},
+		{"city_favorite", a.ID, mediaQueryOptions{PlaceHierarchy: &cityKey,
+			Favorite: &favorite}, "", 1},
+		{"city_album", a.ID, mediaQueryOptions{PlaceHierarchy: &cityKey}, albumKey, 1},
+		{"foreign_owner_empty", b.ID, mediaQueryOptions{PlaceHierarchy: &cityKey}, "", 0},
+	} {
+		t.Run("first-page-count-"+tt.name, func(t *testing.T) {
+			first, err := server.queryMediaItemRange(context.Background(),
+				tt.owner, tt.opts, tt.album, 1, 0)
+			if err != nil || first.TotalCount != tt.want || first.TimelineGroupSets == nil {
+				t.Fatalf("first Range/count mismatch: range=%+v err=%v", first, err)
+			}
+			var sum int64
+			for _, day := range first.TimelineGroupSets.Day {
+				if day.StartIndex != sum || day.ItemCount < 1 {
+					t.Fatalf("invalid day group ordering: %+v", first.TimelineGroupSets.Day)
+				}
+				sum += day.ItemCount
+			}
+			if sum != first.TotalCount {
+				t.Fatalf("day group sum=%d first TotalCount=%d", sum, first.TotalCount)
+			}
+			next, err := server.queryMediaItemRange(context.Background(),
+				tt.owner, tt.opts, tt.album, 1, 1)
+			if err != nil || next.TotalCount != first.TotalCount ||
+				next.TimelineGroupSets != nil {
+				t.Fatalf("subsequent page Count contract differs: range=%+v err=%v", next, err)
+			}
+			if tt.name == "city_captured_unknown" &&
+				len(first.TimelineGroupSets.Day) != 2 {
+				t.Fatalf("known and unknown dates must remain separate: %+v",
+					first.TimelineGroupSets.Day)
+			}
+		})
+	}
+
 	// Keep existing grid deep-link parser unchanged by the new hierarchy key.
 	if _, ok := parseMediaPlaceKey("place:3500:13900"); !ok {
 		t.Fatal("legacy grid key rejected")

@@ -933,11 +933,19 @@ func (s *Server) queryMediaItemRange(
 		return mediaItemRangeDTO{}, err
 	}
 	var totalCount int64
-	if err := query.
-		Session(&gorm.Session{}).
-		Distinct("xd_media_metadata.node_id").
-		Count(&totalCount).Error; err != nil {
-		return mediaItemRangeDTO{}, err
+	// In a trusted B1 GeoNames hierarchy, the first Range always loads
+	// day-level groups. Each visible node has one captured/added day, and
+	// those groups already COUNT(DISTINCT node_id). Summing them avoids
+	// a second complete Owner/GeoNames scan for the same exact total.
+	// Keep the original independent Count for all other Gallery queries
+	// and subsequent sparse pages.
+	if offset != 0 || options.PlaceHierarchy == nil {
+		if err := query.
+			Session(&gorm.Session{}).
+			Distinct("xd_media_metadata.node_id").
+			Count(&totalCount).Error; err != nil {
+			return mediaItemRangeDTO{}, err
+		}
 	}
 
 	var timelineGroups []mediaTimelineGroupDTO
@@ -955,6 +963,19 @@ func (s *Server) queryMediaItemRange(
 		}
 		timelineGroups = sets.Month
 		timelineGroupSets = &sets
+		if options.PlaceHierarchy != nil {
+			// The one-date-per-node invariant means distinct day counts
+			// partition the exact same Owner Range as the global Count.
+			// Reject malformed group offsets rather than publish a false
+			// total or silently expand this Owner-scoped collection.
+			for _, day := range sets.Day {
+				if day.ItemCount <= 0 || day.StartIndex != totalCount ||
+					day.ItemCount > int64(^uint64(0)>>1)-totalCount {
+					return mediaItemRangeDTO{}, fmt.Errorf("invalid place timeline group count")
+				}
+				totalCount += day.ItemCount
+			}
+		}
 	}
 
 	// Mobile chronological first-open: fetch the last sparse page in reverse
