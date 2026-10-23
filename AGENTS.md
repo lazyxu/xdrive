@@ -1,3 +1,22 @@
+## Gallery Places · iOS27 bounded map photo-collection strip (2026-10-23)
+
+- Stack this follow-up on #2405's one-work compact Map/List and signed Baidu
+  Child priority. In the trusted Gallery Parent display at most TEN image
+  covers from CURRENT Owner/Consent/revision /cells matched to the Child's
+  bounded projected display positions. One horizontal, keyboard-accessible
+  overlay is a preview of spatial clusters, NOT a complete viewport gallery.
+- Reject foreign/stale/duplicate/invalid Node/revision/count projections
+  before using the shared authenticated CoverPool. Tap reuses the exact
+  original /cell-items Owner Range/Viewer, with fresh Server rechecks and
+  preserved BD09 camera/virtual Gallery. Pan, unmount, revoke and Owner swap
+  immediately clear both current /cells and projected previews. Do not send
+  Node/Asset IDs, original WGS84, Blob bytes or media URLs to SDK Child.
+- The first scoped CI did not reach source tests: Desktop has no lockfile,
+  so replace that workflow's npm ci with the existing npm install step.
+  Full source-exact 77-job CI remains required after parent merges.
+- Keep all cumulative AGENTS and unrelated master history. Production-only
+  inaccessible acceptance: 按用户决定跳过（未验收）.
+
 ## Gallery Places · compact iOS 27 Map/List mode (2026-10-23)
 
 - Compact Mobile Web Places defaults to the real map; accessible Map/List

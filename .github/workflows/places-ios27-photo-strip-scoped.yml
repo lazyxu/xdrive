@@ -1,0 +1,37 @@
+name: Places iOS27 Trusted Map Photo Collections Strip
+
+on:
+  pull_request:
+    branches:
+      - feat/places-ios27-mobile-map-list-20261023
+
+permissions:
+  contents: read
+
+jobs:
+  source-scoped-web-desktop:
+    if: github.head_ref == 'feat/places-ios27-current-cluster-strip-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact pull request HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+      - name: Install shared Web and Desktop test dependencies
+        run: |
+          npm --prefix desktop install --no-audit --no-fund
+          npm --prefix web ci --no-audit --no-fund
+      - name: Test trusted Owner cluster photo strip
+        run: node --test desktop/tests/gallery-places-ios27-camera-filmstrip.cjs
+      - name: Build Web and Mobile Web
+        run: npm --prefix web run build
+      - name: Typecheck Desktop shared Gallery
+        run: npm --prefix desktop run typecheck
