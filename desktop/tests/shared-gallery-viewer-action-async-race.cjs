@@ -18,7 +18,7 @@ const entire = component.getText(file)
 const index = entire.search(/\n\s*const actions = item \? \(/)
 assert.ok(index > 0, 'missing Viewer action presentation boundary')
 const extracted = entire.slice(0, index) +
-  '\n return {run, close, busyAction, item, setDeleteOpen}; \n}'
+  '\n return {run, close, busyAction, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
 const compiled = ts.transpileModule(extracted, {
   fileName: filename,
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS},
@@ -79,7 +79,7 @@ function fixture(ports = {}) {
   }
   const useRef = initial => next(() => ({current: initial}))
   const useCallback = fn => { next(() => ({})); return fn }
-  const hooks = {useState, useRef, useCallback}
+  const hooks = {useState, useRef, useCallback, useEffect: () => {}, useMediaQuery: () => false}
   const keys = Object.keys(hooks)
   const exports = {}
   const factory = new Function('exports', ...keys, compiled +
@@ -97,7 +97,7 @@ function fixture(ports = {}) {
   const harness = {
     calls, closes,
     get view() {return current},
-    render(id) {
+    render(id, loaders = {}) {
       cursor = 0
       const item = id == null ? null : {
         node: {id, name: id + '.jpg', revision: 1},
@@ -105,6 +105,9 @@ function fixture(ports = {}) {
       }
       current = Viewer({
         item,
+        loadThumbnail: loaders.thumbnail,
+        loadPreviewURL: loaders.preview,
+        loadLivePhotoMotion: loaders.motion,
         onClose: () => closes.push('closed'),
       })
       return current
@@ -295,4 +298,58 @@ test('Viewer: a rejected old Download cannot unlock current B action', async () 
   b.resolve();await flush()
   h.render(2)
   assert.equal(h.view.busyAction,'')
+})
+
+test('Viewer: confirmation, editor, creative and location dialogs remain owned by their originating revision', () => {
+  const h = fixture()
+  const a = h.render(21)
+  a.setDeleteOpen(true)
+  a.setEditOpen(true)
+  a.setCreativeOpen(true)
+  a.setLocationOpen(true)
+  const same = h.render(21)
+  assert.deepEqual(
+    [same.deleteOpen, same.editOpen, same.creativeOpen, same.locationOpen],
+    [true, true, true, true],
+    'same Node/revision keeps its existing dialog state',
+  )
+  const different = h.render(22)
+  assert.deepEqual(
+    [different.deleteOpen, different.editOpen, different.creativeOpen, different.locationOpen],
+    [false, false, false, false],
+    'next filmstrip item must never inherit actionable dialogs from the previous photo',
+  )
+  const returned = h.render(21)
+  assert.deepEqual(
+    [returned.deleteOpen, returned.editOpen, returned.creativeOpen, returned.locationOpen],
+    [false, false, false, false],
+    'returning A after A→B must not resurrect its previous confirmation',
+  )
+  a.setDeleteOpen(true)
+  assert.equal(h.render(21).deleteOpen, false,
+    'stale JSX callback from the old A session cannot rearm the current A confirmation')
+})
+
+test('P0 identical Node/revision from another loader scope starts a new action session', async () => {
+  const pending = deferred()
+  const calls = []
+  const h = fixture({onDownload: item => { calls.push(item.node.id); return pending.promise }})
+  const firstLoaders = {thumbnail: async () => null, preview: async () => null}
+  const nextLoaders = {thumbnail: async () => null, preview: async () => null}
+  const first = h.render(81, firstLoaders)
+  first.setDeleteOpen(true)
+  h.click('download')
+  const same = h.render(81, firstLoaders)
+  assert.equal(same.deleteOpen, true)
+  assert.equal(same.busyAction, 'download')
+  assert.equal(same.session, first.session, 'stable source must preserve action ownership')
+
+  const changed = h.render(81, nextLoaders)
+  assert.equal(changed.deleteOpen, false, 'old source confirmation must not survive an Owner rebind')
+  assert.equal(changed.busyAction, '', 'old transfer may not disable same-ID media in a new source')
+  assert.ok(changed.session > first.session)
+  h.click('download', first)
+  assert.deepEqual(calls, [81], 'stale action must not launch another old-source transfer')
+  pending.resolve()
+  await flush()
 })

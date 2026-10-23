@@ -174,10 +174,12 @@ function WebViewerFrame({
     touchPointersRef.current.add(event.pointerId)
     if (touchPointersRef.current.size > 1) {
       if (touchTapRef.current) touchTapRef.current.multi = true
+      lastTouchTapRef.current = null
       clearTouchTapTimer()
       return
     }
-    const target = event.target instanceof HTMLElement ? event.target : null
+    // SVG child icons inherit the surrounding button's interactive intent.
+    const target = event.target as Element | null
     touchTapRef.current = {
       pointerID: event.pointerId,
       startX: event.clientX,
@@ -202,7 +204,8 @@ function WebViewerFrame({
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
     touchTapRef.current = null
-    if (tap.moved || tap.multi || tap.interactive) return
+    if (tap.moved || tap.multi || tap.interactive ||
+        Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) return
 
     const now = Date.now()
     const previous = lastTouchTapRef.current
@@ -234,6 +237,8 @@ function WebViewerFrame({
   const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
     touchPointersRef.current.delete(event.pointerId)
     if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
+    lastTouchTapRef.current = null
+    clearTouchTapTimer()
   }
 
   useEffect(() => {
@@ -522,6 +527,7 @@ function FileViewerActions({
   onShare,
   onTags,
   onDownload,
+  downloadDisabled = false,
   onError,
 }: {
   node: Node
@@ -529,6 +535,7 @@ function FileViewerActions({
   onShare: () => void
   onTags: () => void
   onDownload?: () => Promise<void>
+  downloadDisabled?: boolean
   onError: (error: unknown) => void
 }) {
   return (
@@ -547,6 +554,7 @@ function FileViewerActions({
         <IconButton
           size="small"
           aria-label="下载"
+          disabled={downloadDisabled}
           onClick={() => {
             // Media Gallery Viewer overrides only the action callback. File
             // Quick Look keeps the existing authenticated file download.
@@ -583,7 +591,13 @@ function FileDialogs({
 
   useEffect(() => {
     if (!tagsOpen) return
-    void api.fileTags().then(setTags).catch(onError)
+    let active = true
+    void api.fileTags().then((value) => {
+      if (active) setTags(value)
+    }).catch((error) => {
+      if (active) onError(error)
+    })
+    return () => { active = false }
   }, [api, onError, tagsOpen])
 
   return (
@@ -645,8 +659,52 @@ function WebPreviewApp({
     predicate: xDriveWebViewerAnyFile,
     onNavigate,
   })
-  const [shareOpen, setShareOpen] = useState(false)
-  const [tagsOpen, setTagsOpen] = useState(false)
+  // Quick Look shares the same Owner boundary as the Gallery Viewer.
+  // A share/tag dialog may not attach to a different file, revision or API.
+  const dialogOwnerRef = useRef({
+    nodeID: route.params.node, revision: viewer.node?.revision,
+    context: route.params.context, api, gallerySource, session: 0, inFlight: false,
+  })
+  if (dialogOwnerRef.current.nodeID !== route.params.node ||
+      dialogOwnerRef.current.revision !== viewer.node?.revision ||
+      dialogOwnerRef.current.context !== route.params.context ||
+      dialogOwnerRef.current.api !== api ||
+      dialogOwnerRef.current.gallerySource !== gallerySource) {
+    dialogOwnerRef.current = {
+      nodeID: route.params.node, revision: viewer.node?.revision,
+      context: route.params.context, api, gallerySource,
+      session: dialogOwnerRef.current.session + 1, inFlight: false,
+    }
+  }
+  const dialogOwner = dialogOwnerRef.current
+  const [visibleDialog, setVisibleDialog] = useState<{
+    owner: typeof dialogOwner
+    kind: 'share' | 'tags'
+  } | null>(null)
+  const shareOpen = visibleDialog?.owner === dialogOwner && visibleDialog.kind === 'share'
+  const tagsOpen = visibleDialog?.owner === dialogOwner && visibleDialog.kind === 'tags'
+  const openDialog = (kind: 'share' | 'tags') => {
+    if (dialogOwnerRef.current !== dialogOwner || !viewer.node) return
+    setVisibleDialog({ owner: dialogOwner, kind })
+  }
+  const closeDialog = (kind: 'share' | 'tags') => {
+    setVisibleDialog((current) => current?.owner === dialogOwner && current.kind === kind ? null : current)
+  }
+  // The download belongs to the same authorized Owner as Share/Tags. Reject
+  // stale JSX callbacks and duplicate taps synchronously, before React renders.
+  const [busyDownloadOwner, setBusyDownloadOwner] = useState<typeof dialogOwner | null>(null)
+  const startDownload = async () => {
+    if (!viewer.node || dialogOwnerRef.current !== dialogOwner || dialogOwner.inFlight) return
+    dialogOwner.inFlight = true
+    setBusyDownloadOwner(dialogOwner)
+    const node = viewer.node
+    try {
+      await api.download(node)
+    } finally {
+      dialogOwner.inFlight = false
+      if (dialogOwnerRef.current === dialogOwner) setBusyDownloadOwner(null)
+    }
+  }
   const target = viewer.node ? {
     id: viewer.node.id,
     name: viewer.node.name,
@@ -656,14 +714,14 @@ function WebPreviewApp({
   } satisfies XDriveFilePreviewTarget : null
   const presentation = useXDrivePreviewPresentation(target)
 
-  const loadThumbnail = useCallback(async () => {
+  const loadThumbnail = useCallback(async (_target: XDriveFilePreviewTarget, signal?: AbortSignal) => {
     if (!viewer.node) return null
     try {
-      return URL.createObjectURL(await api.mediaThumbnail(viewer.node.id))
+      return URL.createObjectURL(await api.mediaThumbnail(viewer.node.id, signal, viewer.node.revision))
     } catch {
       return null
     }
-  }, [api, viewer.node?.id])
+  }, [api, viewer.node?.id, viewer.node?.revision])
 
   return (
     <>
@@ -684,8 +742,10 @@ function WebPreviewApp({
           <FileViewerActions
             node={viewer.node}
             api={api}
-            onShare={() => setShareOpen(true)}
-            onTags={() => setTagsOpen(true)}
+            onShare={() => openDialog('share')}
+            onTags={() => openDialog('tags')}
+            onDownload={startDownload}
+            downloadDisabled={busyDownloadOwner === dialogOwner}
             onError={onError}
           />
         ) : null}
@@ -723,13 +783,14 @@ function WebPreviewApp({
         />}
       </WebViewerFrame>
       {viewer.node ? <FileDialogs
+        key={dialogOwner.session}
         node={viewer.node}
         api={api}
         shareDialogAdapter={shareDialogAdapter}
         shareOpen={shareOpen}
         tagsOpen={tagsOpen}
-        onShareClose={() => setShareOpen(false)}
-        onTagsClose={() => setTagsOpen(false)}
+        onShareClose={() => closeDialog('share')}
+        onTagsClose={() => closeDialog('tags')}
         onError={onError}
       /> : null}
     </>
@@ -780,34 +841,133 @@ function WebMediaViewerApp({
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
+  // The share, tags, inspector and More dialogs are bound to the exact
+  // route/revision. A prior modal must not attach to a new Node even for a frame.
+  const modalOwnerRef = useRef({
+    nodeID: route.params.node,
+    revision: viewer.node?.revision,
+    context: route.params.context,
+    api,
+    gallerySource, session: 0,
+  })
+  if (modalOwnerRef.current.nodeID !== route.params.node ||
+      modalOwnerRef.current.revision !== viewer.node?.revision ||
+      modalOwnerRef.current.context !== route.params.context ||
+      modalOwnerRef.current.api !== api ||
+      modalOwnerRef.current.gallerySource !== gallerySource) {
+    modalOwnerRef.current = {
+      nodeID: route.params.node,
+      revision: viewer.node?.revision,
+      context: route.params.context,
+      api,
+      gallerySource, session: modalOwnerRef.current.session + 1,
+    }
+  }
+  const modalOwner = modalOwnerRef.current
+  const [visibleModalOwner, setVisibleModalOwner] = useState<typeof modalOwner | null>(null)
+  const ownsModal = visibleModalOwner === modalOwner
+  const shareVisible = ownsModal && shareOpen
+  const tagsVisible = ownsModal && tagsOpen
+  const infoVisible = ownsModal && infoOpen
+  const locationVisible = ownsModal && locationOpen
+  const openShare = () => {
+    if (modalOwnerRef.current !== modalOwner) return
+    setVisibleModalOwner(modalOwner)
+    setShareOpen(true)
+  }
+  const openTags = () => {
+    if (modalOwnerRef.current !== modalOwner) return
+    setVisibleModalOwner(modalOwner)
+    setTagsOpen(true)
+  }
+  const openLocation = () => {
+    if (modalOwnerRef.current !== modalOwner) return
+    setVisibleModalOwner(modalOwner)
+    setLocationOpen(true)
+  }
+
+  // Same-tick duplicate operations and old-route callbacks cannot claim the
+  // newer Viewer. Server transfers continue; only their visible owner expires.
+  const actionOwnerRef = useRef({
+    nodeID: route.params.node,
+    revision: viewer.node?.revision,
+    context: route.params.context,
+    api,
+    gallerySource,
+    inFlight: false,
+  })
+  if (actionOwnerRef.current.nodeID !== route.params.node ||
+      actionOwnerRef.current.revision !== viewer.node?.revision ||
+      actionOwnerRef.current.context !== route.params.context ||
+      actionOwnerRef.current.api !== api ||
+      actionOwnerRef.current.gallerySource !== gallerySource) {
+    actionOwnerRef.current = {
+      nodeID: route.params.node,
+      revision: viewer.node?.revision,
+      context: route.params.context,
+      api,
+      gallerySource,
+      inFlight: false,
+    }
+  }
+  const actionOwner = actionOwnerRef.current
+  const [busyViewerAction, setBusyViewerAction] = useState<{
+    owner: typeof actionOwner
+    kind: 'favorite' | 'download'
+  } | null>(null)
+  const actionBusy = busyViewerAction?.owner === actionOwner ? busyViewerAction.kind : null
+  const runViewerAction = (kind: 'favorite' | 'download', task: () => Promise<unknown>) => {
+    if (actionOwnerRef.current !== actionOwner || actionOwner.inFlight ||
+        !viewer.node || !mediaItem ||
+        viewer.node.id !== mediaItem.node.id ||
+        viewer.node.revision !== mediaItem.node.revision) return
+    actionOwner.inFlight = true
+    setBusyViewerAction({ owner: actionOwner, kind })
+    void Promise.resolve().then(task).catch((error) => {
+      if (actionOwnerRef.current === actionOwner) onError(error)
+    }).finally(() => {
+      actionOwner.inFlight = false
+      if (actionOwnerRef.current === actionOwner) setBusyViewerAction(null)
+    })
+  }
   // A dialog belongs to one actual Node revision. Navigating the bounded
   // Filmstrip must never reopen a previous asset's editor on the next photo.
-  const [editTarget, setEditTarget] = useState<{ id: number; revision: number } | null>(null)
+  const [editTarget, setEditTarget] = useState<{ id: number; revision: number; owner: typeof modalOwner } | null>(null)
   // The shared Creative Dialog owns its own Server job. This target is only
   // the visible originating Viewer session, not a second task controller.
   const [creativeTarget, setCreativeTarget] = useState<{
-    id: number; revision: number; context?: string
+    id: number; revision: number; context?: string; owner: typeof modalOwner
   } | null>(null)
   const creativeTargetRef = useRef(creativeTarget)
   creativeTargetRef.current = creativeTarget
-  const [deleteTarget, setDeleteTarget] = useState<{ id: number; revision: number } | null>(null)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const deleteInFlightRef = useRef(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; revision: number; owner: typeof modalOwner } | null>(null)
+  // Each accepted delete remains owned by its original Viewer session.
+  // A pending old-route receipt must not disable or close a newer session.
+  const [deleteBusyOwner, setDeleteBusyOwner] = useState<typeof modalOwner | null>(null)
+  const deleteBusy = deleteBusyOwner === modalOwner
+  const deleteInFlightRef = useRef(new Set<typeof modalOwner>())
   // Deletion belongs to the original Node/revision and browse route; a late
   // Task Center receipt must never close a newer Filmstrip item.
   const currentDeleteRouteRef = useRef({
     node: route.params.node, context: route.params.context, revision: viewer.node?.revision,
+    api, gallerySource,
   })
   currentDeleteRouteRef.current = {
     node: route.params.node, context: route.params.context, revision: viewer.node?.revision,
+    api, gallerySource,
   }
   useEffect(() => {
     setEditTarget(null)
     setCreativeTarget(null)
     setDeleteTarget(null)
     setMoreAnchor(null)
+    setShareOpen(false)
+    setTagsOpen(false)
+    setInfoOpen(false)
+    setAlbums([])
+    setVisibleModalOwner(null)
     setLocationOpen(false)
-  }, [route.params.node, route.params.context, viewer.node?.revision])
+  }, [route.params.node, route.params.context, viewer.node?.revision, api, gallerySource])
   // A More sheet opened at 899px must not reappear if the viewport crosses
   // 900px and returns. Menu ownership belongs to the current compact chrome.
   useEffect(() => {
@@ -816,8 +976,15 @@ function WebMediaViewerApp({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
 
   const openInfo = () => {
-    setInfoOpen((current) => !current)
-    if (!infoOpen) void gallerySource.listAlbums().then(setAlbums).catch(onError)
+    if (modalOwnerRef.current !== modalOwner) return
+    const opening = !ownsModal || !infoOpen
+    setVisibleModalOwner(modalOwner)
+    setInfoOpen(opening)
+    if (opening) void gallerySource.listAlbums().then((value) => {
+      if (modalOwnerRef.current === modalOwner) setAlbums(value)
+    }).catch((error) => {
+      if (modalOwnerRef.current === modalOwner) onError(error)
+    })
   }
 
   const previewKind = viewer.node ? xDriveClassifyFilePreview({
@@ -826,13 +993,15 @@ function WebMediaViewerApp({
   }) : ''
   const supported = ['image', 'video', 'live_photo'].includes(previewKind)
   const editingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
-    editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision
+    editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision &&
+    editTarget.owner === modalOwner
       ? mediaItem : null
   const editOpen = Boolean(editingItem)
   const creativeItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
     creativeTarget?.id === mediaItem.node.id &&
     creativeTarget.revision === mediaItem.node.revision &&
-    creativeTarget.context === route.params.context ? mediaItem : null
+    creativeTarget.context === route.params.context &&
+    creativeTarget.owner === modalOwner ? mediaItem : null
   const creativeOpen = Boolean(creativeItem)
 
   // Report the already-owned dialog sessions, not their media contents. A
@@ -846,35 +1015,41 @@ function WebMediaViewerApp({
   }, [onMediaEditorActivityChange])
 
   const deletingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
-    deleteTarget?.id === mediaItem.node.id && deleteTarget.revision === mediaItem.node.revision
+    deleteTarget?.id === mediaItem.node.id && deleteTarget.revision === mediaItem.node.revision &&
+    deleteTarget.owner === modalOwner
       ? mediaItem : null
   const deleteOpen = Boolean(deletingItem)
   const submitDelete = () => {
-    if (!deletingItem || !gallerySource.deleteItems || deleteInFlightRef.current) return
+    if (!deletingItem || !gallerySource.deleteItems ||
+        modalOwnerRef.current !== modalOwner || deleteInFlightRef.current.has(modalOwner)) return
     const item = deletingItem
+    const initiatingOwner = modalOwner
     const targetNode = item.node
     const targetContext = route.params.context
-    const stillAtTarget = () => currentDeleteRouteRef.current.node === targetNode.id &&
+    const stillAtTarget = () => modalOwnerRef.current === initiatingOwner &&
+      currentDeleteRouteRef.current.node === targetNode.id &&
       currentDeleteRouteRef.current.context === targetContext &&
-      currentDeleteRouteRef.current.revision === targetNode.revision
-    deleteInFlightRef.current = true
-    setDeleteBusy(true)
+      currentDeleteRouteRef.current.revision === targetNode.revision &&
+      currentDeleteRouteRef.current.api === api &&
+      currentDeleteRouteRef.current.gallerySource === gallerySource
+    deleteInFlightRef.current.add(initiatingOwner)
+    setDeleteBusyOwner(initiatingOwner)
     void gallerySource.deleteItems([item]).then((operation) => {
       // A queued file operation is a Task Center receipt, NOT proof that the
       // photo has already been moved to Trash or that its bytes are gone.
       if (operation && (operation.status === 'failed' || operation.status === 'cancelled')) {
         throw new Error('服务端未接受删除任务，请在任务中心核查或重试。')
       }
-      onFileOperationQueued?.()
       if (stillAtTarget()) {
+        onFileOperationQueued?.()
         setDeleteTarget(null)
         onClose(targetNode)
       }
     }).catch((error) => {
       if (stillAtTarget()) onError(error)
     }).finally(() => {
-      deleteInFlightRef.current = false
-      setDeleteBusy(false)
+      deleteInFlightRef.current.delete(initiatingOwner)
+      setDeleteBusyOwner((current) => current === initiatingOwner ? null : current)
     })
   }
 
@@ -887,12 +1062,13 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
 
   const startDownload = () => {
     if (!viewer.node || !mediaItem || viewer.node.id !== mediaItem.node.id) return
-    // Exactly the same authenticated Gallery source used by wide Web,
-    // Mobile Gallery and the inline shared Viewer; no parallel Mobile API.
-    const task = gallerySource.downloadItems
-      ? gallerySource.downloadItems([mediaItem])
-      : api.download(viewer.node)
-    void task.catch(onError)
+    // Wide and Mobile Web use the same authenticated Gallery source and the
+    // same synchronous action gate: no duplicate concurrent downloads.
+    const currentNode = viewer.node
+    const currentItem = mediaItem
+    runViewerAction('download', () => gallerySource.downloadItems
+      ? gallerySource.downloadItems([currentItem])
+      : api.download(currentNode))
   }
 
   const latitude = mediaItem?.metadata.latitude
@@ -907,11 +1083,14 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           <IconButton
             size="small"
             aria-label={mediaItem.favorite ? '取消收藏' : '收藏'}
+            disabled={Boolean(actionBusy)}
             onClick={() => {
               const favorite = !mediaItem.favorite
-              void gallerySource.setFavorite?.(mediaItem.node.id, favorite).then(() => {
-                viewer.updateMediaItem(mediaItem, { favorite })
-              }).catch(onError)
+              const initiatingItem = mediaItem
+              runViewerAction('favorite', async () => {
+                await gallerySource.setFavorite!(initiatingItem.node.id, favorite)
+                viewer.updateMediaItem(initiatingItem, { favorite })
+              })
             }}
           >
             {mediaItem.favorite
@@ -929,6 +1108,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
               id: mediaItem.node.id,
               revision: mediaItem.node.revision,
               context: route.params.context,
+              owner: modalOwner,
             })}
           >
             <AutoFixHighRoundedIcon fontSize="small" />
@@ -943,6 +1123,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             onClick={() => setEditTarget({
               id: mediaItem.node.id,
               revision: mediaItem.node.revision,
+              owner: modalOwner,
             })}
           >
             <EditRoundedIcon fontSize="small" />
@@ -954,10 +1135,11 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           <IconButton
             size="small"
             aria-label="删除媒体"
-            disabled={deleteBusy}
+            disabled={deleteBusy || Boolean(actionBusy)}
             onClick={() => setDeleteTarget({
               id: mediaItem.node.id,
               revision: mediaItem.node.revision,
+              owner: modalOwner,
             })}
           >
             <DeleteOutlineRoundedIcon fontSize="small" />
@@ -966,7 +1148,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
       ) : null}
       {!narrowMediaViewer && hasPhotoGPS ? (
         <Tooltip title="在地图上查看照片">
-          <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
+          <IconButton size="small" aria-label="在地图上查看照片" onClick={openLocation}>
             <MapOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -985,7 +1167,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             size="small"
             aria-label="导出完整实况"
             onClick={() => {
-              void gallerySource.exportLivePhoto!(mediaItem).catch(onError)
+              runViewerAction('download', () => gallerySource.exportLivePhoto!(mediaItem))
             }}
           >
             <ArchiveRoundedIcon fontSize="small" />
@@ -996,18 +1178,17 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         <FileViewerActions
           node={viewer.node}
           api={api}
-          onShare={() => setShareOpen(true)}
-          onTags={() => setTagsOpen(true)}
-          onDownload={gallerySource.downloadItems
-            ? () => gallerySource.downloadItems!([mediaItem])
-            : undefined}
+          onShare={openShare}
+          onTags={openTags}
+          onDownload={async () => { startDownload() }}
+          downloadDisabled={Boolean(actionBusy)}
           onError={onError}
         />
       ) : (
         <>
           <Tooltip title="分享">
             <IconButton size="small" aria-label="分享媒体"
-              onClick={() => setShareOpen(true)}>
+              onClick={openShare}>
               <ShareRoundedIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -1018,7 +1199,11 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
               aria-haspopup="menu"
               aria-controls={moreAnchor ? 'xdrive-gallery-viewer-more' : undefined}
               aria-expanded={Boolean(moreAnchor)}
-              onClick={(event) => setMoreAnchor(event.currentTarget)}
+              onClick={(event) => {
+                if (modalOwnerRef.current !== modalOwner) return
+                setVisibleModalOwner(modalOwner)
+                setMoreAnchor(event.currentTarget)
+              }}
             >
               <MoreHorizRoundedIcon fontSize="small" />
             </IconButton>
@@ -1036,7 +1221,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen || locationOpen || Boolean(moreAnchor)}
+        keepChromeVisible={shareVisible || tagsVisible || infoVisible || editOpen || creativeOpen || deleteOpen || locationVisible || (ownsModal && Boolean(moreAnchor))}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -1076,7 +1261,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           maxHeight="none"
         />}
       </WebViewerFrame>
-      {locationOpen && mediaItem ? (
+      {locationVisible && mediaItem ? (
         <XDriveMediaGalleryViewerLocationDialog
           open
           item={mediaItem}
@@ -1089,8 +1274,8 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
       ) : null}
       <Menu
         id="xdrive-gallery-viewer-more"
-        anchorEl={moreAnchor}
-        open={Boolean(moreAnchor) && narrowMediaViewer &&
+        anchorEl={ownsModal ? moreAnchor : null}
+        open={Boolean(moreAnchor) && ownsModal && narrowMediaViewer &&
           !viewer.loading && !viewer.error && Boolean(mediaItem) &&
           viewer.node?.id === mediaItem?.node.id}
         onClose={() => setMoreAnchor(null)}
@@ -1103,13 +1288,14 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
               id: mediaItem.node.id,
               revision: mediaItem.node.revision,
               context: route.params.context,
+              owner: modalOwner,
             })
           }}>创作图片</MenuItem>
         ) : null}
         {hasPhotoGPS ? (
           <MenuItem aria-label="在地图上查看照片" onClick={() => {
             setMoreAnchor(null)
-            setLocationOpen(true)
+            openLocation()
           }}>在地图上查看照片</MenuItem>
         ) : null}
         <MenuItem aria-label="查看属性" onClick={() => {
@@ -1118,26 +1304,27 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         }}>查看属性</MenuItem>
         <MenuItem aria-label="标签" onClick={() => {
           setMoreAnchor(null)
-          setTagsOpen(true)
+          openTags()
         }}>标签</MenuItem>
         {gallerySource.exportLivePhoto && mediaItem &&
         (mediaItem.live_photo || mediaItem.asset_kind === 'live_photo') ? (
           <MenuItem aria-label="导出完整实况" onClick={() => {
             setMoreAnchor(null)
-            void gallerySource.exportLivePhoto!(mediaItem).catch(onError)
-          }}>导出完整实况</MenuItem>
+            runViewerAction('download', () => gallerySource.exportLivePhoto!(mediaItem))
+          }} disabled={Boolean(actionBusy)}>导出完整实况</MenuItem>
         ) : null}
         <MenuItem aria-label="下载" onClick={() => {
           setMoreAnchor(null)
           startDownload()
-        }}>下载</MenuItem>
+        }} disabled={Boolean(actionBusy)}>下载</MenuItem>
       </Menu>
       {viewer.node ? <FileDialogs
+        key={modalOwner.session}
         node={viewer.node}
         api={api}
         shareDialogAdapter={shareDialogAdapter}
-        shareOpen={shareOpen}
-        tagsOpen={tagsOpen}
+        shareOpen={shareVisible}
+        tagsOpen={tagsVisible}
         onShareClose={() => setShareOpen(false)}
         onTagsClose={() => setTagsOpen(false)}
         onError={onError}
@@ -1196,7 +1383,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         onClose={() => setEditTarget(null)}
       />
       <XDriveMediaDetailsInspector
-        item={infoOpen ? mediaItem : null}
+        item={infoVisible ? mediaItem : null}
         overlayZIndex={1251}
         showPreview={false}
         loadNodeLocation={gallerySource.getNodeLocation}
@@ -1406,10 +1593,10 @@ function WebSinglePreviewApp({
           size: node.size,
           revision: node.revision,
         }}
-        loadPreviewURL={async (_target, kind) => {
+        loadPreviewURL={async (_target, kind, signal) => {
           if (route.app === 'pdf-viewer' && kind !== 'pdf') return null
           if (route.app === 'audio-player' && kind !== 'audio') return null
-          const url = await api.filePreviewURL(node.id)
+          const url = await api.filePreviewURL(node.id, signal)
           return route.app === 'pdf-viewer' && route.params.page
             ? `${url}#page=${route.params.page}`
             : url
