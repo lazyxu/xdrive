@@ -30,3 +30,11 @@ func (c *agentController) CloudAdminCaddyDeployStatus(ctx context.Context, id st
 	}
 	return cli.AdminCaddyDeployStatus(ctx, id)
 }
+
+func (c *agentController) CloudAdminCaddyDeployHistory(ctx context.Context) (client.AdminCaddyDeployHistoryPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyDeployHistoryPage{}, err
+	}
+	return cli.AdminCaddyDeployHistory(ctx)
+}

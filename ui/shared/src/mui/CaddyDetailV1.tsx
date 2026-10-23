@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
-import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig, XDriveCaddyDeployState } from '../service-dependencies'
+import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig, XDriveCaddyDeployState, XDriveCaddyDeployHistoryPage } from '../service-dependencies'
 import type { XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort, type XDriveCaddyHTTPSAtomicDraft } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort, type XDriveCaddyAliDNSAtomicDraft } from './CaddyAliDNSPanel'
@@ -29,6 +29,8 @@ type CaddyPort = XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPrefl
   saveCaddyConfiguration?: (input: AtomicDesiredSave) => Promise<AtomicDesiredResult>
   startCaddyDeploy?: () => Promise<XDriveCaddyDeployState>
   getCaddyDeployStatus?: (requestID: string) => Promise<XDriveCaddyDeployState>
+  loadCaddyDeployHistory?: () => Promise<XDriveCaddyDeployHistoryPage>
+  operationScope?: string // Stable authenticated Server/account boundary.
 }
 type ConfigSnapshot = { source: CaddyPort; config: XDriveCaddyHTTPSConfig | null; failed: boolean }
 
@@ -90,12 +92,15 @@ export function XDriveCaddyDetailV1({
   const [confirmDeploy, setConfirmDeploy] = useState(false)
   const [deployReceipt, setDeployReceipt] = useState<XDriveCaddyDeployState | null>(null)
   const [deployError, setDeployError] = useState('')
+  const [historyItems, setHistoryItems] = useState<XDriveCaddyDeployState[]>([])
+  const [historyState, setHistoryState] = useState<'idle' | 'ready' | 'unavailable'>('idle')
   const [deployPollSeq, setDeployPollSeq] = useState(0)
   const [deployBusy, setDeployBusy] = useState(false)
   const deployEpoch = useRef(0)
   const deployPendingRef = useRef(false)
   const saveEpoch = useRef(0)
   const savePendingRef = useRef(false)
+  const storageKey = source.operationScope ? `xdrive:caddy:deploy:${source.operationScope}` : ''
   useEffect(() => {
     savePendingRef.current = false
     ++saveEpoch.current // Invalidates response from previous Server/account.
@@ -113,13 +118,75 @@ export function XDriveCaddyDetailV1({
     setDeployReceipt(null)
     setDeployError('')
     setDeployPollSeq(0)
-  }, [source])
+    let alive = true
+    // Same-tab resume uses ONLY opaque Request ID + target SHA, never .env,
+    // AliDNS secrets, certificates, or unsafe old results. Authenticated GET
+    // still enforces the Server's administrator boundary.
+    if (storageKey && source.getCaddyDeployStatus) {
+      try {
+        const raw = window.sessionStorage.getItem(storageKey)
+        const saved = raw ? JSON.parse(raw) as { request_id?: unknown; sha256?: unknown; at?: unknown } : null
+        if (saved && typeof saved.request_id === 'string' &&
+            /^[0-9a-f]{24}$/.test(saved.request_id) &&
+            typeof saved.sha256 === 'string' && /^[0-9a-f]{64}$/.test(saved.sha256) &&
+            typeof saved.at === 'number' && Date.now() - saved.at < 7 * 24 * 3600 * 1000 &&
+            saved.at <= Date.now()) {
+          void source.getCaddyDeployStatus(saved.request_id).then((receipt) => {
+            if (!alive || receipt?.request_id !== saved.request_id ||
+                receipt.sha256 !== saved.sha256 ||
+                (receipt.state !== 'deploying' && receipt.state !== 'deployed' &&
+                  receipt.state !== 'failed')) return
+            setDeployReceipt(receipt)
+            if (receipt.state === 'failed') setDeployError(caddyHostDeployFailureMessage(receipt))
+          }).catch(() => {
+            // An unavailable Host status is unknown, not permission to replay.
+          })
+        }
+      } catch {
+        // No browser storage, malformed or stale data: retain neutral UI.
+      }
+    }
+    return () => { alive = false }
+  }, [source, storageKey])
+
+  useEffect(() => {
+    let alive = true
+    setHistoryItems([])
+    setHistoryState('idle')
+    if (!source.loadCaddyDeployHistory) {
+      setHistoryState('unavailable')
+      return () => { alive = false }
+    }
+    void source.loadCaddyDeployHistory().then((page) => {
+      if (!alive) return
+      if (!page || page.scope !== 'host-terminal' || page.retention_days !== 7 ||
+          !Array.isArray(page.items) || page.items.length > 20) {
+        setHistoryState('unavailable')
+        return
+      }
+      const clean = page.items.filter((item) =>
+        item && /^[0-9a-f]{24}$/.test(item.request_id) &&
+        /^[0-9a-f]{64}$/.test(item.sha256) &&
+        (item.state === 'deployed' || item.state === 'failed'))
+      if (clean.length !== page.items.length) {
+        setHistoryState('unavailable')
+        return
+      }
+      setHistoryItems(clean)
+      setHistoryState('ready')
+    }).catch(() => {
+      if (alive) setHistoryState('unavailable')
+    })
+    return () => { alive = false }
+  }, [source, deployReceipt?.request_id, deployReceipt?.state])
+
   // Never render the prior Server/account's sensitive Host/desired state.
   const readFailed = snapshot?.source === source && snapshot.failed
 
   useEffect(() => {
     const anchor = activeTab === 'verify' ? 'caddy-v1-evidence'
-      : activeTab === 'config' || activeTab === 'history' ? 'caddy-v1-config' : ''
+      : activeTab === 'history' ? 'caddy-v1-history'
+      : activeTab === 'config' ? 'caddy-v1-config' : ''
     if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: 'start', behavior: 'auto' })
   }, [activeTab])
 
@@ -224,10 +291,16 @@ export function XDriveCaddyDetailV1({
   const bad = service.health_state === 'failed'
   const primary = healthy ? '网关运行正常' : bad ? '网关检查异常' : '网关状态未确认'
   const inDeploy = deployReceipt?.state === 'deploying'
+  // A historical success blocks retries of THAT precise four-field target,
+  // not a later, independently saved Host .env CAS fingerprint.
+  const validPendingTarget = config?.source === 'host-env' &&
+    config.host_env_pending_redeploy === true &&
+    /^[0-9a-f]{64}$/.test(config.host_env_sha256 ?? '')
+  const alreadyCompletedThisTarget = deployReceipt?.state === 'deployed' &&
+    deployReceipt.sha256 === config?.host_env_sha256
   const canDeploy = !!source.startCaddyDeploy && !!source.getCaddyDeployStatus &&
-    config?.source === 'host-env' && config.host_env_pending_redeploy === true &&
-    !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy &&
-    deployReceipt?.state !== 'deployed'
+    validPendingTarget && !alreadyCompletedThisTarget &&
+    !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy
   const startDeploy = async () => {
     if (!canDeploy || !source.startCaddyDeploy || deployPendingRef.current) return
     deployPendingRef.current = true
@@ -245,6 +318,15 @@ export function XDriveCaddyDetailV1({
         throw new Error('unverified deployment receipt')
       }
       setDeployReceipt(status)
+      if (storageKey) {
+        try {
+          window.sessionStorage.setItem(storageKey, JSON.stringify({
+            request_id: status.request_id, sha256: status.sha256, at: Date.now(),
+          }))
+        } catch {
+          // Storage unavailable: the live Host operation is unaffected.
+        }
+      }
       if (status.state === 'deployed') {
         setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
         changed()
@@ -293,6 +375,25 @@ export function XDriveCaddyDetailV1({
     }, 1500)
     return () => { active = false; window.clearTimeout(timeout) }
   }, [source, deployReceipt?.request_id, deployReceipt?.sha256, deployReceipt?.state, deployPollSeq])
+
+  // A Start ACK says historical deployed, not current Applied. Always obtain
+  // the newer readonly Host comparison for a terminal success when supported.
+  useEffect(() => {
+    if (deployReceipt?.state !== 'deployed' || !source.getCaddyDeployStatus ||
+        deployReceipt.local_runtime_state) return
+    let active = true
+    void source.getCaddyDeployStatus(deployReceipt.request_id).then((next) => {
+      if (!active || next?.request_id !== deployReceipt.request_id ||
+          next.sha256 !== deployReceipt.sha256 || next.state !== 'deployed') return
+      if (next.local_runtime_state === 'matching-local' ||
+          next.local_runtime_state === 'changed-local' ||
+          next.local_runtime_state === 'unverified') setDeployReceipt(next)
+    }).catch(() => {
+      // No trust upgrade from an unavailable read.
+    })
+    return () => { active = false }
+  }, [source, deployReceipt?.request_id, deployReceipt?.sha256,
+    deployReceipt?.state, deployReceipt?.local_runtime_state])
 
   return (
     <Box data-xdrive-caddy-v1-detail data-xdrive-caddy-single-page="true"
@@ -389,6 +490,16 @@ export function XDriveCaddyDetailV1({
                 {atomicError && <XDriveStatusAlert tone="bad">{atomicError}</XDriveStatusAlert>}
                 {atomicNotice && <XDriveStatusAlert tone="good">{atomicNotice}</XDriveStatusAlert>}
                 {deployError && <XDriveStatusAlert tone="bad">{deployError}</XDriveStatusAlert>}
+                {deployReceipt?.state === 'deployed' && (
+                  <Typography variant="caption" color="text.secondary"
+                    data-xdrive-caddy-local-runtime-state>
+                    {deployReceipt.local_runtime_state === 'matching-local'
+                      ? '最近本机运行代际与此次历史部署匹配（未独立签名，不代表持续生效）。'
+                      : deployReceipt.local_runtime_state === 'changed-local'
+                        ? '当前本机配置或运行代际已变化；不能视为此次部署仍然生效。'
+                        : '仅确认历史部署完成；当前运行代际与应用生效状态未验证。'}
+                  </Typography>
+                )}
               </Box>
             </Stack>
           </Paper>
@@ -416,6 +527,55 @@ export function XDriveCaddyDetailV1({
             保存更新宿主机 .env；生效需另行重新部署 Caddy。
           </Typography>
         </Stack>
+      </Box>
+
+      <Box id="caddy-v1-history" sx={{ scrollMarginTop: 72, mt: 1.5 }}>
+        {config?.source === 'host-env' && (
+          <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}
+            data-xdrive-caddy-host-terminal-history>
+            <Typography variant="subtitle2" fontWeight={600}>最近部署记录</Typography>
+            <Typography variant="caption" color="text.secondary">
+              宿主机最多保留 64 条、7 天的不可变部署终态；不是 PostgreSQL 配置版本或签名生效证明。
+            </Typography>
+            {historyState === 'unavailable' && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                当前无法核实宿主机近期历史；不能推断没有执行过部署。
+              </Typography>
+            )}
+            {historyState === 'ready' && historyItems.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                本次读取未发现保留期内的部署终态。
+              </Typography>
+            )}
+            {historyState === 'ready' && historyItems.length > 0 && (
+              <Stack spacing={1} sx={{ mt: 1 }}>
+                {historyItems.slice(0, 10).map((item) => (
+                  <Box key={item.request_id} sx={{ minWidth: 0 }}
+                    data-xdrive-caddy-host-terminal-row>
+                    <Typography variant="body2">
+                      {item.state === 'deployed' ? '历史部署完成' : '历史部署未成功'}
+                      {' · '}请求 {item.request_id.slice(0, 8)}
+                    </Typography>
+                    {item.state === 'failed' && (
+                      <Typography variant="caption" color="text.secondary">
+                        {caddyHostDeployFailureMessage(item)}
+                      </Typography>
+                    )}
+                    {item.state === 'deployed' && (
+                      <Typography variant="caption" color="text.secondary">
+                        {item.local_runtime_state === 'matching-local'
+                          ? '最近本机运行匹配（未独立签名）'
+                          : item.local_runtime_state === 'changed-local'
+                            ? '当前本机代际或配置已变化'
+                            : '当前是否仍生效未验证'}
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </Paper>
+        )}
       </Box>
 
       <Box id="caddy-v1-evidence" sx={{ scrollMarginTop: 72 }}>

@@ -13,7 +13,7 @@ const files = [
   'ui/shared/src/mui/CaddyPreflightPanel.tsx',
 ]
 
-test('Caddy v1.1 compact follow-up: all settings are flat, no history/difference/disclosure UI', () => {
+test('Caddy settings remain flat while recent Host terminal history is readonly', () => {
   const owner = read(files[0])
   const https = read(files[1])
   const alidns = read(files[2])
@@ -21,10 +21,13 @@ test('Caddy v1.1 compact follow-up: all settings are flat, no history/difference
   assert.match(owner, /data-xdrive-caddy-single-page="true"/)
   assert.match(owner, /id="caddy-v1-config"/)
   assert.match(owner, /id="caddy-v1-evidence"/)
-  assert.match(owner, /activeTab === 'config' \|\| activeTab === 'history' \? 'caddy-v1-config'/)
+  assert.match(owner, /activeTab === 'history' \? 'caddy-v1-history'/)
+  assert.match(owner, /activeTab === 'config' \? 'caddy-v1-config'/)
+  assert.match(owner, /id="caddy-v1-history"/)
+  assert.match(owner, /data-xdrive-caddy-host-terminal-history/)
   assert.match(owner, /<XDriveCaddyPreflightPanel source=\{source\} refreshID=\{evidenceRevision\}/)
   for (const v of ['showHistory', 'historyOpen', 'evidenceOpen', 'showEvidence',
-    'caddy-v1-history', 'XDriveCaddyHostBaselinePreviewPanel',
+    'XDriveCaddyHostBaselinePreviewPanel',
     'data-xdrive-caddy-v1-runtime-desired-drift', '运行与目标配置存在差异',
     'caddy-v1-evidence-toggle', 'caddy-v1-history-toggle']) {
     assert.equal(owner.includes(v), false, 'deleted component ' + v)

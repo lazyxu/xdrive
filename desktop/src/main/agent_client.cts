@@ -856,6 +856,11 @@ export type AgentAdminCaddyConfigurationSaveResult = {
   host_applied: false
   apply_supported: false
 }
+export type AgentAdminCaddyDeployHistoryPage = {
+  items: AgentAdminCaddyDeployState[]
+  scope: 'host-terminal'
+  retention_days: number
+}
 export type AgentAdminCaddyDeployState = {
   protocol: 'xdrive.caddy.host-env.v1'
   request_id: string
@@ -863,6 +868,7 @@ export type AgentAdminCaddyDeployState = {
   sha256: string
   rolled_back?: boolean
   error?: string // Fixed Host code; never arbitrary subprocess diagnostics.
+  local_runtime_state?: 'matching-local' | 'changed-local' | 'unverified'
 }
 
 
@@ -4021,6 +4027,9 @@ export class AgentIPCClient {
   }
   cloudAdminCaddyDeployStatus(requestID: string) {
     return this.request<AgentAdminCaddyDeployState>('GET', '/v1/cloud/admin-caddy/config/deploy?request_id=' + encodeURIComponent(requestID))
+  }
+  cloudAdminCaddyDeployHistory() {
+    return this.request<AgentAdminCaddyDeployHistoryPage>('GET', '/v1/cloud/admin-caddy/config/deploy/history')
   }
   cloudAdminCaddyHTTPSRevisions() {
     return this.request<AgentAdminCaddyHTTPSRevisionPage>('GET', '/v1/cloud/admin-caddy-https/revisions')

@@ -103,6 +103,7 @@ import {
   type AgentAdminCaddyConfigurationSaveInput,
   type AgentAdminCaddyConfigurationSaveResult,
   type AgentAdminCaddyDeployState,
+  type AgentAdminCaddyDeployHistoryPage,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
   type AgentAdminCaddyAliDNSReadVerifyInput,
@@ -5496,6 +5497,12 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Invalid Caddy deployment request ID')
       }
       return requireAgentClient().cloudAdminCaddyDeployStatus(requestID)
+    }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-deploy-history', () =>
+    runAgentAction<AgentAdminCaddyDeployHistoryPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      return requireAgentClient().cloudAdminCaddyDeployHistory()
     }, false))
   ipcMain.handle('agent:cloud-admin-caddy-https-revisions', () => runAgentAction<AgentAdminCaddyHTTPSRevisionPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

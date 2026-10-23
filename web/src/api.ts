@@ -837,6 +837,11 @@ export class XDriveApi {
       { cache: 'no-store' },
     )
   }
+  adminCaddyDeployHistory() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyDeployHistoryPage>(
+      '/api/v1/admin/services/caddy/config/deploy/history', { cache: 'no-store' },
+    )
+  }
   adminCaddyHTTPSRevisions() {
     return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>(
       '/api/v1/admin/services/caddy/https/revisions', { cache: 'no-store' },

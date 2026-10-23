@@ -15,9 +15,11 @@ test('Caddy has one permanently open page; old verify/history links map to visib
     assert.match(page, new RegExp(anchor))
   }
   assert.match(page, /activeTab === 'verify' \? 'caddy-v1-evidence'/)
-  assert.match(page, /activeTab === 'config' \|\| activeTab === 'history' \? 'caddy-v1-config'/)
+  assert.match(page, /activeTab === 'history' \? 'caddy-v1-history'/)
+  assert.match(page, /activeTab === 'config' \? 'caddy-v1-config'/)
+  assert.match(page, /id="caddy-v1-history"/)
   assert.match(page, /scrollIntoView\(\{ block: 'start', behavior: 'auto' \}\)/)
-  for (const obsolete of ['caddy-v1-history', 'showHistory', 'historyOpen',
+  for (const obsolete of ['showHistory', 'historyOpen',
     'showEvidence', 'evidenceOpen', 'caddy-v1-evidence-toggle', 'caddy-v1-history-toggle',
     'section="history"', 'XDriveCaddyHostBaselinePreviewPanel',
     'data-xdrive-caddy-v1-runtime-desired-drift', '<Tabs', '<Accordion']) {

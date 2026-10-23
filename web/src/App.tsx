@@ -1311,6 +1311,7 @@ function FileManager({
   }), [api])
 
   const serviceDependenciesPort = useMemo(() => ({
+    operationScope: profile?.id ? `web:${window.location.origin}:${profile.id}` : '',
     load: () => api.adminServices(),
     loadCaddyHTTPSConfig: () => api.adminCaddyHTTPSConfig(),
     saveCaddyHTTPSConfig: (input: import('../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
@@ -1319,6 +1320,7 @@ function FileManager({
       api.adminSaveCaddyConfiguration(input),
     startCaddyDeploy: () => api.adminStartCaddyDeploy(),
     getCaddyDeployStatus: (requestID: string) => api.adminCaddyDeployStatus(requestID),
+    loadCaddyDeployHistory: () => api.adminCaddyDeployHistory(),
     loadCaddyHTTPSRevisions: () => api.adminCaddyHTTPSRevisions(),
     rollbackCaddyHTTPS: (input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
       api.adminRollbackCaddyHTTPS(input),
@@ -1378,7 +1380,7 @@ function FileManager({
       api.adminRestoreMissingGeoNamesSnapshot(input),
     loadGeoNamesRevisions: () => api.adminGeoNamesRevisions(),
     rollbackGeoNames: (input: XDriveGeoNamesRollbackInput) => api.adminRollbackGeoNames(input),
-  }), [api])
+  }), [api, profile?.id])
 
   const executeConfirm = async () => {
     if (!confirmAction) return
