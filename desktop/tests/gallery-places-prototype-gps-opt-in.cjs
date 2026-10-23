@@ -40,7 +40,8 @@ test('Baidu Convertor is separately gated and SDK data never gains persisted con
 test('ending session reloads unisolated SDK and nearby photo actions require opt-in', () => {
   assert.match(code, /data-xdrive-baidu-prototype-gps-stop/)
   assert.match(code, /window\.location\.reload\(\)/)
-  assert.match(code, /disabled=\{!prototypeConsent \|\| !canBrowseNearby \|\| !runtime\}/)
+  assert.match(code, /disabled=\{!prototypeConsent \|\| !canBrowseNearby \|\| !runtime \|\|\s*!committedOwnerFrame\.current\}/)
+  assert.match(code, /if \(!runtime \|\| !manualCamera\.current \|\| !committedOwnerFrame\.current\) return/)
   assert.match(code, /最多 64 组原始 WGS84 GPS/)
   assert.match(code, /已发送的定位无法撤回/)
 })

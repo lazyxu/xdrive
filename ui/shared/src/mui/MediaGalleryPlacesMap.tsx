@@ -22,7 +22,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPIPrototype, onOpenViewportPhotos,
   mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
-  activePlaceID, focusPlaceID, onOpenPlace, onOpenNearby, compact = false,
+  activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -46,6 +46,7 @@ export function XDriveMediaGalleryPlacesMap({
   activePlaceID?: string
   focusPlaceID?: string
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenPrototypePlace?: (place: MediaPlaceFacet) => void
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
   compact?: boolean
 }) {
@@ -69,6 +70,11 @@ export function XDriveMediaGalleryPlacesMap({
     const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
     if (href) window.location.replace(href)
   }
+  // The list selector and native map pins open the same current Owner place.
+  // Only the legacy mode supports direct singleton Viewer; isolated mode
+  // continues to use its authorized Cell/Viewport navigation.
+  const openSelectedPlace = mapMode === 'prototype' && selectedPlace?.id.startsWith('place:')
+    ? (onOpenPrototypePlace ?? onOpenPlace) : onOpenPlace
   const hasChildPorts = Boolean(!desktopOnly && getBaiduJSAPI4Status &&
     mintBaiduIsolatedChildTicket && listBaiduNativeCells && onOpenBaiduNativeCell)
   const cameraRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
@@ -186,12 +192,18 @@ export function XDriveMediaGalleryPlacesMap({
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ py: 1 }}>
           <Autocomplete size="small" options={places} getOptionLabel={p => p.name}
             isOptionEqualToValue={(a, b) => a.id === b.id} value={selectedPlace ?? null}
-            onChange={(_event, p) => { clearCamera(); setSelectedPlaceID(p?.id ?? null) }}
+            onChange={(_event, p) => {
+              // A different list selection must cancel an in-flight singleton
+              // opened from a previous map pin, before changing the camera.
+              onBaiduNativeCellInvalidated?.()
+              clearCamera()
+              setSelectedPlaceID(p?.id ?? null)
+            }}
             renderInput={params => <TextField {...params} size="small" label="选择地点" />}
             sx={{ flex: 1, minWidth: 0 }} />
-          {onOpenPlace ? (
+          {openSelectedPlace ? (
             <Button variant="outlined" size="small" disabled={!selectedPlace}
-              onClick={() => { if (selectedPlace) onOpenPlace(selectedPlace) }}>查看此地点照片</Button>
+              onClick={() => { if (selectedPlace) openSelectedPlace(selectedPlace) }}>查看此地点照片</Button>
           ) : null}
           {onOpenNearby ? (
             <>
@@ -202,7 +214,10 @@ export function XDriveMediaGalleryPlacesMap({
               <Button variant="outlined" size="small"
                 disabled={!selectedPlace || !Number.isFinite(selectedPlace.sample_latitude) ||
                   !Number.isFinite(selectedPlace.sample_longitude)}
-                onClick={() => { if (selectedPlace) onOpenNearby(selectedPlace, nearbyRadiusKM) }}>查看附近照片</Button>
+                onClick={() => {
+                  onBaiduNativeCellInvalidated?.()
+                  if (selectedPlace) onOpenNearby(selectedPlace, nearbyRadiusKM)
+                }}>查看附近照片</Button>
             </>
           ) : null}
         </Stack>
@@ -227,7 +242,8 @@ export function XDriveMediaGalleryPlacesMap({
             listPlacesMapOverview={listPlacesMapOverview}
             initialNativeCamera={cameraRef.current ?? undefined}
             onNativeCameraChange={rememberCamera}
-            onOpenPlace={onOpenPlace}
+            onOpenPlace={onOpenPrototypePlace ?? onOpenPlace}
+            onInvalidated={onBaiduNativeCellInvalidated}
             onOpenViewportPhotos={onOpenViewportPhotos}
             loadThumbnail={loadPhotoCoverThumbnail}
             diagnosticScope={diagnosticScope}
