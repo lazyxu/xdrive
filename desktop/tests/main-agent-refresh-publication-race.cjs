@@ -61,6 +61,14 @@ function fixture() {
     agentError: (err) => ({
       message: err instanceof Error ? err.message : String(err),
     }),
+    // The original Main publishAgentState body also fences the isolated
+    // Baidu map window on Agent/account changes. This fixture exercises
+    // Agent-state publication WITHOUT a map window, exactly as Main starts.
+    // Keep the original production body instead of stripping that guard.
+    secureBaiduMapWindow: null,
+    closeSecureBaiduMapWindow: () => {
+      throw new Error('unexpected map-window close in Agent-only test')
+    },
     resetSourceRunNotificationState: () => {},
     notifyAgentTransition: () => {},
     rebuildTrayMenu: () => {},
