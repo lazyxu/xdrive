@@ -1751,6 +1751,16 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    startCaddyDeploy: async () => {
+      const result = await window.xdriveDesktop.agent.cloudStartAdminCaddyDeploy()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    getCaddyDeployStatus: async (requestID: string) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyDeployStatus(requestID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadCaddyHTTPSRevisions: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSRevisions()
       if (!result.ok) throw new Error(result.error.message)

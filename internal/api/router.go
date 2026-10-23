@@ -22,6 +22,9 @@ import (
 )
 
 type Server struct {
+	// Real server boots with Host .env as canonical Caddy configuration;
+	// missing Host Control must not silently write PostgreSQL.
+	CaddyHostEnvAuthoritative      bool
 	DB                             *gorm.DB
 	PWAOfflineInstanceID           string // Persisted in PostgreSQL; not a permission or secret.
 	localPushCIOnlyFirstLeaf       bool
@@ -483,6 +486,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/caddy/https", s.adminCaddyHTTPSConfig)
 	admin.PUT("/services/caddy/https", s.adminSaveCaddyHTTPS)
 	admin.PUT("/services/caddy/config", s.adminSaveCaddyConfiguration)
+	admin.POST("/services/caddy/config/deploy", s.adminStartCaddyEnvDeploy)
+	admin.GET("/services/caddy/config/deploy", s.adminCaddyEnvDeployStatus)
 	admin.GET("/services/caddy/https/revisions", s.adminCaddyHTTPSRevisions)
 	admin.POST("/services/caddy/https/rollback", s.adminRollbackCaddyHTTPS)
 	admin.GET("/services/caddy/alidns", s.adminCaddyAliDNSConfig)

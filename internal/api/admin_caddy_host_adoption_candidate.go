@@ -105,6 +105,13 @@ func buildCaddyAdoptionEvidence(snapshot caddyPreflightSnapshot,
 // Re-read both DB revisions and Host observation: mixed views fail with 409.
 // This consistency check is NOT the future D2b-2 signed/CAS write guarantee.
 func (s *Server) adminCaddyHostAdoptionCandidate(c *gin.Context) {
+	// First iteration: Host .env is the only Caddy configuration authority.
+	// Legacy PostgreSQL revision/preflight/adoption endpoints must not expose
+	// stale DB state or write an unrelated desired revision.
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusNotImplemented, "Caddy configuration is managed by Host .env")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")

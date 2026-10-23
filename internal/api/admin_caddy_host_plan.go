@@ -59,6 +59,13 @@ func buildCaddyHTTPSHostPlan(snapshot caddyPreflightSnapshot) ([]byte, error) {
 // Admin-only read endpoint for a candidate host-side PREVIEW. Returning a
 // canonical JSON plan does not grant Apply/Restart or install AliDNS secrets.
 func (s *Server) adminCaddyHTTPSHostPlan(c *gin.Context) {
+	// First iteration: Host .env is the only Caddy configuration authority.
+	// Legacy PostgreSQL revision/preflight/adoption endpoints must not expose
+	// stale DB state or write an unrelated desired revision.
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusNotImplemented, "Caddy configuration is managed by Host .env")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")

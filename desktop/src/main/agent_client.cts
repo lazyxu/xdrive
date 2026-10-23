@@ -826,17 +826,26 @@ export type AgentAdminCaddyHTTPSRevisionPage = {
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 export type AgentAdminCaddyConfigurationSaveInput = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
   alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
 }
 export type AgentAdminCaddyConfigurationSaveResult = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   saved: true
   host_applied: false
   apply_supported: false
+}
+export type AgentAdminCaddyDeployState = {
+  protocol: 'xdrive.caddy.host-env.v1'
+  request_id: string
+  state: 'deploying' | 'deployed' | 'failed'
+  sha256: string
+  rolled_back?: boolean
 }
 
 
@@ -3947,6 +3956,12 @@ export class AgentIPCClient {
   }
   cloudSaveAdminCaddyConfiguration(input: AgentAdminCaddyConfigurationSaveInput) {
     return this.request<AgentAdminCaddyConfigurationSaveResult>('PUT', '/v1/cloud/admin-caddy/config', input)
+  }
+  cloudStartAdminCaddyDeploy() {
+    return this.request<AgentAdminCaddyDeployState>('POST', '/v1/cloud/admin-caddy/config/deploy', {})
+  }
+  cloudAdminCaddyDeployStatus(requestID: string) {
+    return this.request<AgentAdminCaddyDeployState>('GET', '/v1/cloud/admin-caddy/config/deploy?request_id=' + encodeURIComponent(requestID))
   }
   cloudAdminCaddyHTTPSRevisions() {
     return this.request<AgentAdminCaddyHTTPSRevisionPage>('GET', '/v1/cloud/admin-caddy-https/revisions')

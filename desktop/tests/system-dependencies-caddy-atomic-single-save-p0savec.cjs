@@ -81,7 +81,7 @@ test('P0-SAVE-C: HTTPS draft stays authoritative without mounted Caddy history U
   assert.doesNotMatch(page, /section="history"/)
   assert.doesNotMatch(page, /caddy-v1-history/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
-  assert.match(page, /保存仅更新管理配置，不会重新部署 Caddy/)
+  assert.match(page, /保存更新宿主机 \.env；生效需另行重新部署 Caddy/)
 })
 test('P0-SAVE-C: in-flight atomic Save freezes both editors and secondary requests', () => {
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')

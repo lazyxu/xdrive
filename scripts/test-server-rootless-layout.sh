@@ -79,6 +79,7 @@ case "$url" in
   */scripts/server-doctor.sh) src="$TEST_ROOT/scripts/server-doctor.sh" ;;
   */scripts/server-migrate-user.sh) src="$TEST_ROOT/scripts/server-migrate-user.sh" ;;
   */scripts/server-control.sh) src="$TEST_ROOT/scripts/server-control.sh" ;;
+  */scripts/caddy-env-config.py) src="$TEST_ROOT/scripts/caddy-env-config.py" ;;
   */scripts/xdrive-server-host.sh) src="$TEST_ROOT/scripts/xdrive-server-host.sh" ;;
   *) echo "unexpected URL: $url" >&2; exit 9 ;;
 esac

@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="$ROOT/scripts/xdrive-server-host.sh"
+# Source-level, real temporary-host filesystem regressions for the scoped Caddy editor.
+python3 "$ROOT/scripts/test-caddy-env-config.py"
+bash "$ROOT/scripts/test-caddy-env-deploy.sh"
 TMP="$(mktemp -d)"
 CONTROL_TEST_PID=""
 cleanup() {

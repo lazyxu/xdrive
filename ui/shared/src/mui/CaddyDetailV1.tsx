@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
-import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig } from '../service-dependencies'
+import type { XDriveServiceDependency, XDriveCaddyHTTPSConfig, XDriveCaddyDeployState } from '../service-dependencies'
 import type { XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort, type XDriveCaddyHTTPSAtomicDraft } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort, type XDriveCaddyAliDNSAtomicDraft } from './CaddyAliDNSPanel'
@@ -10,12 +10,14 @@ import { XDriveStatusAlert } from './StatusAlert'
 
 // Only PostgreSQL desired state is saved. No Host/Docker/ACME/DNS Apply.
 type AtomicDesiredSave = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
   alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
 }
 type AtomicDesiredResult = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   saved: boolean
@@ -24,6 +26,8 @@ type AtomicDesiredResult = {
 }
 type CaddyPort = XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
   saveCaddyConfiguration?: (input: AtomicDesiredSave) => Promise<AtomicDesiredResult>
+  startCaddyDeploy?: () => Promise<XDriveCaddyDeployState>
+  getCaddyDeployStatus?: (requestID: string) => Promise<XDriveCaddyDeployState>
 }
 type ConfigSnapshot = { source: CaddyPort; config: XDriveCaddyHTTPSConfig | null; failed: boolean }
 
@@ -82,11 +86,21 @@ export function XDriveCaddyDetailV1({
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [atomicError, setAtomicError] = useState('')
   const [atomicNotice, setAtomicNotice] = useState('')
+  const [confirmDeploy, setConfirmDeploy] = useState(false)
+  const [deployReceipt, setDeployReceipt] = useState<XDriveCaddyDeployState | null>(null)
+  const [deployError, setDeployError] = useState('')
+  const [deployPollSeq, setDeployPollSeq] = useState(0)
+  const [deployBusy, setDeployBusy] = useState(false)
+  const deployEpoch = useRef(0)
+  const deployPendingRef = useRef(false)
   const saveEpoch = useRef(0)
   const savePendingRef = useRef(false)
   useEffect(() => {
     savePendingRef.current = false
     ++saveEpoch.current // Invalidates response from previous Server/account.
+    ++deployEpoch.current
+    deployPendingRef.current = false
+    setDeployBusy(false)
     setHTTPSDraft(null)
     setAliDraft(null)
     setSavingAtomic(false)
@@ -94,6 +108,10 @@ export function XDriveCaddyDetailV1({
     setConfirmDiscard(false)
     setAtomicError('')
     setAtomicNotice('')
+    setConfirmDeploy(false)
+    setDeployReceipt(null)
+    setDeployError('')
+    setDeployPollSeq(0)
   }, [source])
   // Never render the prior Server/account's sensitive Host/desired state.
   const readFailed = snapshot?.source === source && snapshot.failed
@@ -126,7 +144,9 @@ export function XDriveCaddyDetailV1({
   const https = httpsDraft?.source === source ? httpsDraft : null
   const ali = aliDraft?.source === source ? aliDraft : null
   const safeRevision = (v: number) => Number.isSafeInteger(v) && v >= 0 && v < Number.MAX_SAFE_INTEGER
-  const readyRevisions = !!https && !!ali && safeRevision(https.revision) && safeRevision(ali.revision)
+  const readyRevisions = !!https && !!ali && safeRevision(https.revision) && safeRevision(ali.revision) &&
+    (!https.host_env_sha256 || (https.host_env_sha256 === ali.host_env_sha256 &&
+      /^[a-f0-9]{64}$/.test(https.host_env_sha256)))
   const dirtyAtomic = !!https?.changed || (ali?.action !== undefined && ali.action !== 'keep')
   const readyAtomic = readyRevisions && !!https?.ready && !!ali?.ready &&
     !(https?.host_pending || ali?.host_pending) &&
@@ -140,6 +160,7 @@ export function XDriveCaddyDetailV1({
     savePendingRef.current = true
     const input: AtomicDesiredSave = {
       https_revision: https.revision, alidns_revision: ali.revision,
+      ...(https.host_env_sha256 ? { host_env_sha256: https.host_env_sha256 } : {}),
       ...(https.changed ? { https: {
         enabled: https.enabled, domain: https.domain,
         lan_enabled: https.lan_enabled, lan_ip: https.lan_ip,
@@ -161,15 +182,20 @@ export function XDriveCaddyDetailV1({
           result.apply_supported !== false ||
           !Number.isSafeInteger(result.https_revision) ||
           !Number.isSafeInteger(result.alidns_revision) ||
-          result.https_revision !== input.https_revision + (input.https ? 1 : 0) ||
-          result.alidns_revision !== input.alidns_revision + (input.alidns ? 1 : 0)) {
+          (input.host_env_sha256
+            ? (!/^[0-9a-f]{64}$/.test(result.host_env_sha256 || '') ||
+              result.https_revision !== 0 || result.alidns_revision !== 0)
+            : (result.https_revision !== input.https_revision + (input.https ? 1 : 0) ||
+              result.alidns_revision !== input.alidns_revision + (input.alidns ? 1 : 0)))) {
         throw new Error('原子保存响应不能确认完整双修订；请重新读取目标，勿视为已应用。')
       }
       setHTTPSDraft(null)
       setAliDraft(null)
       setAtomicRefreshID((value) => value + 1)
       changed()
-      setAtomicNotice('两组管理目标已作为一笔事务保存并审计；尚未重新部署 Caddy。')
+      setAtomicNotice(input.host_env_sha256
+        ? '宿主机 .env 已保存；尚未重新部署 Caddy。'
+        : '两组管理目标已作为一笔事务保存并审计；尚未重新部署 Caddy。')
     } catch (err) {
       if (epoch === saveEpoch.current) {
         setAtomicError(safeCaddyAtomicSaveError(err))
@@ -196,6 +222,78 @@ export function XDriveCaddyDetailV1({
     service.health_state === 'ready' && service.local_tls_state === 'verified'
   const bad = service.health_state === 'failed'
   const primary = healthy ? '网关运行正常' : bad ? '网关检查异常' : '网关状态未确认'
+  const inDeploy = deployReceipt?.state === 'deploying'
+  const canDeploy = !!source.startCaddyDeploy && !!source.getCaddyDeployStatus &&
+    config?.source === 'host-env' && config.host_env_pending_redeploy === true &&
+    !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy &&
+    deployReceipt?.state !== 'deployed'
+  const startDeploy = async () => {
+    if (!canDeploy || !source.startCaddyDeploy || deployPendingRef.current) return
+    deployPendingRef.current = true
+    const epoch = ++deployEpoch.current
+    setDeployBusy(true)
+    setConfirmDeploy(false)
+    setDeployError('')
+    try {
+      const status = await source.startCaddyDeploy()
+      if (epoch !== deployEpoch.current) return
+      if (!status || status.protocol !== 'xdrive.caddy.host-env.v1' ||
+        !/^[0-9a-f]{24}$/.test(status.request_id) ||
+        !/^[0-9a-f]{64}$/.test(status.sha256) ||
+        (status.state !== 'deploying' && status.state !== 'deployed' && status.state !== 'failed')) {
+        throw new Error('unverified deployment receipt')
+      }
+      setDeployReceipt(status)
+      if (status.state === 'deployed') {
+        setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
+        changed()
+      } else if (status.state === 'failed') {
+        setDeployError('重新部署失败；请先核对宿主机恢复结果，再决定是否重试。')
+        changed()
+      }
+    } catch {
+      if (epoch === deployEpoch.current) {
+        setDeployError('重新部署结果尚未确认；请刷新宿主机状态，避免重复操作。')
+      }
+    } finally {
+      if (epoch === deployEpoch.current) {
+        deployPendingRef.current = false
+        setDeployBusy(false)
+      }
+    }
+  }
+  useEffect(() => {
+    if (!deployReceipt || deployReceipt.state !== 'deploying' || !source.getCaddyDeployStatus) return
+    let active = true
+    const timeout = window.setTimeout(() => {
+      void source.getCaddyDeployStatus!(deployReceipt.request_id).then((next) => {
+        if (!active) return
+        if (!next || next.protocol !== 'xdrive.caddy.host-env.v1' ||
+          next.request_id !== deployReceipt.request_id ||
+          next.sha256 !== deployReceipt.sha256 ||
+          (next.state !== 'deploying' && next.state !== 'deployed' && next.state !== 'failed')) {
+          setDeployError('部署状态校验失败。请检查宿主机，勿重复提交。')
+          return
+        }
+        setDeployReceipt(next)
+        if (next.state === 'deployed' || next.state === 'failed') {
+          if (next.state === 'deployed') {
+            setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
+          } else {
+            setDeployError(next.rolled_back
+              ? '重新部署失败，已尝试恢复旧 Caddy；请重新检测。'
+              : '重新部署失败，原网关恢复未确认；请从宿主机检查。')
+          }
+          changed()
+        } else {
+          setDeployPollSeq((n) => n + 1)
+        }
+      }).catch(() => {
+        if (active) setDeployError('暂时无法读取部署状态；请检查宿主机，不要重复提交。')
+      })
+    }, 1500)
+    return () => { active = false; window.clearTimeout(timeout) }
+  }, [source, deployReceipt?.request_id, deployReceipt?.sha256, deployReceipt?.state, deployPollSeq])
 
   return (
     <Box data-xdrive-caddy-v1-detail data-xdrive-caddy-single-page="true"
@@ -269,6 +367,12 @@ export function XDriveCaddyDetailV1({
                 data-xdrive-caddy-v11-save-only onClick={() => setConfirmAtomic(true)}>
                 保存配置
               </Button>
+              {config?.source === 'host-env' && (
+                <Button size="small" variant="outlined" disabled={!canDeploy}
+                  onClick={() => setConfirmDeploy(true)} data-xdrive-caddy-host-env-deploy>
+                  {inDeploy ? '正在重新部署…' : '重新部署 Caddy'}
+                </Button>
+              )}
               {dirtyAtomic && (
                 <Button size="small" variant="text" disabled={savingAtomic}
                   onClick={() => setConfirmDiscard(true)}>放弃未保存的修改</Button>
@@ -285,14 +389,19 @@ export function XDriveCaddyDetailV1({
               <Box sx={{ minHeight: 24, width: '100%' }} aria-live="polite">
                 {atomicError && <XDriveStatusAlert tone="bad">{atomicError}</XDriveStatusAlert>}
                 {atomicNotice && <XDriveStatusAlert tone="good">{atomicNotice}</XDriveStatusAlert>}
+                {deployError && <XDriveStatusAlert tone="bad">{deployError}</XDriveStatusAlert>}
               </Box>
             </Stack>
           </Paper>
           <XDriveConfirmDialog open={confirmAtomic} loading={savingAtomic}
             title="保存 Caddy 管理配置"
-            description="将 HTTPS 与 AliDNS 修改作为同一笔事务保存并审计；不会重新部署 Caddy。"
+            description="Host 模式保存至宿主机 .env；不会立即重新部署 Caddy。"
             confirmLabel="仅保存配置" onCancel={() => setConfirmAtomic(false)}
             onConfirm={() => { void saveAtomic() }} />
+          <XDriveConfirmDialog open={confirmDeploy} title="重新部署 Caddy"
+            description="将已保存的宿主机 .env 应用到 Caddy。此操作只重新创建 Caddy；失败时尝试恢复上一份运行配置。"
+            confirmLabel="重新部署" onCancel={() => setConfirmDeploy(false)}
+            onConfirm={() => { void startDeploy() }} />
           <XDriveConfirmDialog open={confirmDiscard} loading={savingAtomic}
             title="放弃未保存的 Caddy 草稿"
             description="重新读取已保存的配置；未保存的输入和凭据操作将被清除。"
@@ -305,13 +414,13 @@ export function XDriveCaddyDetailV1({
             }} />
           <Typography variant="caption" color="text.secondary"
             data-xdrive-caddy-v1-deploy-gate>
-            保存仅更新管理配置，不会重新部署 Caddy。
+            保存更新宿主机 .env；生效需另行重新部署 Caddy。
           </Typography>
         </Stack>
       </Box>
 
       <Box id="caddy-v1-evidence" sx={{ scrollMarginTop: 72 }}>
-        <XDriveCaddyPreflightPanel source={source} refreshID={evidenceRevision} />
+        {config?.source !== 'host-env' && <XDriveCaddyPreflightPanel source={source} refreshID={evidenceRevision} />}
       </Box>
     </Box>
   )

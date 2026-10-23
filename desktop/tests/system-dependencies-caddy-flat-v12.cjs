@@ -44,7 +44,7 @@ test('Caddy displays verified facts only; no yellow unsupported evidence or repe
   const preflight = read(files[3])
   assert.match(owner, /hostDomainVerified \|\| independentDomainVerified \|\| lanVerified/)
   assert.match(https, /config.host_lan_tls_state === 'verified'/)
-  assert.match(owner, /保存仅更新管理配置，不会重新部署 Caddy/)
+  assert.match(owner, /保存更新宿主机 \.env；生效需另行重新部署 Caddy/)
   for (const obsolete of ['公网实际可达：未验证', '当前设备信任 Caddy Local CA',
     '生效待核验', '生效另验', '生效未确认', 'Applied Receipt ·',
     '尚无绑定管理双修订的可信 Applied Receipt', '期望配置未应用']) {

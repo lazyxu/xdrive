@@ -627,6 +627,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https", h.cloudAdminCaddyHTTPS)
 	mux.HandleFunc("PUT /v1/cloud/admin-caddy-https", h.cloudSetAdminCaddyHTTPS)
 	mux.HandleFunc("PUT /v1/cloud/admin-caddy/config", h.cloudSaveAdminCaddyConfiguration)
+	mux.HandleFunc("POST /v1/cloud/admin-caddy/config/deploy", h.cloudStartAdminCaddyDeploy)
+	mux.HandleFunc("GET /v1/cloud/admin-caddy/config/deploy", h.cloudAdminCaddyDeployStatus)
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https/revisions", h.cloudAdminCaddyHTTPSRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-caddy-https/rollback", h.cloudRollbackAdminCaddyHTTPS)
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-https/preflight", h.cloudAdminCaddyHTTPSPreflight)
