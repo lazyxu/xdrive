@@ -67,12 +67,14 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate') {
     if (url.pathname !== '/' && url.pathname !== '/index.html') return
     event.respondWith((async () => {
-      if (SHELL_PATHS.has('/index.html')) {
-        const shell = await caches.open(SHELL_CACHE)
-        const hit = await shell.match('/index.html')
-        if (hit) return hit
-      }
-      try { return await fetch(request) } catch {
+      // On navigation, prefer current Server's public HTML over a cached
+      // older App Shell, which might invoke APIs that no longer exist.
+      try { return await fetch(request, { cache: 'no-store' }) } catch {
+        if (SHELL_PATHS.has('/index.html')) {
+          const shell = await caches.open(SHELL_CACHE)
+          const hit = await shell.match('/index.html')
+          if (hit) return hit
+        }
         const offline = await caches.open(OFFLINE_CACHE)
         return (await offline.match(OFFLINE_URL)) || Response.error()
       }

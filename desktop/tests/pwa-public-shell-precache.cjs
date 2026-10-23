@@ -66,7 +66,8 @@ test('P0A: compiled worker strictly caches public startup, serves offline shell 
   const js = fs.readFileSync(path.join(dist, 'sw.js'), 'utf8')
   const handlers = new Map(), cachesByName = new Map()
   const mime = p => p === '/index.html' ? 'text/html' : p.endsWith('.css') ? 'text/css' : 'text/javascript'
-  let serverReads = 0, claimCount = 0
+  let serverReads = 0, claimCount = 0, offline = false
+  let navigationCacheMode = null
   const caches = {
     async open(name) {
       if (!cachesByName.has(name)) cachesByName.set(name, new Map())
@@ -88,8 +89,12 @@ test('P0A: compiled worker strictly caches public startup, serves offline shell 
   class Request {
     constructor(url, options) { this.url = url; this.options = options }
   }
-  const fetch = async request => {
+  const fetch = async (request, options) => {
     serverReads++
+    if (request?.mode === 'navigate') {
+      navigationCacheMode = options?.cache ?? null
+      if (offline) throw new Error('offline')
+    }
     const pathname = typeof request === 'string' ? request : request.url
     return { ok: true, redirected: false, type: 'basic', tag: 'shell-' + pathname,
       headers: { get: () => mime(pathname) } }
@@ -105,12 +110,19 @@ test('P0A: compiled worker strictly caches public startup, serves offline shell 
   assert.equal(claimCount, 1)
   assert.equal(cachesByName.size, 2)
   const fetchedOnce = serverReads
+  const online = await dispatch('fetch', {method:'GET',mode:'navigate',url:'https://drive.example/#/app/files'})
+  assert.equal(online.tag, 'shell-https://drive.example/#/app/files',
+    'online navigation must not return the stale cached HTML')
+  assert.equal(serverReads, fetchedOnce + 1)
+  assert.equal(navigationCacheMode, 'no-store')
+  offline = true
+  const beforeOffline = serverReads
   const doc = await dispatch('fetch', {method:'GET',mode:'navigate',url:'https://drive.example/#/app/files'})
-  assert.equal(doc.tag, 'shell-/index.html')
-  assert.equal(serverReads, fetchedOnce, 'offline App Shell navigation must require no network')
+  assert.equal(doc.tag, 'shell-/index.html', 'offline navigation still uses the public cached shell')
+  assert.equal(serverReads, beforeOffline + 1)
   assert.equal(dispatch('fetch', {method:'GET',mode:'navigate',url:'https://drive.example/api/v1/download-ticket'}), undefined)
   assert.equal(dispatch('fetch', {method:'GET',mode:'cors',url:'https://drive.example/api/v1/media/1'}), undefined)
   const jsCached = await dispatch('fetch', {method:'GET',mode:'cors',url:'https://drive.example/assets/index-abcd1234.js',headers:{get:()=>null}})
   assert.equal(jsCached.tag, 'shell-/assets/index-abcd1234.js')
-  assert.equal(serverReads, fetchedOnce)
+  assert.equal(serverReads, beforeOffline + 1, 'cached assets and private requests never re-enter the network')
 })
