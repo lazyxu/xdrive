@@ -397,12 +397,14 @@ test('Only Caddy uses flat always-visible config; other service sections retain 
   assert.ok(page.includes("if (!next && unsavedRef.current) return"))
   assert.ok(page.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
 
-  // Caddy itself has no accordion, no history UI and no automatic probing.
+  // Caddy has no accordion or editable lazy history; recent Host terminal history is readonly.
   assert.ok(workspace.includes('data-xdrive-caddy-single-page="true"'))
-  assert.ok(workspace.includes("activeTab === 'config' || activeTab === 'history' ? 'caddy-v1-config'"))
+  assert.ok(workspace.includes("activeTab === 'history' ? 'caddy-v1-history'"))
+  assert.ok(workspace.includes("activeTab === 'config' ? 'caddy-v1-config'"))
+  assert.ok(workspace.includes('id="caddy-v1-history"'))
   for (const forbidden of [
     'showHistory', 'historyOpen', 'showEvidence', 'evidenceOpen',
-    'caddy-v1-history', 'section="history"', 'XDriveCaddyHostBaselinePreviewPanel',
+    'section="history"', 'XDriveCaddyHostBaselinePreviewPanel',
     'data-xdrive-caddy-v1-runtime-desired-drift',
   ]) assert.equal(workspace.includes(forbidden), false, 'obsolete Caddy UI: ' + forbidden)
   assert.ok(workspace.includes('data-xdrive-caddy-v11-atomic-save'))

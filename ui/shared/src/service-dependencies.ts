@@ -147,6 +147,13 @@ export type XDriveCaddyDeployState = {
   sha256: string
   rolled_back?: boolean
   error?: string // Strictly enumerated on Server; never raw Host/Docker diagnostics.
+  // This is a RECENT UNSIGNED Host-local comparison, never signed Applied.
+  local_runtime_state?: 'matching-local' | 'changed-local' | 'unverified'
+}
+export type XDriveCaddyDeployHistoryPage = {
+  items: XDriveCaddyDeployState[]
+  scope: 'host-terminal'
+  retention_days: number
 }
 export type XDriveCaddyConfigurationSaveResult = {
   host_env_sha256?: string

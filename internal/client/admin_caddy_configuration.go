@@ -45,12 +45,13 @@ func (c *Client) SaveAdminCaddyConfiguration(ctx context.Context, input AdminCad
 }
 
 type AdminCaddyDeployState struct {
-	Protocol   string `json:"protocol"`
-	RequestID  string `json:"request_id"`
-	State      string `json:"state"`
-	SHA256     string `json:"sha256"`
-	RolledBack bool   `json:"rolled_back,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Protocol          string `json:"protocol"`
+	RequestID         string `json:"request_id"`
+	State             string `json:"state"`
+	SHA256            string `json:"sha256"`
+	RolledBack        bool   `json:"rolled_back,omitempty"`
+	Error             string `json:"error,omitempty"`
+	LocalRuntimeState string `json:"local_runtime_state,omitempty"`
 }
 
 func (c *Client) StartAdminCaddyDeploy(ctx context.Context) (AdminCaddyDeployState, error) {
@@ -61,5 +62,17 @@ func (c *Client) StartAdminCaddyDeploy(ctx context.Context) (AdminCaddyDeploySta
 func (c *Client) AdminCaddyDeployStatus(ctx context.Context, id string) (AdminCaddyDeployState, error) {
 	var result AdminCaddyDeployState
 	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/caddy/config/deploy?request_id="+url.QueryEscape(id), nil, &result)
+	return result, err
+}
+
+type AdminCaddyDeployHistoryPage struct {
+	Items         []AdminCaddyDeployState `json:"items"`
+	Scope         string                  `json:"scope"`
+	RetentionDays int                     `json:"retention_days"`
+}
+
+func (c *Client) AdminCaddyDeployHistory(ctx context.Context) (AdminCaddyDeployHistoryPage, error) {
+	var result AdminCaddyDeployHistoryPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/caddy/config/deploy/history", nil, &result)
 	return result, err
 }

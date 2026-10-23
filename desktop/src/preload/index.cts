@@ -790,6 +790,7 @@ const agent = Object.freeze({
   }) => ipcRenderer.invoke('agent:cloud-save-admin-caddy-config', input),
   cloudStartAdminCaddyDeploy: () => ipcRenderer.invoke('agent:cloud-start-admin-caddy-deploy'),
   cloudAdminCaddyDeployStatus: (requestID: string) => ipcRenderer.invoke('agent:cloud-admin-caddy-deploy-status', requestID),
+  cloudAdminCaddyDeployHistory: () => ipcRenderer.invoke('agent:cloud-admin-caddy-deploy-history'),
   cloudAdminCaddyHTTPSRevisions: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-revisions'),
   cloudRollbackAdminCaddyHTTPS: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-caddy-https', input),

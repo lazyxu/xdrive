@@ -1762,6 +1762,8 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    operationScope: status?.server && status?.username
+      ? `desktop:${status.server}:${status.username}` : '',
     loadCaddyHTTPSConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSConfig()
       if (!result.ok) throw new Error(result.error.message)
@@ -1784,6 +1786,11 @@ export default function App({
     },
     getCaddyDeployStatus: async (requestID: string) => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyDeployStatus(requestID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadCaddyDeployHistory: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyDeployHistory()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

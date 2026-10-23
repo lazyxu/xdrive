@@ -69,7 +69,7 @@ test('P0-SAVE-C: AliDNS explicit clear stages locally, does not fire its standal
   assert.match(alidns, /if \(atomicMode\) \{[\s\S]*?setPendingClear\(true\)/)
 })
 
-test('P0-SAVE-C: HTTPS draft stays authoritative without mounted Caddy history UI', () => {
+test('P0-SAVE-C: HTTPS draft stays authoritative alongside readonly Host terminal history', () => {
   const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   assert.match(https, /onAtomicDraft\?\.\(config && section === 'config'/)
@@ -79,7 +79,8 @@ test('P0-SAVE-C: HTTPS draft stays authoritative without mounted Caddy history U
   assert.match(https, /validPrivateLANIP\(lanIP\)/)
   assert.match(https, /lanEnabled \|\| enabled/)
   assert.doesNotMatch(page, /section="history"/)
-  assert.doesNotMatch(page, /caddy-v1-history/)
+  assert.match(page, /id="caddy-v1-history"/)
+  assert.match(page, /data-xdrive-caddy-host-terminal-history/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
   assert.match(page, /保存更新宿主机 \.env；生效需另行重新部署 Caddy/)
 })

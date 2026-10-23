@@ -352,6 +352,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "PUT", path: "/api/v1/admin/services/caddy/https", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/caddy/config", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/caddy/config/deploy", suite: "admin"},
+		{method: "GET", path: "/api/v1/admin/services/caddy/config/deploy/history", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/caddy/config/deploy", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/caddy/https/revisions", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/caddy/https/rollback", suite: "admin"},

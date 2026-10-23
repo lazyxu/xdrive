@@ -133,3 +133,22 @@ func (h *desktopIPCHandler) cloudAdminCaddyDeployStatus(w http.ResponseWriter, r
 	w.Header().Set("Cache-Control", "no-store")
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
+
+type desktopIPCAdminCaddyDeployHistoryController interface {
+	CloudAdminCaddyDeployHistory(context.Context) (client.AdminCaddyDeployHistoryPage, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminCaddyDeployHistory(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyDeployHistoryController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_history_unsupported", "Upgrade Agent for Caddy history")
+		return
+	}
+	result, err := provider.CloudAdminCaddyDeployHistory(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
