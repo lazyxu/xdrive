@@ -607,6 +607,11 @@ export default function App({
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
+      history: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupLocalCommonBatchHistory(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
       control: async (sourceID: number, action: 'pause' | 'cancel') => {
         const result = await window.xdriveDesktop.agent.controlDeviceBackupLocalCommonBatch(sourceID, action)
         if (!result.ok) throw new Error(result.error.message)

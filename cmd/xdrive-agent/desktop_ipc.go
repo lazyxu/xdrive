@@ -802,6 +802,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/device-backups/local-first-file", h.startLocalBoundBackupFirstFile)
 	mux.HandleFunc("POST /v1/device-backups/local-common-batch", h.startLocalBoundBackupCommonBatch)
 	mux.HandleFunc("GET /v1/device-backups/local-common-batch", h.localBoundBackupCommonBatchStatus)
+	mux.HandleFunc("GET /v1/device-backups/local-common-batch/history", h.localBoundBackupCommonBatchHistory)
 	mux.HandleFunc("POST /v1/device-backups/local-common-batch/control", h.controlLocalBoundBackupCommonBatch)
 	mux.HandleFunc("GET /v1/device-backups/local-first-file-status", h.readLocalBoundBackupFirstFileStatus)
 	mux.HandleFunc("GET /v1/device-backups/local-delta", h.localBoundBackupDelta)

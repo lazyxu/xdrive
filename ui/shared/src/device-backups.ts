@@ -170,6 +170,26 @@ export interface XDriveLocalBackupCommonBatch {
   current_cas_verified: false
 }
 
+export interface XDriveLocalBackupCommonBatchHistoryItem {
+  run_id: string
+  source_id: number
+  revision: number
+  state: 'partial' | 'uncertain' | 'paused' | 'cancelled'
+  inspected_files: number
+  confirmed_files: number
+  skipped_files: number
+  unsupported_files: number
+  uncertain_files: number
+  confirmed_bytes: number
+  started_at: string
+  finished_at: string
+}
+
+export interface XDriveLocalBackupCommonBatchHistoryPage {
+  source_id: number
+  items: XDriveLocalBackupCommonBatchHistoryItem[]
+}
+
 export interface XDriveLocalBackupSnapshot {
   source_id: number
   revision: number

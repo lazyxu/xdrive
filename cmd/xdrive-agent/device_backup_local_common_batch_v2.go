@@ -190,12 +190,21 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		return out, errLocalBackupCommonBatchUnavailable
 	}
 	defer lease.Close()
+	// Backfill the last trusted terminal observation, or record a crashed
+	// stale-running Agent as UNCERTAIN before replacing its latest checkpoint.
+	// This runs with the cross-process Source lease, not from a Renderer read.
+	if err := localpush.ReconcileVerifiedCommonBatchHistoryBeforeRun(
+		workCtx, configDir, grant, account.SessionID, source.Revision,
+	); err != nil {
+		return out, errLocalBackupCommonBatchUnavailable
+	}
 
 	// The run summary is NOT a new task queue. Original durable per-file
 	// Operations remain the only authority for skipping/retry/commit.
 	runID := uuid.NewString()
-	saveRun := func(saveCtx context.Context, state string) error {
-		checkpoint := localpush.CommonBatchCheckpoint{
+	runStartedAt := time.Now().UTC()
+	makeRunCheckpoint := func(state string) localpush.CommonBatchCheckpoint {
+		return localpush.CommonBatchCheckpoint{
 			Version: 1, RunID: runID,
 			SourceID: sourceID, SourceRevision: source.Revision,
 			RootFingerprint: grant.Fingerprint,
@@ -203,13 +212,18 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			State:           state, InspectedFiles: out.InspectedFiles,
 			ConfirmedFiles: out.ConfirmedFiles, SkippedFiles: out.SkippedFiles,
 			UnsupportedFiles: out.UnsupportedFiles, UncertainFiles: out.UncertainFiles,
-			ConfirmedBytes: out.ConfirmedBytes, UpdatedAt: time.Now().UTC(),
+			ConfirmedBytes: out.ConfirmedBytes, StartedAt: runStartedAt,
+			UpdatedAt:      time.Now().UTC(),
 			BackupComplete: false, RetirementSafe: false, CurrentCASVerified: false,
 		}
-		return localpush.StoreVerifiedCommonBatchCheckpoint(
-			saveCtx, configDir, grant, account.SessionID, source.Revision, checkpoint)
 	}
-	if err := saveRun(workCtx, "running"); err != nil {
+	saveRun := func(saveCtx context.Context, state string) (localpush.CommonBatchCheckpoint, error) {
+		checkpoint := makeRunCheckpoint(state)
+		err := localpush.StoreVerifiedCommonBatchCheckpoint(
+			saveCtx, configDir, grant, account.SessionID, source.Revision, checkpoint)
+		return checkpoint, err
+	}
+	if _, err := saveRun(workCtx, "running"); err != nil {
 		return out, errLocalBackupCommonBatchUnavailable
 	}
 	// Even if the process/IPC disappears after the last remote COMMIT, the
@@ -243,11 +257,21 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		}
 		syncCtx, syncCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer syncCancel()
-		if saveErr := saveRun(syncCtx, out.State); saveErr != nil {
+		finalCheckpoint, saveErr := saveRun(syncCtx, out.State)
+		if saveErr == nil {
+			// A completed local attempt is an immutable historical observation,
+			// never a whole-Source success or a replacement file-operation queue.
+			saveErr = localpush.AppendVerifiedCommonBatchHistory(
+				syncCtx, configDir, grant, account.SessionID, finalCheckpoint)
+		}
+		if saveErr != nil {
 			out.State = "uncertain"
 			if out.UncertainFiles == 0 {
 				out.UncertainFiles = 1
 			}
+			// A missing history write may follow real SQL/CAS commits. Publish
+			// only uncertain status and preserve every original Operation.
+			_, _ = saveRun(syncCtx, "uncertain")
 			if runErr == nil {
 				runErr = errLocalBackupCommonBatchUnavailable
 			}
@@ -313,7 +337,7 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 				out.InspectedFiles++
 				if out.InspectedFiles%16 == 0 {
 					publish()
-					if err := saveRun(workCtx, "running"); err != nil {
+					if _, err := saveRun(workCtx, "running"); err != nil {
 						return errLocalBackupCommonBatchUnavailable
 					}
 				}
@@ -407,7 +431,7 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 					out.SkippedFiles++
 					publish()
 					if out.SkippedFiles%64 == 0 {
-						if err := saveRun(workCtx, "running"); err != nil {
+						if _, err := saveRun(workCtx, "running"); err != nil {
 							return errLocalBackupCommonBatchUnavailable
 						}
 					}
@@ -431,7 +455,7 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 				out.ConfirmedFiles++
 				out.ConfirmedBytes += receipt.Size
 				publish()
-				if err := saveRun(workCtx, "running"); err != nil {
+				if _, err := saveRun(workCtx, "running"); err != nil {
 					return errLocalBackupCommonBatchUnavailable
 				}
 			}

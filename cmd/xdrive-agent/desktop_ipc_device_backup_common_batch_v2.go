@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type localBackupCommonBatchSummary struct {
@@ -23,6 +24,32 @@ type localBackupCommonBatchSummary struct {
 	BackupComplete     bool   `json:"backup_complete"`
 	RetirementSafe     bool   `json:"retirement_safe"`
 	CurrentCASVerified bool   `json:"current_cas_verified"`
+}
+
+// A private owning-Desktop history projection. There are no file names,
+// Root fingerprints, JWTs, content digests or Operation IDs in this payload.
+type localBackupCommonBatchHistoryItem struct {
+	RunID            string    `json:"run_id"`
+	SourceID         uint64    `json:"source_id"`
+	Revision         uint64    `json:"revision"`
+	State            string    `json:"state"`
+	InspectedFiles   int64     `json:"inspected_files"`
+	ConfirmedFiles   int64     `json:"confirmed_files"`
+	SkippedFiles     int64     `json:"skipped_files"`
+	UnsupportedFiles int64     `json:"unsupported_files"`
+	UncertainFiles   int64     `json:"uncertain_files"`
+	ConfirmedBytes   int64     `json:"confirmed_bytes"`
+	StartedAt        time.Time `json:"started_at"`
+	FinishedAt       time.Time `json:"finished_at"`
+}
+
+type localBackupCommonBatchHistoryPage struct {
+	SourceID uint64                              `json:"source_id"`
+	Items    []localBackupCommonBatchHistoryItem `json:"items"`
+}
+
+type desktopIPCLocalCommonBatchHistoryReader interface {
+	CloudLocalBoundBackupCommonBatchHistory(context.Context, uint64) (localBackupCommonBatchHistoryPage, error)
 }
 
 // The Desktop IPC accepts only an owning Source ID, never a pathname,
@@ -162,6 +189,45 @@ func (h *desktopIPCHandler) localBoundBackupCommonBatchStatus(w http.ResponseWri
 			result.State != "cancelled") {
 		writeDesktopIPCError(w, http.StatusConflict, "local_common_batch_uncertain", "local backup state unavailable")
 		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) localBoundBackupCommonBatchHistory(w http.ResponseWriter, r *http.Request) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "local_common_history_platform_unavailable", "local backup unavailable")
+		return
+	}
+	sourceID, ok := validLocalCommonBatchRequest(r)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_local_common_history_request", "source_id only")
+		return
+	}
+	reader, ok := h.ctrl.(desktopIPCLocalCommonBatchHistoryReader)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "local_common_history_unavailable", "owning Agent unavailable")
+		return
+	}
+	result, err := reader.CloudLocalBoundBackupCommonBatchHistory(r.Context(), sourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	if result.SourceID != sourceID || len(result.Items) > 20 {
+		writeDesktopIPCError(w, http.StatusConflict, "local_common_history_invalid", "local backup history unavailable")
+		return
+	}
+	for _, item := range result.Items {
+		if item.SourceID != sourceID || item.Revision == 0 || item.RunID == "" ||
+			(item.State != "partial" && item.State != "uncertain" &&
+				item.State != "paused" && item.State != "cancelled") ||
+			item.InspectedFiles < 0 || item.ConfirmedFiles < 0 ||
+			item.SkippedFiles < 0 || item.UncertainFiles < 0 ||
+			item.FinishedAt.IsZero() {
+			writeDesktopIPCError(w, http.StatusConflict, "local_common_history_invalid", "invalid private backup attempt")
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeDesktopIPCJSON(w, http.StatusOK, result)

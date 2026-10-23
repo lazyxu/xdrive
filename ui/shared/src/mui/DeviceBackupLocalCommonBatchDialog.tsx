@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material'
 import { formatBytes } from '../format'
-import type { XDriveLocalBackupCommonBatch } from '../device-backups'
+import type {
+  XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryItem,
+  XDriveLocalBackupCommonBatchHistoryPage,
+} from '../device-backups'
 
 export interface XDriveLocalBackupCommonBatchActions {
   run(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
   inspect(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
+  history(sourceID: number): Promise<XDriveLocalBackupCommonBatchHistoryPage>
   control(sourceID: number, action: 'pause' | 'cancel'): Promise<XDriveLocalBackupCommonBatch>
 }
 
@@ -34,12 +38,15 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
 }) {
   const epoch = useRef(0)
   const inspectGeneration = useRef(0)
+  const historyGeneration = useRef(0)
   const [pending, setPending] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [controlPending, setControlPending] = useState(false)
   const [status, setStatus] = useState<XDriveLocalBackupCommonBatch | null>(null)
   const [message, setMessage] = useState('')
   const [hasAttempted, setHasAttempted] = useState(false)
+  const [history, setHistory] = useState<XDriveLocalBackupCommonBatchHistoryItem[]>([])
+  const [historyError, setHistoryError] = useState(false)
 
   const refresh = useCallback(async () => {
     const ticket = epoch.current
@@ -63,15 +70,52 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     }
   }, [actions, sourceID])
 
+  const refreshHistory = useCallback(async () => {
+    const ticket = epoch.current
+    const generation = ++historyGeneration.current
+    try {
+      const page = await actions.history(sourceID)
+      if (epoch.current !== ticket || historyGeneration.current !== generation) return
+      if (!page || page.source_id !== sourceID || !Array.isArray(page.items) ||
+        page.items.length > 20 || page.items.some((item) =>
+          item.source_id !== sourceID || !item.run_id ||
+          !Number.isSafeInteger(item.revision) || item.revision <= 0 ||
+          !['partial', 'uncertain', 'paused', 'cancelled'].includes(item.state) ||
+          ![item.inspected_files, item.confirmed_files, item.skipped_files,
+            item.unsupported_files, item.uncertain_files, item.confirmed_bytes].every(
+              (n) => Number.isSafeInteger(n) && n >= 0,
+            ) ||
+          item.confirmed_files + item.skipped_files > item.inspected_files ||
+          !Number.isFinite(Date.parse(item.finished_at)) ||
+          (item.started_at && !Number.isFinite(Date.parse(item.started_at))))) {
+        throw new Error('untrusted owning history')
+      }
+      setHistory(page.items)
+      setHistoryError(false)
+    } catch {
+      if (epoch.current !== ticket || historyGeneration.current !== generation) return
+      setHistoryError(true)
+      setHistory([])
+    }
+  }, [actions, sourceID])
+
   useEffect(() => {
     epoch.current += 1
     inspectGeneration.current += 1
+    historyGeneration.current += 1
     setStatus(null)
+    setHistory([])
+    setHistoryError(false)
     setHasAttempted(false)
     setMessage('')
     void refresh()
-    return () => { epoch.current += 1; inspectGeneration.current += 1 }
-  }, [refresh])
+    void refreshHistory()
+    return () => {
+      epoch.current += 1
+      inspectGeneration.current += 1
+      historyGeneration.current += 1
+    }
+  }, [refresh, refreshHistory])
 
   // Start returns HTTP 202 while the owning Agent continues independently.
   // Poll only while running; closing the dialog merely detaches this observer.
@@ -80,6 +124,10 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     const timer = window.setInterval(() => { void refresh() }, 2000)
     return () => window.clearInterval(timer)
   }, [status?.running, refresh])
+
+  useEffect(() => {
+    if (status && !status.running) void refreshHistory()
+  }, [status?.running, status?.state, refreshHistory])
 
   const start = async () => {
     if (pending || inspecting || hasAttempted || status?.running) return
@@ -178,6 +226,32 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
             onClick={() => void refresh()}>
             {inspecting ? '查询中' : '刷新本机任务状态（只读）'}
           </Button>
+          <Stack spacing={0.75}>
+            <Typography variant="subtitle2">最近本机备份记录</Typography>
+            <Typography variant="caption" color="text.secondary">
+              仅保存本机 Agent 的历史运行结果，不是云端完整备份或物理 CAS 验证证明。
+            </Typography>
+            {history.map((item) => (
+              <Stack key={item.run_id} spacing={0.25} sx={{ py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="body2">
+                  {new Date(item.finished_at).toLocaleString('zh-CN')} ·
+                  {item.state === 'partial' ? '部分完成' : item.state === 'uncertain' ? '结果待核对' :
+                    item.state === 'paused' ? '已暂停' : '已结束本轮'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  已上传 {item.confirmed_files} · 已跳过 {item.skipped_files} ·
+                  不确定 {item.uncertain_files} · {formatBytes(item.confirmed_bytes)}
+                </Typography>
+              </Stack>
+            ))}
+            {history.length === 0 && !historyError ? (
+              <Typography variant="caption" color="text.secondary">暂无已记录的本机运行历史</Typography>
+            ) : null}
+            {historyError ? (
+              <Alert severity="info">本机历史记录暂不可查询，不影响原始文件 Operation 的安全核对。</Alert>
+            ) : null}
+            <Button size="small" variant="text" onClick={() => void refreshHistory()}>刷新运行历史</Button>
+          </Stack>
         </Stack>
       </DialogContent>
       <DialogActions>

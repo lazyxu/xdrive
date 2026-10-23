@@ -417,6 +417,26 @@ export type AgentLocalBackupCommonBatch = {
   current_cas_verified: false
 }
 
+export type AgentLocalBackupCommonBatchHistoryItem = {
+  run_id: string
+  source_id: number
+  revision: number
+  state: 'partial' | 'uncertain' | 'paused' | 'cancelled'
+  inspected_files: number
+  confirmed_files: number
+  skipped_files: number
+  unsupported_files: number
+  uncertain_files: number
+  confirmed_bytes: number
+  started_at: string
+  finished_at: string
+}
+
+export type AgentLocalBackupCommonBatchHistoryPage = {
+  source_id: number
+  items: AgentLocalBackupCommonBatchHistoryItem[]
+}
+
 export type AgentLocalBackupSnapshot = {
   source_id: number
   revision: number
@@ -3598,6 +3618,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupCommonBatch>(
       'GET', `/v1/device-backups/local-common-batch?${query.toString()}`, undefined, 15_000,
+    )
+  }
+
+  localBoundBackupCommonBatchHistory(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupCommonBatchHistoryPage>(
+      'GET', `/v1/device-backups/local-common-batch/history?${query.toString()}`, undefined, 15_000,
     )
   }
 

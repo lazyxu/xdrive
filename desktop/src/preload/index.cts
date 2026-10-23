@@ -625,6 +625,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:start-device-backup-local-common-batch', sourceID),
   getDeviceBackupLocalCommonBatch: (sourceID: number) =>
     ipcRenderer.invoke('agent:get-device-backup-local-common-batch', sourceID),
+  getDeviceBackupLocalCommonBatchHistory: (sourceID: number) =>
+    ipcRenderer.invoke('agent:get-device-backup-local-common-batch-history', sourceID),
   controlDeviceBackupLocalCommonBatch: (sourceID: number, action: 'pause' | 'cancel') =>
     ipcRenderer.invoke('agent:control-device-backup-local-common-batch', sourceID, action),
   cancelDeviceBackupLocalSnapshot: (requestID: string) =>
