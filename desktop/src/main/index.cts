@@ -209,6 +209,7 @@ import {
   type AgentMediaPlacesMapOverview,
   type AgentBaiduNativeViewportBounds,
   type AgentBaiduNativeViewportPage,
+  type AgentBaiduNativeViewportItemsFilter,
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
   type AgentMediaBurstReviewList,
@@ -3373,6 +3374,57 @@ function registerIPCHandlers() {
         v as unknown as AgentBaiduNativeViewportBounds, limit, offset, signal,
       )
     }), false))
+
+
+  // Signed BD09 current-camera Range. The Renderer cannot pass a URL, AK,
+  // Owner ID, WGS84 rectangle, or arbitrary /media/items query.
+  ipcMain.handle('agent:get-media-baidu-native-viewport-items', (
+    event, bounds: unknown, limit: unknown, offset: unknown,
+    filters: unknown = {}, requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(
+    () => viewportRequests.run(event.sender,requestID,async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello,'media-gallery')
+      if (!bounds || typeof bounds !== 'object' || Array.isArray(bounds))
+        throw new AgentIPCError('invalid_input',0,'Invalid BD09 photo camera.')
+      const v = bounds as Record<string,unknown>
+      if (Object.keys(v).length !== 5 ||
+          Object.keys(v).some(k => !['coordinate_space','west','south','east','north'].includes(k)) ||
+          v.coordinate_space !== 'bd09ll' ||
+          !['west','south','east','north'].every(k => typeof v[k]==='number' && Number.isFinite(v[k])) ||
+          (v.west as number) < -180 || (v.west as number) > 180 ||
+          (v.east as number) < -180 || (v.east as number) > 180 ||
+          (v.south as number) < -90 || (v.north as number) > 90 ||
+          (v.south as number) >= (v.north as number) ||
+          v.west === v.east || (v.west === 180 && v.east === -180))
+        throw new AgentIPCError('invalid_input',0,'Invalid BD09 photo geometry.')
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000 ||
+          !filters || typeof filters !== 'object' || Array.isArray(filters))
+        throw new AgentIPCError('invalid_input',0,'Invalid BD09 photo page.')
+      const raw = filters as Record<string,unknown>
+      const accepted = ['sort_by','sort_dir','anchor_node_id','favorite',
+        'captured_from','captured_to','time_zone','asset_kind','fold_duplicates']
+      if (Object.entries(raw).some(([k,x]) => x !== undefined && !accepted.includes(k)) ||
+          (raw.fold_duplicates !== undefined && raw.fold_duplicates !== false) ||
+          (raw.anchor_node_id !== undefined &&
+            (typeof raw.anchor_node_id !== 'number' || !Number.isSafeInteger(raw.anchor_node_id) || raw.anchor_node_id < 1)) ||
+          (raw.favorite !== undefined && typeof raw.favorite !== 'boolean') ||
+          (raw.sort_by !== undefined && raw.sort_by !== 'captured' && raw.sort_by !== 'added') ||
+          (raw.sort_dir !== undefined && raw.sort_dir !== 'asc' && raw.sort_dir !== 'desc') ||
+          (raw.asset_kind !== undefined && raw.asset_kind !== 'image' && raw.asset_kind !== 'video') ||
+          [raw.captured_from,raw.captured_to,raw.time_zone].some(x =>
+            x !== undefined && (typeof x !== 'string' || x.trim() !== x || !x || x.length > 128))) {
+        throw new AgentIPCError('invalid_input',0,'Unsupported BD09 photo filter.')
+      }
+      const safe = raw as AgentBaiduNativeViewportItemsFilter
+      if (safe.time_zone && safe.time_zone !== 'UTC')
+        requireAgentCapability(hello,'media-timezone')
+      return requireAgentClient().mediaBaiduNativeViewportItems(
+        v as unknown as AgentBaiduNativeViewportBounds,
+        limit, offset, safe, signal,
+      )
+    }),false))
 
   ipcMain.handle(
     'agent:get-media-memories',

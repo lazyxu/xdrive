@@ -1962,6 +1962,11 @@ export type AgentMediaPlacesMapOverview = {
 export type AgentBaiduNativeViewportBounds = AgentMediaPlacesViewportBounds & {
   coordinate_space: 'bd09ll'
 }
+export type AgentBaiduNativeViewportItemsFilter = Pick<AgentMediaQuery,
+  'sort_by' | 'sort_dir' | 'anchor_node_id' | 'favorite' |
+  'captured_from' | 'captured_to' | 'time_zone' | 'asset_kind' | 'fold_duplicates'
+>
+
 export type AgentBaiduNativeViewportPage = {
   coordinate_space: 'bd09ll'
   index_scope: 'explicit_opt_in_only'
@@ -2883,6 +2888,70 @@ export class AgentIPCClient {
       'GET', `/v1/media/places/baidu-native-viewport?${query.toString()}`,
       undefined, 10_000, signal,
     )
+  }
+
+  // The Desktop Renderer cannot choose a Server route or reinterpret BD09
+  // as EXIF WGS84. Missing Agent support fails closed, never /media/items.
+  mediaBaiduNativeViewportItems(
+    bounds: AgentBaiduNativeViewportBounds, limit: number, offset: number,
+    filters: AgentBaiduNativeViewportItemsFilter = {}, signal?: AbortSignal,
+  ) {
+    const whitelisted = ['sort_by','sort_dir','anchor_node_id','favorite',
+      'captured_from','captured_to','time_zone','asset_kind','fold_duplicates']
+    if (!bounds || bounds.coordinate_space !== 'bd09ll' ||
+        ![bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite) ||
+        bounds.west < -180 || bounds.west > 180 || bounds.east < -180 || bounds.east > 180 ||
+        bounds.south < -90 || bounds.north > 90 || bounds.south >= bounds.north ||
+        bounds.west === bounds.east || (bounds.west === 180 && bounds.east === -180) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000 ||
+        !filters || typeof filters !== 'object' || Array.isArray(filters) ||
+        Object.entries(filters).some(([k,v]) => v !== undefined && !whitelisted.includes(k)) ||
+        filters.fold_duplicates === true ||
+        (filters.anchor_node_id !== undefined && (!Number.isSafeInteger(filters.anchor_node_id) || filters.anchor_node_id < 1)) ||
+        (filters.favorite !== undefined && typeof filters.favorite !== 'boolean') ||
+        (filters.asset_kind !== undefined && filters.asset_kind !== 'image' && filters.asset_kind !== 'video') ||
+        (filters.sort_by !== undefined && filters.sort_by !== 'captured' && filters.sort_by !== 'added') ||
+        (filters.sort_dir !== undefined && filters.sort_dir !== 'asc' && filters.sort_dir !== 'desc') ||
+        [filters.captured_from,filters.captured_to,filters.time_zone].some(
+          x => x !== undefined && (typeof x !== 'string' || !x || x.trim() !== x || x.length > 128))) {
+      return Promise.reject(new Error('Invalid BD09 photo Range'))
+    }
+    const q = new URLSearchParams({
+      coordinate_space: 'bd09ll', range: 'true',
+      west:String(bounds.west),south:String(bounds.south),
+      east:String(bounds.east),north:String(bounds.north),
+      limit:String(limit),offset:String(offset),
+    })
+    if (filters.sort_by) q.set('sort_by', filters.sort_by)
+    if (filters.sort_dir) q.set('sort_dir', filters.sort_dir)
+    if (filters.anchor_node_id !== undefined) q.set('anchor_node_id',String(filters.anchor_node_id))
+    if (filters.favorite !== undefined) q.set('favorite',String(filters.favorite))
+    if (filters.captured_from) q.set('captured_from',filters.captured_from)
+    if (filters.captured_to) q.set('captured_to',filters.captured_to)
+    if (filters.time_zone) q.set('time_zone',filters.time_zone)
+    if (filters.asset_kind) q.set('kind',filters.asset_kind)
+    return this.request<AgentMediaItemRange>(
+      'GET','/v1/media/places/baidu-native-viewport-items?' + q.toString(),
+      undefined,10_000,signal,
+    ).then(page => {
+      if (signal?.aborted || page.offset !== offset || page.limit !== limit ||
+          !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
+          !Array.isArray(page.items) || page.items.length > limit ||
+          offset + page.items.length > page.total_count ||
+          (page.anchor_index !== undefined && (!Number.isSafeInteger(page.anchor_index) ||
+            page.anchor_index < 0 || page.anchor_index >= page.total_count))) {
+        throw new Error('Invalid or cancelled BD09 photo Range response')
+      }
+      const seen = new Set<number>()
+      for (const item of page.items) {
+        const nodeID = item?.node?.id
+        if (!Number.isSafeInteger(nodeID) || nodeID <= 0 || seen.has(nodeID))
+          throw new Error('Invalid BD09 photo member')
+        seen.add(nodeID)
+      }
+      return page
+    })
   }
 
   mediaPlaces(limit = 24) {
