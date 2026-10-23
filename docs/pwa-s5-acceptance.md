@@ -1,5 +1,13 @@
 # xDrive PWA S5 · 发布验收与跨平台能力矩阵
 
+## 2026-10-23 · 实体验收边界与源码交付独立处理
+
+源码安全组合 #2397 及 Web/Mobile 路由分包 #2408 的非生产 Chromium/Go/PG17/CAS CI 已完成，但**七种实际 OS 模式的下方物理矩阵继续保持 `NOT RUN`**，任何 iOS 27 Home Screen、Android Installed、Desktop Edge Installed、屏幕锁定/OS 回收、VoiceOver/TalkBack 的成绩不得由 Chrome 390px 模拟推断。
+
+根据既定产品交付决定，无法接触的**生产专属安全验收**标记为**按用户决定跳过（未验收）**，不索取账号、AK、JWT、Cookie、HAR、生产抓包或人工签字，也不阻塞受控代码级 CI 和 PR 合并。此标记不等于“真实设备验收成功”；物理安装/使用矩阵仍为 `NOT RUN`，发布许可不能虚构。真实 OS 行为若未来具备可核实环境，应另行形成脱敏来源证据。
+
+---
+
 **状态：未取得真实设备证据，不准宣称 S5 发布已通过。** 本文是 `docs/pwa-delivery.md` 的 S5 验收明细，与 `AGENTS.md` 的持续汇报/固定基线/单提交规则配套。所有 iOS 27、Android、Desktop Installed 的 **OS 安装行为** 均需在实际系统/浏览器上操作确认，不能从 UA、390px Chrome 触屏模拟、Manifest 属性、`display-mode: standalone` 单一字段推导成功。
 
 ## 平台覆盖总表
@@ -96,4 +104,4 @@ S5-A2b1 核验器对本地 S5-A1 JSON 不再只数“十条 pass”：**十项�
 
 ## S5-04A · 实际 Chrome 更新等待与双窗口不中断（自动化预验收）
 
-\`.github/workflows/pwa-s5s4-real-update.yml\` 使用真实构建的 Web、原版 PWA SW 和为隔离测试**临时追加**的受限版本探针，在 genuine Desktop Chromium 与 Android UA/Touch 390px 模拟窗口验证：两个旧窗口仍受旧 worker 控制、新 worker 只 waiting，不刷新页面、不更换 controller；测试专用慢 POST 响应直到 Server 人工释放后才结束；匿名私有 API 仍被拒绝，SW 仅缓存公开离线页；所有旧窗口关闭后新 worker 才激活。脚本和 CI 报告恒写 \`physicalDevice=false\`、\`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN\`，不能证明真实 iOS 27/Android 已安装系统、物理 17MiB–4GiB 文件字节或真实运营 HTTPS。七平台 S5-01～S5-11 原始物理矩阵**全部保持 NOT RUN**，不得以专项绿灯当作发布放行。
+`.github/workflows/pwa-s5s4-real-update.yml` 使用真实构建的 Web、原版 PWA SW 和为隔离测试**临时追加**的受限版本探针，在 genuine Desktop Chromium 与 Android UA/Touch 390px 模拟窗口验证：两个旧窗口仍受旧 worker 控制、新 worker 只 waiting，不刷新页面、不更换 controller；测试专用慢 POST 响应直到 Server 人工释放后才结束；匿名私有 API 仍被拒绝，SW 仅缓存公开离线页；所有旧窗口关闭后新 worker 才激活。脚本和 CI 报告恒写 `physicalDevice=false`、`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN`，不能证明真实 iOS 27/Android 已安装系统、物理 17MiB–4GiB 文件字节或真实运营 HTTPS。七平台 S5-01～S5-11 原始物理矩阵**全部保持 NOT RUN**，不得以专项绿灯当作发布放行。

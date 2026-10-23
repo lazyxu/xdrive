@@ -1,0 +1,27 @@
+name: PWA P1-04 Permanent Public Asset Retention Policy Contract
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p104-retention-policy:
+    if: github.head_ref == 'docs/pwa-archive-retention-policy-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original public archive read-only tests and final policy contracts
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          node --check desktop/tests/pwa-archive-policy-contract.cjs
+          node --test desktop/tests/pwa-archive-policy-contract.cjs \
+            desktop/tests/pwa-archive-reference-audit.cjs \
+            desktop/tests/pwa-archive-audit.cjs
+          test -z "$(git status --porcelain)"

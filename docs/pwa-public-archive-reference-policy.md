@@ -1,5 +1,38 @@
 # xDrive PWA P0-B2c2 · 历史公开资源版本引用与容量审计（只读）
 
+## 2026-10-23 · P1-04 / P2-03 最终长期保留与容量操作政策（高于以下历史记录）
+
+**结论：公开内容哈希归档采用无限期只追加保留（indefinite retention），而不是以 7/30/90 天规则猜测可删除。** 这是一项明确的安全运行策略，不是已证明所有离线旧客户端不再引用历史资源。现有 `deploy/pwa-archive-assets.sh` 发布器不变，原始旧 bytes 不可覆盖；任何未知 hashed JS/CSS/worker 依赖、已发行 PWA Shell、离线主屏客户端与 A→B→A 回滚版本都仍按可能被使用处理。
+
+| 审计或条件 | 决策与动作 |
+| --- | --- |
+| 归档正常、软容量阈值未超 | 保留所有公开历史资源；定期使用现有只读审计查看 `inode_unique_bytes`、文件数与缺失引用 |
+| 资源未被**本次提供的** manifest 引用 | **保留**；只能说明这批清单没有引用，不证明已安装/离线客户端不引用 |
+| 已提交 manifest 引用缺少对应字节 | **报警**，核对发布器和完整性；只能从可信原发布工件恢复**完全相同的 hash 内容**，绝不以新 SPA HTML 伪装缺失 JS |
+| 超过容量软阈值 | **报告容量压力并扩容/调整保留介质**，不执行删除；审计返回 `safe_to_auto_delete=false` |
+| 客户端长期失联、旧版本活跃度未知 | 维持保留。Heartbeat / 最近上线 / CacheStorage 观测并不能证明所有离线安装已经退出 |
+| 想要不可逆人工删除或自动 GC | 当前产品 **不支持、不授权**；必须作为未来独立功能重新设计可验证的全生命周期引用证明、备份/恢复及审批，不以本政策推导候选清理列表 |
+
+**不可变门禁：** `safe_to_auto_delete=false`、`delete_candidates_established=false`、`live_client_versions_proven=false`、`all_historical_releases_proven=false`、`rollback_reference_coverage_proven=false`。自动化只可以读取、核算、预警；不能移除历史 hashed 文件、原件/缩略图/Range/Owner/票据，也不能将公开缓存扩展到私人数据。软阈值是 `inode_unique_bytes` 的运营提醒，不是真实可用磁盘容量，也不能直接推断可保留天数。
+
+**验收含义：** P1-04 的“安全的长期生命周期策略”已选择为**永久保留 + 容量审计**；“实时证明离线旧客户端已全部退休”仍属不可获得的证据，不能标记为通过，**自动删除故意不开发**。P2-03 的操作说明与源码回归合同同属此增量。PWA S5 真实 iOS/Android/Desktop Installed 七平台维持 `NOT RUN`；ChatGPT 无法接触的生产专属安全验收继续**按用户决定跳过（未验收）**，不作为源码/CI 合并门槛。
+
+现有纯只读执行方式（要求显式提供公有存档根路径与经批准的清单，**不要公开生产路径**）：
+
+```sh
+node scripts/pwa-archive-audit.mjs "$XD_CADDY_ASSET_DIR"
+node scripts/pwa-archive-reference-audit.mjs "$XD_CADDY_ASSET_DIR" \
+  /local/old-web/dist/.vite/manifest.json /local/new-web/dist/.vite/manifest.json \
+  --soft-limit-bytes=536870912
+node --test desktop/tests/pwa-archive-policy-contract.cjs \
+  desktop/tests/pwa-archive-reference-audit.cjs
+```
+
+这份政策不能替代 S5 七平台实际安装、锁屏、浏览器进程回收、VoiceOver/TalkBack 验收。那些实体验收继续独立记录为 `NOT RUN`，不能用 Linux CI 或 UA 模拟替代。
+
+---
+
+
 日期：2026-10-22。基于已合入的 P0-B2c1 [#2276](https://github.com/lazyxu/xdrive/issues/2276) 和 [五阶段台账](pwa-five-stage-execution-20261022.md)。**不部署 GC、不修改发布器、不清理文件、不新增私人缓存。**
 
 ## 能证明什么
