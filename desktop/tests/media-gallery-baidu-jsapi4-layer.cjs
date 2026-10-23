@@ -164,6 +164,9 @@ test('A3b3a3b map move/zoom synchronously aborts; invalidation is coalesced', as
     onViewportInvalidated() { changed++ },
   })
   const pending = c.applyAuthorizedViewport(page(1))
+  // The one-flight method gate accepts the job in a microtask. Wait for
+  // actual SDK dispatch before simulating a gesture against an in-flight call.
+  await Promise.resolve()
   assert.equal(typeof callback, 'function')
   ctx.mapEvents.get('movestart')()
   assert.equal(ctx.layer.frames.length, 0, 'cancel immediately at drag start')
@@ -199,11 +202,16 @@ test('A3b3a3b second Owner window cancels previous and refuses late writes', asy
     onViewportInvalidated() {},
   })
   const old = c.applyAuthorizedViewport(page(1))
-  const newer = c.applyAuthorizedViewport(page(2))
-  assert.equal((await newer).kind, 'rendered')
-  assert.equal((await old).kind, 'cancelled')
-  first({ status: 0, points: [{ lng: 10, lat: 10 }] })
   await Promise.resolve()
+  assert.equal(typeof first, 'function', 'first Owner SDK call was submitted')
+  const newer = c.applyAuthorizedViewport(page(2))
+  await Promise.resolve()
+  assert.equal(invocations, 1,
+    'cancelled in-flight Baidu operation must retain the provider method slot')
+  first({ status: 0, points: [{ lng: 10, lat: 10 }] })
+  assert.equal((await old).kind, 'cancelled')
+  assert.equal((await newer).kind, 'rendered')
+  assert.equal(invocations, 2, 'new Owner window dispatches only after old callback')
   assert.equal(ctx.layer.frames.length, 1)
   assert.equal(ctx.layer.frames[0].features.length, 2)
   const abort = new AbortController()

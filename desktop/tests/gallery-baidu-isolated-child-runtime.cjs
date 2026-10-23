@@ -11,7 +11,7 @@ const html = read('deploy/baidu-isolated-child/index.html')
 const caddy = read('deploy/baidu-isolated-child/Caddyfile.example')
 
 function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false) {
-  const events = new Map(), sent=[], moves=[]
+  const events = new Map(), sent=[], moves=[], nativeEvents=new Map()
   const parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin})}}
   const messageTarget={textContent:''}
   const scripts=[]
@@ -20,7 +20,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
     Label:function Label(){this.setStyle=()=>{};this.addEventListener=()=>{};this.removeEventListener=()=>{}},
     Map:function Map(){
       this.centerAndZoom=(point,zoom)=>moves.push({latitude:point.lat,longitude:point.lng,zoom})
-      this.addEventListener=()=>{}
+      this.addEventListener=(name,listener)=>nativeEvents.set(name,listener)
       this.addOverlay=()=>{}
       this.removeOverlay=()=>{}
       this.getBounds=()=>({getSouthWest:()=>new fakeSDK.Point(115,38),
@@ -49,7 +49,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   const context=vm.createContext(env)
   const code=new vm.Script(src,{filename:'deploy/baidu-isolated-child/child.js'})
   code.runInContext(context,{timeout:1500})
-  return {events,sent,moves,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
+  return {events,sent,moves,nativeEvents,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
     const literal=JSON.stringify(obj)
     context.payload=literal
     const shaped=vm.runInContext('JSON.parse(payload)',context)
@@ -140,4 +140,35 @@ test('original Child VM applies only valid post-ready BD09 return camera',async(
   f.sendObject(f.parent,'https://gallery.example.net',{
     version:1,generation:7,nonce:'a'.repeat(64),kind:'restore-camera',camera})
   assert.equal(f.moves.length,before,'old generation cannot restore after disposal')
+})
+
+test('native zoomend/moveend coalesce into ONE viewport after 500ms; start cancels immediately',async()=>{
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),
+    kind:'map-session',ticket:'b'.repeat(64)})
+  // The SDK loader polls asynchronously; a fixed 30ms timeout flakes under
+  // Node's parallel 3k+ Desktop test workload. Wait for the *real* native
+  // listener attachment, then assert the gesture timing independently.
+  for(let attempt=0;attempt<100 && !f.nativeEvents.has('moveend');attempt++){
+    await new Promise(resolve=>setTimeout(resolve,15))
+  }
+  assert(f.nativeEvents.has('moveend'),'native SDK listener attached')
+  assert(f.nativeEvents.has('zoomstart'))
+  const count=kind=>f.sent.filter(item=>item.message.kind===kind).length
+  const originalViewportCount=count('viewport')
+  f.nativeEvents.get('movestart')()
+  assert.equal(count('cancel'),1,'Owner request is cancelled before any debounce')
+  f.nativeEvents.get('moveend')()
+  f.nativeEvents.get('zoomend')()
+  await new Promise(resolve=>setTimeout(resolve,250))
+  assert.equal(count('viewport'),originalViewportCount,'no intermediate viewport during gesture quiet time')
+  await new Promise(resolve=>setTimeout(resolve,340))
+  assert.equal(count('viewport'),originalViewportCount+1,'paired native settle events become one viewport')
+  assert.equal(count('camera'),originalViewportCount+1)
+  f.nativeEvents.get('moveend')()
+  f.events.get('pagehide')()
+  await new Promise(resolve=>setTimeout(resolve,550))
+  assert.equal(count('viewport'),originalViewportCount+1,'disposed Child must not emit stale viewport')
 })

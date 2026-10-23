@@ -1,4 +1,5 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
+import { xDriveClearBaiduConversionSession } from '../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
@@ -316,6 +317,7 @@ function App({
   }, [])
 
   const clearSession = useCallback((notice = '') => {
+    xDriveClearBaiduConversionSession()
     transferApiRef.current?.disposeTransfers()
     // Fail closed across accounts and server instances. Never touch public SW App Shell.
     void xDrivePwaClearOfflineMetadata().catch(() => {
@@ -369,6 +371,9 @@ function App({
   }, [api])
 
   const signOut = () => {
+    // Local derived GPS coordinates are revoked at user intent, not after
+    // a possibly slow or failed remote logout acknowledgement.
+    xDriveClearBaiduConversionSession()
     void api.logout().finally(() => clearSession())
   }
 
@@ -598,8 +603,12 @@ function FileManager({
   const baiduDiagnosticScope = `web:${profile?.id ?? username}`
   // Keep diagnostics while navigating to Admin, but never across an
   // account change, logout or detached Web App lifecycle.
-  useEffect(() => () => xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope),
-    [baiduDiagnosticScope])
+  useEffect(() => () => {
+    xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope)
+    // Retained session cache must never cross account/server identity, even
+    // when authenticated FileManager remounts inside the same browser tab.
+    xDriveClearBaiduConversionSession()
+  }, [baiduDiagnosticScope])
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
   const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)

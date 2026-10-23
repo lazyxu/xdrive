@@ -1,4 +1,5 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../../ui/shared/src/media-gallery-baidu-diagnostics'
+import { xDriveClearBaiduConversionSession } from '../../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
@@ -365,8 +366,10 @@ export default function App({
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
   // Desktop file: owns no provider SDK; only clear this process-local
   // bounded hint when identity changes or the renderer goes away.
-  useEffect(() => () => xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope),
-    [baiduDiagnosticScope])
+  useEffect(() => () => {
+    xDriveClearBaiduMapDiagnostic(baiduDiagnosticScope)
+    xDriveClearBaiduConversionSession()
+  }, [baiduDiagnosticScope])
   systemDependenciesAdminRef.current = status?.role === 'admin'
   const cloudFileExplorerNavigationState =
     cloudFileExplorerNavigationSnapshot &&
@@ -1359,7 +1362,10 @@ export default function App({
       '手动切换服务器连接入口？',
       '当前 Agent 会话将退出，活动传输与同步可能中断。请在登录页手动填写可信的局域网 IP 或公网 HTTPS 地址。不同地址不会自动继承已保存密码；不绕过证书校验。',
       '退出并选择服务器地址',
-      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+      async () => {
+        xDriveClearBaiduConversionSession()
+        await run('logout', () => window.xdriveDesktop.agent.logout())
+      },
       'warning',
     )
   }
@@ -1369,7 +1375,10 @@ export default function App({
       '退出当前设备？',
       '确定要在此设备上退出 xDrive 吗？',
       '退出登录',
-      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+      async () => {
+        xDriveClearBaiduConversionSession()
+        await run('logout', () => window.xdriveDesktop.agent.logout())
+      },
       'error',
     )
   }

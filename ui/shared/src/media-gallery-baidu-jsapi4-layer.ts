@@ -2,6 +2,7 @@ import type { MediaPlaceFacet, MediaPlacesViewportPage } from './models'
 import {
   xDrivePrepareBaiduJSAPI4MarkerWindow,
   xDriveConvertBaiduJSAPI4MarkerWindow,
+  XDriveBaiduJSAPI4ConversionSession,
 } from './media-gallery-baidu-jsapi4-markers'
 import type {
   XDriveBaiduOfficialConvertor,
@@ -94,6 +95,7 @@ export class XDriveBaiduJSAPI4ClusterController {
   private readonly map: XDriveBaiduJSAPI4MapPort
   private readonly layer: XDriveBaiduJSAPI4ClusterLayerPort
   private generation = 0
+  private readonly conversionSession = new XDriveBaiduJSAPI4ConversionSession()
   private active: AbortController | null = null
   private disposed = false
   private viewportNotifyPending = false
@@ -191,7 +193,7 @@ export class XDriveBaiduJSAPI4ClusterController {
       try {
         geojson = await xDriveConvertBaiduJSAPI4MarkerWindow(
           prepared, this.runtime.convertor, (lng, lat) => this.runtime.createPoint(lng, lat),
-          abort.signal,
+          abort.signal, this.conversionSession,
         )
       } catch {
         return abort.signal.aborted ? { kind: 'cancelled' } : { kind: 'unavailable' }
@@ -231,6 +233,10 @@ export class XDriveBaiduJSAPI4ClusterController {
     if (this.disposed) return
     this.disposed = true
     this.invalidate()
+    // The inert controller never inherits a browser-global Owner cache. Its
+    // successful official BD09 pairs are retained only while this instance
+    // exists, including across authorized viewport pans.
+    this.conversionSession.clear()
     try { this.map.removeEventListener('movestart', this.onMapStarted) } catch { /* cleanup */ }
     try { this.map.removeEventListener('zoomstart', this.onMapStarted) } catch { /* cleanup */ }
     try { this.map.removeEventListener('moveend', this.onMapSettled) } catch { /* cleanup */ }
