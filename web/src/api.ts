@@ -3112,8 +3112,8 @@ export class XDriveApi {
     }
   }
 
-  fileTextPreview(id: number) {
-    return this.request<XDriveFileTextPreview>(`/api/v1/files/${id}/preview/text`)
+  fileTextPreview(id: number, signal?: AbortSignal) {
+    return this.request<XDriveFileTextPreview>(`/api/v1/files/${id}/preview/text`, { signal })
   }
 
   async mediaLivePhotoStillURL(nodeID: number): Promise<string> {

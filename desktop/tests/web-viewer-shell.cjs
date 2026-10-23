@@ -1882,3 +1882,94 @@ test('P0 Files Quick Look downloads are single-flight and stale Owner handlers c
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('P1 Files Quick Look forwards the shared text AbortSignal to authenticated API', async () => {
+  const node = { id: 611, revision: 5, name: 'notes.md', type: 'file', size: 4096 }
+  const calls = []
+  const api = {
+    node: async () => node,
+    fileTextPreview: async (id, signal) => {
+      calls.push({ id, signal })
+      return { text: 'Authorized text', size: 15, truncated: false }
+    },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'preview', params: { node: 611 } },
+        api, gallerySource: {}, shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    const preview = renderer.root.findByType('preview-content')
+    const controller = new AbortController()
+    const value = await preview.props.loadTextPreview(preview.props.target, controller.signal)
+    assert.equal(value.text, 'Authorized text')
+    assert.deepEqual(calls, [{ id: 611, signal: controller.signal }])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P1 standalone Text Viewer cancels and fences A→B→A and cross-owner same-ID reads', async () => {
+  const reads = []
+  const makeAPI = owner => ({
+    node: (id, signal) => new Promise(resolve => reads.push({ owner, kind: 'node', id, signal, resolve })),
+    fileTextPreview: (id, signal) => new Promise(resolve => reads.push({ owner, kind: 'text', id, signal, resolve })),
+  })
+  const apiA = makeAPI('A'), apiB = makeAPI('B')
+  const props = (id, api) => ({
+    route: { app: 'text-viewer', params: { node: id } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  const pick = (owner, id, index = 0) => reads.filter(x => x.owner === owner && x.id === id).slice(index * 2, index * 2 + 2)
+  const respond = async (calls, label) => {
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal, calls[1].signal, 'metadata and text share one cancellation signal')
+    await act(async () => {
+      calls[0].resolve({ id: calls[0].id, revision: 1, name: label + '.txt', type: 'file', size: 10 })
+      calls[1].resolve({ text: label, truncated: false, size: label.length })
+      await Promise.resolve()
+    })
+  }
+  let renderer
+  const visible = () => renderer.root.findAllByType('textarea').map(x => x.props.value)
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(701, apiA)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const oldA = pick('A', 701)
+    await respond(oldA, 'A old')
+    assert.deepEqual(visible(), ['A old'])
+
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(702, apiA))))
+    const B = pick('A', 702)
+    assert.equal(oldA[0].signal.aborted, true)
+    assert.deepEqual(visible(), [], 'next Node may not see previous verified text')
+
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(701, apiA))))
+    const newA = pick('A', 701, 1)
+    assert.equal(B[0].signal.aborted, true)
+    assert.deepEqual(visible(), [], 'returning A must not revive the old A response before revalidation')
+    await respond(B, 'B stale')
+    assert.deepEqual(visible(), [], 'late B bytes must not cross into A')
+    await respond(newA, 'A current')
+    assert.deepEqual(visible(), ['A current'])
+
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(701, apiB))))
+    const currentB = pick('B', 701)
+    assert.equal(newA[0].signal.aborted, true)
+    assert.deepEqual(visible(), [], 'same ID/revision under another API must hide old Owner text')
+    await respond(currentB, 'B private')
+    assert.deepEqual(visible(), ['B private'])
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.equal(currentB[0].signal.aborted, true)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
