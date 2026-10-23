@@ -17,9 +17,9 @@ export interface XDriveLocalBackupScheduleActions {
   save(sourceID: number, revision: number, schedule: SavedSchedule): Promise<XDriveLocalBoundBackupSchedule>
 }
 
-// A local, paused Source may save a future policy, but cannot activate the
-// Server-runner or a native watcher. The parent supplies this only to the
-// credential-verified owning Desktop. Remote devices have no action port.
+// Local interval/cron schedules execute only on the owning Windows/Linux
+// Agent after a verified first manual batch under the CURRENT Source revision.
+// Saving configuration never activates the Server runner or gives remote devices write access.
 export function XDriveDeviceBackupLocalScheduleDialog({
   sourceID, actions, onClose, onFinished,
 }: {
@@ -102,7 +102,9 @@ export function XDriveDeviceBackupLocalScheduleDialog({
         result.schedule_timezone !== proposal.schedule_timezone) {
         throw new Error('Server 返回的 Source 版本或计划不匹配，请刷新核对')
       }
-      onFinished('已保存本机计划，但尚未启用后台执行器；当前不会自动开始同步')
+      onFinished(proposal.schedule_type === 'manual'
+        ? '已保存手动模式，本机不会自动安排增量备份'
+        : '已保存计划。请先在所属 Desktop 完成一次当前版本的手动增量备份，后续才会自动按计划检查')
     } catch (failure) {
       setError('保存本机计划失败：' + (failure instanceof Error ? failure.message : String(failure)))
       setBusy(false)
@@ -115,8 +117,9 @@ export function XDriveDeviceBackupLocalScheduleDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="info">
-            本阶段只保存未来的执行计划。Source 仍保持暂停；本机 Agent 后台调度和上传尚未启用，
-            保存后不会自动运行，也不会修改、删除云端文件。
+            只有所属 Windows/Linux Agent 会执行已明确开启的间隔或 Cron 计划。保存或修改计划后，
+            请先手动完成一次当前 Source 版本的增量备份以建立私有可信检查点。此后 Agent 在线时才会定期检查，
+            并复用同一持久任务队列。暂停、取消、不确定任务及撤权不会自动重启；仅 Backup，不删除文件。
           </Alert>
           {loading ? <Typography variant="body2">正在验证本机设备与 Root 授权…</Typography> : null}
           {loaded?.schedule_type === '' ? (
@@ -152,7 +155,8 @@ export function XDriveDeviceBackupLocalScheduleDialog({
             </>
           ) : null}
           <Typography variant="caption" color="text.secondary">
-            计划的语法和时区由 Server 再次校验；计划仅为已保存配置，不代表设备在线或实际生效。
+            Server 校验计划语法和时区。Agent 约每分钟检查一次；设备离线、休眠、Source 版本变化或
+            缺少当前 Owner 会话的可信手动运行记录时，不会执行。计划触发不代表整轮备份已经成功。
           </Typography>
           {error ? <Alert severity="warning">{error}</Alert> : null}
           {error && !busy ? <Button size="small" onClick={() => setRetryID((n) => n + 1)}>重新读取计划</Button> : null}
@@ -161,7 +165,7 @@ export function XDriveDeviceBackupLocalScheduleDialog({
       <DialogActions>
         <Button disabled={busy} onClick={onClose}>取消</Button>
         <Button variant="contained" disabled={!canSave} onClick={() => void save()}>
-          {busy ? '保存中…' : '保存计划（暂不执行）'}
+          {busy ? '保存中…' : '保存计划'}
         </Button>
       </DialogActions>
     </Dialog>
