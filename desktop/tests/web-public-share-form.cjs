@@ -109,6 +109,7 @@ function loadPublicShare(api) {
           ...load('ui/shared/src/mui/AuthSurface.tsx'),
           ...load('ui/shared/src/mui/ActionButton.tsx'),
           ...load('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'),
+          ...load('ui/shared/src/mui/SensitiveField.tsx'),
           XDriveBrandLockup: () => null,
           XDriveStatePanel: ({ message }) => React.createElement('div', null, message),
           XDriveStatusAlert: ({ children, tone }) => React.createElement('div', { role: 'alert', 'data-tone': tone }, children),

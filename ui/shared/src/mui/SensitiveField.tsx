@@ -5,14 +5,16 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 
-// A single editable field for a stored, reversibly encrypted configuration
-// secret. Never copy a read-only reveal into the replacement draft implicitly.
-// The caller owns authenticated, audited and revision-fenced server retrieval.
+// Single password-style editor for encrypted configuration and one-time inputs.
+// A stored credential is read only by an explicit authenticated, audited,
+// revision-fenced onReveal callback. New and transient passwords NEVER ask
+// the Server to reveal their old values.
 export function XDriveSensitiveField({
   label, value, onChange, configured = false, revealedValue = '',
   onReveal, onHide, revealLoading = false, disabled = false, revealDisabled = false,
   placeholder, required = false, autoComplete = 'new-password',
-  maxLength, helperText, onFocus, sx,
+  maxLength, helperText, onFocus, id, autoFocus = false, error = false,
+  startAdornment, sx,
 }: {
   label: ReactNode
   value: string
@@ -30,6 +32,10 @@ export function XDriveSensitiveField({
   maxLength?: number
   helperText?: ReactNode
   onFocus?: () => void
+  id?: string
+  autoFocus?: boolean
+  error?: boolean
+  startAdornment?: ReactNode
   sx?: SxProps<Theme>
 }) {
   const [visible, setVisible] = useState(false)
@@ -59,8 +65,10 @@ export function XDriveSensitiveField({
 
   // A pending edit always takes precedence over a temporary server reveal.
   const shownValue = value || (visible ? revealedValue : '')
+  // Even an empty new password can switch to visible entry; only persisted
+  // secrets require an explicitly supplied audited onReveal callback.
   const canToggle = !revealDisabled && !revealLoading &&
-    (!!value || (!!configured && !!onReveal) || !!revealedValue)
+    (!configured || !!value || !!onReveal || !!revealedValue)
   const toggle = () => {
     if (visible) {
       setVisible(false)
@@ -73,7 +81,8 @@ export function XDriveSensitiveField({
 
   return (
     <TextField
-      fullWidth size="small" label={label} type={visible ? 'text' : 'password'}
+      fullWidth size="small" id={id} label={label}
+      type={visible ? 'text' : 'password'} autoFocus={autoFocus} error={error}
       value={shownValue}
       autoComplete={autoComplete} required={required}
       helperText={helperText} onFocus={onFocus}
@@ -88,6 +97,7 @@ export function XDriveSensitiveField({
       slotProps={{
         htmlInput: { maxLength, spellCheck: false, autoCapitalize: 'off' },
         input: {
+          startAdornment,
           endAdornment: (
             <InputAdornment position="end">
               <IconButton

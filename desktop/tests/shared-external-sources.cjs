@@ -870,7 +870,6 @@ test('Web and Desktop reuse shared source credential fields', () => {
   for (const token of [
     'XDriveSourceCookieField',
     'XDriveSourceTargetField',
-    'XDriveStoredCredentialField',
     'XDriveSynologyDsmCredentialFields',
     '一刻相册 Cookie',
     'DSM 地址',
@@ -885,6 +884,8 @@ test('Web and Desktop reuse shared source credential fields', () => {
   ]) {
     assert.ok(sharedFields.includes(token), `shared Source credential fields missing: ${token}`)
   }
+  assert.doesNotMatch(sharedFields, /export function XDriveStoredCredentialField\(/,
+    'obsolete read-only credential field must not return')
 
   assert.equal((web.match(/<XDriveSourceCookieField\b/g) || []).length, 1, 'Web create/settings should reuse shared Cookie field')
   assert.equal((desktop.match(/<XDriveSourceCookieField\b/g) || []).length, 1, 'Desktop create/settings should reuse shared Cookie field')

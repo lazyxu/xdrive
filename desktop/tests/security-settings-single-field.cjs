@@ -35,3 +35,24 @@ test('static-map and external source settings reuse one password-style editor', 
   assert.doesNotMatch(source, /<XDriveStoredCredentialField/)
   assert.match(dsm, /XDriveSensitiveField label="DSM 密码"/)
 })
+
+test('all temporary admin/share passwords use one typed editor without a Server reveal', () => {
+  const field = read('ui/shared/src/mui/SensitiveField.tsx')
+  const admin = read('ui/shared/src/mui/AdminUsersPage.tsx')
+  const share = read('ui/shared/src/mui/ShareFields.tsx')
+  const publicShare = read('web/src/PublicShare.tsx')
+  const index = read('ui/shared/src/mui/index.tsx')
+  const oldSource = read('ui/shared/src/mui/SourceCredentialFields.tsx')
+  assert.match(field, /!configured \|\| !!value \|\| !!onReveal/)
+  assert.match(field, /startAdornment/)
+  assert.match(index, /export \* from '\.\/SensitiveField'/)
+  assert.match(admin, /XDriveSensitiveField[\s\S]*label="临时密码"/)
+  assert.match(admin, /XDriveSensitiveField[\s\S]*label="新临时密码"/)
+  assert.equal((admin.match(/type="password"/g) || []).length, 0)
+  assert.match(share, /<XDriveSensitiveField[\s\S]*label="密码（可选）"/)
+  assert.match(publicShare, /<XDriveSensitiveField[\s\S]*label="分享密码"/)
+  assert.doesNotMatch(oldSource, /XDriveStoredCredentialField/)
+  // Authentication passwords are irreversible and require create/change/reset.
+  // Transient editors must never invent a backend old-password reveal route.
+  assert.doesNotMatch(share + publicShare + admin, /onReveal=|revealPassword|readCurrentPassword/)
+})
