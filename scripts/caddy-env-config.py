@@ -10,6 +10,7 @@ import re
 import stat
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 KEYS = ("XD_DOMAIN", "XD_LAN_HTTPS_IP", "ALIYUN_ACCESS_KEY_ID", "ALIYUN_ACCESS_KEY_SECRET")
@@ -272,7 +273,135 @@ def reveal(data, env, backup, marker):
     }
 
 
+# A bounded, read-only-for-Server terminal ledger. It is not an Applied
+# Receipt, live Caddy proof, authorization token or history of .env secrets.
+# Archive is Host-only and deliberately does not take install.lock: a proven
+# installer-busy outcome must remain publishable while an upgrade owns it.
+DEPLOY_ARCHIVE_DIR = "caddy-deploy-results"
+DEPLOY_ARCHIVE_MAX = 64
+DEPLOY_ARCHIVE_TTL = 7 * 24 * 60 * 60
+DEPLOY_ERRORS = frozenset((
+    "installer-busy", "deploy-refused", "interrupted-deploy",
+    "caddy-deploy-or-verify-failed",
+))
+
+
+def archive_deploy():
+    home_dir = os.environ.get("XD_CADDY_DEPLOY_RECEIPT_DIR", "")
+    if not home_dir or not os.path.isabs(home_dir):
+        raise Restricted("invalid-receipt-directory")
+    data = sys.stdin.buffer.read(1025)
+    if len(data) > 1024:
+        raise Restricted("oversized-receipt")
+
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise Restricted("duplicate-receipt-field")
+            result[key] = value
+        return result
+
+    try:
+        receipt = json.loads(data, object_pairs_hook=unique_pairs)
+    except (ValueError, UnicodeError) as exc:
+        raise Restricted("invalid-receipt") from exc
+    allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error"}
+    if not isinstance(receipt, dict) or set(receipt) - allowed:
+        raise Restricted("unexpected-receipt-field")
+    if receipt.get("protocol") != "xdrive.caddy.host-env.v1":
+        raise Restricted("invalid-receipt-protocol")
+    request_id, sha = receipt.get("request_id"), receipt.get("sha256")
+    if not isinstance(request_id, str) or REQ_ID.fullmatch(request_id) is None or \
+            not isinstance(sha, str) or HEX.fullmatch(sha) is None:
+        raise Restricted("invalid-receipt-identity")
+    state = receipt.get("state")
+    if state not in ("deployed", "failed"):
+        raise Restricted("nonterminal-receipt")
+    code = receipt.get("error", "")
+    if not isinstance(code, str):
+        raise Restricted("invalid-receipt-error")
+    code = code if state == "failed" and code in DEPLOY_ERRORS else ""
+    if "rolled_back" in receipt and type(receipt["rolled_back"]) is not bool:
+        raise Restricted("invalid-receipt-rollback")
+    restored = (state == "failed" and code in (
+        "interrupted-deploy", "caddy-deploy-or-verify-failed",
+    ) and receipt.get("rolled_back") is True)
+    clean = {
+        "protocol": "xdrive.caddy.host-env.v1",
+        "state": state, "request_id": request_id, "sha256": sha,
+    }
+    if code:
+        clean["error"] = code
+    if restored:
+        clean["rolled_back"] = True
+    output = (json.dumps(clean, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if len(output) > 512:
+        raise Restricted("oversized-receipt")
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    parent = os.open(home_dir, flags)
+    try:
+        p = os.fstat(parent)
+        if not stat.S_ISDIR(p.st_mode) or p.st_uid != os.geteuid() or p.st_mode & 0o007:
+            raise Restricted("unsafe-receipt-parent")
+        try:
+            os.mkdir(DEPLOY_ARCHIVE_DIR, mode=0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+        folder = os.open(DEPLOY_ARCHIVE_DIR, flags, dir_fd=parent)
+        try:
+            f = os.fstat(folder)
+            if not stat.S_ISDIR(f.st_mode) or f.st_uid != os.geteuid() or f.st_gid != p.st_gid:
+                raise Restricted("unsafe-receipt-directory")
+            # Host owns writes; the Server group may only traverse and read.
+            if stat.S_IMODE(f.st_mode) in (0o700, 0o2700):
+                os.fchmod(folder, 0o2750)
+            elif stat.S_IMODE(f.st_mode) != 0o2750:
+                raise Restricted("unsafe-receipt-directory-mode")
+            if stat.S_IMODE(os.fstat(folder).st_mode) != 0o2750:
+                raise Restricted("receipt-directory-permissions-unavailable")
+            filename = request_id + ".json"
+            wflags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(filename, wflags, 0o600, dir_fd=folder)
+            try:
+                os.fchmod(fd, 0o640)
+                with os.fdopen(fd, "wb", closefd=False) as dest:
+                    dest.write(output)
+                    dest.flush()
+                    os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.fsync(folder)
+
+            # Bounded storage: seven days / at most 64 *terminal* receipts.
+            # Never follow symlinks, traverse subdirectories or touch other
+            # Host Control artifacts. Existing request IDs never overwrite.
+            now = time.time()
+            retained = []
+            for name in os.listdir(folder):
+                if not name.endswith(".json") or REQ_ID.fullmatch(name[:-5]) is None:
+                    continue
+                info = os.stat(name, dir_fd=folder, follow_symlinks=False)
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    continue
+                if now - info.st_mtime > DEPLOY_ARCHIVE_TTL:
+                    os.unlink(name, dir_fd=folder)
+                else:
+                    retained.append((info.st_mtime, name))
+            for _, name in sorted(retained)[:-DEPLOY_ARCHIVE_MAX]:
+                os.unlink(name, dir_fd=folder)
+            os.fsync(folder)
+        finally:
+            os.close(folder)
+    finally:
+        os.close(parent)
+
+
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "archive-deploy":
+        archive_deploy()
+        return
     if len(sys.argv) != 2 or sys.argv[1] not in ("snapshot", "save", "commit", "restore", "reveal"):
         raise Restricted("unsupported-command")
     home = Path(os.environ.get("XD_CONFIG_DIR") or Path.home() / ".xd")

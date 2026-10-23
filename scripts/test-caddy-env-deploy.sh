@@ -226,4 +226,38 @@ PY
 [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
 [[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before_calls + 1))" ]]
 
+
+# A terminal result survives later singleton mutations and Host runner restarts,
+# without archiving any Save/Reveal payload or broad credential text.
+archive_dir="$dir/caddy-deploy-results"
+busy_receipt="$archive_dir/777777777777777777777777.json"
+[[ -f "$busy_receipt" && ! -L "$busy_receipt" ]]
+[[ "$(stat -c '%a' "$archive_dir")" == "2750" ]]
+[[ "$(stat -c '%a' "$busy_receipt")" == "640" ]]
+python3 - "$busy_receipt" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert set(r) == {"protocol", "state", "request_id", "sha256", "error"}
+assert r["state"] == "failed" and r["error"] == "installer-busy"
+assert "ALIYUN" not in json.dumps(r) and "POSTGRES_PASSWORD" not in json.dumps(r)
+PY
+printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"%s","sha256":"%s"}\n' \
+  "999999999999999999999999" "$sha" > "$dir/caddy-env-result.json"
+python3 - "$busy_receipt" <<'PY'
+import json,sys
+assert json.load(open(sys.argv[1]))["request_id"] == "777777777777777777777777"
+PY
+# Reject both duplicate request IDs and a smuggled credential field.
+if printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"777777777777777777777777","sha256":"%s","error":"installer-busy"}\n' "$sha" |
+  XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" archive-deploy >/dev/null 2>&1; then
+  echo "archive overwrote immutable receipt" >&2
+  exit 1
+fi
+if printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"aaaaaaaaaaaaaaaaaaaaaaaa","sha256":"%s","access_key_secret":"DO-NOT-STORE"}\n' "$sha" |
+  XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" archive-deploy >/dev/null 2>&1; then
+  echo "archive accepted forbidden secret" >&2
+  exit 1
+fi
+[[ ! -e "$archive_dir/aaaaaaaaaaaaaaaaaaaaaaaa.json" ]]
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"

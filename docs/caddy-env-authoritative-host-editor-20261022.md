@@ -29,6 +29,12 @@
 - Web/Mobile 复用共享 `CaddyDetailV1`；Desktop 经 Electron Main、Preload、Agent 到 Server，旧 Agent 不允许静默落回分段保存。
 - 运行：`python3 scripts/test-caddy-env-config.py`、`bash scripts/test-caddy-env-deploy.sh`；脚本纳入现有 Host validation。另有 Go 无 PostgreSQL Host 读取/部署防误操作测试。
 
+## 有限终态查询（P1 第一增量，独立后续 PR）
+
+- Host Control 对每次成功结束的 Deploy 保存最多 64 条、保留 7 天的**非敏感终态回执**，按随机 request_id 独立定位。日志只包含固定状态/错误码、配置指纹与经确认的回退标记；不包含 AK/SK、Host 原始 .env、路径、Docker 日志或证书私钥。
+- 记录存于 Host Control 内仅 Host 可写、Server 组只读的目录；断电前必须 fsync 文件与目录。管理员已有 GET 状态接口先查询原请求的终态记录，未命中时兼容原 15 秒单槽状态；过期、符号链接、损坏或未知状态必须保守拒绝。
+- 这**不等于**可信签名 Applied Receipt、WAN 可达证明、服务端任务中心、完整部署历史 UI 或自动恢复/重试；后续仍需补足跨代际运行身份、审计与可靠性加固。
+
 ## 合并后的限制与第二版边界
 
 - **源码验收已完成**：PR #2382 及其准确 HEAD 的 Go Linux/Windows、PostgreSQL API Race（整仓兼容）、Web/Desktop、Host/Rootless、制品与 Final Gate 全部通过。

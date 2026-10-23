@@ -1668,6 +1668,15 @@ caddy_env_reap_secret_result() {
   fi
 }
 
+# Terminal statuses are per-request, bounded and contain no secrets. The
+# legacy one-slot result remains available for older Server/Agent versions.
+caddy_env_archive_final() {
+  local dir="$1" file="$2"
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
+    python3 "$BIN_DIR/caddy-env-config.py" archive-deploy < "$file" >/dev/null 2>&1
+}
+
 caddy_env_process() {
   local dir request active result operation request_id created_at expected tmp
   dir="$(prepare_dir)"
@@ -1726,6 +1735,13 @@ caddy_env_process() {
     printf '{"state":"failed","request_id":"%s","error":"host-env-observation-unavailable"}\n' \
       "$request_id" > "$tmp"
   fi
+  if [[ "$operation" == deploy && "$request_id" =~ ^[0-9a-f]{24}$ ]]; then
+    if ! caddy_env_archive_final "$dir" "$tmp"; then
+      # This operation may have physically completed, but must NOT pretend
+      # its per-request terminal receipt was durably archived.
+      echo "xDrive Caddy terminal receipt archive unavailable" >&2
+    fi
+  fi
   chmod 0660 "$tmp"
   mv -f "$tmp" "$result"
 }
@@ -1783,6 +1799,11 @@ caddy_env_recover_interrupted() {
   chmod 0660 "$temp"
   mv -f "$temp" "$dir/caddy-env-result.json"
   if [[ "$recovered" == true ]]; then
+    # Only persist recovery as terminal after the old ingress is verified.
+    # Unresolved active operations may still be reconciled on next startup.
+    if ! caddy_env_archive_final "$dir" "$dir/caddy-env-result.json"; then
+      echo "xDrive Caddy recovered terminal receipt archive unavailable" >&2
+    fi
     rm -f -- "$active"
     caddy_env_refresh || true
     return 0

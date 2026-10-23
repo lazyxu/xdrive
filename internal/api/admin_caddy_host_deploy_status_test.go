@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,5 +76,80 @@ func TestCaddyHostDeployErrorCodesDoNotLeakRawHostErrors(t *testing.T) {
 				t.Fatal("Caddy deploy status must be no-store")
 			}
 		})
+	}
+}
+
+func TestCaddyDeployTerminalArchiveSurvivesSingletonOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Caddy Host archive relies on POSIX directory permissions and symlink behavior; Linux CI verifies these guarantees")
+	}
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "caddy-deploy-results")
+	if err := os.Mkdir(archive, 0750); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("a", 24)
+	other := strings.Repeat("c", 24)
+	sha := strings.Repeat("b", 64)
+	previous := map[string]any{
+		"protocol": caddyHostEnvProtocol, "request_id": id, "sha256": sha,
+		"state": "failed", "error": "installer-busy",
+	}
+	later := map[string]any{
+		"protocol": caddyHostEnvProtocol, "request_id": other, "sha256": sha,
+		"state": "deployed",
+	}
+	for path, value := range map[string]any{
+		filepath.Join(archive, id+".json"):         previous,
+		filepath.Join(dir, caddyHostEnvResultName): later,
+	} {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	terminalPath := filepath.Join(archive, id+".json")
+	dayAgo := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(terminalPath, dayAgo, dayAgo); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{HostControlDir: dir, CaddyHostEnvAuthoritative: true}
+	record, err := server.readCaddyEnvDeployStatus(id)
+	if err != nil || record.RequestID != id || record.Error != "installer-busy" ||
+		record.State != "failed" {
+		t.Fatalf("per-request terminal lost after singleton overwrite: %#v %v", record, err)
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services/caddy/config/deploy?request_id="+id, nil)
+	server.adminCaddyEnvDeployStatus(c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "installer-busy") {
+		t.Fatalf("bounded terminal GET unavailable: %d %s", w.Code, w.Body.String())
+	}
+	if err := os.Remove(terminalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, caddyHostEnvResultName), terminalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.readCaddyEnvDeployStatus(id); err == nil {
+		t.Fatal("archive symlink fell back to another request")
+	}
+	if err := os.Remove(terminalPath); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(previous)
+	if err := os.WriteFile(terminalPath, b, 0640); err != nil {
+		t.Fatal(err)
+	}
+	expired := time.Now().Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(terminalPath, expired, expired); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.readCaddyEnvDeployStatus(id); err == nil {
+		t.Fatal("expired terminal receipt was accepted")
 	}
 }
