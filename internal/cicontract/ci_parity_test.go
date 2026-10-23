@@ -37,6 +37,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
 	githubProviderSpecificJobs := map[string]struct{}{
+		// Android v1 uses GitHub-hosted KVM; GitLab Android deployment is outside this slice.
+		"android-native":      {},
 		"server-rootless-e2e": {},
 		"publish-master":      {},
 		"publish-stable":      {},
