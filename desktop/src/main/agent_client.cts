@@ -400,6 +400,22 @@ export type AgentLocalBackupFirstFileJobStatus = {
   retirement_safe: false
 }
 
+export type AgentLocalBackupCommonBatch = {
+  source_id: number
+  revision: number
+  state: 'running' | 'partial' | 'uncertain'
+  running: boolean
+  inspected_files: number
+  confirmed_files: number
+  skipped_files: number
+  unsupported_files: number
+  uncertain_files: number
+  confirmed_bytes: number
+  backup_complete: false
+  retirement_safe: false
+  current_cas_verified: false
+}
+
 export type AgentLocalBackupSnapshot = {
   source_id: number
   revision: number
@@ -3554,6 +3570,20 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupFirstFileJobStatus>(
       'GET', `/v1/device-backups/local-first-file-status?${query.toString()}`, undefined, 15_000,
+    )
+  }
+
+  localBoundBackupCommonBatch(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupCommonBatch>(
+      'POST', `/v1/device-backups/local-common-batch?${query.toString()}`, undefined, 30_000,
+    )
+  }
+
+  localBoundBackupCommonBatchStatus(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupCommonBatch>(
+      'GET', `/v1/device-backups/local-common-batch?${query.toString()}`, undefined, 15_000,
     )
   }
 

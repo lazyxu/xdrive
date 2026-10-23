@@ -21,11 +21,11 @@ import (
 func checkHeldCommonNativeFile(
 	ctx context.Context, configDir string, grant RootGrant,
 	snapshotSHA256 string, plan localpushcommon.Plan,
-	file *os.File, opened os.FileInfo,
+	file *os.File, opened os.FileInfo, versioned bool,
 ) error {
 	deny := ErrCommonUploadPlanQuarantined
 	if ctx == nil || ctx.Err() != nil || file == nil || opened == nil ||
-		plan.Validate() != nil || plan.Size > 64<<20 ||
+		plan.Validate() != nil || (!versioned && plan.Size > 64<<20) ||
 		grant.SourceID != plan.SourceID || grant.Server != plan.Server ||
 		grant.Account != plan.Account || grant.DeviceID != plan.DeviceID ||
 		grant.RootID != plan.RootID || grant.Fingerprint != plan.RootFingerprint {
@@ -105,16 +105,47 @@ func UploadVerifiedCommonNativeOne(
 	api localpushcommon.DurableTransport, proof client.LocalBoundSourceProof,
 	progress client.UploadProgress,
 ) (client.LocalPushCommonUploadReceipt, error) {
+	return uploadVerifiedCommonNativeOne(ctx, configDir, grant,
+		expectedSnapshotSHA256, plan, api, proof, progress, false)
+}
+
+// UploadVerifiedCommonNativeVersionedOne uses the same securely held native
+// descriptor and ordinary /uploads transport as the original first-file
+// bridge, with the append-only per-target-revision local task journal.
+func UploadVerifiedCommonNativeVersionedOne(
+	ctx context.Context, configDir string, grant RootGrant,
+	expectedSnapshotSHA256 string, plan localpushcommon.Plan,
+	api localpushcommon.DurableTransport, proof client.LocalBoundSourceProof,
+	progress client.UploadProgress,
+) (client.LocalPushCommonUploadReceipt, error) {
+	return uploadVerifiedCommonNativeOne(ctx, configDir, grant,
+		expectedSnapshotSHA256, plan, api, proof, progress, true)
+}
+
+func uploadVerifiedCommonNativeOne(
+	ctx context.Context, configDir string, grant RootGrant,
+	expectedSnapshotSHA256 string, plan localpushcommon.Plan,
+	api localpushcommon.DurableTransport, proof client.LocalBoundSourceProof,
+	progress client.UploadProgress, versioned bool,
+) (client.LocalPushCommonUploadReceipt, error) {
 	var zero client.LocalPushCommonUploadReceipt
 	if ctx == nil || ctx.Err() != nil || api == nil ||
-		plan.Validate() != nil || plan.Size > 64<<20 ||
+		plan.Validate() != nil || (!versioned && plan.Size > 64<<20) ||
 		proof.DeviceID != grant.DeviceID || proof.DeviceToken == "" ||
 		proof.RootID != grant.RootID || proof.RootFingerprint != grant.Fingerprint {
 		return zero, ErrCommonUploadPlanQuarantined
 	}
-	original, err := PrepareVerifiedCommonUploadPlan(ctx, configDir, grant,
-		plan.OwnerSession, plan.SourceRevision, expectedSnapshotSHA256,
-		plan.RelativePath, plan.Target)
+	var original localpushcommon.Plan
+	var err error
+	if versioned {
+		original, err = PrepareVerifiedCommonUploadVersionedPlan(ctx, configDir, grant,
+			plan.OwnerSession, plan.SourceRevision, expectedSnapshotSHA256,
+			plan.RelativePath, plan.Target)
+	} else {
+		original, err = PrepareVerifiedCommonUploadPlan(ctx, configDir, grant,
+			plan.OwnerSession, plan.SourceRevision, expectedSnapshotSHA256,
+			plan.RelativePath, plan.Target)
+	}
 	if err != nil || original != plan {
 		return zero, ErrCommonUploadPlanQuarantined
 	}
@@ -127,7 +158,7 @@ func UploadVerifiedCommonNativeOne(
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil || checkHeldCommonNativeFile(ctx, configDir, grant,
-		expectedSnapshotSHA256, plan, file, opened) != nil {
+		expectedSnapshotSHA256, plan, file, opened, versioned) != nil {
 		return zero, ErrCommonUploadPlanQuarantined
 	}
 	opens := 0
@@ -139,7 +170,7 @@ func UploadVerifiedCommonNativeOne(
 		// There may be a network round trip (admit + bind) between the first
 		// prehash and the first byte. Revalidate before exposing that byte.
 		if err := checkHeldCommonNativeFile(openCtx, configDir, grant,
-			expectedSnapshotSHA256, plan, file, opened); err != nil {
+			expectedSnapshotSHA256, plan, file, opened, versioned); err != nil {
 			return nil, err
 		}
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
@@ -153,7 +184,7 @@ func UploadVerifiedCommonNativeOne(
 	receipt, uploadErr := localpushcommon.UploadDurableOne(ctx, api, proof,
 		localpushcommon.Task{Plan: plan, Open: open}, progress)
 	postErr := checkHeldCommonNativeFile(ctx, configDir, grant,
-		expectedSnapshotSHA256, plan, file, opened)
+		expectedSnapshotSHA256, plan, file, opened, versioned)
 	if uploadErr != nil || postErr != nil || ctx.Err() != nil {
 		// A remote immutable COMMIT may already exist even if posthash
 		// detects local mutation. Never retry using a different Operation.

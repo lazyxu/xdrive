@@ -139,16 +139,18 @@ func (s *Server) admitBoundLocalPushCommonUpload(
 		}
 		targetRoot := *source.TargetNodeID
 		if req.ParentID != nil {
-			if *req.ParentID != targetRoot {
+			if requireLocalPushCommonDescendantDirTx(tx,
+				owner.ID, targetRoot, *req.ParentID) != nil {
 				return deny
 			}
 		} else {
 			var node meta.Node
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).
 				Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
 					*req.NodeID, owner.ID, meta.NodeTypeFile).Take(&node).Error; err != nil ||
-				node.ParentID == nil || *node.ParentID != targetRoot ||
-				node.Revision != req.ExpectedRevision {
+				node.ParentID == nil || node.Revision != req.ExpectedRevision ||
+				requireLocalPushCommonDescendantDirTx(tx,
+					owner.ID, targetRoot, *node.ParentID) != nil {
 				return deny
 			}
 		}
@@ -235,7 +237,8 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			return deny
 		}
 		if op.TargetParentID != nil {
-			if *op.TargetParentID != *source.TargetNodeID ||
+			if requireLocalPushCommonDescendantDirTx(tx,
+				owner.ID, *source.TargetNodeID, *op.TargetParentID) != nil ||
 				session.ParentID == nil || *session.ParentID != *op.TargetParentID ||
 				session.NodeID != nil || session.Name != op.TargetName ||
 				op.ExpectedRevision != 0 {
@@ -249,9 +252,67 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 			return deny
 		}
 		if op.State == meta.LocalPushCommonUploadBound {
-			if op.UploadSessionID == nil || *op.UploadSessionID != session.ID {
+			if op.UploadSessionID == nil || *op.UploadSessionID == "" {
 				return deny
 			}
+			if *op.UploadSessionID == session.ID {
+				bound = op
+				return c.Request.Context().Err()
+			}
+			// The ordinary /uploads Session expires independently of the
+			// ORIGINAL per-file durable Operation. Rebind only AFTER the
+			// previous Session has expired and its row can be locked NOWAIT.
+			// A concurrent old Finalize locks the Session row; it cannot
+			// race our replacement or be mistaken for physical CANCEL.
+			var previous meta.UploadSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).
+				Where("id = ? AND owner_id = ?", *op.UploadSessionID, owner.ID).
+				Take(&previous).Error; err != nil {
+				return deny
+			}
+			if previous.Status != meta.UploadStatusActive ||
+				!time.Now().After(previous.ExpiresAt) ||
+				previous.ResumeKey != op.ResumeKey ||
+				previous.OwnerID != owner.ID ||
+				previous.SHA256 != op.ContentSHA256 ||
+				previous.TotalSize != op.TotalSize ||
+				previous.ConflictPolicy != meta.UploadConflictPolicyFail {
+				return deny
+			}
+			if op.TargetParentID != nil {
+				if previous.ParentID == nil ||
+					*previous.ParentID != *op.TargetParentID ||
+					previous.NodeID != nil || previous.Name != op.TargetName {
+					return deny
+				}
+			} else if previous.NodeID == nil ||
+				*previous.NodeID != *op.TargetNodeID ||
+				previous.ParentID != nil ||
+				previous.ExpectedRevision != op.ExpectedRevision {
+				return deny
+			}
+			// Check the CURRENT remote Node again before allowing a new
+			// ordinary Session to write, identical to fresh admission.
+			if op.TargetNodeID != nil {
+				var node meta.Node
+				if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).
+					Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+						*op.TargetNodeID, owner.ID, meta.NodeTypeFile).
+					Take(&node).Error; err != nil || node.ParentID == nil ||
+					node.Revision != op.ExpectedRevision ||
+					requireLocalPushCommonDescendantDirTx(tx,
+						owner.ID, op.SourceTargetID, *node.ParentID) != nil {
+					return deny
+				}
+			}
+			changed := tx.Model(&meta.LocalPushCommonUploadOperation{}).
+				Where("operation_id = ? AND owner_id = ? AND state = ? AND upload_session_id = ? AND committed_at IS NULL",
+					op.OperationID, owner.ID, meta.LocalPushCommonUploadBound, previous.ID).
+				Update("upload_session_id", session.ID)
+			if changed.Error != nil || changed.RowsAffected != 1 {
+				return deny
+			}
+			op.UploadSessionID = &session.ID
 			bound = op
 			return c.Request.Context().Err()
 		}
@@ -267,8 +328,9 @@ func (s *Server) bindBoundLocalPushCommonUpload(
 				Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
 					*op.TargetNodeID, owner.ID, meta.NodeTypeFile).
 				Take(&node).Error; err != nil || node.ParentID == nil ||
-				*node.ParentID != op.SourceTargetID ||
-				node.Revision != op.ExpectedRevision {
+				node.Revision != op.ExpectedRevision ||
+				requireLocalPushCommonDescendantDirTx(tx,
+					owner.ID, op.SourceTargetID, *node.ParentID) != nil {
 				return deny
 			}
 		}

@@ -593,6 +593,23 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupCommonBatch = useMemo(() => {
+    if (!localBackupSettings ||
+      !agent.hello?.capabilities.includes('device-backup-local-common-batch')) return undefined
+    return {
+      run: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.startDeviceBackupLocalCommonBatch(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      inspect: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupLocalCommonBatch(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const localBackupDelta = useMemo(() => {
     if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-delta')) return undefined
     return {
@@ -2897,6 +2914,7 @@ export default function App({
             localPreview={localBackupPreview}
             localSnapshot={localBackupSnapshot}
             localFirstFile={localBackupFirstFile}
+            localCommonBatch={localBackupCommonBatch}
             localDelta={localBackupDelta}
             localEvidence={localBackupEvidence}
             localEvidenceSummary={localBackupEvidenceSummary}

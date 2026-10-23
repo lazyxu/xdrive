@@ -241,6 +241,7 @@ import {
   type AgentLocalBackupSnapshot,
   type AgentLocalBackupFirstFile,
   type AgentLocalBackupFirstFileJobStatus,
+  type AgentLocalBackupCommonBatch,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
@@ -2431,6 +2432,26 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'device-backup-local-first-file-status')
       return requireAgentClient().localBoundBackupFirstFileStatus(sourceID)
+    }, false))
+  // Owning-Desktop-only manual v2 batch: a Source ID is the sole renderer
+  // selector. All local paths, Operation IDs and CAS evidence remain Agent-private.
+  ipcMain.handle('agent:start-device-backup-local-common-batch', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBackupCommonBatch>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid manual backup Source.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-common-batch')
+      return requireAgentClient().localBoundBackupCommonBatch(sourceID)
+    }, false))
+  ipcMain.handle('agent:get-device-backup-local-common-batch', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBackupCommonBatch>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid manual backup Source.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-common-batch')
+      return requireAgentClient().localBoundBackupCommonBatchStatus(sourceID)
     }, false))
   // An advisory read-only local delta uses its own request registry.
   // Closing its dialog or changing account aborts Electron HTTP and Go.

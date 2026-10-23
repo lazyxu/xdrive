@@ -107,8 +107,10 @@ func persistLocalPushCommonUploadFinalizedTx(
 	// Until recursive descendant authorization is implemented, allow only
 	// immediate children of this Source's immutable target directory.
 	// A forged same-Owner target outside the authorized Source must not pass.
-	if node.ParentID == nil || *node.ParentID != op.SourceTargetID ||
-		(op.TargetParentID != nil && *op.TargetParentID != op.SourceTargetID) {
+	if node.ParentID == nil ||
+		requireLocalPushCommonDescendantDirTx(tx,
+			op.OwnerID, op.SourceTargetID, *node.ParentID) != nil ||
+		(op.TargetParentID != nil && *op.TargetParentID != *node.ParentID) {
 		return deny
 	}
 	if op.TargetNodeID != nil {

@@ -106,11 +106,11 @@ func (p *nativeCommonUploadProbe) UploadStreamResumableVerifiedBoundResult(
 		return client.UploadResult{}, err
 	}
 	p.byteOpens++
-	bytes, readErr := io.ReadAll(stream)
+	digest := sha256.New()
+	size, readErr := io.CopyBuffer(digest, stream, make([]byte, 256<<10))
 	closeErr := stream.Close()
-	sum := sha256.Sum256(bytes)
-	if readErr != nil || closeErr != nil || int64(len(bytes)) != p.plan.Size ||
-		hex.EncodeToString(sum[:]) != p.plan.ContentSHA256 {
+	if readErr != nil || closeErr != nil || size != p.plan.Size ||
+		hex.EncodeToString(digest.Sum(nil)) != p.plan.ContentSHA256 {
 		return client.UploadResult{}, errors.New("native stream bytes are wrong")
 	}
 	p.state = "committed"

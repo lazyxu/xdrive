@@ -46,27 +46,60 @@ type agentRecoveryRequest struct {
 	result chan error
 }
 
+// The job key/result are cross-platform types; on platforms without native
+// local Push the Desktop IPC method remains unavailable instead of preventing
+// the Agent binary from compiling.
+type localPushCommonBatchJob struct {
+	key        localPushFirstFileJobKey
+	done       chan struct{}
+	result     localBackupCommonBatchSummary
+	err        error
+	progressMu sync.RWMutex
+	progress   localBackupCommonBatchSummary
+}
+
+func (j *localPushCommonBatchJob) setProgress(next localBackupCommonBatchSummary) {
+	if j == nil {
+		return
+	}
+	j.progressMu.Lock()
+	j.progress = next
+	j.progressMu.Unlock()
+}
+
+func (j *localPushCommonBatchJob) currentProgress() localBackupCommonBatchSummary {
+	if j == nil {
+		return localBackupCommonBatchSummary{State: "uncertain", UncertainFiles: 1}
+	}
+	j.progressMu.RLock()
+	value := j.progress
+	j.progressMu.RUnlock()
+	return value
+}
+
 type agentController struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wake     chan struct{}
 	recovery chan agentRecoveryRequest
 
-	localFolderGrantMu  sync.Mutex
-	localFirstFileJobMu sync.Mutex
-	localFirstFileJobs  map[localPushFirstFileJobKey]*localPushFirstFileJob
-	historyMu           sync.Mutex
-	historyPath         string
-	historyKey          string
-	historyWriterDone   chan struct{}
-	mu                  sync.RWMutex
-	snap                agentSnapshot
-	snapshotRevision    uint64
-	snapshotChanged     chan struct{}
-	transfers           *transfer.Manager
-	updates             *clientUpdateManager
-	thumbnailCache      *agentMediaThumbnailCache
-	availabilitySearch  *agentAvailabilitySearchCache
+	localFolderGrantMu    sync.Mutex
+	localFirstFileJobMu   sync.Mutex
+	localFirstFileJobs    map[localPushFirstFileJobKey]*localPushFirstFileJob
+	localCommonBatchJobMu sync.Mutex
+	localCommonBatchJob   *localPushCommonBatchJob
+	historyMu             sync.Mutex
+	historyPath           string
+	historyKey            string
+	historyWriterDone     chan struct{}
+	mu                    sync.RWMutex
+	snap                  agentSnapshot
+	snapshotRevision      uint64
+	snapshotChanged       chan struct{}
+	transfers             *transfer.Manager
+	updates               *clientUpdateManager
+	thumbnailCache        *agentMediaThumbnailCache
+	availabilitySearch    *agentAvailabilitySearchCache
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {

@@ -419,6 +419,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-common-upload/admit", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.admitLocalPushCommonUpload)
 	authed.POST("/sources/:id/local-common-upload/bind", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.bindLocalPushCommonUpload)
 	authed.POST("/sources/:id/local-common-upload/receipt", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.readLocalPushCommonUploadReceipt)
+	authed.POST("/sources/:id/local-common-upload/directory", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.ensureLocalPushCommonDirectory)
 	// Owning-Agent-only exact request-key terminal-reservation proof. Never a backup completion.
 	authed.POST("/sources/:id/local-operation/terminal-proof", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.materializeLocalPushTerminalProof)
 	authed.POST("/sources/:id/local-staging", s.requireLocalSourceExecutor(), s.createLocalPushStage)
