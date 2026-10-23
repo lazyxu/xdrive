@@ -1,0 +1,251 @@
+package com.tfluid.xdrive.core
+
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
+import okhttp3.*
+import okhttp3.mockwebserver.*
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
+import org.junit.Assert.*
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class XDriveApiTest {
+    private val auth = """{"access_token":"access-secret","refresh_token":"refresh-secret","username":"owner","must_change_password":true}"""
+    private val directory = """{"id":1,"name":"root","type":"dir","revision":4,"size":0,"updated_at":"2026-10-23T00:00:00Z"}"""
+    private fun page(items: String = "[]", total: Long = 0, offset: Int = 0, limit: Int = 100) =
+        """{"items":$items,"total_count":$total,"total_count_included":true,"offset":$offset,"limit":$limit,"sort":"name","order":"asc"}"""
+    private fun address(server: MockWebServer) = ServerAddress.parse(server.url("/").toString(), true)
+    private fun body(request: RecordedRequest) = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+    private suspend fun failure(block: suspend () -> Unit): ApiException {
+        try { block() } catch (e: ApiException) { return e }
+        throw AssertionError("Expected safe API failure")
+    }
+
+    @Test fun `wrong current password has a safe endpoint specific reason`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"current password is incorrect","detail":"password-secret"}"""))
+            val error = failure { api.changePassword("access-secret", "old-secret", "new-secret") }
+            assertEquals(401, error.statusCode)
+            assertNull(error.cause)
+            assertFalse(error.toString().contains("secret"))
+            assertEquals(ApiFailureReason.CURRENT_PASSWORD_INCORRECT, error.reason)
+        } }
+    }
+
+    @Test fun `password error classification rejects other endpoints statuses malformed and oversized bodies`() = runBlocking {
+        val known = """{"error":"current password is incorrect"}"""
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val cases = listOf(
+                MockResponse().setResponseCode(401).setBody(known),
+                MockResponse().setResponseCode(403).setBody(known),
+                MockResponse().setResponseCode(401).setBody("""{"error":"expired access-secret"}"""),
+                MockResponse().setResponseCode(401).setBody("password-secret"),
+                MockResponse().setResponseCode(401).setBody(known + " ".repeat(4096)),
+                MockResponse().setResponseCode(401).setChunkedBody(known + " ".repeat(4096), 128),
+            )
+            cases.forEachIndexed { index, response ->
+                server.enqueue(response)
+                val error = failure {
+                    if (index == 0) api.login("owner", "password-secret")
+                    else api.changePassword("access-secret", "old-secret", "new-secret")
+                }
+                assertEquals(ApiFailureReason.UNKNOWN, error.reason)
+                assertEquals("Server request failed", error.message)
+                assertNull(error.cause)
+                assertFalse(error.toString().contains("secret"))
+            }
+        } }
+    }
+
+    @Test fun `short nonfinal range is rejected instead of skipping missing rows`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody(page("""[{"id":2,"parent_id":1,"name":"a","type":"file"}]""", 101)))
+            assertEquals("Invalid server response", failure { api.children("access-secret", 1, 0) }.message)
+        } }
+    }
+
+    @Test fun `origin validation rejects credential and ambiguous URLs`() {
+        for (input in listOf("", "http://example.com", "ftp://example.com", "https://u:p@example.com", "https://example.com?x=1", "https://example.com#x", "https://example.com/api", "https:\\example.com", "https://example.com\\evil", "https:///example.com", "https://example.com:99999", "https://example.com/..")) {
+            assertThrows(input, IllegalArgumentException::class.java) { ServerAddress.parse(input, false) }
+        }
+        assertEquals("https://example.com/", ServerAddress.parse("HTTPS://EXAMPLE.COM:443/", false).url)
+        assertEquals("http://localhost:8080/", ServerAddress.parse("http://localhost:8080", true).url)
+    }
+
+    @Test fun `real HTTP auth password refresh logout contracts and redaction`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(auth))
+            server.enqueue(MockResponse().setBody(auth.replace("access_token", "token")))
+            server.enqueue(MockResponse().setBody(auth.replace("true", "false")))
+            server.enqueue(MockResponse().setResponseCode(204))
+            XDriveApi(address(server)).use { api ->
+                val session = api.login("owner", "password-secret")
+                assertTrue(session.mustChangePassword)
+                assertFalse(session.toString().contains("secret"))
+                val login = server.takeRequest()
+                assertEquals("/api/v1/auth/login", login.path)
+                assertEquals("POST", login.method)
+                assertNull(login.getHeader("Authorization"))
+                assertEquals("password-secret", body(login)["password"]!!.jsonPrimitive.content)
+                assertEquals("access-secret", api.refresh("refresh-secret").accessToken)
+                val refresh = server.takeRequest()
+                assertEquals("/api/v1/auth/refresh", refresh.path)
+                assertEquals("refresh-secret", body(refresh)["refresh_token"]!!.jsonPrimitive.content)
+                assertFalse(api.changePassword(session.accessToken, "old-secret", "new-secret").mustChangePassword)
+                val change = server.takeRequest()
+                assertEquals("/api/v1/me/change-password", change.path)
+                assertEquals("Bearer access-secret", change.getHeader("Authorization"))
+                val payload = body(change)
+                assertEquals("old-secret", payload["current_password"]!!.jsonPrimitive.content)
+                assertEquals("new-secret", payload["new_password"]!!.jsonPrimitive.content)
+                api.logout("refresh-secret")
+                val logout = server.takeRequest()
+                assertEquals("/api/v1/auth/logout", logout.path)
+                assertEquals("refresh-secret", body(logout)["refresh_token"]!!.jsonPrimitive.content)
+            }
+        }
+    }
+
+    @Test fun `real HTTP root and bounded range use owner bearer and exact query`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(directory))
+            server.enqueue(MockResponse().setBody(page("""[{"id":2,"parent_id":1,"name":"photo.jpg","type":"file","size":123,"revision":8}]""", 101, 100)))
+            XDriveApi(address(server)).use { api ->
+                assertTrue(api.root("access-secret").isDirectory)
+                val root = server.takeRequest()
+                assertEquals("/api/v1/nodes/root", root.path)
+                assertEquals("Bearer access-secret", root.getHeader("Authorization"))
+                val result = api.children("access-secret", 1, 100)
+                assertEquals(101L, result.totalCount)
+                assertEquals(123L, result.items.single().size)
+                val request = server.takeRequest()
+                assertEquals("/api/v1/nodes/1/children", request.requestUrl!!.encodedPath)
+                assertEquals(mapOf("offset" to "100", "limit" to "100", "sort" to "name", "order" to "asc", "group" to "none", "folders_first" to "true", "include_count" to "true"), request.requestUrl!!.queryParameterNames.associateWith { request.requestUrl!!.queryParameter(it) })
+                assertEquals("Bearer access-secret", request.getHeader("Authorization"))
+            }
+        }
+    }
+
+    @Test fun `range refuses missing count mismatched bounds duplicates invalid nodes and oversized pages`() = runBlocking {
+        val node = """{"id":2,"parent_id":1,"name":"a","type":"file"}"""
+        val invalid = listOf(page(total = -1), page(offset = 1), page(limit = 101), page("[$node]"), page("[$node,$node]", 2), page("[${node.replace("\"file\"", "\"bad\"")}]", 1), page("[${node.replace("\"id\":2", "\"id\":0")}]", 1), page("[${node.replace("\"parent_id\":1", "\"parent_id\":7")}]", 1), page("null", 1), page("[${List(101) { node.replace("\"id\":2", "\"id\":${it + 2}") }.joinToString(",")}]", 101), page().replace("\"total_count\":0,", ""), page().replace("\"total_count_included\":true", "\"total_count_included\":false"))
+        MockWebServer().use { server ->
+            XDriveApi(address(server)).use { api ->
+                for (payload in invalid) {
+                    server.enqueue(MockResponse().setBody(payload))
+                    failure { api.children("access-secret", 1, 0) }
+                }
+                server.enqueue(MockResponse().setBody(page("null")))
+                assertTrue(api.children("access-secret", 1, 0).items.isEmpty())
+                server.enqueue(MockResponse().setBody(page("null", offset = 100)))
+                assertTrue(api.children("access-secret", 1, 100).items.isEmpty())
+            }
+        }
+    }
+
+    @Test fun `redirects are refused without forwarding secrets even on injected client`() = runBlocking {
+        MockWebServer().use { target -> MockWebServer().use { server ->
+            target.enqueue(MockResponse().setBody(directory))
+            server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", target.url("/stolen")))
+            val client = OkHttpClient()
+            try {
+                XDriveApi(address(server), client).use { api -> assertEquals(307, failure { api.root("access-secret") }.statusCode) }
+                assertEquals(0, target.requestCount)
+            } finally { client.dispatcher.executorService.shutdownNow(); client.connectionPool.evictAll() }
+        } }
+    }
+
+    @Test fun `malformed oversized HTTP and network errors never retain secrets`() = runBlocking {
+        MockWebServer().use { server ->
+            XDriveApi(address(server)).use { api ->
+                for (response in listOf(MockResponse().setResponseCode(401).setBody("password-secret access-secret"), MockResponse().setBody("password-secret"), MockResponse().setBody("""{"access_token":"","refresh_token":"refresh-secret","username":"owner"}"""), MockResponse().setBody("x".repeat(2 * 1024 * 1024 + 1)), MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))) {
+                    server.enqueue(response)
+                    val error = failure { api.login("owner", "password-secret") }
+                    assertFalse(error.toString().contains("secret"))
+                    assertNull(error.cause)
+                }
+            }
+        }
+    }
+
+    @Test fun `authentication rejects absent empty and header unsafe tokens`() = runBlocking {
+        val invalid = listOf(auth.replace("access-secret", ""), auth.replace("refresh-secret", ""), auth.replace("access-secret", "bad token"), auth.replace("access-secret", "private-秘密-token"), auth.replace("refresh-secret", "private-秘密-token"), auth.replace("refresh-secret", "bad\\ntoken"), auth.replace("\"must_change_password\":true", "\"must_change_password\":\"true\""), auth.replace("\"username\":\"owner\",", ""))
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            invalid.forEach { payload ->
+                server.enqueue(MockResponse().setBody(payload))
+                failure { api.login("owner", "password-secret") }
+            }
+        } }
+    }
+
+    @Test fun `supplied unsafe bearer tokens receive client owned constant validation errors`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (token in listOf("private-秘密-token", "private-\u007f-token", "private-\n-token", "private- token")) {
+                try {
+                    api.root(token)
+                    fail("Unsafe bearer token must be rejected")
+                } catch (error: Exception) {
+                    assertTrue(error is IllegalArgumentException)
+                    assertEquals("Invalid access token", error.message)
+                    assertFalse(error.toString().contains(token))
+                    assertFalse(error.toString().contains("private-"))
+                    assertNull(error.cause)
+                }
+            }
+            assertEquals(0, server.requestCount)
+        } }
+    }
+
+    @Test fun `unknown length response is bounded while receiving bytes`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setChunkedBody("x".repeat(2 * 1024 * 1024 + 1), 8192))
+            XDriveApi(address(server)).use { api ->
+                failure { api.root("access-secret") }
+                Unit
+            }
+        }
+    }
+
+    @Test fun `HTTPS uses platform trust and accepts only explicitly supplied test CA`() = runBlocking {
+        val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
+        val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
+        MockWebServer().use { server ->
+            server.useHttps(serverTls.sslSocketFactory(), false)
+            server.enqueue(MockResponse().setBody(directory))
+            // MockWebServer's default bind address may expose a numeric IP on Windows.
+            // Use the precise DNS name covered by this fixture certificate's SAN.
+            val address = ServerAddress.parse(server.url("/").newBuilder().host("localhost").build().toString(), false)
+            XDriveApi(address).use { api ->
+                val error = failure { api.root("access-secret") }
+                assertEquals(0, error.statusCode)
+                assertNull(error.cause)
+                assertFalse(error.toString().contains("access-secret"))
+            }
+            val testTrust = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
+            val client = OkHttpClient.Builder().sslSocketFactory(testTrust.sslSocketFactory(), testTrust.trustManager).build()
+            try {
+                XDriveApi(address, client).use { api -> assertEquals(1L, api.root("access-secret").id) }
+            } finally { client.dispatcher.executorService.shutdownNow(); client.connectionPool.evictAll() }
+        }
+    }
+
+    @Test fun `coroutine cancellation cancels actual in flight call`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val canceled = CountDownLatch(1)
+            val client = OkHttpClient.Builder().eventListener(object : EventListener() {
+                override fun canceled(call: Call) { canceled.countDown() }
+            }).build()
+            try {
+                XDriveApi(address(server), client).use { api ->
+                    val job = launch { api.root("access-secret") }
+                    withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(5, TimeUnit.SECONDS)) }
+                    job.cancelAndJoin()
+                    assertTrue(canceled.await(5, TimeUnit.SECONDS))
+                }
+            } finally { client.dispatcher.executorService.shutdownNow(); client.connectionPool.evictAll() }
+        }
+    }
+}
