@@ -44,7 +44,6 @@ import {
   XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
-  XDriveMediaGalleryPage,
   XDriveShareDialog,
   XDriveSourceManager,
   XDriveDeviceBackupPage,
@@ -94,14 +93,10 @@ import type {
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
-import AdminUsersPanel from './AdminUsers'
-import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
-import StorageStatsPanel from './StorageStatsPanel'
-import WebFileExplorer from './WebFileExplorer'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
-import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
+import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -119,6 +114,17 @@ import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
+// P1-B: heavy route presentation only. Controllers/Owner Range/Viewer identity
+// remain unchanged and Web/Mobile Web share the same deferred modules.
+const WebFileExplorer = lazy(() => import('./WebFileExplorer'))
+const XDriveMediaGalleryPage = lazy(() =>
+  import('@xdrive/ui/mui/gallery-page')
+    .then(module => ({ default: module.XDriveMediaGalleryPage })))
+const WebFileViewerApps = lazy(() =>
+  import('./WebFileViewerApps').then(module => ({ default: module.WebFileViewerApps })))
+const AdminUsersPanel = lazy(() => import('./AdminUsers'))
+const AdminAuditPanel = lazy(() => import('./AdminAudit'))
+const StorageStatsPanel = lazy(() => import('./StorageStatsPanel'))
 
 const ACCESS_KEY = 'xdrive.access_token'
 const REFRESH_KEY = 'xdrive.refresh_token'
@@ -1882,6 +1888,10 @@ function FileManager({
               transferAction={transferAction}
             />
           ) : null}
+        <Suspense fallback={
+          <Box data-xdrive-web-route-first-read aria-busy={true}
+            sx={{ flex: 1, height: '100%', minHeight: 0, bgcolor: 'background.paper' }} />
+        }>
         <XDriveWorkspaceContent
           responsive
           presentation={xDriveWorkspacePresentation(appView)}
@@ -2176,11 +2186,15 @@ function FileManager({
           </Box>
         )}
         </XDriveWorkspaceContent>
+        </Suspense>
         </Box>
       </XDriveWorkspaceShell>
       </Box>
 
       {xDriveWebAppViewer(route.app) ? (
+        <Suspense fallback={<Box data-xdrive-viewer-route-first-read
+          aria-busy={true} role="region" aria-label="预览资源尚未确认"
+          sx={{ position: 'fixed', inset: 0, bgcolor: 'background.paper', zIndex: 1000 }} />}>
         <WebFileViewerApps
           route={route}
           api={api}
@@ -2206,6 +2220,7 @@ function FileManager({
           }}
           onError={handleError}
         />
+        </Suspense>
       ) : null}
 
       <XDriveConfirmDialog

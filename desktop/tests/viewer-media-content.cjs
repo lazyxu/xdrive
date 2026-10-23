@@ -11,6 +11,7 @@ const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx
 const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webViewers = read('web', 'src', 'WebFileViewerApps.tsx')
+const webViewerRoute = read('web', 'src', 'webViewerRoute.ts')
 const docs = read('docs', 'preview-engine.md')
 const webAppContract = read('ui', 'shared', 'src', 'web-app.ts')
 
@@ -62,8 +63,10 @@ test('only viewers with a real browsing contract carry previous/next context', (
   assert.equal(textBlock.includes('useViewerNode({'), false)
   assert.equal(singleBlock.includes('useViewerNode({'), false)
 
-  const resolverStart = webViewers.indexOf('export function xDriveWebOpenRouteForNode')
-  const resolver = webViewers.slice(resolverStart)
+  assert.ok(webViewers.includes("export { xDriveWebOpenRouteForNode } from './webViewerRoute'"), 'Viewer compatibility route export missing')
+  const resolverStart = webViewerRoute.indexOf('export function xDriveWebOpenRouteForNode')
+  assert.ok(resolverStart >= 0)
+  const resolver = webViewerRoute.slice(resolverStart)
   assert.ok(resolver.includes("app: 'media-viewer', params: { node: node.id, context: contextID }"))
   assert.ok(resolver.includes("app: 'text-viewer', params: { node: node.id }"))
   assert.ok(resolver.includes("app: 'pdf-viewer', params: { node: node.id }"))

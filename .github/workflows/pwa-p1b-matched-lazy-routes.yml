@@ -1,0 +1,111 @@
+name: PWA P1B Matched Native Chrome Shared Lazy Routes
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p1b-matched-chunks:
+    if: github.head_ref == 'perf/pwa-p1b-shared-lazy-routes-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Exact original route safety and candidate Vite build
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          npm --prefix web ci --no-audit --no-fund
+          node --test desktop/tests/pwa-p1b-shared-lazy-route-contract.cjs
+          npm --prefix web run lint
+          npm --prefix web run build
+          git worktree add --detach "$RUNNER_TEMP/pwa-p1b-parent" "$(git rev-parse HEAD^)"
+          npm --prefix "$RUNNER_TEMP/pwa-p1b-parent/web" ci --no-audit --no-fund
+          npm --prefix "$RUNNER_TEMP/pwa-p1b-parent/web" run build
+          echo "XD_P1B_BASE=$RUNNER_TEMP/pwa-p1b-parent" >> "$GITHUB_ENV"
+          echo "XD_P1B_PARENT=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/pwa-p1b-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-p1b-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-p1b-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chrome required" >&2; exit 1
+          fi
+      - name: Same runner native 390/430/899/900/1280 cold and warm before/after, n3
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/pwa-p1b-results
+          (cd "$XD_P1B_BASE" && XD_PR_HEAD="$XD_P1B_PARENT" XD_PWA_P1A_OUT="$GITHUB_WORKSPACE/desktop/pwa-p1b-results/before.json" node desktop/scripts/pwa-p1a-public-before.cjs)
+          XD_PWA_P1A_OUT="$GITHUB_WORKSPACE/desktop/pwa-p1b-results/after.json" node desktop/scripts/pwa-p1a-public-before.cjs
+          node - <<'NODE'
+          const assert=require('node:assert/strict'),fs=require('node:fs')
+          const root='desktop/pwa-p1b-results/'
+          const a=JSON.parse(fs.readFileSync(root+'before.json'))
+          const b=JSON.parse(fs.readFileSync(root+'after.json'))
+          assert.equal(a.sha,process.env.XD_P1B_PARENT)
+          assert.equal(b.sha,process.env.XD_PR_HEAD)
+          for(const x of [a,b]){assert.equal(x.n,3);assert.equal(x.samples.length,15);assert.deepEqual(x.viewports,[390,430,899,900,1280])}
+          const gain=Number((100*(a.initialGzipBytes-b.initialGzipBytes)/a.initialGzipBytes).toFixed(3))
+          const rows=a.perViewport.map(v=>({width:v.width,beforeMs:v.coldP50Ms,afterMs:b.perViewport.find(x=>x.width===v.width).coldP50Ms}))
+          const result={head:b.sha,parent:a.sha,scope:'public-login-shell-only',physical100k:false,n:3,gzipReductionPct:gain,rows}
+          fs.writeFileSync(root+'paired.json',JSON.stringify(result,null,2)+'\n')
+          console.log('PWA_P1B_MATCHED_BEFORE_AFTER '+JSON.stringify(result))
+          assert(gain>=10,'No material bundle saving: candidate should be rolled back')
+          assert(rows.every(v=>v.afterMs<=v.beforeMs*1.25+30),'Cold start regression: candidate should be rolled back')
+          NODE
+      - name: Original real Chromium 390px Files-Gallery navigation and 52px frame
+        env:
+          XD_PWA_P0C2_NAV_BEFORE: '1'
+          XDRIVE_BROWSER_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/pwa-p1b-navigation
+          node desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-chrome --output-dir=desktop/pwa-p1b-navigation
+          node - <<'NODE'
+          const assert=require('node:assert/strict')
+          const r=require('./desktop/pwa-p1b-navigation/p0c2-summary.json')
+          assert.equal(r.source_commit_sha,process.env.XD_PR_HEAD)
+          assert.equal(r.independent_browser_sessions,3)
+          assert.equal(r.transitions_per_direction,9)
+          assert.equal(r.samples.length,18)
+          assert.equal(r.physical_ios,false)
+          assert.equal(r.authenticated_go_backend,false)
+          for(const key of ['files-to-gallery','gallery-to-files']){
+            assert(r.metrics[key].visible_ms.p50>0)
+            assert(r.metrics[key].header_height_px.p50>=50&&r.metrics[key].header_height_px.p50<=64)
+          }
+          NODE
+      - name: Original production Gallery to Viewer and return-anchor regression
+        env:
+          XDRIVE_BROWSER_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/pwa-p1b-viewer
+          node desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-viewer --output-dir=desktop/pwa-p1b-viewer
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1b-anonymous-same-runner-chunks
+          path: |
+            desktop/pwa-p1b-results/before.json
+            desktop/pwa-p1b-results/after.json
+            desktop/pwa-p1b-results/paired.json
+            desktop/pwa-p1b-navigation/p0c2-summary.json
+          if-no-files-found: warn
+          retention-days: 14

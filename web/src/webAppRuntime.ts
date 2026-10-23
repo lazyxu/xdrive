@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
@@ -100,7 +100,7 @@ export function useXDriveWebAppRuntime(
     committedStateRef.current = window.history.state
     committedHashRef.current = window.location.hash
     routeRef.current = next
-    setRoute(next)
+    startTransition(() => setRoute(next))
   }, [])
 
   const commitProgrammaticRoute = useCallback((next: XDriveWebAppRoute) => {
@@ -109,7 +109,7 @@ export function useXDriveWebAppRuntime(
     committedHashRef.current = window.location.hash
     committedIndexRef.current = historyIndex(window.history.state) ?? committedIndexRef.current
     routeRef.current = next
-    setRoute(next)
+    startTransition(() => setRoute(next))
   }, [])
 
   useEffect(() => {
