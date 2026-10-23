@@ -1,0 +1,111 @@
+name: Places C1 Real PostgreSQL Baseline (10k / 100k)
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/api/media_places_c1_baseline_linux_test.go
+      - .github/workflows/places-c1-postgres-baseline.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-c1-postgres-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  c1-postgres-real-10k-100k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_C1_PLACES_BASELINE: '1'
+      XD_C1_PLACES_OUTPUT: ${{ github.workspace }}/artifacts/places-c1-postgres-baseline.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Exact checkout and fixture source formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee places-c1-source-sha.txt
+          echo "XD_C1_PLACES_SOURCE_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          unformatted="$(gofmt -l internal/api/media_places_c1_baseline_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_c1_baseline_linux_test.go
+            echo "Go fixture formatting drift" >&2
+            exit 1
+          fi
+      - name: Measure genuine PostgreSQL 17 Owner Facet, Range and map SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestC1PlacesPostgresBaseline$' -v -timeout=105m ./internal/api 2>&1 | tee places-c1-run.log
+      - name: Enforce complete source-exact BEFORE artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("artifacts/places-c1-postgres-baseline.json")
+          assert path.is_file() and path.stat().st_size > 0, "missing actual PostgreSQL plan JSON"
+          data = json.loads(path.read_text())
+          sha = Path("places-c1-source-sha.txt").read_text().strip()
+          assert len(sha) == 40 and all(r["ci_git_head"] == sha for r in data), "source mismatch"
+          assert [r["owner_assets"] for r in data] == [10000, 100000], "wrong dataset sizes"
+          for report in data:
+              metrics = report["metrics"]
+              assert len(metrics) == 7, "missing real query measurements"
+              for sample in metrics:
+                  assert sample["sample_count"] == 7
+                  assert sample.get("explain_analyze_buffers"), sample["operation"]
+                  sql_plans = sample.get("statement_plans") or []
+                  assert 1 <= len(sql_plans) <= 32, sample["operation"]
+                  if sample["operation"].startswith("range_"):
+                      assert len(sql_plans) >= 2, "Range must include Count and page SQL"
+                  assert sample.get("first_sql_ms", 0) > 0, sample["operation"]
+                  for index, entry in enumerate(sql_plans, start=1):
+                      assert entry["order"] == index
+                      assert entry["role"] in ("distinct_count", "grouped_read", "cte", "bounded_page", "read")
+                      assert len(entry["sql_sha256"]) == 64
+                      assert entry["first_ms"] >= 0
+                      assert entry.get("explain_analyze_buffers"), sample["operation"]
+          print("Verified 10k/100k Owner query metrics and real PostgreSQL EXPLAIN plans")
+          PY
+      - name: Preserve exact SQL plans, baselines and test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-c1-postgres-10k-100k-${{ github.run_id }}
+          path: |
+            artifacts/places-c1-postgres-baseline.json
+            places-c1-run.log
+            places-c1-source-sha.txt
+          if-no-files-found: warn
+          retention-days: 30
