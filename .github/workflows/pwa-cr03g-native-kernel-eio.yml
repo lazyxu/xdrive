@@ -1,0 +1,61 @@
+name: PWA CR03g Real Chromium IndexedDB under Kernel Block EIO
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-cr03g-native-eio:
+    if: github.head_ref == 'test/pwa-cr03g-chromium-kernel-block-eio-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Exact HEAD, source tests, native Chrome and disposable mapper prerequisites
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          bash -n scripts/pwa-cr03g-native-kernel-eio.sh
+          node --check desktop/scripts/pwa-cr03g-native-kernel-eio.cjs
+          node --test desktop/tests/pwa-cr03g-native-kernel-eio-contract.cjs
+          npm --prefix web ci --no-audit --no-fund
+          node web/scripts/test-pwa-offline-directory.cjs
+          node web/scripts/test-pwa-offline-readonly.cjs
+          npm --prefix web run build
+          sudo apt-get update -qq
+          sudo apt-get install -y dmsetup util-linux e2fsprogs
+          mkdir -p "$RUNNER_TEMP/pwa-cr03g-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-cr03g-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-cr03g-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chrome is mandatory" >&2; exit 1
+          fi
+      - name: Genuine dm-error on private ext4 and original Chromium P1 IndexedDB
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_PWA_CR03G_NATIVE_EIO: '1'
+          XD_PWA_CR03G_OUTPUT: ${{ github.workspace }}/desktop/pwa-cr03g-results
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          bash scripts/pwa-cr03g-native-kernel-eio.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-cr03g-anonymous-native-indexeddb-kernel-block-eio
+          path: desktop/pwa-cr03g-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
