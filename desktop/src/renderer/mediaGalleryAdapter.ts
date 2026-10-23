@@ -82,6 +82,10 @@ export function createDesktopMediaGalleryDataSource(
       xDriveDesktopViewportRequest(signal, requestID =>
         agent.getMediaBaiduNativeViewport(bounds, limit, offset, requestID),
       ),
+    listBaiduNativeViewportItems: (bounds, limit, offset, query, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaBaiduNativeViewportItems(bounds, limit, offset, query, requestID),
+      ),
     getBaiduMapConsent: (nodeID) => agent.getMediaBaiduConsent(nodeID),
     saveBaiduMapConsent: (nodeID, input) => agent.saveMediaBaiduConsent(nodeID, input),
     revokeBaiduMapConsent: (nodeID, revision) => agent.revokeMediaBaiduConsent(nodeID, revision),

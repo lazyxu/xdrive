@@ -584,6 +584,13 @@ declare global {
         getMediaBaiduNativeViewport: (
           bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, requestID?: string,
         ) => Promise<DesktopResult<MediaBaiduNativeViewportPage>>
+        getMediaBaiduNativeViewportItems: (
+          bounds: MediaBaiduNativeViewportBounds,
+          limit: number,
+          offset: number,
+          query: MediaGalleryQuery,
+          requestID?: string,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaMemories: (
           anchorDate?: string,
           limit?: number,
