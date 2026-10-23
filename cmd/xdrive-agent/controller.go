@@ -228,6 +228,7 @@ func (c *agentController) wakeNow() {
 func (c *agentController) Run() {
 	go c.updates.Run()
 	go c.runDeviceBackupHeartbeat()
+	go c.runLocalPushAutoScheduler()
 	updateReady := c.updates.InstallStarted()
 	mount.SetEventSink(func(event mount.Event) {
 		switch event.Kind {

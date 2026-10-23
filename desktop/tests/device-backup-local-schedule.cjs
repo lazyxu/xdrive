@@ -5,7 +5,7 @@ const path = require('node:path')
 const root = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
 
-test('Only the owning native Agent may view/edit a saved local schedule; no automatic execution', () => {
+test('Only the owning Agent controls local schedule; automatic runs need an explicit verified checkpoint', () => {
   const router = read('internal', 'api', 'router.go')
   const source = read('internal', 'api', 'sources.go')
   const privateRead = read('internal', 'api', 'local_source_schedule.go')
@@ -49,7 +49,11 @@ test('Only the owning native Agent may view/edit a saved local schedule; no auto
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /source === source/)
   assert.match(dialog, /actions\.save\(sourceID, loaded\.revision, proposal\)/)
-  assert.match(dialog, /不会自动运行/)
+  assert.match(dialog, /只有所属 Windows\/Linux Agent/)
+  assert.match(dialog, /请先手动完成一次当前 Source 版本的增量备份/)
+  assert.match(dialog, /暂停、取消、不确定任务及撤权不会自动重启/)
+  assert.match(dialog, /不会自动安排增量备份/)
+  assert.match(dialog, /Saving configuration never activates the Server runner/)
   assert.doesNotMatch(web, /localSchedule=/)
   assert.doesNotMatch(web, /getDeviceBackupLocalSchedule/)
   assert.ok(dto.includes('export interface XDriveLocalBoundBackupSchedule'))
