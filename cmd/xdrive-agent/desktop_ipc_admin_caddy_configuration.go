@@ -9,6 +9,10 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 )
 
+type desktopIPCAdminCaddyDeployController interface {
+	CloudStartAdminCaddyDeploy(context.Context) (client.AdminCaddyDeployState, error)
+	CloudAdminCaddyDeployStatus(context.Context, string) (client.AdminCaddyDeployState, error)
+}
 type desktopIPCAdminCaddyConfigurationController interface {
 	CloudSaveAdminCaddyConfiguration(context.Context, client.AdminCaddyConfigurationSaveInput) (client.AdminCaddyConfigurationSaveResult, error)
 }
@@ -25,6 +29,7 @@ func (h *desktopIPCHandler) cloudSaveAdminCaddyConfiguration(w http.ResponseWrit
 	var input struct {
 		HTTPSRevision  *uint64 `json:"https_revision"`
 		AliDNSRevision *uint64 `json:"alidns_revision"`
+		HostEnvSHA256  string  `json:"host_env_sha256,omitempty"`
 		HTTPS          *struct {
 			Enabled    *bool   `json:"enabled"`
 			Domain     *string `json:"domain"`
@@ -45,6 +50,7 @@ func (h *desktopIPCHandler) cloudSaveAdminCaddyConfiguration(w http.ResponseWrit
 	}
 	out := client.AdminCaddyConfigurationSaveInput{
 		HTTPSRevision: *input.HTTPSRevision, AliDNSRevision: *input.AliDNSRevision,
+		HostEnvSHA256: input.HostEnvSHA256,
 	}
 	if input.HTTPS != nil {
 		cfg := input.HTTPS
@@ -85,5 +91,45 @@ func (h *desktopIPCHandler) cloudSaveAdminCaddyConfiguration(w http.ResponseWrit
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudStartAdminCaddyDeploy(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyDeployController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_deploy_unsupported", "Upgrade Agent for Caddy deploy")
+		return
+	}
+	result, err := provider.CloudStartAdminCaddyDeploy(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusAccepted, result)
+}
+func (h *desktopIPCHandler) cloudAdminCaddyDeployStatus(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyDeployController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_deploy_unsupported", "Upgrade Agent for Caddy deploy")
+		return
+	}
+	id := r.URL.Query().Get("request_id")
+	if len(id) != 24 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_deploy_id", "Invalid Caddy operation ID")
+		return
+	}
+	for _, c := range id {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_deploy_id", "Invalid Caddy operation ID")
+			return
+		}
+	}
+	result, err := provider.CloudAdminCaddyDeployStatus(r.Context(), id)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }

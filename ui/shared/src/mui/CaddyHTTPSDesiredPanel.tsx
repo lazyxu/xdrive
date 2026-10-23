@@ -18,6 +18,7 @@ export type XDriveCaddyHTTPSPort = {
 // Parent receives draft values, never a network action. In v1.1 atomic mode,
 // this child cannot issue its legacy single-group Save.
 export type XDriveCaddyHTTPSAtomicDraft = {
+  host_env_sha256?: string
   source: XDriveCaddyHTTPSPort
   revision: number
   enabled: boolean
@@ -137,7 +138,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
   useEffect(() => { onDirtyChange?.(changed) }, [onDirtyChange, changed])
   useEffect(() => {
     onAtomicDraft?.(config && section === 'config' ? {
-      source, revision: config.revision, enabled, domain: domain.toLowerCase(),
+      source, revision: config.revision, host_env_sha256: config.host_env_sha256, enabled, domain: domain.toLowerCase(),
       lan_enabled: lanEnabled, lan_ip: lanIP, changed,
       valid: valid && supportsLAN, ready: canEdit && supportsLAN,
       host_pending: config.host_apply_pending === true,

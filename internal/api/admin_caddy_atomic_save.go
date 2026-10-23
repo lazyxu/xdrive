@@ -34,6 +34,7 @@ type atomicCaddyAliDNSInput struct {
 type atomicCaddySaveInput struct {
 	HTTPSRevision  *uint64                 `json:"https_revision"`
 	AliDNSRevision *uint64                 `json:"alidns_revision"`
+	HostEnvSHA256  string                  `json:"host_env_sha256,omitempty"`
 	HTTPS          *atomicCaddyHTTPSInput  `json:"https,omitempty"`
 	AliDNS         *atomicCaddyAliDNSInput `json:"alidns,omitempty"`
 }
@@ -42,6 +43,13 @@ type atomicCaddySaveInput struct {
 // groups. Each expected revision is ALWAYS supplied and checked, including
 // when only one group is being updated. No partial DB success is possible.
 func (s *Server) adminSaveCaddyConfiguration(c *gin.Context) {
+	// Installed Host Control is authoritative for Caddy v1. No SQL write
+	// occurs on this branch. Historical DB-backed compatibility is retained
+	// only for older installations that have no Host Control directory.
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		s.adminSaveCaddyEnvOnly(c)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")
@@ -265,9 +273,8 @@ func (s *Server) adminSaveCaddyConfiguration(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "Caddy configuration not persisted or audited")
 	default:
 		c.JSON(http.StatusOK, gin.H{
-			"https_revision":  nextHTTPS,
-			"alidns_revision": nextAliDNS,
-			"saved":           true, "host_applied": false, "apply_supported": false,
+			"https_revision": nextHTTPS, "alidns_revision": nextAliDNS,
+			"saved": true, "host_applied": false, "apply_supported": false,
 		})
 	}
 }

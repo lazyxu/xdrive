@@ -60,7 +60,8 @@ type adminCaddyAliDNSConfigDTO struct {
 	ApplySupported bool       `json:"apply_supported"`
 	Requirement    string     `json:"requirement"`
 
-	HostApplyPending bool `json:"host_apply_pending"`
+	HostApplyPending bool   `json:"host_apply_pending"`
+	HostEnvSHA256    string `json:"host_env_sha256,omitempty"`
 }
 
 func (s *Server) readCaddyAliDNSSetting(c *gin.Context) (meta.AdminServiceSecret, bool, error) {
@@ -88,6 +89,10 @@ func readCaddyAliDNSSettingDB(db *gorm.DB) (meta.AdminServiceSecret, bool, error
 }
 
 func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		s.adminCaddyAliDNSConfigHost(c)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	row, exists, err := s.readCaddyAliDNSSetting(c)
@@ -105,6 +110,7 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 		requirement = caddyAliDNSPendingRequirement
 	}
 	state, source := "unmanaged", "unset"
+	configured := exists && len(row.Ciphertext) > 0
 	if exists {
 		state, source = "pending", "saved"
 		if row.Origin == caddyImportedHostOrigin {
@@ -112,7 +118,7 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, adminCaddyAliDNSConfigDTO{
-		Configured: exists && len(row.Ciphertext) > 0,
+		Configured: configured,
 		Revision:   row.Revision, Source: source,
 		UpdatedAt: func() *time.Time {
 			if exists {
@@ -127,6 +133,10 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 }
 
 func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
+	if s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusConflict, "Use the combined Caddy host configuration Save")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	if s == nil || s.DB == nil || s.ConnectorSecrets == nil {
@@ -241,6 +251,10 @@ func (s *Server) adminSaveCaddyAliDNS(c *gin.Context) {
 // Reveal is an explicit administrator-only action and never part of normal
 // list, health, config, audit or log responses.
 func (s *Server) adminRevealCaddyAliDNS(c *gin.Context) {
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		s.adminRevealCaddyAliDNSHost(c)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")

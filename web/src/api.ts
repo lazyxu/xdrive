@@ -825,6 +825,17 @@ export class XDriveApi {
       },
     )
   }
+  adminStartCaddyDeploy() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyDeployState>(
+      '/api/v1/admin/services/caddy/config/deploy', { method: 'POST', body: '{}', cache: 'no-store' },
+    )
+  }
+  adminCaddyDeployStatus(requestID: string) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyDeployState>(
+      '/api/v1/admin/services/caddy/config/deploy?request_id=' + encodeURIComponent(requestID),
+      { cache: 'no-store' },
+    )
+  }
   adminCaddyHTTPSRevisions() {
     return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>(
       '/api/v1/admin/services/caddy/https/revisions', { cache: 'no-store' },

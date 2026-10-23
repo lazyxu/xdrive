@@ -1527,6 +1527,263 @@ caddy_host_control_main_sample_since() {
 # is still alive after a script upgrade. It never calls Compose up/down,
 # restarts Caddy, edits .env, reveals credentials or consumes Host Pending.
 # flock guarantees at most one supplemental Caddy-only observer.
+# Four-field Caddy .env authority is a HOST-only operation, not a generic
+# Docker/env manipulation API. No password or whole .env is published here.
+caddy_env_refresh() {
+  local dir tmp
+  dir="$(prepare_dir)"
+  [[ -f "$BIN_DIR/caddy-env-config.py" ]] || return 1
+  tmp="$(mktemp "$dir/.caddy-env-observed.XXXXXX")" || return 1
+  if XD_CONFIG_DIR="$XDRIVE_HOME" python3 "$BIN_DIR/caddy-env-config.py" snapshot > "$tmp" 2>/dev/null; then
+    chmod 0660 "$tmp"
+    mv -f "$tmp" "$dir/caddy-env-observed.json"
+  else
+    rm -f "$tmp" "$dir/caddy-env-observed.json"
+    return 1
+  fi
+}
+
+# Fixed host request, only "save" and the private "commit/restore" transitions.
+# User input NEVER specifies the .env path, script path or Docker arguments.
+
+# A bounded Caddy-only recreate is a separate, administrator-audited request.
+# It does not run "compose down", restart other services, install images or
+# accept browser-selected commands. The Host retains a private running baseline.
+caddy_env_deploy() {
+  local id="$1" active="$2" result_file="$3" dir snapshot expected observed pending
+  local domain lan ready=0 previous=0 attempt request
+  dir="$(prepare_dir)"
+  expected="$(json_value "$active" expected_sha256)"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || return 1
+
+  # Serialize before the snapshot: an installer-held lock is a retryable busy
+  # receipt, not an unclassified snapshot/deploy-refused error.
+  exec 6>"$STATE_DIR/install.lock"
+  if ! flock -n 6; then
+    exec 6>&-
+    printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","rolled_back":false,"error":"installer-busy"}\n' \
+      "$id" "$expected" > "$result_file"
+    return 0
+  fi
+
+  # Reuse the Host's same open-file-description; taking a second snapshot
+  # lock in Python would conflict with our own exclusive install lock.
+  snapshot="$(mktemp "$dir/.caddy-deploy-before.XXXXXX")" || {
+    flock -u 6
+    exec 6>&-
+    return 1
+  }
+  if ! XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+      python3 "$BIN_DIR/caddy-env-config.py" snapshot > "$snapshot" 2>/dev/null; then
+    rm -f "$snapshot"
+    flock -u 6
+    exec 6>&-
+    return 1
+  fi
+  observed="$(json_value "$snapshot" sha256)"
+  pending="$(json_bool_value "$snapshot" pending_redeploy)"
+  rm -f "$snapshot"
+  if [[ "$expected" != "$observed" || "$pending" != true ]]; then
+    flock -u 6
+    exec 6>&-
+    return 1
+  fi
+
+  # The initial receipt is a durable task state, NOT deployment success.
+  request="$(mktemp "$dir/.caddy-deploy-progress.XXXXXX")" || {
+    flock -u 6
+    exec 6>&-
+    return 1
+  }
+  printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deploying","request_id":"%s","sha256":"%s"}\n' \
+    "$id" "$expected" > "$request"
+  chmod 0660 "$request"
+  mv -f "$request" "$dir/caddy-env-result.json"
+
+  # Hold the same install lock across ONLY the Caddy recreate, checks and
+  # config commit/rollback; never restart the entire Compose application.
+  if timeout 180s docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+      up -d --no-deps --force-recreate caddy >/dev/null 2>&1; then
+      for attempt in $(seq 1 30); do
+        touch_heartbeat
+        domain="$(env_value XD_DOMAIN)"
+        lan="$(env_value XD_LAN_HTTPS_IP)"
+        if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
+            http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
+            { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
+            { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+          ready=1
+          break
+        fi
+        sleep 2
+      done
+    fi
+  # Keep install.lock until the Host journal is committed or restored. A
+  # concurrent upgrade must not adopt an uncommitted candidate in this gap.
+  if (( ready == 1 )); then
+    if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$expected" |
+        XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+          python3 "$BIN_DIR/caddy-env-config.py" commit > /dev/null 2>&1; then
+      flock -u 6
+      exec 6>&-
+      printf '{"protocol":"xdrive.caddy.host-env.v1","state":"deployed","request_id":"%s","sha256":"%s"}\n' \
+        "$id" "$expected" > "$result_file"
+      return 0
+    fi
+  fi
+
+  # A failed start, probe or finalization must NEVER claim success. Restore
+  # only the four Caddy fields; never roll back unrelated .env credentials.
+  if printf '{"operation":"restore","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$expected" |
+      XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+        python3 "$BIN_DIR/caddy-env-config.py" restore > /dev/null 2>&1; then
+    if timeout 180s docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+        up -d --no-deps --force-recreate caddy >/dev/null 2>&1; then
+      domain="$(env_value XD_DOMAIN)"
+      lan="$(env_value XD_LAN_HTTPS_IP)"
+      if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
+          http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
+          { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
+          { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+        previous=1
+      fi
+    fi
+  fi
+  flock -u 6
+  exec 6>&-
+  printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","rolled_back":%s,"error":"caddy-deploy-or-verify-failed"}\n' \
+    "$id" "$expected" "$([[ "$previous" == 1 ]] && printf true || printf false)" > "$result_file"
+  return 0
+}
+
+# Secret response is private, one-time, and forcibly reaped after 30s.
+# It never enters status.json, Caddy runtime snapshots or standard logs.
+caddy_env_reap_secret_result() {
+  local file="$1" now="$2" modified
+  if [[ -L "$file" ]]; then rm -f -- "$file"; return 0; fi
+  [[ -f "$file" ]] || return 0
+  modified="$(stat -c %Y -- "$file" 2>/dev/null)" || return 0
+  if [[ "$modified" =~ ^[0-9]+$ ]] && (( now - modified >= 30 )); then
+    rm -f -- "$file"
+  fi
+}
+
+caddy_env_process() {
+  local dir request active result operation request_id created_at expected tmp
+  dir="$(prepare_dir)"
+  request="$dir/caddy-env-request.json"
+  active="$dir/caddy-env-active.json"
+  result="$dir/caddy-env-result.json"
+  [[ -f "$request" && ! -L "$request" && ! -e "$active" ]] || return 0
+  mv -n "$request" "$active" || return 0
+  [[ -f "$active" && ! -L "$active" ]] || return 0
+  rm -f -- "$dir/caddy-env-secret-result.json"
+  operation="$(json_value "$active" operation)"
+  request_id="$(json_value "$active" request_id)"
+  created_at="$(json_value "$active" created_at)"
+  expected="$(json_value "$active" expected_sha256)"
+  [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
+  tmp="$(mktemp "$dir/.caddy-env-result.XXXXXX")" || return 1
+  if [[ -n "$request_id" && "$operation" == deploy ]] && request_time_is_fresh "$created_at"; then
+    if ! caddy_env_deploy "$request_id" "$active" "$tmp"; then
+      if [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+        printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","error":"deploy-refused"}\n' "$request_id" "$expected" > "$tmp"
+      else
+        printf '{"state":"failed","request_id":"%s","error":"invalid-deploy"}\n' "$request_id" > "$tmp"
+      fi
+    fi
+  elif [[ -n "$request_id" && "$operation" == reveal && "$expected" =~ ^[0-9a-f]{64}$ ]] &&
+      request_time_is_fresh "$created_at" &&
+      XD_CONFIG_DIR="$XDRIVE_HOME" python3 "$BIN_DIR/caddy-env-config.py" reveal \
+      < "$active" > "$tmp" 2>/dev/null; then
+    chmod 0660 "$tmp"
+    mv -f "$tmp" "$dir/caddy-env-secret-result.json"
+    printf '{"protocol":"xdrive.caddy.host-env.v1","state":"revealed","request_id":"%s","sha256":"%s"}\n' \
+      "$request_id" "$expected" > "$tmp"
+  elif [[ -n "$request_id" && ( "$operation" == save || "$operation" == commit || "$operation" == restore ) ]] &&
+      request_time_is_fresh "$created_at" &&
+      XD_CONFIG_DIR="$XDRIVE_HOME" python3 "$BIN_DIR/caddy-env-config.py" "$operation" \
+      < "$active" > "$tmp" 2>/dev/null; then
+    :
+  else
+    # Do not echo raw JSON, .env values, provider error text or request payload.
+    printf '{"state":"failed","request_id":"%s","error":"host-env-operation-failed"}\n' "$request_id" > "$tmp"
+  fi
+  # Publish the new non-secret Host projection BEFORE acknowledging Save.
+  # Otherwise immediate UI reload could still read the previous .env digest
+  # even though the mutation response already said "saved".
+  rm -f "$active"
+  if ! caddy_env_refresh; then
+    # The file may have changed even when observation fails. Do not fabricate
+    # success: callers must reconcile the actual Host state before retry.
+    printf '{"state":"failed","request_id":"%s","error":"host-env-observation-unavailable"}\n' \
+      "$request_id" > "$tmp"
+  fi
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$result"
+}
+
+
+# Recovery is ONLY for an interrupted authorized fixed Caddy transaction.
+# Never replay the candidate. Restore last private Host baseline and verify the
+# old ingress before clearing the sticky active slot. Unknown state stays fenced.
+caddy_env_recover_interrupted() {
+  local dir="$1" active operation request_id expected domain lan recovered=false
+  active="$dir/caddy-env-active.json"
+  [[ -e "$active" ]] || return 0
+  [[ -f "$active" && ! -L "$active" ]] || return 1
+  operation="$(json_value "$active" operation)"
+  request_id="$(json_value "$active" request_id)"
+  expected="$(json_value "$active" expected_sha256)"
+  [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
+  # A saved .env may be valid after a lost Save ACK. Do not undo it or replay
+  # credentials; the fresh snapshot determines whether it is still pending.
+  if [[ "$operation" == save || "$operation" == reveal ]]; then
+    rm -f -- "$active" "$dir/caddy-env-secret-result.json"
+    caddy_env_refresh || true
+    return 0
+  fi
+  if [[ "$operation" != deploy || -z "$request_id" || ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+    # Malformed or ambiguous active records cannot authorize Host effects.
+    return 1
+  fi
+  # The installer lock must cover *both* restoring the pinned .env and
+  # recreating Caddy. An updater cannot interleave between these two effects.
+  exec 6>"$STATE_DIR/install.lock"
+  if flock -n 6; then
+    if printf '{"operation":"restore","request_id":"%s","expected_sha256":"%s"}\n' "$request_id" "$expected" |
+        XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
+          python3 "$BIN_DIR/caddy-env-config.py" restore > /dev/null 2>&1; then
+      if timeout 180s docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+          up -d --no-deps --force-recreate caddy >/dev/null 2>&1; then
+        domain="$(env_value XD_DOMAIN)"
+        lan="$(env_value XD_LAN_HTTPS_IP)"
+        if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
+            http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
+            { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
+            { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+          recovered=true
+        fi
+      fi
+    fi
+    flock -u 6
+  fi
+  exec 6>&-
+  local temp
+  temp="$(mktemp "$dir/.caddy-interrupted-status.XXXXXX")" || return 1
+  printf '{"protocol":"xdrive.caddy.host-env.v1","state":"failed","request_id":"%s","sha256":"%s","rolled_back":%s,"error":"interrupted-deploy"}\n' \
+    "$request_id" "$expected" "$recovered" > "$temp"
+  chmod 0660 "$temp"
+  mv -f "$temp" "$dir/caddy-env-result.json"
+  if [[ "$recovered" == true ]]; then
+    rm -f -- "$active"
+    caddy_env_refresh || true
+    return 0
+  fi
+  # Keep unresolved active slot to block later Save/Deploy attempts.
+  return 1
+}
+
 caddy_compat_observe_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh caddy-observe" >&2; return 2; }
   local dir sha current pid i main_pulse_at_entry
@@ -1620,6 +1877,12 @@ serve_cmd() {
   # Identify the code that THIS daemon actually loaded. A new installer
   # can then detect an older live runner without killing a running update.
   caddy_host_control_mark_runner "$dir" || true
+  # Never keep a plaintext reveal after the Host runner itself restarts.
+  rm -f -- "$dir/caddy-env-secret-result.json"
+  # A lost Host ACK during Docker recreate cannot become phantom success.
+  # On restart recover only the pinned original Caddy baseline, or leave a
+  # sticky failed record for operator reconciliation.
+  caddy_env_recover_interrupted "$dir" || true
 
   # An interrupted media activation is never acknowledged after a runner crash.
   if [[ -f "$dir/media-worker-control-active.json" ]]; then
@@ -1682,6 +1945,7 @@ serve_cmd() {
   (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
   refresh_storage_host_inventory || true
   media_worker_control_refresh
+  caddy_env_refresh || true
   if caddy_host_refresh; then
     caddy_host_control_mark_main_sample "$dir" || true
   fi
@@ -1693,15 +1957,18 @@ serve_cmd() {
   while true; do
     touch_heartbeat
     [[ -f "$dir/request.json" ]] && process_request
+    [[ -f "$dir/caddy-env-request.json" ]] && caddy_env_process
     [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
     media_worker_control_refresh
     [[ -f "$dir/photo-host-control-request.json" ]] && photo_host_control_process
     photo_host_control_refresh || true
     now="$(date +%s)"
+    caddy_env_reap_secret_result "$dir/caddy-env-secret-result.json" "$now"
     if (( now - last_caddy_observation_at >= 15 )); then
       if caddy_host_refresh; then
         caddy_host_control_mark_main_sample "$dir" || true
       fi
+      caddy_env_refresh || true
       photo_intelligence_host_refresh || true
       last_caddy_observation_at="$now"
     fi

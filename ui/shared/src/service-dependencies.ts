@@ -70,7 +70,9 @@ export type XDriveCaddyHTTPSConfig = {
   host_lan_configured?: boolean // deployment environment only, NOT effective HTTPS proof
   host_lan_ip?: string
   revision: number
-  source: 'default' | 'saved' | 'host-import'
+  host_env_sha256?: string
+  host_env_pending_redeploy?: boolean
+  source: 'default' | 'saved' | 'host-import' | 'host-env'
   updated_at?: string
   apply_state: 'unmanaged' | 'pending'
   // Existence of a sticky Host intent, never an applied Caddy receipt.
@@ -107,7 +109,8 @@ export type XDriveCaddyHTTPSRollbackInput = { revision: number; target_revision:
 export type XDriveCaddyAliDNSConfig = {
   configured: boolean
   revision: number
-  source: 'unset' | 'saved' | 'host-import'
+  source: 'unset' | 'saved' | 'host-import' | 'host-env'
+  host_env_sha256?: string
   updated_at?: string
   editable: boolean
   apply_state: 'unmanaged' | 'pending'
@@ -131,12 +134,15 @@ export type XDriveCaddyAliDNSReveal = {
 // Administrator-only desired transaction: zero Host/Docker/DNS/CA effects.
 // Both revision CAS inputs are mandatory even for a one-group update.
 export type XDriveCaddyConfigurationSaveInput = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
   alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
 }
+export type XDriveCaddyDeployState = { protocol: string; request_id: string; state: 'deploying' | 'deployed' | 'failed'; sha256: string; rolled_back?: boolean }
 export type XDriveCaddyConfigurationSaveResult = {
+  host_env_sha256?: string
   https_revision: number
   alidns_revision: number
   saved: true

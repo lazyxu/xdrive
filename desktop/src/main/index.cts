@@ -103,6 +103,7 @@ import {
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyConfigurationSaveInput,
   type AgentAdminCaddyConfigurationSaveResult,
+  type AgentAdminCaddyDeployState,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
   type AgentAdminCaddyAliDNSReadVerifyInput,
@@ -5406,7 +5407,8 @@ function registerIPCHandlers() {
       const validRevision = (v: unknown) =>
         typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 2 ** 60
       if (!input || !validRevision(input.https_revision) || !validRevision(input.alidns_revision) ||
-          (!input.https && !input.alidns)) {
+          (input.host_env_sha256 !== undefined && (typeof input.host_env_sha256 !== 'string' ||
+            !/^[0-9a-f]{64}$/.test(input.host_env_sha256))) || (!input.https && !input.alidns)) {
         throw new AgentIPCError('invalid_input', 0, 'Both Caddy revisions and at least one edited group are required.')
       }
       const https = input.https
@@ -5432,6 +5434,7 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Both bounded AliDNS credentials are required.')
       }
       return requireAgentClient().cloudSaveAdminCaddyConfiguration({
+        ...(input.host_env_sha256 ? { host_env_sha256: input.host_env_sha256 } : {}),
         https_revision: input.https_revision!,
         alidns_revision: input.alidns_revision!,
         ...(https ? { https: {
@@ -5444,6 +5447,21 @@ function registerIPCHandlers() {
               access_key_id: alidns.access_key_id,
               access_key_secret: alidns.access_key_secret } } : {}),
       })
+    }, false))
+  ipcMain.handle('agent:cloud-start-admin-caddy-deploy', () =>
+    runAgentAction<AgentAdminCaddyDeployState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      return requireAgentClient().cloudStartAdminCaddyDeploy()
+    }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-deploy-status', (_event, requestID: unknown) =>
+    runAgentAction<AgentAdminCaddyDeployState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (typeof requestID !== 'string' || !/^[0-9a-f]{24}$/.test(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Caddy deployment request ID')
+      }
+      return requireAgentClient().cloudAdminCaddyDeployStatus(requestID)
     }, false))
   ipcMain.handle('agent:cloud-admin-caddy-https-revisions', () => runAgentAction<AgentAdminCaddyHTTPSRevisionPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

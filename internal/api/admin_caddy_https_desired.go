@@ -52,6 +52,8 @@ type adminCaddyHTTPSConfigDTO struct {
 	HostHTTPSConfigured           bool       `json:"host_https_configured"`
 	HostTLSState                  string     `json:"host_tls_state"`
 	HostLANTLSState               string     `json:"host_lan_tls_state"`
+	HostEnvSHA256                 string     `json:"host_env_sha256,omitempty"`
+	HostEnvPendingRedeploy        bool       `json:"host_env_pending_redeploy,omitempty"`
 }
 
 const caddyHTTPSPendingRequirement = "存在待协调的 Host 配置申请；系统已锁定 IP/域名编辑和历史回滚。独立操作员完成受控核对或恢复之前，不得重新保存或宣称已应用。"
@@ -91,10 +93,14 @@ func readCaddyHTTPSDesiredDB(db *gorm.DB) (adminCaddyHTTPSDesired, error) {
 }
 
 func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		s.adminCaddyHTTPSConfigHost(c)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	desired, err := s.readCaddyHTTPSDesired(c.Request.Context())
 	if err != nil {
-		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired settings unavailable")
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS history unavailable")
 		return
 	}
 	hostPending, err := readCaddyHostPendingUnappliedDB(s.DB.WithContext(c.Request.Context()))
@@ -173,6 +179,11 @@ func recordCaddyHTTPSRevisionTx(tx *gorm.DB, revision uint64, enabled bool,
 }
 
 func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
+	// Legacy separate writes must not bypass the single Host .env transaction.
+	if s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusConflict, "Use the combined Caddy host configuration Save")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	if s == nil || s.DB == nil {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS database unavailable")
@@ -303,6 +314,13 @@ type adminCaddyHTTPSRevisionDTO struct {
 }
 
 func (s *Server) adminCaddyHTTPSRevisions(c *gin.Context) {
+	// First iteration: Host .env is the only Caddy configuration authority.
+	// Legacy PostgreSQL revision/preflight/adoption endpoints must not expose
+	// stale DB state or write an unrelated desired revision.
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusNotImplemented, "Caddy configuration is managed by Host .env")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	if s == nil || s.DB == nil {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS history unavailable")
@@ -326,6 +344,13 @@ func (s *Server) adminCaddyHTTPSRevisions(c *gin.Context) {
 }
 
 func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
+	// First iteration: Host .env is the only Caddy configuration authority.
+	// Legacy PostgreSQL revision/preflight/adoption endpoints must not expose
+	// stale DB state or write an unrelated desired revision.
+	if s != nil && s.CaddyHostEnvAuthoritative {
+		fail(c, http.StatusNotImplemented, "Caddy configuration is managed by Host .env")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	if s == nil || s.DB == nil {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS database unavailable")

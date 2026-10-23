@@ -282,6 +282,7 @@ func main() {
 		PhotoCreativeAnalyzer:       photoCreativeAnalyzer,
 		PhotoFacePreviewBaseURL:     cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:              strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
+		CaddyHostEnvAuthoritative:   true,
 		PhotoHostTrustAnchorPath:    strings.TrimSpace(os.Getenv("XD_PHOTO_TRUST_ANCHOR_PATH")),
 		PhotoHostTrustAnchorSHA256:  strings.TrimSpace(os.Getenv("XD_PHOTO_TRUST_ANCHOR_SHA256")),
 		PhotoHostTrustRootSHA256:    strings.TrimSpace(os.Getenv("XD_PHOTO_TRUST_OPERATOR_KEY_SHA256")),

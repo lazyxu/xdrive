@@ -1286,6 +1286,8 @@ function FileManager({
       api.adminSaveCaddyHTTPS(input),
     saveCaddyConfiguration: (input: import('../../ui/shared/src').XDriveCaddyConfigurationSaveInput) =>
       api.adminSaveCaddyConfiguration(input),
+    startCaddyDeploy: () => api.adminStartCaddyDeploy(),
+    getCaddyDeployStatus: (requestID: string) => api.adminCaddyDeployStatus(requestID),
     loadCaddyHTTPSRevisions: () => api.adminCaddyHTTPSRevisions(),
     rollbackCaddyHTTPS: (input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
       api.adminRollbackCaddyHTTPS(input),

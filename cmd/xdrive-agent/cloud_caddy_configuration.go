@@ -15,3 +15,18 @@ func (c *agentController) CloudSaveAdminCaddyConfiguration(ctx context.Context, 
 	}
 	return cli.SaveAdminCaddyConfiguration(ctx, input)
 }
+
+func (c *agentController) CloudStartAdminCaddyDeploy(ctx context.Context) (client.AdminCaddyDeployState, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyDeployState{}, err
+	}
+	return cli.StartAdminCaddyDeploy(ctx)
+}
+func (c *agentController) CloudAdminCaddyDeployStatus(ctx context.Context, id string) (client.AdminCaddyDeployState, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyDeployState{}, err
+	}
+	return cli.AdminCaddyDeployStatus(ctx, id)
+}

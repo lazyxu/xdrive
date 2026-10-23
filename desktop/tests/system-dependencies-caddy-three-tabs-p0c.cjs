@@ -56,7 +56,7 @@ test('Always-visible config retains atomic CAS, fail-closed deployment and secre
   assert.match(page, /result\.apply_supported !== false/)
   assert.match(page, /data-xdrive-caddy-v11-save-only/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
-  assert.match(page, /保存仅更新管理配置，不会重新部署 Caddy/)
+  assert.match(page, /保存更新宿主机 \.env；生效需另行重新部署 Caddy/)
   assert.doesNotMatch(page, /applyCaddy|restartCaddy|source\.deploy|docker restart/)
   assert.match(https, /data-xdrive-caddy-running-lan-ip/)
   assert.match(https, /host_lan_tls_state === 'verified'/)

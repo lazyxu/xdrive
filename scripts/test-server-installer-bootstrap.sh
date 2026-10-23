@@ -108,6 +108,7 @@ printf "%s\n" "$dir"
   */0123456789abcdef0123456789abcdef01234567/scripts/server-verify.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-doctor.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-control.sh|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/caddy-env-config.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0

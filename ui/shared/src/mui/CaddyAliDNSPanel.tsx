@@ -12,6 +12,7 @@ export type XDriveCaddyAliDNSPort = {
   revealCaddyAliDNS?: (revision: number) => Promise<XDriveCaddyAliDNSReveal>
 }
 export type XDriveCaddyAliDNSAtomicDraft = {
+  host_env_sha256?: string
   source: XDriveCaddyAliDNSPort
   revision: number
   action: 'keep' | 'replace' | 'clear'
@@ -174,7 +175,7 @@ export function XDriveCaddyAliDNSPanel({
   useEffect(() => { onDirtyChange?.(action !== 'keep') }, [onDirtyChange, action])
   useEffect(() => {
     onAtomicDraft?.(config ? {
-      source, revision: config.revision, action,
+      source, revision: config.revision, host_env_sha256: config.host_env_sha256, action,
       access_key_id: action === 'replace' ? keyID : '',
       access_key_secret: action === 'replace' ? keySecret : '',
       valid: action === 'keep' || (canEdit && (action === 'clear' ? config.configured : valid)),
@@ -228,9 +229,12 @@ export function XDriveCaddyAliDNSPanel({
               confirmLabel="仅保存凭据" onCancel={() => setConfirmSave(false)}
               onConfirm={() => { void save() }} />}
             <XDriveConfirmDialog open={confirmClear} loading={busy}
-              title="清除服务器保存的 AliDNS 凭据"
-              description={atomicMode ? '只加入待保存草稿。下方统一「保存配置」后才会删除数据库里的密文；不会修改 Caddy 或宿主机。' :
-                '删除此加密配置并审计；无法据此证明或清除宿主机正在使用的任何凭据。'}
+              title={config.source === 'host-env' ? '清除宿主机 AliDNS 凭据' : '清除服务器保存的 AliDNS 凭据'}
+              description={atomicMode
+                ? config.source === 'host-env'
+                  ? '只加入待保存草稿。点击「保存配置」后清除宿主机 .env 中的 AliDNS ID 和 Secret；仍需单独重新部署 Caddy。'
+                  : '只加入待保存草稿。下方统一「保存配置」后才会删除数据库里的密文；不会修改 Caddy 或宿主机。'
+                : '删除此加密配置并审计；无法据此证明或清除宿主机正在使用的任何凭据。'}
               confirmLabel={atomicMode ? '加入清除草稿' : '仅清除已保存配置'}
               onCancel={() => setConfirmClear(false)}
               onConfirm={() => {
