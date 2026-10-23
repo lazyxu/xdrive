@@ -84,3 +84,12 @@
 - Go Server 严格校验成对 SHA-256、空配置摘要、配置/入口状态矛盾，以及与原现有 Live Config 字段的一致性。管理员服务状态仍只返回既有的安全状态与本机验证范围，**不**传输这两个私有摘要，不公开新的 Applied 接口。
 - 这一小段只完成**最近一次正向本机观测**的标准化；Host 控制目录允许 Server 读取并非独立签名授权，快照存在 45 秒新鲜度限制且可能刚好发生代际变化。禁止据此宣布某个历史 `deployed` 当前仍生效。后续 P0-02B3-B 必须将**可信原请求历史记录**与独立重新采样下的当前代际对比并定义 matching/changed/unverified，完成签名和禁用入口负向验证后才能考虑真正 Applied Receipt。
 - 保留 Host `.env` 唯一权威、原提交持久回放、安全隔离和 Rescue 边界；生产环境专属安全验收 **按用户决定跳过（未验收）**，源码级故障注入及权限测试照常要求。
+
+## P0-02B3-B · 历史部署与当前本机观测的受限对比（2026-10-23）
+
+- 只读管理员 `GET /api/v1/admin/services/caddy/config/deploy?request_id=...` 在原有终态 `state` 之外，对于 `deployed` 返回固定的 `local_runtime_state`：`matching-local` / `changed-local` / `unverified`。原 `state=deployed` 仍仅表示历史 Host 事务提交，不是当前生效证明；不返回私有原始 Docker Identity、Live Config JSON、私有摘要或新的签名字段。
+- `matching-local` 仅在原请求 ID 对应**不可覆盖成功归档**中包含两项有效 Host 本机摘要、当前 Host `.env` 指纹与入口开关同档、域名 TLS SNI 摘要/LAN IP SAN 摘要正确、当前 Docker Generation 与 Live Config 都通过正向本机观测并逐项等于历史记录、没有待部署更新或未完成 Host 请求、相关 Host 快照和 heartbeat 均未过期（45 秒）时返回。读取前后重查一致性；中途发生读写变化保守返回 `unverified`。
+- `changed-local` 仅表示原可信本机历史摘要与当前**同样完整有效**的本机观测在运行代际、配置内容或现行 `.env` 指纹中至少一项不一致；不指明是谁修改、WAN 是否失效或新部署是否获得权限。
+- 任何历史旧回执没有摘要、当前 Host 观测无法读取、证书/入口样本失败或不一致、双入口缺一个、保存未部署、Active/queued 操作、权限/时间异常、伪造或部分摘要、一侧快照缺失均返回 `unverified`，**不能降级成 matching**。失败/进行中原终态不增加本机成功标签。
+- 此 API 仍不是独立 Host 签名的 Applied Receipt：在两次快照读取之间或读取之后发生的 A→B→A/重新部署无法被排除，只有短有效期的 Host 本地观察，不构成连续生效保证。后续仍须可信独立 Collector、签名防重放、启用/禁用入口正负验证，以及独立 Rescue/Watchdog。
+- 生产环境专属安全验收继续按用户决定跳过（未验收）；不要求生产账号或抓包，不作为源码、CI、PR、合并阻塞条件。源码层面的 Owner/Admin 权限、证据隔离和故障负例测试仍必须通过。

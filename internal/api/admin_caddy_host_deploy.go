@@ -13,12 +13,13 @@ import (
 )
 
 type caddyEnvDeployStatus struct {
-	Protocol   string `json:"protocol"`
-	RequestID  string `json:"request_id"`
-	State      string `json:"state"`
-	SHA256     string `json:"sha256"`
-	RolledBack bool   `json:"rolled_back,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Protocol          string `json:"protocol"`
+	RequestID         string `json:"request_id"`
+	State             string `json:"state"`
+	SHA256            string `json:"sha256"`
+	RolledBack        bool   `json:"rolled_back,omitempty"`
+	Error             string `json:"error,omitempty"`
+	LocalRuntimeState string `json:"local_runtime_state,omitempty"`
 }
 
 // These are fixed Host Control protocol error codes, never raw Docker, env,
@@ -85,6 +86,18 @@ func (s *Server) readCaddyEnvDeployStatus(id string) (caddyEnvDeployStatus, erro
 		// A nonterminal result cannot claim a rollback or carry diagnostics.
 		status.Error = ""
 		status.RolledBack = false
+	}
+	// A historical deployed terminal is not proof the gateway is still
+	// running with this exact configuration and process generation. Only a
+	// Host-owned immutable archive with a complete local witness is eligible
+	// for the explicitly bounded, UNSIGNED local comparison. Any caller-
+	// supplied "local_runtime_state" in the JSON is overwritten.
+	status.LocalRuntimeState = ""
+	if status.State == "deployed" {
+		status.LocalRuntimeState = caddyLocalUnverified
+		if archived {
+			status.LocalRuntimeState = s.caddyLocalRuntimeComparison(raw, id, status.SHA256)
+		}
 	}
 	return status, nil
 }
