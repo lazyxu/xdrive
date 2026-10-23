@@ -88,6 +88,12 @@ export function useXDriveWebAppRuntime(
   const committedIndexRef = useRef(historyIndex(window.history.state) ?? 0)
   const guardRef = useRef(guardBrowserNavigation)
   const blockedRef = useRef<PendingBrowserNavigation | null>(null)
+  // Only a committed, resolved lazy workspace can use a synchronous route
+  // update. Cold navigation keeps React's previous-view transition.
+  const resolvedWorkspacesRef = useRef(new Set<'files' | 'gallery'>())
+  const markLoadedWorkspaceApp = useCallback((app: 'files' | 'gallery') => {
+    resolvedWorkspacesRef.current.add(app)
+  }, [])
   guardRef.current = guardBrowserNavigation
 
   const commitBrowserRoute = useCallback((next: XDriveWebAppRoute) => {
@@ -100,7 +106,8 @@ export function useXDriveWebAppRuntime(
     committedStateRef.current = window.history.state
     committedHashRef.current = window.location.hash
     routeRef.current = next
-    startTransition(() => setRoute(next))
+    if (resolvedWorkspacesRef.current.has(next.app as 'files' | 'gallery')) setRoute(next)
+    else startTransition(() => setRoute(next))
   }, [])
 
   const commitProgrammaticRoute = useCallback((next: XDriveWebAppRoute) => {
@@ -109,7 +116,8 @@ export function useXDriveWebAppRuntime(
     committedHashRef.current = window.location.hash
     committedIndexRef.current = historyIndex(window.history.state) ?? committedIndexRef.current
     routeRef.current = next
-    startTransition(() => setRoute(next))
+    if (resolvedWorkspacesRef.current.has(next.app as 'files' | 'gallery')) setRoute(next)
+    else startTransition(() => setRoute(next))
   }, [])
 
   useEffect(() => {
@@ -285,6 +293,6 @@ export function useXDriveWebAppRuntime(
 
   return {
     route, launch, closeViewer, exitApp, canExitApp,
-    cancelHistoryNavigation, confirmHistoryNavigation,
+    cancelHistoryNavigation, confirmHistoryNavigation, markLoadedWorkspaceApp,
   }
 }

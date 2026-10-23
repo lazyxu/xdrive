@@ -127,6 +127,20 @@ const AdminUsersPanel = lazy(() => import('./AdminUsers'))
 const AdminAuditPanel = lazy(() => import('./AdminAudit'))
 const StorageStatsPanel = lazy(() => import('./StorageStatsPanel'))
 
+// Mounts only after the parent Suspense has resolved the actual lazy
+// Files/Gallery presentation. An earlier navigation intent is never proof.
+function XDriveCommittedWorkspaceRoute({
+  view, onReady,
+}: {
+  view: string
+  onReady: (app: 'files' | 'gallery') => void
+}) {
+  useEffect(() => {
+    if (view === 'files' || view === 'gallery') onReady(view)
+  }, [view, onReady])
+  return null
+}
+
 const ACCESS_KEY = 'xdrive.access_token'
 const REFRESH_KEY = 'xdrive.refresh_token'
 const EXPIRES_KEY = 'xdrive.access_expires_at'
@@ -632,7 +646,7 @@ function FileManager({
   }, [])
   const {
     route, launch: launchWebAppRuntime, closeViewer, exitApp, canExitApp,
-    cancelHistoryNavigation, confirmHistoryNavigation,
+    cancelHistoryNavigation, confirmHistoryNavigation, markLoadedWorkspaceApp,
   } = useXDriveWebAppRuntime(guardBrowserNavigation)
   const activeAppRef = useRef(route.app)
   activeAppRef.current = route.app
@@ -2195,6 +2209,7 @@ function FileManager({
           </Box>
         )}
         </XDriveWorkspaceContent>
+        <XDriveCommittedWorkspaceRoute view={appView} onReady={markLoadedWorkspaceApp} />
         </Suspense>
         </Box>
       </XDriveWorkspaceShell>
