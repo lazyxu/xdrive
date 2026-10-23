@@ -286,6 +286,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "conflict_policy applies only to uploads into a directory")
 		return
 	}
+	// A common local Push operation cannot claim a generic name-conflict
+	// skip as a committed source file, or silently change the target.
+	if strings.HasPrefix(req.ResumeKey, "lp2_") && req.ConflictPolicy != meta.UploadConflictPolicyFail {
+		fail(c, http.StatusBadRequest, "invalid private upload policy")
+		return
+	}
 
 	chunkCount := 0
 	if req.Size > 0 {
@@ -488,7 +494,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 	}
 
-	if req.SHA256 != "" {
+	// lp2_ is reserved for an authenticated, durable local Push operation.
+	// Its normal UploadSession must bind to that operation before finalize;
+	// the generic immediate CAS fast path would commit before binding.
+	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") {
 		session, currentRevision, instant, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount,
 		)
@@ -986,6 +995,11 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			}
 		}
 		if skipped {
+			// A skipped conflict is NOT a committed local Push file. Leave
+			// its durable original Operation uncertain, not successful.
+			if strings.HasPrefix(currentSession.ResumeKey, "lp2_") {
+				return errLocalPushCommonUploadUnavailable
+			}
 			return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
 		}
 		if _, err := s.ensureQuotaForStorageKeyExcludingSession(
@@ -1056,6 +1070,14 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				return err
 			}
 		}
+		// The original local Push checkpoint, if one was authenticated and
+		// bound, is persisted inside this exact ordinary CAS/Node/Version
+		// transaction. Missing or revoked bindings fail the WHOLE finalize.
+		if err := persistLocalPushCommonUploadFinalizedTx(
+			tx, currentSession, result.ID, actualHash, size, now,
+		); err != nil {
+			return err
+		}
 		resultID := result.ID
 		if err := tx.Model(&meta.UploadSession{}).Where("id = ?", currentSession.ID).Updates(map[string]any{
 			"status": meta.UploadStatusFinalized, "result_node_id": resultID,
@@ -1086,6 +1108,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			revisionConflict(c, session.ExpectedRevision, currentRevision)
 		case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
 			fail(c, http.StatusConflict, "name already exists")
+		case errors.Is(err, errLocalPushCommonUploadUnavailable):
+			fail(c, http.StatusConflict, "private local upload operation unavailable")
 		default:
 			fail(c, http.StatusInternalServerError, "finalize upload failed")
 		}
