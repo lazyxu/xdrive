@@ -18,14 +18,6 @@ func (c *agentController) CloudBaiduNativeViewport(ctx context.Context,
 	return cli.BaiduNativeViewport(ctx, bounds, limit, offset)
 }
 
-func (c *agentController) CloudBaiduJSAPIPrototype(ctx context.Context) (client.BaiduJSAPIPrototypeConfig, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.BaiduJSAPIPrototypeConfig{}, err
-	}
-	return cli.MediaBaiduJSAPIPrototype(ctx)
-}
-
 // Forward the bounded map summary through the authenticated Agent only.
 func (c *agentController) CloudMediaPlacesMapOverview(ctx context.Context, bounds client.MediaPlacesViewportBounds, detail bool) (client.MediaPlacesMapOverview, error) {
 	cli, _, err := c.cloudClient()

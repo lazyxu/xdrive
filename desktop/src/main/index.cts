@@ -228,7 +228,6 @@ import {
   type AgentMediaEditRecipeInput,
   type AgentMediaCreativeGeneration,
   type AgentMediaCreativeInput,
-  type AgentBaiduJSAPIPrototype,
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentDeviceBackupOverview,
@@ -4531,13 +4530,6 @@ function registerIPCHandlers() {
     }, false),
   )
 
-  ipcMain.handle('agent:get-baidu-jsapi-prototype', () =>
-    runAgentAction<AgentBaiduJSAPIPrototype>(async () => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'media-gallery')
-      return requireAgentClient().mediaBaiduJSAPIPrototype()
-    }, false),
-  )
   ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown, reportProgress: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {

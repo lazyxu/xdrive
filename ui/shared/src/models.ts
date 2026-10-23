@@ -912,13 +912,6 @@ export interface NodeLocation {
   sync_folders: NodeLocationSyncFolder[]
 }
 
-/** Public JSAPI browser AK for accepted in-Gallery prototype, not Server AK. */
-export type XDriveBaiduJSAPIPrototypeConfig = {
-  provider: 'baidu-jsapi-4.0'
-  browser_ak: string
-  revision: number
-}
-
 // Privacy-only state: authorized DOES NOT imply JSAPI4 is enabled. Never
 // serialize original WGS84, SourceNode fingerprint, AK or provider URLs.
 export type MediaBaiduMapConsent = {

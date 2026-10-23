@@ -61,25 +61,20 @@ test('invalid or hostile SDK point counts never enter icon text or grow the cach
   assert.equal(doc.texts.some(value=>value.includes('private')),false)
 })
 
-test('one official SDK layer owns marker picking and all covers center on its native hit targets',()=>{
-  const map=read('ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')
-  assert.match(map,/new api.ClusterLayer/)
-  // Marker restacks must never retire the already merged #2416 quota gate.
-  assert.ok(map.includes('setTimeout(load, 500)'))
-  assert.ok(map.includes('xDriveBaiduConversionSessionForScope'))
-  assert.ok(map.includes('abort.signal, conversionSession'))
-  assert.match(map,/clusterIcon: markerArt.clusterIcon/)
-  assert.match(map,/singleStyle: \{ icon: markerArt.singleIcon, iconSize: \[64, 64\] \}/)
-  assert.match(map,/clusterIconSize: \(\) => \[64, 64\]/)
-  assert.match(map,/fitViewOnClick: true/)
-  assert.match(map,/pointerEvents: 'none'/)
-  assert.match(map,/data-xdrive-baidu-native-cluster-cover/)
-  assert.match(map,/data-xdrive-baidu-photo-cover/)
-  assert.equal((map.match(/top: pin.y - 30/g)||[]).length,2)
-  assert.equal((map.match(/left: pin.x - 30/g)||[]).length,2)
-  assert.equal((map.match(/pin.photoCount.toLocaleString\('zh-CN'\)/g)||[]).length,2)
-  assert.doesNotMatch(map,/new BMapLib.MarkerClusterer|clusterIcon:.*https?:/)
-  assert.match(map,/listPlacesMapOverview\(bounds, detail, controller.signal\)/)
+test('isolated Child projects bounded cells; only trusted Parent loads photo covers',()=>{
+  const child=read('deploy/baidu-isolated-child/child.js')
+  const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  assert.match(child,/map\.pointToPixel\(new sdk\.Point\(cell\.longitude,cell\.latitude\)\)/)
+  assert.match(child,/send\('cell-projections'/)
+  assert.match(parent,/xDriveCurrentMapPhotoCollections\(summary, projected/)
+  assert.match(parent,/XDriveMediaGalleryCoverThumbnail/)
+  assert.match(parent,/data-xdrive-places-trusted-photo-cover-pins/)
+  assert.match(parent,/onClick=\{\(\) => opened\.current\(pin\.selection\)\}/)
+  assert.match(parent,/pointerEvents:'none'/)
+  assert.match(parent,/pin\.count\.toLocaleString\('zh-CN'\)/)
+  assert.doesNotMatch(child,/loadThumbnail|Bearer/)
+  assert.equal(fs.existsSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),false)
 })
 
 test('map has one short user hint; debug throughput and duplicate counters are not shown',()=>{

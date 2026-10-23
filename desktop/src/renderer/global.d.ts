@@ -72,7 +72,6 @@ import type {
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
   MediaBaiduMapIndexJobInput,
-  XDriveBaiduJSAPIPrototypeConfig,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -745,7 +744,6 @@ declare global {
         getMediaBaiduConsent: (nodeID: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
         saveMediaBaiduConsent: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<DesktopResult<MediaBaiduMapConsent>>
         revokeMediaBaiduConsent: (nodeID: number, revision: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
-        getBaiduJSAPIPrototype: () => Promise<DesktopResult<XDriveBaiduJSAPIPrototypeConfig>>
         getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>

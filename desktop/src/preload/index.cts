@@ -525,7 +525,6 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:save-media-baidu-consent', nodeID, input),
   revokeMediaBaiduConsent: (nodeID: number, revision: number) =>
     ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
-  getBaiduJSAPIPrototype: () => ipcRenderer.invoke('agent:get-baidu-jsapi-prototype'),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
