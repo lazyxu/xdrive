@@ -1,0 +1,101 @@
+name: PWA P1C Matched Real Owner 100k SPA Go before after
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p1c-real-signed-100k-matched:
+    if: github.head_ref == 'test/pwa-p1c-real-owner-100k-matched-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: probe
+      - uses: actions/checkout@v4
+        with:
+          ref: 84ef0076506b958001369bb173f221418bf4833a
+          path: before
+      - uses: actions/checkout@v4
+        with:
+          ref: 7515c421412666893e4b0519e4b5869d988bf8e1
+          path: after
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: after/web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: after/go.sum
+      - name: Exact 100k Owner source equality, original contracts and native dependencies
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git -C before rev-parse HEAD)" = "84ef0076506b958001369bb173f221418bf4833a"
+          test "$(git -C after rev-parse HEAD)" = "7515c421412666893e4b0519e4b5869d988bf8e1"
+          cmp before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          cmp before/internal/api/gallery_real_web_cold_performance_integration_test.go after/internal/api/gallery_real_web_cold_performance_integration_test.go
+          node --check probe/desktop/tests/pwa-p1c-owner-matched-release-contract.cjs
+          (cd probe && node --test desktop/tests/pwa-p1c-owner-matched-release-contract.cjs)
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix before/web ci --no-audit --no-fund
+          npm --prefix after/web ci --no-audit --no-fund
+          # Desktop intentionally has no package-lock.json; npm ci cannot run here.
+          # Match the already established desktop native CI install procedure.
+          npm --prefix after/desktop install --no-audit --no-fund
+          ln -s "$GITHUB_WORKSPACE/after/desktop/node_modules" before/desktop/node_modules
+          npm --prefix before/web run build
+          npm --prefix after/web run build
+          mkdir -p after/desktop/pwa-p1c-go-bin
+          (cd after && go test -c -o "$GITHUB_WORKSPACE/after/desktop/pwa-p1c-go-bin/api.test" ./internal/api)
+          test -x after/desktop/pwa-p1c-go-bin/api.test
+      - name: One native Electron + Go binary for both immutable real 100k normal Web releases
+        env:
+          XD_GALLERY_MOBILE_NATIVE_GO_BINARY: ${{ github.workspace }}/after/desktop/pwa-p1c-go-bin/api.test
+        run: |
+          set -euo pipefail
+          mkdir -p probe/desktop/pwa-p1c-real-results
+          (cd before && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            "$GITHUB_WORKSPACE/after/desktop/node_modules/.bin/electron" --no-sandbox \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs)
+          (cd after && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            "$GITHUB_WORKSPACE/after/desktop/node_modules/.bin/electron" --no-sandbox \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs)
+          node probe/desktop/scripts/pwa-p1c-summarize-paired.cjs \
+            before/desktop/pwa-p0c2-spa-go-results \
+            after/desktop/pwa-p0c2-spa-go-results \
+            probe/desktop/pwa-p1c-real-results/paired.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1c-real-owner-100k-spa-paired-anonymous
+          path: |
+            before/desktop/pwa-p0c2-spa-go-results/summary.json
+            after/desktop/pwa-p0c2-spa-go-results/summary.json
+            probe/desktop/pwa-p1c-real-results/paired.json
+          if-no-files-found: warn
+          retention-days: 14
