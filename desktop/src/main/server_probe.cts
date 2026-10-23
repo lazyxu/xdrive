@@ -83,6 +83,11 @@ export async function probeDesktopServer(
       referrerPolicy: 'no-referrer',
       signal: controller.signal,
     })
+    if (response.status >= 300 && response.status < 400) {
+      return failure('server_auth_redirect',
+        '当前入口将 xDrive API 请求重定向至其他地址。请检查 IP HTTPS 与 Caddy 配置；登录凭据不会被自动转发。',
+        response.status)
+    }
     if (!response.ok) {
       return failure('server_http_error', '服务器返回 HTTP ' + response.status + '；请检查网关及 xDrive Server。', response.status)
     }

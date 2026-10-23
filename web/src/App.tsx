@@ -389,7 +389,9 @@ function App({
     // a possibly slow or failed remote logout acknowledgement.
     xDriveClearBaiduConversionSession()
     xDriveClearPrivateMapBrowseSessions()
-    void api.logout().finally(() => clearSession())
+    // Failed remote logout (including a forbidden redirect) must never
+    // prevent local sign-out or leave an unhandled rejection.
+    void api.logout().catch(() => undefined).finally(() => clearSession())
   }
 
   if (publicShareToken) {

@@ -161,7 +161,7 @@ func (c *Client) RefreshSession(ctx context.Context) (SessionTokens, error) {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "xdrive-xd/0.1")
-		resp, err := c.do(req)
+		resp, err := c.doAuth(req)
 		if err != nil {
 			return SessionTokens{}, err
 		}
@@ -254,7 +254,7 @@ func (c *Client) ChangePassword(ctx context.Context, currentPassword, newPasswor
 		return out, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.do(req)
+	resp, err := c.doAuth(req)
 	if err != nil {
 		return out, err
 	}
@@ -284,7 +284,7 @@ func (c *Client) LogoutSession(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "xdrive-xd/0.1")
-	resp, err := c.do(req)
+	resp, err := c.doAuth(req)
 	if err != nil {
 		return err
 	}

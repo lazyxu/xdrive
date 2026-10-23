@@ -1330,7 +1330,7 @@ func (c *Client) authenticate(ctx context.Context, path, username, password stri
 		return out, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.do(req)
+	resp, err := c.doAuth(req)
 	if err != nil {
 		return out, err
 	}

@@ -53,6 +53,7 @@ test('a redirect or SPA HTML is not a verified xDrive Server', async () => {
   }))
   assert.equal(redirect.ok, false)
   assert.equal(redirect.error.status, 302)
+  assert.equal(redirect.error.code, 'server_auth_redirect')
   const html = await probeDesktopServer(lan, async () => new Response('<html>login</html>', {
     headers: { 'Content-Type': 'text/html' },
   }))
