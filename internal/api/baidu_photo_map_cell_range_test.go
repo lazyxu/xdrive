@@ -37,10 +37,23 @@ func TestBaiduCellRangeParserFailClosed(t *testing.T) {
 		selection.Bounds.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL {
 		t.Fatalf("incorrect bounded BD09 range: %+v %+v %v", selection, options, err)
 	}
+	if _, _, _, _, err := parseBaiduNativeMapCellItems(
+		validBaiduCellRangeQuery() + "&favorite=true&kind=image&captured_from=2026-01-01&captured_to=2027-01-01&time_zone=UTC&album=manual:trip",
+	); err != nil {
+		t.Fatalf("reviewed filtered Cell Range rejected: %v", err)
+	}
 	for _, text := range []string{
 		"", "range=true", validBaiduCellRangeQuery() + "&ak=secret",
 		validBaiduCellRangeQuery() + "&owner_id=1",
 		validBaiduCellRangeQuery() + "&coordinate_space=wgs84ll",
+		validBaiduCellRangeQuery() + "&favorite=true&favorite=false",
+		validBaiduCellRangeQuery() + "&album=unknown",
+		validBaiduCellRangeQuery() + "&album=manual:",
+		validBaiduCellRangeQuery() + "&album=manual:" + strings.Repeat("x", 600),
+		validBaiduCellRangeQuery() + "&fold_duplicates=true",
+		validBaiduCellRangeQuery() + "&bbox=100,0,108,8",
+		validBaiduCellRangeQuery() + "&favorite=%20true",
+		validBaiduCellRangeQuery() + "&captured_from=",
 		validBaiduCellRangeQuery() + "&cell_x=4",
 		validBaiduCellRangeQuery() + "&west=102",
 		validBaiduCellRangeQuery() + "&sort_by=random",
@@ -256,6 +269,34 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 		t.Fatal("missing proof approved")
 	}
 	ownerServer := &Server{DB: db}
+	// The selected Cell must be revalidated against the SAME filtered
+	// Gallery members as the Map /cells summary. Here both original media
+	// share one Cell, while only the image is an Owner favorite.
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", a1.ID).Update("favorite", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	favorite := true
+	filter := mediaQueryOptions{Favorite: &favorite, SortBy: "captured", SortDir: "desc"}
+	filteredCells, err := ownerServer.baiduMapCellFilteredSummary(
+		context.Background(), alice.ID, target, filter, "")
+	if err != nil || filteredCells.TotalCount != 1 || len(filteredCells.Items) != 1 ||
+		filteredCells.Items[0].AssetID != a1.ID {
+		t.Fatalf("filtered Cell not equal Owner map membership: %+v %v", filteredCells, err)
+	}
+	filteredCell := target
+	filteredCell.PhotoCount = 1
+	if !baiduPhotoMapCellSelectionCurrent(filteredCell, filteredCells) ||
+		baiduPhotoMapCellSelectionCurrent(target, filteredCells) {
+		t.Fatal("stale unfiltered Cell identity accepted under favorite query")
+	}
+	filter.BaiduCell = &filteredCell
+	filteredRange, err := ownerServer.queryMediaItemRange(
+		context.Background(), alice.ID, filter, "", 10, 0)
+	if err != nil || filteredRange.TotalCount != 1 || len(filteredRange.Items) != 1 ||
+		filteredRange.Items[0].Node.ID != n1.ID || filteredRange.Items[0].Node.ID == n2.ID {
+		t.Fatalf("filtered Cell sparse Range widens membership: %+v %v", filteredRange, err)
+	}
 	first, err := ownerServer.queryMediaItemRange(context.Background(), alice.ID,
 		mediaQueryOptions{BaiduCell: &target}, "", 1, 0)
 	if err != nil || first.TotalCount != 2 || len(first.Items) != 1 || !target.valid() {

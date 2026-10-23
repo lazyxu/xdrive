@@ -1,7 +1,8 @@
 import { xDriveValidBaiduNativeCellsPage } from './media-gallery-baidu-jsapi4-cells'
+import { xDriveBaiduNativeCellsFilterParams } from './media-gallery-baidu-jsapi4-viewport-range'
 import type {
   MediaBaiduNativeCellSelection, MediaBaiduNativeCellsPage,
-  MediaBaiduNativeViewportBounds, MediaItemRange,
+  MediaBaiduNativeViewportBounds, MediaGalleryQuery, MediaItemRange,
 } from './models'
 
 type Cell = MediaBaiduNativeCellsPage['cells'][number]
@@ -9,6 +10,8 @@ export type XDriveBaiduCellRangeSort = Readonly<{
   by: 'captured' | 'added'
   dir: 'asc' | 'desc'
   anchorNodeID?: number
+  filters?: MediaGalleryQuery
+  albumKey?: string
 }>
 
 /** Only capture cells of the exact current Server /cells response; never
@@ -63,16 +66,27 @@ export function xDriveBaiduNativeCellRangeParams(
         (!Number.isSafeInteger(sort.anchorNodeID) || sort.anchorNodeID <= 0))) {
     return null
   }
-  const query = new URLSearchParams({
-    west: String(b.west), south: String(b.south),
-    east: String(b.east), north: String(b.north),
-    cell_x: String(selection.cell_x), cell_y: String(selection.cell_y),
-    asset_id: String(selection.asset_id), node_id: String(selection.node_id),
-    node_revision: String(selection.node_revision),
-    photo_count: String(selection.photo_count),
-    limit: String(limit), offset: String(offset), range: 'true',
-    sort_by: sort.by, sort_dir: sort.dir,
-  })
+  // Runtime-invalid input and conflicting map/wall sorts must fail closed.
+  // Never drop unknown filters and silently return an unfiltered Cell.
+  if (sort.filters !== undefined &&
+      (!sort.filters || typeof sort.filters !== 'object' ||
+        Array.isArray(sort.filters))) return null
+  if ((sort.filters?.sort_by !== undefined && sort.filters.sort_by !== sort.by) ||
+      (sort.filters?.sort_dir !== undefined && sort.filters.sort_dir !== sort.dir))
+    return null
+  const query = xDriveBaiduNativeCellsFilterParams(
+    b, { ...sort.filters, sort_by: sort.by, sort_dir: sort.dir },
+    sort.albumKey ?? '',
+  )
+  if (!query) return null
+  for (const [key, value] of [
+    ['cell_x', selection.cell_x], ['cell_y', selection.cell_y],
+    ['asset_id', selection.asset_id], ['node_id', selection.node_id],
+    ['node_revision', selection.node_revision],
+    ['photo_count', selection.photo_count],
+    ['limit', limit], ['offset', offset],
+  ] as const) query.set(key, String(value))
+  query.set('range', 'true')
   if (sort.anchorNodeID !== undefined)
     query.set('anchor_node_id', String(sort.anchorNodeID))
   return query
