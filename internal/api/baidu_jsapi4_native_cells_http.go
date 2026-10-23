@@ -43,6 +43,43 @@ func parseBaiduNativeMapCells(raw string) (baiduPhotoMapBounds, error) {
 	return bounds, nil
 }
 
+// Only the reviewed Gallery membership keys may accompany a native BD09
+// viewport. Do not allow unknown filters to silently widen a cell query.
+func parseBaiduNativeMapCellsScope(raw string) (baiduPhotoMapBounds, string, error) {
+	deny := func() (baiduPhotoMapBounds, string, error) {
+		return baiduPhotoMapBounds{}, "", errBaiduJSAPIResourceDenied
+	}
+	vals, err := url.ParseQuery(raw)
+	if err != nil || len(vals) < 4 || len(vals) > 12 {
+		return deny()
+	}
+	allowed := map[string]bool{
+		"west": true, "south": true, "east": true, "north": true,
+		"sort_by": true, "sort_dir": true, "time_zone": true,
+		"kind": true, "favorite": true, "captured_from": true,
+		"captured_to": true, "album": true,
+	}
+	geometry := url.Values{}
+	for key, values := range vals {
+		if !allowed[key] || len(values) != 1 || values[0] == "" ||
+			strings.TrimSpace(values[0]) != values[0] {
+			return deny()
+		}
+		if key == "west" || key == "south" || key == "east" || key == "north" {
+			geometry.Set(key, values[0])
+		}
+	}
+	bounds, err := parseBaiduNativeMapCells(geometry.Encode())
+	if err != nil {
+		return deny()
+	}
+	album := vals.Get("album")
+	if album != "" && !validMediaAlbumKey(album) {
+		return deny()
+	}
+	return bounds, album, nil
+}
+
 // An authenticated, release-fenced, no-provider-egress summary. It never
 // issues map Cookie, calls Baidu, grants media bytes or returns original WGS84.
 // The same post-query Owner/session/epoch/signed-release checks as the raw
@@ -68,14 +105,26 @@ func (s *Server) listBaiduNativeMapCells(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "map_cells_denied"})
 		return
 	}
-	bounds, err := parseBaiduNativeMapCells(c.Request.URL.RawQuery)
+	bounds, album, err := parseBaiduNativeMapCellsScope(c.Request.URL.RawQuery)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_map_cells_viewport"})
 		return
 	}
+	options, valid := mediaQueryFromRequest(c)
+	if !valid {
+		return
+	}
 	ctx, stop := context.WithTimeout(c.Request.Context(), baiduPhotoMapQueryTimeout)
 	defer stop()
-	page, err := queryBaiduPhotoMapCells(ctx, s.DB, prior.UserID, bounds)
+	// Reuse the original Owner/PhotoMetadata/Album query from Gallery Range,
+	// then intersect with the signed, live BD09 Owner/Consent predicate.
+	gallery, err := s.mediaItemsBaseQuery(ctx, prior.UserID, options, album)
+	if err != nil || ctx.Err() != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cells_unavailable"})
+		return
+	}
+	page, err := queryBaiduPhotoMapCellsScoped(ctx, s.DB, prior.UserID,
+		bounds, gallery.Select("n.id"), options)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cells_unavailable"})
 		return

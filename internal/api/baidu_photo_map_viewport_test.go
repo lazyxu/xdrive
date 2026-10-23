@@ -96,7 +96,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	dbSQL.SetMaxOpenConns(2)
 	dbSQL.SetMaxIdleConns(0)
 	defer dbSQL.Close()
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}, &meta.PhotoMetadata{}); err != nil {
 		t.Fatal(err)
 	}
 	alice := meta.User{Username: "bd09-alice", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -127,6 +127,11 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		asset := meta.PhotoAsset{OwnerID: owner, PrimaryNodeID: node.ID,
 			Kind: meta.PhotoAssetKindImage, EvidenceKey: name}
 		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+		}).Error; err != nil {
 			t.Fatal(err)
 		}
 		grant := meta.BaiduPhotoMapConsent{
@@ -248,6 +253,27 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatalf("map count includes GPS-only unconsented photos: map=%d GPS=%d",
 			cells.TotalCount, gpsBearingCount)
 	}
+	// A favorite-only signed Cells filter intersects the original Gallery
+	// Owner membership before aggregating. A forbidden/unconsented photo
+	// can never be counted or chosen as a representative.
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", firstAsset.ID).
+		Update("favorite", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	favorite := true
+	options := mediaQueryOptions{Favorite: &favorite, SortBy: "captured", SortDir: "desc"}
+	gallery, err := (&Server{DB: db}).mediaItemsBaseQuery(context.Background(), alice.ID, options, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered, err := queryBaiduPhotoMapCellsScoped(context.Background(), db, alice.ID,
+		world, gallery.Select("n.id"), options)
+	if err != nil || filtered.TotalCount != 1 || len(filtered.Items) != 1 ||
+		filtered.Items[0].AssetID != firstAsset.ID {
+		t.Fatalf("favorite BD09 Cells != original Owner Gallery Range: %+v %v", filtered, err)
+	}
+
 	// A second approved photo in the same fixed bin must update the count
 	// to two while returning ONE representative, never a grid-center GPS.
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).

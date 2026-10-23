@@ -299,7 +299,8 @@ export interface MediaGalleryDataSource {
     signal?: AbortSignal,
   ) => Promise<import('../models').MediaBaiduNativeViewportPage>
   listBaiduNativeCells?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
-    signal: AbortSignal) => Promise<import('../models').MediaBaiduNativeCellsPage>
+    signal: AbortSignal, filters?: MediaGalleryQuery, albumKey?: string,
+  ) => Promise<import('../models').MediaBaiduNativeCellsPage>
   /** Signed Owner full-camera BD09 → original Gallery virtual Media Range. */
   listBaiduNativeViewportItems?: (
     bounds: import('../models').MediaBaiduNativeViewportBounds,

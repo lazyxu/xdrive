@@ -1,4 +1,4 @@
-import { xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
+import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
   xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
@@ -1659,24 +1659,22 @@ export class XDriveApi {
   }
 
   /** Signed runtime only: 8x8 bounded Owner BD09 aggregate, never Browser AK. */
-  mediaBaiduNativeCells(bounds: MediaBaiduNativeViewportBounds, signal: AbortSignal) {
-    if (!signal || signal.aborted || !bounds || bounds.coordinate_space !== 'bd09ll' ||
-        ![bounds.west, bounds.south, bounds.east, bounds.north].every(Number.isFinite) ||
-        bounds.west < -180 || bounds.west > 180 || bounds.east < -180 ||
-        bounds.east > 180 || bounds.south < -90 || bounds.north > 90 ||
-        bounds.south >= bounds.north || bounds.west === bounds.east ||
-        (bounds.west === 180 && bounds.east === -180)) {
-      return Promise.reject(new Error('Invalid BD09 cell bounds'))
-    }
-    const q = new URLSearchParams({
-      west:String(bounds.west), south:String(bounds.south),
-      east:String(bounds.east), north:String(bounds.north),
-    })
+  mediaBaiduNativeCells(
+    bounds: MediaBaiduNativeViewportBounds,
+    signal: AbortSignal,
+    filters: MediaGalleryQuery = {},
+    albumKey = '',
+  ) {
+    // Match the trusted BD09 viewport Range filter allowlist. Unsupported
+    // scope must fail closed, never fall back to unfiltered Map Cells.
+    const q = xDriveBaiduNativeCellsFilterParams(bounds, filters, albumKey)
+    if (!signal || signal.aborted || !q)
+      return Promise.reject(new Error('Invalid or cancelled BD09 cell scope'))
     return this.request<MediaBaiduNativeCellsPage>(
-      `/api/v1/media/places/baidu-jsapi/cells?${q.toString()}`,
-      {signal,cache:'no-store'},
+      '/api/v1/media/places/baidu-jsapi/cells?' + q.toString(),
+      { signal, cache: 'no-store' },
     ).then(page => {
-      if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page,bounds))
+      if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page, bounds))
         throw new Error('Invalid BD09 cell response')
       return page
     })

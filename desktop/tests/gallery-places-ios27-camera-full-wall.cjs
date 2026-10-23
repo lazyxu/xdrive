@@ -15,6 +15,7 @@ assert.deepEqual((built.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCat
 const output={exports:{}}
 new Function('module','exports',built.outputText)(output,output.exports)
 const { xDriveBaiduNativeViewportRangeParams:params,
+  xDriveBaiduNativeCellsFilterParams:cellParams,
   xDriveValidBaiduNativeViewportRangePage:valid }=output.exports
 const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:40}
 const query={sort_by:'captured',sort_dir:'desc',time_zone:'Asia/Tokyo'}
@@ -45,6 +46,45 @@ test('current camera queries use only bounded BD09 and signed original Range',()
   assert.equal(params(bounds,48,0,{...query,fold_duplicates:true}),null)
   assert.equal(params(bounds,48,0,{...query,asset_kind:'live_photo'}),null)
   assert.ok(params(bounds,48,0,{...query,fold_duplicates:false}))
+})
+
+test('Owner BD09 cell summary uses exactly the same reviewed Gallery filter keys as the full camera',()=>{
+  const scoped={
+    sort_by:'added',sort_dir:'asc',favorite:true,asset_kind:'video',
+    captured_from:'2026-01-01',captured_to:'2026-12-31',
+    time_zone:'Asia/Tokyo',
+  }
+  const cell=cellParams(bounds,scoped,'manual:album-1')
+  const wall=params(bounds,48,0,scoped)
+  assert.ok(cell && wall)
+  for(const key of ['west','south','east','north','sort_by','sort_dir','favorite',
+      'kind','captured_from','captured_to','time_zone']) {
+    assert.equal(cell.get(key),wall.get(key),key)
+  }
+  assert.equal(cell.get('album'),'manual:album-1')
+  assert.equal(cell.get('limit'),null)
+  assert.equal(cell.get('offset'),null)
+  assert.equal(cell.get('range'),null)
+  assert.equal(cell.get('coordinate_space'),null)
+  assert.equal(cellParams(bounds,{}).toString(),
+    'west=116&south=39&east=117&north=40')
+  for(const bad of [
+    {...scoped,search:'secret'},
+    {...scoped,bbox:'116,39,117,40'},
+    {...scoped,anchor_node_id:7},
+    {...scoped,fold_duplicates:true},
+    {...scoped,asset_kind:'live_photo'},
+  ]) assert.equal(cellParams(bounds,bad),null)
+  assert.equal(cellParams(bounds,scoped,'not-an-album'),null)
+  assert.ok(cellParams(bounds,scoped,'manual:Family Trip'))
+  assert.equal(cellParams(bounds,scoped,'manual: trip '),null)
+  assert.equal(cellParams(bounds,scoped,'manual:'),null)
+  assert.equal(cellParams(bounds,scoped,'manual:'+'x'.repeat(550)),null)
+  const adapter=read('ui/shared/src/mui/MediaGalleryAdapter.ts')
+  const webAdapter=read('web/src/mediaGalleryAdapter.ts')
+  assert.ok(adapter.includes('port.listBaiduNativeCells!(bounds, signal, filters, albumKey)'))
+  assert.ok(webAdapter.includes('api.mediaBaiduNativeCells(bounds, signal, filters, albumKey)'))
+  assert.equal(cellParams({...bounds,coordinate_space:'wgs84'},scoped),null)
 })
 
 test('Owner sparse Range remains page-bounded even with 100k authorized members',()=>{

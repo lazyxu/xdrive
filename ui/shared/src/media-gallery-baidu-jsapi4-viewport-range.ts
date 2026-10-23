@@ -58,6 +58,36 @@ export function xDriveBaiduNativeViewportRangeParams(
   return params
 }
 
+/** Filtered Cells and the full viewport Range must serialize the SAME
+ * reviewed Gallery membership keys. Signed BD09 identity is not WGS84.
+ * Unlike a sparse Range, Cells are an aggregate: never accept anchors,
+ * offsets or provider SDK fields. Existing unfiltered clients continue to
+ * send only the original four BD09 camera coordinates.
+ */
+export function xDriveBaiduNativeCellsFilterParams(
+  bounds: MediaBaiduNativeViewportBounds,
+  query: MediaGalleryQuery = {},
+  albumKey = '',
+): URLSearchParams | null {
+  if (!query || typeof query !== 'object' || Array.isArray(query) ||
+      query.anchor_node_id !== undefined || query.initial_position !== undefined ||
+      (typeof albumKey !== 'string' || albumKey.length > 512 ||
+       (albumKey !== '' && (albumKey.trim() !== albumKey ||
+         !/^(folder|source|manual|smart):.+$/.test(albumKey))))) return null
+  const params = xDriveBaiduNativeViewportRangeParams(bounds, 1, 0, query)
+  if (!params) return null
+  params.delete('range')
+  params.delete('limit')
+  params.delete('offset')
+  // No previously unknown keys may turn into a silent unfiltered map.
+  if (Object.entries(query).every(([, value]) => value === undefined)) {
+    params.delete('sort_by')
+    params.delete('sort_dir')
+  }
+  if (albumKey) params.set('album', albumKey)
+  return params
+}
+
 export function xDriveValidBaiduNativeViewportRangePage(
   page: MediaItemRange, limit: number, offset: number,
 ): boolean {

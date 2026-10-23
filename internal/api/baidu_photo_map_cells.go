@@ -71,6 +71,17 @@ func queryBaiduPhotoMapCells(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 	bounds baiduPhotoMapBounds,
 ) (baiduPhotoMapCellPage, error) {
+	return queryBaiduPhotoMapCellsScoped(ctx, db, ownerID, bounds, nil, mediaQueryOptions{})
+}
+
+// A filtered map is exactly the intersection of a current consented BD09
+// viewport and the Gallery's Owner/Album/Filter membership SQL. The filtered
+// subset is evaluated BEFORE the 8x8 counts and representative selection.
+func queryBaiduPhotoMapCellsScoped(
+	ctx context.Context, db *gorm.DB, ownerID uint64,
+	bounds baiduPhotoMapBounds, galleryMemberNodes *gorm.DB,
+	options mediaQueryOptions,
+) (baiduPhotoMapCellPage, error) {
 	empty := baiduPhotoMapCellPage{}
 	if ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 {
 		return empty, fmt.Errorf("invalid map cell caller")
@@ -92,7 +103,8 @@ func queryBaiduPhotoMapCells(
 	const xCell = "LEAST(7, GREATEST(0, FLOOR((p.longitude - ?) / ?)))::integer AS cell_x"
 	const xWrapCell = "LEAST(7, GREATEST(0, FLOOR((CASE WHEN p.longitude >= ? THEN p.longitude - ? ELSE p.longitude + 360 - ? END) / ?)))::integer AS cell_x"
 	selectCells := "p.asset_id AS asset_id, p.primary_node_id AS node_id, p.node_revision AS node_revision, " +
-		"p.latitude AS latitude, p.longitude AS longitude, " + yCell + ", "
+		"p.latitude AS latitude, p.longitude AS longitude, " +
+		"m.captured_at AS captured_at, n.created_at AS added_at, " + yCell + ", "
 	var values []any
 	values = append(values, bounds.South, stepY)
 	if bounds.West < bounds.East {
@@ -104,9 +116,32 @@ func queryBaiduPhotoMapCells(
 	}
 	scoped := baiduPhotoMapOwnerEligibleQuery(readCtx, db, ownerID, bounds, projection).
 		Select(selectCells, values...)
+	// NULL means legacy unfiltered behavior for existing internal callers.
+	// HTTP cells always supplies the same validated member Range as Gallery.
+	order := "scoped.asset_id ASC"
+	if galleryMemberNodes != nil {
+		if (options.SortBy != "" && options.SortBy != "captured" && options.SortBy != "added") ||
+			(options.SortDir != "" && options.SortDir != "asc" && options.SortDir != "desc") {
+			return empty, fmt.Errorf("invalid Gallery map sort")
+		}
+		scoped = scoped.Where("p.primary_node_id IN (?)", galleryMemberNodes)
+		direction := "DESC"
+		if options.SortDir == "asc" {
+			direction = "ASC"
+		}
+		if options.SortBy == "added" {
+			order = "scoped.added_at " + direction + ", scoped.node_id " + direction
+		} else {
+			// Match the Gallery's captured-date NULL policy, created-at and
+			// Node-ID tie breakers without disclosing capture metadata to SDK.
+			order = "CASE WHEN scoped.captured_at IS NULL THEN 1 ELSE 0 END ASC, " +
+				"scoped.captured_at " + direction + ", scoped.added_at " + direction +
+				", scoped.node_id " + direction
+		}
+	}
 	ranked := db.WithContext(readCtx).Table("(?) AS scoped", scoped).
 		Select("scoped.*, COUNT(*) OVER (PARTITION BY scoped.cell_x, scoped.cell_y) AS photo_count, " +
-			"ROW_NUMBER() OVER (PARTITION BY scoped.cell_x, scoped.cell_y ORDER BY scoped.asset_id ASC) AS row_in_cell")
+			"ROW_NUMBER() OVER (PARTITION BY scoped.cell_x, scoped.cell_y ORDER BY " + order + ") AS row_in_cell")
 	var cells []baiduPhotoMapCell
 	err = db.WithContext(readCtx).Table("(?) AS ranked", ranked).
 		Select("ranked.cell_x, ranked.cell_y, ranked.photo_count, ranked.asset_id, "+
