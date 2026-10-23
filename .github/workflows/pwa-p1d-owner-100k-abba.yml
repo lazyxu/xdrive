@@ -1,0 +1,120 @@
+name: PWA P1D Genuine Owner 100k ABBA Order Attribution
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p1d-owner-100k-abba:
+    if: github.head_ref == 'test/pwa-p1d-owner-100k-abba-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: probe
+      - uses: actions/checkout@v4
+        with:
+          ref: 84ef0076506b958001369bb173f221418bf4833a
+          path: before
+      - uses: actions/checkout@v4
+        with:
+          ref: 7515c421412666893e4b0519e4b5869d988bf8e1
+          path: after
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: after/web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: after/go.sum
+      - name: Source-exact frozen releases, source contracts, native dependencies
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git -C before rev-parse HEAD)" = "84ef0076506b958001369bb173f221418bf4833a"
+          test "$(git -C after rev-parse HEAD)" = "7515c421412666893e4b0519e4b5869d988bf8e1"
+          cmp before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          cmp before/internal/api/gallery_real_web_cold_performance_integration_test.go after/internal/api/gallery_real_web_cold_performance_integration_test.go
+          node --check probe/desktop/scripts/pwa-p1d-summarize-abba.cjs
+          (cd probe && node --test desktop/tests/pwa-p1d-owner-100k-abba-contract.cjs)
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix before/web ci --no-audit --no-fund
+          npm --prefix after/web ci --no-audit --no-fund
+          npm --prefix after/desktop install --no-audit --no-fund
+          ln -s "$GITHUB_WORKSPACE/after/desktop/node_modules" before/desktop/node_modules
+          npm --prefix before/web run build
+          npm --prefix after/web run build
+          mkdir -p after/desktop/pwa-p1d-go-bin
+          (cd after && go test -c -o "$GITHUB_WORKSPACE/after/desktop/pwa-p1d-go-bin/api.test" ./internal/api)
+          test -x after/desktop/pwa-p1d-go-bin/api.test
+      - name: Original real Chromium/PG17/CAS A then B then B then A
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XD_GALLERY_MOBILE_NATIVE_GO_BINARY: ${{ github.workspace }}/after/desktop/pwa-p1d-go-bin/api.test
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "$XD_PR_HEAD"
+          OUT="$GITHUB_WORKSPACE/probe/desktop/pwa-p1d-abba-results"
+          mkdir -p "$OUT"
+          run_release() {
+            local release="$1" label="$2"
+            (cd "$release" && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+              "$GITHUB_WORKSPACE/after/desktop/node_modules/.bin/electron" --no-sandbox \
+              desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs)
+            test -s "$release/desktop/pwa-p0c2-spa-go-results/summary.json"
+            mkdir -p "$OUT/$label"
+            cp "$release/desktop/pwa-p0c2-spa-go-results/summary.json" "$OUT/$label/summary.json"
+            for n in 1 2 3; do
+              cp "$release/desktop/pwa-p0c2-spa-go-results/sample-$n.json" "$OUT/$label/sample-$n.json"
+            done
+          }
+          run_release before a1
+          run_release after b1
+          run_release after b2
+          run_release before a2
+          node probe/desktop/scripts/pwa-p1d-summarize-abba.cjs \
+            "$OUT/a1" "$OUT/b1" "$OUT/b2" "$OUT/a2" "$OUT/paired.json"
+          node - <<'NODE'
+          const s=require('./probe/desktop/pwa-p1d-abba-results/paired.json')
+          if(s.sourceHEAD!==process.env.XD_PR_HEAD || s.order!=='A-B-B-A' ||
+             s.run.length!==4||s.run.some(r=>r.n!==3||r.goCancelMaxMs>160)||
+             !s.sameRunner||!s.genuineOwnerGoPG17CAS||
+             s.causalConclusion!=='NOT_ESTABLISHED'||s.physicalIOS||
+             s.distinctPhysical100k||s.productionOptimizationImplemented)process.exit(1)
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1d-anonymous-native-owner-100k-abba
+          path: |
+            probe/desktop/pwa-p1d-abba-results/a1/summary.json
+            probe/desktop/pwa-p1d-abba-results/b1/summary.json
+            probe/desktop/pwa-p1d-abba-results/b2/summary.json
+            probe/desktop/pwa-p1d-abba-results/a2/summary.json
+            probe/desktop/pwa-p1d-abba-results/paired.json
+          if-no-files-found: warn
+          retention-days: 14
