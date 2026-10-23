@@ -1546,6 +1546,32 @@ caddy_env_refresh() {
 # Fixed host request, only "save" and the private "commit/restore" transitions.
 # User input NEVER specifies the .env path, script path or Docker arguments.
 
+# Verify a single Host-local Caddy runtime generation across the fixed
+# Ready, domain TLS and LAN TLS probes. The Docker instance and in-memory
+# Caddy JSON must BOTH remain unchanged; even in-place reloads fail closed.
+# This is local proof within the install.lock deployment window, never a
+# signed Applied Receipt or external WAN/CA/client trust assertion.
+caddy_env_verify_local_runtime_window() {
+  local domain="$1" lan="$2" before_generation="" after_generation=""
+  local before_live="" after_live=""
+  before_generation="$(caddy_container_generation_sample)" || return 1
+  before_live="$(caddy_live_active_config_sha256)" || return 1
+  [[ -n "$before_generation" && -n "$before_live" ]] || return 1
+  timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
+    http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 || return 1
+  if [[ -n "$domain" && "$(caddy_local_tls_state "$domain")" != verified ]]; then
+    return 1
+  fi
+  if [[ -n "$lan" && "$(caddy_local_lan_tls_state "$lan")" != verified ]]; then
+    return 1
+  fi
+  after_live="$(caddy_live_active_config_sha256)" || return 1
+  after_generation="$(caddy_container_generation_sample)" || return 1
+  [[ -n "$after_live" && -n "$after_generation" &&
+     "$before_generation" == "$after_generation" &&
+     "$before_live" == "$after_live" ]]
+}
+
 # A bounded Caddy-only recreate is a separate, administrator-audited request.
 # It does not run "compose down", restart other services, install images or
 # accept browser-selected commands. The Host retains a private running baseline.
@@ -1608,10 +1634,7 @@ caddy_env_deploy() {
         touch_heartbeat
         domain="$(env_value XD_DOMAIN)"
         lan="$(env_value XD_LAN_HTTPS_IP)"
-        if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
-            http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
-            { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
-            { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+        if caddy_env_verify_local_runtime_window "$domain" "$lan"; then
           ready=1
           break
         fi
@@ -1663,10 +1686,7 @@ caddy_env_deploy() {
         up -d --no-deps --force-recreate caddy >/dev/null 2>&1; then
       domain="$(env_value XD_DOMAIN)"
       lan="$(env_value XD_LAN_HTTPS_IP)"
-      if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
-          http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
-          { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
-          { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+      if caddy_env_verify_local_runtime_window "$domain" "$lan"; then
         previous=1
       fi
     fi
