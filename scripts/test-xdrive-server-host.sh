@@ -558,6 +558,8 @@ if [[ "$before" != "$after" ]]; then
 fi
 
 # Host update control: one long-lived runner transitions idle -> running -> success.
+# A terminal status is persisted BEFORE Active cleanup. Both conditions must
+# hold before advancing to the next request; retain final cleanup assertions.
 cp "$HOST" "$TMP/home/bin/xdrive-server"
 cp "$ROOT/scripts/server-control.sh" "$TMP/home/bin/server-control.sh"
 chmod 700 "$TMP/home/bin/xdrive-server" "$TMP/home/bin/server-control.sh"
@@ -605,7 +607,8 @@ rm -f "$request_tmp"
 
 for _ in $(seq 1 100); do
   if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+     grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     [[ ! -f "$TMP/home/state/control/request.json" && ! -f "$TMP/home/state/control/active.json" ]]; then
     break
   fi
   kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
@@ -629,7 +632,8 @@ EOF
 # Keep a finite wait; detect early runner death and assert terminal success.
 for _ in $(seq 1 300); do
   if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
-     grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+     grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     [[ ! -f "$TMP/home/state/control/request.json" && ! -f "$TMP/home/state/control/active.json" ]]; then
     break
   fi
   kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
