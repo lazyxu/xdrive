@@ -246,6 +246,36 @@ class TestCaddyDeployArchiveBounded(unittest.TestCase):
             self.assertNotIn("ALIYUN_ACCESS_KEY", content)
             self.assertNotIn("POSTGRES_PASSWORD", content)
 
+    def test_local_runtime_witness_requires_pair_and_does_not_change_legacy(self):
+        # The Host publishes only digest pairs in a completed local-window
+        # observation; old deployed receipts without a pair remain readable.
+        self.assertEqual(self.archive(21).returncode, 0)
+        self.assertEqual(self.archive(22, {
+            "host_local_generation_sha256": "c" * 64,
+            "host_local_live_config_sha256": "d" * 64,
+        }).returncode, 0)
+        directory = self.control / "caddy-deploy-results"
+        old = json.loads((directory / f"{21:024x}.json").read_text())
+        modern = json.loads((directory / f"{22:024x}.json").read_text())
+        self.assertNotIn("host_local_generation_sha256", old)
+        self.assertEqual(modern["host_local_generation_sha256"], "c" * 64)
+        self.assertEqual(modern["host_local_live_config_sha256"], "d" * 64)
+        self.assertEqual(set(modern), {
+            "protocol", "request_id", "sha256", "state",
+            "host_local_generation_sha256", "host_local_live_config_sha256",
+        })
+        for number, extra in (
+            (23, {"host_local_generation_sha256": "c" * 64}),
+            (24, {"host_local_generation_sha256": "INVALID",
+                  "host_local_live_config_sha256": "d" * 64}),
+            (25, {"host_local_generation_sha256": "c" * 64,
+                  "host_local_live_config_sha256": "d" * 64,
+                  "state": "failed"}),
+        ):
+            response = self.archive(number, extra)
+            self.assertNotEqual(response.returncode, 0)
+            self.assertFalse((directory / f"{number:024x}.json").exists())
+
     def test_duplicate_and_secret_injection_refused_without_overwrite(self):
         self.assertEqual(self.archive(1).returncode, 0)
         receipt = self.control / "caddy-deploy-results" / f"{1:024x}.json"

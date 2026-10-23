@@ -69,3 +69,10 @@
 - 中断恢复的 `caddy_env_recover_interrupted` 不再仅凭旧 `.env` 已恢复、本机 `readyz` 和单次域名/LAN TLS 检查就声明 `rolled_back=true`，而是在固定 `install.lock` 内调用 P0-02A 的 Docker Generation + Caddy Live Config 前后双采样窗口。
 - Docker 实例/进程代际变化、Caddy 原地重载、Admin Live Config 不可读取、任何 Ready/TLS 未通过时维持同 Request ID 的 Sticky Active，不发成功回退，也不触发新候选再次执行。
 - Host 离线 fixture 分别注入重启恢复时换代、同代配置改变、缺少 Live Config，验证非敏感固定错误码、`rolled_back=false`、原 Active 留存、旧 `.env` 之外的密码未被修改。正式 Rescue/Watchdog、签名 Applied Receipt 和持续运行监测另行开发。生产环境专属安全验收：**按用户决定跳过（未验收）**。
+
+## P0-02B2 · 单次部署的 Host 本机代际摘要写入持久成功决议（2026-10-23）
+
+- 对 P0-02A 已通过 Ready、域名/LAN TLS、Docker Generation 和 Live Config 同一验证窗口的结果，在 Host 内派生 `host_local_generation_sha256`（域分离的固定实例/启动代际/PID 摘要）与 `host_local_live_config_sha256`（运行中的 Caddy Admin 配置摘要）；只保留不可逆 SHA-256，不持久化原始 Docker inspect、Caddy JSON、AK/SK 或日志。
+- 原 `commit` 在固定 `install.lock` 与 Host 私有继承文件描述符约束下，要求两个摘要同时存在。成功时把原 Request ID、四字段 `.env` SHA、上述本地窗口摘要**一起写入现有不可覆盖、fsync 的相同终态回执**，然后才清理 Pending/Backup；不是第二套独立提交记录。崩溃/丢 ACK 的原 Request ID 回放接受新旧两种严格固定字段格式。
+- 旧版不带摘要的成功终态仍允许只读和历史崩溃恢复，**不得被视作具有新窗口代际证据**；只有一个摘要、非法十六进制、失败终态携带摘要、额外敏感字段一律拒绝。管理员 API 仍只返回既有安全的终态和固定错误码，不向浏览器泄露 Host 私有摘要。
+- 该摘要是**历史本机观测，不是当前网关运行证明或签名 Applied Receipt**：没有独立 Host 签名/禁用入口负向证据，也尚未实现实时重新比对并自动宣告旧 generation 失效、跨进程 Watchdog、WAN/终端 CA 信任。P0-02B3/P0-05 继续独立开发。生产专属验收按用户决定跳过（未验收）；源代码安全测试仍必需。
