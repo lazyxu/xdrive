@@ -298,4 +298,39 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 			videoOverview, err)
 	}
 
+	// A sub-28m cell with distinct true WGS84 coordinates stays ONE
+	// display representative. Selecting an image cover must select the
+	// SAME image's exact GPS, not the cell's video-heavy first location.
+	// A foreign user's media in that cell is never added to the count.
+	cellOwner, cellRoot := makeOwner("microcell-owner")
+	videoLat, videoLon := 29.111101, 119.222102
+	imageLat, imageLon := 29.111154, 119.222155
+	for i := 0; i < 2; i++ {
+		nodeID := addPoint(cellOwner, cellRoot,
+			fmt.Sprintf("microcell-video-%d.mp4", i), videoLat, videoLon)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", nodeID).
+			Updates(map[string]interface{}{"mime_type": "video/mp4",
+				"media_kind": meta.MediaKindVideo}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	imageID := addPoint(cellOwner, cellRoot, "microcell-cover.jpg", imageLat, imageLon)
+	addPoint(foreign, foreignRoot, "foreign-microcell.jpg", imageLat, imageLon)
+	boundedCell, err := queryMediaPlacesMapOverview(context.Background(), db,
+		cellOwner, world, false)
+	if err != nil || !boundedCell.Aggregated ||
+		boundedCell.TotalPhotoCount != 3 || len(boundedCell.Items) != 1 {
+		t.Fatalf("microcell counts must include only three genuine Owner assets: %+v error=%v",
+			boundedCell, err)
+	}
+	representative := boundedCell.Items[0]
+	if representative.CoverNodeID == nil ||
+		*representative.CoverNodeID != imageID ||
+		representative.SampleLatitude != imageLat ||
+		representative.SampleLongitude != imageLon ||
+		representative.ItemCount != 3 ||
+		representative.CoordinateKind != "map_region_sample" {
+		t.Fatalf("microcell image cover and genuine WGS84 not paired: %+v", representative)
+	}
+
 }
