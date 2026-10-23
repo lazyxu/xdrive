@@ -205,6 +205,19 @@ func (r *PlaceRunner) placeCandidateQuery(
 				"(ppl.asset_id IS NOT NULL AND ("+
 				"ppl.resolver <> ? OR ppl.resolver_version <> ? OR "+
 				"COALESCE(ppl.input_fingerprint, '') = '' OR "+
+				// A matching version alone is not trustworthy. Keep the
+				// candidate producer consistent with the Owner Facet/Range
+				// fingerprint predicate so rejected labels can be repaired.
+				"ppl.input_fingerprint <> pas.input_fingerprint OR "+
+				"ppl.input_fingerprint <> ('gps:' || "+
+				"encode(float8send(pm.latitude), 'hex') || ':' || "+
+				"encode(float8send(pm.longitude), 'hex')) OR "+
+				// Unresolved GPS legitimately has no label or distance.
+				// Backfill only resolved legacy labels missing proximity.
+				"(ppl.distance_km IS NULL AND ("+
+				"ppl.formatted <> '' OR ppl.city_geo_name_id > 0 OR "+
+				"ppl.country_code <> '')) OR "+
+				"ppl.distance_km < 0 OR "+
 				"ppl.latitude <> pm.latitude OR ppl.longitude <> pm.longitude))",
 			analyzerVersion,
 			meta.PhotoAnalysisStatePending,
