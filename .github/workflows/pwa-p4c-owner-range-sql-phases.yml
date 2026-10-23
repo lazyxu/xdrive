@@ -1,0 +1,101 @@
+name: PWA P4C Owner 100k PostgreSQL Range Phase Attribution
+on:
+  push:
+    branches: [test/pwa-p4c-owner-range-sql-phases-20261023]
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p4c-owner-range-phases:
+    if: github.head_ref == 'test/pwa-p4c-owner-range-sql-phases-20261023' || github.ref == 'refs/heads/test/pwa-p4c-owner-range-sql-phases-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P4C_SERVER_PHASE: '1'
+      XD_PWA_P4C_SERVER_PHASE_RESULTS: ${{ github.workspace }}/desktop/pwa-p4c-results/summary.json
+      XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact HEAD, gofmt, and source-only server phase fixture
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          test -z "$(gofmt -l internal/api/pwa_p4c_owner_range_sql_phases_performance_integration_test.go)"
+          go test -c -o "$RUNNER_TEMP/xdrive-p4c-api.test" ./internal/api
+      - name: Real PostgreSQL17 100k Owner Range split-phase BEFORE (three rotated depth rounds)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          mkdir -p desktop/pwa-p4c-results
+          "$RUNNER_TEMP/xdrive-p4c-api.test" \
+            -test.run '^TestPwaP4CServerRangeSQLPhases100K$' \
+            -test.v -test.timeout 65m
+          node - <<'NODE'
+          const assert = require('node:assert/strict')
+          const fs = require('node:fs')
+          const p = process.env.XD_PWA_P4C_SERVER_PHASE_RESULTS
+          const x = JSON.parse(fs.readFileSync(p, 'utf8'))
+          assert.equal(x.schema, 'xdrive-pwa-p4c-owner-server-sql-phases-v1')
+          assert.equal(x.same_fixture_repeated, true)
+          assert.equal(x.physical_media_frame_test, false)
+          assert.equal(x.optimization_implemented, false)
+          assert.equal(x.after, null)
+          assert.equal(x.causal_conclusion, 'NOT_ESTABLISHED')
+          assert.equal(x.samples.length, 9)
+          const expected = ['base_query_ms','count_distinct_ms','http_whole_ms',
+            'index_probe_ms','json_encode_ms','materialize_ms','page_sql_replay_ms',
+            'prepare_fold_ms','range_whole_ms','timeline_ms']
+          const allowed = ['round','viewport','offset','total','items','http_bytes',...expected].sort()
+          for (let round = 1; round <= 3; round++) {
+            const rows = x.samples.filter(s => s.round === round)
+            assert.deepEqual(rows.map(s => s.viewport).sort(), ['middle','tail','top'])
+            for (const s of rows) {
+              assert.deepEqual(Object.keys(s).sort(), allowed)
+              assert(s.total >= 90000 && s.items === 48 && s.http_bytes > 0)
+              assert([0,50000,95000].includes(s.offset))
+              for (const k of expected) assert(Number.isFinite(s[k]) && s[k] >= 0, k)
+            }
+          }
+          console.log('PWA_P4C_ANONYMOUS_SERVER_PHASES '+JSON.stringify({
+            sha:process.env.XD_PR_HEAD, samples:x.samples.length,
+            ownerRangeCountMin:Math.min(...x.samples.map(s=>s.total)),
+            before:true, after:null, optimizationImplemented:false,
+            independentFixtures:1, physicalMediaFrameTest:false
+          }))
+          NODE
+          printf 'SHA=%s\nRUN=%s\n' "$XD_PR_HEAD" "$GITHUB_RUN_ID" > desktop/pwa-p4c-results/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p4c-owner-100k-server-range-phases-before
+          path: |
+            desktop/pwa-p4c-results/summary.json
+            desktop/pwa-p4c-results/source.txt
+          if-no-files-found: warn
+          retention-days: 14
