@@ -153,6 +153,12 @@ test "$(json_value "$status" runtime_tls_alignment)" = matched-local
 test "$(json_value "$status" live_config_sha256)" = "$expected_live_sha"
 test "$(json_value "$status" instance_generation_state)" = same-instance-local
 test "$(json_value "$status" alidns_module_state)" = present-local
+# Current positive Host-local generation metadata is digest-only, uses the
+# EXACT same domain-separated recipe as immutable Caddy deployment receipts.
+expected_local_generation="$(printf 'xdrive.caddy.host.local-generation.v1\n%s\n' \
+  "$(cat "$XD_CADDY_GENERATION_FIXTURE")" | sha256sum | awk '{print $1}')"
+test "$(json_value "$status" host_local_generation_sha256)" = "$expected_local_generation"
+test "$(json_value "$status" host_local_live_config_sha256)" = "$expected_live_sha"
 ! grep -q 'example.invalid' "$status"
 ! grep -q "$fixed_caddy_id" "$status"
 ! grep -q '|2478|' "$status"
@@ -184,6 +190,8 @@ test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 test "$(json_value "$status" runtime_tls_alignment)" = unverified
 test "$(json_value "$status" live_config_sha256)" = ""
 test "$(json_value "$status" instance_generation_state)" = unverified
+test "$(json_value "$status" host_local_generation_sha256)" = ""
+test "$(json_value "$status" host_local_live_config_sha256)" = ""
 ! grep -q "$next_live_sha" "$status"
 # If a digest cannot be read, only the config observation is unverified;
 # local TLS and process generation are independently still observable.
@@ -193,6 +201,8 @@ caddy_host_refresh
 test "$(json_value "$status" tls_state)" = verified
 test "$(json_value "$status" instance_generation_state)" = same-instance-local
 test "$(json_value "$status" live_config_sha256)" = ""
+test "$(json_value "$status" host_local_generation_sha256)" = ""
+test "$(json_value "$status" host_local_live_config_sha256)" = ""
 rm -f "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE" "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = verified
@@ -207,6 +217,8 @@ test "$(json_value "$status" tls_state)" = unavailable
 test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 test "$(json_value "$status" runtime_tls_alignment)" = unverified
 test "$(json_value "$status" live_config_sha256)" = ""
+test "$(json_value "$status" host_local_generation_sha256)" = ""
+test "$(json_value "$status" host_local_live_config_sha256)" = ""
 ! grep -q "$fixed_caddy_id" "$status"
 rm -f "$XD_CADDY_GENERATION_NEXT_FIXTURE" "$XD_CADDY_GENERATION_COUNT_FIXTURE"
 caddy_host_refresh
@@ -338,6 +350,9 @@ test "$(json_value "$status" tls_state)" = disabled
 test "$(json_bool_value "$status" https_configured)" = false
 expected_lan_ip_sha="$(printf '192.168.2.4' | sha256sum | awk '{print $1}')"
 test "$(json_value "$status" lan_verified_ip_sha256)" = "$expected_lan_ip_sha"
+# Domainless HTTPS uses the independently bounded LAN-IP SAN/local-CA window.
+test "$(json_value "$status" host_local_generation_sha256)" = "$expected_local_generation"
+test "$(json_value "$status" host_local_live_config_sha256)" = "$expected_live_sha"
 ! grep -q '192.168.2.4' "$status"
 ! grep -q 'AAAAA' "$status"
 # HTTP 2xx without a true API readiness JSON must not be green.
@@ -346,6 +361,8 @@ for result in invalid-json empty-json; do
   caddy_host_refresh
   test "$(json_value "$status" lan_tls_state)" = failed
   test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+  test "$(json_value "$status" host_local_generation_sha256)" = ""
+  test "$(json_value "$status" host_local_live_config_sha256)" = ""
 done
 # A failed curl is never green even if the fake writes a positive message.
 export XD_TEST_CADDY_LAN_RESULT=failed

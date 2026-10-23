@@ -25,7 +25,12 @@ test('NET-M5-A private-IP TLS effect uses a fixed local CA, not a server Docker 
   assert.doesNotMatch(host, /curl -k|--insecure|https:\/\/\$domain/)
   assert.match(api, /LANHTTPSConfigured/)
   assert.match(api, /LANVerifiedIPSHA256/)
-  assert.match(api, /len\(raw\) > 768/)
+  // The new paired SHA-256 generation fields make bounded Host JSON larger;
+  // preserve a strict cap and demand paired Host-positive validation.
+  assert.match(api, /len\(raw\) > 1024/)
+  assert.match(api, /HostLocalGenerationSHA256/)
+  assert.match(api, /HostLocalLiveConfigSHA256/)
+  assert.match(api, /validCaddyHostLocalWitness\(status\)/)
   assert.match(contract, /host\.LANVerifiedIPSHA256 == hex\.EncodeToString/)
   assert.match(desired, /caddyLANLocalEffectState\(host, observed, hostLANIP\)/)
   assert.match(shared, /host_lan_tls_state\?:/)

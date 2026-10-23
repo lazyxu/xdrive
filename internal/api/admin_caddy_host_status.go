@@ -16,18 +16,20 @@ const (
 )
 
 type caddyHostStatus struct {
-	State                   string `json:"state"`
-	HTTPSConfigured         bool   `json:"https_configured"`
-	TLSCheckSupported       bool   `json:"tls_check_supported"`
-	TLSState                string `json:"tls_state"`
-	TLSVerifiedDomainSHA256 string `json:"tls_verified_domain_sha256,omitempty"`
-	RuntimeTLSAlignment     string `json:"runtime_tls_alignment,omitempty"`
-	LiveConfigSHA256        string `json:"live_config_sha256,omitempty"`
-	InstanceGenerationState string `json:"instance_generation_state,omitempty"`
-	AliDNSModuleState       string `json:"alidns_module_state,omitempty"`
-	LANHTTPSConfigured      bool   `json:"lan_https_configured,omitempty"`
-	LANTLSState             string `json:"lan_tls_state,omitempty"`
-	LANVerifiedIPSHA256     string `json:"lan_verified_ip_sha256,omitempty"`
+	State                     string `json:"state"`
+	HTTPSConfigured           bool   `json:"https_configured"`
+	TLSCheckSupported         bool   `json:"tls_check_supported"`
+	TLSState                  string `json:"tls_state"`
+	TLSVerifiedDomainSHA256   string `json:"tls_verified_domain_sha256,omitempty"`
+	RuntimeTLSAlignment       string `json:"runtime_tls_alignment,omitempty"`
+	LiveConfigSHA256          string `json:"live_config_sha256,omitempty"`
+	HostLocalGenerationSHA256 string `json:"host_local_generation_sha256,omitempty"`
+	HostLocalLiveConfigSHA256 string `json:"host_local_live_config_sha256,omitempty"`
+	InstanceGenerationState   string `json:"instance_generation_state,omitempty"`
+	AliDNSModuleState         string `json:"alidns_module_state,omitempty"`
+	LANHTTPSConfigured        bool   `json:"lan_https_configured,omitempty"`
+	LANTLSState               string `json:"lan_tls_state,omitempty"`
+	LANVerifiedIPSHA256       string `json:"lan_verified_ip_sha256,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -125,6 +127,31 @@ func caddyObservedAliDNSModuleState(host caddyHostStatus, observed bool) string 
 	return "unverified"
 }
 
+// Host-local snapshot metadata is a bounded, unsigned observation: never
+// an independently authenticated Applied Receipt or proof of WAN access.
+// Require a complete digest pair AND all currently configured local TLS
+// targets to be positive in the same Host sampling window.
+func validCaddyHostLocalWitness(host caddyHostStatus) bool {
+	if host.HostLocalGenerationSHA256 == "" && host.HostLocalLiveConfigSHA256 == "" {
+		return true // legacy Host snapshots: no local-witness claim
+	}
+	if !validCaddyTLSVerifiedDomainDigest(host.HostLocalGenerationSHA256) ||
+		!validCaddyTLSVerifiedDomainDigest(host.HostLocalLiveConfigSHA256) ||
+		host.HostLocalLiveConfigSHA256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ||
+		host.State != "healthy" || (!host.HTTPSConfigured && !host.LANHTTPSConfigured) ||
+		(host.LANHTTPSConfigured && host.LANTLSState != "verified") {
+		return false
+	}
+	if host.HTTPSConfigured {
+		return host.TLSState == "verified" &&
+			host.RuntimeTLSAlignment == "matched-local" &&
+			host.InstanceGenerationState == "same-instance-local" &&
+			host.LiveConfigSHA256 == host.HostLocalLiveConfigSHA256
+	}
+	return host.LANHTTPSConfigured && host.LANTLSState == "verified" &&
+		host.TLSState == "disabled" && host.LiveConfigSHA256 == ""
+}
+
 func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 	var status caddyHostStatus
 	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
@@ -139,7 +166,7 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 		}
 	}
 	raw, err := os.ReadFile(filepath.Join(s.HostControlDir, caddyHostStatusName))
-	if err != nil || len(raw) == 0 || len(raw) > 768 {
+	if err != nil || len(raw) == 0 || len(raw) > 1024 {
 		return caddyHostStatus{}, false
 	}
 	if json.Unmarshal(raw, &status) != nil || !validCaddyHostState(status.State) ||
@@ -187,7 +214,8 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 			(status.TLSState == "verified" || status.LiveConfigSHA256 != "" ||
 				status.TLSVerifiedDomainSHA256 != "" ||
 				status.RuntimeTLSAlignment == "matched-local" ||
-				status.RuntimeTLSAlignment == "mismatch-local")) {
+				status.RuntimeTLSAlignment == "mismatch-local")) ||
+		!validCaddyHostLocalWitness(status) {
 		return caddyHostStatus{}, false
 	}
 	return status, true
