@@ -100,3 +100,14 @@ test('times out stalled probe without leaving it running', async () => {
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'server_timeout')
 })
+
+
+test('Desktop shows safe CA enrollment guidance and lets user retry Chromium TLS after trust changes', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/renderer/App.tsx'), 'utf8')
+  assert.match(app, /serverProbe\.code === 'server_tls_trust'/)
+  assert.match(app, /xdrive-server lan-ca export/)
+  assert.match(app, /setServerProbeRetry\(\(current\) => current \+ 1\)/)
+  assert.match(app, /\[configured, server, serverProbeRetry\]/)
+  assert.match(app, /code: result\.error\.code/)
+  assert.doesNotMatch(app, /setCertificateVerifyProc|ignoreCertificateErrors/)
+})

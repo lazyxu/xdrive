@@ -10,6 +10,15 @@ Desktop 登录前的 `/api/v1/version` 检查现使用 Electron Main 的 Chromiu
 
 `https://192.168.2.4:8443` 无法连接时，先确认当前 Caddy Host **实际**启用了 `XD_LAN_HTTPS_IP=192.168.2.4`、`XD_HTTPS_PORT=8443`，并且 `XD_HTTPS_BIND` 允许 LAN IP 访问；仅保存系统依赖期望值不代表当前 Host 生效。Windows 上可用 `Test-NetConnection 192.168.2.4 -Port 8443` 只读确认 TCP，再从可信独立渠道取得**当前服务器的** Caddy `root.crt` 并核验指纹，使用 `curl.exe --noproxy "*" --cacert <受信任的root.crt> https://192.168.2.4:8443/api/v1/version` 验证 TLS 证书链和 IP SAN。成功后，再按 OS 证书管理策略安全配置本机信任；**不要**通过 `-k`、忽略证书错误或在网页自动安装 CA 来登录。生产环境现场验收按用户决定跳过（未验收）；不影响代码级测试和合并。
 
+### 修复 Desktop 上的私有 CA 信任错误
+
+此错误发生在 Electron/Chromium 登录前的无凭据 HTTPS 探测阶段，**不是 IP URL 不被接受，也不是账号密码错误**。服务端自动签发 IP SAN 证书，不代表 Windows、macOS、Linux 客户端已经信任 Caddy 私有根 CA。不要从未经验证的 HTTPS 页面下载“修复证书”并直接安装；根 CA 一旦被信任，就有签发其他站点证书的能力。
+
+**服务端（已有可信 SSH/本机终端）**：运行 `xdrive-server lan-ca export /absolute/path/root.crt`。命令仅从本地 Docker Compose Caddy 容器读取公开根证书；验证它是有效单根 CA，然后用该 CA 验证实际 `https://XD_LAN_HTTPS_IP:XD_HTTPS_PORT/api/v1/readyz` 的证书链和 IP SAN，要求 HTTP 200。全部通过才以 `0600` 权限原子导出到不存在的绝对路径，打印 PEM SHA256 和证书指纹。它不安装 CA、不重启 Caddy、不修改数据库、不打印私钥；失败不留下目标文件。
+
+**Windows 客户端（通过可信 SSH/SCP/U 盘获得文件后）**：运行 `Get-FileHash .\root.crt -Algorithm SHA256` 比对服务端独立提供的 **CA PEM SHA256**。不一致立即停止。运行 `curl.exe --noproxy "*" --cacert .\root.crt https://192.168.2.4:8443/api/v1/version` 验证证书链及 IP SAN。仅在验证成功并确认服务器身份后，用户才明确批准在 Windows“当前用户 → 受信任的根证书颁发机构”安装此 CA（可使用 `certutil -user -addstore Root .\root.crt`）。之后重启 xDrive Desktop 并重新检查 HTTPS。系统信任根属于较高权限；不愿信任私有 CA 时改用公有 CA HTTPS 域名，不能关闭证书校验。
+
+如果仍失败，检查本机证书存储范围、CA 是否轮换、系统时钟、Caddy IP SAN 和真正生效的 8443 HTTPS 入口。服务端 `/readyz` 只能证明服务端侧 TLS 与身份，**不能代替客户端信任检查**。Desktop 的“重新检查 HTTPS”会重新运行无凭据探测；Chromium 可能需要重启以读取新的系统信任。
 **NET-M5-B2 Host 变更计划：** 管理员已保存的 IP/域名入口可经只读 Host Plan API 导出为规范候选配置，再由独立操作员在宿主机离线复核；它尚未执行 Caddy 重启。参阅 [Caddy HTTPS Host Plan](caddy-https-host-plan.md)，完成受控应用/回滚验收前必须保留至少一个可恢复的管理入口。私网 CA 信任仍需每台客户端安全配置。
 
 **NET-M4 首次部署默认值说明：** 当 DB 还没有管理员 Caddy 修订时，已通过规范 RFC1918 校验的 `XD_LAN_HTTPS_IP` 作为“系统依赖”页面**未保存的默认启用 IP**显示。它来自 Server 配置声明，只用于降低首次配置混淆；仍显示 `revision=0`、`apply_state=unmanaged`、`apply_supported=false`，不表示 Caddy 重启、TLS 验证、浏览器 CA 信任或已保存的宿主修订。

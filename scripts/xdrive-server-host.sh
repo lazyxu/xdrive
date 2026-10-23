@@ -42,6 +42,7 @@ Usage:
   xdrive-server update [--source github|gitlab] [--channel stable|master] [--backup-file-data]
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
+  xdrive-server lan-ca export /absolute/path/root.crt
   xdrive-server status [--summary-only]
   xdrive-server backup [create] [server-backup.sh options...]
   xdrive-server backup list
@@ -326,6 +327,100 @@ control_cmd() {
   }
   XD_CONFIG_DIR="$XDRIVE_HOME" exec "$control" "$@"
 }
+
+
+# Export a verified public CA certificate through the trusted local Docker management
+# plane. This deliberately never installs or trusts the CA on any client.
+lan_ca_cmd() (
+  if [[ "$#" -ne 2 || "$1" != "export" || -z "$2" || "$2" == "-" ]]; then
+    echo "usage: xdrive-server lan-ca export /absolute/path/root.crt" >&2
+    return 2
+  fi
+  if [[ ! -f "$ENV_PATH" || ! -f "$COMPOSE_PATH" ]]; then
+    echo "xdrive-server: managed deployment is unavailable." >&2
+    return 1
+  fi
+
+  local ip port output temp first second third fourth octet code fingerprint pem_sha tool
+  ip="$(env_value XD_LAN_HTTPS_IP)"
+  port="$(env_value XD_HTTPS_PORT)"
+  [[ -n "$port" ]] || port=8443
+  if [[ ! "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    echo "xdrive-server: an enabled canonical LAN HTTPS IP is required." >&2
+    return 1
+  fi
+  IFS=. read -r first second third fourth <<< "$ip"
+  for octet in "$first" "$second" "$third" "$fourth"; do
+    if [[ ! "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || (( 10#$octet > 255 )); then
+      echo "xdrive-server: invalid LAN HTTPS IPv4." >&2
+      return 1
+    fi
+  done
+  if ! (( first == 10 || (first == 172 && second >= 16 && second <= 31) ||
+           (first == 192 && second == 168) )); then
+    echo "xdrive-server: only canonical RFC1918 LAN HTTPS IPs are allowed." >&2
+    return 1
+  fi
+  if [[ ! "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( 10#$port > 65535 )); then
+    echo "xdrive-server: invalid HTTPS port." >&2
+    return 1
+  fi
+
+  output="$2"
+  if [[ "$output" != /* || -e "$output" || -L "$output" ||
+        ! -d "$(dirname -- "$output")" ]]; then
+    echo "xdrive-server: use a new absolute output path in an existing directory; overwrite is forbidden." >&2
+    return 1
+  fi
+  for tool in docker openssl curl sha256sum mktemp ln; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "xdrive-server: required local verification tool is unavailable: $tool" >&2
+      return 1
+    fi
+  done
+
+  temp="$(mktemp "$(dirname -- "$output")/.xdrive-lan-ca.XXXXXXXX")"
+  trap 'rm -f -- "$temp"' EXIT
+  chmod 0600 "$temp"
+  # Never fetch a root certificate from the untrusted HTTPS destination itself.
+  if ! compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > "$temp" 2>/dev/null; then
+    echo "xdrive-server: cannot read the running Caddy local CA." >&2
+    return 1
+  fi
+  if [[ "$(grep -c -- '-----BEGIN CERTIFICATE-----' "$temp")" -ne 1 ||
+        "$(grep -c -- '-----END CERTIFICATE-----' "$temp")" -ne 1 ]] ||
+     ! openssl x509 -in "$temp" -noout -checkend 0 >/dev/null 2>&1 ||
+     ! openssl x509 -in "$temp" -noout -ext basicConstraints 2>/dev/null | grep -q 'CA:TRUE' ||
+     ! openssl verify -CAfile "$temp" "$temp" >/dev/null 2>&1; then
+    echo "xdrive-server: Caddy local CA is not a valid, current single-root certificate." >&2
+    return 1
+  fi
+  # curl checks the real TLS chain and IP-address SAN with no SNI workarounds,
+  # redirects, proxies or TLS bypass. Require actual HTTP 200.
+  code="$(curl -sS --noproxy '*' --cacert "$temp" --connect-timeout 4 --max-time 10 \
+    --output /dev/null --write-out '%{http_code}' \
+    "https://$ip:$port/api/v1/readyz" 2>/dev/null)" || {
+    echo "xdrive-server: actual LAN HTTPS chain or IP SAN verification failed." >&2
+    return 1
+  }
+  if [[ "$code" != 200 ]]; then
+    echo "xdrive-server: LAN HTTPS readiness did not return HTTP 200." >&2
+    return 1
+  fi
+  # Atomic hard link fails if another process created the target. 0600 file.
+  if ! ln -- "$temp" "$output"; then
+    echo "xdrive-server: CA export destination is not available." >&2
+    return 1
+  fi
+  pem_sha="$(sha256sum "$output" | cut -d' ' -f1)"
+  fingerprint="$(openssl x509 -in "$output" -noout -fingerprint -sha256)"
+  printf 'Verified LAN HTTPS: https://%s:%s\n' "$ip" "$port"
+  printf 'Public CA certificate exported: %s\n' "$output"
+  printf 'CA PEM SHA256 (compare on client): %s\n' "$pem_sha"
+  printf 'CA certificate %s\n' "$fingerprint"
+  echo "Transfer through an independently trusted channel; compare SHA256 before explicitly trusting on each client."
+  echo "No operating-system certificate stores or xDrive login settings were changed."
+)
 
 doctor_cmd() {
   local doctor="$BIN_DIR/server-doctor.sh"
@@ -1134,6 +1229,7 @@ case "$cmd" in
   update) update_cmd "$@" ;;
   control) control_cmd "$@" ;;
   doctor) doctor_cmd "$@" ;;
+  lan-ca) lan_ca_cmd "$@" ;;
   status) status_cmd "$@" ;;
   backup) backup_cmd "$@" ;;
   restore) restore_cmd "$@" ;;
