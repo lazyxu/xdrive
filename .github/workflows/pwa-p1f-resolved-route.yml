@@ -1,0 +1,144 @@
+name: PWA P1F Real Owner 100k Resolved Route Paired
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p1f-resolved-route:
+    if: github.head_ref == 'fix/pwa-p1f-resolved-route-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+      XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1fdc58c7c4d99fc634f73199fdead9f57861b3ef
+          path: before
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: after
+          fetch-depth: 2 # direct-parent evidence for the exact A/B comparison
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: before/web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: before/go.sum
+      - name: Exact source, original route contracts and real browser dependencies
+        run: |
+          set -euo pipefail
+          test "$(git -C before rev-parse HEAD)" = '1fdc58c7c4d99fc634f73199fdead9f57861b3ef'
+          test "$(git -C after rev-parse HEAD^)" = "$(git -C before rev-parse HEAD)"
+          test "$(git -C after rev-parse HEAD)" = "$XD_PR_HEAD"
+          cmp before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          cmp before/internal/api/gallery_real_web_cold_performance_integration_test.go after/internal/api/gallery_real_web_cold_performance_integration_test.go
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix before/web ci --no-audit --no-fund
+          npm --prefix after/web ci --no-audit --no-fund
+          npm --prefix before/desktop install --no-audit --no-fund
+          node --check after/desktop/scripts/pwa-p1f-owner-paired.cjs
+          # The original Desktop contract fixtures load TypeScript through
+          # require('typescript'); only Web installs it in this scoped job.
+          # Reuse the already-installed exact-head Web dependency tree, not a
+          # second product dependency or a mocked transpiler.
+          (cd after && NODE_PATH="$GITHUB_WORKSPACE/after/web/node_modules" node --test desktop/tests/pwa-p1f-resolved-route.cjs desktop/tests/pwa-p1b-shared-lazy-route-contract.cjs desktop/tests/web-app-history-guard.cjs)
+          mkdir -p "$RUNNER_TEMP/pwa-p1f-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-p1f-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/pwa-p1f-driver/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo 'Real Chrome/Chromium is required' >&2
+            exit 1
+          fi
+          ln -s "$GITHUB_WORKSPACE/before/desktop/node_modules" after/desktop/node_modules
+          npm --prefix before/web run build
+          npm --prefix after/web run build
+          mkdir -p before/desktop/pwa-p1f-bin
+          (cd before && go test -c -o "$GITHUB_WORKSPACE/before/desktop/pwa-p1f-bin/api.test" ./internal/api)
+          test -x before/desktop/pwa-p1f-bin/api.test
+      - name: Genuine Owner Files Gallery Files A-B-B-A 100k Go cancellation
+        env:
+          XD_GALLERY_MOBILE_NATIVE_GO_BINARY: ${{ github.workspace }}/before/desktop/pwa-p1f-bin/api.test
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/after/desktop/pwa-p1f-results"
+          mkdir -p "$OUT"
+          run_release() {
+            local release="$1" label="$2"
+            (cd "$release" && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+              "$GITHUB_WORKSPACE/before/desktop/node_modules/.bin/electron" --no-sandbox \
+              desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs)
+            test -s "$release/desktop/pwa-p0c2-spa-go-results/summary.json"
+            mkdir -p "$OUT/$label"
+            cp "$release/desktop/pwa-p0c2-spa-go-results/summary.json" "$OUT/$label/summary.json"
+            for n in 1 2 3; do
+              cp "$release/desktop/pwa-p0c2-spa-go-results/sample-$n.json" "$OUT/$label/sample-$n.json"
+            done
+          }
+          run_release before a1
+          run_release after b1
+          run_release after b2
+          run_release before a2
+          node after/desktop/scripts/pwa-p1f-owner-paired.cjs \
+            "$OUT/a1" "$OUT/b1" "$OUT/b2" "$OUT/a2" "$OUT/paired.json"
+      - name: Genuine 390px three-session navigation plus Gallery Viewer return
+        env:
+          XDRIVE_BROWSER_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+        run: |
+          set -euo pipefail
+          mkdir -p after/desktop/pwa-p1f-navigation after/desktop/pwa-p1f-viewer
+          (cd after && XD_PWA_P0C2_NAV_BEFORE=1 node desktop/scripts/mobile-web-app-browser.cjs \
+            --scenario=gallery-ios27-chrome --output-dir="$GITHUB_WORKSPACE/after/desktop/pwa-p1f-navigation")
+          node - <<'NODE'
+          const s=require('./after/desktop/pwa-p1f-navigation/p0c2-summary.json')
+          if(s.source_commit_sha!==process.env.XD_PR_HEAD||s.independent_browser_sessions!==3||
+             s.transitions_per_direction!==9||s.samples.length!==18||s.physical_ios||
+             !s.metrics['files-to-gallery']||!s.metrics['gallery-to-files'])process.exit(1)
+          NODE
+          (cd after && node desktop/scripts/mobile-web-app-browser.cjs \
+            --scenario=gallery-ios27-viewer --output-dir="$GITHUB_WORKSPACE/after/desktop/pwa-p1f-viewer")
+          node - <<'NODE'
+          const s=require('./after/desktop/pwa-p1f-viewer/results.json')
+          if(!s.passed||s.failures.length||s.checks.length<10||
+             s.unknownRequests.length||s.pageErrors.length||s.consoleErrors.length)process.exit(1)
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1f-resolved-route-anonymous-100k
+          path: |
+            after/desktop/pwa-p1f-results/paired.json
+            after/desktop/pwa-p1f-navigation/p0c2-summary.json
+            after/desktop/pwa-p1f-viewer/results.json
+          if-no-files-found: warn
+          retention-days: 14
