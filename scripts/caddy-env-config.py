@@ -222,9 +222,20 @@ def save(data, env, backup, marker):
 
 
 def finish(data, env, backup, marker, commit):
-    if set(data) not in ({"operation", "request_id", "expected_sha256"},
-                         {"operation", "request_id", "created_at"}) or \
-            data.get("operation") != ("commit" if commit else "restore"):
+    durable = commit and os.environ.get("XD_CADDY_COMMIT_DURABLE") == "1"
+    base = {"operation", "request_id", "expected_sha256"}
+    with_local = base | {"host_local_generation_sha256", "host_local_live_config_sha256"}
+    if data.get("operation") != ("commit" if commit else "restore"):
+        raise Restricted("invalid-completion")
+    if durable:
+        # Only the internal Host runner with its inherited install.lock can
+        # publish a new success decision containing bounded local proof.
+        if set(data) != with_local or any(
+            not isinstance(data.get(key), str) or HEX.fullmatch(data[key]) is None
+            for key in ("host_local_generation_sha256", "host_local_live_config_sha256")
+        ):
+            raise Restricted("invalid-local-runtime-witness")
+    elif set(data) not in (base, {"operation", "request_id", "created_at"}):
         raise Restricted("invalid-completion")
     raw = read_secure(env)
     _, old = parse(raw)
@@ -243,14 +254,16 @@ def finish(data, env, backup, marker, commit):
         _, before = parse(read_secure(backup))
         replace_atomic(env, render(raw, before))
         _, old = parse(read_secure(env))
-    if commit and os.environ.get("XD_CADDY_COMMIT_DURABLE") == "1":
-        # The local Ready + trusted TLS checks happened under the inherited
-        # installer lock BEFORE this commit. The archive is the durable
-        # decision point: without it, restart may roll back the candidate;
-        # after it, restart must NEVER undo a completed deploy.
+    if durable:
+        # The local Generation+Live Config window and Ready+TLS checks happened
+        # under the inherited install.lock. Publish the window witness in
+        # the SAME immutable decision as the original Request ID and .env SHA.
+        # This is historical host-local evidence, not signed/live Applied.
         archive_deploy({
             "protocol": "xdrive.caddy.host-env.v1", "state": "deployed",
             "request_id": data["request_id"], "sha256": data["expected_sha256"],
+            "host_local_generation_sha256": data["host_local_generation_sha256"],
+            "host_local_live_config_sha256": data["host_local_live_config_sha256"],
         })
         # Offline fault injection: power loss after durable decision, before
         # marker/backup cleanup. Never reachable from browser input.
@@ -336,7 +349,8 @@ def archive_deploy(receipt=None):
             receipt = json.loads(data, object_pairs_hook=unique_pairs)
         except (ValueError, UnicodeError) as exc:
             raise Restricted("invalid-receipt") from exc
-    allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error"}
+    local_keys = {"host_local_generation_sha256", "host_local_live_config_sha256"}
+    allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error"} | local_keys
     if not isinstance(receipt, dict) or set(receipt) - allowed:
         raise Restricted("unexpected-receipt-field")
     if receipt.get("protocol") != "xdrive.caddy.host-env.v1":
@@ -348,6 +362,13 @@ def archive_deploy(receipt=None):
     state = receipt.get("state")
     if state not in ("deployed", "failed"):
         raise Restricted("nonterminal-receipt")
+    present_local = set(receipt) & local_keys
+    # Legacy v1 success rows have neither field. Modern trusted Host commits
+    # include BOTH; never accept a partial, malformed or failed-row witness.
+    if present_local and (state != "deployed" or present_local != local_keys or
+            any(not isinstance(receipt[k], str) or HEX.fullmatch(receipt[k]) is None
+                for k in local_keys)):
+        raise Restricted("invalid-local-runtime-witness")
     code = receipt.get("error", "")
     if not isinstance(code, str):
         raise Restricted("invalid-receipt-error")
@@ -365,6 +386,9 @@ def archive_deploy(receipt=None):
         clean["error"] = code
     if restored:
         clean["rolled_back"] = True
+    if present_local:
+        for key in local_keys:
+            clean[key] = receipt[key]
     output = (json.dumps(clean, sort_keys=True, separators=(",", ":")) + "\n").encode()
     if len(output) > 512:
         raise Restricted("oversized-receipt")
@@ -513,13 +537,20 @@ def reconcile_committed(data, env, backup, marker):
         receipt = json.loads(raw, object_pairs_hook=no_duplicate_pairs)
     except (ValueError, UnicodeError) as exc:
         raise Restricted("invalid-commit-receipt") from exc
-    if (not isinstance(receipt, dict) or
-            receipt != {
-                "protocol": "xdrive.caddy.host-env.v1",
-                "state": "deployed", "request_id": data["request_id"],
-                "sha256": data["expected_sha256"],
-            }):
+    legacy_success = {
+        "protocol": "xdrive.caddy.host-env.v1",
+        "state": "deployed", "request_id": data["request_id"],
+        "sha256": data["expected_sha256"],
+    }
+    modern_keys = {"host_local_generation_sha256", "host_local_live_config_sha256"}
+    if not isinstance(receipt, dict):
         raise Restricted("mismatched-commit-receipt")
+    if receipt != legacy_success:
+        if (set(receipt) != set(legacy_success) | modern_keys or
+                any(receipt.get(k) != v for k, v in legacy_success.items()) or
+                any(not isinstance(receipt[k], str) or HEX.fullmatch(receipt[k]) is None
+                    for k in modern_keys)):
+            raise Restricted("mismatched-commit-receipt")
     _, present = parse(read_secure(env))
     if fingerprint(present) != data["expected_sha256"]:
         raise Restricted("changed-host-env")

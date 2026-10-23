@@ -1553,7 +1553,11 @@ caddy_env_refresh() {
 # signed Applied Receipt or external WAN/CA/client trust assertion.
 caddy_env_verify_local_runtime_window() {
   local domain="$1" lan="$2" before_generation="" after_generation=""
-  local before_live="" after_live=""
+  local before_live="" after_live="" generation_digest=""
+  # These are Host-process-only outputs, never browser/Server inputs.
+  # Clear on every call so a failed recheck cannot reuse a prior generation.
+  CADDY_LOCAL_WINDOW_GENERATION_SHA256=""
+  CADDY_LOCAL_WINDOW_LIVE_SHA256=""
   before_generation="$(caddy_container_generation_sample)" || return 1
   before_live="$(caddy_live_active_config_sha256)" || return 1
   [[ -n "$before_generation" && -n "$before_live" ]] || return 1
@@ -1567,9 +1571,19 @@ caddy_env_verify_local_runtime_window() {
   fi
   after_live="$(caddy_live_active_config_sha256)" || return 1
   after_generation="$(caddy_container_generation_sample)" || return 1
-  [[ -n "$after_live" && -n "$after_generation" &&
-     "$before_generation" == "$after_generation" &&
-     "$before_live" == "$after_live" ]]
+  if [[ -z "$after_live" || -z "$after_generation" ||
+        "$before_generation" != "$after_generation" ||
+        "$before_live" != "$after_live" ]]; then
+    return 1
+  fi
+  # Domain separate the fixed five-field Docker runtime identity. The
+  # underlying container ID/start/PID and raw Caddy JSON never leave Host.
+  generation_digest="$(printf 'xdrive.caddy.host.local-generation.v1\n%s\n' "$before_generation" |
+    sha256sum | awk '{print $1}')" || return 1
+  [[ "$generation_digest" =~ ^[0-9a-f]{64}$ &&
+     "$before_live" =~ ^[0-9a-f]{64}$ ]] || return 1
+  CADDY_LOCAL_WINDOW_GENERATION_SHA256="$generation_digest"
+  CADDY_LOCAL_WINDOW_LIVE_SHA256="$before_live"
 }
 
 # A bounded Caddy-only recreate is a separate, administrator-audited request.
@@ -1643,8 +1657,14 @@ caddy_env_deploy() {
     fi
   # Keep install.lock until the Host journal is committed or restored. A
   # concurrent upgrade must not adopt an uncommitted candidate in this gap.
-  if (( ready == 1 )); then
-    if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$expected" |
+  if (( ready == 1 )) &&
+      [[ "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" =~ ^[0-9a-f]{64}$ &&
+         "$CADDY_LOCAL_WINDOW_LIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+    # Persist this precise request + local runtime witness IN THE SAME
+    # immutable Host success decision as the .env SHA. It is historical
+    # Host-local evidence, NOT a signed/current Applied Receipt.
+    if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s","host_local_generation_sha256":"%s","host_local_live_config_sha256":"%s"}\n' \
+        "$id" "$expected" "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" "$CADDY_LOCAL_WINDOW_LIVE_SHA256" |
         XD_CONFIG_DIR="$XDRIVE_HOME" XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 \
           XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" XD_CADDY_COMMIT_DURABLE=1 \
           python3 "$BIN_DIR/caddy-env-config.py" commit > /dev/null 2>&1; then

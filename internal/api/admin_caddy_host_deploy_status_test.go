@@ -39,14 +39,21 @@ func TestCaddyHostDeployErrorCodesDoNotLeakRawHostErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			payload, err := json.Marshal(map[string]any{
+			value := map[string]any{
 				"protocol":    caddyHostEnvProtocol,
 				"request_id":  id,
 				"sha256":      sha,
 				"state":       tc.state,
 				"rolled_back": tc.rolledBack,
 				"error":       tc.errorCode,
-			})
+			}
+			if tc.name == "success cannot report error" {
+				// Host-private immutable local observation is NOT a public
+				// live Applied Receipt or a browser-visible runtime identity.
+				value["host_local_generation_sha256"] = strings.Repeat("c", 64)
+				value["host_local_live_config_sha256"] = strings.Repeat("d", 64)
+			}
+			payload, err := json.Marshal(value)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -61,8 +68,10 @@ func TestCaddyHostDeployErrorCodesDoNotLeakRawHostErrors(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("get status: HTTP %d: %s", w.Code, w.Body.String())
 			}
-			if strings.Contains(w.Body.String(), "SECRET-DO-NOT-LEAK") {
-				t.Fatal("host diagnostic leaked into administrator response")
+			if strings.Contains(w.Body.String(), "SECRET-DO-NOT-LEAK") ||
+				strings.Contains(w.Body.String(), "host_local_") ||
+				strings.Contains(w.Body.String(), strings.Repeat("c", 64)) {
+				t.Fatal("private Host runtime witness or diagnostic leaked to administrator")
 			}
 			var output caddyEnvDeployStatus
 			if err := json.Unmarshal(w.Body.Bytes(), &output); err != nil {

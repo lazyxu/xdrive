@@ -133,6 +133,17 @@ import json,sys
 r=json.load(open(sys.argv[1]))
 assert r["state"] == "deployed" and r["sha256"] == sys.argv[2]
 PY
+# A successful normal deployment durably records local Docker Generation
+# and Caddy in-memory config hashes in its SAME original Request ID terminal.
+python3 - "$(prepare_dir)/caddy-deploy-results/111111111111111111111111.json" "$sha" <<'PY'
+import json,re,sys
+r=json.load(open(sys.argv[1]))
+assert r["state"] == "deployed" and r["request_id"] == "111111111111111111111111"
+assert r["sha256"] == sys.argv[2]
+assert re.fullmatch(r"[0-9a-f]{64}",r["host_local_generation_sha256"])
+assert r["host_local_live_config_sha256"] == f"{1:064d}"
+assert "POSTGRES_PASSWORD" not in json.dumps(r) and "ALIYUN_ACCESS_KEY" not in json.dumps(r)
+PY
 grep -q '^XD_DOMAIN=next.example.com$' "$XD_CONFIG_DIR/config/.env"
 grep -q '^POSTGRES_PASSWORD=unmodified-example$' "$XD_CONFIG_DIR/config/.env"
 grep -q '^XD_JWT_SECRET=also-unmodified-example$' "$XD_CONFIG_DIR/config/.env"
@@ -335,13 +346,17 @@ simulate_committed_host_crash() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
     up -d --no-deps --force-recreate caddy >/dev/null
   [[ "$(caddy_local_tls_state "$name")" == verified ]]
+  caddy_env_verify_local_runtime_window "$name" "192.168.1.9"
+  [[ "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" =~ ^[0-9a-f]{64}$ &&
+     "$CADDY_LOCAL_WINDOW_LIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
   exec 6>"$XD_CONFIG_DIR/state/install.lock"
   flock -n 6
   local crash_after_archive=0 crash_after_marker=0 crash_after_link=0
   [[ "$mode" != after-link ]] || crash_after_link=1
   [[ "$mode" != after-archive ]] || crash_after_archive=1
   [[ "$mode" != after-marker ]] || crash_after_marker=1
-  if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$sha" |
+  if printf '{"operation":"commit","request_id":"%s","expected_sha256":"%s","host_local_generation_sha256":"%s","host_local_live_config_sha256":"%s"}\n' \
+      "$id" "$sha" "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" "$CADDY_LOCAL_WINDOW_LIVE_SHA256" |
       XD_CONFIG_DIR="$XD_CONFIG_DIR" XD_CADDY_DEPLOY_RECEIPT_DIR="$dir" \
       XD_CADDY_INSTALL_LOCK_INHERITED_FD=6 XD_CADDY_COMMIT_DURABLE=1 \
       XD_CADDY_TEST_COMMIT_CRASH_AFTER_LINK="$crash_after_link" \
@@ -362,11 +377,13 @@ simulate_committed_host_crash() {
   exec 6>&-
   [[ -f "$dir/caddy-env-active.json" ]]
   local receipt="$dir/caddy-deploy-results/$id.json"
-  python3 - "$receipt" "$id" "$sha" <<'PY'
+  python3 - "$receipt" "$id" "$sha" "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" "$CADDY_LOCAL_WINDOW_LIVE_SHA256" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1]))
 assert r=={"protocol":"xdrive.caddy.host-env.v1","state":"deployed",
-          "request_id":sys.argv[2],"sha256":sys.argv[3]}
+          "request_id":sys.argv[2],"sha256":sys.argv[3],
+          "host_local_generation_sha256":sys.argv[4],
+          "host_local_live_config_sha256":sys.argv[5]}
 PY
   # This is the precise crash window between the durable decision and Host
   # journal cleanup. Neither wrong rollback nor a second recreate is allowed.
