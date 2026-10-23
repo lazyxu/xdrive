@@ -53,6 +53,7 @@
   let cells = [], allowedKeys = new Set(), map = null, sdk = null
   let script = null, pending = false, disposed = false, labelBindings = []
   let initialOverviewPending = true
+  let viewportTimer = null
   const send = (kind, fields = {}) => {
     if (!active || disposed) return
     window.parent.postMessage(Object.assign({version:1,generation,nonce,kind},fields),parentOrigin)
@@ -145,6 +146,22 @@
       }
     } catch { /* provider errors are never passed to the trusted parent */ }
   }
+  // Coalesce SDK moveend + zoomend and repeated native settle events. The
+  // Parent still cancels its current Owner query immediately at gesture START.
+  const scheduleViewport = () => {
+    if (viewportTimer !== null) clearTimeout(viewportTimer)
+    viewportTimer = setTimeout(() => {
+      viewportTimer = null
+      if (!disposed && active) emitViewport()
+    }, 500)
+  }
+  const stopViewport = () => {
+    if (viewportTimer !== null) clearTimeout(viewportTimer)
+    viewportTimer = null
+    allowedKeys.clear()
+    clearLabels()
+    send('cancel')
+  }
   const bindNative = native => {
     if (disposed || !active || !canvas || typeof native.Map !== 'function' ||
         typeof native.Point !== 'function' || typeof native.Label !== 'function') throw Error('unavailable')
@@ -157,15 +174,15 @@
       map.enablePinchToZoom?.(true)
     } catch { /* unsupported optional SDK gesture API */ }
     fitInitialOverview()
-    map.addEventListener('movestart', () => { allowedKeys.clear(); clearLabels(); send('cancel') })
-    map.addEventListener('zoomstart', () => { allowedKeys.clear(); clearLabels(); send('cancel') })
-    map.addEventListener('moveend', emitViewport)
-    map.addEventListener('zoomend', emitViewport)
+    map.addEventListener('movestart', stopViewport)
+    map.addEventListener('zoomstart', stopViewport)
+    map.addEventListener('moveend', scheduleViewport)
+    map.addEventListener('zoomend', scheduleViewport)
     renderCells()
     if (status) status.textContent = '百度地图'
     send('map-ready')
     emitCellProjections()
-    emitViewport()
+    scheduleViewport()
   }
   const loadSDK = () => new Promise((resolve,reject) => {
     if (script || disposed || !active) { reject(Error('unavailable')); return }
@@ -268,6 +285,8 @@
     }
   }
   const dispose=()=>{
+    if (viewportTimer !== null) clearTimeout(viewportTimer)
+    viewportTimer = null
     active=false;disposed=true;generation=0;nonce=''
     allowedKeys.clear();cells=[];clearLabels()
     try { map?.destroy?.() } catch {}

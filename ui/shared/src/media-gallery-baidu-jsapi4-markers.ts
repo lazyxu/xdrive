@@ -185,19 +185,30 @@ function officialTranslate(
       if (error) reject(error)
       else resolve(converted ?? [])
     }
-    const onAbort = () => finish(new Error('baidu_map_conversion_cancelled'))
+    // Abort cannot retract a request already sent to Baidu. Keep the physical
+    // conversion slot occupied until its callback or timeout, even if the
+    // Gallery has navigated away and no longer accepts its result.
+    let dispatched = false
+    let cancelled = false
+    const onAbort = () => {
+      cancelled = true
+      if (!dispatched) finish(new Error('baidu_map_conversion_cancelled'))
+    }
     if (signal?.aborted) return onAbort()
     signal?.addEventListener('abort', onAbort, { once: true })
-    timer = setTimeout(() => finish(new Error('baidu_map_conversion_unavailable')),
+    timer = setTimeout(() => finish(new Error('baidu_map_conversion_timeout')),
       conversionTimeoutMs)
     try {
       // 1 = WGS84 GPS, 5 = official Baidu BD-09. Never approximate locally.
+      dispatched = true
       convertor.translate(points, 1, 5, result => {
-        if (!convertedPointsValid(result, points.length)) {
+        if (cancelled || signal?.aborted) {
+          finish(new Error('baidu_map_conversion_cancelled'))
+        } else if (!convertedPointsValid(result, points.length)) {
           finish(new Error('baidu_map_conversion_unavailable'))
-          return
+        } else {
+          finish(null, result.points.map(p => ({ lng: p.lng, lat: p.lat })))
         }
-        finish(null, result.points.map(p => ({ lng: p.lng, lat: p.lat })))
       })
     } catch {
       finish(new Error('baidu_map_conversion_unavailable'))
@@ -205,13 +216,281 @@ function officialTranslate(
   })
 }
 
-/** Fail closed: ONLY official successful BD-09 points may enter a FUTURE
- * licensed ClusterLayer.setData(). This function has NO active UI caller. */
+
+/**
+ * Browser-document/session-only derived-coordinate cache and Convertor gate.
+ * No durable browser storage, cookie, raw-GPS log or persisted Baidu result.
+ * One active scope (Owner/server) at a time; caller clears it on sign-out.
+ *
+ * The gate controls method invocations, NOT Baidu's account-wide QPS or the
+ * underlying SDK's internal subrequests. No quota refund is assumed.
+ */
+export type XDriveBaiduConversionAudit = Readonly<{
+  entry: 'places-prototype'
+  anonymous_session: string
+  cache_hit_rate_percent: number
+  method_calls: number
+  submitted_points: number
+  converted_points: number
+  peak_method_calls_per_second: number
+  cache_hits: number
+  cache_misses: number
+  cancelled: number
+  failed: number
+  cache_entries: number
+  in_flight: number
+}>
+
+function baiduConversionMonotonicMs(): number {
+  // Wall clock jumps must never reduce the actual method-call interval.
+  return typeof performance === 'object' && typeof performance.now === 'function'
+    ? performance.now() : Date.now()
+}
+
+function ephemeralBaiduAuditSession(): string {
+  // Displayable opaque identifier only; never used for auth, signing or quota.
+  // Unsupported runtimes keep telemetry local and without a stable ID.
+  try {
+    return typeof crypto === 'object' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID() : ''
+  } catch { return '' }
+}
+
+export class XDriveBaiduJSAPI4ConversionSession {
+  private scope = ''
+  private anonymousSession = ephemeralBaiduAuditSession()
+  private epoch = 0
+  private sourceRevision = 0
+  private readonly cache = new Map<string, XDriveBaiduOfficialPoint>()
+  private readonly sources = new Map<string, string>()
+  private tail: Promise<void> = Promise.resolve()
+  private queueDepth = 0
+  private lastDispatch = -Infinity
+  private second = -1
+  private callsThisSecond = 0
+  private poisoned = false
+  private inFlight = 0
+  private methodCalls = 0
+  private submittedPoints = 0
+  private convertedPoints = 0
+  private peak = 0
+  private hits = 0
+  private misses = 0
+  private cancelled = 0
+  private failed = 0
+
+  constructor(private readonly capacity = 512) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 1024) {
+      throw new Error('baidu_map_conversion_capacity_invalid')
+    }
+  }
+
+  useScope(scope: string): this {
+    if (!scope || scope.length > 256) {
+      this.clear()
+      return this
+    }
+    if (scope !== this.scope) {
+      this.clear()
+      this.scope = scope
+    }
+    return this
+  }
+
+  clear(): void {
+    this.epoch++
+    this.scope = ''
+    this.anonymousSession = ephemeralBaiduAuditSession()
+    this.cache.clear()
+    this.sources.clear()
+    this.methodCalls = this.submittedPoints = this.convertedPoints = this.peak = 0
+    this.hits = this.misses = this.cancelled = this.failed = 0
+    // Retain the scheduler's last dispatch and any unknown in-flight status;
+    // a logout must not accidentally make another Baidu call simultaneous.
+  }
+
+  private key(p: XDriveBaiduOfficialPoint): string {
+    return p.lat.toString() + ':' + p.lng.toString()
+  }
+
+  observeSource(marker: XDriveBaiduWGS84Marker): void {
+    const key = this.key({ lng: marker.longitude, lat: marker.latitude })
+    const old = this.sources.get(marker.placeID)
+    if (old && old !== key) {
+      this.cache.delete(old)
+      // A translation already dispatched for the old point must NEVER
+      // reinsert it after this source changes. Invalidate queued/in-flight
+      // translation generations without assuming provider request refunds.
+      this.sourceRevision++
+    }
+    this.sources.delete(marker.placeID)
+    this.sources.set(marker.placeID, key)
+    if (this.sources.size > 1024) {
+      const first = this.sources.keys().next().value
+      if (first !== undefined) this.sources.delete(first)
+    }
+  }
+
+  private read(key: string): XDriveBaiduOfficialPoint | undefined {
+    const value = this.cache.get(key)
+    if (!value) { this.misses++; return undefined }
+    this.hits++
+    this.cache.delete(key)
+    this.cache.set(key, value)
+    return value
+  }
+
+  private write(key: string, value: XDriveBaiduOfficialPoint): void {
+    this.cache.delete(key)
+    this.cache.set(key, { lng: value.lng, lat: value.lat })
+    if (this.cache.size > this.capacity) {
+      const first = this.cache.keys().next().value
+      if (first !== undefined) this.cache.delete(first)
+    }
+  }
+
+  audit(): XDriveBaiduConversionAudit {
+    return {
+      entry:'places-prototype', anonymous_session:this.anonymousSession,
+      cache_hit_rate_percent:this.hits + this.misses === 0
+        ? 0 : Math.round(10000 * this.hits / (this.hits + this.misses)) / 100,
+      method_calls:this.methodCalls,
+      submitted_points:this.submittedPoints,
+      converted_points:this.convertedPoints,
+      peak_method_calls_per_second:this.peak,
+      cache_hits:this.hits, cache_misses:this.misses,
+      cancelled:this.cancelled, failed:this.failed,
+      cache_entries:this.cache.size, in_flight:this.inFlight,
+    }
+  }
+
+  async translate(
+    convertor: XDriveBaiduOfficialConvertor,
+    points: XDriveBaiduOfficialPoint[],
+    signal?: AbortSignal,
+  ): Promise<XDriveBaiduOfficialPoint[]> {
+    if (signal?.aborted) throw new Error('baidu_map_conversion_cancelled')
+    if (!Array.isArray(points) || points.length < 1 ||
+        points.length > XDRIVE_BAIDU_JSAPI4_CONVERSION_BATCH ||
+        !points.every(p => p && Number.isFinite(p.lng) && Number.isFinite(p.lat) &&
+          Math.abs(p.lng) <= 180 && Math.abs(p.lat) <= 85)) {
+      throw new Error('baidu_map_conversion_unavailable')
+    }
+    if (this.queueDepth >= 16) throw new Error('baidu_map_conversion_queue_full')
+    this.queueDepth++
+    const epoch = this.epoch
+    const sourceRevision = this.sourceRevision
+    // Re-check the cache *inside* the gate: competing viewport updates must
+    // not each charge the same source point while waiting their turn.
+    const job = this.tail.then(async () => {
+      const check = () => {
+        if (signal?.aborted || epoch !== this.epoch ||
+            sourceRevision !== this.sourceRevision) {
+          throw new Error('baidu_map_conversion_cancelled')
+        }
+      }
+      try {
+        check()
+        const keys = points.map(p => this.key(p))
+        const answers = keys.map(key => this.read(key))
+        const unseen = new Map<string, XDriveBaiduOfficialPoint>()
+        keys.forEach((key, i) => {
+          if (!answers[i] && !unseen.has(key)) unseen.set(key, points[i])
+        })
+        if (unseen.size) {
+          if (this.poisoned) throw new Error('baidu_map_conversion_unavailable')
+          const delay = Math.max(0, 1000 - (baiduConversionMonotonicMs() - this.lastDispatch))
+          if (delay) {
+            await new Promise<void>((resolve, reject) => {
+              const onAbort = () => {
+                clearTimeout(timer)
+                reject(new Error('baidu_map_conversion_cancelled'))
+              }
+              const timer = setTimeout(() => {
+                signal?.removeEventListener('abort', onAbort)
+                resolve()
+              }, delay)
+              if (signal?.aborted) onAbort()
+              else signal?.addEventListener('abort', onAbort, { once: true })
+            })
+          }
+          check()
+          const missing = [...unseen.entries()]
+          this.lastDispatch = baiduConversionMonotonicMs()
+          const second = Math.floor(Date.now() / 1000)
+          this.callsThisSecond = this.second === second
+            ? this.callsThisSecond + 1 : 1
+          this.second = second
+          this.peak = Math.max(this.peak, this.callsThisSecond)
+          this.methodCalls++
+          this.submittedPoints += missing.length
+          this.inFlight++
+          try {
+            const result = await officialTranslate(convertor,
+              missing.map(([,p]) => p), signal)
+            check()
+            this.convertedPoints += result.length
+            result.forEach((value, i) => this.write(missing[i][0], value))
+          } catch (error) {
+            // SDK timeout does NOT prove its provider request has ended:
+            // fail closed for the remainder of this document session.
+            if (error instanceof Error && error.message === 'baidu_map_conversion_timeout') {
+              this.poisoned = true
+            }
+            throw error
+          } finally { this.inFlight-- }
+        }
+        check()
+        return keys.map(key => {
+          const value = this.cache.get(key)
+          if (!value) throw new Error('baidu_map_conversion_unavailable')
+          return { lng:value.lng, lat:value.lat }
+        })
+      } catch (error) {
+        if (epoch === this.epoch) {
+          if (signal?.aborted || sourceRevision !== this.sourceRevision ||
+              (error instanceof Error && error.message === 'baidu_map_conversion_cancelled')) {
+            this.cancelled++
+          } else this.failed++
+        }
+        // Never attribute an old Owner's late rejection to the new anonymous
+        // audit session created after a scope switch or logout.
+        throw error
+      }
+    })
+    this.tail = job.then(() => {}, () => {})
+    try { return await job }
+    finally { this.queueDepth-- }
+  }
+}
+
+// A single browser-document gate, shared by all Gallery remounts. The owning
+// Web/Desktop auth lifecycle clears it immediately on logout/server switch.
+const sharedConversionSession = new XDriveBaiduJSAPI4ConversionSession()
+export function xDriveBaiduConversionSessionForScope(
+  scope: string,
+): XDriveBaiduJSAPI4ConversionSession {
+  return sharedConversionSession.useScope(scope)
+}
+export function xDriveClearBaiduConversionSession(): void {
+  sharedConversionSession.clear()
+}
+export function xDriveBaiduConversionAuditSnapshot(): XDriveBaiduConversionAudit {
+  return sharedConversionSession.audit()
+}
+
+/** Only official successful BD-09 points may enter the legacy active
+ * browser prototype's ClusterLayer. The isolated HTTPS Child instead uses
+ * Server-authorized BD09 cells without running this Convertor. */
 export async function xDriveConvertBaiduJSAPI4MarkerWindow(
   prepared: XDriveBaiduMarkerPreparation,
   convertor: XDriveBaiduOfficialConvertor,
   createPoint: (lng: number, lat: number) => XDriveBaiduOfficialPoint,
   signal?: AbortSignal,
+  // Only the owning Gallery explicitly supplies a document-scoped shared session.
+  // Other callers (including the inert legacy Controller) must not inherit
+  // an unscoped cache across unrelated Owner sessions or test fixtures.
+  session: XDriveBaiduJSAPI4ConversionSession = new XDriveBaiduJSAPI4ConversionSession(),
 ): Promise<XDriveBaiduConvertedFeatureCollection> {
   if (prepared.kind !== 'ready' || !Array.isArray(prepared.markers) ||
       prepared.markers.length > XDRIVE_BAIDU_JSAPI4_MAX_MARKER_CELLS ||
@@ -233,6 +512,7 @@ export async function xDriveConvertBaiduJSAPI4MarkerWindow(
     sum += item.photoCount
   }
   if (sum !== prepared.totalPhotoCount) throw new Error('baidu_map_markers_unavailable')
+  for (const marker of prepared.markers) session.observeSource(marker)
 
   const features: XDriveBaiduConvertedFeatureCollection['features'] = []
   for (let offset = 0; offset < prepared.markers.length;
@@ -249,7 +529,7 @@ export async function xDriveConvertBaiduJSAPI4MarkerWindow(
     } catch {
       throw new Error('baidu_map_conversion_unavailable')
     }
-    const converted = await officialTranslate(convertor, input, signal)
+    const converted = await session.translate(convertor, input, signal)
     if (signal?.aborted) throw new Error('baidu_map_conversion_cancelled')
     batch.forEach((item, i) => {
       features.push({ type: 'Feature', id: item.placeID,

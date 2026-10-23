@@ -20,7 +20,10 @@ import type { XDriveBaiduMapDiagnosticCode } from '../media-gallery-baidu-diagno
 import { xDriveCaptureBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveConvertBaiduJSAPI4MarkerWindow,
+  xDriveBaiduConversionSessionForScope,
+  XDriveBaiduJSAPI4ConversionSession,
 } from '../media-gallery-baidu-jsapi4-markers'
+import type { XDriveBaiduConversionAudit } from '../media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduConvertedFeatureCollection, XDriveBaiduWGS84Marker } from '../media-gallery-baidu-jsapi4-markers'
 
 type Point = { lng: number; lat: number }
@@ -289,6 +292,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   placesRef.current = places
   const [runtime, setRuntime] = useState<Runtime | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [conversionAudit, setConversionAudit] = useState<XDriveBaiduConversionAudit | null>(null)
   const [failureCode, setFailureCode] = useState<XDriveBaiduMapDiagnosticCode | null>(null)
   const reportFailure = useCallback((code: XDriveBaiduMapDiagnosticCode) => {
     setFailureCode(code)
@@ -445,6 +449,8 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       const empty: XDriveBaiduConvertedFeatureCollection = {
         type: 'FeatureCollection', features: [],
       }
+      // Only CURRENT Owner markers are cleared. Validated BD-09 derived points
+      // remain in the bounded session cache across pan/zoom/Viewer return.
       runtime.converted.clear()
       runtime.rendered = empty
       renderedRef.current = empty
@@ -480,7 +486,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         })
       }
       if (immediate) load()
-      else delayed = setTimeout(load, 200)
+      else delayed = setTimeout(load, 500)
     }
     const refresh = () => update(false)
     const stopOnGesture = () => {
@@ -589,6 +595,11 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     if (!runtime) return
     const abort = new AbortController()
     let phase: 'conversion' | 'layer' = 'conversion'
+    // No trusted scope: do NOT share a process-wide cache under a generic
+    // fallback key that could accidentally span independent accounts.
+    const conversionSession = diagnosticScope
+      ? xDriveBaiduConversionSessionForScope(diagnosticScope)
+      : new XDriveBaiduJSAPI4ConversionSession()
     const update = async () => {
       const source = places.filter(validMarker)
       const seen = new Set<string>()
@@ -615,7 +626,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
           { kind: 'ready', markers, totalPhotoCount: total },
           convertor,
           (lng, lat) => new runtime.namespace.Point(lng, lat),
-          abort.signal,
+          abort.signal, conversionSession,
         )
         if (abort.signal.aborted) return
         converted.features.forEach((feature, i) => runtime.converted.set(
@@ -660,9 +671,11 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       if (abort.signal.aborted) return
       reportFailure(phase === 'conversion'
         ? 'prototype_sdk_convert_failed' : 'prototype_sdk_layer_update_failed')
+    }).finally(() => {
+      if (!abort.signal.aborted) setConversionAudit(conversionSession.audit())
     })
     return () => abort.abort()
-  }, [runtime, places, reportFailure])
+  }, [runtime, places, reportFailure, diagnosticScope])
 
   return (
     <Box component="section" data-xdrive-gallery-baidu-prototype
@@ -742,6 +755,26 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         </Box>
       )) : null}
       </Box>
+      {conversionAudit ? (
+        <Box component="details" data-xdrive-baidu-conversion-audit
+          sx={{ mx: { xs: 1, sm: 1.5 }, my: 0.5 }}>
+          <Box component="summary" sx={{ typography: 'caption', color:'text.secondary',
+            cursor:'pointer', minHeight: 32 }}>
+            本次地图会话转换统计
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            方法调用 {conversionAudit.method_calls} 次，
+            提交坐标点 {conversionAudit.submitted_points} 个，
+            成功转换 {conversionAudit.converted_points} 个，
+            缓存命中 {conversionAudit.cache_hits} 次
+            （{conversionAudit.cache_hit_rate_percent}%），
+            取消 {conversionAudit.cancelled} 次，
+            失败 {conversionAudit.failed} 次，
+            每秒峰值 {conversionAudit.peak_method_calls_per_second} 次。
+            仅统计本窗口 JS Convertor；不代表百度账号的全局请求数量。
+          </Typography>
+        </Box>
+      ) : null}
       {dataLoading && status === 'ready' ? (
         <Typography role="status" variant="caption" sx={{ px: 1.5 }}>
           正在读取当前地图区域照片…

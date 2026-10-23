@@ -232,9 +232,14 @@ test('A3b3a3a converter fails closed on provider failure, cancellation and forge
   let deferred
   const pending = convert(ready, { translate(_p, _f, _t, cb) { deferred = cb } },
     point, abort.signal)
+  await Promise.resolve()
+  assert.equal(typeof deferred, 'function',
+    'the SDK request must be sent before testing a non-refundable cancellation')
   abort.abort()
+  // A sent official request still occupies the one-flight slot; only its
+  // callback settles the physical work. Late converted bytes are discarded.
+  deferred({ status: 0, points: [{ lng: 0, lat: 0 }] })
   await assert.rejects(pending, /conversion_cancelled/)
-  deferred({ status: 0, points: [{ lng: 0, lat: 0 }] }) // late result is discarded
 })
 
 test('A3b3a3a no JSAPI runtime, alternate basemap, AK leak or unauthorized data source', () => {
