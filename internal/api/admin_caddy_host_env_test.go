@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -199,5 +200,56 @@ func TestCaddyHostEnvCanConfigureLegacyHTTPOnlyIngress(t *testing.T) {
 	if !actual.Editable || actual.Source != "host-env" ||
 		actual.DesiredEnabled || actual.DesiredLANEnabled {
 		t.Fatalf("legacy HTTP-only host projection invalid: %#v", actual)
+	}
+}
+
+func TestCaddyHostEnvActiveFenceRejectsNewHostRequests(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	if err := os.WriteFile(filepath.Join(dir, "heartbeat"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snap := caddyHostEnvSnapshot{
+		Protocol: caddyHostEnvProtocol,
+		Domain:   "host.example.com", DomainEnabled: true,
+		LANIP: "192.168.1.9", LANEnabled: true,
+		SHA256:     caddyHostEnvFingerprint("host.example.com", "192.168.1.9", "", ""),
+		ObservedAt: now,
+	}
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, caddyHostEnvSnapshotName), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{HostControlDir: dir, CaddyHostEnvAuthoritative: true}
+	active := filepath.Join(dir, "caddy-env-active.json")
+	for _, pathType := range []string{"regular", "symlink"} {
+		t.Run(pathType, func(t *testing.T) {
+			var createErr error
+			if pathType == "regular" {
+				createErr = os.WriteFile(active, []byte("{}"), 0600)
+			} else {
+				createErr = os.Symlink("heartbeat", active)
+			}
+			if createErr != nil {
+				t.Fatal(createErr)
+			}
+			defer os.Remove(active)
+			for _, req := range []caddyHostEnvRequest{
+				{Operation: "deploy", ExpectedSHA256: snap.SHA256},
+				{Operation: "save", ExpectedSHA256: snap.SHA256,
+					AliDNS: &atomicCaddyAliDNSInput{Action: "clear"}},
+				{Operation: "reveal", ExpectedSHA256: snap.SHA256},
+			} {
+				if _, e := server.runCaddyHostEnv(context.Background(), req); !errors.Is(e, errCaddyHostEnvConflict) {
+					t.Fatalf("%s admitted over active %s operation: %v", req.Operation, pathType, e)
+				}
+				if _, e := os.Lstat(filepath.Join(dir, caddyHostEnvRequestName)); !os.IsNotExist(e) {
+					t.Fatalf("%s queued despite active %s operation: %v", req.Operation, pathType, e)
+				}
+			}
+		})
 	}
 }
