@@ -307,6 +307,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
 	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
+	// P0-01: privacy-preserving Owner count reconciliation, not an SDK/provider route.
+	authed.GET("/media/places/baidu-jsapi/coverage", s.listBaiduPhotoMapCoverage)
 	// Shared Gallery prototype; returns only configured browser-type AK.
 	authed.GET("/media/places/baidu-jsapi/prototype", s.mediaBaiduJSAPIPrototype)
 	// A3c13: signed-release gated exact BD09 Owner opt-in viewport, not WGS84.

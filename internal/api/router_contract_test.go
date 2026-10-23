@@ -202,6 +202,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cells", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cell-items", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/viewport-items", suite: "media-places"},
+		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/coverage", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/pets", suite: "media"},
 		{method: "GET", path: "/api/v1/media/pets/:petKind/items", suite: "media"},
 		{method: "GET", path: "/api/v1/media/memories", suite: "media"},

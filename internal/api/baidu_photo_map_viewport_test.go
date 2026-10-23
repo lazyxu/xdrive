@@ -202,6 +202,18 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	if gpsBearingCount != 3 {
 		t.Fatalf("GPS fixture count invalid: got %d, want 3", gpsBearingCount)
 	}
+	// P0-01: GPS-bearing is not equivalent to explicit-consent BD09 map eligibility.
+	// These counts share one PostgreSQL read snapshot and expose no raw coordinate.
+	coverage, coverageErr := queryBaiduPhotoMapCoverage(context.Background(), db, alice.ID)
+	if coverageErr != nil || coverage.ValidGPSAssets != 3 ||
+		coverage.EligibleBD09Assets != 2 || coverage.OutsideSourceMapLatitudeAssets != 0 {
+		t.Fatalf("wrong Owner map coverage: %+v %v", coverage, coverageErr)
+	}
+	peerCoverage, peerCoverageErr := queryBaiduPhotoMapCoverage(context.Background(), db, bob.ID)
+	if peerCoverageErr != nil || peerCoverage.ValidGPSAssets != 1 ||
+		peerCoverage.EligibleBD09Assets != 1 {
+		t.Fatalf("cross-Owner map coverage: %+v %v", peerCoverage, peerCoverageErr)
+	}
 
 	world := baiduPhotoMapBounds{West: -180, South: -90, East: 180, North: 90, CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL}
 	page, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 1, 0)
