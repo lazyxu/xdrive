@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedExplorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const sharedItemVisual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
+const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const mountState = read('internal', 'mount', 'state.go')
@@ -36,8 +37,11 @@ test('shared FileExplorer owns canonical item icons and availability badges', ()
     assert.ok(sharedExplorer.includes(token), 'shared visual contract missing: ' + token)
   }
   assert.ok(sharedExplorer.includes("from './FileExplorerItemPresentation'"), 'Owner Explorer must reuse public read-only icon helper')
-  for (const token of ['XDriveFileExplorerItemIcon', 'FolderZipRoundedIcon', "color: xDriveWindowsFolderYellow"]) {
+  for (const token of ['XDriveFileExplorerItemIcon', 'FolderZipRoundedIcon', "if (fileKind === 'folder') return <XDriveFolderIcon"]) {
     assert.ok(sharedItemVisual.includes(token), 'shared file icon presentation missing: ' + token)
+  }
+  for (const token of ["XDRIVE_FOLDER_YELLOW = '#ffcb3d'", 'color: XDRIVE_FOLDER_YELLOW']) {
+    assert.ok(sharedFolderIcon.includes(token), 'centralized Windows folder color missing: ' + token)
   }
   for (const token of [
     "| 'mixed'",

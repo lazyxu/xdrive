@@ -2,7 +2,7 @@ import { useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { XDriveFolderIcon } from './FolderIcon'
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded'
 import {
   Box,
@@ -205,7 +205,7 @@ export function XDriveFileExplorerTabs({
                   borderRadius: 0,
                 }}
               >
-                <FolderRoundedIcon sx={{ fontSize: 17, color: '#ffcb3d', flexShrink: 0 }} />
+                <XDriveFolderIcon sx={{ fontSize: 17, flexShrink: 0 }} />
                 <Typography
                   variant="body2"
                   noWrap

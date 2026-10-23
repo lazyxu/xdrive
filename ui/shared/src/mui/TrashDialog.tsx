@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import {
   Dialog,
   Stack,
@@ -19,6 +17,7 @@ import type {
 } from '../cloud-files'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveFileExplorerItemIcon } from './FileExplorerItemPresentation'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
@@ -150,9 +149,7 @@ export function XDriveTrashDialog({
                     <TableRow key={node.id} hover>
                       <TableCell>
                         <Stack direction="row" spacing={1} alignItems="center">
-                          {node.type === 'dir'
-                            ? <FolderOpenRoundedIcon fontSize="small" />
-                            : <InsertDriveFileRoundedIcon fontSize="small" />}
+                          <XDriveFileExplorerItemIcon item={{ name: node.name, kind: node.type === 'dir' ? 'dir' : 'file' }} size={20} />
                           <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{node.name}</Typography>
                         </Stack>
                       </TableCell>

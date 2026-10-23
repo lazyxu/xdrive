@@ -27,6 +27,7 @@ const mocks = {
   '@mui/material': Object.fromEntries(
     ['Box','Chip','IconButton','Stack','Typography'].map(name=>[name,name.toLowerCase()])),
   '../format':{formatBytes:n=>String(n)+' B'},
+  './FolderIcon':{XDriveFolderIcon:'icon'},
   './ActionButton':{XDriveActionButton:'action-button'},
   './ConfirmDialog':{XDriveConfirmDialog:'confirm-dialog'},
   './MetricCards':{XDriveMetricCard:'metric-card',XDriveMetricGrid:'metric-grid'},

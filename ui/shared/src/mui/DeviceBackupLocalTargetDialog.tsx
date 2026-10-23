@@ -4,7 +4,7 @@ import {
   DialogTitle, List, ListItemButton, Stack, Typography,
 } from '@mui/material'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { XDriveFolderIcon } from './FolderIcon'
 import type { XDriveLocalBoundBackupSettings } from '../device-backups'
 import type { XDriveSourceTargetBrowser, XDriveSourceTargetNode } from './SourceManager'
 
@@ -131,7 +131,7 @@ export function XDriveDeviceBackupLocalTargetDialog({
               {children.map((folder) => (
                 <ListItemButton key={folder.id} disabled={busy || browsing}
                   onClick={() => void browse([...trail, folder])}>
-                  <FolderRoundedIcon color="action" fontSize="small" sx={{ mr: 1 }} />
+                  <XDriveFolderIcon fontSize="small" sx={{ mr: 1 }} />
                   <Typography variant="body2">{folder.name}</Typography>
                 </ListItemButton>
               ))}

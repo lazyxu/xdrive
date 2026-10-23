@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { Box, InputAdornment, Stack, Typography } from '@mui/material'
-import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert, XDriveSensitiveField } from '@xdrive/ui/mui'
+import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert, XDriveSensitiveField, XDriveFileExplorerItemIcon } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import { xDriveShareReadOnlyDefaultCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
@@ -408,9 +406,9 @@ export default function PublicShareView({ token }: { token: string }) {
                   border: 1, borderColor: 'divider', borderRadius: 2,
                   bgcolor: 'background.paper',
                 }}>
-                {share.type === 'dir'
-                  ? <FolderRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
-                  : <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />}
+                <Box sx={{ mt: 0.5 }}>
+                  <XDriveFileExplorerItemIcon item={{ name: share.name, kind: share.type === 'dir' ? 'dir' : 'file' }} size={28} />
+                </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
                     {share.name}

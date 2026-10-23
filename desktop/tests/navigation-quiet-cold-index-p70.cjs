@@ -49,6 +49,7 @@ const Columns = original('ui/shared/src/mui/FileExplorerColumnView.tsx', {
   '@mui/icons-material/FolderRounded': 'folder',
   '@mui/icons-material/InsertDriveFileRounded': 'file',
   './AutoLoadSentinel': { XDriveAutoLoadSentinel: 'sentinel' },
+  './FileExplorerItemPresentation': { XDriveFileExplorerItemIcon: 'file-icon' },
 }).XDriveFileExplorerColumnView
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 const rings = view => view.root.findAllByType('circularprogress')

@@ -3026,7 +3026,7 @@ export default function MobileFiles(props: Props) {
                 // navigation is awaiting its Server-authoritative commit.
                 props.onCrumbClick(index)
               }}>
-              <ListItemIcon><FolderRoundedIcon sx={{ color: IOS_FILES_MOBILE_BLUE }}/></ListItemIcon>
+              <ListItemIcon><MobileFolderIcon size={23}/></ListItemIcon>
               <Typography noWrap dir="auto" title={crumb.name || '根目录'}
                 sx={{ unicodeBidi: 'plaintext' }}>{crumb.name || '根目录'}</Typography>
               {index === props.crumbs.length - 1

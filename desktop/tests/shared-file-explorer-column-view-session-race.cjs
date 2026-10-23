@@ -124,6 +124,9 @@ function loadColumnView(runtime) {
     if (request === './AutoLoadSentinel') {
       return { XDriveAutoLoadSentinel: () => null }
     }
+    if (request === './FileExplorerItemPresentation') {
+      return { XDriveFileExplorerItemIcon: () => null }
+    }
     if (request === './useDeferredLoading') {
       return { useXDriveDeferredLoading: () => false }
     }

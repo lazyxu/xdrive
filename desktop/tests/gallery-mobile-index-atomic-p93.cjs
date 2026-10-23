@@ -108,6 +108,7 @@ const Organizer = loadOriginal('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx
   '@mui/material': mui,
   '@mui/icons-material': icons,
   './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
+  './FolderIcon': { XDriveFolderIcon: 'folder' },
   './MediaGalleryAlbumOrganization': prefs,
   './MediaGalleryAlbumFolderModel': folderModel,
 }).XDriveMediaGalleryAlbumOrganizer

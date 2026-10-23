@@ -13,6 +13,7 @@ const workspaceContent = readRepo('ui/shared/src/mui/WorkspaceContent.tsx')
 const workspaceSidebar = readRepo('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
 const fileExplorerVisual = readRepo('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+const folderIcon = readRepo('ui/shared/src/mui/FolderIcon.tsx')
 const fileExplorerActions = readRepo('ui/shared/src/mui/FileExplorerActions.tsx')
 const fileExplorerNavigationPane = readRepo('ui/shared/src/mui/FileExplorerNavigationPane.tsx')
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
@@ -104,10 +105,15 @@ if ((fileExplorer.match(/<XDriveFileExplorerCommandButton/g) || []).length < 3) 
   throw new Error('Shared FileExplorer must use neutral command chrome for create, upload and sort')
 }
 
+requireText(folderIcon, [
+  "XDRIVE_FOLDER_YELLOW = '#ffcb3d'",
+  'color: XDRIVE_FOLDER_YELLOW',
+  'data-xdrive-folder-icon',
+], 'Shared Windows folder glyph/color')
 requireText(fileExplorerVisual, [
-  "const xDriveWindowsFolderYellow = '#ffcb3d'",
-  'color: xDriveWindowsFolderYellow',
-], 'Shared FileExplorer Windows folder color')
+  "from './FolderIcon'",
+  "if (fileKind === 'folder') return <XDriveFolderIcon",
+], 'Shared FileExplorer folder icon reuse')
 
 requireText(fileExplorer, ["from './FileExplorerItemPresentation'"], 'Shared FileExplorer reuses isolated file visuals')
 

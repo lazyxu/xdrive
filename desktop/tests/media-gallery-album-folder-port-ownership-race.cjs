@@ -45,6 +45,7 @@ const component = load('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx', {
   '@mui/material': tags,
   '@mui/icons-material': new Proxy({}, { get: (_, name) => String(name) }),
   './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
+  './FolderIcon': { XDriveFolderIcon: 'folder' },
   './MediaGalleryAlbumOrganization': organization,
   './MediaGalleryAlbumFolderModel': folderModel,
   './useDeferredLoading': { useXDriveDeferredLoading: () => false, useXDriveDeferredPendingLoading: () => false },

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { XDriveFolderIcon } from './FolderIcon'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded'
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
@@ -407,7 +407,7 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
 
 const serviceOverviewIcons: Record<string, ReactNode> = {
   database: <StorageRoundedIcon fontSize="small" />,
-  storage: <FolderRoundedIcon fontSize="small" />,
+  storage: <XDriveFolderIcon fontSize="small" />,
   'background-worker': <SyncRoundedIcon fontSize="small" />,
   caddy: <ShieldRoundedIcon fontSize="small" />,
   'media-worker': <MovieRoundedIcon fontSize="small" />,

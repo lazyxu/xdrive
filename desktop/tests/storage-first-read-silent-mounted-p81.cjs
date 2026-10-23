@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, '../..')
 
 const mui = new Proxy({}, { get: (_target, name) => String(name) })
 const components = {
+  './FolderIcon': { XDriveFolderIcon: 'Icon' },
   './ActionButton': { XDriveActionButton: 'ActionButton' },
   './ConfirmDialog': { XDriveConfirmDialog: 'ConfirmDialog' },
   './MetricCards': { XDriveMetricCard: 'MetricCard', XDriveMetricGrid: 'MetricGrid' },

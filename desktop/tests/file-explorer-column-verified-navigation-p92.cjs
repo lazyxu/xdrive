@@ -29,6 +29,7 @@ const localRequire = (id) => {
   if (id === '@mui/material') return mui
   if (id.startsWith('@mui/icons-material/')) return { __esModule: true, default: () => null }
   if (id === './AutoLoadSentinel') return { XDriveAutoLoadSentinel: () => null }
+  if (id === './FileExplorerItemPresentation') return { XDriveFileExplorerItemIcon: () => null }
   throw Error('Unexpected Column View module: ' + id)
 }
 new Function('exports', 'module', 'require', compiled)(mod.exports, mod, localRequire)
