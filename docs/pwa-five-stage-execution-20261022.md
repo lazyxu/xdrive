@@ -1,5 +1,35 @@
 # xDrive PWA · 五阶段剩余工作与验收台账（2026-10-22）
 
+## 2026-10-23 · 最新已合并源准确结果（高于下方所有旧快照）
+
+- **P0 已完成**：[#2397](https://github.com/lazyxu/xdrive/pull/2397) 真在途 Owner HTTP Range + 当前 Server 目录 DELETE/404 + 旧 SW waiting + 跨窗口真实登出/P1 清退/Abort/Context.Done + 第三浏览器进程冷启的组合专项及完整 CI 均成功，已合并 `f9b3a604`。
+- **P1-01 配对仍未闭环**：[#2420](https://github.com/lazyxu/xdrive/pull/2420) 真实 Owner/Gin/PG17/CAS 100k 逻辑资产/115k metadata、首页 4–6 条在途 JPEG 的 SAME Runner 路由取消 BEFORE/AFTER，准确 HEAD 原生专项+完整 CI 成功并合入 `2ad3aa0a`。真实 Go `Context.Done` P50 **57.505 → 105.760ms**，最大 **60.902 → 106.774ms**，两版都在 160ms 预算内且未在取消后发送浪费字节。Renderer 峰值 RSS 增长 P50 **24.473 → 30.992MiB**。这些数据提示回归需继续归因，**不是** 100k 完整首屏/媒体首帧 AFTER 或提速证明。
+- **P1-02 已交付**：[#2403](https://github.com/lazyxu/xdrive/pull/2403) 普通生产 App Shell BEFORE + [#2408](https://github.com/lazyxu/xdrive/pull/2408) Files/Gallery/Viewer/部分 Admin 懒加载及同 Runner A/B 均已合入；初始公有 Shell gzip 816287 → 709413B（-13.093%）。[旧未合并分包实验 #2404](https://github.com/lazyxu/xdrive/pull/2404) 已作为被取代项关闭，不重复执行。
+- **P1-03 核心非生产故障覆盖扩大**：[#2412](https://github.com/lazyxu/xdrive/pull/2412) 一次性 Chromium LevelDB 文件真破坏已合并 `f4c08e08`；[#2415](https://github.com/lazyxu/xdrive/pull/2415) 真 Linux 非 root EACCES + 失败清退跨标签通知已合并 `974b0b1c`。两者源准确专项+完整 CI 均通过。但原生内核块级 EIO/EROFS、实体 iOS/Android 的特定文件系统损坏 **NOT TESTED**，不能推断所有 OS 均已覆盖。
+- **P1-04 / P2-03**：长期政策收敛为**公开内容哈希静态资源无限期 append-only 保留**、只读 manifest 引用/容量审计与软阈值报警，`safe_to_auto_delete=false`；尚无可信活跃旧 PWA 客户端引用全生命周期证明，自动/人工删除执行器不开发。[旧重复 runbook PR #2413](https://github.com/lazyxu/xdrive/pull/2413) 已关闭，以上述专用政策文档为单一权威来源。
+- **P1-05/06 七平台实体安装与系统生命周期**：iOS 27/Android/Desktop Installed、锁屏/回收、VoiceOver/TalkBack 仍 **NOT RUN**，不得将原生 Ubuntu Chromium/模拟断点当作 OS 设备 PASS。用户决定不可接触的生产专属安全验收 **按用户决定跳过（未验收）**，不阻碍受控源码/CI/PR 合并；真实代码级 Owner/ACL/隐私测试不跳过。
+
+以下旧日期段落只保留历史过程，且其中“Draft”、“当前待办”以本节及实际 GitHub merge/CI 为准。
+
+---
+
+## 2026-10-23 · 五阶段主线最终状态快照（优先于以下历史过程记录）
+
+| 优先级 | 当前事实 | 尚缺什么 |
+| --- | --- | --- |
+| P0-01/02/03 可靠性组合 | [#2397](https://github.com/lazyxu/xdrive/pull/2397) 已合入 `f9b3a604`；原生 Chromium/真实 Gin PG17 CAS 同轮 Owner DELETE/404、旧在途 Range、另一窗口登出、SW waiting/P1 清退/Abort/第三进程均验收；原生专项和完整 CI 通过 | 该受控场景未发现需要追加的生产修复 |
+| P1-01 100k 性能 | [#2368](https://github.com/lazyxu/xdrive/pull/2368) 已合入 100k/115k Go/PG/CAS BEFORE；[#2403](https://github.com/lazyxu/xdrive/pull/2403) 已合入普通 App Shell 五视口三次独立 Chrome BEFORE | **真实 100k/115k 正常业务路径仍无配对 AFTER**，不得以独立公开 Shell 测量替代 |
+| P1-02 Web/Mobile 分包 | [#2408](https://github.com/lazyxu/xdrive/pull/2408) 已合入 `81bf3a65`，同 Runner 公开 App Shell gzip -13.09%，五视口 n3 A/B、Files/Gallery/Viewer 导航与完整 CI 通过 | 这不等于受保护 100k Go/CAS 真实业务 AFTER，S5 实机另验 |
+| P1-03 IndexedDB 底层故障 | 原生 QuotaExceeded/abort/blocked/VersionError、Owner 撤权已覆盖；[#2412](https://github.com/lazyxu/xdrive/pull/2412) 原生 LevelDB 文件损坏和 [#2415](https://github.com/lazyxu/xdrive/pull/2415) Linux EACCES 均已合并 | [Draft #2422](https://github.com/lazyxu/xdrive/pull/2422) 增加隔离内核 EROFS，准确 HEAD CI 未通过前不得记完成；块级 EIO 和不同 OS 实体故障依然 NOT TESTED |
+| P1-04 历史公开资源 | [#2357](https://github.com/lazyxu/xdrive/pull/2357) 已合入只读存档/manifest/容量审计。长期策略确认为**无限期 append-only 保留 + 软容量告警** | 无法证明所有旧离线客户端已退休；`safe_to_auto_delete=false`、没有自动/人工删除执行器；此项是有意的策略收敛 |
+| P1-05/06 S5 七平台与 OS 生命周期 | 已提供源码和有限 Chromium 模拟、S5 原始验收矩阵及脱敏观察工具 | 物理 iOS 27/Android/Installed、锁屏回收/VoiceOver/TalkBack **NOT RUN**，不能伪装成功；不索取生产安全凭据 |
+| P2-01/02/03 文档与 Issue | [#2374](https://github.com/lazyxu/xdrive/pull/2374) 文档已合入；#2347 已关闭完成；#2348 仅保留底层故障；历史资源策略详见 [专用政策](pwa-public-archive-reference-policy.md) | #2260 仍跟踪 100k AFTER；#1263 的完整 100k 性能回归仍保留为未闭环 |
+
+不可触及的真实生产环境安全验收永久标注**按用户决定跳过（未验收）**，不得作为源代码、CI、PR、合并阻塞项。代码级权限/撤权/隐私测试仍需执行。以下旧日期分段属于历史快照，仅可复核当时 CI，不得作为当前待办结论。
+
+---
+
+
 ## 2026-10-23 · P0 可靠性最新真实交付（本节优先于历史记录）
 
 > 当前事实以 master 的实际 PR Merge 状态与准确源码 HEAD CI 为准。历史 2026-10-22 段落保留当时失败、Draft 和实验结果，不得将历史待办当作仍未实现。仅源码级可控非生产 E2E/CI 可以计算为自动化通过；物理 iOS/Android 仍为 NOT RUN，无法访问的生产安全验收固定「按用户决定跳过（未验收）」且不阻塞源码、CI 或 PR。
