@@ -1,0 +1,147 @@
+name: Places Native Owner PostgreSQL 100k Matched BEFORE AFTER
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  places-native-owner-100k-ab:
+    if: github.head_ref == 'perf/places-overview-pg100k-ab-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Validate historical BEFORE source and test formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/media_places_map_overview_100k_performance_test.go)"
+          baseline=6043128d8609e0beb6d7581f8ec1ab60c2fc3ea0
+          test "$(git rev-parse "$baseline")" = "$baseline"
+          test "$(git show "$baseline:internal/api/media_places_map_overview.go" | sha256sum | cut -d " " -f1)" != \
+            "$(sha256sum internal/api/media_places_map_overview.go | cut -d " " -f1)"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - name: Compile historical BEFORE and proposed AFTER with the same Go benchmark source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/xdrive-map-before" 6043128d8609e0beb6d7581f8ec1ab60c2fc3ea0
+          cp internal/api/media_places_map_overview_100k_performance_test.go \
+            "$RUNNER_TEMP/xdrive-map-before/internal/api/"
+          (cd "$RUNNER_TEMP/xdrive-map-before" && \
+            go test -c -o "$RUNNER_TEMP/xdrive-map-before-api.test" ./internal/api)
+          go test -c -o "$RUNNER_TEMP/xdrive-map-after-api.test" ./internal/api
+      - name: Seed one 100k logical assets and 115k metadata rows in disposable PostgreSQL
+        shell: bash
+        env:
+          XD_PLACES_100K_ACTION: seed
+          XD_PLACES_100K_DISPOSABLE_CI: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p places-100k-results
+          printf 'BEFORE=6043128d8609e0beb6d7581f8ec1ab60c2fc3ea0\nAFTER=%s\nRUN=%s\n' \
+            "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > places-100k-results/provenance.txt
+          "$RUNNER_TEMP/xdrive-map-after-api.test" \
+            -test.run '^TestPlacesOverviewPostgres100kMatchedBeforeAfter$' \
+            -test.count=1 -test.timeout=40m -test.v \
+            | tee places-100k-results/seed.log
+      - name: Alternate three PostgreSQL BEFORE and AFTER samples on identical data
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sample in before-1 after-1 after-2 before-2 before-3 after-3; do
+            phase="${sample%-*}"
+            ordinal="${sample#*-}"
+            binary="$RUNNER_TEMP/xdrive-map-${phase}-api.test"
+            echo "MAP_PLACES100K_PHASE_START phase=$phase run=$ordinal"
+            XD_PLACES_100K_ACTION=probe XD_PLACES_100K_PHASE="$phase" \
+              XD_PLACES_100K_RUN="$ordinal" \
+              "$binary" -test.run '^TestPlacesOverviewPostgres100kMatchedBeforeAfter$' \
+              -test.count=1 -test.timeout=12m -test.v \
+              | tee "places-100k-results/$sample.log"
+          done
+      - name: Summarize latencies and Owner counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, re, statistics
+          folder=pathlib.Path("places-100k-results")
+          files=sorted(folder.glob("before-*.log"))+sorted(folder.glob("after-*.log"))
+          assert len(files)==6,files
+          pattern=re.compile(r"MAP_PLACES100K_SAMPLE (\{[^\n]+\})")
+          windows={"world":100000,"dense-city":78000,"two-cities":95000,"empty":0}
+          rows=[]
+          for file in files:
+              matches=pattern.findall(file.read_text())
+              assert len(matches)==4,(file,len(matches))
+              for item in matches:
+                  row=json.loads(item)
+                  assert row["expected_photos"]==windows[row["window"]],row
+                  rows.append(row)
+          assert len(rows)==24,len(rows)
+          report={
+            "source_before":"6043128d8609e0beb6d7581f8ec1ab60c2fc3ea0",
+            "source_after":(folder/"provenance.txt").read_text().splitlines()[1].split("=")[1],
+            "fixture":"PostgreSQL17 100k logical PhotoAsset 115k media rows: 70k image, 15k video, 15k Live",
+            "scope":"Go production query, 3s deadline; excludes seeding, process startup, cover lookup",
+            "sample_order":"B1 A1 A2 B2 B3 A3; identical viewport warmups",
+            "samples":rows,"windows":{},"failures":[]}
+          for name,expected in windows.items():
+              phases={}
+              for phase in ("before","after"):
+                  samples=sorted((x for x in rows if x["phase"]==phase and x["window"]==name),key=lambda x:x["run"])
+                  assert len(samples)==3 and [x["run"] for x in samples]==[1,2,3]
+                  for x in samples:
+                      if x.get("error"):
+                          report["failures"].append({"phase":phase,"window":name,"run":x["run"],"error":x["error"]})
+                      elif x["photos"]!=expected or x["pins"]>64 or (expected and not x["pins"]):
+                          report["failures"].append({"phase":phase,"window":name,"run":x["run"],"error":"incorrect Owner count/point budget"})
+                  phases[phase]={"p50_ms":round(statistics.median(x["elapsed_ms"] for x in samples),3),
+                                 "samples_ms":[x["elapsed_ms"] for x in samples],
+                                 "pins":[x["pins"] for x in samples],
+                                 "verified_covers":[x["verified_covers"] for x in samples]}
+              b=phases["before"]["p50_ms"]; a=phases["after"]["p50_ms"]
+              report["windows"][name]={"before":phases["before"],"after":phases["after"],
+                                        "p50_delta_ms":round(a-b,3),
+                                        "p50_after_before_ratio":round(a/b,3) if b else None}
+          (folder/"summary.json").write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n")
+          print("MAP_PLACES100K_MEDIANS",json.dumps(report["windows"],ensure_ascii=False))
+          print("MAP_PLACES100K_FAILURES",json.dumps(report["failures"],ensure_ascii=False))
+          assert not [f for f in report["failures"] if f["phase"]=="after"],report["failures"]
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xdrive-places-native-postgres-100k-matched-ab
+          path: places-100k-results/
+          retention-days: 30
+          if-no-files-found: warn
