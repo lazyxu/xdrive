@@ -8,6 +8,7 @@ import {
 } from '../media-gallery-baidu-prototype-cover-pins'
 import type { XDriveBaiduPrototypeCoverPin } from '../media-gallery-baidu-prototype-cover-pins'
 import { xDriveProjectBaiduNativeClusterCovers } from '../media-gallery-baidu-native-cluster-covers'
+import { xDriveCreateBaiduNativePhotoMarkerArt } from '../media-gallery-baidu-native-photo-marker-art'
 import type { XDriveBaiduClusterCover } from '../media-gallery-baidu-native-cluster-covers'
 import type { MediaPlaceFacet, MediaPlacesMapOverview, MediaPlacesViewportBounds, XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import { xDriveBaiduConservativeOwnerQueryBounds, XDRIVE_BAIDU_WORLD_OVERVIEW } from '../media-gallery-baidu-native-query-bounds'
@@ -58,6 +59,8 @@ type Namespace = {
     fitViewOnClick: boolean; updateRealTime: boolean; idKey: string
     clusterMaxZoom: number
     clusterIconSize?: () => [number, number]
+    clusterIcon?: (properties: unknown) => HTMLCanvasElement
+    singleStyle?: { icon: HTMLCanvasElement; iconSize: [number, number] }
   }) => Layer
   Convertor: new () => {
     translate(points: Point[], from: 1, to: 5,
@@ -345,6 +348,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         map.centerAndZoom(new api.Point(105, 35), 3)
       }
       map.enableScrollWheelZoom?.(true)
+      const markerArt = xDriveCreateBaiduNativePhotoMarkerArt(node.ownerDocument)
       layer = new api.ClusterLayer({
         clusterRadius: 60, enablePicked: true,
         fitViewOnClick: true, updateRealTime: false,
@@ -352,6 +356,10 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         // The full photo-card face must sit INSIDE the official 64px
         // hit target; pointer passthrough then preserves native click-zoom.
         clusterIconSize: () => [64, 64],
+        // Override the SDK's yellow/red bubble without replacing its
+        // authoritative clustering, native click target or fitViewOnClick.
+        clusterIcon: markerArt.clusterIcon,
+        singleStyle: { icon: markerArt.singleIcon, iconSize: [64, 64] },
       })
       const activeLayer = layer
       const activeMap = map
@@ -686,38 +694,33 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
         sx={{ width: '100%', height: { xs: 'calc(100dvh - 215px)', sm: 540 },
           minHeight: 370, borderRadius: { xs: 0, sm: 1.5 }, overflow: 'hidden' }} />
       {loadThumbnail ? clusterCovers.map(pin => (
-        // A visual overlay only: pointer events pass THROUGH to the actual
-        // native ClusterLayer icon, preserving the SDK fitViewOnClick zoom.
+        // Verified Owner cover sits exactly ON TOP of its native pick target.
+        // Unknown memberships display the neutral SDK marker, never fake N 张.
         <Box key={pin.id} data-xdrive-baidu-native-cluster-cover={pin.id}
           aria-hidden="true"
           sx={{
             position: 'absolute', pointerEvents: 'none', zIndex: 4,
-            left: pin.x - 30, top: pin.y - 29,
-            width: 60, height: 58,
+            left: pin.x - 30, top: pin.y - 30,
+            width: 60, height: 60,
+            border: '2px solid white', borderRadius: 2,
+            bgcolor: 'background.paper',
+            boxShadow: '0 3px 12px rgba(15,23,42,.28)',
           }}>
-          <Box sx={{
-            position: 'absolute', inset: '4px 2px 0 5px', borderRadius: 1.5,
-            bgcolor: 'background.paper', boxShadow: 2,
-            transform: 'rotate(-7deg)',
-          }} />
-          <Box sx={{
-            position: 'absolute', inset: '0 5px 4px 0',
-            border: '3px solid white', borderRadius: 1.5,
-            bgcolor: 'background.paper', boxShadow: 2, overflow: 'hidden',
-          }}>
+          <Box sx={{ width: '100%', height: '100%', borderRadius: 1.5,
+            overflow: 'hidden' }}>
             <XDriveMediaGalleryCoverThumbnail
               nodeID={pin.nodeID} alt="" loadThumbnail={loadThumbnail}
               fallback={<PhotoLibraryOutlinedIcon color="disabled" />}
             />
           </Box>
           <Box component="span" sx={{
-            position: 'absolute', right: -8, bottom: -7,
-            bgcolor: 'background.paper', color: 'text.primary',
-            border: 1, borderColor: 'divider',
-            borderRadius: '12px', px: 0.6, minWidth: 24,
-            fontSize: 11, fontWeight: 700, textAlign: 'center',
-            lineHeight: '19px', whiteSpace: 'nowrap',
-          }}>{pin.photoCount.toLocaleString('zh-CN')} 张</Box>
+            position: 'absolute', right: -6, bottom: -6,
+            bgcolor: 'rgba(15,23,42,.94)', color: '#fff',
+            borderRadius: '999px', px: 0.75, minWidth: 27, maxWidth: 100,
+            fontSize: 11, fontWeight: 700, lineHeight: '21px',
+            textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>{pin.photoCount.toLocaleString('zh-CN')}张</Box>
         </Box>
       )) : null}
       {loadThumbnail ? coverPins.map(pin => (
@@ -732,13 +735,13 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
             if (current && runtime) openMapItemRef.current(current, runtime.map, runtime.namespace)
           }}
           sx={{
-            position: 'absolute', zIndex: 4, left: pin.x - 30, top: pin.y - 66,
-            width: 60, height: 62, display: 'block', p: 0,
-            border: '3px solid white', borderRadius: '11px',
+            position: 'absolute', zIndex: 4, left: pin.x - 30, top: pin.y - 30,
+            width: 60, height: 60, display: 'block', p: 0,
+            border: '2px solid white', borderRadius: 2,
             backgroundColor: 'background.paper', cursor: 'pointer',
-            boxShadow: 2, overflow: 'visible',
+            boxShadow: '0 3px 12px rgba(15,23,42,.28)',
           }}>
-          <Box sx={{ width: '100%', height: '100%', borderRadius: '8px',
+          <Box sx={{ width: '100%', height: '100%', borderRadius: 1.5,
             overflow: 'hidden' }}>
             <XDriveMediaGalleryCoverThumbnail
               nodeID={pin.nodeID} alt={pin.name} loadThumbnail={loadThumbnail}
@@ -746,12 +749,13 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
             />
           </Box>
           <Box component="span" sx={{
-            position: 'absolute', bottom: -8, right: -10,
-            bgcolor: 'background.paper', border: 1,
-            borderColor: 'divider', borderRadius: '12px',
-            fontSize: 11, fontWeight: 700, px: 0.7, lineHeight: '20px',
-            minWidth: 22, textAlign: 'center',
-          }}>{pin.photoCount}</Box>
+            position: 'absolute', right: -6, bottom: -6,
+            bgcolor: 'rgba(15,23,42,.94)', color: '#fff',
+            borderRadius: '999px', px: 0.75, minWidth: 27, maxWidth: 100,
+            fontSize: 11, fontWeight: 700, lineHeight: '21px',
+            textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>{pin.photoCount.toLocaleString('zh-CN')}张</Box>
         </Box>
       )) : null}
       </Box>

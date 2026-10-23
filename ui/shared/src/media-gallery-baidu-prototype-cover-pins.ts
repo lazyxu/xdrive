@@ -99,7 +99,7 @@ export function xDriveProjectBaiduPrototypeCoverPins(
     } catch { continue }
     if (!pixel || !Number.isFinite(pixel.x) || !Number.isFinite(pixel.y) ||
         pixel.x < 35 || pixel.x > width - 35 ||
-        pixel.y < 76 || pixel.y > height - 12) continue
+        pixel.y < 38 || pixel.y > height - 38) continue
 
     const pin: XDriveBaiduPrototypeCoverPin = {
       placeID: id, nodeID: place.cover_node_id!,
