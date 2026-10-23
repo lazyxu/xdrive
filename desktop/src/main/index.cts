@@ -2454,6 +2454,16 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'device-backup-local-common-batch')
       return requireAgentClient().localBoundBackupCommonBatchStatus(sourceID)
     }, false))
+  ipcMain.handle('agent:control-device-backup-local-common-batch', (_event, sourceID: unknown, action: unknown) =>
+    runAgentAction<AgentLocalBackupCommonBatch>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+          (action !== 'pause' && action !== 'cancel')) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid owning local backup stop request.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-common-batch')
+      return requireAgentClient().localBoundBackupCommonBatchControl(sourceID, action)
+    }, false))
   // An advisory read-only local delta uses its own request registry.
   // Closing its dialog or changing account aborts Electron HTTP and Go.
   const localDeltaRequests = new Map<string, AbortController>()

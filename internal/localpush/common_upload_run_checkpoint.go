@@ -52,7 +52,8 @@ func (p CommonBatchCheckpoint) valid(grant RootGrant, session string, revision u
 		p.UpdatedAt.IsZero() || revision == 0 {
 		return false
 	}
-	if p.State != "running" && p.State != "partial" && p.State != "uncertain" {
+	if p.State != "running" && p.State != "partial" && p.State != "uncertain" &&
+		p.State != "paused" && p.State != "cancelled" {
 		return false
 	}
 	if p.InspectedFiles < 0 || p.ConfirmedFiles < 0 || p.SkippedFiles < 0 ||

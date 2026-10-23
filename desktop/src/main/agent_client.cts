@@ -402,8 +402,9 @@ export type AgentLocalBackupFirstFileJobStatus = {
 
 export type AgentLocalBackupCommonBatch = {
   source_id: number
+  stop_requested?: 'pause' | 'cancel'
   revision: number
-  state: 'running' | 'partial' | 'uncertain'
+  state: 'running' | 'partial' | 'uncertain' | 'paused' | 'cancelled'
   running: boolean
   inspected_files: number
   confirmed_files: number
@@ -3583,6 +3584,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupCommonBatch>(
       'POST', `/v1/device-backups/local-common-batch?${query.toString()}`, undefined, 30_000,
+    )
+  }
+
+  localBoundBackupCommonBatchControl(sourceID: number, action: 'pause' | 'cancel') {
+    const query = new URLSearchParams({ source_id: String(sourceID), action })
+    return this.request<AgentLocalBackupCommonBatch>(
+      'POST', `/v1/device-backups/local-common-batch/control?${query.toString()}`, undefined, 15_000,
     )
   }
 

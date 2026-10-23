@@ -86,3 +86,42 @@ func TestCommonBatchCheckpointRejectsCorruptionAndSymlinks(t *testing.T) {
 		}
 	}
 }
+
+// Paused and cancelled mean no more files will be scheduled in this run.
+// Neither state is a physical CANCEL nor a verified complete Source.
+func TestCommonBatchCheckpointPersistsSchedulingStopWithoutFalseBackupProof(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	ctx := context.Background()
+	base := CommonBatchCheckpoint{
+		Version: commonBatchCheckpointVersion, RunID: uuid.NewString(),
+		SourceID: f.grant.SourceID, SourceRevision: 7,
+		RootFingerprint: f.grant.Fingerprint,
+		SessionDigest:   commonUploadSessionDigest(f.secret),
+		InspectedFiles:  5, ConfirmedFiles: 2, SkippedFiles: 2,
+		ConfirmedBytes: 4096, UpdatedAt: time.Now().UTC(),
+	}
+	for _, state := range []string{"paused", "cancelled"} {
+		t.Run(state, func(t *testing.T) {
+			checkpoint := base
+			checkpoint.State = state
+			if err := StoreVerifiedCommonBatchCheckpoint(
+				ctx, f.config, f.grant, f.secret, 7, checkpoint,
+			); err != nil {
+				t.Fatal(err)
+			}
+			read, err := ReadVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7)
+			if err != nil || read != checkpoint || read.BackupComplete ||
+				read.CurrentCASVerified || read.RetirementSafe {
+				t.Fatalf("stop checkpoint forged terminal remote status: %+v, %v", read, err)
+			}
+		})
+	}
+	unsafe := base
+	unsafe.State = "cancelled"
+	unsafe.BackupComplete = true
+	if err := StoreVerifiedCommonBatchCheckpoint(
+		ctx, f.config, f.grant, f.secret, 7, unsafe,
+	); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("cancelled incorrectly became complete Source: %v", err)
+	}
+}

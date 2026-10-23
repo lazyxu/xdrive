@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -50,12 +51,47 @@ type agentRecoveryRequest struct {
 // local Push the Desktop IPC method remains unavailable instead of preventing
 // the Agent binary from compiling.
 type localPushCommonBatchJob struct {
-	key        localPushFirstFileJobKey
-	done       chan struct{}
-	result     localBackupCommonBatchSummary
-	err        error
-	progressMu sync.RWMutex
-	progress   localBackupCommonBatchSummary
+	key         localPushFirstFileJobKey
+	done        chan struct{}
+	result      localBackupCommonBatchSummary
+	err         error
+	progressMu  sync.RWMutex
+	progress    localBackupCommonBatchSummary
+	stopRequest atomic.Int32 // 0=none; 1=pause; 2=cancel scheduling AFTER current file
+	stopClosed  bool         // under agentController.localCommonBatchJobMu
+}
+
+func (j *localPushCommonBatchJob) requestStop(action string) bool {
+	if j == nil || (action != "pause" && action != "cancel") {
+		return false
+	}
+	next := int32(1)
+	if action == "cancel" {
+		next = 2
+	}
+	for {
+		old := j.stopRequest.Load()
+		if old >= next {
+			return true
+		}
+		if j.stopRequest.CompareAndSwap(old, next) {
+			return true
+		}
+	}
+}
+
+func (j *localPushCommonBatchJob) stopAction() string {
+	if j == nil {
+		return ""
+	}
+	switch j.stopRequest.Load() {
+	case 1:
+		return "pause"
+	case 2:
+		return "cancel"
+	default:
+		return ""
+	}
 }
 
 func (j *localPushCommonBatchJob) setProgress(next localBackupCommonBatchSummary) {
@@ -74,6 +110,9 @@ func (j *localPushCommonBatchJob) currentProgress() localBackupCommonBatchSummar
 	j.progressMu.RLock()
 	value := j.progress
 	j.progressMu.RUnlock()
+	if value.Running {
+		value.StopRequested = j.stopAction()
+	}
 	return value
 }
 

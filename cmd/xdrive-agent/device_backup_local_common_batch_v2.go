@@ -21,6 +21,21 @@ import (
 
 var errLocalBackupCommonBatchUnavailable = errors.New("本机多文件备份未确认：请检查原始任务记录、当前云端文件版本及设备授权")
 
+// Stop scheduling at file boundaries; never infer remote physical cancel.
+var errLocalCommonBatchPaused = errors.New("local batch paused between files")
+var errLocalCommonBatchCancelled = errors.New("local batch scheduling cancelled")
+
+func localCommonBatchControlState(err error) (string, bool) {
+	switch {
+	case errors.Is(err, errLocalCommonBatchPaused):
+		return "paused", true
+	case errors.Is(err, errLocalCommonBatchCancelled):
+		return "cancelled", true
+	default:
+		return "", false
+	}
+}
+
 // A scoped, paginated and owner-authenticated read for one immediate child.
 // No full 100k-node directory materialization, and no implicit overwrites
 // of an existing name with missing trusted Push provenance.
@@ -134,6 +149,22 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 	if err != nil {
 		return out, errLocalBackupCommonBatchUnavailable
 	}
+	stopAtBoundary := func() error {
+		c.localCommonBatchJobMu.Lock()
+		job := c.localCommonBatchJob
+		c.localCommonBatchJobMu.Unlock()
+		if job == nil || job.key != key {
+			return nil
+		}
+		switch job.stopAction() {
+		case "pause":
+			return errLocalCommonBatchPaused
+		case "cancel":
+			return errLocalCommonBatchCancelled
+		default:
+			return nil
+		}
+	}
 	legacyPresent, legacyErr := localFirstFileDurableClaimPresent(workCtx, configDir, key)
 	if legacyErr != nil || legacyPresent {
 		return out, errLocalBackupCommonBatchUnavailable
@@ -185,7 +216,25 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 	// last persisted running record becomes UNCERTAIN on fresh Agent read,
 	// not a fabricated completed backup.
 	defer func() {
-		if runErr != nil || out.State != "partial" {
+		// Atomically close stop admission and observe its final action before
+		// publishing a terminal checkpoint. A command received after this
+		// point cannot falsely claim that an already-finished run was stopped.
+		c.localCommonBatchJobMu.Lock()
+		job := c.localCommonBatchJob
+		if job != nil && job.key == key {
+			job.stopClosed = true
+			if runErr == nil && (out.State == "partial" ||
+				out.State == "paused" || out.State == "cancelled") {
+				if action := job.stopAction(); action == "pause" {
+					out.State = "paused"
+				} else if action == "cancel" {
+					out.State = "cancelled"
+				}
+			}
+		}
+		c.localCommonBatchJobMu.Unlock()
+		if runErr != nil || (out.State != "partial" &&
+			out.State != "paused" && out.State != "cancelled") {
 			out.State = "uncertain"
 			out.Running = false
 			if out.UncertainFiles == 0 {
@@ -245,6 +294,9 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		configDir, grant, localpush.DefaultInventoryBatchSize,
 		func(items []localpush.InventoryItem) error {
 			for _, item := range items {
+				if err := stopAtBoundary(); err != nil {
+					return err
+				}
 				if item.Ignored || matcher.Ignored(item.Path, item.Kind == "directory") {
 					continue
 				}
@@ -385,11 +437,26 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			}
 			return workCtx.Err()
 		})
-	if err != nil || after.SnapshotSHA256 != snapshot.SnapshotSHA256 ||
-		after.SnapshotName != snapshot.SnapshotName ||
-		workCtx.Err() != nil || localBackupRuleSessionUnchanged(account) != nil {
+	// An OS/HTTP/SQL failure or cancelled Agent context must NOT be
+	// mislabeled as a user pause simply because a stop request also arrived.
+	stopState, controlledStop := localCommonBatchControlState(err)
+	if (err != nil && !controlledStop) || workCtx.Err() != nil ||
+		localBackupRuleSessionUnchanged(account) != nil {
 		out.State = "uncertain"
 		return out, errLocalBackupCommonBatchUnavailable
+	}
+	if controlledStop {
+		out.State = stopState
+		return out, nil
+	}
+	if after.SnapshotSHA256 != snapshot.SnapshotSHA256 ||
+		after.SnapshotName != snapshot.SnapshotName {
+		out.State = "uncertain"
+		return out, errLocalBackupCommonBatchUnavailable
+	}
+	if state, stopped := localCommonBatchControlState(stopAtBoundary()); stopped {
+		out.State = state
+		return out, nil
 	}
 	// A second bounded manifest pass preserves genuinely empty local folders.
 	// Do this only after all file operations and original Node checks, so a
@@ -398,6 +465,9 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		configDir, grant, localpush.DefaultInventoryBatchSize,
 		func(items []localpush.InventoryItem) error {
 			for _, item := range items {
+				if err := stopAtBoundary(); err != nil {
+					return err
+				}
 				if item.Kind != "directory" || item.Ignored ||
 					matcher.Ignored(item.Path, true) {
 					continue
@@ -420,11 +490,24 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			}
 			return workCtx.Err()
 		})
-	if err != nil || directories.SnapshotSHA256 != snapshot.SnapshotSHA256 ||
-		directories.SnapshotName != snapshot.SnapshotName ||
-		workCtx.Err() != nil || localBackupRuleSessionUnchanged(account) != nil {
+	stopState, controlledStop = localCommonBatchControlState(err)
+	if (err != nil && !controlledStop) || workCtx.Err() != nil ||
+		localBackupRuleSessionUnchanged(account) != nil {
 		out.State = "uncertain"
 		return out, errLocalBackupCommonBatchUnavailable
+	}
+	if controlledStop {
+		out.State = stopState
+		return out, nil
+	}
+	if directories.SnapshotSHA256 != snapshot.SnapshotSHA256 ||
+		directories.SnapshotName != snapshot.SnapshotName {
+		out.State = "uncertain"
+		return out, errLocalBackupCommonBatchUnavailable
+	}
+	if state, stopped := localCommonBatchControlState(stopAtBoundary()); stopped {
+		out.State = state
+		return out, nil
 	}
 	// Per-file immutable COMMIT and current descendant checks do not yet
 	// grant a whole-SourceRun or current physical CAS completion proof.
@@ -550,6 +633,49 @@ func (c *agentController) CloudRunLocalBoundBackupCommonBatch(
 			return localBackupCommonBatchSummary{}, errLocalBackupCommonBatchUnavailable
 		}
 		return job.result, job.err
+	}
+}
+
+// Only CURRENT owning Source requests may stop scheduling new files.
+// In-flight native bytes and original SQL receipts are NEVER cancelled by this.
+func (c *agentController) CloudControlLocalBoundBackupCommonBatch(
+	ctx context.Context, sourceID uint64, action string,
+) (localBackupCommonBatchSummary, error) {
+	var zero localBackupCommonBatchSummary
+	if c == nil || ctx == nil || ctx.Err() != nil || c.ctx == nil ||
+		c.ctx.Err() != nil || sourceID == 0 ||
+		(action != "pause" && action != "cancel") {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	account, err := userconfig.Load()
+	if err != nil || account.SessionInvalid || account.Server == "" ||
+		account.Username == "" || account.SessionID == "" {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	key, err := currentLocalFirstFileDeviceKey(account, sourceID)
+	if err != nil || !key.valid() {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	source, _, api, scopeErr := c.localBoundBackupConfig(ctx, sourceID)
+	if scopeErr != nil || api == nil || source.ID != sourceID ||
+		source.SyncMode != meta.SourceSyncModeBackup ||
+		source.TargetNodeID == nil || *source.TargetNodeID == 0 {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	c.localCommonBatchJobMu.Lock()
+	defer c.localCommonBatchJobMu.Unlock()
+	job := c.localCommonBatchJob
+	if job == nil || job.key != key || job.stopClosed {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	select {
+	case <-job.done:
+		return zero, errLocalBackupCommonBatchUnavailable
+	default:
+		if !job.requestStop(action) {
+			return zero, errLocalBackupCommonBatchUnavailable
+		}
+		return job.currentProgress(), nil
 	}
 }
 
