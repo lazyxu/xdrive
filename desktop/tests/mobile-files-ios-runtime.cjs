@@ -649,8 +649,15 @@ test('Browse home uses distinct location symbols while real folders remain blue'
     for (const icon of ['CloudRounded', 'DeleteOutlineRounded', 'ManageSearchRounded', 'LabelRounded']) {
       assert.equal(h.view.root.findAll(node => node.type === icon).length, 1, icon)
     }
-    assert.equal(count(h.view, 'data-xdrive-mobile-folder-icon') > 0, false,
-      'special locations must not impersonate normal folders')
+    // React's host Menu mock renders the closed breadcrumb menu too. Those
+    // are real folders; Browse-home special-location rows must not use them.
+    const folderIcons = h.view.root.findAll(node => node.props?.['data-xdrive-mobile-folder-icon'])
+    for (const folderIcon of folderIcons) {
+      let parent = folderIcon.parent
+      while (parent && !parent.props?.['data-mobile-files-location-menu']) parent = parent.parent
+      assert.ok(parent, 'Browse-home special locations must not use the normal folder icon')
+      assert.equal(parent.props.open, false, 'folder icon belongs only to the closed location menu')
+    }
   }, { props: {
     savedSearches: [{ id: 18, name: '照片搜索' }],
     tags: [{ id: 19, name: '重要' }],

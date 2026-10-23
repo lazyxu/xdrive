@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Divider, Stack, Typography } from '@mui/material'
+import { XDriveFileExplorerItemIcon, XDriveFolderIcon } from '@xdrive/ui/mui'
 import { ApiError } from './api'
 import type { XDriveApi } from './api'
 import {
@@ -244,6 +245,7 @@ export default function PwaOfflineDirectoryBrowser({
             <Stack direction="row" flexWrap="wrap" gap={1}>
               {(saved?.directories ?? []).map(directory => (
                 <Button key={directory.id} data-xdrive-pwa-offline-folder
+                  startIcon={<XDriveFolderIcon fontSize="small" />}
                   variant={selectedID === directory.id ? 'contained' : 'outlined'}
                   sx={{ minHeight: 44 }}
                   onClick={() => choose(directory)}>
@@ -264,7 +266,10 @@ export default function PwaOfflineDirectoryBrowser({
                   <Box key={item.id} data-xdrive-pwa-offline-item sx={{
                     py: 1.5, minHeight: 44, borderBottom: 1, borderColor: 'divider',
                   }}>
-                    <Typography variant="body2">{item.type === 'dir' ? '📁 ' : '📄 '}{item.name}</Typography>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <XDriveFileExplorerItemIcon item={{ name: item.name, kind: item.type === 'dir' ? 'dir' : 'file' }} size={20} />
+                      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                    </Stack>
                     <Typography variant="caption" color="text.secondary">
                       {item.type === 'dir' ? '当时的文件夹' : '当时的文件'} · 仅元数据
                     </Typography>

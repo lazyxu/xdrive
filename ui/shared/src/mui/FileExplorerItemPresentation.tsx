@@ -5,7 +5,7 @@ import type { BoxProps } from '@mui/material'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { XDriveFolderIcon } from './FolderIcon'
 import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
@@ -275,8 +275,6 @@ export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') 
   return fileKind === 'image' || fileKind === 'video'
 }
 
-const xDriveWindowsFolderYellow = '#ffcb3d'
-
 export function XDriveFileExplorerItemIcon({
   item,
   size = 21,
@@ -287,7 +285,7 @@ export function XDriveFileExplorerItemIcon({
   folderSize?: number
 }) {
   const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
-  if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: folderSize, color: xDriveWindowsFolderYellow }} />
+  if (fileKind === 'folder') return <XDriveFolderIcon sx={{ fontSize: folderSize }} />
   if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
   if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
   if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />

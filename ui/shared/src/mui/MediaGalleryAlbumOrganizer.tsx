@@ -6,7 +6,6 @@ import {
   Collections as CollectionsIcon,
   PushPin as PushPinIcon,
   PushPinOutlined as PushPinOutlinedIcon,
-  FolderOutlined as FolderOutlinedIcon,
   DriveFileMoveOutlined as DriveFileMoveOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
   DeleteOutline as DeleteOutlineIcon,
@@ -18,6 +17,7 @@ import {
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { XDriveFolderIcon } from './FolderIcon'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -502,7 +502,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
                   <Button
                     fullWidth
                     size="small"
-                    startIcon={<FolderOutlinedIcon />}
+                    startIcon={<XDriveFolderIcon />}
                     sx={{ justifyContent: 'flex-start', minHeight: 44, minWidth: 0, textTransform: 'none' }}
                     onClick={() => { setActiveFolderID(folder.id); setSearch('') }}
                   >

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import {
   Box,
   Button,
@@ -12,6 +10,7 @@ import {
 } from '@mui/material'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
+import { XDriveFileExplorerItemIcon } from './FileExplorerItemPresentation'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerID,
@@ -341,9 +340,7 @@ export function XDriveFileExplorerColumnView({
                     onContextMenu={(event) => onItemContextMenu?.(event, item)}
                     sx={{ minHeight: 30, py: 0.25, px: 1, gap: 0.75 }}
                   >
-                    {directory
-                      ? <FolderRoundedIcon sx={{ fontSize: 19, flexShrink: 0 }} />
-                      : <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />}
+                    <XDriveFileExplorerItemIcon item={item} size={18} folderSize={19} />
                     <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1 }}>{item.name}</Typography>
                     {directory ? <ChevronRightRoundedIcon sx={{ fontSize: 17, color: 'text.secondary', flexShrink: 0 }} /> : null}
                   </ListItemButton>

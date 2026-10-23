@@ -10,6 +10,7 @@ const navigation = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts
 const search = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const workspace = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const tabs = read('ui', 'shared', 'src', 'mui', 'FileExplorerTabs.tsx')
+const folderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const keyboard = read('ui', 'shared', 'src', 'file-explorer-keyboard.ts')
 const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
@@ -75,10 +76,11 @@ test('shared FileExplorer renders a reusable tab bar and keyboard tab commands',
     'onActivate(tab.id)',
     'onCloseTab(tab.id)',
     'onNewTab',
-    "color: '#ffcb3d'",
+    '<XDriveFolderIcon',
   ]) {
     assert.ok(tabs.includes(token), 'shared tab bar missing: ' + token)
   }
+  assert.ok(folderIcon.includes("XDRIVE_FOLDER_YELLOW = '#ffcb3d'"), 'tab icon must reuse canonical folder color')
   assert.equal(tabs.includes('<Tab '), false, 'tab close controls must not be nested inside MUI Tab buttons')
 
   for (const token of [

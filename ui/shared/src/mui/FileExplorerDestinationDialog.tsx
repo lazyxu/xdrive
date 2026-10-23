@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import { XDriveFolderIcon } from './FolderIcon'
 import { Alert, Box, Button, Dialog, Stack, Typography } from '@mui/material'
 import {
   xDriveFileExplorerDestinationTargetDisabledReason,
@@ -249,7 +249,7 @@ export function XDriveFileExplorerDestinationDialog({
                   <Button
                     key={directory.id}
                     fullWidth
-                    startIcon={<FolderOutlinedIcon />}
+                    startIcon={<XDriveFolderIcon />}
                     aria-label={`打开文件夹 ${directory.name}`}
                     data-xdrive-file-explorer-destination-directory={directory.id}
                     disabled={submitting}

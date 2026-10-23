@@ -84,6 +84,7 @@ function loadPublicShare(api) {
         ) }
       }
       if (name === './FileExplorerItemPresentation') return load('ui/shared/src/mui/FileExplorerItemPresentation.tsx')
+      if (name === './FolderIcon') return load('ui/shared/src/mui/FolderIcon.tsx')
       // This renderer verifies public form/navigation/authorization, not image
       // decoding. Retain the neutral fallback visual; real thumbnail behavior
       // has its own source/Go/physical browser coverage and is never bypassed.
@@ -111,6 +112,7 @@ function loadPublicShare(api) {
           ...load('ui/shared/src/mui/PublicShareReadOnlyExplorer.tsx'),
           ...load('ui/shared/src/mui/SensitiveField.tsx'),
           XDriveBrandLockup: () => null,
+          XDriveFileExplorerItemIcon: load('ui/shared/src/mui/FileExplorerItemPresentation.tsx').XDriveFileExplorerItemIcon,
           XDriveStatePanel: ({ message }) => React.createElement('div', null, message),
           XDriveStatusAlert: ({ children, tone }) => React.createElement('div', { role: 'alert', 'data-tone': tone }, children),
         }

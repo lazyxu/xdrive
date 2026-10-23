@@ -122,6 +122,7 @@ test('Mounted shared Album Organizer keeps one fixed status slot through fast, s
     '@mui/material':mui,
     '@mui/icons-material':icons,
     './MediaGalleryCoverThumbnail':{XDriveMediaGalleryCoverThumbnail:'thumbnail'},
+    './FolderIcon':{XDriveFolderIcon:'folder'},
     './MediaGalleryAlbumOrganization':prefs,
     './MediaGalleryAlbumFolderModel':folders,
     './useDeferredLoading':hook,

@@ -1,7 +1,7 @@
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { XDriveFolderIcon } from './FolderIcon'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -142,7 +142,7 @@ function LocalFolderRow({
               ? <ExpandMoreRoundedIcon fontSize="small" />
               : <ChevronRightRoundedIcon fontSize="small" />}
         </IconButton>
-        <FolderRoundedIcon fontSize="small" sx={{ color: '#ffcb3d' }} />
+        <XDriveFolderIcon fontSize="small" />
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography variant="body2" fontWeight={600} noWrap>{node.name}</Typography>
           <Typography variant="caption" color="text.secondary">

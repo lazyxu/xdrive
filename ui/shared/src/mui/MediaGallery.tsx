@@ -20,10 +20,10 @@ import {
 } from '../media-gallery-baidu-viewport-return-session'
 import type { XDriveBaiduViewportReturn } from '../media-gallery-baidu-viewport-return-session'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { XDriveFolderIcon } from './FolderIcon'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
-  FolderOutlined as FolderOutlinedIcon,
   Image as ImageIcon,
   Movie as MovieIcon,
   PersonOutline as PersonOutlineIcon,
@@ -7989,7 +7989,7 @@ export function XDriveMediaGallery({
                     loadThumbnail={loadThumbnail}
                     fallback={(
                       <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', bgcolor: 'action.hover', color: 'text.secondary' }}>
-                        <FolderOutlinedIcon sx={{ fontSize: 44 }} />
+                        <XDriveFolderIcon sx={{ fontSize: 44 }} />
                       </Box>
                     )}
                   />
@@ -8614,7 +8614,7 @@ export function XDriveMediaGallery({
                     }}
                   >
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <FolderOutlinedIcon color="action" />
+                      <XDriveFolderIcon />
                       <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Typography variant="body2" fontWeight={650} noWrap>
                           {folder.name}
