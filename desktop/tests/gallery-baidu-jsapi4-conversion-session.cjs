@@ -148,16 +148,11 @@ test('scope change clears cache, old in-flight reply cannot re-populate new owne
   assert.equal(session.audit().cache_entries,0)
 })
 
-test('real Child queries only after 500 ms quiet period and prototype does not clear session cache',()=>{
-  const prototype=fs.readFileSync(path.join(root,
-    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx'),'utf8')
+test('isolated dynamic Child waits for quiet viewport and Owner session cache clears on account change',()=>{
   const child=fs.readFileSync(path.join(root,
     'deploy/baidu-isolated-child/child.js'),'utf8')
   const web=fs.readFileSync(path.join(root,'web/src/App.tsx'),'utf8')
   const desktop=fs.readFileSync(path.join(root,'desktop/src/renderer/App.tsx'),'utf8')
-  assert.match(prototype,/setTimeout\(load, 500\)/)
-  assert.match(prototype,/xDriveBaiduConversionSessionForScope/)
-  assert.match(prototype,/abort\.signal, conversionSession/)
   assert.match(child,/map\.addEventListener\('movestart', stopViewport\)/)
   assert.match(child,/map\.addEventListener\('zoomend', scheduleViewport\)/)
   assert.match(child,/viewportTimer = setTimeout\(\(\) => \{/)

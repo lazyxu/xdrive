@@ -110,21 +110,20 @@ test('bounded source and native SDK marker projection never process 100k cells',
     'oversized client input fails closed without creating another 100k SDK index')
 })
 
-test('map uses native ClusterLayer.change and bounded Owner service',()=>{
-  const ui=fs.readFileSync(path.join(root,
-    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx'),'utf8')
-  assert.match(ui,/runtime\.layer\.addEventListener\('change', onNativeClusters\)/)
-  assert.ok(ui.indexOf("runtime.layer.addEventListener('change', onNativeClusters)") <
-    ui.indexOf('runtime.layer.setData(collection)'))
-  assert.match(ui,/fitViewOnClick: true/)
-  assert.match(ui,/clusterIconSize: \(\) => \[64, 64\]/)
-  assert.match(ui,/data-xdrive-baidu-native-cluster-cover/)
-  assert.match(ui,/pointerEvents: 'none'/)
-  assert.match(ui,/pin\.photoCount\.toLocaleString/)
-  assert.match(ui,/listPlacesMapOverview\(bounds, detail, controller.signal\)/)
-  assert.match(ui,/runtime\.map\.addEventListener\('movestart', stopOnGesture\)/)
-  assert.match(ui,/runtime\.map\.addEventListener\('zoomstart', stopOnGesture\)/)
-  assert.match(ui,/runtime\.map\.removeEventListener\('movestart', stopOnGesture\)/)
-  assert.match(ui,/runtime\.map\.removeEventListener\('zoomstart', stopOnGesture\)/)
-  assert.doesNotMatch(ui,/getLeaves\(|new BMapLib\.MarkerClusterer/)
+test('isolated native viewport cancels at gesture start; only Parent owns bounded cells',()=>{
+  const child=fs.readFileSync(path.join(root,
+    'deploy/baidu-isolated-child/child.js'),'utf8')
+  const parent=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  assert.match(child,/map\.addEventListener\('movestart', stopViewport\)/)
+  assert.match(child,/map\.addEventListener\('zoomstart', stopViewport\)/)
+  assert.match(child,/map\.addEventListener\('moveend', scheduleViewport\)/)
+  assert.match(child,/send\('cancel'\)/)
+  assert.match(child,/viewportTimer = setTimeout\(\(\) => \{/)
+  assert.match(parent,/listOwnerCells\(bounds,request\.signal\)/)
+  assert.match(parent,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
+  assert.match(parent,/data-xdrive-places-trusted-photo-cover-pins/)
+  assert.doesNotMatch(parent,/new api\.ClusterLayer|BMapLib\.MarkerClusterer/)
+  assert.equal(fs.existsSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),false)
 })

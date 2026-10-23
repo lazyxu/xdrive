@@ -2100,12 +2100,6 @@ export type AgentMediaDescription = {
   description: string
 }
 
-export type AgentBaiduJSAPIPrototype = {
-  provider: 'baidu-jsapi-4.0'
-  browser_ak: string
-  revision: number
-}
-
 export type AgentMediaThumbnail = {
   content_type: string
   data: ArrayBuffer
@@ -2789,10 +2783,6 @@ export class AgentIPCClient {
   revokeMediaBaiduConsent(nodeID: number, revision: number) {
     const query = new URLSearchParams({ node_id: String(nodeID), revision: String(revision) })
     return this.request<AgentMediaBaiduMapConsent>('DELETE', `/v1/media/baidu-consent?${query.toString()}`)
-  }
-
-  mediaBaiduJSAPIPrototype() {
-    return this.request<AgentBaiduJSAPIPrototype>('GET', '/v1/media/baidu-jsapi-prototype')
   }
 
   mediaPlacesPage(limit = 48, offset = 0) {

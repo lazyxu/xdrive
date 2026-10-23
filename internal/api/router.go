@@ -303,8 +303,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
 	// P0-01: privacy-preserving Owner count reconciliation, not an SDK/provider route.
 	authed.GET("/media/places/baidu-jsapi/coverage", s.listBaiduPhotoMapCoverage)
-	// Shared Gallery prototype; returns only configured browser-type AK.
-	authed.GET("/media/places/baidu-jsapi/prototype", s.mediaBaiduJSAPIPrototype)
 	// A3c13: signed-release gated exact BD09 Owner opt-in viewport, not WGS84.
 	authed.GET("/media/places/baidu-jsapi/viewport", s.listBaiduNativeMapViewport)
 	// A3c19: exact Owner BD09 8x8 aggregate, never 100k raw photo coordinates.
