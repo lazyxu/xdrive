@@ -878,6 +878,7 @@ caddy_container_generation_sample() {
 caddy_host_refresh() {
   local dir tmp observed domain generation_before="" generation_after="" live_config_before="" live_config_after="" instance_generation_state=unverified alidns_module_state=unverified module_generation_before="" module_generation_after="" state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
   local lan_ip="" lan_https_configured=false lan_tls_state=disabled lan_verified_ip_sha256="" lan_generation_before="" lan_generation_after="" lan_live_before="" lan_live_after=""
+  local host_local_generation_sha256="" host_local_live_config_sha256="" local_generation_sample="" local_live_config_sample=""
   domain="$(env_value XD_DOMAIN)"
   lan_ip="$(env_value XD_LAN_HTTPS_IP)"
   if [[ -n "$domain" ]]; then
@@ -1016,10 +1017,45 @@ caddy_host_refresh() {
       lan_verified_ip_sha256=""
     fi
   fi
+  # Reuse only coherent, positive Host-local observations already collected
+  # above. This adds NO second Docker/TLS sampling or third-party requests.
+  # Neither digest grants a signed Applied Receipt or configuration authority.
+  # Both-on requires both entries verified; LAN-only uses its bounded
+  # IP-SAN/local-CA observation window.
+  if [[ "$state" == healthy &&
+        ( "$https_configured" == true || "$lan_https_configured" == true ) &&
+        ( "$https_configured" != true ||
+          ( "$tls_state" == verified &&
+            "$instance_generation_state" == same-instance-local &&
+            "$runtime_tls_alignment" == matched-local &&
+            "$live_config_sha256" =~ ^[0-9a-f]{64}$ ) ) &&
+        ( "$lan_https_configured" != true || "$lan_tls_state" == verified ) ]]; then
+    if [[ "$https_configured" == true ]]; then
+      local_generation_sample="$generation_after"
+      local_live_config_sample="$live_config_sha256"
+    elif [[ -n "$lan_generation_before" &&
+            "$lan_generation_before" == "$lan_generation_after" &&
+            -n "$lan_live_before" && "$lan_live_before" == "$lan_live_after" ]]; then
+      local_generation_sample="$lan_generation_after"
+      local_live_config_sample="$lan_live_after"
+    fi
+    if [[ -n "$local_generation_sample" &&
+          "$local_live_config_sample" =~ ^[0-9a-f]{64}$ &&
+          "$local_live_config_sample" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ]] &&
+          command -v sha256sum >/dev/null 2>&1; then
+      host_local_generation_sha256="$(printf 'xdrive.caddy.host.local-generation.v1\n%s\n' "$local_generation_sample" |
+        sha256sum | awk '{print $1}')" || host_local_generation_sha256=""
+      if [[ "$host_local_generation_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        host_local_live_config_sha256="$local_live_config_sample"
+      else
+        host_local_generation_sha256=""
+      fi
+    fi
+  fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s","alidns_module_state":"%s","lan_https_configured":%s,"lan_tls_state":"%s","lan_verified_ip_sha256":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" "$alidns_module_state" \
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","host_local_generation_sha256":"%s","host_local_live_config_sha256":"%s","instance_generation_state":"%s","alidns_module_state":"%s","lan_https_configured":%s,"lan_tls_state":"%s","lan_verified_ip_sha256":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$host_local_generation_sha256" "$host_local_live_config_sha256" "$instance_generation_state" "$alidns_module_state" \
     "$lan_https_configured" "$lan_tls_state" "$lan_verified_ip_sha256" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"

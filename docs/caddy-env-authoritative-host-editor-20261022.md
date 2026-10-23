@@ -76,3 +76,11 @@
 - 原 `commit` 在固定 `install.lock` 与 Host 私有继承文件描述符约束下，要求两个摘要同时存在。成功时把原 Request ID、四字段 `.env` SHA、上述本地窗口摘要**一起写入现有不可覆盖、fsync 的相同终态回执**，然后才清理 Pending/Backup；不是第二套独立提交记录。崩溃/丢 ACK 的原 Request ID 回放接受新旧两种严格固定字段格式。
 - 旧版不带摘要的成功终态仍允许只读和历史崩溃恢复，**不得被视作具有新窗口代际证据**；只有一个摘要、非法十六进制、失败终态携带摘要、额外敏感字段一律拒绝。管理员 API 仍只返回既有安全的终态和固定错误码，不向浏览器泄露 Host 私有摘要。
 - 该摘要是**历史本机观测，不是当前网关运行证明或签名 Applied Receipt**：没有独立 Host 签名/禁用入口负向证据，也尚未实现实时重新比对并自动宣告旧 generation 失效、跨进程 Watchdog、WAN/终端 CA 信任。P0-02B3/P0-05 继续独立开发。生产专属验收按用户决定跳过（未验收）；源代码安全测试仍必需。
+
+## P0-02B3-A · 当前 Host 本机代际观测字段（2026-10-23）
+
+- 不增加 Docker、TLS、地图或第三方 API 调用，而是复用现有 `caddy_host_refresh` 的本机 Docker ID/StartedAt/PID/healthy、Live Config SHA、域名 SNI 与 LAN IP SAN/本机 CA 正向样本。只有已配置的**全部**入口在同一稳定采样窗口内通过、且域名入口与容器启动域名一致，才用与 P0-02B2 成功终态完全相同的域分离规则派生 `host_local_generation_sha256` 与 `host_local_live_config_sha256`。
+- 当前快照 `caddy-runtime-status.json` 仅携带两个非密钥摘要，绝不携带原始 Docker inspect、Caddy 配置 JSON、域名、LAN IP、AK/SK 或证书；一方缺失、切换运行代际、同实例 Live Config 变化、TLS/CA 失败、双入口任一失败均不发布摘要。LAN-only 正常可独立证明本机窗口，旧版 Host 省略字段保持只读兼容。
+- Go Server 严格校验成对 SHA-256、空配置摘要、配置/入口状态矛盾，以及与原现有 Live Config 字段的一致性。管理员服务状态仍只返回既有的安全状态与本机验证范围，**不**传输这两个私有摘要，不公开新的 Applied 接口。
+- 这一小段只完成**最近一次正向本机观测**的标准化；Host 控制目录允许 Server 读取并非独立签名授权，快照存在 45 秒新鲜度限制且可能刚好发生代际变化。禁止据此宣布某个历史 `deployed` 当前仍生效。后续 P0-02B3-B 必须将**可信原请求历史记录**与独立重新采样下的当前代际对比并定义 matching/changed/unverified，完成签名和禁用入口负向验证后才能考虑真正 Applied Receipt。
+- 保留 Host `.env` 唯一权威、原提交持久回放、安全隔离和 Rescue 边界；生产环境专属安全验收 **按用户决定跳过（未验收）**，源码级故障注入及权限测试照常要求。
