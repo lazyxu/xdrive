@@ -57,3 +57,9 @@
 - 离线故障注入覆盖新旧双重失败、原 ID 失败归档、Active 留存、请求队列隔离和重启后仍隔离。Go 测试覆盖正常及符号链接 Active。生产环境专属验收：**按用户决定跳过（未验收）**。
 
 - 多副本竞态补充：Server 检查 Active 与发布队列并非原子事务；即使第二个请求在这一间隙入队，Host 发现 Active 后会删除该普通队列文件，防止稍后解除隔离时执行早已超时的请求。符号链接或异常 Active 保持保守隔离。
+## P0-02A · Caddy-only 部署与回退的本机同代际验证窗口（2026-10-23）
+
+- 将已有的固定 Docker ID/StartedAt/PID/healthy 采样与仅返回 SHA256 的 Caddy Admin `/config/` Live Config 采样，直接接入 Host-only 重新部署和旧配置回退的 Ready/域名 TLS/LAN TLS 验证；验证前后运行代际与内存配置摘要必须完全相同。
+- 采样和探针运行在同一个 `install.lock` 受限部署事务中。发生 Docker Generation 切换、Caddy 原地 Reload、Live Config 不可读取或探针失败时，不将结果标记为本机成功或已回退。独立的现有 Host 只读采样仍可工作。
+- 离线固定 Docker fixture 验证稳定成功、跨代际拒绝、同代际 Live Config 变化拒绝、缺少 Live Config 拒绝，原有成功/失败/崩溃和锁互斥回归仍需继续。此阶段不新增公开 API、凭据暴露或数据库配置权威。
+- 该本机观测仍无法阻止安装锁之外的 A→B→A 变化；也不具备独立签名、禁用入口负向证明、当前代际持续验证或 WAN/客户端 CA 证据。**不是** Applied Receipt，后续 P0-02B/P0-05 独立交付。生产环境专属验收按用户决定跳过（未验收）。

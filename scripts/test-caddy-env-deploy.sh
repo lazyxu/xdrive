@@ -12,6 +12,9 @@ export XD_HOST_CONTROL_SOURCE_ONLY=1
 export MOCK_DOCKER_LOG="$TMP/docker.log"
 export MOCK_FAIL_NEW=0
 export MOCK_FAIL_OLD=0
+export MOCK_GENERATION_CHANGE=0 MOCK_CONFIG_CHANGE=0 MOCK_LIVE_UNAVAILABLE=0
+export MOCK_INSPECT_COUNTER_PATH="$TMP/inspect-count"
+export MOCK_LIVE_COUNTER_PATH="$TMP/live-count"
 mkdir -p "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state" "$XD_CONFIG_DIR/bin" "$TMP/fakebin"
 chmod 0700 "$XD_CONFIG_DIR" "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/state"
 cp "$ROOT/scripts/caddy-env-config.py" "$XD_CONFIG_DIR/bin/caddy-env-config.py"
@@ -42,9 +45,31 @@ if [[ "$1" == compose ]]; then
   fi
   exit 0
 fi
-if [[ "$1" == exec ]]; then
-  [[ "$2" == xdrive-caddy && "$3" == wget ]] || exit 92
+if [[ "$1" == inspect ]]; then
+  [[ "$2" == --format && "$4" == xdrive-caddy ]] || exit 92
+  count="$(cat "$MOCK_INSPECT_COUNTER_PATH" 2>/dev/null || printf 0)"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$MOCK_INSPECT_COUNTER_PATH"
+  instance=1
+  if [[ "$MOCK_GENERATION_CHANGE" == 1 && "$count" -gt 1 ]]; then instance=2; fi
+  printf -v digest '%064d' "$instance"
+  printf '%s|2026-10-23T04:00:00Z|123|true|healthy\n' "$digest"
   exit 0
+fi
+if [[ "$1" == exec ]]; then
+  [[ "$2" == xdrive-caddy ]] || exit 92
+  if [[ "$3" == wget ]]; then exit 0; fi
+  if [[ "$3" == /bin/sh && "$4" == -ec ]]; then
+    [[ "$MOCK_LIVE_UNAVAILABLE" != 1 ]] || exit 94
+    count="$(cat "$MOCK_LIVE_COUNTER_PATH" 2>/dev/null || printf 0)"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$MOCK_LIVE_COUNTER_PATH"
+    revision=1
+    if [[ "$MOCK_CONFIG_CHANGE" == 1 && "$count" -gt 1 ]]; then revision=2; fi
+    printf '%064d  -\n' "$revision"
+    exit 0
+  fi
+  exit 92
 fi
 exit 93
 DOCKER
@@ -73,6 +98,32 @@ deploy() {
   printf '{"operation":"deploy","request_id":"%s","expected_sha256":"%s"}\n' "$id" "$sha" > "$TMP/active.json"
   caddy_env_deploy "$id" "$TMP/active.json" "$TMP/result.json"
 }
+
+# P0-02A: the existing Docker generation and live Caddy config samplers
+# must bracket the ACTUAL local Ready+TLS path before claiming host success.
+# These only mock Docker; independent tests exercise the real TLS/CA logic.
+caddy_env_verify_local_runtime_window original.example.com 192.168.1.9
+MOCK_GENERATION_CHANGE=1
+printf '0\n' > "$MOCK_INSPECT_COUNTER_PATH"
+if caddy_env_verify_local_runtime_window original.example.com 192.168.1.9; then
+  echo "changed Docker Caddy generation falsely accepted" >&2
+  exit 1
+fi
+MOCK_GENERATION_CHANGE=0
+MOCK_CONFIG_CHANGE=1
+printf '0\n' > "$MOCK_LIVE_COUNTER_PATH"
+if caddy_env_verify_local_runtime_window original.example.com 192.168.1.9; then
+  echo "in-place Caddy live-config change falsely accepted" >&2
+  exit 1
+fi
+MOCK_CONFIG_CHANGE=0
+MOCK_LIVE_UNAVAILABLE=1
+if caddy_env_verify_local_runtime_window original.example.com 192.168.1.9; then
+  echo "missing in-memory Caddy config falsely accepted" >&2
+  exit 1
+fi
+MOCK_LIVE_UNAVAILABLE=0
+caddy_env_verify_local_runtime_window original.example.com 192.168.1.9
 
 save_domain next.example.com
 sha="$(fingerprint)"
