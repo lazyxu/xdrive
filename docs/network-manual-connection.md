@@ -1,3 +1,9 @@
+## 2026-10-24 · 全端认证重定向保护
+
+Web / Mobile Web / PWA 的密码登录、refresh-token 刷新、登出与修改密码均使用 `fetch(..., {redirect: 'error'})`，不允许在 HTTP 30x 后把用户密码或刷新令牌继续发送至跳转目标。Desktop 登录前版本探测将 30x 显示为 `server_auth_redirect`；Go Agent 的密码登录、令牌刷新、登出与修改密码同样拒绝全部 30x（包括没有 Location 的 3xx），特别防止 307/308 将原始 POST 请求体转发到其他 Origin。错误结果不包含目标 Location。正常 TLS 证书链、IP SAN、系统 CA 和 Server 身份认证不降低。
+
+`https://192.168.2.4:8443` 应直接代理 xDrive 的认证 API；如果 Caddy 将它重定向到公网域名或其他路径，请修复真实生效配置，不能以忽略证书错误代替修复。生产环境安全验收按用户决定跳过（未验收），不索取生产凭据或抓包，也不影响源码测试、CI 和合并。
+
 ## Desktop 局域网 IP 登录探测（2026-10-23）
 
 Desktop 登录前的 `/api/v1/version` 检查现使用 Electron Main 的 Chromium `net.fetch` 和平台 TLS 验证，不再使用 Node 默认 `fetch` 的内置 CA 列表。探测只请求所填的 HTTP(S) 根 Origin，不发送 Cookie / 用户名 / 密码 / Bearer，不跟随重定向，不跳过证书校验。失败时区分证书链未信任、IP SAN 不匹配、TLS 协议、端口拒绝连接、网络不可达和超时。探测成功仅表示**版本 API 可达**，不能证明账户登录或当前管理员 Caddy Desired 已应用。

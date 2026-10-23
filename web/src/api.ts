@@ -682,6 +682,7 @@ export class XDriveApi {
     this.refreshPromise = (async () => {
       const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
         method: 'POST',
+        redirect: 'error',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: this.session.refreshToken }),
         signal,
@@ -767,7 +768,7 @@ export class XDriveApi {
 
   login(username: string, password: string) {
     return this.request<AuthResult>('/api/v1/auth/login', {
-      method: 'POST', body: JSON.stringify({ username, password }),
+      method: 'POST', redirect: 'error', body: JSON.stringify({ username, password }),
     }, false)
   }
 
@@ -775,6 +776,7 @@ export class XDriveApi {
     if (!this.session.refreshToken) return
     await fetch(`${API_BASE}/api/v1/auth/logout`, {
       method: 'POST',
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: this.session.refreshToken }),
     })
@@ -1173,6 +1175,7 @@ export class XDriveApi {
   async changePassword(currentPassword: string, newPassword: string) {
     const result = await this.request<AuthResult>('/api/v1/me/change-password', {
       method: 'POST',
+      redirect: 'error',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     })
     this.setSession(sessionFromAuth(result))

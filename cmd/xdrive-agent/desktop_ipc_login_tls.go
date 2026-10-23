@@ -26,6 +26,9 @@ func classifyDesktopLoginTransportError(err error) (code, message string, status
 		// Existing Server authorization/password errors must remain authoritative.
 		return "", "", 0, false
 	}
+	if errors.Is(err, client.ErrAuthRedirect) {
+		return "server_auth_redirect", "登录入口发生重定向；为保护密码已拒绝继续发送。请检查当前 IP HTTPS 的 Caddy 配置，不要依赖其他域名的登录跳转。", http.StatusBadGateway, true
+	}
 	var hostErr x509.HostnameError
 	if errors.As(err, &hostErr) {
 		return "server_tls_name", "HTTPS 证书与服务器地址不匹配；证书的 IP SAN 必须包含当前局域网 IP。", http.StatusBadGateway, true
