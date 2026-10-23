@@ -11,7 +11,7 @@ import type { MediaPlaceFacet } from '../models'
 /**
  * One responsive native Map surface for shared Web/Mobile Web/Desktop Gallery.
  * NO script, Cookie, AK or external request is created here; without a
- * Server-authorized runtime port the containing Gallery uses Baidu Static PNG.
+ * Server-authorized runtime port no alternate map is mounted.
  */
 export function XDriveMediaGalleryBaiduJSAPI4Surface({
   authorizedRuntime,

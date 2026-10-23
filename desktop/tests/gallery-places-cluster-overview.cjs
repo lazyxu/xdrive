@@ -109,5 +109,5 @@ test('Gallery Places mounts its map without waiting for Facets and preserves Own
   assert.match(surface,/queryCells\(world\)\.then\(ok =>/)
   assert.match(surface,/listOwnerCells\(bounds,request.signal\)/)
   assert.match(surface,/xDriveSelectBaiduNativeCell/)
-  assert.match(map,/initialCamera=\{nativeRestoreRef\.current\?\?undefined\}/)
+  assert.match(map,/initialCamera=\{cameraRef\.current \?\? undefined\}/)
 })

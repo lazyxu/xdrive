@@ -33,7 +33,7 @@ test('one service title and four honest axes, with verbose hints only after disc
   assert.match(serviceRow, /data-xdrive-service-evidence-toggle aria-expanded=\{showLifecycleEvidence\}/)
   assert.match(serviceRow, /\{showLifecycleEvidence && \(\s*<Box data-xdrive-service-extra-evidence/)
   assert.match(serviceRow, /data-xdrive-service-config-mode/)
-  assert.match(serviceRow, /showLifecycleEvidence && service.id === 'baidu-map'/)
+  assert.match(serviceRow, /service.id !== 'baidu-map'/)
   assert.match(page, /\{selectedPage === 'photo-auto' && \(\s*<Typography/)
   assert.match(page, /data-xdrive-unified-detail-intro/)
   assert.match(page, /selectedTabs\.filter\(\(tab\) => tab !== 'verify'\)/)
@@ -42,14 +42,10 @@ test('one service title and four honest axes, with verbose hints only after disc
     assert.ok(nav.includes("'"+name+"'"), 'must share rule for '+name)
   }
 })
-test('static quota and dynamic signed authority are two explicit operations, not two editable runtime copies', () => {
-  assert.match(page, /data-xdrive-baidu-static-unverified-hint/)
-  assert.match(page, /\{currentTab === 'verify' && \(\s*<Stack direction="row"/)
-  assert.match(page, /onClick=\{\(\) => \{ void verifyBaiduMap\(\) \}\}/)
-  assert.match(page, /固定 128×128/)
-  assert.match(page, /消耗一次 API 配额/)
-  assert.match(page, /30 秒后自动隐藏/)
+test('Server AK and signed dynamic JSAPI4 remain separate authorities', () => {
+  assert.match(page, /XDriveSensitiveField label="Server AK"/)
   assert.match(page, /XDriveBaiduJSAPIDesiredPanel source=\{source\} mode=\{currentTab\}/)
+  assert.doesNotMatch(page, /data-xdrive-baidu-static-unverified-hint|固定 128×128|verifyBaiduMap\(/)
   assert.equal((panel.match(/XDriveBaiduJSAPIConfigSnapshot config=/g) || []).length, 1)
   assert.match(snapshot, /detailsOpen && \(/)
   assert.match(snapshot, /data-xdrive-baidu-jsapi4-six-field-state/)

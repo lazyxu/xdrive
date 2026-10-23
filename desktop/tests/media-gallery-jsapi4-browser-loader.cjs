@@ -283,7 +283,7 @@ test('A3c22 a script without onload/onerror expires and can be retried', async (
   }
 })
 
-test('static contract: only Baidu, original WGS84, no browser AK or alternate map source', () => {
+test('dynamic-only contract: signed Baidu Child, original WGS84, no alternate map source', () => {
   for (const value of [
     '/_BMapService/api?v=4.0', 'mintMapOnlySession(signal)',
     'translate([original], 1, 5', 'trustedWGS84Bounds',
@@ -293,8 +293,9 @@ test('static contract: only Baidu, original WGS84, no browser AK or alternate ma
     /api\.map\.baidu\.com|googleapis|openstreetmap|mapbox|[?&]ak=|localStorage|sessionStorage/)
   const current = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
-  assert.match(current, /XDriveMediaGalleryBaiduStaticMap/)
-  assert.match(current, /authorizedJSAPI4Runtime/)
+  assert.match(current, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(current, /activation_state === 'authorized_signed_release'/)
+  assert.doesNotMatch(current, /XDriveMediaGalleryBaiduStaticMap|BaiduPrototypeMap/)
   for (const platform of [
     'web/src/mediaGalleryAdapter.ts',
     'desktop/src/renderer/mediaGalleryAdapter.ts',

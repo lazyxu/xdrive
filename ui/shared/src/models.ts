@@ -919,21 +919,6 @@ export type XDriveBaiduJSAPIPrototypeConfig = {
   revision: number
 }
 
-export type XDriveBaiduMapProviderInfo = {
-  provider: 'baidu-server-static'
-  enabled: boolean
-  attribution: string
-  privacy: string
-}
-
-export type XDriveBaiduStaticMapRequest = {
-  latitude: number
-  longitude: number
-  zoom: number
-  width: number
-  height: number
-}
-
 // Privacy-only state: authorized DOES NOT imply JSAPI4 is enabled. Never
 // serialize original WGS84, SourceNode fingerprint, AK or provider URLs.
 export type MediaBaiduMapConsent = {

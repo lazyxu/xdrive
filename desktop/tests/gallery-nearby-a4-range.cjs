@@ -45,13 +45,13 @@ test('A4 real WGS84 filtering reuses one Owner Media Range on Web/Mobile/Desktop
   assert.match(filters, /hasNear && hasBBox/)
   assert.match(gallery, /openNearbyGeoRange/)
   assert.match(gallery, /loadFirstPage\(null, nextQuery/)
-  assert.match(map, /data-xdrive-gallery-nearby-a4/)
-  // Live JSAPI4 uses BD-09: never query the last static WGS84 viewport.
-  assert.match(map, /const boundedWGS84Viewport = Boolean\(!showingNative && viewportBounds/)
+  assert.match(map, /onOpenNearby\(selectedPlace, nearbyRadiusKM\)/)
+  // BD-09 must not be treated as approximate static WGS84 viewport geometry.
+  assert.doesNotMatch(map, /boundedWGS84Viewport|xDriveBaiduStaticViewportBounds/)
   // The user-selected date/search/favorite criteria still intersect with Nearby;
   // only the previous exact Place cell is removed.
   assert.match(gallery, /\.\.\.draftFilters, place: '', location: 'with'/)
-  assert.match(map, /data-xdrive-gallery-bbox-photos/)
+  assert.match(gallery, /onOpenViewportPhotos=\{\(bounds\) => openNearbyGeoRange\(/)
   assert.match(gallery, /activePlaceID=\{(?:query\.place_hierarchy \|\| )?query\.place \|\|/)
   assert.doesNotMatch(backend, /http\.Get|baidu|_BMapService/)
 })

@@ -36,7 +36,7 @@ test('mobile switch preserves trusted shared Map and Owner photo wall routes',()
     "aria-pressed={placesMobileMode === 'map'}",
     "aria-pressed={placesMobileMode === 'list'}",
     'onOpenBaiduNativeCell={onOpenBaiduNativeCell}',
-    'onOpenViewportPhotos={onOpenViewportPhotos}',
+    'onOpenNearby={onOpenNearby}',
   ]) assert.ok(gallery.includes(marker),marker)
   assert.ok(places.includes('edgeToEdge={compact}'))
   assert.ok(child.includes('xDriveSelectBaiduNativeCell(page,bounds,cell)'))

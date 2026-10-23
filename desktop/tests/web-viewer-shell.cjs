@@ -270,15 +270,13 @@ test('P0-Places-A2 real routed Viewer opens one shared GPS map on narrow and wid
       media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready',
       latitude: 39.91234, longitude: 116.41234,
     } }
-    const getBaiduMapProvider = async () => ({ provider: 'baidu-server-static', enabled: true })
-    const loadBaiduStaticMap = async () => new Blob([])
     let renderer
     try {
       await act(async () => {
         renderer = create(React.createElement(WebFileViewerApps, {
           route: { app: 'media-viewer', params: { node: node.id } },
           api: { node: async () => node, mediaItem: async () => item },
-          gallerySource: { getBaiduMapProvider, loadBaiduStaticMap },
+          gallerySource: {},
           shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
           onError(error) { throw error },
         }), { createNodeMock: () => ({ focus() {} }) })
@@ -299,8 +297,11 @@ test('P0-Places-A2 real routed Viewer opens one shared GPS map on narrow and wid
       assert.equal(dialogs()[0].props.open, true)
       assert.equal(dialogs()[0].props.item.metadata.latitude, 39.91234)
       assert.equal(dialogs()[0].props.item.metadata.longitude, 116.41234)
-      assert.equal(dialogs()[0].props.getBaiduMapProvider, getBaiduMapProvider)
-      assert.equal(dialogs()[0].props.loadBaiduStaticMap, loadBaiduStaticMap)
+      assert.equal(typeof dialogs()[0].props.onOpenDynamicMap, 'function')
+      assert.equal(dialogs()[0].props.getBaiduMapProvider, undefined)
+      assert.equal(dialogs()[0].props.loadBaiduStaticMap, undefined)
+      const viewerSource = fs.readFileSync(path.join(repo, 'web/src/WebFileViewerApps.tsx'), 'utf8')
+      assert.match(viewerSource, /xDriveWebAppHash\(\{ app: 'gallery', params: \{ section: 'places' \} \}\)/)
       await act(async () => dialogs()[0].props.onClose())
       assert.equal(dialogs().length, 0, 'close releases the owned map component')
     } finally {

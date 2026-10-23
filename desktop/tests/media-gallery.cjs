@@ -19,7 +19,7 @@ const sharedGalleryMemories = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMe
 const sharedGalleryCleanup = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCleanup.tsx')
 const sharedGalleryPets = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPets.tsx')
 const sharedGalleryPlacesMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMap.tsx')
-const sharedGalleryBaiduMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryBaiduStaticMap.tsx')
+const sharedGalleryBaiduMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryBaiduIsolatedPhotoSurface.tsx')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
@@ -551,50 +551,25 @@ test('Gallery Trash and reliable media collections stay shared and evidence-base
   }
 })
 
-test('Gallery Places renders only Baidu Server map with no offline fallback', () => {
-  for (const token of [
-    '<XDriveMediaGalleryPlacesMap',
-    'placesExpandedRef',
-    'placesExpandedRef.current && source.listPlacesPage',
-    'places.map((place) => (',
-    '地点列表',
-    'listPlacesMapOverview={listPlacesMapOverview}',
-  ]) {
-    assert.ok(sharedGalleryMain.includes(token), `Gallery map wiring missing: ${token}`)
+test('Gallery Places uses a signed HTTPS Baidu Child; never a static or prototype fallback', () => {
+  for (const token of ['<XDriveMediaGalleryPlacesMap', 'placesExpandedRef',
+    'placesExpandedRef.current && source.listPlacesPage', 'places.map((place) => (', '地点列表']) {
+    assert.ok(sharedGalleryMain.includes(token), 'Gallery Places missing: '+token)
   }
-  for (const token of [
-    'data-xdrive-gallery-places-map',
-    '缩放地图浏览照片，点击标记查看照片墙。',
-    '<XDriveMediaGalleryBaiduPrototypeMap',
-    'getBaiduMapProvider',
-    'loadBaiduStaticMap',
-    '选择地图地点',
-    '查看此地点照片',
-  ]) {
-    assert.ok(sharedGalleryPlacesMap.includes(token), `Baidu-only Places missing: ${token}`)
+  for (const token of ['data-xdrive-gallery-places-map', 'XDriveMediaGalleryBaiduIsolatedPhotoSurface',
+    'getBaiduJSAPI4Status', 'mintBaiduIsolatedChildTicket', 'listBaiduNativeCells',
+    '查看此地点照片', "activation_state === 'authorized_signed_release'"]) {
+    assert.ok(sharedGalleryPlacesMap.includes(token), 'isolated map missing: '+token)
   }
-  for (const obsolete of [
-    'WORLD_OUTLINES',
-    'xDriveMediaPlacesCluster',
-    'xDriveMediaPlacesProject',
-    'xDriveMediaPlacesPanViewport',
-    'component="svg"',
-    '内置简化地理底图',
-    '本地 GPS 聚合',
-    '不请求在线地图瓦片',
-  ]) {
-    assert.equal(sharedGalleryPlacesMap.includes(obsolete), false, `obsolete offline map: ${obsolete}`)
+  assert.match(sharedGalleryBaiduMap, /xDriveMountBaiduIsolatedFrame/)
+  assert.match(sharedGalleryPlacesMap, /startsWith\('https:\/\/'\)/)
+  for (const obsolete of ['WORLD_OUTLINES','xDriveMediaPlacesCluster','xDriveMediaPlacesProject',
+    'xDriveMediaPlacesPanViewport','component="svg"','内置简化地理底图',
+    'getBaiduMapProvider','loadBaiduStaticMap','XDriveMediaGalleryBaiduStaticMap',
+    'XDriveMediaGalleryBaiduPrototypeMap', 'authorizedJSAPI4Runtime']) {
+    assert.equal(sharedGalleryPlacesMap.includes(obsolete), false, 'obsolete map fallback: '+obsolete)
   }
-  assert.ok(sharedGalleryBaiduMap.includes('百度地图未启用'))
-  assert.ok(sharedGalleryBaiduMap.includes('百度地图加载失败'))
-  assert.ok(sharedGalleryBaiduMap.includes('ProviderResult'))
-  assert.ok(sharedGalleryBaiduMap.includes('AbortController'))
-  assert.ok(sharedGalleryBaiduMap.includes('URL.revokeObjectURL'))
-  assert.equal(sharedGalleryBaiduMap.includes('return null'), false)
-  assert.equal(sharedGalleryBaiduMap.includes('本地地图'), false)
   assert.equal(sharedGalleryPlacesMap.includes('http://'), false)
-  // Only a trusted Server-returned HTTPS child Origin can arm the dynamic map.
-  assert.match(sharedGalleryPlacesMap, /status\.isolated_child_origin\.startsWith\('https:\/\/'\)/)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {
@@ -1003,7 +978,8 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /face_count: number/)
   assert.match(sharedModels, /attribution\?: string/)
   assert.match(sharedModels, /attribution_url\?: string/)
-  assert.match(sharedGallery, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
+  assert.match(sharedGallery, /listBaiduNativeCells=\{listBaiduNativeCells\}/)
+  assert.doesNotMatch(sharedGalleryPlacesMap, /BaiduStaticMap|loadBaiduStaticMap/)
   assert.match(sharedGallery, /待确认建议/)
   assert.match(sharedGallery, /本地人脸聚类快照；确认后成为长期人物/)
   assert.match(sharedGallery, /暂不处理/)

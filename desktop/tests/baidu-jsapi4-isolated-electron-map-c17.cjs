@@ -63,7 +63,7 @@ test('A3c17 permits one Origin and no unreviewed external map/CDN egress', () =>
   }
 })
 
-test('A3c17 Desktop remains sandboxed while prototype Places stays in shared Gallery window', () => {
+test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynamic map', () => {
   const main = read('desktop/src/main/index.cts')
   const preload = read('desktop/src/preload/index.cts')
   const globals = read('desktop/src/renderer/global.d.ts')
@@ -86,22 +86,16 @@ test('A3c17 Desktop remains sandboxed while prototype Places stays in shared Gal
   assert.match(main, /'账户已禁用'/)
   assert.match(preload, /openBaiduMapSecure: \(\) => ipcRenderer\.invoke\('desktop:open-baidu-map-secure'\)/)
   assert.match(globals, /openBaiduMapSecure:/)
-  assert.doesNotMatch(desktopApp, /onOpenSecureDesktopMap=\{/)
-  // Legacy secure window remains available for a later hardened JSAPI
-  // release; this prototype uses the shared Gallery direct SDK instead.
+  assert.match(desktopApp, /onOpenSecureDesktopMap=\{\(\) => \{/)
+  assert.match(desktopApp, /window\.xdriveDesktop\.openBaiduMapSecure\(\)/)
+  // Electron file pages never load a map SDK. Web uses only the signed HTTPS Child.
   assert.match(desktopApp, /<XDriveMediaGalleryPage/)
-  // Web has both ports; the signed isolated Child supersedes direct prototype.
-  // Desktop without the Child ports keeps its existing bounded prototype.
-  assert.match(places,/const hasIsolatedChildPorts = Boolean\(/)
-  assert.match(places,/const prototypeMap = xDriveBaiduPlacesRuntime\(/)
-  assert.match(places,/hasIsolatedChildPorts, Boolean\(listPlacesMapOverview && getBaiduJSAPIPrototype\)/)
-  assert.doesNotMatch(places, /listPlacesPage\(100,offset\)/)
-  assert.match(places, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
-  assert.match(places, /<XDriveMediaGalleryBaiduPrototypeMap/)
-  assert.match(preload, /getBaiduJSAPIPrototype/)
-  assert.match(main, /agent:get-baidu-jsapi-prototype/)
+  assert.match(places, /const hasChildPorts = Boolean\(/)
+  assert.match(places, /activation_state === 'authorized_signed_release'/)
+  assert.match(places, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(places, /在独立 HTTPS 安全窗口打开动态地图/)
+  assert.doesNotMatch(places, /XDriveMediaGalleryBaiduPrototypeMap|BaiduStaticMap|prototypeMap/)
   assert.match(gallery, /onOpenSecureDesktopMap=\{onOpenSecureDesktopMap\}/)
-  assert.match(places, /在独立安全窗口打开地图/)
   assert.match(webApp, /initialSection=\{route\.app === 'gallery'/)
   assert.doesNotMatch(main, /BaiduBrowserAK|BMapSecurityConfig|allowRunningInsecureContent: true/)
   assert.doesNotMatch(preload, /mintBaiduJSAPI4Session/)

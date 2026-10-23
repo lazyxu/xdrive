@@ -201,7 +201,7 @@ test('A3 shared native composition has NO SDK loader, AK, second API or runtime 
   assert.match(policy, /return ErrGateClosed/)
   assert.match(web, /api.mediaPlacesViewport/)
   assert.match(desktop, /getMediaPlacesViewport/)
-  assert.match(gallery, /XDriveMediaGalleryBaiduStaticMap/)
+  assert.match(gallery, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.doesNotMatch(gallery, /media-gallery-baidu-jsapi4-composition/)
   assert.doesNotMatch(code,
     /window\.BMap|new BMap\.|fetch\(|document\.createElement|BMAP_PROXY_URL|serviceHost|localStorage|indexedDB|new WebSocket/)

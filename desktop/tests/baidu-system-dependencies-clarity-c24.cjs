@@ -19,18 +19,11 @@ for (const [name, source] of [['ServiceDependenciesPage.tsx', parent], ['BaiduJS
   })
 }
 
-test('Static Map config editing and authenticated online evidence are distinct in the shared panel', () => {
-  assert.match(parent, /currentTab === 'config' \? '百度地图 Server AK' : '静态地图 · 在线生效验证'/)
-  assert.match(parent, /currentTab === 'config' && baiduConfig && \(/)
-  assert.match(parent, /data-xdrive-baidu-static-unverified-hint/)
-  assert.match(parent, /service\.id === 'baidu-map' && service\.status === 'unknown'/)
-  assert.match(parent, /service\.health_state === 'not-checked'/)
-  assert.match(parent, /label: '待人工在线验证'/)
-  assert.match(parent, /验证当前 AK 在线生效/)
-  assert.match(parent, /消耗一次 API 配额/)
-  assert.match(parent, /currentTab === 'verify' && \(/)
+test('Admin Server AK remains separate from the signed dynamic JSAPI release', () => {
+  assert.match(parent, /case 'baidu-map': return \['status', 'config', 'verify'\]/)
+  assert.match(parent, /XDriveBaiduJSAPIDesiredPanel/)
   assert.match(parent, /XDriveSensitiveField label="Server AK"/)
-  assert.doesNotMatch(parent, /<XDriveStoredCredentialField/)
+  assert.doesNotMatch(parent, /data-xdrive-baidu-static-unverified-hint|静态地图 · 在线生效验证|验证当前 AK 在线生效/)
 })
 
 test('JSAPI Browser AK configuration is separate from signed production release evidence', () => {
@@ -42,6 +35,7 @@ test('JSAPI Browser AK configuration is separate from signed production release 
   assert.match(jsapi, /data-xdrive-baidu-jsapi4-missing-blocker-evidence/)
   assert.match(jsapi, /不需要再次填写已保存的 AK/)
   assert.match(jsapi, /未放行时不会试探加载脚本/)
+  assert.doesNotMatch(jsapi, /静态 PNG|静态地图|Static Map/, 'dynamic map diagnostics must not refer to retired static maps')
   assert.doesNotMatch(jsapi, /fetch\(|window\._BMapSecurityConfig|_BMapService\/api\?v=4\.0/)
   assert.match(read('internal/api/baidu_jsapi_config.go'),
     /ReleaseBlockers:\s+s\.baiduJSAPI4ReleaseBlockers\(cfg, approved\)/)

@@ -1277,14 +1277,6 @@ export type AgentAdminBaiduMapConfig = {
   updated_at?: string
 }
 
-export type AgentAdminBaiduMapVerification = {
-  state: 'verified' | 'denied' | 'unavailable'
-  revision: number
-  checked_at: string
-  image_verified: boolean
-  detail: string
-}
-
 export type AgentAdminBaiduMapAKReveal = {
   field: 'ak'
   value: string
@@ -2109,13 +2101,6 @@ export type AgentBaiduJSAPIPrototype = {
   revision: number
 }
 
-export type AgentBaiduMapProvider = {
-  provider: 'baidu-server-static'
-  enabled: boolean
-  attribution: string
-  privacy: string
-}
-
 export type AgentMediaThumbnail = {
   content_type: string
   data: ArrayBuffer
@@ -2801,20 +2786,8 @@ export class AgentIPCClient {
     return this.request<AgentMediaBaiduMapConsent>('DELETE', `/v1/media/baidu-consent?${query.toString()}`)
   }
 
-  mediaBaiduMapProvider() {
-    return this.request<AgentBaiduMapProvider>('GET', '/v1/media/map-provider')
-  }
-
   mediaBaiduJSAPIPrototype() {
     return this.request<AgentBaiduJSAPIPrototype>('GET', '/v1/media/baidu-jsapi-prototype')
-  }
-
-  mediaBaiduStaticMap(latitude: number, longitude: number, zoom: number, width: number, height: number, signal?: AbortSignal) {
-    const query = new URLSearchParams({
-      lat: String(latitude), lng: String(longitude), zoom: String(zoom),
-      width: String(width), height: String(height),
-    })
-    return this.requestBinary(`/v1/media/baidu-static?${query.toString()}`, 12_000, signal)
   }
 
   mediaPlacesPage(limit = 48, offset = 0) {
@@ -3939,10 +3912,6 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
-  }
-
-  cloudVerifyAdminBaiduMap(revision: number) {
-    return this.request<AgentAdminBaiduMapVerification>('POST', '/v1/cloud/admin-baidu-map/verify', { revision }, 15_000)
   }
 
   cloudRevealAdminBaiduMapAK(revision: number) {

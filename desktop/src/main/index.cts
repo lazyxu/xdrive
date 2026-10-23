@@ -93,7 +93,6 @@ import {
   type AgentBackgroundTask,
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
-  type AgentAdminBaiduMapVerification,
   type AgentAdminBaiduMapConfig,
   type AgentAdminBaiduJSAPIConfig,
   type AgentAdminBaiduJSAPIUpdate,
@@ -228,7 +227,6 @@ import {
   type AgentMediaEditRecipeInput,
   type AgentMediaCreativeGeneration,
   type AgentMediaCreativeInput,
-  type AgentBaiduMapProvider,
   type AgentBaiduJSAPIPrototype,
   type AgentMediaThumbnail,
   type AgentSource,
@@ -4481,14 +4479,6 @@ function registerIPCHandlers() {
     }, false),
   )
 
-  ipcMain.handle('agent:get-baidu-map-provider', () =>
-    runAgentAction<AgentBaiduMapProvider>(async () => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'baidu-static-map')
-      return requireAgentClient().mediaBaiduMapProvider()
-    }, false),
-  )
-
   ipcMain.handle('agent:get-baidu-jsapi-prototype', () =>
     runAgentAction<AgentBaiduJSAPIPrototype>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
@@ -4496,23 +4486,6 @@ function registerIPCHandlers() {
       return requireAgentClient().mediaBaiduJSAPIPrototype()
     }, false),
   )
-  ipcMain.handle('agent:get-baidu-static-map', (
-    event, lat: unknown, lng: unknown, zoom: unknown, width: unknown, height: unknown, requestID: unknown,
-  ) => runAgentAction<AgentMediaThumbnail>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'baidu-static-map')
-    if (typeof lat !== 'number' || !Number.isFinite(lat) ||
-        typeof lng !== 'number' || !Number.isFinite(lng) ||
-        typeof zoom !== 'number' || !Number.isSafeInteger(zoom) ||
-        typeof width !== 'number' || !Number.isSafeInteger(width) ||
-        typeof height !== 'number' || !Number.isSafeInteger(height) ||
-        lat < -85 || lat > 85 || lng < -180 || lng > 180 ||
-        zoom < 3 || zoom > 18 || width < 128 || width > 512 ||
-        height < 128 || height > 512) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid map parameters.')
-    }
-    return requireAgentClient().mediaBaiduStaticMap(lat, lng, zoom, width, height, signal)
-  }), false))
   ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown, reportProgress: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {
@@ -5366,14 +5339,6 @@ function registerIPCHandlers() {
       refs,
       typeof targetParent === 'number' ? targetParent : 0,
     )
-  }, false))
-  ipcMain.handle('agent:cloud-verify-admin-baidu-map', (_event, revision: unknown) => runAgentAction<AgentAdminBaiduMapVerification>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'admin-services')
-    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map verification revision.')
-    }
-    return requireAgentClient().cloudVerifyAdminBaiduMap(revision)
   }, false))
   ipcMain.handle('agent:cloud-reveal-admin-baidu-map-ak', (_event, revision: unknown) => runAgentAction<AgentAdminBaiduMapAKReveal>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

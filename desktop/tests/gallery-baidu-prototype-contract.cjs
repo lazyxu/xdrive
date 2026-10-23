@@ -10,17 +10,14 @@ function source(file) {
   return fs.readFileSync(path.join(root, file), 'utf8')
 }
 
-test('Places retains native SDK as a prototype-only fallback', () => {
+test('Places only mounts the signed isolated dynamic JSAPI Child', () => {
   const entry = source('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
-  assert.match(entry, /const hasIsolatedChildPorts = Boolean\(/)
-  assert.match(entry, /const prototypeMap = xDriveBaiduPlacesRuntime\(/)
-  assert.match(entry, /prototypeMap && getBaiduJSAPIPrototype && listPlacesMapOverview \? \(/)
-  assert.match(entry, /<XDriveMediaGalleryBaiduPrototypeMap/)
-  assert.match(entry, /onOpenPlace=\{onOpenPlace\}/)
-  assert.match(entry, /const prototypePlaces = places/)
-  assert.match(entry, /listPlacesMapOverview=\{listPlacesMapOverview\}/)
-  assert.doesNotMatch(entry, /listPlacesPage\(100,offset\)/)
-  assert.match(entry, /loadThumbnail=\{loadPhotoCoverThumbnail\}/)
+  assert.match(entry, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(entry, /result\.activation_state === 'authorized_signed_release'/)
+  assert.match(entry, /getBaiduJSAPI4Status/)
+  assert.match(entry, /mintBaiduIsolatedChildTicket/)
+  assert.match(entry, /listBaiduNativeCells/)
+  assert.doesNotMatch(entry, /XDriveMediaGalleryBaiduPrototypeMap|BaiduStaticMap|prototypeMap/)
 })
 
 test('Baidu owns camera gestures, WGS84 conversion and geojson clustering', () => {
@@ -58,8 +55,10 @@ test('Web, Mobile Web and Desktop use the same Gallery component', () => {
   const web = source('web/src/mediaGalleryAdapter.ts')
   const desktop = source('desktop/src/renderer/mediaGalleryAdapter.ts')
   const preload = source('desktop/src/preload/index.cts')
-  assert.match(gallery, /getBaiduJSAPIPrototype=\{getBaiduJSAPIPrototype\}/)
-  assert.match(web, /getBaiduJSAPIPrototype: signal => api\.mediaBaiduJSAPIPrototype\(signal\)/)
-  assert.match(desktop, /getBaiduJSAPIPrototype: \(_signal\) => agent\.getBaiduJSAPIPrototype\(\)/)
+  assert.match(gallery, /getBaiduJSAPI4Status=\{getBaiduJSAPI4Status\}/)
+  assert.match(gallery, /mintBaiduIsolatedChildTicket=\{mintBaiduIsolatedChildTicket\}/)
+  assert.match(web, /getBaiduJSAPI4Status: signal => api\.mediaBaiduJSAPI4Status\(signal\)/)
+  assert.match(web, /mintBaiduIsolatedChildTicket: signal => api\.mediaBaiduIsolatedChildTicket\(signal\)/)
+  assert.doesNotMatch(desktop, /mintBaiduIsolatedChildTicket|loadBaiduStaticMap/)
   assert.match(preload, /agent:get-baidu-jsapi-prototype/)
 })

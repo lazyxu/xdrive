@@ -28,7 +28,7 @@ const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
   signed_release_not_installed: '尚未安装当前有效的 Server 受信签名发布',
 }
 const releaseBlockerHints: Record<ReleaseBlocker, string> = {
-  browser_ak_not_configured: '在「配置与修改」保存独立的 Browser 类型 AK；不要填写 Server 静态地图 AK。',
+  browser_ak_not_configured: '在「配置与修改」保存独立的 Browser 类型 AK；不要填写 Server API 坐标转换 AK。',
   desired_disabled: '在「配置与修改」开启 JSAPI 4.0 并保存后重新读取 Server 发布状态。',
   encryption_keyring_unavailable: '检查 Server 凭据加密密钥环的部署状态和实例重启要求；不应在浏览器打印密钥。',
   trusted_https_origin_invalid: '检查 Server 当前可信 HTTPS Origin、Caddy Host 与实际站点入口是否一致。',
@@ -272,7 +272,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
         ? '当前 Server 已完成签名授权并启用动态地图。请打开图库的「地点 → 地图」验证平移、缩放、聚合及 Viewer；真实三端和资源安全仍需验收。'
         : result.desired_enabled
           ? '启用设置已保存，但当前 Server 尚未授权运行。请切换「检测与生效证据」查看准确的阻断原因。'
-          : 'JSAPI 4.0 已停用，原有百度静态地图仍可使用。')
+          : 'JSAPI 4.0 已停用；地点列表和照片墙仍可使用。')
     } catch {
       if (revision === generation.current) setError('保存失败；如其他管理员已修改修订，请重新打开此页面再试。')
     } finally {
@@ -354,9 +354,9 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 </Typography>
                 <Typography variant="caption" color="text.secondary"
                   data-xdrive-baidu-runtime-evidence-boundary>
-                  这是一条实际客户端运行阶段的匿名记录。Server AK 的静态 PNG、
-                  Server 签名发布和固定 Loader 校验属于不同前置条件；
-                  它们成功也不能覆盖此项浏览器 SDK 失败。
+                  这是一条实际客户端运行阶段的匿名记录。Server API 坐标转换、
+                  Server 签名发布与固定 Loader 校验属于不同环节；
+                  即使前置检查通过，也不能证明独立动态地图的 SDK、瓦片和交互正常。
                 </Typography>
               </Stack>
             ) : (
@@ -474,7 +474,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
         {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
       </Stack>
       <XDriveConfirmDialog open={confirmClear} title="清除 Browser AK"
-        description="该操作保存新的服务端修订并关闭 JSAPI 4.0 的期望开关；现有静态地图 Server AK 不会受到影响。"
+        description="该操作保存新的服务端修订并关闭 JSAPI 4.0 的期望开关；Server API 坐标转换 AK 不会受到影响。"
         confirmIntent="danger" confirmLabel="确认清除 Browser AK" loading={busy}
         onCancel={() => setConfirmClear(false)} onConfirm={() => { void apply(true) }} />
     </Paper>

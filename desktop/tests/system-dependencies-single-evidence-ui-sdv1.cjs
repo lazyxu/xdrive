@@ -21,10 +21,10 @@ test('SD-UX-V1 shared page preserves typed React source, one default detail sect
   assert.match(page, /data-xdrive-service-lifecycle/)
   assert.match(page, /data-xdrive-service-evidence-toggle aria-expanded=\{showLifecycleEvidence\}/)
   assert.match(page, /showLifecycleEvidence && \(/)
-  assert.match(page, /data-xdrive-baidu-static-unverified-hint/)
+  assert.match(page, /XDriveSensitiveField label="Server AK"/)
   assert.match(page, /data-xdrive-unified-detail-intro/)
   assert.match(page, /unsavedRef\.current/)
-  assert.match(page, /onClick=\{\(\) => \{ void verifyBaiduMap\(\) \}\}/)
+  assert.doesNotMatch(page, /onClick=\{\(\) => \{ void verifyBaiduMap\(\) \}\}/)
   assert.match(page, /XDriveBaiduJSAPIDesiredPanel source=\{source\} mode=\{currentTab\}/)
 })
 

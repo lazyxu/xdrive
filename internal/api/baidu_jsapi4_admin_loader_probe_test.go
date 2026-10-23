@@ -22,6 +22,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// The retired PNG map's RoundTripper is replaced by a JSAPI-only test seam.
+type baiduLoaderRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f baiduLoaderRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 // No production network is accessed. A real HTTP client is injected only as
 // the controlled seam to check the exact upstream, size/MIME and AK leakage.
 func TestBaiduJSAPI4ManualFixedLoaderOnlyNoRelease(t *testing.T) {
@@ -40,7 +47,7 @@ func TestBaiduJSAPI4ManualFixedLoaderOnlyNoRelease(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			client := &http.Client{Transport: baiduMapRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: baiduLoaderRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				calls++
 				if req.Method != http.MethodGet || req.URL.Scheme != "https" ||
 					req.URL.Host != "api.map.baidu.com" || req.URL.EscapedPath() != "/api" ||
@@ -68,7 +75,7 @@ func TestBaiduJSAPI4ManualFixedLoaderOnlyNoRelease(t *testing.T) {
 		})
 	}
 	calls := 0
-	client := &http.Client{Transport: baiduMapRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: baiduLoaderRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		calls++
 		return nil, context.Canceled
 	})}
@@ -143,7 +150,7 @@ func TestBaiduJSAPI4AdminLoaderProbeRealPostgresRevisionAndAudit(t *testing.T) {
 		BaiduMapAK: "static-server-ak-should-never-leak",
 	}
 	clientCalls := 0
-	s.BaiduJSAPIProbeHTTPClient = &http.Client{Transport: baiduMapRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+	s.BaiduJSAPIProbeHTTPClient = &http.Client{Transport: baiduLoaderRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		clientCalls++
 		if req.URL.Host != "api.map.baidu.com" || req.URL.Path != "/api" ||
 			req.URL.Query().Get("ak") != secret || req.URL.Query().Get("v") != "4.0" ||

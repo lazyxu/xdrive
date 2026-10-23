@@ -59,7 +59,7 @@ test('Baidu Server AK can be edited through admin-only API and Desktop Agent wit
   const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
   const webApi = read('web', 'src', 'api.ts')
   const preload = read('desktop', 'src', 'preload', 'index.cts')
-  const map = read('internal', 'api', 'baidu_map.go')
+  const config = read('internal', 'api', 'admin_baidu_map_config.go')
   const appMain = read('cmd', 'server', 'main.go')
 
   assert.ok(api.includes('admin.GET("/services/baidu-map", s.adminBaiduMapConfig)'))
@@ -76,7 +76,8 @@ test('Baidu Server AK can be edited through admin-only API and Desktop Agent wit
   assert.ok(backendConfig.includes('func (s *Server) adminSaveBaiduMapConfig'))
   assert.ok(backendConfig.includes('RequiresRestart: false'))
   assert.ok(backendConfig.includes('revision =') || backendConfig.includes('nextRevision'))
-  assert.ok(map.includes('s.effectiveBaiduMapConfig(c.Request.Context())'))
+  assert.ok(config.includes('func (s *Server) effectiveBaiduMapConfig'))
+  assert.equal(fs.existsSync(path.join(repoRoot, 'internal/api/baidu_map.go')), false)
   assert.ok(client.includes('UpdateAdminBaiduMapConfig'))
   assert.ok(agentController.includes('CloudSetAdminBaiduMapConfig'))
   assert.ok(bridge.includes('PUT /v1/cloud/admin-baidu-map'))
@@ -137,7 +138,7 @@ test('Baidu AK reveal reuses the Yike Cookie temporary reveal UI and a privilege
   assert.ok(desktopClient.includes('cloudRevealAdminBaiduMapAK('))
   assert.ok(desktop.includes('revealBaiduMapAK: async'))
   assert.ok(app.includes('revealBaiduMapAK: (revision: number)'))
-  assert.ok(page.includes('主动点击“显示”'))
+  assert.ok(page.includes('管理员点击“显示”才临时解密 AK'))
   assert.ok(page.includes('30 秒后自动隐藏'))
 })
 

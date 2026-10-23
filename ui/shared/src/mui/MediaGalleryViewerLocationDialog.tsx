@@ -6,10 +6,8 @@ import {
 import type {
   MediaBaiduMapConsent, MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob, MediaBaiduMapIndexJobInput, MediaItem,
-  XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveDialogTitle } from './DialogTitle'
-import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
 
 const indexJobStatusText: Record<MediaBaiduMapIndexJob['status'], string> = {
   not_queued: '尚未加入索引队列',
@@ -30,18 +28,17 @@ const consentStatusText: Record<MediaBaiduMapConsent['status'], string> = {
 
 /**
  * The ONE shared Owner-authorized Viewer location surface for Web, Mobile Web
- * and Desktop. Server-only Baidu Static and future source-bound map-index
- * consent are deliberately distinct; neither control enables JSAPI4.
+ * and Desktop. The map action navigates to the isolated dynamic map; GPS
+ * consent and source-bound map-index controls are independent.
  */
 export function XDriveMediaGalleryViewerLocationDialog({
-  open, item, getBaiduMapProvider, loadBaiduStaticMap,
+  open, item, onOpenDynamicMap,
   getBaiduMapConsent, saveBaiduMapConsent, revokeBaiduMapConsent,
   getBaiduMapIndexJob, enqueueBaiduMapIndexJob, cancelBaiduMapIndexJob, onClose,
 }: {
   open: boolean
   item: MediaItem | null
-  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
-  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  onOpenDynamicMap?: () => void
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
@@ -221,11 +218,16 @@ export function XDriveMediaGalleryViewerLocationDialog({
       <XDriveDialogTitle title="照片位置" subtitle={item?.node.name || '地图'} onClose={onClose} closeDisabled={busy} />
       <DialogContent dividers sx={{ p: { xs: 0.5, sm: 1 } }}>
         {validGPS ? (
-          <XDriveMediaGalleryBaiduStaticMap
-            location={{ latitude, longitude, name: item?.node.name }}
-            getProvider={getBaiduMapProvider}
-            loadStaticMap={loadBaiduStaticMap}
-          />
+          <Stack spacing={1} sx={{ p: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              这张照片具有有效 GPS 位置。动态照片地图显示当前账户已授权的照片聚集区域，
+              点击聚集点可进入对应照片墙。
+            </Typography>
+            <Button variant="outlined" disabled={!onOpenDynamicMap}
+              onClick={() => { onClose(); onOpenDynamicMap?.() }}>
+              打开百度动态照片地图
+            </Button>
+          </Stack>
         ) : (
           <Typography role="status" color="text.secondary" sx={{ p: 2 }}>
             这张照片没有有效的 GPS 坐标。

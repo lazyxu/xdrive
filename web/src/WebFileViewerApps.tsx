@@ -964,7 +964,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           </IconButton>
         </Tooltip>
       ) : null}
-      {!narrowMediaViewer && hasPhotoGPS && gallerySource.getBaiduMapProvider && gallerySource.loadBaiduStaticMap ? (
+      {!narrowMediaViewer && hasPhotoGPS ? (
         <Tooltip title="在地图上查看照片">
           <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
             <MapOutlinedIcon fontSize="small" />
@@ -1080,8 +1080,10 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         <XDriveMediaGalleryViewerLocationDialog
           open
           item={mediaItem}
-          getBaiduMapProvider={gallerySource.getBaiduMapProvider}
-          loadBaiduStaticMap={gallerySource.loadBaiduStaticMap}
+          onOpenDynamicMap={() => {
+            setLocationOpen(false)
+            window.location.hash = xDriveWebAppHash({ app: 'gallery', params: { section: 'places' } })
+          }}
           onClose={() => setLocationOpen(false)}
         />
       ) : null}
@@ -1104,7 +1106,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             })
           }}>创作图片</MenuItem>
         ) : null}
-        {hasPhotoGPS && gallerySource.getBaiduMapProvider && gallerySource.loadBaiduStaticMap ? (
+        {hasPhotoGPS ? (
           <MenuItem aria-label="在地图上查看照片" onClick={() => {
             setMoreAnchor(null)
             setLocationOpen(true)

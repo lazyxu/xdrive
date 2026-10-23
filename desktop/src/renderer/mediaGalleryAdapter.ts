@@ -88,16 +88,6 @@ export function createDesktopMediaGalleryDataSource(
     getBaiduMapIndexJob: (nodeID) => agent.getMediaBaiduIndexJob(nodeID),
     enqueueBaiduMapIndexJob: (nodeID, input) => agent.enqueueMediaBaiduIndexJob(nodeID, input),
     cancelBaiduMapIndexJob: (nodeID, revision) => agent.cancelMediaBaiduIndexJob(nodeID, revision),
-    getBaiduMapProvider: () => agent.getBaiduMapProvider(),
-    getBaiduJSAPIPrototype: (_signal) => agent.getBaiduJSAPIPrototype(),
-    loadBaiduStaticMap: async (input, signal) => {
-      const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
-        agent.getBaiduStaticMap(input.latitude, input.longitude, input.zoom,
-          input.width, input.height, requestID),
-      )
-      if (!result.ok) return result
-      return { ok: true as const, data: new Blob([result.data.data], { type: 'image/png' }) }
-    },
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       agent.getMediaMemories(anchorDate, limit, timeZone),
     listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>

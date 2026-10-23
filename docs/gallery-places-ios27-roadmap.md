@@ -6,6 +6,8 @@
 **Current delivery (2026-10-13):** A1 #1593 and A2 #1598 merged; A3a dual-AK proxy review PR #1599 pending; separate encrypted Browser AK desired-config #1607 had green exact-head CI but was closed under an obsolete limitation and is not merged. JSAPI runtime and A4/B1–B3/C1 remain unaccepted.
 No physical iOS 27 Safari/PWA, Android or Electron measurements are asserted.
 
+**2026-10-23 运行路径更新：** Places 仅使用 Server 签名放行的隔离式百度 JSAPI 4.0 Child。静态 PNG 地图和由静态相机模拟的视窗查询全部删除；被 Server 拒绝时不会显示替代地图。此项跟踪 [PR #2441](https://github.com/lazyxu/xdrive/pull/2441)，与下文 2026-10-13 历史里程碑区分。生产环境专属验收按用户决定跳过（未验收），仍需代码级和 CI 安全检查。
+
 ## Non-negotiable application contract
 
 - Apple iOS 27 **Photos**, not vague iOS aesthetics, is the version-locked

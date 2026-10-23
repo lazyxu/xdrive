@@ -273,8 +273,8 @@ test('A3b3a3b no unlicensed loader, unsafe BD09->WGS84 bbox or alternate Provide
   const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(policy, /return ErrGateClosed/)
-  assert.match(shared, /<XDriveMediaGalleryBaiduStaticMap/)
-  assert.match(shared, /listPlacesViewport/)
+  assert.match(shared, /<XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
+  assert.match(shared, /listBaiduNativeCells/)
   assert.match(web, /api.mediaPlacesViewport/)
   assert.match(desktop, /getMediaPlacesViewport/)
   assert.doesNotMatch(layerSource,
