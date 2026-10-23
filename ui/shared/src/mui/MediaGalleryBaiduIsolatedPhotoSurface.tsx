@@ -10,6 +10,7 @@ import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import { xDriveCurrentMapPhotoCollections } from '../media-gallery-places-map-strip'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 
 type Bounds = XDriveBaiduIsolatedBounds
@@ -222,6 +223,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       coverPins.push(candidate)
     }
   }
+  // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
+  // key as private media authority. A pan/revoke clears both inputs.
+  const photoStrip = phase === 'ready'
+    ? xDriveCurrentMapPhotoCollections(summary, projected, accessible.map(cell => cell.selection)) : []
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
@@ -276,6 +281,54 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 </Box>
               </Box>
             ))}
+          </Box>
+        ) : null}
+        {loadThumbnail && photoStrip.length > 0 ? (
+          <Box data-xdrive-places-photo-collection-strip
+            aria-label="地图照片区域封面"
+            sx={{position:'absolute',left:{xs:8,sm:16},right:{xs:8,sm:16},
+              bottom:{xs:10,sm:16},zIndex:5,pointerEvents:'none'}}>
+            <Box sx={{pointerEvents:'auto',p:0.8,px:1,borderRadius:2,
+              bgcolor:'background.paper',boxShadow:3,
+              border:'1px solid',borderColor:'divider',maxWidth:560,
+              mx:'auto',backdropFilter:'blur(14px)'}}>
+              <Typography variant="caption" sx={{display:'block',mb:0.5,
+                fontWeight:700}}>
+                照片地点 · 当前区域 {summary?.total_count.toLocaleString('zh-CN')} 张
+              </Typography>
+              <Box component="nav" aria-label="浏览地图当前聚合区域照片"
+                sx={{display:'flex',gap:0.75,overflowX:'auto',overflowY:'hidden',
+                  pb:0.25,touchAction:'pan-x',scrollbarWidth:'thin'}}>
+                {photoStrip.map(pin => (
+                  <Button key={pin.selection.cell_x+':'+pin.selection.cell_y}
+                    data-xdrive-places-collection-thumb={pin.selection.node_id}
+                    aria-label={'查看区域 '+
+                      (pin.selection.cell_y*8+pin.selection.cell_x+1)+
+                      ' 的 '+pin.count.toLocaleString('zh-CN')+' 张照片'}
+                    onClick={() => opened.current(pin.selection)}
+                    sx={{position:'relative',display:'block',flex:'0 0 76px',
+                      width:76,minWidth:76,height:78,p:0.5,
+                      borderRadius:1.5,border:'1px solid',borderColor:'divider',
+                      bgcolor:'action.hover',textTransform:'none',
+                      '&:focus-visible':{outline:'3px solid',
+                        outlineColor:'primary.main',outlineOffset:2}}}>
+                    <Box sx={{width:'100%',height:52,borderRadius:1,
+                      overflow:'hidden',bgcolor:'background.default'}}>
+                      <XDriveMediaGalleryCoverThumbnail
+                        nodeID={pin.selection.node_id}
+                        revision={pin.selection.node_revision}
+                        loadThumbnail={loadThumbnail}
+                        alt={'区域 '+(pin.selection.cell_y*8+pin.selection.cell_x+1)+'代表照片'}
+                        fallback={<PhotoLibraryOutlinedIcon fontSize="small"/>}/>
+                    </Box>
+                    <Typography variant="caption" component="span"
+                      sx={{fontSize:10,fontWeight:700,display:'block',lineHeight:'16px'}}>
+                      {pin.count.toLocaleString('zh-CN')} 张
+                    </Typography>
+                  </Button>
+                ))}
+              </Box>
+            </Box>
           </Box>
         ) : null}
       </Box>
