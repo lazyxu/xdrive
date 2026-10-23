@@ -50,6 +50,7 @@ type caddyHostEnvResult struct {
 	RequestID        string `json:"request_id"`
 	State            string `json:"state"`
 	Error            string `json:"error,omitempty"`
+	RolledBack       bool   `json:"rolled_back,omitempty"`
 	AccessKeyID      string `json:"access_key_id,omitempty"`
 	AccessKeySecret  string `json:"access_key_secret,omitempty"`
 	ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`

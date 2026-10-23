@@ -140,7 +140,14 @@ export type XDriveCaddyConfigurationSaveInput = {
   https?: { enabled: boolean; domain: string; lan_enabled: boolean; lan_ip: string }
   alidns?: { action: 'replace' | 'clear'; access_key_id?: string; access_key_secret?: string }
 }
-export type XDriveCaddyDeployState = { protocol: string; request_id: string; state: 'deploying' | 'deployed' | 'failed'; sha256: string; rolled_back?: boolean }
+export type XDriveCaddyDeployState = {
+  protocol: string
+  request_id: string
+  state: 'deploying' | 'deployed' | 'failed'
+  sha256: string
+  rolled_back?: boolean
+  error?: string // Strictly enumerated on Server; never raw Host/Docker diagnostics.
+}
 export type XDriveCaddyConfigurationSaveResult = {
   host_env_sha256?: string
   https_revision: number

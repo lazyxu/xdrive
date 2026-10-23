@@ -190,4 +190,40 @@ sha="$(fingerprint)"
 printf '{"operation":"restore","request_id":"666666666666666666666666","expected_sha256":"%s"}\n' "$sha" |
   XD_CONFIG_DIR="$XD_CONFIG_DIR" python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" restore >/dev/null
 grep -q '^XD_DOMAIN=blocked\.example\.com$' "$XD_CONFIG_DIR/config/.env"
+# Verify the REAL Host request processing path, not only caddy_env_deploy().
+# An upgrade can hold install.lock while the handler publishes a final receipt.
+# A failing snapshot must NOT erase the unambiguous installer-busy code.
+save_domain queued.example.com
+sha="$(fingerprint)"
+dir="$(prepare_dir)"
+printf '{"operation":"deploy","request_id":"777777777777777777777777","created_at":"%s","expected_sha256":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" > "$dir/caddy-env-request.json"
+chmod 0660 "$dir/caddy-env-request.json"
+before_calls="$(wc -l < "$MOCK_DOCKER_LOG")"
+exec 7>"$XD_CONFIG_DIR/state/install.lock"
+flock -x 7
+caddy_env_process
+python3 - "$dir/caddy-env-result.json" "$sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r["protocol"] == "xdrive.caddy.host-env.v1"
+assert r["state"] == "failed" and r["error"] == "installer-busy"
+assert r["sha256"] == sys.argv[2] and r["rolled_back"] is False
+PY
+[[ ! -e "$dir/caddy-env-active.json" ]]
+[[ ! -e "$dir/caddy-env-request.json" ]]
+[[ -f "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+grep -Fxq "XD_DOMAIN=queued.example.com" "$XD_CONFIG_DIR/config/.env"
+grep -Fxq "POSTGRES_PASSWORD=unmodified-example" "$XD_CONFIG_DIR/config/.env"
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before_calls" ]]
+flock -u 7
+exec 7>&-
+deploy "$sha" 888888888888888888888888
+python3 - "$TMP/result.json" <<'PY'
+import json,sys
+assert json.load(open(sys.argv[1]))["state"] == "deployed"
+PY
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before_calls + 1))" ]]
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"

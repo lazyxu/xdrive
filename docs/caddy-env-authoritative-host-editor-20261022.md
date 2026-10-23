@@ -1,6 +1,6 @@
 # Caddy 管理第一版：宿主机 .env 单一配置源
 
-**状态：Draft PR #2382，尚未合并 / 尚未发布。** 本文描述当前分支的实际源码能力，不把源码与合入、部署或真实公网 HTTPS 验收混为一谈。
+**状态：2026-10-23 已合入 `master`，PR [#2382](https://github.com/lazyxu/xdrive/pull/2382)，Squash `f240c9e5b02dec2de12903530963cd5252fb62c8`。** 准确 HEAD 的 [CI #39878810970](https://github.com/lazyxu/xdrive/actions/runs/39878810970) 已通过（25 成功、52 条件跳过、Final Gate 成功）；原分支已由 [清理工作流 #39880257174](https://github.com/lazyxu/xdrive/actions/runs/39880257174) 删除。仅代表**源码合并**，不代表生产服务器升级、网关重新部署、真实公网 HTTPS 或终端证书信任验收。
 
 ## 用户确认的第一版范围
 
@@ -29,6 +29,9 @@
 - Web/Mobile 复用共享 `CaddyDetailV1`；Desktop 经 Electron Main、Preload、Agent 到 Server，旧 Agent 不允许静默落回分段保存。
 - 运行：`python3 scripts/test-caddy-env-config.py`、`bash scripts/test-caddy-env-deploy.sh`；脚本纳入现有 Host validation。另有 Go 无 PostgreSQL Host 读取/部署防误操作测试。
 
-## 尚需确认
+## 合并后的限制与第二版边界
 
-准确 PR HEAD 的全量 Go Linux/Windows、PostgreSQL API Race（整仓兼容验证）、Web/Desktop、Host/Rootless、制品与 Final Gate 均通过后，才能将 Draft 改为 Ready、合并并清理分支。运行中的真实公网/生产域名/凭据不作伪验证。真实生产环境专属安全验收：**按用户决定跳过（未验收）**；代码权限和安全测试必须通过。
+- **源码验收已完成**：PR #2382 及其准确 HEAD 的 Go Linux/Windows、PostgreSQL API Race（整仓兼容）、Web/Desktop、Host/Rootless、制品与 Final Gate 全部通过。
+- **运行环境尚未变更**：源代码合并不会修改已有宿主机 `.env` 或重新创建生产 Caddy。生产环境专属安全验收：**按用户决定跳过（未验收）**；不得据此宣称公网可达、终端 CA 已信任或实际 Caddy 已部署。
+- Host 返回的 `installer-busy`、`deploy-refused`、`interrupted-deploy`、`caddy-deploy-or-verify-failed` 是固定诊断代码；管理员 UI 仅将已知代码映射为安全的中文提示。未知字段、主机路径、环境变量值、Docker/TLS/供应商原始日志不得传给浏览器。
+- 第二版如需配置历史、回退和修改审计，可在 PostgreSQL 记录经严格脱敏或加密的受限修订及操作记录，**但不得把 PostgreSQL 恢复为 Caddy 当前配置权威**；任何版本回退应先经受限 Host Control 的四字段 CAS 写入 `.env`，再单独执行 Caddy-only 重新部署。
