@@ -19,6 +19,7 @@ import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalSchedu
 import { XDriveDeviceBackupLocalPreviewDialog } from './DeviceBackupLocalPreviewDialog'
 import { XDriveDeviceBackupLocalSnapshotDialog } from './DeviceBackupLocalSnapshotDialog'
 import { XDriveDeviceBackupLocalFirstFileDialog } from './DeviceBackupLocalFirstFileDialog'
+import { XDriveDeviceBackupLocalCommonBatchDialog } from './DeviceBackupLocalCommonBatchDialog'
 import { XDriveDeviceBackupLocalDeltaDialog } from './DeviceBackupLocalDeltaDialog'
 import { XDriveDeviceBackupLocalEvidenceDialog } from './DeviceBackupLocalEvidenceDialog'
 import { XDriveDeviceBackupLocalEvidenceSummaryDialog } from './DeviceBackupLocalEvidenceSummaryDialog'
@@ -32,6 +33,7 @@ import type { XDriveLocalBackupScheduleActions } from './DeviceBackupLocalSchedu
 import type { XDriveLocalBackupPreviewActions } from './DeviceBackupLocalPreviewDialog'
 import type { XDriveLocalBackupSnapshotActions } from './DeviceBackupLocalSnapshotDialog'
 import type { XDriveLocalBackupFirstFileActions } from './DeviceBackupLocalFirstFileDialog'
+import type { XDriveLocalBackupCommonBatchActions } from './DeviceBackupLocalCommonBatchDialog'
 import type { XDriveLocalBackupDeltaActions } from './DeviceBackupLocalDeltaDialog'
 import type { XDriveLocalBackupEvidenceActions } from './DeviceBackupLocalEvidenceDialog'
 import type { XDriveLocalBackupEvidenceSummaryActions } from './DeviceBackupLocalEvidenceSummaryDialog'
@@ -115,6 +117,7 @@ export function XDriveDeviceBackupPage({
   localPreview,
   localSnapshot,
   localFirstFile,
+  localCommonBatch,
   localDelta,
   localEvidence,
   localEvidenceSummary,
@@ -134,6 +137,7 @@ export function XDriveDeviceBackupPage({
   localPreview?: XDriveLocalBackupPreviewActions
   localSnapshot?: XDriveLocalBackupSnapshotActions
   localFirstFile?: XDriveLocalBackupFirstFileActions
+  localCommonBatch?: XDriveLocalBackupCommonBatchActions
   localDelta?: XDriveLocalBackupDeltaActions
   localEvidence?: XDriveLocalBackupEvidenceActions
   localEvidenceSummary?: XDriveLocalBackupEvidenceSummaryActions
@@ -156,6 +160,7 @@ export function XDriveDeviceBackupPage({
   const [previewTarget, setPreviewTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [snapshotTarget, setSnapshotTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [firstFileTarget, setFirstFileTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [commonBatchTarget, setCommonBatchTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [deltaTarget, setDeltaTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceTarget, setEvidenceTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceSummaryTarget, setEvidenceSummaryTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
@@ -176,6 +181,7 @@ export function XDriveDeviceBackupPage({
     setPreviewTarget(null)
     setSnapshotTarget(null)
     setFirstFileTarget(null)
+    setCommonBatchTarget(null)
     setDeltaTarget(null)
     setEvidenceTarget(null)
     setEvidenceSummaryTarget(null)
@@ -627,10 +633,17 @@ export function XDriveDeviceBackupPage({
                             保存本机扫描清单（不上传）
                           </Button>
                         ) : null}
-                        {localFirstFile && folder.sync_mode === 'backup' && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localFirstFile && !localCommonBatch && folder.sync_mode === 'backup' && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="contained"
                             onClick={() => setFirstFileTarget({ source, id: folder.source_id })}>
                             开始真实备份（首文件试运行）
+                          </Button>
+                        ) : null}
+                        {localCommonBatch && folder.sync_mode === 'backup' &&
+                          verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="contained"
+                            onClick={() => setCommonBatchTarget({ source, id: folder.source_id })}>
+                            手动增量备份（试用）
                           </Button>
                         ) : null}
                         {localDelta && verifiedLocalDeviceID === device.id && !device.revoked ? (
@@ -862,6 +875,15 @@ export function XDriveDeviceBackupPage({
           sourceID={firstFileTarget.id}
           actions={localFirstFile}
           onClose={() => setFirstFileTarget(null)}
+        />
+      ) : null}
+      {commonBatchTarget && commonBatchTarget.source === source && source && localCommonBatch &&
+        verifiedLocalDeviceID && localOwnsFolder(commonBatchTarget.id) ? (
+        <XDriveDeviceBackupLocalCommonBatchDialog
+          key={commonBatchTarget.id}
+          sourceID={commonBatchTarget.id}
+          actions={localCommonBatch}
+          onClose={() => setCommonBatchTarget(null)}
         />
       ) : null}
       {deltaTarget && deltaTarget.source === source && source && localDelta &&

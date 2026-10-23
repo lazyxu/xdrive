@@ -151,6 +151,24 @@ export interface XDriveLocalBackupFirstFileJobStatus {
   retirement_safe: false
 }
 
+// Private owning-Desktop manual v2 batch observation; not a whole backup.
+// No local path, file hash, Source Root or per-file Operation escapes the Agent.
+export interface XDriveLocalBackupCommonBatch {
+  source_id: number
+  revision: number
+  state: 'running' | 'partial' | 'uncertain'
+  running: boolean
+  inspected_files: number
+  confirmed_files: number
+  skipped_files: number
+  unsupported_files: number
+  uncertain_files: number
+  confirmed_bytes: number
+  backup_complete: false
+  retirement_safe: false
+  current_cas_verified: false
+}
+
 export interface XDriveLocalBackupSnapshot {
   source_id: number
   revision: number

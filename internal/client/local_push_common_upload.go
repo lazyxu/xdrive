@@ -83,7 +83,7 @@ func (c *Client) postLocalPushCommonOperation(ctx context.Context, sourceID, rev
 	proof LocalBoundSourceProof, action string, payload any,
 ) ([]byte, error) {
 	if c == nil || !validLocalPushStageProof(ctx, sourceID, revision, proof) ||
-		(action != "admit" && action != "bind" && action != "receipt") {
+		(action != "admit" && action != "bind" && action != "receipt" && action != "directory") {
 		return nil, errors.New("invalid private common Push operation scope")
 	}
 	body, err := json.Marshal(payload)
@@ -269,4 +269,70 @@ func (c *Client) ReadLocalPushCommonUploadReceipt(ctx context.Context, sourceID,
 		NodeID: got.NodeID, NodeRevision: got.NodeRevision,
 		ContentSHA256: got.ContentSHA256, Size: got.Size,
 	}, nil
+}
+
+// EnsureLocalPushCommonDirectory only accepts the Source's currently
+// authenticated Owner/Device/Root. It performs one metadata-only directory
+// ensure operation and never starts a file upload or SourceRun.
+func (c *Client) EnsureLocalPushCommonDirectory(
+	ctx context.Context, sourceID, revision uint64,
+	proof LocalBoundSourceProof, parentID uint64, name string,
+) (Node, error) {
+	return c.localPushCommonDirectory(ctx, sourceID, revision, proof, parentID, name, false)
+}
+
+// VerifyLocalPushCommonDirectory is a strictly read-only check of an existing
+// directory under the CURRENT authorized Source. A missing path must not
+// silently be created while deciding whether an earlier file can be skipped.
+func (c *Client) VerifyLocalPushCommonDirectory(
+	ctx context.Context, sourceID, revision uint64,
+	proof LocalBoundSourceProof, parentID uint64, name string,
+) (Node, error) {
+	return c.localPushCommonDirectory(ctx, sourceID, revision, proof, parentID, name, true)
+}
+
+func (c *Client) localPushCommonDirectory(
+	ctx context.Context, sourceID, revision uint64,
+	proof LocalBoundSourceProof, parentID uint64, name string, checkOnly bool,
+) (Node, error) {
+	var empty Node
+	if parentID == 0 || name == "" || len(name) > 255 ||
+		strings.TrimSpace(name) != name ||
+		strings.ContainsAny(name, "/\\\x00\r\n") {
+		return empty, errors.New("invalid local Push descendant directory")
+	}
+	raw, err := c.postLocalPushCommonOperation(ctx, sourceID, revision,
+		proof, "directory", struct {
+			ParentID  uint64 `json:"parent_id"`
+			Name      string `json:"name"`
+			CheckOnly bool   `json:"check_only,omitempty"`
+		}{ParentID: parentID, Name: name, CheckOnly: checkOnly})
+	if err != nil {
+		return empty, err
+	}
+	var data struct {
+		SourceID           uint64 `json:"source_id"`
+		Revision           uint64 `json:"revision"`
+		NodeID             uint64 `json:"node_id"`
+		ParentID           uint64 `json:"parent_id"`
+		NodeRevision       uint64 `json:"node_revision"`
+		Name               string `json:"name"`
+		Type               string `json:"type"`
+		BackupComplete     *bool  `json:"backup_complete"`
+		RetirementSafe     *bool  `json:"retirement_safe"`
+		CurrentCASVerified *bool  `json:"current_cas_verified"`
+	}
+	if err := decodeLocalPushCommonReply(raw, &data); err != nil {
+		return empty, err
+	}
+	if data.SourceID != sourceID || data.Revision != revision ||
+		data.NodeID == 0 || data.ParentID != parentID || data.Name != name ||
+		data.Type != "dir" || data.NodeRevision == 0 ||
+		data.BackupComplete == nil || *data.BackupComplete ||
+		data.RetirementSafe == nil || *data.RetirementSafe ||
+		data.CurrentCASVerified == nil || *data.CurrentCASVerified {
+		return empty, errors.New("unsafe local Push descendant directory receipt")
+	}
+	return Node{ID: data.NodeID, ParentID: &data.ParentID, Name: data.Name,
+		Type: data.Type, Revision: data.NodeRevision}, nil
 }
