@@ -782,6 +782,7 @@ declare global {
         getDeviceBackupLocalFirstFileStatus: (sourceID: number) => Promise<DesktopResult<XDriveLocalBackupFirstFileJobStatus>>
         startDeviceBackupLocalCommonBatch: (sourceID: number) => Promise<DesktopResult<XDriveLocalBackupCommonBatch>>
         getDeviceBackupLocalCommonBatch: (sourceID: number) => Promise<DesktopResult<XDriveLocalBackupCommonBatch>>
+        controlDeviceBackupLocalCommonBatch: (sourceID: number, action: 'pause' | 'cancel') => Promise<DesktopResult<XDriveLocalBackupCommonBatch>>
         cancelDeviceBackupLocalSnapshot: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getDeviceBackupLocalDelta: (sourceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupDelta>>
         cancelDeviceBackupLocalDelta: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>

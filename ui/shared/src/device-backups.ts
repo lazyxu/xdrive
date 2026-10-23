@@ -156,8 +156,9 @@ export interface XDriveLocalBackupFirstFileJobStatus {
 export interface XDriveLocalBackupCommonBatch {
   source_id: number
   revision: number
-  state: 'running' | 'partial' | 'uncertain'
+  state: 'running' | 'partial' | 'uncertain' | 'paused' | 'cancelled'
   running: boolean
+  stop_requested?: 'pause' | 'cancel'
   inspected_files: number
   confirmed_files: number
   skipped_files: number

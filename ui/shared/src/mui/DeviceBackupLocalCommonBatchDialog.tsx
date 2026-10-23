@@ -6,13 +6,16 @@ import type { XDriveLocalBackupCommonBatch } from '../device-backups'
 export interface XDriveLocalBackupCommonBatchActions {
   run(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
   inspect(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
+  control(sourceID: number, action: 'pause' | 'cancel'): Promise<XDriveLocalBackupCommonBatch>
 }
 
 function safeBatchStatus(value: XDriveLocalBackupCommonBatch, sourceID: number): boolean {
   if (!value || value.source_id !== sourceID || value.backup_complete !== false ||
     value.retirement_safe !== false || value.current_cas_verified !== false ||
-    !['running', 'partial', 'uncertain'].includes(value.state) ||
+    !['running', 'partial', 'uncertain', 'paused', 'cancelled'].includes(value.state) ||
     value.running !== (value.state === 'running')) return false
+  if (value.stop_requested !== undefined &&
+    (value.state !== 'running' || !['pause', 'cancel'].includes(value.stop_requested))) return false
   if (value.state !== 'running' &&
     (!Number.isSafeInteger(value.revision) || value.revision <= 0)) return false
   return [
@@ -33,6 +36,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
   const inspectGeneration = useRef(0)
   const [pending, setPending] = useState(false)
   const [inspecting, setInspecting] = useState(false)
+  const [controlPending, setControlPending] = useState(false)
   const [status, setStatus] = useState<XDriveLocalBackupCommonBatch | null>(null)
   const [message, setMessage] = useState('')
   const [hasAttempted, setHasAttempted] = useState(false)
@@ -102,6 +106,28 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     }
   }
 
+  const requestStop = async (action: 'pause' | 'cancel') => {
+    if (!status?.running || status.stop_requested || controlPending || pending) return
+    const ticket = epoch.current
+    setControlPending(true)
+    try {
+      const next = await actions.control(sourceID, action)
+      if (epoch.current !== ticket) return
+      if (!safeBatchStatus(next, sourceID) || !next.running ||
+        !next.stop_requested) throw new Error('unconfirmed owning Agent stop request')
+      setStatus(next)
+      setMessage(action === 'pause'
+        ? '暂停请求已接收：当前文件仍会完成上传和原始 SQL 回执核对，然后停止安排后续文件。'
+        : '停止本轮请求已接收：当前文件仍会完成上传和原始 SQL 回执核对，不代表远端物理取消。')
+    } catch {
+      if (epoch.current === ticket) {
+        setMessage('停止调度请求未得到确认。请刷新 Agent 状态；不能据此认定当前文件已取消。')
+      }
+    } finally {
+      if (epoch.current === ticket) setControlPending(false)
+    }
+  }
+
   const blocked = status?.running
 
   return (
@@ -131,6 +157,19 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
               这不是完整备份成功回执。
             </Alert>
           ) : null}
+          {status?.state === 'paused' || status?.state === 'cancelled' ? (
+            <Alert severity="info">
+              {status.state === 'paused' ? '本轮已在文件边界暂停。' : '本轮已停止安排后续文件。'}
+              已核实 {status.confirmed_files} 个上传文件，后续可再次扫描并沿用原始任务恢复。
+              本状态不表示远端物理取消或完整备份成功。
+            </Alert>
+          ) : null}
+          {status?.running && status.stop_requested ? (
+            <Alert severity="info">
+              已请求{status.stop_requested === 'pause' ? '暂停' : '停止调度'}。
+              正在等待当前文件原始 SQL 回执核对，不会中途伪造取消。
+            </Alert>
+          ) : null}
           {status?.state === 'uncertain' || (status?.uncertain_files ?? 0) > 0 ? (
             <Alert severity="error">存在结果不确定的文件。可让本机 Agent 核对并恢复原始 Operation，但禁止盲目新建任务或清除历史。</Alert>
           ) : null}
@@ -142,10 +181,21 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
         </Stack>
       </DialogContent>
       <DialogActions>
+        {status?.running && !status.stop_requested ? (
+          <>
+            <Button disabled={controlPending} onClick={() => void requestStop('pause')}>
+              暂停后续文件
+            </Button>
+            <Button color="warning" disabled={controlPending} onClick={() => void requestStop('cancel')}>
+              结束本轮
+            </Button>
+          </>
+        ) : null}
         <Button variant="contained"
           disabled={pending || inspecting || hasAttempted || Boolean(blocked)}
           onClick={() => void start()}>
-          {pending ? '正在启动' : hasAttempted ? '本次已提交' : status?.state === 'uncertain' || (status?.uncertain_files ?? 0) > 0 ? '核对并恢复原始任务' : '立即扫描并增量备份'}
+          {pending ? '正在启动' : hasAttempted ? '本次已提交' : status?.state === 'uncertain' || (status?.uncertain_files ?? 0) > 0 ? '核对并恢复原始任务' : status?.state === 'paused' ? '继续增量备份'
+            : status?.state === 'cancelled' ? '重新扫描并备份' : '立即扫描并增量备份'}
         </Button>
         <Button onClick={onClose}>关闭</Button>
       </DialogActions>
