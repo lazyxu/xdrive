@@ -498,4 +498,49 @@ assert r["state"] == "failed" and r["error"] == "caddy-deploy-or-verify-failed"
 assert r.get("rolled_back", False) is False
 PY
 
+
+# P0-02B1: the interrupted Host recovery path must NOT bypass the
+# generation/Live-Config window already used for normal rollback.
+# Each test explicitly resets the PREVIOUS offline fixture's Sticky Active;
+# no production API exists to clear that uncertain Host state blindly.
+simulate_interrupted_unstable_window() {
+  local mode="$1" id="$2" name="$3" sha dir before
+  dir="$(prepare_dir)"
+  rm -f -- "$dir/caddy-env-active.json"  # disposable fixture only
+  save_domain "$name"
+  sha="$(fingerprint)"
+  printf '{"operation":"deploy","request_id":"%s","expected_sha256":"%s"}\n' \
+    "$id" "$sha" > "$dir/caddy-env-active.json"
+  chmod 0600 "$dir/caddy-env-active.json"
+  before="$(wc -l < "$MOCK_DOCKER_LOG")"
+  printf '0\n' > "$MOCK_INSPECT_COUNTER_PATH"
+  printf '0\n' > "$MOCK_LIVE_COUNTER_PATH"
+  export MOCK_GENERATION_CHANGE=0 MOCK_CONFIG_CHANGE=0 MOCK_LIVE_UNAVAILABLE=0
+  case "$mode" in
+    generation) MOCK_GENERATION_CHANGE=1 ;;
+    live) MOCK_CONFIG_CHANGE=1 ;;
+    missing) MOCK_LIVE_UNAVAILABLE=1 ;;
+    *) echo "invalid offline fault injection" >&2; exit 1 ;;
+  esac
+  if caddy_env_recover_interrupted "$dir"; then
+    echo "interrupted Caddy accepted unstable $mode window" >&2
+    exit 1
+  fi
+  export MOCK_GENERATION_CHANGE=0 MOCK_CONFIG_CHANGE=0 MOCK_LIVE_UNAVAILABLE=0
+  [[ -f "$dir/caddy-env-active.json" && ! -L "$dir/caddy-env-active.json" ]]
+  [[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((before + 1))" ]]
+  python3 - "$dir/caddy-env-result.json" "$sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r["state"] == "failed" and r["rolled_back"] is False
+assert r["error"] == "interrupted-deploy" and r["sha256"] == sys.argv[2]
+PY
+  [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+  [[ ! -e "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+  grep -Fxq 'POSTGRES_PASSWORD=unmodified-example' "$XD_CONFIG_DIR/config/.env"
+}
+simulate_interrupted_unstable_window generation "565656565656565656565656" "recovery-generation-change.example.com"
+simulate_interrupted_unstable_window live "575757575757575757575757" "recovery-live-reload.example.com"
+simulate_interrupted_unstable_window missing "585858585858585858585858" "recovery-live-unavailable.example.com"
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"

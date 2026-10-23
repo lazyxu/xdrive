@@ -63,3 +63,9 @@
 - 采样和探针运行在同一个 `install.lock` 受限部署事务中。发生 Docker Generation 切换、Caddy 原地 Reload、Live Config 不可读取或探针失败时，不将结果标记为本机成功或已回退。独立的现有 Host 只读采样仍可工作。
 - 离线固定 Docker fixture 验证稳定成功、跨代际拒绝、同代际 Live Config 变化拒绝、缺少 Live Config 拒绝，原有成功/失败/崩溃和锁互斥回归仍需继续。此阶段不新增公开 API、凭据暴露或数据库配置权威。
 - 该本机观测仍无法阻止安装锁之外的 A→B→A 变化；也不具备独立签名、禁用入口负向证明、当前代际持续验证或 WAN/客户端 CA 证据。**不是** Applied Receipt，后续 P0-02B/P0-05 独立交付。生产环境专属验收按用户决定跳过（未验收）。
+
+## P0-02B1 · Host 崩溃恢复沿用可信运行代际窗口（2026-10-23）
+
+- 中断恢复的 `caddy_env_recover_interrupted` 不再仅凭旧 `.env` 已恢复、本机 `readyz` 和单次域名/LAN TLS 检查就声明 `rolled_back=true`，而是在固定 `install.lock` 内调用 P0-02A 的 Docker Generation + Caddy Live Config 前后双采样窗口。
+- Docker 实例/进程代际变化、Caddy 原地重载、Admin Live Config 不可读取、任何 Ready/TLS 未通过时维持同 Request ID 的 Sticky Active，不发成功回退，也不触发新候选再次执行。
+- Host 离线 fixture 分别注入重启恢复时换代、同代配置改变、缺少 Live Config，验证非敏感固定错误码、`rolled_back=false`、原 Active 留存、旧 `.env` 之外的密码未被修改。正式 Rescue/Watchdog、签名 Applied Receipt 和持续运行监测另行开发。生产环境专属安全验收：**按用户决定跳过（未验收）**。

@@ -1888,10 +1888,11 @@ caddy_env_recover_interrupted() {
           up -d --no-deps --force-recreate caddy >/dev/null 2>&1; then
         domain="$(env_value XD_DOMAIN)"
         lan="$(env_value XD_LAN_HTTPS_IP)"
-        if timeout 5s docker exec xdrive-caddy wget -q -O /dev/null \
-            http://127.0.0.1/api/v1/readyz >/dev/null 2>&1 &&
-            { [[ -z "$domain" ]] || [[ "$(caddy_local_tls_state "$domain")" == verified ]]; } &&
-            { [[ -z "$lan" ]] || [[ "$(caddy_local_lan_tls_state "$lan")" == verified ]]; }; then
+        # After an interrupted Host transaction, restored .env bytes or a
+        # one-off TLS success cannot attest the old running Caddy. Use the
+        # same bounded Docker generation + Live Config window as ordinary
+        # Caddy-only rollback; missing/changing evidence stays fenced.
+        if caddy_env_verify_local_runtime_window "$domain" "$lan"; then
           recovered=true
         fi
       fi
