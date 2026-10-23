@@ -6,6 +6,9 @@ const {spawn}=require('node:child_process'),{performance}=require('node:perf_hoo
 const {chromium}=require(process.env.XDRIVE_PLAYWRIGHT_MODULE||'playwright-core');
 const root=path.resolve(__dirname,'../..'),dist=path.join(root,'web/dist');
 const chrome=process.env.XDRIVE_BROWSER_EXECUTABLE,goBin=process.env.XD_GALLERY_WEB_PHYSICAL_GO_BINARY;
+const waterfall=process.env.XD_PWA_P4B_RESOURCE_WATERFALL==='1';
+const summarizeBrowserApiWaterfall=waterfall
+ ? require('./pwa-p4b-resource-waterfall.cjs').summarizeBrowserApiWaterfall : null;
 const out=path.resolve(process.env.XD_PWA_P4A_RESULTS||path.join(root,'desktop/pwa-p4a-results'));
 const fractions=[0,0.5,0.95],timeout=25000,delay=ms=>new Promise(r=>setTimeout(r,ms));
 assert.equal(process.env.XD_PWA_P4A_BEFORE,'1','P2-A2 explicit test-only switch required');
@@ -75,6 +78,8 @@ async function position(page,fraction,required,perfCDP){const start=performance.
  // ResourceTiming can reflect only exposed same-origin requests; it is NOT
  // a full HTTP waterfall, and clearing it has no CacheStorage effect.
  await page.evaluate(()=>performance.clearResourceTimings());
+ // A same-page monotonic marker precedes the actual original virtual-grid scroll.
+ const scrollAt=waterfall ? await page.evaluate(()=>performance.now()) : null;
  assert(await page.evaluate(f=>{let g=document.querySelector('[data-xdrive-media-gallery-virtual-grid]');
  let h=g?.parentElement;while(h){if(/(auto|scroll|overlay)/.test(getComputedStyle(h).overflowY)&&
  h.scrollHeight-h.clientHeight>10000)break;h=h.parentElement}
@@ -112,10 +117,11 @@ async function position(page,fraction,required,perfCDP){const start=performance.
  const t2=performance.now()
  return {valid:imgs.every(i=>i.complete&&i.naturalWidth>0),
    lateDecodeAwaitMs:Number((t1-t0).toFixed(3)),
-   postDecodeTwoRafMs:Number((t2-t1).toFixed(3))}
+   postDecodeTwoRafMs:Number((t2-t1).toFixed(3)),
+   visibleAt:t2}
  },ids)
  assert(phase.valid,'4 true image decodes + 2 actual rendering frames')
- const timing=await page.evaluate(()=>{
+ const timing=await page.evaluate(withWaterfall=>{
    const requests=performance.getEntriesByType('resource')
      .filter(t=>{try{return new URL(t.name).pathname.startsWith('/api/')}
        catch{return false}})
@@ -123,16 +129,28 @@ async function position(page,fraction,required,perfCDP){const start=performance.
    const minStarted=requests.reduce((x,v)=>Math.min(x,v.startTime),Infinity)
    return {apiResourcesObserved:requests.length,
      apiResourceWindowMs:requests.length ?
-       Number((maxResponseEnd-minStarted).toFixed(3)):0}
- })
+       Number((maxResponseEnd-minStarted).toFixed(3)):0,
+     ...(withWaterfall?{anonymousResourcePhases:requests.map(t=>{
+       // Category is calculated in-page; URL, media ID, query and token never
+       // leave the browser process, nor enter a persisted artifact.
+       const pathname=new URL(t.name).pathname;
+       const kind=pathname.endsWith('/thumbnail') ? 'thumbnail' :
+         pathname.includes('/media') ? 'media-range' : 'api-other';
+       return {kind,startTime:t.startTime,requestStart:t.requestStart,
+         responseStart:t.responseStart,responseEnd:t.responseEnd}
+     })}:{})}
+ },waterfall)
  const after=await perfCDP.send('Performance.getMetrics')
+ const resourceWaterfall=waterfall ?
+   summarizeBrowserApiWaterfall(scrollAt,phase.visibleAt,timing.anonymousResourcePhases) : undefined;
  const cpu=sampleCPU(before,after)
  let ms=performance.now()-start;assert(ms<=timeout,'revisit 25s deadline')
  return {fraction,ids,ms:Number(ms.toFixed(3)),mounted:view.mounted,
    lateDecodeAwaitMs:phase.lateDecodeAwaitMs,
    postDecodeTwoRafMs:phase.postDecodeTwoRafMs,
    apiResourcesObserved:timing.apiResourcesObserved,
-   apiResourceWindowMs:timing.apiResourceWindowMs,cpu}
+   apiResourceWindowMs:timing.apiResourceWindowMs,cpu,
+   ...(waterfall?{resourceWaterfall}:{})}
 }
 
 function sampleCPU(before,after){
@@ -171,11 +189,13 @@ async function measure(sample,tmp){let g=await fixture(sample,tmp);
  let pairs=first.map((a,i)=>({fraction:a.fraction,ids:a.ids,
  firstMs:a.ms,restartMs:restarted[i].ms,
  firstPhases:{lateDecodeAwaitMs:a.lateDecodeAwaitMs,postDecodeTwoRafMs:a.postDecodeTwoRafMs,cpu:a.cpu,
-   apiResourcesObserved:a.apiResourcesObserved,apiResourceWindowMs:a.apiResourceWindowMs},
+   apiResourcesObserved:a.apiResourcesObserved,apiResourceWindowMs:a.apiResourceWindowMs,
+   ...(waterfall?{resourceWaterfall:a.resourceWaterfall}:{})},
  restartPhases:{lateDecodeAwaitMs:restarted[i].lateDecodeAwaitMs,
    postDecodeTwoRafMs:restarted[i].postDecodeTwoRafMs,
    cpu:restarted[i].cpu,apiResourcesObserved:restarted[i].apiResourcesObserved,
-   apiResourceWindowMs:restarted[i].apiResourceWindowMs}}));
+   apiResourceWindowMs:restarted[i].apiResourceWindowMs,
+   ...(waterfall?{resourceWaterfall:restarted[i].resourceWaterfall}:{})}}));
  let data={sample,pidA,pidB,profilePersisted:true,launchA,launchB,pairs,
  firstHTTP:delta(beforeA,afterA),restartedHTTP:delta(beforeB,afterB),
  publicCacheA,publicCacheB,goRSSGrowthBytes:growth,maxActive:afterB.max_active};
@@ -187,6 +207,11 @@ async function measure(sample,tmp){let g=await fixture(sample,tmp);
 async function main(){let tmp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-p4a-go-'));
  try{let samples=[];for(let i=1;i<=3;i++)samples.push(await measure(i,tmp));
  let all=samples.flatMap(s=>s.pairs);
+ const deep=waterfall?all.filter(p=>p.fraction>0):[];
+ const timelineViews=waterfall?deep.flatMap(p=>[
+   p.firstPhases.resourceWaterfall,p.restartPhases.resourceWaterfall]):[];
+ const numericPhase=key=>timelineViews.map(p=>p[key])
+   .filter(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0);
  const result={status:'P4A-GENUINE-100K-ATTRIBUTION-BEFORE',sha:process.env.XD_PR_HEAD||null,
  nativeChromium:true,physicalIOS:false,privatePersistentCache:false,n:3,pairs:9,
  logicalCount:100000,physicalCount:115000,
@@ -205,6 +230,24 @@ async function main(){let tmp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-p4a-g
   postDecodeTwoRafP50:percentile(all.map(p=>p.restartPhases.postDecodeTwoRafMs),.5),
   observedApiResourceRequests:all.reduce((n,p)=>n+p.restartPhases.apiResourcesObserved,0),
   observedGoHttpRequests:samples.reduce((n,p)=>n+p.restartedHTTP.requests,0)},
+ ...(waterfall?{resourceWaterfallMeasurement:{
+  schema:'xdrive-pwa-p4b-resource-waterfall-v1',
+  deepViewportCount:timelineViews.length,
+  firstRequestFromScrollP50Ms:percentile(numericPhase('scrollToFirstObservedApiStartMs'),.5),
+  browserApiTtfbP50Ms:percentile(numericPhase('browserTtfbP50Ms'),.5),
+  browserApiTransferP50Ms:percentile(numericPhase('browserTransferP50Ms'),.5),
+  lastCompletedApiFromScrollP50Ms:percentile(numericPhase('scrollToLastCompletedApiEndMs'),.5),
+  latestApiStartP50Ms:percentile(numericPhase('scrollToLastObservedApiStartMs'),.5),
+  latestNetworkDispatchP50Ms:percentile(numericPhase('scrollToLastObservedNetworkDispatchMs'),.5),
+  medianViewportTtfbP95Ms:percentile(numericPhase('browserTtfbP95Ms'),.5),
+  medianViewportTtfbMaxMs:percentile(numericPhase('browserTtfbMaxMs'),.5),
+  latestThumbnailStartP50Ms:percentile(timelineViews.map(p=>
+    p.categoryTail.thumbnail.scrollToLastStartMs).filter(Number.isFinite),.5),
+  latestMediaRangeStartP50Ms:percentile(timelineViews.map(p=>
+    p.categoryTail['media-range'].scrollToLastStartMs).filter(Number.isFinite),.5),
+  postObservedApiToVisibleP50Ms:percentile(numericPhase('afterLastObservedApiToVisibleMs'),.5),
+  caveat:'Observed same-origin API resources only; TTFB mixes browser queuing and server response work. Overlapping requests, invisible resources and paint are not a causal partition.'
+ }}:{}),
  observedResourceNote:'Only exposed same-origin /api ResourceTiming. Request window includes overlapping requests and does not isolate network wait or TCP wire bytes.',
  decodeNote:'lateDecodeAwaitMs is img.decode() time AFTER 4 images became visible; it excludes earlier image-decoding work and MUST NOT be interpreted as complete decode critical path.',
  rafNote:'postDecodeTwoRafMs is two-rAF scheduling time after img.decode(), not rasterization or GPU paint duration.',
@@ -215,7 +258,9 @@ async function main(){let tmp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-p4a-g
   s.profilePersisted&&s.maxActive<=6&&s.pairs.every(p=>p.ids.length===4&&
     p.firstPhases.cpu.TaskDuration>=0&&p.restartPhases.cpu.TaskDuration>=0&&
     Number.isFinite(p.restartPhases.lateDecodeAwaitMs)&&
-    Number.isFinite(p.restartPhases.postDecodeTwoRafMs))) };
+    Number.isFinite(p.restartPhases.postDecodeTwoRafMs))) &&
+   (!waterfall || (timelineViews.length===12&&timelineViews.every(x=>
+      x.apiRequestsStarted>=1&&x.apiResponsesCompletedBeforeVisible>=1))) };
  fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n');
  console.log('P4A_PHASE_ATTRIBUTION_BEFORE '+JSON.stringify({sha:result.sha,accepted:result.accepted,
  n:result.n,pairs:result.pairs,firstP50:result.firstP50,firstP95:result.firstP95,
