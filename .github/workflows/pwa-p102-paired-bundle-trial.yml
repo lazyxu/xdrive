@@ -1,0 +1,43 @@
+name: PWA P102 Paired Native Production Vite Route-Split Bundle Trial
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  pwa-p102-route-bundle-paired:
+    if: github.head_ref == 'feat/pwa-p102-shared-route-lazy-trial-20261023'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Independent baseline and candidate TypeScript, Vite and exact-source tests
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          node --check desktop/scripts/pwa-p102-paired-bundle-graph.cjs
+          git worktree add --detach "$RUNNER_TEMP/pwa-p102-base" 'b204dc5b1cfc3aaf14d0cf1b413cc586cdd6a8a9'
+          npm --prefix "$RUNNER_TEMP/pwa-p102-base/web" ci --no-audit --no-fund
+          npm --prefix "$RUNNER_TEMP/pwa-p102-base/web" run build
+          npm --prefix web ci --no-audit --no-fund
+          node --test desktop/tests/pwa-p102-paired-bundle-contract.cjs
+          npm --prefix web run lint
+          npm --prefix web run build
+          node desktop/scripts/pwa-p102-paired-bundle-graph.cjs              "$RUNNER_TEMP/pwa-p102-base/web/dist" web/dist              desktop/pwa-p102-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p102-same-runner-normal-vite-route-split-trial
+          path: desktop/pwa-p102-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

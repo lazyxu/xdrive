@@ -44,7 +44,6 @@ import {
   XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
-  XDriveMediaGalleryPage,
   XDriveShareDialog,
   XDriveSourceManager,
   XDriveDeviceBackupPage,
@@ -94,11 +93,7 @@ import type {
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
-import AdminUsersPanel from './AdminUsers'
-import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
-import StorageStatsPanel from './StorageStatsPanel'
-import WebFileExplorer from './WebFileExplorer'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
@@ -118,6 +113,13 @@ import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUpl
 import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
+// P1-02 trial: keep the common authenticated App/runtime/Owner API static.
+ // Only route-owned heavy rendering modules become dynamic chunks.
+const WebFileExplorer = lazy(() => import('./WebFileExplorer'))
+const XDriveMediaGalleryPage = lazy(() => import('./PwaMediaGalleryRoute'))
+const AdminUsersPanel = lazy(() => import('./AdminUsers'))
+const AdminAuditPanel = lazy(() => import('./AdminAudit'))
+const StorageStatsPanel = lazy(() => import('./StorageStatsPanel'))
 const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -1890,6 +1892,8 @@ function FileManager({
           // tile row as the virtual window reflows through Viewer breakpoints.
           sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
         >
+        <Suspense fallback={<Box data-xdrive-pwa-route-chunk-pending aria-busy="true"
+          sx={{ height: '100%', minHeight: 0, width: '100%' }} />}>
         {appView === 'overview' ? (
           <WebOverviewPage
             api={api}
@@ -2175,6 +2179,7 @@ function FileManager({
             ) : null}
           </Box>
         )}
+        </Suspense>
         </XDriveWorkspaceContent>
         </Box>
       </XDriveWorkspaceShell>
