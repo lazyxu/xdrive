@@ -48,6 +48,9 @@ function fixture() {
   }).outputText
   const deps = {
     exports: {}, initialState: initial,
+    // This isolated Agent-state race has no HTTPS Baidu map BrowserWindow.
+    // Production publishAgentState must still close a real window on revoke.
+    secureBaiduMapWindow: null,
     requireAgentLifecycle: () => ({
       ensureRunning: async () => statusCalls === 0 ? oldHello : currentHello,
     }),
