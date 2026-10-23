@@ -92,9 +92,10 @@ test('UI reuses Server-verified /cells -> /cell-items, not a new photo source',(
   const ui=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   const child=read('deploy/baidu-isolated-child/child.js')
   for(const fragment of [
-    'xDriveCurrentMapPhotoCollections(summary, projected, accessible.map(cell => cell.selection))',
+    'xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection))',
+    'scopeIsCurrent && phase',
     'data-xdrive-places-photo-collection-strip',
-    'onClick={() => opened.current(pin.selection)}',
+    'onClick={() => openVerifiedCell(pin.selection)}',
     'XDriveMediaGalleryCoverThumbnail',
     'revision={pin.selection.node_revision}',
     'frame.replaceAuthorizedCells(cells)',

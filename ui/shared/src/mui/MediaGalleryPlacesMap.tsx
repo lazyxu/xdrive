@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
-import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds } from '../models'
+import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
+import {
+  xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
+} from '../media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
@@ -23,6 +27,7 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
+  mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, mapAlbums = [],
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -37,8 +42,10 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduMapCoverage?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverage']
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
-  onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
-  onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds) => void
+  onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection,
+    scope: XDriveBaiduMapPhotoScope) => void
+  onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
+    scope: XDriveBaiduMapPhotoScope) => void
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
   diagnosticScope?: string
@@ -48,6 +55,9 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenPrototypePlace?: (place: MediaPlaceFacet) => void
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
+  mapPhotoScope?: XDriveBaiduMapPhotoScope
+  onMapPhotoScopeChange?: (scope: XDriveBaiduMapPhotoScope) => void
+  mapAlbums?: MediaAlbum[]
   compact?: boolean
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
@@ -152,6 +162,17 @@ export function XDriveMediaGalleryPlacesMap({
     return () => controller.abort()
   }, [desktopOnly, mapMode, hasChildPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
   const nativeEnabled = mapMode === 'isolated' && status === 'authorized' && !childFailed && childOrigin !== ''
+  // Only the parent owns the selected Album/filters; nothing here is sent to
+  // Baidu's Child, and the current SDK iframe does not remount on changes.
+  const changeMapScope = (patch: Partial<MediaGalleryQuery>, albumKey = mapPhotoScope.albumKey) => {
+    if (!onMapPhotoScopeChange || !mapReady || !nativeEnabled) return
+    const next = xDriveNormalizeBaiduMapPhotoScope({
+      filters: {...mapPhotoScope.filters,...patch},albumKey,
+    })
+    if (next) onMapPhotoScopeChange(next)
+  }
+  const sortValue = (mapPhotoScope.filters.sort_by ?? 'captured') + ':' +
+    (mapPhotoScope.filters.sort_dir ?? 'desc')
 
   return (
     <Paper variant="outlined" data-xdrive-gallery-places-map
@@ -229,6 +250,71 @@ export function XDriveMediaGalleryPlacesMap({
       </Box>
       <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
         getCoverage={getBaiduMapCoverage} ownerScope={diagnosticScope}/></Box>
+      {onMapPhotoScopeChange && mapMode === 'isolated' && !desktopOnly ? (
+        <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
+          <Stack direction="row" flexWrap="wrap" gap={1} sx={{ alignItems:'center' }}>
+            <TextField select size="small" label="照片类型" value={mapPhotoScope.filters.asset_kind ?? 'all'}
+              disabled={!mapReady || !nativeEnabled}
+              onChange={event => changeMapScope({
+                asset_kind: event.target.value === 'all' ? undefined :
+                  event.target.value as 'image' | 'video',
+              })} sx={{ minWidth:110, flex:'1 1 110px', maxWidth:180 }}>
+              <MenuItem value="all">照片与视频</MenuItem>
+              <MenuItem value="image">照片</MenuItem>
+              <MenuItem value="video">视频</MenuItem>
+            </TextField>
+            <TextField select size="small" label="收藏" value={
+              mapPhotoScope.filters.favorite === undefined ? 'all' :
+                String(mapPhotoScope.filters.favorite)}
+              disabled={!mapReady || !nativeEnabled}
+              onChange={event => changeMapScope({
+                favorite: event.target.value === 'all' ? undefined :
+                  event.target.value === 'true',
+              })} sx={{ minWidth:100, flex:'1 1 100px', maxWidth:150 }}>
+              <MenuItem value="all">全部</MenuItem>
+              <MenuItem value="true">已收藏</MenuItem>
+              <MenuItem value="false">未收藏</MenuItem>
+            </TextField>
+            <TextField select size="small" label="相册" value={mapPhotoScope.albumKey}
+              disabled={!mapReady || !nativeEnabled}
+              onChange={event => changeMapScope({},event.target.value)}
+              sx={{ minWidth:110, flex:'1 1 110px', maxWidth:210 }}>
+              <MenuItem value="">全部相册</MenuItem>
+              {mapAlbums.filter(a => /^(folder|source|manual|smart):.+/.test(a.id)).map(a =>
+                <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
+            </TextField>
+            <TextField select size="small" label="排序" value={sortValue}
+              disabled={!mapReady || !nativeEnabled}
+              onChange={event => {
+                const [by,dir]=event.target.value.split(':')
+                if ((by==='captured'||by==='added')&&(dir==='asc'||dir==='desc'))
+                  changeMapScope({sort_by:by,sort_dir:dir})
+              }} sx={{ minWidth:145, flex:'1 1 145px', maxWidth:190 }}>
+              <MenuItem value="captured:desc">拍摄时间 · 新到旧</MenuItem>
+              <MenuItem value="captured:asc">拍摄时间 · 旧到新</MenuItem>
+              <MenuItem value="added:desc">添加时间 · 新到旧</MenuItem>
+              <MenuItem value="added:asc">添加时间 · 旧到新</MenuItem>
+            </TextField>
+            <TextField type="date" size="small" label="拍摄开始日期" slotProps={{ inputLabel:{ shrink:true } }}
+              value={mapPhotoScope.filters.captured_from ?? ''} disabled={!mapReady || !nativeEnabled}
+              onChange={event => changeMapScope({captured_from:event.target.value || undefined})}
+              sx={{ minWidth:150, flex:'1 1 150px', maxWidth:190 }}/>
+            <TextField type="date" size="small" label="拍摄结束前" slotProps={{ inputLabel:{ shrink:true } }}
+              value={mapPhotoScope.filters.captured_to ?? ''} disabled={!mapReady || !nativeEnabled}
+              onChange={event => changeMapScope({captured_to:event.target.value || undefined})}
+              sx={{ minWidth:150, flex:'1 1 150px', maxWidth:190 }}/>
+            <Button size="small" variant="text" disabled={!mapReady || !nativeEnabled}
+              onClick={() => {
+                const next = xDriveNormalizeBaiduMapPhotoScope({
+                  filters:{sort_by:'captured',sort_dir:'desc',
+                    ...(mapPhotoScope.filters.time_zone ? {time_zone:mapPhotoScope.filters.time_zone}: {})},
+                  albumKey:'',
+                })
+                if (next) onMapPhotoScopeChange(next)
+              }}>清除筛选</Button>
+          </Stack>
+        </Box>
+      ) : null}
       {nativeEnabled && !mapReady ? (
         <Typography variant="caption" role="status" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
           正在初始化百度动态地图…
@@ -273,6 +359,7 @@ export function XDriveMediaGalleryPlacesMap({
           onCameraClear={clearCamera} onReady={setMapReady}
           onFailure={() => setChildFailed(true)}
           initialCamera={cameraRef.current ?? undefined} scope={diagnosticScope}
+          mapPhotoScope={mapPhotoScope}
         />
       ) : status === 'checking' ? (
         <Stack role="status" direction="row" alignItems="center" spacing={1.5} sx={{ p: 2, minHeight: 96 }}>

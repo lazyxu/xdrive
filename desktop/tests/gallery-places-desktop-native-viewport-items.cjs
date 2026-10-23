@@ -19,7 +19,7 @@ test('Desktop BD09 signed Owner camera range is wired end-to-end',()=>{
   [client,"/v1/media/places/baidu-native-viewport-items?"],
   [preload,"agent:get-media-baidu-native-viewport-items"],
   [rendererTypes,"getMediaBaiduNativeViewportItems: ("],
-  [adapter,"listBaiduNativeViewportItems: (bounds, limit, offset, query, signal)"],
+  [adapter,"listBaiduNativeViewportItems: (bounds, limit, offset, query, signal, albumKey)"],
   [go,"/api/v1/media/places/baidu-jsapi/viewport-items?"],
   [agent,"parseDesktopIPCBaiduNativeViewportItems("],
   [server,"baiduMapViewportPageMembersStillAuthorized("],

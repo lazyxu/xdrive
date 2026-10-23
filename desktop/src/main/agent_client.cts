@@ -2009,7 +2009,7 @@ export type AgentBaiduNativeViewportBounds = AgentMediaPlacesViewportBounds & {
 export type AgentBaiduNativeViewportItemsFilter = Pick<AgentMediaQuery,
   'sort_by' | 'sort_dir' | 'anchor_node_id' | 'favorite' |
   'captured_from' | 'captured_to' | 'time_zone' | 'asset_kind' | 'fold_duplicates'
->
+> & { map_album?: string }
 
 export type AgentBaiduNativeViewportPage = {
   coordinate_space: 'bd09ll'
@@ -2917,7 +2917,7 @@ export class AgentIPCClient {
     filters: AgentBaiduNativeViewportItemsFilter = {}, signal?: AbortSignal,
   ) {
     const whitelisted = ['sort_by','sort_dir','anchor_node_id','favorite',
-      'captured_from','captured_to','time_zone','asset_kind','fold_duplicates']
+      'captured_from','captured_to','time_zone','asset_kind','fold_duplicates','map_album']
     if (!bounds || bounds.coordinate_space !== 'bd09ll' ||
         ![bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite) ||
         bounds.west < -180 || bounds.west > 180 || bounds.east < -180 || bounds.east > 180 ||
@@ -2928,6 +2928,11 @@ export class AgentIPCClient {
         !filters || typeof filters !== 'object' || Array.isArray(filters) ||
         Object.entries(filters).some(([k,v]) => v !== undefined && !whitelisted.includes(k)) ||
         filters.fold_duplicates === true ||
+        (filters.map_album !== undefined &&
+          (typeof filters.map_album !== 'string' ||
+           filters.map_album.trim() !== filters.map_album ||
+           filters.map_album.length > 512 ||
+           !/^(folder|source|manual|smart):.+$/.test(filters.map_album))) ||
         (filters.anchor_node_id !== undefined && (!Number.isSafeInteger(filters.anchor_node_id) || filters.anchor_node_id < 1)) ||
         (filters.favorite !== undefined && typeof filters.favorite !== 'boolean') ||
         (filters.asset_kind !== undefined && filters.asset_kind !== 'image' && filters.asset_kind !== 'video') ||
@@ -2951,6 +2956,7 @@ export class AgentIPCClient {
     if (filters.captured_to) q.set('captured_to',filters.captured_to)
     if (filters.time_zone) q.set('time_zone',filters.time_zone)
     if (filters.asset_kind) q.set('kind',filters.asset_kind)
+    if (filters.map_album) q.set('album',filters.map_album)
     return this.request<AgentMediaItemRange>(
       'GET','/v1/media/places/baidu-native-viewport-items?' + q.toString(),
       undefined,10_000,signal,

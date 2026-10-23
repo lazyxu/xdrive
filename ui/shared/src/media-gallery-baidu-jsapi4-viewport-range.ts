@@ -10,7 +10,12 @@ export function xDriveBaiduNativeViewportRangeParams(
   limit: number,
   offset: number,
   query: MediaGalleryQuery,
+  albumKey = '',
 ): URLSearchParams | null {
+  if (typeof albumKey !== 'string' || albumKey.length > 512 ||
+      albumKey.trim() !== albumKey ||
+      (albumKey !== '' && !/^(folder|source|manual|smart):.+$/.test(albumKey)))
+    return null
   // The Gallery's logical map count is never folded. Unsupported filter keys
   // must fail closed rather than silently broadening an Owner photo selection.
   if (!query || typeof query !== 'object' ||
@@ -43,6 +48,7 @@ export function xDriveBaiduNativeViewportRangeParams(
     limit: String(limit), offset: String(offset),
     sort_by: query.sort_by ?? 'captured', sort_dir: query.sort_dir ?? 'desc',
   })
+  if (albumKey) params.set('album', albumKey)
   if (query.anchor_node_id !== undefined) params.set('anchor_node_id', String(query.anchor_node_id))
   if (query.favorite !== undefined) params.set('favorite', String(query.favorite))
   const boundedOptional: ReadonlyArray<[string, string | undefined]> = [

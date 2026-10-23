@@ -1,4 +1,6 @@
 import type { MediaBaiduNativeCellSelection } from './models'
+import { xDriveCopyBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
 
 /** W3b2a: bounded, ephemeral UI return state. This is NEVER an authorization
  * token, map SDK payload, persisted URL, Storage entry or replacement for
@@ -10,6 +12,7 @@ export type XDriveBaiduCellReturnSort = Readonly<{
 export interface XDriveBaiduCellReturnSnapshot {
   selection: MediaBaiduNativeCellSelection
   sort: XDriveBaiduCellReturnSort
+  photoScope?: XDriveBaiduMapPhotoScope
   anchorNodeID?: number
   anchorIndex?: number
 }
@@ -34,6 +37,11 @@ function validReturn(snapshot: XDriveBaiduCellReturnSnapshot): boolean {
   if (!snapshot || typeof snapshot !== 'object' || !snapshot.sort ||
       (snapshot.sort.by !== 'captured' && snapshot.sort.by !== 'added') ||
       (snapshot.sort.dir !== 'asc' && snapshot.sort.dir !== 'desc')) return false
+  if (snapshot.photoScope) {
+    const approved=xDriveCopyBaiduMapPhotoScope(snapshot.photoScope)
+    if (!approved || approved.filters.sort_by!==snapshot.sort.by ||
+        approved.filters.sort_dir!==snapshot.sort.dir)return false
+  }
   const cell = snapshot.selection
   const bounds = cell?.bounds
   if (!cell || !bounds || bounds.coordinate_space !== 'bd09ll' ||
@@ -64,6 +72,8 @@ function clone(snapshot: XDriveBaiduCellReturnSnapshot): XDriveBaiduCellReturnSn
         east: b.east, north: b.north },
     },
     sort: { by: snapshot.sort.by, dir: snapshot.sort.dir },
+    ...(snapshot.photoScope
+      ? { photoScope: xDriveCopyBaiduMapPhotoScope(snapshot.photoScope)! } : {}),
     ...(snapshot.anchorNodeID !== undefined
       ? { anchorNodeID: snapshot.anchorNodeID } : {}),
     ...(snapshot.anchorIndex !== undefined

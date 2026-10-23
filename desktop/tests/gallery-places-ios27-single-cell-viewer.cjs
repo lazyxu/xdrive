@@ -1,0 +1,45 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const web = read('web/src/webViewerContext.ts')
+const sourceStart = gallery.indexOf('const openBaiduNativeCell = useCallback(')
+const sourceEnd = gallery.indexOf('const openBaiduNativeViewport = useCallback(', sourceStart)
+assert.ok(sourceStart >= 0 && sourceEnd > sourceStart)
+const cell = gallery.slice(sourceStart, sourceEnd)
+
+test('one signed Owner Cell member opens Viewer, not a representative-cover photo wall', () => {
+  assert.match(cell, /!returning && onOpenViewer && range\.total_count === 1 &&[\s\S]*?range\.items\.length === 1/)
+  assert.ok(cell.indexOf('onOpenViewer(range.items[0], {') > cell.indexOf('range.total_count === 1'))
+  assert.ok(cell.indexOf('onOpenViewer(range.items[0], {') < cell.indexOf('collectionTargetRef.current = target'))
+  assert.match(cell, /target: \{ kind: 'baidu-cell', id: approved\.albumKey \|\| undefined,[\s\S]*?baiduCell: cell, query: cellQuery \}/)
+  assert.match(cell, /activeIndex: 0,[\s\S]*?totalCount: 1/)
+  assert.match(cell, /xDriveClearBaiduCellReturn\(preferenceScope\)/)
+  assert.doesNotMatch(cell.slice(cell.indexOf('// A single current'), cell.indexOf('if (xDriveRememberBaiduCellReturn')),
+    /xDriveMarkBaiduCellViewerReturn/)
+})
+
+test('multi-member Cells still enter the original sparse VirtualCollection', () => {
+  assert.ok(cell.includes('virtualCollection.primePage({'))
+  assert.ok(cell.includes('range.items, totalCount: range.total_count'))
+  assert.ok(cell.includes('setSection(\'places\')'))
+  assert.ok(cell.includes('request !== requestID.current'))
+  assert.ok(cell.includes('controller.signal'))
+  assert.ok(cell.includes('photoScope:approved'))
+})
+
+test('direct Viewer pages remain on revalidated signed BD09 Cell and do not fall back to all photos', () => {
+  const start = web.indexOf("case 'baidu-cell':")
+  const end = web.indexOf("case 'album':", start)
+  assert.ok(start >= 0 && end > start)
+  const page = web.slice(start, end)
+  assert.ok(page.includes('source.listBaiduNativeCellItems('))
+  assert.ok(page.includes('target.baiduCell'))
+  assert.ok(page.includes("albumKey:target.id ?? ''"))
+  assert.ok(page.includes('signal,'))
+  assert.doesNotMatch(page, /source\.listItemRange/)
+})

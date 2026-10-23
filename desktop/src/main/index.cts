@@ -3414,9 +3414,13 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input',0,'Invalid BD09 photo page.')
       const raw = filters as Record<string,unknown>
       const accepted = ['sort_by','sort_dir','anchor_node_id','favorite',
-        'captured_from','captured_to','time_zone','asset_kind','fold_duplicates']
+        'captured_from','captured_to','time_zone','asset_kind','fold_duplicates','map_album']
       if (Object.entries(raw).some(([k,x]) => x !== undefined && !accepted.includes(k)) ||
           (raw.fold_duplicates !== undefined && raw.fold_duplicates !== false) ||
+          (raw.map_album !== undefined &&
+            (typeof raw.map_album !== 'string' || raw.map_album.trim() !== raw.map_album ||
+              raw.map_album.length > 512 ||
+              !/^(folder|source|manual|smart):.+$/.test(raw.map_album))) ||
           (raw.anchor_node_id !== undefined &&
             (typeof raw.anchor_node_id !== 'number' || !Number.isSafeInteger(raw.anchor_node_id) || raw.anchor_node_id < 1)) ||
           (raw.favorite !== undefined && typeof raw.favorite !== 'boolean') ||

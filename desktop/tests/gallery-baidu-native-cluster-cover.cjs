@@ -120,7 +120,7 @@ test('isolated native viewport cancels at gesture start; only Parent owns bounde
   assert.match(child,/map\.addEventListener\('moveend', scheduleViewport\)/)
   assert.match(child,/send\('cancel'\)/)
   assert.match(child,/viewportTimer = setTimeout\(\(\) => \{/)
-  assert.match(parent,/listOwnerCells\(bounds,request\.signal\)/)
+  assert.match(parent,/listOwnerCells\(bounds,request\.signal,\s*approved\.snapshot\.filters,approved\.snapshot\.albumKey\)/)
   assert.match(parent,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
   assert.match(parent,/data-xdrive-places-trusted-photo-cover-pins/)
   assert.doesNotMatch(parent,/new api\.ClusterLayer|BMapLib\.MarkerClusterer/)

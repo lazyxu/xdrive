@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lazyxu/xdrive/internal/client"
 )
@@ -29,7 +30,7 @@ func parseDesktopIPCBaiduNativeViewportItems(raw string) (
 	for _, k := range []string{
 		"coordinate_space", "range", "west", "south", "east", "north", "limit", "offset",
 		"sort_by", "sort_dir", "anchor_node_id", "favorite", "captured_from", "captured_to",
-		"time_zone", "kind",
+		"time_zone", "kind", "album",
 	} {
 		allowed[k] = true
 	}
@@ -53,6 +54,23 @@ func parseDesktopIPCBaiduNativeViewportItems(raw string) (
 	filter.CapturedTo = vals.Get("captured_to")
 	filter.TimeZone = vals.Get("time_zone")
 	filter.MediaKind = vals.Get("kind")
+	filter.AlbumKey = vals.Get("album")
+	if filter.AlbumKey != "" {
+		if utf8.RuneCountInString(filter.AlbumKey) > 512 {
+			return fail()
+		}
+		approved := false
+		for _, prefix := range []string{"folder:", "source:", "manual:", "smart:"} {
+			if strings.HasPrefix(filter.AlbumKey, prefix) &&
+				len(filter.AlbumKey) > len(prefix) {
+				approved = true
+				break
+			}
+		}
+		if !approved {
+			return fail()
+		}
+	}
 	if s := vals.Get("anchor_node_id"); s != "" {
 		n, e := strconv.ParseUint(s, 10, 64)
 		if e != nil || n == 0 {

@@ -73,7 +73,8 @@ test('W2b2 Viewer pages respect the signed Owner Cell 100-item hard limit', asyn
       assert.equal(sel, selection)
       assert.equal(limit, 100)
       assert.equal(offset, 100)
-      assert.deepEqual(sort, { by: 'captured', dir: 'desc' })
+      assert.deepEqual(sort, {by:'captured',dir:'desc',
+        filters:{sort_by:'captured',sort_dir:'desc'},albumKey:''})
       assert.equal(signal.aborted, false)
       calls.push(offset)
       return Promise.resolve({ items: [{ node: { id: 101, type: 'file',

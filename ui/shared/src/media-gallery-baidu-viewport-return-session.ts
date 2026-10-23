@@ -1,10 +1,13 @@
 import type { MediaBaiduNativeViewportBounds } from './models'
+import { xDriveCopyBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
 
 /** Account-local, bounded and ephemeral Viewer return intent. It is not an
  * authorization: current Owner/session/consent must be rechecked by Server. */
 export interface XDriveBaiduViewportReturn {
   bounds: MediaBaiduNativeViewportBounds
   sort: { by: 'captured' | 'added'; dir: 'asc' | 'desc' }
+  photoScope?: XDriveBaiduMapPhotoScope
   anchorNodeID?: number
   anchorIndex?: number
 }
@@ -17,7 +20,11 @@ const validIndex = (v:unknown) => v === undefined ||
   (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 10_000_000)
 function valid(v:XDriveBaiduViewportReturn):boolean {
   const b = v?.bounds
-  return Boolean(b && b.coordinate_space === 'bd09ll' &&
+  const approved=v?.photoScope ? xDriveCopyBaiduMapPhotoScope(v.photoScope) : null
+  return Boolean((!v?.photoScope || (approved &&
+    approved.filters.sort_by===v.sort?.by &&
+    approved.filters.sort_dir===v.sort?.dir)) &&
+    b && b.coordinate_space === 'bd09ll' &&
     [b.west,b.south,b.east,b.north].every(Number.isFinite) &&
     b.west >= -180 && b.west <= 180 && b.east >= -180 && b.east <= 180 &&
     b.south >= -90 && b.north <= 90 && b.south < b.north && b.west !== b.east &&
@@ -28,6 +35,7 @@ function valid(v:XDriveBaiduViewportReturn):boolean {
 }
 function clone(v:XDriveBaiduViewportReturn):XDriveBaiduViewportReturn {
   return { bounds: {...v.bounds}, sort: {...v.sort},
+    ...(v.photoScope ? {photoScope:xDriveCopyBaiduMapPhotoScope(v.photoScope)!} : {}),
     ...(v.anchorNodeID ? { anchorNodeID: v.anchorNodeID } : {}),
     ...(v.anchorIndex !== undefined ? { anchorIndex: v.anchorIndex } : {}) }
 }

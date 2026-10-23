@@ -38,7 +38,8 @@ test('W3a aborted Viewer cancels real Owner-cell transport and not generic Galle
     listBaiduNativeCellItems: (_selection, limit, offset, sort, signal) => {
       assert.equal(limit, 100)
       assert.equal(offset, 0)
-      assert.deepEqual(sort, { by: 'captured', dir: 'desc' })
+      assert.deepEqual(sort, {by:'captured',dir:'desc',
+        filters:{sort_by:'captured',sort_dir:'desc'},albumKey:''})
       signals.push(signal)
       return new Promise((resolve, reject) => {
         if (signal.aborted) return reject(new Error('aborted'))

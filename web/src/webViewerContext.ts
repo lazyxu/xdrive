@@ -68,7 +68,7 @@ async function loadGalleryRange(
       // Viewer pages must retain EXACTLY the current authenticated BD09 scope.
       // Falling back to /media/items here would silently reveal other photos.
       return source.listBaiduNativeViewportItems(
-        target.baiduViewport, limit, offset, target.query, signal,
+        target.baiduViewport, limit, offset, target.query, signal, target.id ?? '',
       )
     }
     case 'baidu-cell': {
@@ -77,7 +77,8 @@ async function loadGalleryRange(
       return source.listBaiduNativeCellItems(
         target.baiduCell, limit, offset,
         { by: target.query.sort_by === 'added' ? 'added' : 'captured',
-          dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc' },
+          dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc',
+          filters:target.query,albumKey:target.id ?? '' },
         signal,
       )
     }

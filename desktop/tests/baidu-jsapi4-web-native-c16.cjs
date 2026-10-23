@@ -136,7 +136,7 @@ test('C16 Web and Mobile share isolated Ticket/Owner Range while Desktop file re
   assert.doesNotMatch(places, /XDriveMediaGalleryBaiduJSAPI4PhotoSurface|XDriveMediaGalleryBaiduJSAPI4Surface/)
   assert.match(surface, /xDriveMountBaiduIsolatedFrame/)
   assert.match(surface, /xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
-  assert.match(surface, /listOwnerCells\(bounds,request\.signal\)/)
+  assert.match(surface, /listOwnerCells\(bounds,request\.signal,\s*approved\.snapshot\.filters,approved\.snapshot\.albumKey\)/)
   assert.match(host, /onActivateCell\(ownerSelection\.get\(event\.key\)!\)/)
   assert.match(child, /script\.src = '\/_BMapService\/api\?v=4\.0'/)
   // Trusted Gallery Parent may render signed Owner photo covers over iframe;
