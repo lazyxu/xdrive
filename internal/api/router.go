@@ -417,6 +417,12 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-operation/prepare", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.prepareLocalPushOperation)
 	authed.POST("/sources/:id/local-operation/abort", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.abortLocalPushOperation)
 	authed.POST("/sources/:id/local-operation/observe", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.observeLocalPushOperation)
+	// v2: owning-Agent-only durable original Operation admission, generic
+	// UploadSession bind, and immutable SQL receipt. Generic /uploads remains
+	// the sole bytes/CAS/Node/FileVersion writer; no SourceRun activation.
+	authed.POST("/sources/:id/local-common-upload/admit", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.admitLocalPushCommonUpload)
+	authed.POST("/sources/:id/local-common-upload/bind", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.bindLocalPushCommonUpload)
+	authed.POST("/sources/:id/local-common-upload/receipt", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.readLocalPushCommonUploadReceipt)
 	// Owning-Agent-only exact request-key terminal-reservation proof. Never a backup completion.
 	authed.POST("/sources/:id/local-operation/terminal-proof", localPushOperationNoStore, s.requireLocalSourceExecutor(), s.materializeLocalPushTerminalProof)
 	authed.POST("/sources/:id/local-staging", s.requireLocalSourceExecutor(), s.createLocalPushStage)
