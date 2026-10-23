@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -7,10 +7,11 @@ import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
-import { Box, IconButton, Stack, Tooltip } from '@mui/material'
+import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, useMediaQuery } from '@mui/material'
 import type {
   MediaEditRecipe,
   MediaEditRecipeInput,
@@ -126,29 +127,92 @@ export function XDriveMediaGalleryViewer({
   onClose: () => void
 }) {
   const [fullScreen, setFullScreen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [creativeOpen, setCreativeOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [locationOpen, setLocationOpen] = useState(false)
+  const narrowViewer = useMediaQuery('(max-width:899.95px)')
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  // Dialog visibility belongs to the actual Node/revision action session.
+  // Closing a filmstrip item must not leave a previous confirmation or editor
+  // armed for a different photo before the passive effects have run.
+  const [deleteDialogOwner, setDeleteDialogOwner] = useState<object | null>(null)
+  const [creativeDialogOwner, setCreativeDialogOwner] = useState<object | null>(null)
+  const [editDialogOwner, setEditDialogOwner] = useState<object | null>(null)
+  const [locationDialogOwner, setLocationDialogOwner] = useState<object | null>(null)
   // The visible Viewer can change while a durable action is still running.
   // Pending work keeps running, but only its initiating media session may own
   // the action chrome or close that session on completion.
   const actionOwnerRef = useRef({
     nodeID: item?.node.id,
     nodeRevision: item?.node.revision,
+    thumbnailLoader: loadThumbnail,
+    previewLoader: loadPreviewURL,
+    motionLoader: loadLivePhotoMotion,
+    session: 0,
     inFlight: false,
   })
   if (
     actionOwnerRef.current.nodeID !== item?.node.id ||
-    actionOwnerRef.current.nodeRevision !== item?.node.revision
+    actionOwnerRef.current.nodeRevision !== item?.node.revision ||
+    actionOwnerRef.current.thumbnailLoader !== loadThumbnail ||
+    actionOwnerRef.current.previewLoader !== loadPreviewURL ||
+    actionOwnerRef.current.motionLoader !== loadLivePhotoMotion
   ) {
+    // The same Node/revision may exist in two authorized sources. Treat a
+    // changed preview loader as a new session before effects or pending JSX
+    // handlers can read the prior account's image, Live motion, or dialog.
+    const session = actionOwnerRef.current.session + 1
     actionOwnerRef.current = {
       nodeID: item?.node.id,
       nodeRevision: item?.node.revision,
+      thumbnailLoader: loadThumbnail,
+      previewLoader: loadPreviewURL,
+      motionLoader: loadLivePhotoMotion,
+      session,
       inFlight: false,
     }
   }
   const actionOwner = actionOwnerRef.current
+  // The last queued pointer event from a replaced photo must not start a
+  // synchronous Share or Inspector action against the old media identity.
+  const runCurrentItemAction = (handler?: (value: MediaItem) => void) => {
+    if (item && handler && actionOwnerRef.current === actionOwner) handler(item)
+  }
+  const [moreOwner, setMoreOwner] = useState<typeof actionOwner | null>(null)
+  const moreOpen = Boolean(item && narrowViewer && moreAnchor && moreOwner === actionOwner)
+  const openMore = (anchor: HTMLElement) => {
+    if (actionOwnerRef.current !== actionOwner) return
+    setMoreOwner(actionOwner)
+    setMoreAnchor(anchor)
+  }
+  const closeMore = () => {
+    if (actionOwnerRef.current !== actionOwner) return
+    setMoreAnchor(null)
+    setMoreOwner(null)
+  }
+  // Match routed Web Viewer: leaving compact layout permanently dismisses
+  // this menu. 390→900→390 must never resurrect its previous menu anchor.
+  useEffect(() => {
+    if (!narrowViewer) {
+      setMoreAnchor(null)
+      setMoreOwner(null)
+    }
+  }, [narrowViewer])
+  const deleteOpen = deleteDialogOwner === actionOwner
+  const creativeOpen = creativeDialogOwner === actionOwner
+  const editOpen = editDialogOwner === actionOwner
+  const locationOpen = locationDialogOwner === actionOwner
+  // Old JSX callbacks remain callable after a Filmstrip navigation. Reject
+  // them even if A is selected again after A → B → A.
+  const setDeleteOpen = (open: boolean) => {
+    if (actionOwnerRef.current === actionOwner) setDeleteDialogOwner(open ? actionOwner : null)
+  }
+  const setCreativeOpen = (open: boolean) => {
+    if (actionOwnerRef.current === actionOwner) setCreativeDialogOwner(open ? actionOwner : null)
+  }
+  const setEditOpen = (open: boolean) => {
+    if (actionOwnerRef.current === actionOwner) setEditDialogOwner(open ? actionOwner : null)
+  }
+  const setLocationOpen = (open: boolean) => {
+    if (actionOwnerRef.current === actionOwner) setLocationDialogOwner(open ? actionOwner : null)
+  }
   const [busyState, setBusyState] = useState<{
     owner: typeof actionOwner
     action: ViewerAction
@@ -179,8 +243,10 @@ export function XDriveMediaGalleryViewer({
   const close = () => {
     // A close/reopen of the same Node still starts a fresh action session.
     actionOwnerRef.current = {
+      ...actionOwnerRef.current,
       nodeID: undefined,
       nodeRevision: undefined,
+      session: actionOwnerRef.current.session + 1,
       inFlight: false,
     }
     setBusyState(null)
@@ -188,6 +254,7 @@ export function XDriveMediaGalleryViewer({
     setCreativeOpen(false)
     setEditOpen(false)
     setLocationOpen(false)
+    closeMore()
     setFullScreen(false)
     onClose()
   }
@@ -217,7 +284,7 @@ export function XDriveMediaGalleryViewer({
           </span>
         </Tooltip>
       ) : null}
-      {onCreateCreativeGeneration &&
+      {!narrowViewer && onCreateCreativeGeneration &&
       onGetCreativeGeneration &&
       loadPreviewURL &&
       xDriveMediaItemSupportsCreative(item) ? (
@@ -242,21 +309,21 @@ export function XDriveMediaGalleryViewer({
           </IconButton>
         </Tooltip>
       ) : null}
-      {hasPhotoGPS ? (
+      {!narrowViewer && hasPhotoGPS ? (
         <Tooltip title="在地图上查看照片">
           <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
             <MapOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
-      {onInfo ? (
+      {!narrowViewer && onInfo ? (
         <Tooltip title="属性">
-          <IconButton size="small" aria-label="查看属性" onClick={() => onInfo(item)}>
+          <IconButton size="small" aria-label="查看属性" onClick={() => runCurrentItemAction(onInfo)}>
             <InfoOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
-      {onDownload ? (
+      {!narrowViewer && onDownload ? (
         <Tooltip title="下载">
           <span>
             <IconButton
@@ -272,7 +339,7 @@ export function XDriveMediaGalleryViewer({
           </span>
         </Tooltip>
       ) : null}
-      {onExportLivePhoto && (item.live_photo || item.asset_kind === 'live_photo') ? (
+      {!narrowViewer && onExportLivePhoto && (item.live_photo || item.asset_kind === 'live_photo') ? (
         <Tooltip title="导出完整实况（照片与动态原件）">
           <span>
             <IconButton
@@ -290,7 +357,7 @@ export function XDriveMediaGalleryViewer({
       ) : null}
       {onShare ? (
         <Tooltip title="分享">
-          <IconButton size="small" aria-label="分享媒体" onClick={() => onShare(item)}>
+          <IconButton size="small" aria-label="分享媒体" onClick={() => runCurrentItemAction(onShare)}>
             <ShareRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -308,6 +375,20 @@ export function XDriveMediaGalleryViewer({
               <DeleteOutlineRoundedIcon fontSize="small" />
             </IconButton>
           </span>
+        </Tooltip>
+      ) : null}
+      {narrowViewer ? (
+        <Tooltip title="更多">
+          <IconButton
+            size="small"
+            aria-label="更多照片操作"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            aria-controls={moreOpen ? 'xdrive-shared-gallery-viewer-more' : undefined}
+            onClick={(event) => openMore(event.currentTarget)}
+          >
+            <MoreHorizRoundedIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
       ) : null}
     </Stack>
@@ -337,6 +418,7 @@ export function XDriveMediaGalleryViewer({
         onNext={onNext}
         actions={actions}
         footer={footer}
+        keepChromeVisible={moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
         immersive
         mobileEdgeToEdge
         fullScreen={fullScreen}
@@ -345,6 +427,7 @@ export function XDriveMediaGalleryViewer({
       >
         {item ? (
           <XDriveMediaViewerContent
+            key={actionOwner.session}
             item={item}
             loadThumbnail={loadThumbnail}
             loadLivePhotoMotion={loadLivePhotoMotion}
@@ -357,6 +440,37 @@ export function XDriveMediaGalleryViewer({
           />
         ) : null}
       </XDriveOpenPreviewDialog>
+
+      <Menu
+        id="xdrive-shared-gallery-viewer-more"
+        anchorEl={moreOpen ? moreAnchor : null}
+        open={moreOpen}
+        onClose={closeMore}
+        MenuListProps={{ 'aria-label': '更多照片操作' }}
+      >
+        {item && onCreateCreativeGeneration && onGetCreativeGeneration && loadPreviewURL &&
+        xDriveMediaItemSupportsCreative(item) ? (
+          <MenuItem aria-label="创作图片" onClick={() => { closeMore(); setCreativeOpen(true) }}>创作图片</MenuItem>
+        ) : null}
+        {item && hasPhotoGPS ? (
+          <MenuItem aria-label="在地图上查看照片" onClick={() => { closeMore(); setLocationOpen(true) }}>在地图上查看照片</MenuItem>
+        ) : null}
+        {item && onInfo ? (
+          <MenuItem aria-label="查看属性" onClick={() => { closeMore(); runCurrentItemAction(onInfo) }}>查看属性</MenuItem>
+        ) : null}
+        {item && onExportLivePhoto && (item.live_photo || item.asset_kind === 'live_photo') ? (
+          <MenuItem aria-label="导出完整实况" disabled={Boolean(busyAction)} onClick={() => {
+            closeMore()
+            void run('download', () => onExportLivePhoto(item)).catch(() => undefined)
+          }}>导出完整实况</MenuItem>
+        ) : null}
+        {item && onDownload ? (
+          <MenuItem aria-label="下载" disabled={Boolean(busyAction)} onClick={() => {
+            closeMore()
+            void run('download', () => onDownload(item)).catch(() => undefined)
+          }}>下载</MenuItem>
+        ) : null}
+      </Menu>
 
       <XDriveMediaGalleryViewerLocationDialog
         open={locationOpen}

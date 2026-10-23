@@ -53,8 +53,9 @@ const sharedUI = {
   XDriveConfirmDialog: (props) => React.createElement('confirm-dialog', props),
   XDriveStatePanel: ({ message }) => React.createElement('p', null, message),
   XDriveStatusAlert: ({ children }) => React.createElement('p', { role: 'alert' }, children),
-  XDriveFileTagDialog: () => null, XDriveMediaDetailsInspector: () => null,
-  XDriveShareDialog: () => null,
+  XDriveFileTagDialog: (props) => React.createElement('tag-dialog', props),
+  XDriveMediaDetailsInspector: () => null,
+  XDriveShareDialog: (props) => React.createElement('share-dialog', props),
 }
 
 function load(filename, cache = new Map()) {
@@ -1405,5 +1406,479 @@ test('P1-2j 899→900→899 layout crossover must dismiss compact More rather th
     if (renderer) await act(async () => renderer.unmount())
     viewportWidth = 390
     compactTouch = false
+  }
+})
+
+
+test('P0 Viewer gates repeat downloads on narrow/wide Web and keeps retry available', async () => {
+  for (const width of [390, 900]) {
+    compactTouch = width < 900
+    viewportWidth = width
+    const node = { id: 980, revision: 4, type: 'file', name: 'duplicate.jpg', size: 200 }
+    const item = { node, metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' } }
+    const requests = []
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: { node: async () => node, mediaItem: async () => item },
+          gallerySource: {
+            downloadItems: (items) => new Promise((resolve) => {
+              requests.push({ items, resolve })
+            }),
+          },
+          shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+          onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      let action
+      if (width < 900) {
+        await openGalleryMore(renderer)
+        action = galleryMoreItems(renderer, '下载')[0]
+      } else {
+        action = buttons(renderer, '下载')[0]
+      }
+      assert.ok(action, 'both layouts must expose their authorized download')
+      await act(async () => {
+        action.props.onClick()
+        action.props.onClick()
+        await Promise.resolve()
+      })
+      assert.equal(requests.length, 1, 'two same-tick callbacks must queue only one transfer')
+      assert.deepEqual(requests[0].items.map(value => [value.node.id, value.node.revision]), [[980, 4]])
+      if (width === 900) {
+        assert.equal(buttons(renderer, '下载')[0].props.disabled, true)
+      }
+      await act(async () => {
+        requests[0].resolve()
+        await Promise.resolve()
+      })
+      await clickGalleryAction(renderer, '下载')
+      assert.equal(requests.length, 2, 'transfer acknowledgment releases the gate for explicit retry')
+      await act(async () => { requests[1].resolve(); await Promise.resolve() })
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+  compactTouch = false
+  viewportWidth = 390
+})
+
+test('P0 Viewer never attaches old download failures to a new routed photo', async () => {
+  compactTouch = false
+  viewportWidth = 900
+  const nodes = [981, 982].map(id => ({ id, revision: 1, type: 'file', name: id + '.jpg', size: 10 }))
+  const requests = [], errors = []
+  const props = (id) => ({
+    route: { app: 'media-viewer', params: { node: id } },
+    api: {
+      node: async value => nodes.find(node => node.id === value),
+      mediaItem: async value => ({
+        node: nodes.find(node => node.id === value),
+        metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' },
+      }),
+    },
+    gallerySource: {
+      downloadItems: (items) => new Promise((resolve, reject) => {
+        requests.push({ items, resolve, reject })
+      }),
+    },
+    shareDialogAdapter: {}, onReplaceRoute() {}, onClose() {},
+    onError(error) { errors.push(error.message) },
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(981)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => {
+      buttons(renderer, '下载')[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(requests.length, 1)
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(982))))
+    await act(async () => {
+      requests[0].reject(new Error('old Owner 403'))
+      await Promise.resolve()
+    })
+    assert.deepEqual(errors, [], 'obsolete failure must not overwrite the next Viewer')
+    await act(async () => {
+      buttons(renderer, '下载')[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(requests.length, 2, 'next item owns a fresh action gate')
+    assert.equal(requests[1].items[0].node.id, 982)
+    await act(async () => { requests[1].resolve(); await Promise.resolve() })
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    viewportWidth = 390
+  }
+})
+
+test('P1 Share and Inspector immediately detach when Filmstrip changes the routed Node', async () => {
+  const albumReads = []
+  compactTouch = true
+  viewportWidth = 390
+  const oldShare = sharedUI.XDriveShareDialog
+  const oldInspector = sharedUI.XDriveMediaDetailsInspector
+  sharedUI.XDriveShareDialog = props => React.createElement('test-share-dialog', props)
+  sharedUI.XDriveMediaDetailsInspector = props => React.createElement('test-media-inspector', props)
+  const nodes = [983, 984].map(id => ({ id, revision: 2, type: 'file', name: id + '.jpg', size: 10 }))
+  const props = id => ({
+    route: { app: 'media-viewer', params: { node: id } },
+    api: {
+      node: async value => nodes.find(node => node.id === value),
+      mediaItem: async value => ({
+        node: nodes.find(node => node.id === value),
+        metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' },
+      }),
+    },
+    gallerySource: { listAlbums: async () => { albumReads.push(id); return [] } },
+    shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+    onError(error) { throw error },
+  })
+  let renderer
+  const share = () => renderer.root.findByType('test-share-dialog')
+  const inspector = () => renderer.root.findByType('test-media-inspector')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(983)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const staleShare = buttons(renderer, '分享媒体')[0].props.onClick
+    const staleMore = buttons(renderer, '更多照片操作')[0].props.onClick
+    await act(async () => { staleShare() })
+    assert.equal(share().props.node.id, 983)
+    await openGalleryMore(renderer)
+    const staleInfo = galleryMoreItems(renderer, '查看属性')[0].props.onClick
+    await act(async () => { staleInfo() })
+    assert.equal(inspector().props.item.node.id, 983)
+    assert.deepEqual(albumReads, [983])
+
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(984))))
+    await act(async () => {
+      staleShare()
+      staleInfo()
+      staleMore({ currentTarget: {} })
+    })
+    assert.deepEqual(albumReads, [983],
+      'old route callback must not fetch albums from the previous data source')
+    assert.equal(share().props.node, null, 'old Share modal must not bind to a new Node')
+    assert.equal(inspector().props.item, null, 'old Inspector must not expose new media')
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(983))))
+    assert.equal(share().props.node, null, 'returning to an earlier Node does not resurrect a stale dialog')
+    assert.equal(inspector().props.item, null)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    sharedUI.XDriveShareDialog = oldShare
+    sharedUI.XDriveMediaDetailsInspector = oldInspector
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P0 same Node/revision source rebind must fence actions and modal ownership', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const oldShare = sharedUI.XDriveShareDialog
+  const oldInspector = sharedUI.XDriveMediaDetailsInspector
+  sharedUI.XDriveShareDialog = props => React.createElement('test-share-dialog', props)
+  sharedUI.XDriveMediaDetailsInspector = props => React.createElement('test-media-inspector', props)
+  const node = { id: 985, revision: 2, type: 'file', name: 'same-id.jpg', size: 10 }
+  const media = { node, metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' } }
+  const downloads = [], errors = []
+  const makeSource = owner => ({
+    listAlbums: async () => [],
+    downloadItems: items => new Promise((resolve, reject) => downloads.push({ owner, items, resolve, reject })),
+  })
+  const sourceA = makeSource('A'), sourceB = makeSource('B')
+  const apiA = { node: async () => node, mediaItem: async () => media }
+  const apiB = { node: async () => node, mediaItem: async () => media }
+  const props = (api, gallerySource) => ({
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {},
+    onError(error) { errors.push(error.message) },
+  })
+  let renderer
+  const share = () => renderer.root.findByType('test-share-dialog')
+  const inspector = () => renderer.root.findByType('test-media-inspector')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(apiA, sourceA)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => { buttons(renderer, '分享媒体')[0].props.onClick() })
+    await openGalleryMore(renderer)
+    await act(async () => { galleryMoreItems(renderer, '查看属性')[0].props.onClick() })
+    assert.equal(share().props.node.id, 985)
+    assert.equal(inspector().props.item.node.id, 985)
+    await act(async () => {
+      await clickGalleryAction(renderer, '下载')
+      await Promise.resolve()
+    })
+    assert.equal(downloads.length, 1)
+    assert.equal(downloads[0].owner, 'A')
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(apiB, sourceB)))
+    })
+    assert.equal(share().props.node, null, 'old account Share cannot expose the new source with matching Node ID')
+    assert.equal(inspector().props.item, null, 'old Inspector is closed before new source is visible')
+    await act(async () => {
+      await clickGalleryAction(renderer, '下载')
+      await Promise.resolve()
+    })
+    assert.equal(downloads.length, 2, 'new data source owns its own download gate')
+    assert.equal(downloads[1].owner, 'B')
+    await act(async () => {
+      downloads[0].reject(new Error('old account failed'))
+      await Promise.resolve()
+    })
+    assert.deepEqual(errors, [], 'stale A failure must never become a B error')
+    await act(async () => {
+      downloads[1].resolve()
+      await Promise.resolve()
+    })
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    sharedUI.XDriveShareDialog = oldShare
+    sharedUI.XDriveMediaDetailsInspector = oldInspector
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P0 same Node/revision pending delete does not block a new owner or close its Viewer', async () => {
+  compactTouch = false
+  viewportWidth = 900
+  const node = { id: 986, revision: 5, type: 'file', name: 'owner-collision.jpg', size: 20 }
+  const media = { node, metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' } }
+  const queued = []
+  const makeSource = owner => ({
+    deleteItems: items => new Promise(resolve => queued.push({ owner, items, resolve })),
+  })
+  const sourceA = makeSource('A'), sourceB = makeSource('B')
+  const apiA = { node: async () => node, mediaItem: async () => media }
+  const apiB = { node: async () => node, mediaItem: async () => media }
+  let closed = 0, receipts = 0, renderer
+  const props = (api, gallerySource) => ({
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() { closed++ },
+    onFileOperationQueued() { receipts++ },
+    onReplaceRoute() {}, onError(error) { throw error },
+  })
+  const confirm = () => renderer.root.find(el => el.type === 'confirm-dialog')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(apiA, sourceA)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => { buttons(renderer, '删除媒体')[0].props.onClick() })
+    await act(async () => { confirm().props.onConfirm(); confirm().props.onConfirm() })
+    assert.equal(queued.length, 1, 'old account submit remains immediate single-flight')
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(apiB, sourceB)))
+    })
+    assert.equal(confirm().props.open, false, 'A confirmation disarms when API/source changes')
+    assert.equal(buttons(renderer, '删除媒体')[0].props.disabled, false,
+      'A pending delete cannot disable the new owner with an identical Node and revision')
+    await act(async () => { buttons(renderer, '删除媒体')[0].props.onClick() })
+    assert.equal(confirm().props.open, true)
+    await act(async () => { confirm().props.onConfirm(); confirm().props.onConfirm() })
+    assert.equal(queued.length, 2)
+    assert.equal(queued[1].owner, 'B')
+    assert.equal(confirm().props.loading, true)
+    await act(async () => {
+      queued[0].resolve({ id: 'A-operation', status: 'queued' })
+      await Promise.resolve()
+    })
+    assert.equal(closed, 0, 'stale A receipt must never close B')
+    assert.equal(receipts, 0, 'stale A receipt must never refresh B account Task Center')
+    assert.equal(confirm().props.loading, true, 'A completion must not clear B pending indicator')
+    await act(async () => {
+      queued[1].resolve({ id: 'B-operation', status: 'queued' })
+      await Promise.resolve()
+    })
+    assert.equal(closed, 1)
+    assert.equal(receipts, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P0 Files Quick Look fences Share/Tags across routes and identical Node/revision in another source', async () => {
+  const node = id => ({ id, revision: 7, name: id + '.pdf', type: 'file', size: 800 })
+  let resolveOldTags
+  const apiA = {
+    node: async id => node(id),
+    fileTags: () => new Promise(resolve => { resolveOldTags = resolve }),
+  }
+  const apiB = {
+    node: async id => node(id),
+    fileTags: async () => [{ id: 2, name: 'B tag' }],
+  }
+  const sourceA = {}, sourceB = {}
+  const props = (id, api = apiA, gallerySource = sourceA) => ({
+    route: { app: 'preview', params: { node: id } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  let renderer
+  const shareNode = () => renderer.root.findAll(el => el.type === 'share-dialog')[0]?.props.node ?? null
+  const tagDialog = () => renderer.root.findAll(el => el.type === 'tag-dialog')[0]
+  const render = async (id, api, source) => {
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(id, api, source)))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(701)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const oldShare = buttons(renderer, '分享')[0].props.onClick
+    await act(async () => buttons(renderer, '分享')[0].props.onClick())
+    assert.equal(shareNode()?.id, 701)
+
+    await render(702, apiA, sourceA)
+    assert.equal(shareNode(), null, 'Quick Look must close the old file share on navigation')
+    await render(701, apiA, sourceA)
+    assert.equal(shareNode(), null, 'returning to an old Node never resurrects its share')
+    await act(async () => oldShare())
+    assert.equal(shareNode(), null, 'old JSX Share handler must be inert after A→B→A')
+
+    const oldTags = buttons(renderer, '标签')[0].props.onClick
+    await act(async () => oldTags())
+    assert.equal(tagDialog().props.open, true)
+    assert.equal(typeof resolveOldTags, 'function')
+    await render(701, apiB, sourceB)
+    assert.equal(shareNode(), null)
+    assert.equal(tagDialog().props.open, false, 'same Node/revision in another Owner disarms Tags')
+    await act(async () => {
+      resolveOldTags([{ id: 1, name: 'A private tag' }])
+      await new Promise(resolve => setImmediate(resolve))
+      oldTags()
+      oldShare()
+    })
+    assert.equal(tagDialog().props.open, false, 'old Owner tags callback cannot open a new Owner dialog')
+    assert.equal(shareNode(), null, 'old Owner share callback cannot open a new Owner dialog')
+    assert.deepEqual(tagDialog().props.tags, [], 'old Owner tags response cannot appear under new account')
+
+    await act(async () => buttons(renderer, '标签')[0].props.onClick())
+    assert.equal(tagDialog().props.open, true)
+    assert.deepEqual(tagDialog().props.tags, [{ id: 2, name: 'B tag' }])
+    await act(async () => tagDialog().props.onClose())
+    await act(async () => buttons(renderer, '分享')[0].props.onClick())
+    assert.equal(shareNode()?.id, 701, 'current Owner can still share its own file')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abort signal', async () => {
+  const seen = []
+  const api = {
+    node: async id => ({ id, revision: 9, type: 'file',
+      name: id === 31 ? 'image.jpg' : id === 32 ? 'document.pdf' : 'voice.mp3', size: 300 }),
+    mediaThumbnail: async (id, signal, revision) => {
+      seen.push(['thumbnail', id, signal, revision])
+      throw new Error('simulated interrupted thumbnail')
+    },
+    filePreviewURL: async (id, signal) => {
+      seen.push(['preview-ticket', id, signal])
+      return '/authenticated/preview'
+    },
+  }
+  const props = (app, node) => ({
+    route: { app, params: { node } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props('preview', 31)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    let content = renderer.root.find(el => el.type === 'preview-content')
+    const thumbAbort = new AbortController()
+    assert.equal(await content.props.loadImagePreview(content.props.target, thumbAbort.signal), null)
+    assert.deepEqual(seen.at(-1), ['thumbnail', 31, thumbAbort.signal, 9],
+      'thumbnail fetch receives the real signal and exact Node revision')
+
+    for (const [app, id, kind] of [['pdf-viewer', 32, 'pdf'], ['audio-player', 33, 'audio']]) {
+      await act(async () => {
+        renderer.update(React.createElement(WebFileViewerApps, props(app, id)))
+      })
+      content = renderer.root.find(el => el.type === 'preview-content')
+      const controller = new AbortController()
+      assert.equal(await content.props.loadPreviewURL(content.props.target, kind, controller.signal),
+        '/authenticated/preview')
+      assert.deepEqual(seen.at(-1), ['preview-ticket', id, controller.signal],
+        app + ' must forward the shared surface AbortSignal to the signed ticket request')
+    }
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 Files Quick Look downloads are single-flight and stale Owner handlers cannot start old transfers', async () => {
+  const node = { id: 807, revision: 1, name: 'archive.pdf', type: 'file', size: 32 }
+  let resolveFirst
+  let firstCalls = 0, secondCalls = 0
+  const firstAPI = {
+    node: async () => node,
+    download: () => { firstCalls++; return new Promise(resolve => { resolveFirst = resolve }) },
+  }
+  const nextAPI = {
+    node: async () => node,
+    download: async () => { secondCalls++ },
+  }
+  const firstSource = {}, nextSource = {}
+  const props = (api, gallerySource) => ({
+    route: { app: 'preview', params: { node: 807 } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(firstAPI, firstSource)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const stale = buttons(renderer, '下载')[0].props.onClick
+    await act(async () => { stale(); stale() })
+    assert.equal(firstCalls, 1, 'two same-tick clicks must submit one download')
+    assert.equal(buttons(renderer, '下载')[0].props.disabled, true)
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(nextAPI, nextSource)))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(buttons(renderer, '下载')[0].props.disabled, false,
+      'an old Owner transfer may not disable the next Owner with the same Node identity')
+    await act(async () => {
+      stale()
+      buttons(renderer, '下载')[0].props.onClick()
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(firstCalls, 1, 'stale old-account handler must not create another request')
+    assert.equal(secondCalls, 1, 'new Owner can initiate its own download')
+
+    await act(async () => {
+      resolveFirst()
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(buttons(renderer, '下载')[0].props.disabled, false,
+      'late old transfer acknowledgment must not change the new Owner busy state')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
   }
 })

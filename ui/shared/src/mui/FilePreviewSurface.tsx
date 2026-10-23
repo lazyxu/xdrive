@@ -412,8 +412,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
     if (!loaders.url) return () => undefined
 
+    // The shared loader contract accepts AbortSignal. A stale route or
+    // revision must release its pending media request, not just ignore its
+    // eventual URL after the response has consumed network resources.
+    const controller = new AbortController()
     setLoading(true)
-    void loaders.url(currentTarget, previewKind)
+    void loaders.url(currentTarget, previewKind, controller.signal)
       .then((value) => {
         if (!value) {
           if (active) setFailed(true)
@@ -434,6 +438,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
     return () => {
       active = false
+      controller.abort()
       if (previewGenerationRef.current === generation) previewGenerationRef.current += 1
     }
   }, [
@@ -649,7 +654,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         </Box>
       )
     }
-    if (loading) {
+    // A target change can render before its effect clears the previous URL.
+    // Never mount old video/audio/PDF bytes under a newer Node/revision.
+    if (loading || acquiredIdentityRef.current !== sourceIdentity) {
       return (
         <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
           <CircularProgress size={26} />

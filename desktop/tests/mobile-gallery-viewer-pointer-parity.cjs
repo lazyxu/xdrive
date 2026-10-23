@@ -52,7 +52,7 @@ const Preview = loaded.exports.XDriveOpenPreviewDialog
 const findData = (tree, key) => tree.root.findAll((node) => node.props?.[key] !== undefined)
 const findType = (tree, kind) => tree.root.findAll((node) => node.type === kind)
 
-async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false }, verify) {
+async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false, keepChromeVisible = false }, verify) {
   viewport = { width, coarse }
   const originalWindow = global.window
   const originalHTMLElement = global.HTMLElement
@@ -80,6 +80,7 @@ async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false 
       title: 'sample.jpg',
       immersive,
       mobileEdgeToEdge,
+      keepChromeVisible,
       quickLook: !immersive,
       actions: React.createElement('button', {
         'data-shared-media-action': true,
@@ -303,4 +304,62 @@ test('P1-2b edge-to-edge mode is owned only by the existing shared Gallery Viewe
   assert.match(pageSource, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
   assert.match(webSource, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
   assert.match(adapterSource, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
+})
+
+
+test('P1 shared Viewer treats SVG button targets as interactive and rejected gestures as non-taps', async () => {
+  await withPreview({ width: 390, coarse: false, immersive: true },
+    async ({ view, timers, FakeHTMLElement }) => {
+      const content = findType(view, 'dialogcontent')[0]
+      const chrome = () => view.root.findAll(node =>
+        node.props?.['data-xdrive-preview-chrome'] === 'header')[0]
+      const svgChildOfButton = { closest(selector) {
+        assert.match(selector, /button/)
+        return { tagName: 'button' }
+      } }
+      const iconTap = { pointerId: 71, pointerType: 'touch', clientX: 150,
+        clientY: 100, target: svgChildOfButton }
+      await act(async () => {
+        content.props.onPointerDownCapture(iconTap)
+        content.props.onPointerUpCapture(iconTap)
+      })
+      assert.equal([...timers.values()].filter(t => t.delay === 260).length, 0,
+        'tapping SVG inside a button must not hide the toolbars')
+      assert.equal(chrome().props.sx.opacity, 1)
+
+      const farStart = { pointerId: 72, pointerType: 'touch', clientX: 10,
+        clientY: 100, target: new FakeHTMLElement() }
+      await act(async () => {
+        content.props.onPointerDownCapture(farStart)
+        content.props.onPointerUpCapture({ ...farStart, clientX: 200 })
+      })
+      assert.equal([...timers.values()].filter(t => t.delay === 260).length, 0,
+        'pointerup far from pointerdown cannot count as a tap if pointermove was skipped')
+      await act(async () => {
+        content.props.onPointerDownCapture(farStart)
+        content.props.onPointerCancelCapture(farStart)
+      })
+      assert.equal([...timers.values()].filter(t => t.delay === 260).length, 0)
+    })
+})
+
+test('P1 shared Viewer keeps chrome accessible while an action menu or modal owns focus', async () => {
+  await withPreview({ width: 390, coarse: false, immersive: true, keepChromeVisible: true },
+    async ({ view, timers, FakeHTMLElement, runTimeout }) => {
+      assert.equal([...timers.values()].some(t => t.delay === 2200), false,
+        'More/Inspector must suspend auto-hide while open')
+      const content = findType(view, 'dialogcontent')[0]
+      const tap = { pointerId: 73, pointerType: 'touch', clientX: 80,
+        clientY: 120, target: new FakeHTMLElement() }
+      await act(async () => {
+        content.props.onPointerDownCapture(tap)
+        content.props.onPointerUpCapture(tap)
+      })
+      await act(async () => runTimeout(260))
+      const header = view.root.findAll(node =>
+        node.props?.['data-xdrive-preview-chrome'] === 'header')[0]
+      assert.equal(header.props.sx.opacity, 1,
+        'background tap cannot hide controls behind an open action menu')
+      assert.equal([...timers.values()].some(t => t.delay === 2200), false)
+    })
 })

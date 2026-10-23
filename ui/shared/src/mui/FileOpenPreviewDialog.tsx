@@ -27,6 +27,7 @@ export type XDriveOpenPreviewDialogProps = {
   fullScreen?: boolean
   onFullScreenChange?: (fullScreen: boolean) => void
   chromeAutoHideMs?: number
+  keepChromeVisible?: boolean
   onClose: () => void
   children: ReactNode
 }
@@ -48,6 +49,7 @@ export function XDriveOpenPreviewDialog({
   fullScreen = false,
   onFullScreenChange,
   chromeAutoHideMs = 2200,
+  keepChromeVisible = false,
   onClose,
   children,
 }: XDriveOpenPreviewDialogProps) {
@@ -86,13 +88,13 @@ export function XDriveOpenPreviewDialog({
   const showChrome = useCallback(() => {
     setChromeVisible(true)
     clearChromeTimer()
-    if (immersive && open) {
+    if (immersive && open && !keepChromeVisible) {
       chromeTimerRef.current = window.setTimeout(() => {
         chromeTimerRef.current = null
         setChromeVisible(false)
       }, chromeAutoHideMs)
     }
-  }, [chromeAutoHideMs, clearChromeTimer, immersive, open])
+  }, [chromeAutoHideMs, clearChromeTimer, immersive, keepChromeVisible, open])
 
   const clearTouchTapTimer = useCallback(() => {
     if (touchTapTimerRef.current !== null) {
@@ -106,10 +108,12 @@ export function XDriveOpenPreviewDialog({
     touchPointersRef.current.add(event.pointerId)
     if (touchPointersRef.current.size > 1) {
       if (touchTapRef.current) touchTapRef.current.multi = true
+      lastTouchTapRef.current = null
       clearTouchTapTimer()
       return
     }
-    const target = event.target instanceof HTMLElement ? event.target : null
+    // SVG icons nested inside buttons are also interactive tap targets.
+    const target = event.target as Element | null
     touchTapRef.current = {
       pointerID: event.pointerId,
       startX: event.clientX,
@@ -134,7 +138,8 @@ export function XDriveOpenPreviewDialog({
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
     touchTapRef.current = null
-    if (tap.moved || tap.multi || tap.interactive) return
+    if (tap.moved || tap.multi || tap.interactive ||
+        Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) return
 
     const now = Date.now()
     const previous = lastTouchTapRef.current
@@ -149,7 +154,7 @@ export function XDriveOpenPreviewDialog({
     }
 
     lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
-    const hideChrome = chromeVisible
+    const hideChrome = chromeVisible && !keepChromeVisible
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
       touchTapTimerRef.current = null
@@ -165,6 +170,8 @@ export function XDriveOpenPreviewDialog({
   const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
     touchPointersRef.current.delete(event.pointerId)
     if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
+    lastTouchTapRef.current = null
+    clearTouchTapTimer()
   }
 
   useEffect(() => () => {

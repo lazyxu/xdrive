@@ -59,7 +59,7 @@ export function XDriveMediaViewerContent({
       (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')
     ) return null
     return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision, onProgress)
-  }, [item.node.id, item.node.name, loadPreviewURL])
+  }, [item.node.id, item.node.name, item.node.revision, loadPreviewURL])
 
   const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal) => {
     if (!item.metadata.has_thumbnail) return null
