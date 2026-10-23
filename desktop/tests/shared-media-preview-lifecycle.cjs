@@ -277,3 +277,85 @@ test('semantic media Loader captures exactly the current Node revision after in-
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('P1 text preview aborts stale HTTP readers and discards late text on revision change/unmount', async () => {
+  const reads = []
+  const target = revision => ({ id: 600, revision, name: 'notes.txt', kind: 'file' })
+  const loadTextPreview = (node, signal) => new Promise(resolve => reads.push({ node, signal, resolve }))
+  let renderer
+  const shown = () => renderer.root.findAllByType('pre').map(node => node.children.join(''))
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: target(1), loadTextPreview,
+      }))
+    })
+    assert.equal(reads.length, 1)
+    assert.ok(reads[0].signal instanceof AbortSignal)
+    assert.equal(reads[0].signal.aborted, false)
+    await act(async () => {
+      renderer.update(React.createElement(XDriveFilePreviewSurface, {
+        target: target(2), loadTextPreview,
+      }))
+    })
+    assert.equal(reads[0].signal.aborted, true, 'new revision cancels old text network request')
+    assert.equal(reads.length, 2)
+    assert.equal(reads[1].signal.aborted, false)
+    await act(async () => {
+      reads[0].resolve({ text: 'PRIVATE OLD REVISION', truncated: false, size: 20 })
+      await Promise.resolve()
+    })
+    assert.deepEqual(shown(), [], 'late old text must not be rendered')
+    await act(async () => {
+      reads[1].resolve({ text: 'Current revision', truncated: false, size: 16 })
+      await Promise.resolve()
+    })
+    assert.deepEqual(shown(), ['Current revision'])
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.equal(reads[1].signal.aborted, true, 'closing Viewer cancels the current text reader')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P1 FileExplorer Owner scope remounts in-place text Inspector and Quick Look', async () => {
+  const explorer = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  assert.match(explorer, /<XDriveFilePreviewSurface\s+key=\{interactionScopeKey\}/,
+    'Inspector must remount when the authorized FileExplorer scope changes')
+  assert.match(explorer, /<XDriveFileQuickLookDialog\s+key=\{interactionScopeKey\}/,
+    'Quick Look must remount when the authorized FileExplorer scope changes')
+
+  const current = { id: 771, revision: 1, name: 'same-id.txt', kind: 'file' }
+  const reads = []
+  const scoped = owner => React.createElement(XDriveFilePreviewSurface, {
+    key: owner, target: current,
+    loadTextPreview: (_item, signal) => new Promise(resolve => reads.push({ owner, signal, resolve })),
+  })
+  let renderer
+  try {
+    await act(async () => { renderer = create(scoped('Owner A')) })
+    assert.equal(reads.length, 1)
+    assert.equal(reads[0].signal.aborted, false)
+
+    await act(async () => { renderer.update(scoped('Owner B')) })
+    assert.equal(reads.length, 2, 'same Node/revision under a new Owner requires a new text read')
+    assert.equal(reads[0].signal.aborted, true, 'old Owner text request must abort on remount')
+    assert.equal(reads[1].signal.aborted, false)
+
+    await act(async () => {
+      reads[0].resolve({ text: 'OLD OWNER PRIVATE TEXT', truncated: false, size: 22 })
+      await Promise.resolve()
+    })
+    assert.equal(renderer.root.findAllByType('pre').length, 0, 'old Owner text cannot paint in the new Viewer')
+
+    await act(async () => {
+      reads[1].resolve({ text: 'New owner text', truncated: false, size: 14 })
+      await Promise.resolve()
+    })
+    assert.deepEqual(renderer.root.findAllByType('pre').map(x => x.children.join('')), ['New owner text'])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})

@@ -951,10 +951,10 @@ export default function WebFileExplorer({
     if (allowSelectionAction('cut', selected)) cutWorkspaceItems(selected)
   }
 
-  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (item.kind !== 'file') return null
+  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (item.kind !== 'file' || signal?.aborted) return null
     try {
-      return await api.fileTextPreview(Number(item.id))
+      return await api.fileTextPreview(Number(item.id), signal)
     } catch {
       return null
     }

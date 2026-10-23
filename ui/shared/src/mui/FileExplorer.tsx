@@ -983,7 +983,7 @@ export function XDriveFileExplorer({
   navigationPane?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
-  loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
+  loadTextPreview?: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<XDriveFileTextPreview | null | undefined>
   loadPreviewURL?: (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
@@ -6961,6 +6961,7 @@ export function XDriveFileExplorer({
                   }}
                 >
                   <XDriveFilePreviewSurface
+                    key={interactionScopeKey}
                     target={inspectorItem}
                     loadTextPreview={loadTextPreview}
                     loadPreviewURL={loadPreviewURL}
@@ -7047,6 +7048,7 @@ export function XDriveFileExplorer({
       />
 
       <XDriveFileQuickLookDialog
+        key={interactionScopeKey}
         open={quickLookItem !== null}
         item={quickLookItem}
         positionLabel={quickLookItem

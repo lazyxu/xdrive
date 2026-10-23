@@ -758,8 +758,9 @@ function WebPreviewApp({
             <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
           </Box>
         ) : <XDriveFilePreviewSurface
+          key={dialogOwner.session}
           target={target}
-          loadTextPreview={() => api.fileTextPreview(viewer.node!.id)}
+          loadTextPreview={(currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal)}
           loadImagePreview={loadThumbnail}
           loadPreviewURL={async (_target, kind, signal) => (
             kind === 'live_photo'
@@ -1431,15 +1432,21 @@ function WebTextViewerApp({
   onClose: (node: Node | null) => void
 }) {
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
-  // Node and preview become visible together, only for the owning API/route.
+  // One reader per API and route, even when navigation returns A→B→A.
+  // Ownership changes during render, before any stale response can paint.
+  const readerOwnerRef = useRef({ api, nodeID: route.params.node })
+  if (readerOwnerRef.current.api !== api ||
+      readerOwnerRef.current.nodeID !== route.params.node) {
+    readerOwnerRef.current = { api, nodeID: route.params.node }
+  }
+  const readerOwner = readerOwnerRef.current
   const [read, setRead] = useState<{
-    api: XDriveApi
-    nodeID: number
+    owner: typeof readerOwner
     node: Node | null
     preview: XDriveFileTextPreview | null
     error: string
   } | null>(null)
-  const current = read?.api === api && read.nodeID === route.params.node ? read : null
+  const current = read?.owner === readerOwner ? read : null
   const node = current?.node ?? null
   const preview = current?.preview ?? null
   const error = current?.error ?? ''
@@ -1447,18 +1454,25 @@ function WebTextViewerApp({
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    let active = true
-    const nodeID = route.params.node
-    void Promise.all([api.node(nodeID), api.fileTextPreview(nodeID)])
-      .then(([nextNode, nextPreview]) => {
-        if (active) setRead({ api, nodeID, node: nextNode, preview: nextPreview, error: '' })
-      })
-      .catch((reason) => {
-        if (active) setRead({ api, nodeID, node: null, preview: null,
+    const controller = new AbortController()
+    const nodeID = readerOwner.nodeID
+    // Abort both metadata and text bytes when closing, navigating or
+    // changing accounts. An A→B→A return has a fresh identity.
+    void Promise.all([
+      api.node(nodeID, controller.signal),
+      api.fileTextPreview(nodeID, controller.signal),
+    ]).then(([nextNode, nextPreview]) => {
+      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
+        setRead({ owner: readerOwner, node: nextNode, preview: nextPreview, error: '' })
+      }
+    }).catch((reason) => {
+      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
+        setRead({ owner: readerOwner, node: null, preview: null,
           error: reason instanceof Error ? reason.message : String(reason) })
-      })
-    return () => { active = false }
-  }, [api, route.params.node])
+      }
+    })
+    return () => controller.abort()
+  }, [api, readerOwner])
 
   useEffect(() => {
     if (!preview || !route.params.line || !textRef.current) return

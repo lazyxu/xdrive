@@ -27,6 +27,7 @@ import {
 
 export type XDriveFilePreviewTextLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
+  signal?: AbortSignal,
 ) => Promise<XDriveFileTextPreview | null | undefined>
 
 export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
@@ -392,21 +393,26 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
     if (previewKind === 'text') {
       if (!loaders.text) return () => undefined
+      const controller = new AbortController()
       setLoading(true)
-      void loaders.text(currentTarget)
+      void loaders.text(currentTarget, controller.signal)
         .then((value) => {
-          if (!active) return
+          if (!active || controller.signal.aborted ||
+              previewGenerationRef.current !== generation) return
           if (value) setTextPreview(value)
           else setFailed(true)
         })
         .catch(() => {
-          if (active) setFailed(true)
+          if (active && !controller.signal.aborted &&
+              previewGenerationRef.current === generation) setFailed(true)
         })
         .finally(() => {
-          if (active) setLoading(false)
+          if (active && previewGenerationRef.current === generation) setLoading(false)
         })
       return () => {
         active = false
+        controller.abort()
+        if (previewGenerationRef.current === generation) previewGenerationRef.current += 1
       }
     }
 
