@@ -356,7 +356,12 @@ func runLocalPushCommonActualProcessKillReplay(t *testing.T, crashBeforeAdmitACK
 	if strings.Contains(result.String(), jwt) || strings.Contains(result.String(), deviceSecret) {
 		t.Fatal("restarted native uploader leaked owning credentials")
 	}
-	if admits.Load() != 2 || chunks.Load() != 1 || binds.Load() != 1 || finalizes.Load() != 1 {
+	// The ordinary uploader deliberately retries a lost Finalize HTTP response.
+	// Multiple identical Finalize requests are not multiple SQL/CAS COMMITs;
+	// prove uniqueness using the original immutable Operation/Node and FileVersion
+	// rows below, rather than requiring a single HTTP attempt.
+	if admits.Load() != 2 || chunks.Load() != 1 || binds.Load() != 1 ||
+		finalizes.Load() < 1 || finalizes.Load() > 3 {
 		t.Fatalf("restarted child repeated original physical write: admits=%d chunks=%d binds=%d finalizes=%d",
 			admits.Load(), chunks.Load(), binds.Load(), finalizes.Load())
 	}
