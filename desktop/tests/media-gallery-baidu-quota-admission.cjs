@@ -25,7 +25,7 @@ test('A3d2m1b2b2b1 accounts are checked BEFORE claim and AGAIN before quota, nev
   assert.doesNotMatch(quota, /http\.Get\(|http\.Post\(|ForwardWGS84ToBD09|BrowserAK|BMAP_PROXY_URL/)
 })
 
-test('A3 Geoconv quota never authorizes a second map renderer; retain signed JSAPI4 and Owner Gallery data source', () => {
+test('A3 Geoconv quota does not bypass signed Child; legacy prototype needs explicit mode and Owner opt-in', () => {
   const policy = read('internal/baidumapjsapi/resource_policy.go')
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   const placesMap = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
@@ -36,7 +36,10 @@ test('A3 Geoconv quota never authorizes a second map renderer; retain signed JSA
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(placesMap, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(placesMap, /activation_state === 'authorized_signed_release'/)
-  assert.doesNotMatch(placesMap, /MediaGalleryBaiduStaticMap|MediaGalleryBaiduPrototypeMap|loadBaiduStaticMap/)
+  assert.doesNotMatch(placesMap, /MediaGalleryBaiduStaticMap|loadBaiduStaticMap/)
+  assert.match(placesMap, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(placesMap, /mapMode === 'isolated' && status === 'authorized'/)
+  assert.match(placesMap, /mapMode === 'prototype' && !desktopOnly/)
   assert.match(policy, /return ErrGateClosed/)
   assert.match(gallery, /getBaiduMapIndexJob/)
   assert.match(web, /getBaiduMapIndexJob/)

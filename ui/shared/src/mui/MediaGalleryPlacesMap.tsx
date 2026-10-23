@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
-import type { MediaPlaceFacet, MediaBaiduNativeCellSelection } from '../models'
+import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds } from '../models'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
+import { XDriveMediaGalleryBaiduPrototypeMap } from './MediaGalleryBaiduPrototypeMap'
+import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL } from '../media-gallery-places-map-mode'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
   xDriveReadBaiduMapDiagnostic, xDriveSubscribeBaiduMapDiagnostics,
@@ -11,11 +13,12 @@ import {
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 
-/** Signed, isolated HTTPS JSAPI4 Child is the only photo-map renderer.
- * A release denial or Child failure never falls back to a static map. */
+/** Two user-selected dynamic SDK runtimes. A denied signed release never
+ * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, loadPhotoCoverThumbnail, getBaiduJSAPI4Status,
+  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype, onOpenViewportPhotos,
   mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenNearby, compact = false,
@@ -26,6 +29,9 @@ export function XDriveMediaGalleryPlacesMap({
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onNativeCameraClear?: () => void
   listBaiduNativeCells?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCells']
+  listPlacesMapOverview?: import('./MediaGallery').MediaGalleryDataSource['listPlacesMapOverview']
+  getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
+  onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
@@ -52,6 +58,15 @@ export function XDriveMediaGalleryPlacesMap({
   const [mapReady, setMapReady] = useState(false)
   const [retry, setRetry] = useState(0)
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
+  // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
+  const mapMode = desktopOnly ? 'isolated' : xDrivePlacesMapModeFromHref(
+    typeof window === 'undefined' ? '' : window.location.href,
+  )
+  const changeMapMode = (next: 'prototype' | 'isolated') => {
+    if (desktopOnly || mapMode === next || typeof window === 'undefined') return
+    const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
+    if (href) window.location.replace(href)
+  }
   const hasChildPorts = Boolean(!desktopOnly && getBaiduJSAPI4Status &&
     mintBaiduIsolatedChildTicket && listBaiduNativeCells && onOpenBaiduNativeCell)
   const cameraRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
@@ -61,6 +76,12 @@ export function XDriveMediaGalleryPlacesMap({
     cameraRef.current = null
     onNativeCameraClear?.()
   }, [onNativeCameraClear])
+  const rememberCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
+    if (!xDriveValidBaiduNativeCameraSnapshot(camera)) return
+    cameraRef.current = { coordinate_space: 'bd09ll', latitude: camera.latitude,
+      longitude: camera.longitude, zoom: camera.zoom }
+    onNativeCameraChange?.(camera)
+  }, [onNativeCameraChange])
   const [diagnosis, setDiagnosis] = useState<{ scope: string; value: XDriveBaiduMapDiagnostic | null }>(
     { scope: diagnosticScope ?? '', value: null },
   )
@@ -95,7 +116,7 @@ export function XDriveMediaGalleryPlacesMap({
     setChildFailed(false)
     setMapReady(false)
     setStatus('checking')
-    if (desktopOnly) return
+    if (desktopOnly || mapMode === 'prototype') return
     if (!hasChildPorts || !getBaiduJSAPI4Status) {
       setStatus('unsupported')
       if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'client_transport_missing')
@@ -121,8 +142,8 @@ export function XDriveMediaGalleryPlacesMap({
         diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
     })
     return () => controller.abort()
-  }, [desktopOnly, hasChildPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
-  const nativeEnabled = status === 'authorized' && !childFailed && childOrigin !== ''
+  }, [desktopOnly, mapMode, hasChildPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
+  const nativeEnabled = mapMode === 'isolated' && status === 'authorized' && !childFailed && childOrigin !== ''
 
   return (
     <Paper variant="outlined" data-xdrive-gallery-places-map
@@ -137,6 +158,25 @@ export function XDriveMediaGalleryPlacesMap({
             ? `本页 ${places.length.toLocaleString('zh-CN')} 个地点`
             : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} />
         </Stack>
+      ) : null}
+      {!desktopOnly ? (
+        <Stack data-xdrive-places-map-mode direction="row" spacing={1}
+          sx={{ px: 1.5, py: 1, flexWrap: 'wrap' }}>
+          <Button size="small" data-xdrive-map-mode-prototype
+            variant={mapMode === 'prototype' ? 'contained' : 'outlined'}
+            aria-pressed={mapMode === 'prototype'}
+            onClick={() => changeMapMode('prototype')}>同页原型（默认）</Button>
+          <Button size="small" data-xdrive-map-mode-isolated
+            variant={mapMode === 'isolated' ? 'contained' : 'outlined'}
+            aria-pressed={mapMode === 'isolated'}
+            onClick={() => changeMapMode('isolated')}>安全隔离版</Button>
+        </Stack>
+      ) : null}
+      {mapMode === 'prototype' && !desktopOnly ? (
+        <Typography variant="caption" color="text.secondary"
+          data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>
+          同页原型直接在图库页面执行百度第三方脚本，不具备独立 Origin 隔离；切换安全版会重新加载页面。
+        </Typography>
       ) : null}
       <Box component="details" data-xdrive-places-map-options sx={{ px: 1.5, pb: 1 }}>
         <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
@@ -165,7 +205,9 @@ export function XDriveMediaGalleryPlacesMap({
           ) : null}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          仅显示当前账户已授权的真实 GPS 照片；照片数量和 Viewer 使用同一 Server Range。
+          {mapMode === 'prototype'
+            ? '同页原型使用当前账户的 GPS 聚合代表点；照片墙仍经 Server Owner 授权。高倍视窗附近范围不等于精确 BD-09 Range。'
+            : '隔离版仅显示当前账户已授权的 GPS 媒体；照片数量和 Viewer 使用同一 Server Range。'}
         </Typography>
       </Box>
       {nativeEnabled && !mapReady ? (
@@ -173,7 +215,27 @@ export function XDriveMediaGalleryPlacesMap({
           正在初始化百度动态地图…
         </Typography>
       ) : null}
-      {desktopOnly ? (
+      {mapMode === 'prototype' && !desktopOnly ? (
+        getBaiduJSAPIPrototype && listPlacesMapOverview ? (
+          <XDriveMediaGalleryBaiduPrototypeMap
+            key={diagnosticScope ?? 'places-prototype'}
+            getPrototypeConfig={getBaiduJSAPIPrototype}
+            listPlacesMapOverview={listPlacesMapOverview}
+            initialNativeCamera={cameraRef.current ?? undefined}
+            onNativeCameraChange={rememberCamera}
+            onOpenPlace={onOpenPlace}
+            onOpenViewportPhotos={onOpenViewportPhotos}
+            loadThumbnail={loadPhotoCoverThumbnail}
+            diagnosticScope={diagnosticScope}
+          />
+        ) : (
+          <Box role="alert" data-xdrive-baidu-prototype-unavailable sx={{ px: 1.5, pb: 1.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              当前 Web / Server 缺少同页原型接口；可切换安全隔离版，或更新到匹配版本。
+            </Typography>
+          </Box>
+        )
+      ) : desktopOnly ? (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
           <Button variant="outlined" onClick={onOpenSecureDesktopMap}>在独立 HTTPS 安全窗口打开动态地图</Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
@@ -187,7 +249,7 @@ export function XDriveMediaGalleryPlacesMap({
           listOwnerCells={listBaiduNativeCells} loadThumbnail={loadPhotoCoverThumbnail}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}
           onOpenViewport={onOpenBaiduNativeViewport}
-          onInvalidated={onBaiduNativeCellInvalidated} onCamera={onNativeCameraChange}
+          onInvalidated={onBaiduNativeCellInvalidated} onCamera={rememberCamera}
           onCameraClear={clearCamera} onReady={setMapReady}
           onFailure={() => setChildFailed(true)}
           initialCamera={cameraRef.current ?? undefined} scope={diagnosticScope}

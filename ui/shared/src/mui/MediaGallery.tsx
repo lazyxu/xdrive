@@ -321,6 +321,7 @@ export interface MediaGalleryDataSource {
   mintBaiduIsolatedChildTicket?: (signal: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; child_origin: string; ticket: string
   }>
+  getBaiduJSAPIPrototype?: (signal: AbortSignal) => Promise<import('../models').XDriveBaiduJSAPIPrototypeConfig>
   mintBaiduJSAPI4Session?: (signal: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; runtime_enabled: true
   }>
@@ -3600,6 +3601,7 @@ export function XDriveMediaGalleryPage({
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
+        getBaiduJSAPIPrototype={source.getBaiduJSAPIPrototype}
         mintBaiduIsolatedChildTicket={source.mintBaiduIsolatedChildTicket}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
@@ -4099,6 +4101,7 @@ export interface XDriveMediaGalleryProps {
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
+  getBaiduJSAPIPrototype?: MediaGalleryDataSource['getBaiduJSAPIPrototype']
   mintBaiduIsolatedChildTicket?: MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
@@ -5814,6 +5817,7 @@ export function XDriveMediaGallery({
   listBaiduNativeViewport,
   listBaiduNativeCells,
   getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype,
   mintBaiduJSAPI4Session,
   mintBaiduIsolatedChildTicket,
   onOpenBaiduNativePhoto,
@@ -8055,8 +8059,10 @@ export function XDriveMediaGallery({
             places={places}
             totalCount={placesTotalCount}
             listBaiduNativeCells={listBaiduNativeCells}
+            listPlacesMapOverview={listPlacesMapOverview}
             loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
+            getBaiduJSAPIPrototype={getBaiduJSAPIPrototype}
             mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}
             onOpenBaiduNativeCell={onOpenBaiduNativeCell}
             onOpenBaiduNativeViewport={onOpenBaiduNativeViewport}
@@ -8071,6 +8077,7 @@ export function XDriveMediaGallery({
             focusPlaceID={focusPlaceID}
             onOpenPlace={onOpenPlace}
             onOpenNearby={onOpenNearby}
+            onOpenViewportPhotos={onOpenViewportPhotos}
           />
           ) : null}
 

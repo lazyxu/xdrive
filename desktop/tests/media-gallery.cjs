@@ -551,7 +551,7 @@ test('Gallery Trash and reliable media collections stay shared and evidence-base
   }
 })
 
-test('Gallery Places uses a signed HTTPS Baidu Child; never a static or prototype fallback', () => {
+test('Gallery Places explicitly offers prototype and signed HTTPS Child without Static PNG fallback', () => {
   for (const token of ['<XDriveMediaGalleryPlacesMap', 'placesExpandedRef',
     'placesExpandedRef.current && source.listPlacesPage', 'places.map((place) => (', '地点列表']) {
     assert.ok(sharedGalleryMain.includes(token), 'Gallery Places missing: '+token)
@@ -561,12 +561,14 @@ test('Gallery Places uses a signed HTTPS Baidu Child; never a static or prototyp
     '查看此地点照片', "activation_state === 'authorized_signed_release'"]) {
     assert.ok(sharedGalleryPlacesMap.includes(token), 'isolated map missing: '+token)
   }
+  assert.match(sharedGalleryPlacesMap, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(sharedGalleryPlacesMap, /data-xdrive-places-map-mode/)
   assert.match(sharedGalleryBaiduMap, /xDriveMountBaiduIsolatedFrame/)
   assert.match(sharedGalleryPlacesMap, /startsWith\('https:\/\/'\)/)
   for (const obsolete of ['WORLD_OUTLINES','xDriveMediaPlacesCluster','xDriveMediaPlacesProject',
     'xDriveMediaPlacesPanViewport','component="svg"','内置简化地理底图',
     'getBaiduMapProvider','loadBaiduStaticMap','XDriveMediaGalleryBaiduStaticMap',
-    'XDriveMediaGalleryBaiduPrototypeMap', 'authorizedJSAPI4Runtime']) {
+    'authorizedJSAPI4Runtime']) {
     assert.equal(sharedGalleryPlacesMap.includes(obsolete), false, 'obsolete map fallback: '+obsolete)
   }
   assert.equal(sharedGalleryPlacesMap.includes('http://'), false)

@@ -124,6 +124,8 @@ test('isolated native viewport cancels at gesture start; only Parent owns bounde
   assert.match(parent,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
   assert.match(parent,/data-xdrive-places-trusted-photo-cover-pins/)
   assert.doesNotMatch(parent,/new api\.ClusterLayer|BMapLib\.MarkerClusterer/)
+  // Legacy Web-only prototype coexists, but this HTTPS Child still never
+  // accepts direct photo URLs or creates a second native ClusterLayer.
   assert.equal(fs.existsSync(path.join(root,
-    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),false)
+    'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx')),true)
 })
