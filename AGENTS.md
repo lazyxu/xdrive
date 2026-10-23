@@ -1,3 +1,18 @@
+## Gallery Places · compact iOS 27 Map/List mode (2026-10-23)
+
+- Compact Mobile Web Places defaults to the real map; accessible Map/List
+  switch changes only presentation. When both prototype and HTTPS Child
+  transports exist, signed Child takes priority and failed release stays static. The list reuses existing bounded Owner
+  Place pagination and hierarchy, and the map reuses the isolated trusted
+  Baidu Child and its existing /cells -> /cell-items Range/Viewer.
+- Keep wide Web/Electron panels, BD09 camera return, 52px App Frame and
+  source-level Owner/Consent/Origin/ACL/cancel gates intact; do not invent a
+  new photo index or claim exact iOS pixels, full camera Grid or real-device
+  acceptance. Preserve independent Places SQL and GeoNames PRs.
+- Single scoped commit atop the complete latest master, Desktop regression,
+  Web/Desktop build and source-exact full CI/Final Gate before merge.
+  Production-only inaccessible checks: 按用户决定跳过（未验收）.
+
 ## Local Push v2 · owning-device admission, common UploadSession bind, and original receipt (2026-10-23)
 
 - Implement one authenticated Server-private `/sources/:id/local-common-upload/{admit,bind,receipt}` protocol on top of existing Owner-scoped `/uploads`; the ordinary uploader remains the ONLY file-byte/CAS/Node/FileVersion writer. No new OS-remote-kernel-lock attestation requirement for file #2. Parent #2394 shared uploader and #2395 original-Operation SQL/finalize were independently tested and merged.

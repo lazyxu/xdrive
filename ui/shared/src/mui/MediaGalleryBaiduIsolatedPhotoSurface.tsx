@@ -26,6 +26,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mintChildTicket,
   listOwnerCells,
   loadThumbnail,
+  edgeToEdge = false,
   onOpenCell,
   onInvalidated,
   onCamera,
@@ -39,6 +40,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mintChildTicket: (signal: AbortSignal) => Promise<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>
   listOwnerCells: (bounds: Bounds, signal: AbortSignal) => Promise<MediaBaiduNativeCellsPage>
   loadThumbnail?: MediaThumbnailLoader
+  edgeToEdge?: boolean
   onOpenCell: (selection: MediaBaiduNativeCellSelection) => void
   onInvalidated?: () => void
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
@@ -222,12 +224,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
-      sx={{px:{xs:1.25,sm:1.5},pb:1.5,minWidth:0}}>
+      sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
       <Box data-xdrive-places-cluster-overview role="region" aria-label="定位照片聚集地图"
         sx={{position:'relative',width:'100%',height:{
           xs:'max(460px, calc(100dvh - 190px))',
           sm:'max(540px, calc(100dvh - 185px))'},
-          maxHeight:1024,borderRadius:1.5,
+          maxHeight:1024,borderRadius:edgeToEdge ? 0 : 1.5,
           overflow:'hidden',backgroundColor:'background.default'}}>
         <Box ref={mount} sx={{position:'absolute',inset:0,
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
