@@ -8,6 +8,7 @@ const ts = require('typescript')
 const React = require('react')
 const Renderer = require('react-test-renderer')
 const { act } = Renderer
+const mapScopeHelper = require('./helpers/load-baidu-map-scope.cjs')
 const root = path.resolve(__dirname, '../..')
 const mapFile = path.join(root, 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
 const original = fs.readFileSync(mapFile, 'utf8')
@@ -28,6 +29,7 @@ function loadSharedMap() {
   ].map(name => [name, name.toLowerCase()]))
   const injected = {
     '@mui/material': mui,
+    '../media-gallery-baidu-map-photo-scope': mapScopeHelper,
     '../media-gallery-baidu-native-camera-session': {
       xDriveValidBaiduNativeCameraSnapshot: () => false,
     },

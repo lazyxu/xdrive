@@ -107,7 +107,7 @@ test('Gallery Places mounts its map without waiting for Facets and preserves Own
   assert.match(map,/data-xdrive-places-map-options/)
   assert.match(surface,/data-xdrive-places-cluster-overview/)
   assert.match(surface,/queryCells\(world\)\.then\(ok =>/)
-  assert.match(surface,/listOwnerCells\(bounds,request.signal\)/)
+  assert.match(surface,/listOwnerCells\(bounds,request.signal,\s*approved.snapshot.filters,approved.snapshot.albumKey\)/)
   assert.match(surface,/xDriveSelectBaiduNativeCell/)
   assert.match(map,/initialCamera=\{cameraRef\.current \?\? undefined\}/)
 })

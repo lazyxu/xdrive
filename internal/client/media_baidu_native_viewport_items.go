@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // BaiduNativeViewportItemsFilter is deliberately smaller than MediaQuery.
@@ -21,9 +22,32 @@ type BaiduNativeViewportItemsFilter struct {
 	CapturedTo   string
 	TimeZone     string
 	MediaKind    string
+	AlbumKey     string
+}
+
+// Reuse only canonical Owner PhotoCollection keys, never client-selected paths.
+func validBaiduViewportAlbumKey(value string) bool {
+	if value == "" {
+		return true
+	}
+	if utf8.RuneCountInString(value) > 512 || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, prefix := range []string{"folder:", "source:", "manual:", "smart:"} {
+		if strings.HasPrefix(value, prefix) && len(value) > len(prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f BaiduNativeViewportItemsFilter) add(q url.Values) error {
+	if !validBaiduViewportAlbumKey(f.AlbumKey) {
+		return errBaiduNativeViewport
+	}
+	if f.AlbumKey != "" {
+		q.Set("album", f.AlbumKey)
+	}
 	if f.SortBy != "" && f.SortBy != "captured" && f.SortBy != "added" {
 		return errBaiduNativeViewport
 	}

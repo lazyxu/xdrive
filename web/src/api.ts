@@ -1710,8 +1710,9 @@ export class XDriveApi {
   mediaBaiduNativeViewportItems(
     bounds: MediaBaiduNativeViewportBounds,
     limit: number, offset: number, query: MediaGalleryQuery, signal: AbortSignal,
+    albumKey = '',
   ) {
-    const params = xDriveBaiduNativeViewportRangeParams(bounds, limit, offset, query)
+    const params = xDriveBaiduNativeViewportRangeParams(bounds, limit, offset, query, albumKey)
     if (!params || !signal || signal.aborted)
       return Promise.reject(new Error('Invalid or cancelled BD09 map Range'))
     return this.request<MediaItemRange>(

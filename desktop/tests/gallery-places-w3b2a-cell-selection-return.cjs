@@ -18,6 +18,10 @@ assert.deepEqual(output.diagnostics || [], [])
 const mod = new Module(sourcePath, module)
 mod.filename = path.join(root, sourcePath)
 mod.paths = module.paths
+const mapScopeHelper=require('./helpers/load-baidu-map-scope.cjs')
+const baseRequire=mod.require.bind(mod)
+mod.require=name=>name==='./media-gallery-baidu-map-photo-scope'
+  ? mapScopeHelper : baseRequire(name)
 mod._compile(output.outputText, mod.filename)
 const {
   XDRIVE_BAIDU_CELL_RETURN_TTL_MS,
@@ -123,7 +127,8 @@ test('original shared mounted map wires selection only after Owner Range success
   assert.match(map, /onOpenCell=\{onOpenBaiduNativeCell\}/)
   assert.match(map, /listOwnerCells=\{listBaiduNativeCells\}/)
   assert.match(isolated, /xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
-  assert.match(isolated, /opened\.current\(cell\.selection\)/)
+  assert.match(isolated, /onClick=\{\(\)=>openVerifiedCell\(cell\.selection\)\}/)
+  assert.match(isolated, /approved\.key===filterRef\.current\.key/)
   assert.match(photoSurface, /xDriveSelectBaiduNativeCell\(frame.page, frame.bounds/)
   assert.match(photoSurface, /xDriveBaiduCellReturnMatchesFreshSelection/)
   assert.match(photoSurface, /aria-pressed=\{isSelected/)

@@ -103,7 +103,8 @@ test('full camera uses original virtual Gallery wall, not the ten-cover preview'
   const web=read('web/src/api.ts')
   const child=read('deploy/baidu-isolated-child/child.js')
   for (const match of [
-    "kind: 'baidu-viewport'", "case 'baidu-viewport':",
+    "kind:'baidu-viewport',id:approved.albumKey || undefined",
+    "case 'baidu-viewport':",
     'listBaiduNativeViewportItems(target.baiduViewport',
     'virtualCollection.primePage(', 'controller.signal',
     'setSection(\'places\')',

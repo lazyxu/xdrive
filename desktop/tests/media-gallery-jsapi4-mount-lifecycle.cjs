@@ -140,7 +140,7 @@ test('A3 signed Child loader remains free of Browser AK and injection despite op
   assert.match(places, /activation_state === 'authorized_signed_release'/)
   assert.match(places, /listOwnerCells=\{listBaiduNativeCells\}/)
   assert.match(isolated, /xDriveMountBaiduIsolatedFrame/)
-  assert.match(isolated, /listOwnerCells\(bounds,request\.signal\)/)
+  assert.match(isolated, /listOwnerCells\(bounds,request\.signal,\s*approved\.snapshot\.filters,approved\.snapshot\.albumKey\)/)
   assert.doesNotMatch(isolated, /document\.createElement|BMapLoader|\bfetch\(/)
   assert.match(surface, /XDriveBaiduJSAPI4MountLifecycle/)
   assert.doesNotMatch(surface, /document\.createElement|BMapLoader|\bfetch\(/)

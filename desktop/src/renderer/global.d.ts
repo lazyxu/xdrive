@@ -591,7 +591,7 @@ declare global {
           bounds: MediaBaiduNativeViewportBounds,
           limit: number,
           offset: number,
-          query: MediaGalleryQuery,
+          query: MediaGalleryQuery & {map_album?: string},
           requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaMemories: (

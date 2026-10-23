@@ -19,6 +19,10 @@ assert.deepEqual(js.diagnostics || [], [])
 const m = new Module(sessionPath, module)
 m.filename = path.join(root, sessionPath)
 m.paths = module.paths
+const mapScopeHelper=require('./helpers/load-baidu-map-scope.cjs')
+const baseRequire=m.require.bind(m)
+m.require=name=>name==='./media-gallery-baidu-map-photo-scope'
+  ? mapScopeHelper : baseRequire(name)
 m._compile(js.outputText, m.filename)
 const {
   XDRIVE_BAIDU_CELL_VIEWER_RETURN_TTL_MS: returnTTL,

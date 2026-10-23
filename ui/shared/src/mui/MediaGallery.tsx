@@ -20,6 +20,11 @@ import {
   xDriveClearBaiduViewportViewerReturn, xDriveClearBaiduViewportReturn,
 } from '../media-gallery-baidu-viewport-return-session'
 import type { XDriveBaiduViewportReturn } from '../media-gallery-baidu-viewport-return-session'
+import {
+  xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
+  xDriveEmptyBaiduMapPhotoScope,
+} from '../media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { XDriveFolderIcon } from './FolderIcon'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
@@ -306,7 +311,7 @@ export interface MediaGalleryDataSource {
   listBaiduNativeViewportItems?: (
     bounds: import('../models').MediaBaiduNativeViewportBounds,
     limit: number, offset: number, query: MediaGalleryQuery,
-    signal: AbortSignal,
+    signal: AbortSignal, albumKey?: string,
   ) => Promise<MediaItemRange>
   /** Trusted parent Owner-only sparse W1 Cell Range; NEVER an SDK call. */
   listBaiduNativeCellItems?: (
@@ -684,6 +689,17 @@ export function XDriveMediaGalleryPage({
     camera: xDriveReadBaiduNativeCamera(preferenceScope) }))
   const baiduNativeCameraSnapshot = baiduCameraOwner.scope === preferenceScope
     ? baiduCameraOwner.camera : xDriveReadBaiduNativeCamera(preferenceScope)
+  const [baiduPhotoScopeOwner,setBaiduPhotoScopeOwner] = useState<{
+    owner:string;value:XDriveBaiduMapPhotoScope
+  }>(()=>({owner:preferenceScope,
+    value:xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
+      xDriveEmptyBaiduMapPhotoScope}))
+  const mapPhotoScope = baiduPhotoScopeOwner.owner===preferenceScope
+    ? baiduPhotoScopeOwner.value
+    : (xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
+        xDriveEmptyBaiduMapPhotoScope)
+  const mapPhotoScopeRef = useRef(mapPhotoScope)
+  mapPhotoScopeRef.current=mapPhotoScope
   // Persisted in-memory only after Owner Range authorization, not from SDK.
   const [baiduCellOwner, setBaiduCellOwner] = useState<{
     scope: string; selection?: MediaBaiduNativeCellSelection
@@ -838,6 +854,18 @@ export function XDriveMediaGalleryPage({
   const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
+  const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
+    const next=xDriveCopyBaiduMapPhotoScope(input)
+    if (!next || xDriveBaiduMapPhotoScopeKey(next)===
+        xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current))return
+    nativeCellOpenAbort.current?.abort()
+    requestID.current+=1
+    xDriveClearBaiduCellReturn(preferenceScope)
+    xDriveClearBaiduViewportReturn(preferenceScope)
+    setBaiduCellOwner({scope:preferenceScope,selection:undefined})
+    mapPhotoScopeRef.current=next
+    setBaiduPhotoScopeOwner({owner:preferenceScope,value:next})
+  },[preferenceScope])
   useEffect(() => () => {
     nativeCellOpenAbort.current?.abort()
     nativeCellOpenAbort.current = null
@@ -870,7 +898,7 @@ export function XDriveMediaGalleryPage({
           throw new Error('当前客户端不支持地图视窗照片范围加载')
         }
         return source.listBaiduNativeViewportItems(target.baiduViewport, limit,
-          offset, rangedQuery, signal ?? new AbortController().signal)
+          offset, rangedQuery, signal ?? new AbortController().signal,target.id ?? '')
       case 'baidu-cell':
         if (!target.baiduCell || !source.listBaiduNativeCellItems) {
           throw new Error('当前客户端不支持地图区域范围加载')
@@ -878,6 +906,7 @@ export function XDriveMediaGalleryPage({
         return source.listBaiduNativeCellItems(target.baiduCell, limit, offset, {
           by: target.query.sort_by === 'added' ? 'added' : 'captured',
           dir: target.query.sort_dir === 'asc' ? 'asc' : 'desc',
+          filters: target.query, albumKey:target.id ?? '',
         }, signal ?? new AbortController().signal)
       case 'trash':
         if (!source.listTrashItemRange) {
@@ -2282,6 +2311,7 @@ export function XDriveMediaGalleryPage({
   const openBaiduNativeCell = useCallback((
     selection: MediaBaiduNativeCellSelection,
     returning?: XDriveBaiduCellReturnSnapshot,
+    fromMap?: XDriveBaiduMapPhotoScope,
   ) => {
     if (!source.listBaiduNativeCellItems || pageSize < 1 || pageSize > 100) return
     // A fresh user Cell click supersedes any unconsumed Viewer return intent.
@@ -2291,19 +2321,35 @@ export function XDriveMediaGalleryPage({
     const controller = new AbortController()
     nativeCellOpenAbort.current = controller
     const request = ++requestID.current
-    const sort = returning?.sort ?? gallerySortRef.current
+    const approved=xDriveCopyBaiduMapPhotoScope(
+      returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
+    if(!approved || (!returning && fromMap &&
+      xDriveBaiduMapPhotoScopeKey(fromMap)!==
+        xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current)))return
+    const sort = returning?.sort ?? {
+      by:approved.filters.sort_by ?? 'captured',
+      dir:approved.filters.sort_dir ?? 'desc',
+    }
+    if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    if(returning) {
+      mapPhotoScopeRef.current=approved
+      setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
+    }
     const cell: MediaBaiduNativeCellSelection = {
       ...selection, bounds: { ...selection.bounds },
     }
     const cellQuery: MediaGalleryQuery = {
-      sort_by: sort.by, sort_dir: sort.dir, fold_duplicates: false,
+      ...approved.filters,sort_by:sort.by,sort_dir:sort.dir,
+      fold_duplicates:false,
     }
     const target: MediaGalleryCollectionTarget = {
-      kind: 'baidu-cell', baiduCell: cell, query: cellQuery, requestID: request,
+      kind:'baidu-cell',id:approved.albumKey || undefined,
+      baiduCell:cell,query:cellQuery,requestID:request,
     }
     void source.listBaiduNativeCellItems(
       cell, pageSize, 0, {
-        by: sort.by, dir: sort.dir,
+        by:sort.by,dir:sort.dir,filters:approved.filters,
+        albumKey:approved.albumKey,
         ...(returning?.anchorNodeID ? { anchorNodeID: returning.anchorNodeID } : {}),
       }, controller.signal,
     ).then((range) => {
@@ -2319,10 +2365,28 @@ export function XDriveMediaGalleryPage({
         setError('该区域照片已变化，请在地图中重新选择')
         return
       }
+      // A single current, signed Owner Cell member opens the original Viewer
+      // directly, as iOS Photos does. The count and Node come from the fresh
+      // Server Range (never from an untrusted SDK cluster or cover badge).
+      // Do NOT mark a Cell-wall Viewer return: Back should restore the map,
+      // while Viewer paging stays bound to this same authenticated BD09 Cell.
+      if (!returning && onOpenViewer && range.total_count === 1 &&
+          range.items.length === 1) {
+        xDriveClearBaiduCellReturn(preferenceScope)
+        setBaiduCellOwner({ scope: preferenceScope, selection: undefined })
+        onOpenViewer(range.items[0], {
+          target: { kind: 'baidu-cell', id: approved.albumKey || undefined,
+            baiduCell: cell, query: cellQuery },
+          activeIndex: 0,
+          totalCount: 1,
+        })
+        return
+      }
       // Selected only after the matching authorized Owner Cell Range wins.
       // Never use this remembered identity as permission for another request.
       if (xDriveRememberBaiduCellReturn(preferenceScope, {
         selection: cell, sort: { by: sort.by, dir: sort.dir },
+        photoScope:approved,
         ...(returning?.anchorNodeID ? { anchorNodeID: returning.anchorNodeID,
           anchorIndex: range.anchor_index } : {}),
       })) {
@@ -2370,7 +2434,7 @@ export function XDriveMediaGalleryPage({
     }).finally(() => {
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
-  }, [pageSize, places, placesPageOffset, placesTotalCount, preferenceScope, query, section, source,
+  }, [onOpenViewer, pageSize, places, placesPageOffset, placesTotalCount, preferenceScope, query, section, source,
     virtualCollection.primePage, virtualCollection.reset])
 
 
@@ -2380,6 +2444,7 @@ export function XDriveMediaGalleryPage({
   const openBaiduNativeViewport = useCallback((
     raw: import('../models').MediaBaiduNativeViewportBounds,
     returning?: XDriveBaiduViewportReturn,
+    fromMap?: XDriveBaiduMapPhotoScope,
   ) => {
     if (!source.listBaiduNativeViewportItems || !raw ||
         raw.coordinate_space !== 'bd09ll' ||
@@ -2390,21 +2455,34 @@ export function XDriveMediaGalleryPage({
     const controller = new AbortController()
     nativeCellOpenAbort.current = controller
     const request = ++requestID.current
-    const bounds = { ...raw }
-    const sort = returning?.sort ?? gallerySortRef.current
-    const rangeQuery: MediaGalleryQuery = {
-      sort_by: sort.by, sort_dir: sort.dir,
-      time_zone: mediaTimeZoneRef.current, fold_duplicates: false,
+    const bounds={...raw}
+    const approved=xDriveCopyBaiduMapPhotoScope(
+      returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
+    if(!approved || (!returning && fromMap &&
+      xDriveBaiduMapPhotoScopeKey(fromMap)!==
+        xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current)))return
+    const sort=returning?.sort ?? {
+      by:approved.filters.sort_by ?? 'captured',
+      dir:approved.filters.sort_dir ?? 'desc',
+    }
+    if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    if(returning) {
+      mapPhotoScopeRef.current=approved
+      setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
+    }
+    const rangeQuery:MediaGalleryQuery={
+      ...approved.filters,sort_by:sort.by,sort_dir:sort.dir,
+      fold_duplicates:false,
     }
     const firstQuery: MediaGalleryQuery = returning?.anchorNodeID
       ? { ...rangeQuery, anchor_node_id: returning.anchorNodeID }
       : rangeQuery
     const target: MediaGalleryCollectionTarget = {
-      kind: 'baidu-viewport', baiduViewport: bounds,
-      query: rangeQuery, requestID: request,
+      kind:'baidu-viewport',id:approved.albumKey || undefined,
+      baiduViewport:bounds,query:rangeQuery,requestID:request,
     }
     void source.listBaiduNativeViewportItems(bounds, pageSize, 0, firstQuery,
-      controller.signal).then(range => {
+      controller.signal,approved.albumKey).then(range => {
       if (controller.signal.aborted || request !== requestID.current) return
       if (range.offset !== 0 || range.limit !== pageSize ||
           !Number.isSafeInteger(range.total_count) || range.total_count < 0 ||
@@ -2418,7 +2496,7 @@ export function XDriveMediaGalleryPage({
       // An ephemeral return hint only becomes a photo wall after the current
       // Server Owner+Consent+session Range has been independently revalidated.
       xDriveRememberBaiduViewportReturn(preferenceScope, {
-        bounds, sort, ...(returning?.anchorNodeID
+        bounds, sort, photoScope:approved, ...(returning?.anchorNodeID
           ? { anchorNodeID: returning.anchorNodeID, anchorIndex: range.anchor_index }
           : {}),
       })
@@ -3656,13 +3734,17 @@ export function XDriveMediaGalleryPage({
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduMapCoverage={source.getBaiduMapCoverage}
+        mapPhotoScope={mapPhotoScope}
+        onMapPhotoScopeChange={changeBaiduMapPhotoScope}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
         getBaiduJSAPIPrototype={source.getBaiduJSAPIPrototype}
         mintBaiduIsolatedChildTicket={source.mintBaiduIsolatedChildTicket}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
-        onOpenBaiduNativeCell={source.listBaiduNativeCellItems ? openBaiduNativeCell : undefined}
-        onOpenBaiduNativeViewport={source.listBaiduNativeViewportItems ? openBaiduNativeViewport : undefined}
+        onOpenBaiduNativeCell={source.listBaiduNativeCellItems
+          ? (selection,scope)=>openBaiduNativeCell(selection,undefined,scope) : undefined}
+        onOpenBaiduNativeViewport={source.listBaiduNativeViewportItems
+          ? (bounds,scope)=>openBaiduNativeViewport(bounds,undefined,scope) : undefined}
         onBaiduNativeCellInvalidated={() => {
           nativeCellOpenAbort.current?.abort()
           nativePhotoOpenAbort.current?.abort()
@@ -4166,8 +4248,11 @@ export interface XDriveMediaGalleryProps {
   mintBaiduIsolatedChildTicket?: MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
-  onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection) => void
-  onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds) => void
+  onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection,scope:XDriveBaiduMapPhotoScope) => void
+  onOpenBaiduNativeViewport?: (bounds:import('../models').MediaBaiduNativeViewportBounds,
+    scope:XDriveBaiduMapPhotoScope) => void
+  mapPhotoScope?: XDriveBaiduMapPhotoScope
+  onMapPhotoScopeChange?: (scope:XDriveBaiduMapPhotoScope)=>void
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: () => void
   onOpenBaiduMapDiagnostics?: () => void
@@ -5886,6 +5971,8 @@ export function XDriveMediaGallery({
   onOpenBaiduNativePhoto,
   onOpenBaiduNativeCell,
   onOpenBaiduNativeViewport,
+  mapPhotoScope = xDriveEmptyBaiduMapPhotoScope,
+  onMapPhotoScopeChange,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
   onOpenBaiduMapDiagnostics,
@@ -8131,6 +8218,9 @@ export function XDriveMediaGallery({
             mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}
             onOpenBaiduNativeCell={onOpenBaiduNativeCell}
             onOpenBaiduNativeViewport={onOpenBaiduNativeViewport}
+            mapPhotoScope={mapPhotoScope}
+            onMapPhotoScopeChange={onMapPhotoScopeChange}
+            mapAlbums={albums}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             diagnosticScope={preferenceScope}

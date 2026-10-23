@@ -11,6 +11,10 @@ import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-c
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveCurrentMapPhotoCollections } from '../media-gallery-places-map-strip'
+import {
+  xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
+} from '../media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 
 type Bounds = XDriveBaiduIsolatedBounds
@@ -37,14 +41,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   onFailure,
   initialCamera,
   scope,
+  mapPhotoScope,
 }: {
   childOrigin: string
   mintChildTicket: (signal: AbortSignal) => Promise<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>
-  listOwnerCells: (bounds: Bounds, signal: AbortSignal) => Promise<MediaBaiduNativeCellsPage>
+  listOwnerCells: (bounds: Bounds, signal: AbortSignal,
+    filters?: XDriveBaiduMapPhotoScope['filters'], albumKey?: string) => Promise<MediaBaiduNativeCellsPage>
   loadThumbnail?: MediaThumbnailLoader
   edgeToEdge?: boolean
-  onOpenCell: (selection: MediaBaiduNativeCellSelection) => void
-  onOpenViewport?: (bounds: Bounds) => void
+  onOpenCell: (selection: MediaBaiduNativeCellSelection, scope: XDriveBaiduMapPhotoScope) => void
+  onOpenViewport?: (bounds: Bounds, scope: XDriveBaiduMapPhotoScope) => void
   onInvalidated?: () => void
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onCameraClear?: () => void
@@ -52,6 +58,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   onFailure?: () => void
   initialCamera?: XDriveBaiduNativeCameraSnapshot
   scope?: string
+  mapPhotoScope: XDriveBaiduMapPhotoScope
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
   const failureCallback = useRef(onFailure)
@@ -59,6 +66,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const opened = useRef(onOpenCell)
   const openViewport = useRef(onOpenViewport)
   const latestAcceptedViewport = useRef<Bounds | null>(null)
+  // Owner-approved cells, their camera and filter signature form one scope.
+  const currentFilterKey = xDriveBaiduMapPhotoScopeKey(mapPhotoScope)
+  const scopeSnapshot = xDriveCopyBaiduMapPhotoScope(mapPhotoScope)
+  const filterRef = useRef({key:currentFilterKey,snapshot:scopeSnapshot})
+  filterRef.current = {key:currentFilterKey,snapshot:scopeSnapshot}
+  const acceptedScope = useRef<{key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
+  const acceptedCells = useRef<MediaBaiduNativeCellSelection[]>([])
+  const lastViewport = useRef<{bounds:Bounds;live:boolean}|null>(null)
+  const refreshFilteredCells = useRef<(() => void) | null>(null)
+  const lastFilterKey = useRef(currentFilterKey)
   const invalidated = useRef(onInvalidated)
   const cameraUpdate = useRef(onCamera)
   const cameraClear = useRef(onCameraClear)
@@ -75,6 +92,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const [projected,setProjected] = useState<
     XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
   const [error,setError] = useState(false)
+  const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
+  const trustedSummary = scopeIsCurrent ? summary : null
+  // Refresh the existing isolated map: never remount its SDK for a filter.
+  useEffect(() => {
+    if(lastFilterKey.current===currentFilterKey)return
+    lastFilterKey.current=currentFilterKey
+    refreshFilteredCells.current?.()
+  },[currentFilterKey])
 
   useEffect(() => {
     const node = mount.current
@@ -104,6 +129,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       generation++
       activeQuery?.abort()
       activeQuery = null
+      acceptedScope.current = null
+      acceptedCells.current = []
       setAccessible([])
       setSummary(null)
       setAcceptedViewport(null)
@@ -127,7 +154,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     }
     const frame = xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>({
       host:node,parentWindow:win,childOrigin,
-      onActivateCell:selection => { if(!lifetime.signal.aborted)opened.current(selection) },
+      onActivateCell:selection => {
+        const approved=acceptedScope.current
+        if(!lifetime.signal.aborted && approved && approved.key===filterRef.current.key &&
+          acceptedCells.current.some(cell=>cell.node_id===selection.node_id &&
+            cell.asset_id===selection.asset_id && cell.node_revision===selection.node_revision &&
+            cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
+            cell.photo_count===selection.photo_count)) {
+          opened.current(selection,approved.scope)
+        }
+      },
       onCancel:cancel,
       onCamera:camera => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
@@ -160,16 +196,21 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
+      lastViewport.current={bounds:{...bounds},live:liveCamera}
       cancel()
       frame.replaceAuthorizedCells([])
+      const approved=filterRef.current
+      if(!approved.snapshot)return false
       const request = new AbortController()
       const onLifetime = () => request.abort()
       lifetime.signal.addEventListener('abort',onLifetime,{once:true})
       activeQuery=request
       const run = generation
       try {
-        const page = await listOwnerCells(bounds,request.signal)
-        if(request.signal.aborted || lifetime.signal.aborted || run!==generation) return false
+        const page = await listOwnerCells(bounds,request.signal,
+          approved.snapshot.filters,approved.snapshot.albumKey)
+        if(request.signal.aborted || lifetime.signal.aborted || run!==generation ||
+           approved.key!==filterRef.current.key)return false
         if(!xDriveValidBaiduNativeCellsPage(page,bounds) ||
             page.cells.some(cell => !Number.isSafeInteger(cell.node_revision) || (cell.node_revision ?? 0)<=0)) {
           throw new Error('map_cells_invalid')
@@ -182,6 +223,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             count:cell.photo_count,selection})
         }
         if(!frame.replaceAuthorizedCells(cells)) throw new Error('map_cells_unavailable')
+        if(approved.key!==filterRef.current.key || run!==generation)return false
+        acceptedScope.current={key:approved.key,scope:approved.snapshot}
+        acceptedCells.current=cells.map(item=>item.selection)
         setAccessible(cells.map((item,index)=>({
           label:'区域 '+(page.cells[index].cell_y*8+page.cells[index].cell_x+1)+
             ' · '+page.cells[index].photo_count.toLocaleString('zh-CN'),
@@ -208,6 +252,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(activeQuery===request)activeQuery=null
       }
     }
+    refreshFilteredCells.current=()=>{
+      if(lifetime.signal.aborted || failed || !lastViewport.current)return
+      const last=lastViewport.current
+      void queryCells({...last.bounds},last.live)
+    }
     const acquireTicket=async() => {
       if(lifetime.signal.aborted || failed) return
       try {
@@ -221,6 +270,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     // Original WGS84 photo EXIF never enters the isolated document.
     refresh=setInterval(() => { if(!lifetime.signal.aborted)void acquireTicket() },65_000)
     return () => {
+      refreshFilteredCells.current=null
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
@@ -233,7 +283,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // All 64 map numbers remain in the provider map; only 24 thumbnails load.
   const coverPins: Array<{selection:MediaBaiduNativeCellSelection;
     count:number;x:number;y:number}> = []
-  if (projected?.width && projected.height && loadThumbnail && phase === 'ready') {
+  if (scopeIsCurrent && projected?.width && projected.height && loadThumbnail && phase === 'ready') {
     for (const candidate of [...projected.cells].sort((a,b) => b.count-a.count)) {
       if (coverPins.length >= 24) break
       if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 72)) continue
@@ -242,8 +292,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
   // key as private media authority. A pan/revoke clears both inputs.
-  const photoStrip = phase === 'ready'
-    ? xDriveCurrentMapPhotoCollections(summary, projected, accessible.map(cell => cell.selection)) : []
+  const photoStrip = scopeIsCurrent && phase === 'ready'
+    ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
+  const openVerifiedCell=(selection:MediaBaiduNativeCellSelection)=>{
+    const approved=acceptedScope.current
+    if(approved && approved.key===filterRef.current.key &&
+        acceptedCells.current.some(cell=>cell.node_id===selection.node_id &&
+          cell.asset_id===selection.asset_id && cell.node_revision===selection.node_revision &&
+          cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
+          cell.photo_count===selection.photo_count))opened.current(selection,approved.scope)
+  }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
@@ -262,7 +320,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               <Box key={pin.selection.node_id} component="button" type="button"
                 data-xdrive-places-trusted-photo-cover={pin.selection.node_id}
                 aria-label={`查看该区域 ${pin.count} 张照片`}
-                onClick={() => opened.current(pin.selection)}
+                onClick={() => openVerifiedCell(pin.selection)}
                 sx={{position:'absolute',
                   left:`${pin.x/projected.width*100}%`,
                   top:`${pin.y/projected.height*100}%`,
@@ -311,7 +369,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               mx:'auto',backdropFilter:'blur(14px)'}}>
               <Typography variant="caption" sx={{display:'block',mb:0.5,
                 fontWeight:700}}>
-                照片地点 · 当前区域 {summary?.total_count.toLocaleString('zh-CN')} 张
+                照片地点 · 当前区域 {trustedSummary?.total_count.toLocaleString('zh-CN')} 张
               </Typography>
               <Box component="nav" aria-label="浏览地图当前聚合区域照片"
                 sx={{display:'flex',gap:0.75,overflowX:'auto',overflowY:'hidden',
@@ -322,7 +380,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                     aria-label={'查看区域 '+
                       (pin.selection.cell_y*8+pin.selection.cell_x+1)+
                       ' 的 '+pin.count.toLocaleString('zh-CN')+' 张照片'}
-                    onClick={() => opened.current(pin.selection)}
+                    onClick={() => openVerifiedCell(pin.selection)}
                     sx={{position:'relative',display:'block',flex:'0 0 76px',
                       width:76,minWidth:76,height:78,p:0.5,
                       borderRadius:1.5,border:'1px solid',borderColor:'divider',
@@ -349,15 +407,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           </Box>
         ) : null}
       </Box>
-      {summary ? (
+      {trustedSummary ? (
         <Box sx={{ px:edgeToEdge ? 1 : 0, display:'flex',alignItems:'center',
           justifyContent:'space-between',gap:1,flexWrap:'wrap',mt:0.75 }}>
           <Typography variant="caption" color="text.secondary">
-            {summary.total_count > 0
-              ? `当前地图可查看 ${summary.total_count.toLocaleString('zh-CN')} 张照片`
+            {trustedSummary.total_count > 0
+              ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
               : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
           </Typography>
-          {acceptedViewport && phase === 'ready' && openViewport.current && summary.total_count > 0 ? (
+          {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-full-camera-wall
               sx={{minHeight:44,textTransform:'none'}}
@@ -367,7 +425,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                     accepted.east===acceptedViewport.east &&
                     accepted.south===acceptedViewport.south &&
                     accepted.north===acceptedViewport.north) {
-                  openViewport.current?.({...accepted})
+                  const approved=acceptedScope.current
+                  if(approved && approved.key===filterRef.current.key)
+                    openViewport.current?.({...accepted},approved.scope)
                 }
               }}>
               查看此地图的全部照片
@@ -380,7 +440,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           动态地图隔离会话不可用；地点列表与照片墙仍可使用。
         </Typography>
       ):null}
-      {accessible.length>0 ? (
+      {scopeIsCurrent && accessible.length>0 ? (
         <Box component="details" data-xdrive-places-cluster-list>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
             color:'text.secondary',minHeight:36}}>
@@ -390,7 +450,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           sx={{display:'flex',flexWrap:'wrap',gap:0.5,mt:0.5}}>
           {accessible.map((cell,index)=>(
             <Button key={index} size="small" variant="text"
-              onClick={()=>opened.current(cell.selection)} disabled={phase!=='ready'}>
+              onClick={()=>openVerifiedCell(cell.selection)} disabled={phase!=='ready'}>
               {cell.label}
             </Button>
           ))}

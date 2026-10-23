@@ -7,7 +7,12 @@ const compiled=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
   reportDiagnostics:true,fileName:file})
 assert.deepEqual((compiled.diagnostics||[]).filter(x=>x.category===ts.DiagnosticCategory.Error),[])
-const obj={exports:{}};new Function('module','exports',compiled.outputText)(obj,obj.exports)
+const obj={exports:{}}
+const mapScopeHelper=require('./helpers/load-baidu-map-scope.cjs')
+new Function('module','exports','require',compiled.outputText)(obj,obj.exports,id=>{
+  assert.equal(id,'./media-gallery-baidu-map-photo-scope')
+  return mapScopeHelper
+})
 const m=obj.exports,scope='viewer:test'
 const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:40}
 const snapshot={bounds,sort:{by:'captured',dir:'desc'}}
