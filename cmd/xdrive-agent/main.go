@@ -28,6 +28,14 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Install the shutdown handler before potentially slow instance-lock and
+	// logging initialization. The parent `xd backup agent` can receive a
+	// service-manager stop while the child is still starting; without this,
+	// its forwarded interrupt may terminate the Agent by the default signal
+	// action instead of completing the normal graceful shutdown path.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	closeInstance, err := acquireSingleInstance()
 	if err != nil {
 		if errors.Is(err, errAlreadyRunning) {
@@ -44,9 +52,6 @@ func main() {
 	}
 	log.SetPrefix("xdrive-agent: ")
 	log.Printf("starting version %s", version.String())
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	ctrl := newAgentController(ctx, cancel)
 	ipc, ipcErr := startDesktopIPC(ctx, ctrl, cancel)
