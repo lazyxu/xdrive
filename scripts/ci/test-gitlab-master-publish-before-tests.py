@@ -69,12 +69,32 @@ assert re.search(
 for name in ("release-assets", "publish-server-images"):
     block = jobs[name]
     assert "final-gate" in block, f"stable {name} must still require full final-gate"
-    assert release_only in block and "      when: always\n" in block
+    assert release_only in block and "      when: on_success\n" in block
 
 for name in ("promote-server-images", "publish-release"):
     block = jobs[name]
-    assert "      when: always\n" in block and release_only in block
+    assert "      when: on_success\n" in block and release_only in block
     assert 'CI_COMMIT_TAG =~ /^v.+/' in block, f"{name}: stable publishing must remain guarded"
+
+# A master publisher must NEVER run after a failed hard prerequisite.
+# GitLab's when:always ignores failures; allow_failure master diagnostics are
+# already considered successful by when:on_success, and needs retain the DAG.
+for name in ("release-assets", "publish-server-images", "promote-server-images", "publish-release"):
+    block = jobs[name]
+    # Select the unique master publication rule, not just any matching text.
+    # A duplicated earlier when:always rule must not bypass this contract.
+    master_rules = list(re.finditer(
+        r'(?m)^    - if: [^\n]*' + re.escape(release_only) + r'[^\n]*\n',
+        block,
+    ))
+    assert len(master_rules) == 1, f"{name}: expected exactly one master publisher rule"
+    rule_body = block[master_rules[0].end():]
+    assert rule_body.startswith("      when: on_success\n"), (
+        f"{name}: failed image/asset builds must prevent master Snapshot publication"
+    )
+    assert "      allow_failure: true\n" not in block, (
+        f"{name}: image/asset publication must fail closed even after a dependency error"
+    )
 
 # The complete verified image/desktop package DAG is still required. A build
 # failure must leave the old Snapshot untouched, not publish missing images.
