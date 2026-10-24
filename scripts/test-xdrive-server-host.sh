@@ -17,7 +17,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
+      update.out update.err update-github-bad-sha.err update-github-no-sha.err update-github-rollover.err update-github-duplicate-sha.err update-github-malformed-sha.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -49,8 +49,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$out" && -n "$url" ]]
-printf '%s\n' "$url" > "$TEST_STATE/curl-url"
 printf '%s\n' "$url" >> "$TEST_STATE/curl-urls"
+if [[ "$url" == */SHA256SUMS.txt ]]; then
+  if [[ "${TEST_CURL_FAIL_SHA256SUMS:-0}" == "1" ]]; then
+    exit 22
+  fi
+  # First manifest may belong to an older rolling snapshot generation.
+  if [[ "${TEST_CURL_BAD_CHECKSUM:-0}" == "1" ||
+        ( "${TEST_CURL_BAD_CHECKSUM_ONCE:-0}" == "1" &&
+          "$(grep -c '/SHA256SUMS.txt$' "$TEST_STATE/curl-urls")" == "1" ) ]]; then
+    printf '%064d  xdrive-server-install.sh\n' 0 > "$out"
+  else
+    sha256sum "$TEST_STATE/last-installer" | awk '{ print $1 "  xdrive-server-install.sh" }' > "$out"
+  fi
+  if [[ "${TEST_CURL_DUPLICATE_INSTALLER_LINE:-0}" == "1" ]]; then
+    sha256sum "$TEST_STATE/last-installer" | awk '{ print $1 "  xdrive-server-install.sh" }' >> "$out"
+  fi
+  if [[ "${TEST_CURL_MALFORMED_MANIFEST:-0}" == "1" ]]; then
+    printf 'NOT_HEX  server-restore.sh\n' >> "$out"
+  fi
+  exit 0
+fi
+printf '%s\n' "$url" > "$TEST_STATE/curl-url"
 if [[ "${TEST_CURL_FAIL_GITLAB_DOMAIN:-0}" == "1" && "$url" == http://gitlab.t-fluid.com:1080/* ]]; then
   exit "${TEST_CURL_FAIL_STATUS:-28}"
 fi
@@ -61,6 +81,7 @@ printf '%s\n' "$*" > "$TEST_STATE/installer-args"
 printf '%s\n' "${XD_GITLAB_BASE_URL:-}" > "$TEST_STATE/installer-gitlab-base"
 readlink /proc/$$/fd/0 > "$TEST_STATE/installer-stdin" || true
 INSTALL
+cp "$out" "$TEST_STATE/last-installer"
 SH
 chmod +x "$TMP/bin/curl"
 
@@ -264,6 +285,88 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source github --channel master >"$TMP/update-github-master.out" 2>"$TMP/update-github-master.err"
 grep -q '^https://github.com/lazyxu/xdrive/releases/download/snapshot/xdrive-server-install.sh$' "$TMP/state/curl-url"
+grep -q '^https://github.com/lazyxu/xdrive/releases/download/snapshot/SHA256SUMS.txt$' "$TMP/state/curl-urls"
+grep -q 'GitHub release installer SHA-256 verified' "$TMP/update-github-master.out"
+
+# A rolling snapshot can change between the installer and its checksum.
+# Retry the complete pair and succeed on the second, consistent generation.
+rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+TEST_CURL_BAD_CHECKSUM_ONCE=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-rollover.out" 2>"$TMP/update-github-rollover.err"
+[[ "$(grep -c '/SHA256SUMS.txt$' "$TMP/state/curl-urls")" -eq 2 ]]
+[[ "$(grep -c '/xdrive-server-install.sh$' "$TMP/state/curl-urls")" -eq 2 ]]
+grep -q 'GitHub release installer/manifest verification failed; retrying the complete pair (1/3)' "$TMP/update-github-rollover.err"
+grep -q 'GitHub release installer SHA-256 verified' "$TMP/update-github-rollover.out"
+grep -q '^--source github --channel master$' "$TMP/state/installer-args"
+
+# A rolling snapshot rollover or corrupted installer must fail closed: none
+# of the downloaded script's code can be executed on mismatched generations.
+rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+set +e
+TEST_CURL_BAD_CHECKSUM=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-bad-sha.out" 2>"$TMP/update-github-bad-sha.err"
+bad_sha_status=$?
+set -e
+[[ "$bad_sha_status" -ne 0 ]]
+test ! -e "$TMP/state/installer-args"
+[[ "$(grep -c '/SHA256SUMS.txt$' "$TMP/state/curl-urls")" -eq 3 ]]
+grep -q 'GitHub release installer SHA-256 mismatch' "$TMP/update-github-bad-sha.err"
+grep -q 'no installer was executed' "$TMP/update-github-bad-sha.err"
+
+# Duplicate checksum entries must be rejected even if both are valid.
+rm -f "$TMP/state/curl-urls"
+set +e
+TEST_CURL_DUPLICATE_INSTALLER_LINE=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-duplicate-sha.out" 2>"$TMP/update-github-duplicate-sha.err"
+duplicate_sha_status=$?
+set -e
+[[ "$duplicate_sha_status" -ne 0 ]]
+test ! -e "$TMP/state/installer-args"
+[[ "$(grep -c '/SHA256SUMS.txt$' "$TMP/state/curl-urls")" -eq 3 ]]
+grep -q 'lacks exactly one valid' "$TMP/update-github-duplicate-sha.err"
+grep -q 'no installer was executed' "$TMP/update-github-duplicate-sha.err"
+
+# Even unrelated malformed checksum lines must invalidate the manifest.
+rm -f "$TMP/state/curl-urls"
+set +e
+TEST_CURL_MALFORMED_MANIFEST=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-malformed-sha.out" 2>"$TMP/update-github-malformed-sha.err"
+malformed_sha_status=$?
+set -e
+[[ "$malformed_sha_status" -ne 0 ]]
+test ! -e "$TMP/state/installer-args"
+[[ "$(grep -c '/SHA256SUMS.txt$' "$TMP/state/curl-urls")" -eq 3 ]]
+grep -q 'lacks exactly one valid' "$TMP/update-github-malformed-sha.err"
+grep -q 'no installer was executed' "$TMP/update-github-malformed-sha.err"
+
+# A missing checksum manifest cannot silently fall back to syntax-only
+# execution. Custom URL overrides and GitLab remain unaffected below.
+rm -f "$TMP/state/curl-urls"
+set +e
+TEST_CURL_FAIL_SHA256SUMS=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-no-sha.out" 2>"$TMP/update-github-no-sha.err"
+no_sha_status=$?
+set -e
+[[ "$no_sha_status" -ne 0 ]]
+test ! -e "$TMP/state/installer-args"
+[[ "$(grep -c '/SHA256SUMS.txt$' "$TMP/state/curl-urls")" -eq 3 ]]
+grep -q 'could not download the GitHub release SHA256SUMS.txt' "$TMP/update-github-no-sha.err"
+grep -q 'no installer was executed' "$TMP/update-github-no-sha.err"
 
 rm -f "$TMP/state/curl-url"
 TEST_STATE="$TMP/state" \
@@ -271,6 +374,8 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source github --channel stable >"$TMP/update-github-stable.out" 2>"$TMP/update-github-stable.err"
 grep -q '^https://github.com/lazyxu/xdrive/releases/latest/download/xdrive-server-install.sh$' "$TMP/state/curl-url"
+grep -q '^https://github.com/lazyxu/xdrive/releases/latest/download/SHA256SUMS.txt$' "$TMP/state/curl-urls"
+grep -q 'GitHub release installer SHA-256 verified' "$TMP/update-github-stable.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

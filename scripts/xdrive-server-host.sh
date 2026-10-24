@@ -216,9 +216,66 @@ download_failure_is_connectivity() {
   esac
 }
 
+# The rolling snapshot Release can change while its assets are being read.
+# Pair each GitHub Release installer with that Release's SHA256SUMS.txt and
+# refuse to execute either a corrupt download or mismatched generations.
+verify_github_release_installer() {
+  local destination="$1" installer_url="$2" manifest="${destination}.SHA256SUMS.txt"
+  local expected actual
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "xdrive-server: sha256sum is required to verify GitHub release installers." >&2
+    return 1
+  fi
+  if ! download_installer_url "${installer_url%/*}/SHA256SUMS.txt" "$manifest"; then
+    echo "xdrive-server: could not download the GitHub release SHA256SUMS.txt; refusing to execute installer." >&2
+    rm -f "$manifest"
+    return 1
+  fi
+
+  # Reject malformed entries anywhere in the published manifest and require
+  # exactly one checksum for this installer, including duplicate-valid rows.
+  expected="$(awk '
+    NF != 2 || length($1) != 64 || $1 !~ /^[[:xdigit:]]+$/ { invalid = 1 }
+    $2 == "xdrive-server-install.sh" { matching++; hash = tolower($1) }
+    END { if (!invalid && matching == 1) print hash }
+  ' "$manifest")"
+  rm -f "$manifest"
+  if [[ ! "$expected" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "xdrive-server: GitHub release SHA256SUMS.txt lacks exactly one valid xdrive-server-install.sh checksum." >&2
+    return 1
+  fi
+  actual="$(sha256sum "$destination" | awk '{ print $1 }')"
+  if [[ "$expected" != "$actual" ]]; then
+    echo "xdrive-server: GitHub release installer SHA-256 mismatch (possible rolling snapshot change); refusing to execute." >&2
+    return 1
+  fi
+  printf '[xDrive] GitHub release installer SHA-256 verified: %s\n' "$actual"
+}
+
 download_installer() {
-  local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url
+  local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url attempt
   installer_url="$(installer_url_for_source "$source" "$channel")"
+
+  # The official GitHub master/stable Release publishes SHA256SUMS.txt beside
+  # the installer. Retry the WHOLE pair after a snapshot rollover; never
+  # accept a checksum from a different release generation. Intentional custom
+  # URL overrides and GitLab retain their existing distribution contract.
+  if [[ "$source" == "github" && -z "$INSTALLER_URL_OVERRIDE" ]]; then
+    for attempt in 1 2 3; do
+      if download_installer_url "$installer_url" "$destination"; then
+        if verify_github_release_installer "$destination" "$installer_url"; then
+          return 0
+        fi
+      fi
+      rm -f "$destination" "${destination}.SHA256SUMS.txt"
+      if (( attempt < 3 )); then
+        echo "[xDrive] GitHub release installer/manifest verification failed; retrying the complete pair ($attempt/3)..." >&2
+      fi
+    done
+    echo "xdrive-server: GitHub installer could not be verified after 3 attempts; no installer was executed." >&2
+    return 1
+  fi
+
   if download_installer_url "$installer_url" "$destination"; then
     return 0
   else
