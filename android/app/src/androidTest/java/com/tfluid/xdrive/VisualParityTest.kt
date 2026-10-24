@@ -123,6 +123,15 @@ class VisualParityTest {
         compose.runOnIdle { Assert.assertEquals(0, changes) }
         compose.onNodeWithTag("confirm-password").performTextReplacement("synthetic-new")
         compose.onNodeWithText("更新密码").performScrollTo().performClick()
+        // The controller enters FILES before the Main coroutine finishes
+        // its first authenticated root/children read. Compose idle alone does
+        // not guarantee that the freshly loaded "Documents" row is visible.
+        // Keep the real screen/row assertion; wait for the real loaded state.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val current = controller.state.value
+            current.screen == Screen.FILES && current.loaded && !current.loading
+        }
+        compose.waitForIdle()
         compose.onNodeWithText("Documents").assertIsDisplayed()
     }
     @Test fun brandAndFileTypeGlyphsRender() {
