@@ -26,6 +26,10 @@ import {
   xDriveBaiduMapResourceAllowed,
   xDriveBaiduMapNavigationAllowed,
 } from './baidu_map_secure_view.cjs'
+import {
+  xDriveReleasedBaiduChildOrigin,
+  xDriveBaiduReleasedChildResourceAllowed,
+} from './baidu_map_child_resource_policy.cjs'
 import { xDriveParseDesktopBaiduMapScope, xDriveDesktopBaiduMapClaimAllowed,
   type XDriveDesktopBaiduMapScope } from './baidu_map_scope_handoff.cjs'
 import { DesktopViewportRequests } from './viewport_requests.cjs'
@@ -302,6 +306,13 @@ type DesktopResult<T> =
 
 let mainWindow: BrowserWindow | null = null
 let secureBaiduMapWindow: BrowserWindow | null = null
+// Main-only accepted Child Origin; never copied to Renderer or persisted.
+let secureBaiduMapChildOrigin: string | null = null
+// A previously authenticated HTTPS Session can NEVER be reused for another
+// Desktop login, even if its Server and signed Child Origin have not changed.
+let secureBaiduMapWindowOwner: string | null = null
+let secureBaiduMapWindowDenied = false
+let secureBaiduMapOpenGeneration = 0
 // Owner-private, one-use, memory-only. Nothing crosses the Web URL, shared
 // Electron Session, disk storage, third-party Child or Desktop Agent JWT.
 let secureBaiduMapHandoff: {
@@ -1089,7 +1100,11 @@ function restoreWindowsTaskbarIcon() {
  * to this renderer. Only the current Agent-configured HTTPS Server is trusted.
  */
 function closeSecureBaiduMapWindow() {
+  secureBaiduMapOpenGeneration++
   secureBaiduMapHandoff = null
+  secureBaiduMapChildOrigin = null
+  secureBaiduMapWindowOwner = null
+  secureBaiduMapWindowDenied = false
   const win = secureBaiduMapWindow
   secureBaiduMapWindow = null
   if (win && !win.isDestroyed()) win.destroy()
@@ -1114,14 +1129,40 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
     return {ok:false,error:{code:'invalid_map_scope',
       message:'地图只接受已审核的相册、日期、收藏和媒体类型筛选。'}}
   }
+  const openGeneration = ++secureBaiduMapOpenGeneration
+  // Only the authenticated Agent can read the Server's current, signed
+  // JSAPI4 release. The isolated HTTPS Renderer is NEVER allowed to propose
+  // an Origin or opt into an arbitrary provider/CDN destination.
+  const ownerName = agentState.status.username
+  const sameOwner = () => Boolean(agentState.connected &&
+    agentState.status?.username === ownerName &&
+    xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin === target.origin)
+  let releasedOrigin: string | null = null
+  try {
+    const released = await requireAgentClient().mediaBaiduJSAPI4Release()
+    releasedOrigin = xDriveReleasedBaiduChildOrigin(released, target.origin)
+  } catch { /* current Server release absent / denied: fail closed */ }
+  if (openGeneration !== secureBaiduMapOpenGeneration) {
+    return {ok:false,error:{code:'map_open_superseded',
+      message:'已有更新的地图打开请求；过期地图不会覆盖当前窗口。'}}
+  }
+  if (!releasedOrigin || !sameOwner()) {
+    closeSecureBaiduMapWindow()
+    return {ok:false,error:{code:'map_signed_child_unavailable',
+      message:'当前服务器尚未授权独立百度地图资源，或 Desktop 登录状态已改变。'}}
+  }
+  const childOrigin = releasedOrigin
   const nextHandoff = (windowID: number) => ({
     windowID, serverOrigin: target.origin,
-    ownerUsername: agentState.status!.username!, scope,
+    ownerUsername: ownerName, scope,
     expiresAt: Date.now() + 10 * 60 * 1000,
   })
   if (secureBaiduMapWindow && !secureBaiduMapWindow.isDestroyed()) {
-    if (secureBaiduMapWindow.webContents.getURL().startsWith(
-      target.origin + '/?places_map_mode=isolated')) {
+    if (secureBaiduMapChildOrigin === childOrigin &&
+        secureBaiduMapWindowOwner === ownerName &&
+        !secureBaiduMapWindowDenied && sameOwner() &&
+        secureBaiduMapWindow.webContents.getURL().startsWith(
+          target.origin + '/?places_map_mode=isolated')) {
       // Latest explicit Desktop selection wins. Do not send scope in an event:
       // the separately authenticated trusted Web parent must claim it itself.
       secureBaiduMapHandoff = nextHandoff(secureBaiduMapWindow.webContents.id)
@@ -1137,8 +1178,65 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   const mapSession = session.fromPartition(partition, { cache: false })
   mapSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   mapSession.setPermissionCheckHandler(() => false)
+  // Every Child request stays on the one Server-attested distinct HTTPS
+  // Origin. Fresh subframe navigations recheck immediately; a brief 3s
+  // singleflight cache bounds Agent reads during SDK tile bursts. Sensitive
+  // _BMapService resources additionally revalidate Owner/epoch/release in Go.
+  // A lost / changed signed release permanently denies this old Window.
+  let releaseRevoked = false
+  let releaseVerifiedAt = Date.now()
+  let inflightReleaseCheck: Promise<boolean> | null = null
+  let windowID = 0
+  const revokeWindow = (): false => {
+    releaseRevoked = true
+    if (windowID > 0 && secureBaiduMapWindow?.webContents.id === windowID)
+      secureBaiduMapWindowDenied = true
+    return false
+  }
+  const verifyChildRelease = async (): Promise<boolean> => {
+    if (!sameOwner() || releaseRevoked) return revokeWindow()
+    try {
+      const active = await requireAgentClient().mediaBaiduJSAPI4Release()
+      if (!sameOwner() ||
+          xDriveReleasedBaiduChildOrigin(active, target.origin) !== childOrigin)
+        return revokeWindow()
+      releaseVerifiedAt = Date.now()
+      return true
+    } catch {
+      return revokeWindow()
+    }
+  }
   mapSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: !xDriveBaiduMapResourceAllowed(details.url, target.origin) })
+    if (!sameOwner() || releaseRevoked) {
+      revokeWindow()
+      callback({ cancel: true })
+      return
+    }
+    if (xDriveBaiduMapResourceAllowed(details.url, target.origin)) {
+      callback({ cancel: false })
+      return
+    }
+    if (!xDriveBaiduReleasedChildResourceAllowed(details.url, childOrigin)) {
+      callback({ cancel: true })
+      return
+    }
+    if (details.resourceType !== 'subFrame' &&
+        Date.now() - releaseVerifiedAt < 3000) {
+      callback({ cancel: false })
+      return
+    }
+    if (!inflightReleaseCheck) inflightReleaseCheck = verifyChildRelease()
+    const pending = inflightReleaseCheck
+    void pending.then(ok => {
+      if (inflightReleaseCheck === pending) inflightReleaseCheck = null
+      const accepted = ok && !releaseRevoked && sameOwner()
+      if (!accepted) revokeWindow()
+      callback({ cancel: !accepted })
+    }).catch(() => {
+      if (inflightReleaseCheck === pending) inflightReleaseCheck = null
+      revokeWindow()
+      callback({ cancel: true })
+    })
   })
   const win = new BrowserWindow({
     width: 1080, height: 760, minWidth: 720, minHeight: 520,
@@ -1154,6 +1252,10 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
     },
   })
   secureBaiduMapWindow = win
+  windowID = win.webContents.id
+  secureBaiduMapChildOrigin = childOrigin
+  secureBaiduMapWindowOwner = ownerName
+  secureBaiduMapWindowDenied = false
   secureBaiduMapHandoff = nextHandoff(win.webContents.id)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
@@ -1167,12 +1269,21 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
     if (secureBaiduMapWindow === win) {
       secureBaiduMapWindow = null
       secureBaiduMapHandoff = null
+      secureBaiduMapChildOrigin = null
+      secureBaiduMapWindowOwner = null
+      secureBaiduMapWindowDenied = false
     }
     void mapSession.clearStorageData().catch(() => {})
   })
   win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show() })
   try {
     await win.loadURL(target.url)
+    if (secureBaiduMapWindow !== win || !sameOwner() ||
+        secureBaiduMapWindowDenied) {
+      if (!win.isDestroyed()) win.destroy()
+      return {ok:false,error:{code:'map_open_superseded',
+        message:'登录或地图发布已变更，旧 HTTPS 窗口不会继续显示。'}}
+    }
     return { ok: true, data: { opened: true, separate_login_required: true } }
   } catch {
     if (!win.isDestroyed()) win.destroy()
