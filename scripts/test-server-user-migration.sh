@@ -62,6 +62,7 @@ cat > "$TMP/bin/runuser" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$1" == "-u" && "$2" == "alice" && "$3" == "--" ]]
+printf '%s\n' "$*" >> "$TEST_STATE/runuser-calls"
 shift 3
 exec "$@"
 SH
@@ -129,7 +130,9 @@ if [[ "${USER:-}" == "alice" ]]; then
       [[ "${DOCKER_HOST:-}" == "unix:///run/user/1001/docker.sock" ]] || exit 1
       ;;
     needs-group)
-      [[ -f "$TEST_STATE/docker-group-granted" && -z "${DOCKER_HOST:-}" ]] || exit 1
+      [[ -f "$TEST_STATE/docker-group-granted" ]] || exit 1
+      [[ -z "${DOCKER_HOST:-}" || "${DOCKER_HOST:-}" == "unix:///var/run/docker.sock" ]] || exit 1
+      [[ "${TEST_POST_GRANT_DOCKER_FAIL:-0}" == "0" ]] || exit 1
       ;;
     unavailable)
       exit 1
@@ -275,6 +278,9 @@ run_case() {
     grep -Fxq -- '-aG docker alice' "$base/state/usermod-calls"
     grep -q 'root-equivalent host access' "$base/migrate.err"
     grep -q 'docker group membership is permanent' "$base/migrate.err"
+    grep -q 'user=alice host=unix:///var/run/docker.sock .*args=info$' "$base/state/docker-env-calls"
+    grep -q 'DOCKER_HOST=unix:///var/run/docker.sock docker info$' "$base/state/runuser-calls"
+    grep -q "Docker access verified for 'alice'" "$base/migrate.err"
   else
     test ! -e "$base/state/usermod-calls"
   fi
@@ -318,12 +324,40 @@ run_case rootful rootful
 run_case rootless rootless
 run_case rootful-opt-in rootful --grant-docker-group
 run_case rootless-opt-in rootless --grant-docker-group
-run_case needs-group needs-group --grant-docker-group
+run_case default-auto-grant needs-group
+run_case legacy-explicit-grant needs-group --grant-docker-group
 
-run_failing_case no-opt-in needs-group 'cannot access a Docker daemon'
-TEST_GROUP_PRESENT=0 run_failing_case missing-group needs-group 'system docker group does not exist' --grant-docker-group
-TEST_DOCKER_SOCKET_GID=99 run_failing_case wrong-socket-group needs-group 'not owned by docker group' --grant-docker-group
-TEST_SYSTEM_DOCKER_AVAILABLE=0 run_failing_case no-system-daemon needs-group 'rootful system Docker daemon is not available' --grant-docker-group
-TEST_GROUP_ALREADY_MEMBER=1 run_failing_case already-member needs-group 'already in docker group but Docker is inaccessible' --grant-docker-group
+run_failing_case opt-out needs-group 'cannot access a Docker daemon' --no-grant-docker-group
+TEST_GROUP_PRESENT=0 run_failing_case missing-group needs-group 'system docker group does not exist'
+TEST_DOCKER_SOCKET_GID=99 run_failing_case wrong-socket-group needs-group 'not owned by docker group'
+TEST_SYSTEM_DOCKER_AVAILABLE=0 run_failing_case no-system-daemon needs-group 'rootful system Docker daemon is not available'
+TEST_GROUP_ALREADY_MEMBER=1 run_failing_case already-member needs-group 'already in docker group but Docker is inaccessible'
+
+run_failed_group_attempt() {
+  local name="$1" expected="$2" membership="$3"
+  local base="$TMP/$name"
+  prepare_case "$name"
+  if invoke_case "$name" needs-group; then
+    echo "$name: migration unexpectedly succeeded" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$base/migrate.err"
+  grep -Fxq -- '-aG docker alice' "$base/state/usermod-calls"
+  if [[ "$membership" == "yes" ]]; then
+    test -e "$base/state/docker-group-granted"
+    grep -q 'group grant persists' "$base/migrate.err"
+  else
+    test ! -e "$base/state/docker-group-granted"
+  fi
+  test ! -e "$base/target"
+  test -f "$base/source/data/files/file.bin"
+  if grep -q 'down --remove-orphans' "$base/state/docker-calls"; then
+    echo "$name: original deployment stopped despite failed Docker verification" >&2
+    exit 1
+  fi
+}
+
+TEST_USERMOD_FAIL=1 run_failed_group_attempt usermod-failure 'failed to update docker group membership' no
+TEST_POST_GRANT_DOCKER_FAIL=1 run_failed_group_attempt post-grant-unusable 'still cannot access Docker' yes
 
 echo "server root-to-user migration tests passed"

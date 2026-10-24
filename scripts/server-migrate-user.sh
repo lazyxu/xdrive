@@ -7,7 +7,7 @@ usage() {
 Migrate an xDrive server deployment from root to a normal Linux user.
 
 Usage:
-  server-migrate-user.sh USER [--grant-docker-group]
+  server-migrate-user.sh USER [--grant-docker-group|--no-grant-docker-group]
 
 Typical:
   /root/.xd/bin/xdrive-server migrate-user alice
@@ -16,24 +16,31 @@ Defaults:
   source: /root/.xd (or the current xDrive home when invoked via xdrive-server)
   target: /home/USER/.xd
 
-Use --grant-docker-group only when deliberately approving root-equivalent host
-privileges. The group grant persists even if migration fails.
+If the target cannot access Docker, migration grants root-equivalent docker
+membership automatically only after verifying the local rootful daemon/socket.
+Use --no-grant-docker-group to disable automatic authorization; the older
+--grant-docker-group option remains supported. A group grant is permanent even
+if migration fails.
 
 The source deployment is retained after success as a rollback copy. It is not
 deleted automatically.
 EOF
 }
 
-GRANT_DOCKER_GROUP=0
+GRANT_DOCKER_GROUP=1
 case "$#" in
   1)
     [[ "$1" != -* ]] || { usage >&2; exit 2; }
     TARGET_USER="$1"
     ;;
   2)
-    [[ "$1" != -* && "$2" == "--grant-docker-group" ]] || { usage >&2; exit 2; }
+    [[ "$1" != -* ]] || { usage >&2; exit 2; }
     TARGET_USER="$1"
-    GRANT_DOCKER_GROUP=1
+    case "$2" in
+      --grant-docker-group) GRANT_DOCKER_GROUP=1 ;;
+      --no-grant-docker-group) GRANT_DOCKER_GROUP=0 ;;
+      *) usage >&2; exit 2 ;;
+    esac
     ;;
   *)
     usage >&2
@@ -213,6 +220,10 @@ grant_target_docker_group() {
     echo "xDrive migration: usermod is required to grant Docker group access." >&2
     return 1
   fi
+  if ! command -v runuser >/dev/null 2>&1; then
+    echo "xDrive migration: runuser is required to verify Docker group membership." >&2
+    return 1
+  fi
   if id -nG "$TARGET_USER" | tr ' ' '\n' | grep -Fxq docker; then
     echo "xDrive migration: user '$TARGET_USER' is already in docker group but Docker is inaccessible." >&2
     return 1
@@ -238,6 +249,22 @@ grant_target_docker_group() {
     return 1
   fi
   echo "[xDrive] docker group membership is permanent even if the following migration fails." >&2
+
+  # The requested runuser -u USER -- docker info check is performed with a
+  # clean target-user environment and the verified rootful system socket.
+  # runuser starts a fresh process, so new supplementary groups take effect.
+  if ! runuser -u "$TARGET_USER" -- env \
+      -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG \
+      -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION \
+      HOME="$TARGET_LOGIN_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      XDG_RUNTIME_DIR="$TARGET_RUNTIME_DIR" \
+      DOCKER_HOST=unix:///var/run/docker.sock \
+      docker info </dev/null >/dev/null 2>&1; then
+    echo "xDrive migration: docker group was updated, but '$TARGET_USER' still cannot access Docker." >&2
+    echo "xDrive migration: the group grant persists; the original deployment was not stopped." >&2
+    return 1
+  fi
+  echo "[xDrive] Docker access verified for '$TARGET_USER' after group update." >&2
 }
 
 source_compose() {
@@ -249,8 +276,9 @@ target_compose() {
 }
 
 if ! select_target_docker; then
-  # Group membership grants root-equivalent control. Only an explicit opt-in
-  # may change it, and only after all ordinary/Rootless probes fail.
+  # Root-only migration attempts normal and Rootless Docker first. A failed
+  # preflight can authorize a verified rootful docker group automatically,
+  # unless the operator explicitly opts out.
   if [[ "$GRANT_DOCKER_GROUP" != "1" ]] ||
       ! grant_target_docker_group || ! select_target_docker; then
     echo "xDrive migration: user '$TARGET_USER' cannot access a Docker daemon." >&2
@@ -258,7 +286,7 @@ if ! select_target_docker; then
     if [[ "$GRANT_DOCKER_GROUP" == "1" ]]; then
       echo "Docker group authorization failed or did not provide access; check the daemon and socket configuration." >&2
     else
-      echo "Configure Docker Rootless Mode, grant Docker access yourself, or retry with USER --grant-docker-group." >&2
+      echo "Automatic docker-group authorization is disabled; retry without --no-grant-docker-group or configure Docker access manually." >&2
     fi
     exit 1
   fi
