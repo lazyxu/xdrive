@@ -6,6 +6,8 @@
 
 [#2525](https://github.com/lazyxu/xdrive/pull/2525) 已把两版地图的 Owner Cells、Camera Range、PhotoScope、封面和 Viewer 业务汇合。剩余限制不是渲染能力，而是切换 Baidu SDK 时必须进行 `location.replace` 全文档重载，会遗失可信 Parent 的私有内存筛选。
 
+模式切换时，**未筛选但已有有效 BD-09 当前相机**同样使用这条现成的一次性交接：不仅保留筛选，而且保留地图中心与缩放；只有尚无有效相机且没有受限成员时才允许不经票据直接换文档。绝不通过 URL 或浏览器 Storage 传递原始位置，也不创建第二种交接协议。
+
 P0-4 新增独立于 Baidu Map-only Child Ticket 的 `BaiduMapScopeHandoff`：单个 256-bit 随机 nonce；数据库只存 SHA-256，90 秒过期；绑定 OwnerID、SessionVersion、current signed BrowserAK release revision、Map revocation epoch、目标模式、规范化并经白名单校验的有限 Gallery Scope、Album revision、可选 BD-09LL Camera。唯一消费使用 PostgreSQL `FOR UPDATE` 及同一事务更新 `consumed_at`。不能转交 media authorization；`/cells` 与原 Gallery Range 始终是独立重查询的最终数据授权源。
 
 ### 端到端流程

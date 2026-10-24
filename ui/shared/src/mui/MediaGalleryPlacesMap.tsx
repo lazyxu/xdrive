@@ -90,17 +90,19 @@ export function XDriveMediaGalleryPlacesMap({
       setModeWarning('当前照片范围无效，未切换到全图库。')
       return
     }
-    if (xDriveBaiduMapScopeSurvivesFullReload(scope)) {
+    if (xDriveBaiduMapScopeSurvivesFullReload(scope) &&
+      !xDriveValidBaiduNativeCameraSnapshot(cameraRef.current)) {
       setModeWarning('')
       const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
       if (href) window.location.replace(href)
       return
     }
-    // Full-document transition must not lose a private Owner filter. Only a
-    // fresh Server issued, one-use scope handoff can replace this document.
+    // Preserve BOTH private filters and an already selected BD-09 camera.
+    // The unrestricted gallery can navigate directly only before a camera
+    // exists. Reuse the SAME one-use Server handoff for either SDK host.
     // No Album/GPS/Owner identifiers are written to URL, history or storage.
     if (!onMapModeHandoff) {
-      setModeWarning('当前受限照片范围无法安全交接，保持原地图，不会切换到全图库。')
+      setModeWarning('当前照片范围或地图位置无法安全交接，保持原地图，不会切换到全图库。')
       return
     }
     handoffAbort.current?.abort()
@@ -116,7 +118,7 @@ export function XDriveMediaGalleryPlacesMap({
       window.location.replace(url)
     }).catch(() => {
       if (!controller.signal.aborted && handoffAbort.current === controller)
-        setModeWarning('当前照片筛选的安全交接失败，已保留当前地图与筛选；不会打开全图库。')
+        setModeWarning('地图状态交接失败，已保留当前相机与照片筛选；不会打开全图库。')
     }).finally(() => {
       if (handoffAbort.current === controller) {
         handoffAbort.current = null
