@@ -39,12 +39,14 @@ function summary(values: XDrivePostgresPoolValues): string {
 
 export function XDrivePostgresPoolConfigPanel({
   source,
-  refreshID, section = 'config', onDirtyChange,
+  refreshID, section = 'config', onDirtyChange, onBusyChange, singlePage = false,
 }: {
   source: XDrivePostgresPoolPort
   refreshID: number
-  section?: 'config' | 'history' | 'verify'
+  section?: 'config' | 'history' | 'verify' | 'all'
   onDirtyChange?: (dirty: boolean) => void
+  onBusyChange?: (busy: boolean) => void
+  singlePage?: boolean
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDrivePostgresPoolConfig | null>(null)
@@ -58,6 +60,7 @@ export function XDrivePostgresPoolConfigPanel({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [historyError, setHistoryError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -71,6 +74,7 @@ export function XDrivePostgresPoolConfigPanel({
     setError('')
     setNotice('')
     setHistoryError('')
+    setHistoryLoading(section === 'history' || section === 'all')
     setLoading(true)
     setBusy(false)
     if (source.loadPostgresPoolConfig) {
@@ -86,18 +90,22 @@ export function XDrivePostgresPoolConfigPanel({
     } else {
       setLoading(false)
     }
-    if (section === 'history' && source.loadPostgresPoolRevisions) {
+    if ((section === 'history' || section === 'all') && source.loadPostgresPoolRevisions) {
       void source.loadPostgresPoolRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
         if (active && epoch === epochRef.current) setHistoryError('无法读取 PostgreSQL 连接池历史修订。')
+      }).finally(() => {
+        if (active && epoch === epochRef.current) setHistoryLoading(false)
       })
+    } else {
+      setHistoryLoading(false)
     }
     return () => { active = false; ++epochRef.current }
   }, [source, refreshID, section])
 
   const reload = async () => {
-    if (!source.loadPostgresPoolConfig || busy) return
+    if (!source.loadPostgresPoolConfig || busy || (singlePage && isDraftDirty)) return
     const epoch = ++epochRef.current
     setLoading(true)
     setError('')
@@ -106,7 +114,7 @@ export function XDrivePostgresPoolConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraft(asDraft(next.desired))
-      if (section === 'history' && source.loadPostgresPoolRevisions) {
+      if ((section === 'history' || section === 'all') && source.loadPostgresPoolRevisions) {
         const page = await source.loadPostgresPoolRevisions().catch(() => null)
         if (epoch === epochRef.current && page) {
           setHistory(page.items)
@@ -138,8 +146,8 @@ export function XDrivePostgresPoolConfigPanel({
       setDraft(asDraft(next.desired))
       setTarget('')
       setNotice(next.apply_state === 'applied'
-        ? '已持久化、审计并确认当前 Server 的真实数据库连接池上限热生效；其他 Server 独立协调。'
-        : '配置已持久化，但当前 Server 尚未确认实际生效；请刷新状态。')
+        ? '配置已保存，当前 Server 连接池已生效；其他实例另行核验。'
+        : '配置已保存，当前 Server 生效状态待确认。')
       if (source.loadPostgresPoolRevisions) {
         const page = await source.loadPostgresPoolRevisions().catch(() => null)
         if (epoch === epochRef.current && page) { setHistory(page.items); setHistoryError('') }
@@ -148,7 +156,8 @@ export function XDrivePostgresPoolConfigPanel({
       if (epoch !== epochRef.current) return
       setError(err instanceof Error ? err.message : 'PostgreSQL 连接池配置未确认保存。')
       const current = await source.loadPostgresPoolConfig?.().catch(() => null)
-      if (current && epoch === epochRef.current) { setConfig(current); setDraft(asDraft(current.desired)) }
+      // An unconfirmed Save must not silently destroy the operator's draft.
+      if (current && epoch === epochRef.current) setConfig(current)
     } finally {
       if (epoch === epochRef.current) {
         setBusy(false)
@@ -191,22 +200,26 @@ export function XDrivePostgresPoolConfigPanel({
     parsed.max_open_connections !== config.desired.max_open_connections ||
     parsed.max_idle_connections !== config.desired.max_idle_connections
   )
+  const isDraftDirty = Boolean(config && (!parsed || changed))
 
-  useEffect(() => { onDirtyChange?.(Boolean(config && (!parsed || changed))) },
-    [onDirtyChange, config, parsed?.max_open_connections, parsed?.max_idle_connections, changed])
+  useEffect(() => { onDirtyChange?.(isDraftDirty) },
+    [onDirtyChange, isDraftDirty])
+  useEffect(() => { onBusyChange?.(busy || loading) },
+    [onBusyChange, busy, loading])
+  useEffect(() => () => { onBusyChange?.(false) }, [onBusyChange])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-postgres-pool>
       <Stack spacing={1.5}>
         <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-          <Typography variant="subtitle2" fontWeight={700}>PostgreSQL · xDrive Server 连接池</Typography>
-          <Button variant="outlined" size="small" disabled={!source.loadPostgresPoolConfig || busy || loading}
-            onClick={() => { void reload() }}>验证当前实例</Button>
+          <Typography variant="subtitle2" fontWeight={700}>数据库连接池</Typography>
+          {!singlePage && <Button variant="outlined" size="small"
+            disabled={!source.loadPostgresPoolConfig || busy || loading || isDraftDirty}
+            onClick={() => { void reload() }}>验证当前实例</Button>}
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          仅调节本 Server 使用的 database/sql 连接池，不修改 PostgreSQL 数据库服务端配置、连接地址、凭据、
-          数据卷或容器。保存后当前实例立即应用，其他 Server 每 30 秒独立读取并应用，不代表集群已完成。
+          仅调整 xDrive Server 的数据库连接数，不修改数据库服务、账号或文件。其他实例另行核验。
         </Typography>
         {config ? (
           <>
@@ -214,18 +227,18 @@ export function XDrivePostgresPoolConfigPanel({
               <Chip size="small" variant="outlined" color={config.apply_state === 'applied' ? 'success' : 'default'}
                 label={config.apply_state === 'applied' ? '当前实例已生效' :
                   config.apply_state === 'pending' ? '当前实例待生效' : '未由管理员管理'} />
-              <Typography variant="caption" color="text.secondary">
+              {!singlePage && <Typography variant="caption" color="text.secondary">
                 期望修订 #{config.revision} · 当前实例修订 #{config.effective_revision}
                 {' · '}{config.source === 'saved' ? '管理员持久设置' : 'Go 默认值，未声明部署状态'}
-              </Typography>
+              </Typography>}
             </Stack>
             <Typography variant="body2" color={config.apply_state === 'pending' ? 'warning.main' : 'text.secondary'}>
-              期望：{summary(config.desired)}
+              已保存：{summary(config.desired)}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              实际：{config.effective ? summary(config.effective) : '尚无经本 Server 确认的管理员应用修订'}
-              {' · '}打开中 {config.open_connections} · 使用中 {config.in_use_connections}
-              {' · '}空闲 {config.idle_connections} · 实际打开上限 {config.current_max_open_connections || '不限额'}
+              本机：{config.effective ? summary(config.effective) : '尚未确认配置生效'}
+              {' · '}已打开 {config.open_connections} · 使用中 {config.in_use_connections}
+              {' · '}空闲 {config.idle_connections}
             </Typography>
             {config.replicas ? (
               <Box data-xdrive-postgres-pool-replicas sx={{ p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
@@ -252,8 +265,7 @@ export function XDrivePostgresPoolConfigPanel({
                   </Typography>
                 ))}
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                  每 5 秒上报一次、20 秒过期，仅表示已观测在线实例，不代表部署中所有 Server 都已生效。
-                  查询失败或旧版本无法提供完整证据时不显示成功。
+                  仅统计近期有心跳的实例，不代表全部部署节点。
                 </Typography>
               </Box>
             ) : (
@@ -261,21 +273,30 @@ export function XDrivePostgresPoolConfigPanel({
                 当前 Server/Agent 尚不支持 PostgreSQL 多实例观测，不能确认其他实例是否生效。
               </Typography>
             )}
-            {section === 'config' && (<>
+            {(section === 'config' || section === 'all') && (<>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
               <TextField size="small" fullWidth type="number" label="最大打开连接数" value={draft.open}
-                helperText="0（Go 默认不限额）或 8–256"
+                helperText={!parsed && draft.open ? '0 表示不限额，或填写 8–256' : undefined}
                 disabled={busy || !config.editable}
                 onChange={(event) => setDraft((old) => ({ ...old, open: event.target.value }))} />
               <TextField size="small" fullWidth type="number" label="最大空闲连接数" value={draft.idle}
-                helperText="0–32，不能超过非零打开连接上限"
+                helperText={!parsed && draft.idle ? '填写 0–32，且不能超过打开连接上限' : undefined}
                 disabled={busy || !config.editable}
                 onChange={(event) => setDraft((old) => ({ ...old, idle: event.target.value }))} />
             </Stack>
-            <Button variant="contained" size="small" disabled={busy || !config.editable || !parsed || !changed ||
-              !source.savePostgresPoolConfig} onClick={() => setConfirmSave(true)}>
-              {busy ? '正在保存…' : '保存并热应用到当前 Server'}
-            </Button>
+            <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+              <Button variant="contained" size="small"
+                disabled={busy || !config.editable || !parsed || !changed || !source.savePostgresPoolConfig}
+                onClick={singlePage ? () => { void save() } : () => setConfirmSave(true)}>
+                {busy ? '正在保存…' : '保存配置'}
+              </Button>
+              {singlePage && isDraftDirty && (
+                <Button variant="text" size="small" disabled={busy || loading}
+                  onClick={() => setDraft(asDraft(config.desired))}>
+                  放弃修改
+                </Button>
+              )}
+            </Stack>
             <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="确认变更 PostgreSQL 连接池上限"
               description={parsed ? `应用新的连接池配置：${summary(parsed)}。仅作用于本应用进程，可能改变请求等待时间，不会修改数据库服务端、容器或数据目录；其他 Server 需独立确认。` : '配置无效'}
@@ -289,12 +310,18 @@ export function XDrivePostgresPoolConfigPanel({
               '此 Server/Agent 版本不支持连接池在线配置；不会提供无效的编辑按钮。'}
           </Typography>
         )}
-        {section === 'history' && config && source.loadPostgresPoolRevisions && source.rollbackPostgresPool && (
+        {(section === 'history' || section === 'all') && config &&
+          source.loadPostgresPoolRevisions && source.rollbackPostgresPool && (
           <Box>
             <Stack spacing={1}>
-              <Typography variant="subtitle2" fontWeight={700}>版本历史与安全回滚</Typography>
+              <Typography variant="subtitle2" fontWeight={700}
+                id="dependency-database-history-header" sx={{ scrollMarginTop: 72 }}>
+                配置历史与回滚
+              </Typography>
+              {historyLoading && <Typography variant="caption" color="text.secondary">正在读取历史…</Typography>}
               <TextField select size="small" fullWidth label="选择历史连接池配置" value={target}
-                disabled={busy || !config.editable || !history.some((item) => item.revision < config.revision)}
+                disabled={busy || isDraftDirty || historyLoading || !config.editable ||
+                  !history.some((item) => item.revision < config.revision)}
                 onChange={(event) => setTarget(event.target.value)}
                 helperText="回滚会新建审计修订，仅热调整本 Server 的连接池上限。">
                 <MenuItem value="">选择更早修订</MenuItem>
@@ -305,7 +332,8 @@ export function XDrivePostgresPoolConfigPanel({
                   </MenuItem>
                 ))}
               </TextField>
-              <Button variant="outlined" size="small" disabled={busy || !config.editable || !historic}
+              <Button variant="outlined" size="small"
+                disabled={busy || isDraftDirty || !config.editable || !historic}
                 onClick={() => setConfirmRollback(true)}>确认回滚历史配置</Button>
               <XDriveConfirmDialog open={confirmRollback} loading={busy}
                 title="确认回滚 PostgreSQL 连接池"
@@ -315,6 +343,9 @@ export function XDrivePostgresPoolConfigPanel({
                 onConfirm={() => { void rollback() }} />
             </Stack>
           </Box>
+        )}
+        {section === 'all' && !source.loadPostgresPoolRevisions && (
+          <Typography variant="caption" color="text.secondary">当前版本不支持查看连接池历史。</Typography>
         )}
         {historyError && <Typography variant="caption" color="warning.main">{historyError}</Typography>}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}

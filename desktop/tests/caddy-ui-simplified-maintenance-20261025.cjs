@@ -12,7 +12,7 @@ test('Caddy owns one full refresh; children do not add active refresh buttons', 
   const detail = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
-  assert.match(parent, /pageActions=\{selectedPage === 'caddy' \? null : \(/)
+  assert.match(parent, /pageActions=\{\['caddy', 'database', 'storage', 'background-worker'\]\.includes\(selectedPage\) \? null : \(/)
   assert.match(detail, /onClick=\{refreshAllCaddy\}/)
   assert.match(detail, /setAtomicRefreshID\(\(value\) => value \+ 1\)/)
   assert.match(detail, /setHistoryRefreshID\(\(value\) => value \+ 1\)/)

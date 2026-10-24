@@ -55,8 +55,8 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveSensitiveField } from './SensitiveField'
 import { XDriveBaiduJSAPIDesiredPanel } from './BaiduJSAPIDesiredPanel'
-import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
-import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
+import type { XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
+import { XDriveCoreDependencyDetail } from './CoreDependencyDetail'
 import { XDriveMediaWorkerConfigPanel, type XDriveMediaWorkerPort } from './MediaWorkerConfigPanel'
 import { XDrivePhotoHostDesiredPanel, type XDrivePhotoHostPort } from './PhotoHostDesiredPanel'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
@@ -1371,7 +1371,7 @@ export function XDriveServiceDependenciesPage({
       presentation="page"
       title="系统依赖"
       subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
-      pageActions={selectedPage === 'caddy' ? null : (
+      pageActions={['caddy', 'database', 'storage', 'background-worker'].includes(selectedPage) ? null : (
         <Button
           size="small"
           variant="outlined"
@@ -1731,6 +1731,14 @@ export function XDriveServiceDependenciesPage({
                       onConfigurationChanged={invalidateCaddyEvidence}
                       evidenceRevision={caddyEvidenceRevision}
                     />
+                  ) : (['database', 'storage', 'background-worker'].includes(selectedPage) && selectedItem ? (
+                    <XDriveCoreDependencyDetail
+                      source={source} service={selectedItem} checkedAt={checkedAt}
+                      activeTab={currentTab} refreshing={refreshing}
+                      hasUnsavedEdits={hasUnsavedEdits}
+                      onRefreshStatus={() => setRefreshID((value) => value + 1)}
+                      onDirtyChange={setChildDirty}
+                    />
                   ) : (<>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
@@ -1885,9 +1893,6 @@ export function XDriveServiceDependenciesPage({
               {selectedPage === 'media-worker' && currentTab !== 'status' &&
                 <XDriveMediaWorkerConfigPanel source={source} refreshID={0}
                   section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
-              {selectedPage === 'database' && currentTab !== 'status' &&
-                <XDrivePostgresPoolConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history') &&
                 <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
                   section={currentTab} onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}
@@ -1897,9 +1902,6 @@ export function XDriveServiceDependenciesPage({
                   onDirtyChange={setCaddyAliDirty} onConfigurationChanged={invalidateCaddyEvidence} />}
               {selectedPage === 'caddy' && currentTab === 'verify' && <XDriveCaddyPreflightPanel source={source}
                 refreshID={caddyEvidenceRevision} />}
-              {selectedPage === 'background-worker' && currentTab !== 'status' &&
-                <XDriveSourceWorkerConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'photo-auto' && (currentTab === 'config' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
@@ -2409,7 +2411,7 @@ export function XDriveServiceDependenciesPage({
                       </Accordion>
                     )
                   })}
-                  </>)}
+                  </>))}
             </Box>
           )
             })}

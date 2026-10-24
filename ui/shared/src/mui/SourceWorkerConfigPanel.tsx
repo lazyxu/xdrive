@@ -57,12 +57,14 @@ const applyLabels: Record<XDriveSourceWorkerConfig['apply_state'], string> = {
 
 export function XDriveSourceWorkerConfigPanel({
   source,
-  refreshID, section = 'config', onDirtyChange,
+  refreshID, section = 'config', onDirtyChange, onBusyChange, singlePage = false,
 }: {
   source: XDriveSourceWorkerPort
   refreshID: number
-  section?: 'config' | 'history' | 'verify'
+  section?: 'config' | 'history' | 'verify' | 'all'
   onDirtyChange?: (dirty: boolean) => void
+  onBusyChange?: (busy: boolean) => void
+  singlePage?: boolean
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveSourceWorkerConfig | null>(null)
@@ -75,6 +77,7 @@ export function XDriveSourceWorkerConfigPanel({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [historyError, setHistoryError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -87,6 +90,7 @@ export function XDriveSourceWorkerConfigPanel({
     setError('')
     setNotice('')
     setHistoryError('')
+    setHistoryLoading(section === 'history' || section === 'all')
     setLoading(true)
     setBusy(false)
     if (source.loadSourceWorkerConfig) {
@@ -104,20 +108,22 @@ export function XDriveSourceWorkerConfigPanel({
     } else {
       setLoading(false)
     }
-    if (section === 'history' && source.loadSourceWorkerRevisions) {
+    if ((section === 'history' || section === 'all') && source.loadSourceWorkerRevisions) {
       void source.loadSourceWorkerRevisions().then((next) => {
         if (active && epoch === epochRef.current) setHistory(next.items)
       }).catch(() => {
-        if (active && epoch === epochRef.current) {
-          setHistoryError('无法读取 Pull Worker 历史修订。')
-        }
+        if (active && epoch === epochRef.current) setHistoryError('无法读取 Pull Worker 历史修订。')
+      }).finally(() => {
+        if (active && epoch === epochRef.current) setHistoryLoading(false)
       })
+    } else {
+      setHistoryLoading(false)
     }
     return () => { active = false; ++epochRef.current }
   }, [source, refreshID, section])
 
   const reload = async () => {
-    if (!source.loadSourceWorkerConfig || busy) return
+    if (!source.loadSourceWorkerConfig || busy || (singlePage && isDraftDirty)) return
     const epoch = ++epochRef.current
     setLoading(true)
     setError('')
@@ -126,7 +132,7 @@ export function XDriveSourceWorkerConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraft(valuesToDraft(next.desired))
-      if (section === 'history' && source.loadSourceWorkerRevisions) {
+      if ((section === 'history' || section === 'all') && source.loadSourceWorkerRevisions) {
         try {
           const page = await source.loadSourceWorkerRevisions()
           if (epoch === epochRef.current) {
@@ -164,8 +170,8 @@ export function XDriveSourceWorkerConfigPanel({
       setDraft(valuesToDraft(next.desired))
       setTarget('')
       setNotice(next.apply_state === 'applied'
-        ? '配置已保存、审计，并由全部已观察在线 Worker 确认生效。'
-        : '配置已保存并审计，实际生效仍需 Worker 完成当前批次、更新心跳后才能确认。')
+        ? '配置已保存，已观测在线 Worker 确认生效。'
+        : '配置已保存，等待 Worker 在安全任务边界生效。')
       if (source.loadSourceWorkerRevisions) {
         try {
           const page = await source.loadSourceWorkerRevisions()
@@ -182,7 +188,8 @@ export function XDriveSourceWorkerConfigPanel({
         : null
       if (actual && epoch === epochRef.current) {
         setConfig(actual)
-        setDraft(valuesToDraft(actual.desired))
+        // A Save with missing ACK must keep the edit until the operator
+        // explicitly reconciles or discards it; never overwrite the draft.
       }
     } finally {
       if (epoch === epochRef.current) setBusy(false)
@@ -240,23 +247,25 @@ export function XDriveSourceWorkerConfigPanel({
     parsed.poll_interval_seconds !== config.desired.poll_interval_seconds ||
     parsed.max_concurrency !== config.desired.max_concurrency
   )
+  const isDraftDirty = Boolean(config && (!parsed || changed))
 
-  useEffect(() => { onDirtyChange?.(Boolean(config && (!parsed || changed))) },
-    [onDirtyChange, config, parsed?.scan_interval_seconds, parsed?.poll_interval_seconds,
-      parsed?.max_concurrency, changed])
+  useEffect(() => { onDirtyChange?.(isDraftDirty) }, [onDirtyChange, isDraftDirty])
+  useEffect(() => { onBusyChange?.(busy || loading) },
+    [onBusyChange, busy, loading])
+  useEffect(() => () => { onBusyChange?.(false) }, [onBusyChange])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-source-worker>
       <Stack spacing={1.5}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-          <Typography variant="subtitle2" fontWeight={700}>独立 Pull Worker · 运行配置</Typography>
-          <Button variant="outlined" size="small" disabled={busy || loading || !source.loadSourceWorkerConfig}
-            onClick={() => { void reload() }}>验证生效状态</Button>
+          <Typography variant="subtitle2" fontWeight={700}>后台 Worker 设置</Typography>
+          {!singlePage && <Button variant="outlined" size="small"
+            disabled={busy || loading || isDraftDirty || !source.loadSourceWorkerConfig}
+            onClick={() => { void reload() }}>验证生效状态</Button>}
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          仅配置系统级扫描周期、轮询周期和网络并发。已运行的远程拉取批次正常完成；
-          下一个安全任务边界更新配置，不会重启容器，也不会中断上传、下载、同步或设备备份。
+          调整 Pull Worker 扫描、轮询和并发；运行中任务不中断，新参数在安全任务边界生效。
         </Typography>
         {config ? (
           <>
@@ -268,21 +277,22 @@ export function XDriveSourceWorkerConfigPanel({
                   config.apply_state === 'pending' ? '部分实例待生效' :
                     config.apply_state === 'unavailable' ? '无在线实例' : '未由管理员管理'} />
               <Typography variant="caption" color="text.secondary">
-                期望修订 #{config.revision} · {config.source === 'saved' ? '持久化策略' : '代码默认值（不代表部署参数）'}
-                {' · '}在线 {config.active_instances} 个 · 确认生效 {config.applied_instances} 个
+                在线 {config.active_instances} 个 · 已生效 {config.applied_instances} 个
+                {!singlePage ? ` · 修订 #${config.revision}` : ''}
               </Typography>
             </Stack>
             <Typography variant="body2" color={config.apply_state === 'pending' ? 'warning.main' : 'text.secondary'}>
               {applyLabels[config.apply_state]}
-              {config.truncated ? ' · 在线实例超过查询上限，不判定为全部已生效' : ''}
+              {config.truncated ? ' · 查询结果不完整，不能确认全部生效' : ''}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              期望参数：{valuesSummary(config.desired)}
+              已保存：{valuesSummary(config.desired)}
             </Typography>
             {config.effective.map((group) => (
               <Typography variant="caption" color="text.secondary"
                 key={`${group.revision}-${group.config.scan_interval_seconds}-${group.config.poll_interval_seconds}-${group.config.max_concurrency}`}>
-                实际心跳：{group.count} 个 Worker，修订 #{group.revision}，{valuesSummary(group.config)}
+                在线实例：{group.count} 个，{valuesSummary(group.config)}
+                {!singlePage ? ` · 修订 #${group.revision}` : ''}
               </Typography>
             ))}
           </>
@@ -292,38 +302,44 @@ export function XDriveSourceWorkerConfigPanel({
               '当前 Server/Agent 不支持 Pull Worker 参数管理，不能提供虚假的启用或保存按钮。'}
           </Typography>
         )}
-        {section === 'config' && config && (
+        {(section === 'config' || section === 'all') && config && (
           <>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
               <TextField size="small" fullWidth type="number" label="扫描间隔（秒）"
-                helperText="60–604800" value={draft.scan}
+                helperText={!parsed && draft.scan ? '允许 60–604800 秒' : undefined} value={draft.scan}
                 disabled={!config.editable || busy}
                 onChange={(e) => setDraft((old) => ({ ...old, scan: e.target.value }))} />
               <TextField size="small" fullWidth type="number" label="轮询间隔（秒）"
-                helperText="10–3600" value={draft.poll}
+                helperText={!parsed && draft.poll ? '允许 10–3600 秒' : undefined} value={draft.poll}
                 disabled={!config.editable || busy}
                 onChange={(e) => setDraft((old) => ({ ...old, poll: e.target.value }))} />
               <TextField size="small" fullWidth type="number" label="最大并发"
-                helperText="1–8" value={draft.concurrency}
+                helperText={!parsed && draft.concurrency ? '允许 1–8' : undefined} value={draft.concurrency}
                 disabled={!config.editable || busy}
                 onChange={(e) => setDraft((old) => ({ ...old, concurrency: e.target.value }))} />
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
               <Button variant="contained" size="small" disabled={!config.editable || !parsed || !changed ||
                 busy || !source.saveSourceWorkerConfig}
-                onClick={() => { void save() }}> {busy ? '正在提交…' : '保存期望配置'} </Button>
-              <Typography variant="caption" color="text.secondary">
-                保存后先显示待生效；以 Worker 心跳上报的修订号与实际参数验证，不凭表单判断。
-              </Typography>
+                onClick={() => { void save() }}>{busy ? '正在保存…' : '保存配置'}</Button>
+              {singlePage && isDraftDirty && (
+                <Button variant="text" size="small" disabled={busy || loading}
+                  onClick={() => setDraft(valuesToDraft(config.desired))}>放弃修改</Button>
+              )}
             </Stack>
           </>
         )}
-        {section === 'history' && !!source.loadSourceWorkerRevisions && !!source.rollbackSourceWorker && !!config && (
+        {(section === 'history' || section === 'all') &&
+          !!source.loadSourceWorkerRevisions && !!source.rollbackSourceWorker && !!config && (
           <Box>
             <Stack spacing={1}>
-              <Typography variant="subtitle2" fontWeight={700}>版本历史与审计回滚</Typography>
+              <Typography variant="subtitle2" fontWeight={700}
+                id="dependency-background-worker-history-header" sx={{ scrollMarginTop: 72 }}>
+                配置历史与回滚
+              </Typography>
+              {historyLoading && <Typography variant="caption" color="text.secondary">正在读取历史…</Typography>}
               <TextField select fullWidth size="small" label="回滚到较早的运行配置"
-                value={target} disabled={busy || !config.editable ||
+                value={target} disabled={busy || isDraftDirty || historyLoading || !config.editable ||
                   !history.some((x) => x.revision < config.revision)}
                 onChange={(e) => setTarget(e.target.value)}
                 helperText="回滚会生成新的审计修订；不会立即取消或中断运行中的任务。">
@@ -342,7 +358,8 @@ export function XDriveSourceWorkerConfigPanel({
                   </MenuItem>
                 ))}
               </TextField>
-              <Button variant="outlined" size="small" disabled={busy || !config.editable || !targetRevision}
+              <Button variant="outlined" size="small"
+                disabled={busy || isDraftDirty || !config.editable || !targetRevision}
                 onClick={() => setConfirmRollback(true)}>确认回滚 Worker 参数</Button>
               <XDriveConfirmDialog open={confirmRollback}
                 title="确认回滚独立 Pull Worker 运行配置"
@@ -355,6 +372,9 @@ export function XDriveSourceWorkerConfigPanel({
                 onConfirm={() => { void rollback() }} />
             </Stack>
           </Box>
+        )}
+        {section === 'all' && !source.loadSourceWorkerRevisions && (
+          <Typography variant="caption" color="text.secondary">当前版本不支持查看 Worker 历史。</Typography>
         )}
         {historyError && <Typography variant="caption" color="warning.main">{historyError}</Typography>}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
