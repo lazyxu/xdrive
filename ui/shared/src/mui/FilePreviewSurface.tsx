@@ -632,6 +632,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}
               onSwipeNext={interactiveImage ? onSwipeNext : undefined}
               deferTouchHold={interactiveImage}
+              interactiveImage={interactiveImage}
               label={target.name ? `${target.name} 实况照片` : '实况照片'}
             />
           )}

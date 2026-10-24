@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent, ReactNode, WheelEvent } from 'react'
 import { Box, Chip, CircularProgress } from '@mui/material'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
+import type { XDrivePreviewPoint, XDrivePreviewViewport, XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
@@ -47,6 +49,7 @@ export type XDriveLivePhotoSurfaceProps = {
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
   deferTouchHold?: boolean
+  interactiveImage?: boolean
 }
 
 function livePhotoMotionURL(value: XDriveLivePhotoMotionSource) {
@@ -76,6 +79,7 @@ export function XDriveLivePhotoSurface({
   onSwipePrevious,
   onSwipeNext,
   deferTouchHold = false,
+  interactiveImage = false,
 }: XDriveLivePhotoSurfaceProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const motionURLRef = useRef('')
@@ -123,6 +127,7 @@ export function XDriveLivePhotoSurface({
     pointerId: number
     startX: number
     startY: number
+    startedAt: number
     x: number
     y: number
     mode: 'pending' | 'holding' | 'swiping' | 'cancelled'
@@ -144,6 +149,129 @@ export function XDriveLivePhotoSurface({
   const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; bufferedStartSeconds?: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
   const [failed, setFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
+
+  // One decoded still, one motion player: only transform the already-visible
+  // still. This reuses the ordinary image viewport math without new requests.
+  const viewportElementRef = useRef<HTMLDivElement | null>(null)
+  const viewportSizeRef = useRef({ width: 0, height: 0 })
+  const imageDimensionsRef = useRef<XDrivePreviewImageDimensions | null>(null)
+  const viewportRef = useRef<XDrivePreviewViewport>({ scale: 1, offset: { x: 0, y: 0 } })
+  const [imageScale, setImageScale] = useState(1)
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
+  const zoomPointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const pinchRef = useRef<{
+    distance: number
+    scale: number
+    offset: XDrivePreviewPoint
+    anchor: XDrivePreviewPoint
+  } | null>(null)
+  const panRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startedAt: number
+    offset: XDrivePreviewPoint
+    fromPinch?: boolean
+  } | null>(null)
+  const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
+  const lastTouchZoomAtRef = useRef(0)
+
+  const measureViewport = useCallback((element: HTMLDivElement | null = viewportElementRef.current) => {
+    if (!element || typeof element.getBoundingClientRect !== 'function') return
+    const rect = element.getBoundingClientRect()
+    viewportSizeRef.current = { width: rect.width, height: rect.height }
+    // The still's decoded image/canvas already exists. Never decode it again
+    // to discover its aspect ratio, and never infer a Live pairing here.
+    const canvas = element.querySelector?.('canvas')
+    const image = element.querySelector?.('img:not([aria-hidden="true"])') as HTMLImageElement | null
+    if (canvas && canvas.width > 0 && canvas.height > 0) {
+      imageDimensionsRef.current = { width: canvas.width, height: canvas.height }
+    } else if (image && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      imageDimensionsRef.current = { width: image.naturalWidth, height: image.naturalHeight }
+    }
+  }, [])
+  const imageAnchor = useCallback((element: HTMLDivElement, x: number, y: number): XDrivePreviewPoint => {
+    measureViewport(element)
+    const rect = element.getBoundingClientRect()
+    return { x: x - rect.left - rect.width / 2, y: y - rect.top - rect.height / 2 }
+  }, [measureViewport])
+  const applyImageViewport = useCallback((next: XDrivePreviewViewport) => {
+    const size = viewportSizeRef.current
+    // A still that hasn't reported dimensions yet cannot safely pan beyond
+    // its painted rectangle. The next measure will refine the bounds.
+    const dimensions = imageDimensionsRef.current ?? (
+      size.width > 0 && size.height > 0 ? { width: size.width, height: size.height } : null
+    )
+    const clamped = xDriveClampPreviewViewport(next, size, dimensions, 'contain')
+    viewportRef.current = clamped
+    setImageScale(clamped.scale)
+    setImageOffset((current) =>
+      current.x === clamped.offset.x && current.y === clamped.offset.y ? current : clamped.offset)
+  }, [])
+  const setImageZoom = useCallback((scale: number, anchor: XDrivePreviewPoint) => {
+    const nextScale = Math.max(1, Math.min(6, Math.round(scale * 100) / 100))
+    applyImageViewport(xDriveAnchorPreviewZoom(viewportRef.current, nextScale, anchor))
+  }, [applyImageViewport])
+  useLayoutEffect(() => {
+    if (!interactiveImage || !viewportElementRef.current) return
+    const element = viewportElementRef.current
+    const resize = () => {
+      measureViewport(element)
+      applyImageViewport(viewportRef.current)
+    }
+    resize()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize)
+    observer?.observe(element)
+    if (typeof window !== 'undefined') window.addEventListener('resize', resize)
+    return () => {
+      observer?.disconnect()
+      if (typeof window !== 'undefined') window.removeEventListener('resize', resize)
+    }
+  }, [applyImageViewport, interactiveImage, measureViewport])
+  useLayoutEffect(() => {
+    // A new source/Owner must not show the previous still's zoom for a frame.
+    viewportRef.current = { scale: 1, offset: { x: 0, y: 0 } }
+    imageDimensionsRef.current = null
+    zoomPointersRef.current.clear()
+    pinchRef.current = null
+    panRef.current = null
+    lastTapRef.current = null
+    lastTouchZoomAtRef.current = 0
+    setImageScale(1)
+    setImageOffset({ x: 0, y: 0 })
+  }, [gestureSession])
+  useLayoutEffect(() => {
+    // A decoded still can become ready after the component first mounts.
+    // Measure its actual contain-fit pixels then reclamp the existing zoom
+    // without triggering a new byte request, and do so after session reset.
+    if (!interactiveImage || !stillReady || !viewportElementRef.current) return
+    measureViewport(viewportElementRef.current)
+    applyImageViewport(viewportRef.current)
+  }, [applyImageViewport, gestureSession, interactiveImage, measureViewport, stillReady])
+  const acceptTouchTap = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!interactiveImage || !stillReadyRef.current || gestureSessionRef.current !== gestureSession) return
+    const now = Date.now(), previous = lastTapRef.current
+    if (previous && now - previous.at <= 320 &&
+        Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 32) {
+      lastTapRef.current = null
+      lastTouchZoomAtRef.current = now
+      const anchor = imageAnchor(event.currentTarget, event.clientX, event.clientY)
+      setImageZoom(viewportRef.current.scale > 1 ? 1 : 2, anchor)
+    } else lastTapRef.current = { at: now, x: event.clientX, y: event.clientY }
+  }, [gestureSession, imageAnchor, interactiveImage, setImageZoom])
+  const handleDoubleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!interactiveImage || !stillReadyRef.current ||
+        gestureSessionRef.current !== gestureSession ||
+        Date.now() - lastTouchZoomAtRef.current < 500) return
+    const anchor = imageAnchor(event.currentTarget, event.clientX, event.clientY)
+    setImageZoom(viewportRef.current.scale > 1 ? 1 : 2, anchor)
+  }, [gestureSession, imageAnchor, interactiveImage, setImageZoom])
+  const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    if (!interactiveImage || !stillReadyRef.current || gestureSessionRef.current !== gestureSession) return
+    event.preventDefault()
+    const anchor = imageAnchor(event.currentTarget, event.clientX, event.clientY)
+    setImageZoom(viewportRef.current.scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15), anchor)
+  }, [gestureSession, imageAnchor, interactiveImage, setImageZoom])
 
   const stopPlayback = useCallback(() => {
     playbackAttemptRef.current += 1
@@ -313,10 +441,15 @@ export function XDriveLivePhotoSurface({
 
   const beginHold = useCallback(() => {
     if (!stillReady) return
+    // Keyboard's explicit hold remains accessible while zoomed. Show the
+    // unzoomed still before starting its native unzoomed video overlay.
+    if (interactiveImage && viewportRef.current.scale > 1.01) {
+      applyImageViewport({ scale: 1, offset: { x: 0, y: 0 } })
+    }
     holdActiveRef.current = true
     if (motionURLRef.current) playLoadedMotion()
     else requestMotion()
-  }, [playLoadedMotion, requestMotion, stillReady])
+  }, [applyImageViewport, interactiveImage, playLoadedMotion, requestMotion, stillReady])
 
   const endHold = useCallback(() => {
     holdActiveRef.current = false
@@ -337,6 +470,13 @@ export function XDriveLivePhotoSurface({
     if (!stillReady) {
       clearHoldTimer()
       touchGestureRef.current = null
+      zoomPointersRef.current.clear()
+      pinchRef.current = null
+      panRef.current = null
+      lastTapRef.current = null
+      if (viewportRef.current.scale !== 1) {
+        applyImageViewport({ scale: 1, offset: { x: 0, y: 0 } })
+      }
       holdActiveRef.current = false
       stopPlayback()
       cancelPendingMotion()
@@ -345,7 +485,7 @@ export function XDriveLivePhotoSurface({
       retryableMotionLoadRef.current = false
       setLoading(false)
     }
-  }, [cancelPendingMotion, clearHoldTimer, stillReady, stopPlayback])
+  }, [applyImageViewport, cancelPendingMotion, clearHoldTimer, stillReady, stopPlayback])
 
   useEffect(() => {
     clearHoldTimer()
@@ -387,12 +527,55 @@ export function XDriveLivePhotoSurface({
   }, [cancelPendingMotion, sourceKey, stopPlayback])
 
   const cancelTouchGesture = useCallback(() => {
+    if (gestureSessionRef.current !== gestureSession) return
     clearHoldTimer()
     touchGestureRef.current = null
+    zoomPointersRef.current.clear()
+    pinchRef.current = null
+    panRef.current = null
+    lastTapRef.current = null
     endHold()
-  }, [clearHoldTimer, endHold])
+  }, [clearHoldTimer, endHold, gestureSession])
+  const handleLostCapture = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
+    // A normal pointerup loses capture too; keep the completed first tap so
+    // the second touch can be recognized as a double-tap.
+    if (zoomPointersRef.current.has(event.pointerId) ||
+        touchGestureRef.current?.pointerId === event.pointerId) cancelTouchGesture()
+  }, [cancelTouchGesture, gestureSession])
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
+    if (interactiveImage && stillReadyRef.current && event.pointerType === 'touch') {
+      zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      if (zoomPointersRef.current.size >= 2) {
+        clearHoldTimer()
+        if (touchGestureRef.current) {
+          touchGestureRef.current.multi = true
+          touchGestureRef.current.mode = 'cancelled'
+        }
+        endHold()
+        if (pendingMotionControllerRef.current) {
+          // Pinching an actively loading Live clip must release its in-flight
+          // motion ticket/Range instead of continuing a hidden download.
+          cancelPendingMotion()
+          motionLoadAttemptRef.current += 1
+          loadStartedRef.current = false
+          retryableMotionLoadRef.current = true
+        }
+        panRef.current = null
+        lastTapRef.current = null
+        const [first, second] = [...zoomPointersRef.current.values()]
+        const midpoint = imageAnchor(event.currentTarget, (first.x + second.x) / 2, (first.y + second.y) / 2)
+        pinchRef.current = {
+          distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+          scale: viewportRef.current.scale,
+          offset: { ...viewportRef.current.offset },
+          anchor: midpoint,
+        }
+        return
+      }
+    }
     if (!event.isPrimary) {
       // A second finger must cancel a pending hold, not download motion.
       const gesture = touchGestureRef.current
@@ -410,6 +593,16 @@ export function XDriveLivePhotoSurface({
     } catch {
       // Pointer capture is best-effort; cancel/release still ends the hold.
     }
+    // A zoomed still uses drag/pan, not a new Live motion request.
+    if (interactiveImage && viewportRef.current.scale > 1.01) {
+      clearHoldTimer()
+      touchGestureRef.current = null
+      panRef.current = {
+        pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+        startedAt: Date.now(), offset: { ...viewportRef.current.offset },
+      }
+      return
+    }
     if (event.pointerType !== 'touch' || !deferTouchHold) {
       beginHold()
       return
@@ -419,6 +612,7 @@ export function XDriveLivePhotoSurface({
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      startedAt: Date.now(),
       x: event.clientX,
       y: event.clientY,
       mode: 'pending' as const,
@@ -438,9 +632,37 @@ export function XDriveLivePhotoSurface({
       touchGestureRef.current = { ...gesture, mode: 'holding' }
       beginHold()
     }, 260)
-  }, [beginHold, clearHoldTimer, deferTouchHold, endHold, gestureSession])
+  }, [beginHold, cancelPendingMotion, clearHoldTimer, deferTouchHold, endHold, gestureSession, imageAnchor, interactiveImage])
 
   const handlePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
+    if (interactiveImage && event.pointerType === 'touch' &&
+        zoomPointersRef.current.has(event.pointerId)) {
+      zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      const pinch = pinchRef.current
+      if (pinch && zoomPointersRef.current.size === 2) {
+        event.preventDefault()
+        const [first, second] = [...zoomPointersRef.current.values()]
+        const midpoint = imageAnchor(event.currentTarget, (first.x + second.x) / 2, (first.y + second.y) / 2)
+        const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
+        const scale = Math.max(1, Math.min(6, Math.round(pinch.scale * distance / pinch.distance * 100) / 100))
+        applyImageViewport(xDriveAnchorPreviewZoom(
+          { scale: pinch.scale, offset: pinch.offset }, scale, pinch.anchor, midpoint))
+        return
+      }
+    }
+    const pan = panRef.current
+    if (interactiveImage && pan?.pointerId === event.pointerId) {
+      event.preventDefault()
+      applyImageViewport({
+        scale: viewportRef.current.scale,
+        offset: {
+          x: pan.offset.x + event.clientX - pan.startX,
+          y: pan.offset.y + event.clientY - pan.startY,
+        },
+      })
+      return
+    }
     const gesture = touchGestureRef.current
     if (!gesture || gesture.pointerId !== event.pointerId ||
         gesture.session !== gestureSessionRef.current) return
@@ -458,9 +680,40 @@ export function XDriveLivePhotoSurface({
         gesture.mode = Math.abs(dx) > Math.abs(dy) * 1.25 ? 'swiping' : 'cancelled'
       }
     }
-  }, [clearHoldTimer, endHold])
+  }, [applyImageViewport, clearHoldTimer, endHold, gestureSession, imageAnchor, interactiveImage])
 
   const handlePointerRelease = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
+    const pinch = pinchRef.current
+    const pinching = Boolean(interactiveImage && pinch && zoomPointersRef.current.has(event.pointerId))
+    if (event.pointerType === 'touch') zoomPointersRef.current.delete(event.pointerId)
+    const pan = panRef.current
+    if (pinching || (interactiveImage && pan?.pointerId === event.pointerId)) {
+      clearHoldTimer()
+      touchGestureRef.current = null
+      if (pinching) {
+        pinchRef.current = null
+        lastTapRef.current = null
+        if (zoomPointersRef.current.size === 1) {
+          const [pointerId, point] = [...zoomPointersRef.current.entries()][0]
+          panRef.current = { pointerId, startX: point.x, startY: point.y,
+            startedAt: Date.now(), offset: { ...viewportRef.current.offset }, fromPinch: true }
+        }
+      } else if (pan) {
+        panRef.current = null
+        if (event.pointerType === 'touch' && !pan.fromPinch &&
+            Math.hypot(event.clientX - pan.startX, event.clientY - pan.startY) < 12 &&
+            Date.now() - pan.startedAt <= 450) acceptTouchTap(event)
+        else lastTapRef.current = null
+      }
+      try {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        }
+      } catch { /* Already released. */ }
+      endHold()
+      return
+    }
     const gesture = touchGestureRef.current
     const current = Boolean(gesture && gesture.pointerId === event.pointerId &&
       gesture.session === gestureSessionRef.current)
@@ -475,45 +728,59 @@ export function XDriveLivePhotoSurface({
     }
     endHold()
     if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') return
+    if (interactiveImage && gesture.mode === 'pending' &&
+        Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 12 &&
+        Date.now() - gesture.startedAt <= 450) acceptTouchTap(event)
     const dx = event.clientX - gesture.startX
     const dy = event.clientY - gesture.startY
-    if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
+    // Match ordinary images: only a brisk unzoomed horizontal swipe navigates.
+    // Slow drags or post-pinch releases must remain on the current still.
+    if (viewportRef.current.scale > 1.01 ||
+        Date.now() - gesture.startedAt > 700 ||
+        Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
     if (dx > 0) onSwipePrevious?.()
     else onSwipeNext?.()
-  }, [clearHoldTimer, endHold, onSwipeNext, onSwipePrevious])
+  }, [acceptTouchTap, clearHoldTimer, endHold, gestureSession, interactiveImage, onSwipeNext, onSwipePrevious])
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
     if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
       event.preventDefault()
       event.stopPropagation()
       beginHold()
     }
-  }, [beginHold])
+  }, [beginHold, gestureSession])
 
   const handleKeyUp = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (gestureSessionRef.current !== gestureSession) return
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       event.stopPropagation()
       endHold()
     }
-  }, [endHold])
+  }, [endHold, gestureSession])
 
   const statusLabel = failed ? '实况不可用' : '实况'
 
   return (
     <Box
+      ref={viewportElementRef}
       role="button"
       tabIndex={0}
-      aria-label={`${label}。按住播放，松开停止。`}
+      data-xdrive-live-zoom={interactiveImage || undefined}
+      data-xdrive-live-pinch={interactiveImage || undefined}
+      aria-label={`${label}。按住播放，松开停止。${interactiveImage ? " 双指缩放、双击放大。" : ""}`}
       aria-pressed={playing}
       aria-busy={loading}
       aria-disabled={!stillReady || undefined}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerRelease}
+      onDoubleClick={handleDoubleClick}
+      onWheel={handleWheel}
       onPointerCancel={cancelTouchGesture}
       onPointerLeave={cancelTouchGesture}
-      onLostPointerCapture={cancelTouchGesture}
+      onLostPointerCapture={handleLostCapture}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
       onBlur={cancelTouchGesture}
@@ -527,7 +794,7 @@ export function XDriveLivePhotoSurface({
         bgcolor: 'black',
         cursor: stillReady && loadMotion && !failed ? 'pointer' : 'default',
         userSelect: 'none',
-        touchAction: 'pan-y pinch-zoom',
+        touchAction: interactiveImage ? 'none' : 'pan-y pinch-zoom',
         outline: 'none',
         '&:focus-visible': {
           boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}`,
@@ -539,7 +806,14 @@ export function XDriveLivePhotoSurface({
         },
       }}
     >
-      <Box sx={{ position: 'absolute', inset: 0 }}>
+      <Box sx={{
+        position: 'absolute', inset: 0,
+        transform: interactiveImage
+          ? `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`
+          : undefined,
+        transformOrigin: 'center',
+        transition: panRef.current || pinchRef.current ? 'none' : 'transform 100ms ease-out',
+      }}>
         {still}
       </Box>
 
