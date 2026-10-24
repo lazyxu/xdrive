@@ -1,0 +1,69 @@
+name: Places P0-17 Real Chromium Malicious Child Isolation
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-p0-17-real-chromium.yml'
+      - 'deploy/baidu-isolated-child/**'
+      - 'desktop/scripts/baidu-isolated-child-chromium.cjs'
+      - 'desktop/src/main/baidu_map_*.cts'
+      - 'desktop/src/main/index.cts'
+      - 'desktop/src/preload/baidu_map_secure.cts'
+      - 'ui/shared/src/media-gallery-baidu-isolated-*.ts'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-p0-17-real-chromium.yml'
+      - 'deploy/baidu-isolated-child/**'
+      - 'desktop/scripts/baidu-isolated-child-chromium.cjs'
+      - 'desktop/src/main/baidu_map_*.cts'
+      - 'desktop/src/main/index.cts'
+      - 'desktop/src/preload/baidu_map_secure.cts'
+      - 'ui/shared/src/media-gallery-baidu-isolated-*.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-p0-17-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  malicious-sdk-controlled-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source checkout, browser, and local certificate fixture tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --version
+          command -v openssl
+          if command -v google-chrome-stable >/dev/null 2>&1; then
+            echo "XDRIVE_MAP_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            echo "XDRIVE_MAP_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            command -v chromium
+            echo "XDRIVE_MAP_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          fi
+          node --check desktop/scripts/baidu-isolated-child-chromium.cjs
+      - name: Real controlled HTTPS Chromium hostile SDK / CSP / origin / Cookie isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Uses synthetic gallery.example.net and map-isolated.example.org
+          # looped to 127.0.0.1 with a temporary test-only self-signed CA.
+          # The script itself asserts no private Parent data or navigation
+          # crosses origins. It never accesses the real Provider or user media.
+          XDRIVE_BROWSER_EXECUTABLE="$XDRIVE_MAP_CHROME" \
+            node desktop/scripts/baidu-isolated-child-chromium.cjs
