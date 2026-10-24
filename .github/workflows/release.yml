@@ -213,6 +213,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@v4
       - name: Download exact Linux installer produced by CI
         uses: actions/download-artifact@v4
         with:
@@ -248,6 +249,7 @@ jobs:
           test -f release/xdrive-source-agent-linux-arm64
           test -s release/xdrive-backup-linux-amd64.tar.gz
           test -s release/xdrive-backup-windows-amd64.zip
+          bash scripts/ci/verify-release-archive-allowlist.sh release
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
             exit 1
@@ -431,12 +433,7 @@ jobs:
           done
       - name: Assert distribution assets are not archive-wrapped
         shell: bash
-        run: |
-          set -euo pipefail
-          if find release -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | grep -q .; then
-            echo "single-file installers/scripts must be published directly, not archive-wrapped" >&2
-            exit 1
-          fi
+        run: bash scripts/ci/verify-release-archive-allowlist.sh release
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
