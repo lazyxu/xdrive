@@ -633,6 +633,10 @@ export interface XDriveMediaGalleryPageProps {
   shareDialog?: XDriveMediaGalleryShareDialogOptions
   initialSection?: MediaGallerySection
   initialMapPhotoScope?: XDriveBaiduMapPhotoScope
+  initialBaiduNativeCamera?: XDriveBaiduNativeCameraSnapshot
+  onMapModeHandoff?: (scope:XDriveBaiduMapPhotoScope,
+    target:'prototype'|'isolated',signal:AbortSignal,
+    camera?:XDriveBaiduNativeCameraSnapshot)=>Promise<string>
   onSectionRouteChange?: (section: MediaGallerySection) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   onShowInFolder?: (location: NodeLocation) => void
@@ -653,6 +657,8 @@ export function XDriveMediaGalleryPage({
   shareDialog,
   initialSection,
   initialMapPhotoScope,
+  initialBaiduNativeCamera,
+  onMapModeHandoff,
   onSectionRouteChange,
   onOpenViewer,
   onShowInFolder,
@@ -716,7 +722,8 @@ export function XDriveMediaGalleryPage({
   const [baiduCameraOwner, setBaiduCameraOwner] = useState<{
     scope: string; camera?: XDriveBaiduNativeCameraSnapshot
   }>(() => ({ scope: preferenceScope,
-    camera: xDriveReadBaiduNativeCamera(preferenceScope) }))
+    camera: xDriveValidBaiduNativeCameraSnapshot(initialBaiduNativeCamera)
+      ? {...initialBaiduNativeCamera} : xDriveReadBaiduNativeCamera(preferenceScope) }))
   const baiduNativeCameraSnapshot = baiduCameraOwner.scope === preferenceScope
     ? baiduCameraOwner.camera : xDriveReadBaiduNativeCamera(preferenceScope)
   const [baiduPhotoScopeOwner,setBaiduPhotoScopeOwner] = useState<{
@@ -3876,6 +3883,7 @@ export function XDriveMediaGalleryPage({
         getBaiduMapCoverageReasons={source.getBaiduMapCoverageReasons}
         mapPhotoScope={mapPhotoScope}
         onMapPhotoScopeChange={changeBaiduMapPhotoScope}
+        onMapModeHandoff={onMapModeHandoff}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
         getBaiduJSAPIPrototype={source.getBaiduJSAPIPrototype}
         mintBaiduIsolatedChildTicket={source.mintBaiduIsolatedChildTicket}
@@ -4400,6 +4408,9 @@ export interface XDriveMediaGalleryProps {
     scope:XDriveBaiduMapPhotoScope) => void
   mapPhotoScope?: XDriveBaiduMapPhotoScope
   onMapPhotoScopeChange?: (scope:XDriveBaiduMapPhotoScope)=>void
+  onMapModeHandoff?: (scope:XDriveBaiduMapPhotoScope,
+    target:'prototype'|'isolated',signal:AbortSignal,
+    camera?:XDriveBaiduNativeCameraSnapshot)=>Promise<string>
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   onOpenBaiduMapDiagnostics?: () => void
@@ -6122,6 +6133,7 @@ export function XDriveMediaGallery({
   onOpenBaiduNativeViewport,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope,
   onMapPhotoScopeChange,
+  onMapModeHandoff,
   onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap,
   onOpenBaiduMapDiagnostics,
@@ -8379,6 +8391,7 @@ export function XDriveMediaGallery({
             onOpenBaiduNativeViewport={onOpenBaiduNativeViewport}
             mapPhotoScope={mapPhotoScope}
             onMapPhotoScopeChange={onMapPhotoScopeChange}
+            onMapModeHandoff={onMapModeHandoff}
             mapAlbums={albums}
             onBaiduNativeCellInvalidated={onBaiduNativeCellInvalidated}
             onOpenSecureDesktopMap={onOpenSecureDesktopMap}

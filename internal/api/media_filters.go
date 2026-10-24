@@ -283,13 +283,35 @@ func mediaQueryTime(c *gin.Context, name string) (*time.Time, bool) {
 	if raw == "" {
 		return nil, true
 	}
-	value, err := time.Parse(time.RFC3339, raw)
+	value, err := mediaCapturedBoundary(raw, c.Query("time_zone"))
 	if err != nil {
-		fail(c, http.StatusBadRequest, name+" must be RFC3339")
+		fail(c, http.StatusBadRequest, name+" must be RFC3339 or YYYY-MM-DD")
 		return nil, false
 	}
-	value = value.UTC()
 	return &value, true
+}
+
+// Calendar dates from the native Gallery <input type="date"> represent local
+// midnight in the selected IANA time zone, not UTC midnight. Cells and sparse
+// Viewer Range MUST use this same boundary, including across DST changes.
+// RFC3339 instants retain their prior meaning and remain supported.
+func mediaCapturedBoundary(raw, zone string) (time.Time, error) {
+	location, _, err := mediaIANAZone(zone)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(raw) == len("2006-01-02") {
+		value, err := time.ParseInLocation("2006-01-02", raw, location)
+		if err != nil || value.In(location).Format("2006-01-02") != raw {
+			return time.Time{}, fmt.Errorf("invalid captured calendar date")
+		}
+		return value.UTC(), nil
+	}
+	value, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return value.UTC(), nil
 }
 
 func validMediaCategory(value string) bool {

@@ -125,7 +125,7 @@ test('Text/Code Viewer is read-only textarea with common source/config allowlist
 
 test('optional deep-link arguments are consumed by their owning apps', () => {
   assert.ok(app.includes("initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}"))
-  assert.ok(app.includes("initialSection={route.app === 'gallery'"))
+  assert.ok(app.includes("initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'"))
   assert.ok(app.includes("initialSourceID={route.app === 'remote-pull' ? route.params.source : undefined}"))
   assert.ok(app.includes("focusUserID={route.app === 'admin-users' ? route.params.user : undefined}"))
   assert.ok(app.includes("focusSection={route.app === 'admin-storage' ? route.params.section : undefined}"))

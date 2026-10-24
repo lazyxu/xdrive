@@ -53,6 +53,9 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if !db.Migrator().HasTable(&meta.BaiduGeoconvFlight{}) {
 		t.Fatal("Server Geoconv in-flight capacity table missing")
 	}
+	if !db.Migrator().HasTable(&meta.BaiduMapScopeHandoff{}) {
+		t.Fatal("private one-use map scope handoff table missing")
+	}
 	if !db.Migrator().HasTable(&meta.BaiduPhotoMapIndexIntent{}) {
 		t.Fatal("private photo map index intent table missing")
 	}
@@ -68,6 +71,14 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	}
 	if err := db.Model(&meta.BaiduGeoconvFlight{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("Geoconv migration cannot start external tasks: count=%d err=%v", count, err)
+	}
+	if err := db.Model(&meta.BaiduMapScopeHandoff{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("migration must not create or grant map scope tickets: rows=%d err=%v", count, err)
+	}
+	for _, field := range []string{"Hash", "OwnerID", "SessionVersion", "ConfigurationRevision", "RevocationEpoch", "TargetMode", "ScopeJSON", "CameraJSON", "AlbumRevision", "ExpiresAt", "ConsumedAt"} {
+		if !db.Migrator().HasColumn(&meta.BaiduMapScopeHandoff{}, field) {
+			t.Fatalf("scope handoff column missing %s", field)
+		}
 	}
 	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("index intent migration must not enqueue or export coordinates: count=%d err=%v", count, err)

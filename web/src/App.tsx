@@ -1,5 +1,6 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
 import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveClearBaiduConversionSession } from '../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
@@ -103,6 +104,8 @@ import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
+import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
+import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
@@ -115,6 +118,15 @@ import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './p
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
 import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
+
+// Extract the opaque handoff hint exactly once per DOCUMENT (not per React
+// StrictMode mount). Clear it from the URL synchronously before any SDK view.
+const initialWebMapScopeHandoff: XDriveMapScopeHandoffState =
+  typeof window === 'undefined' ? {state:'none'} :
+    xDriveTakeMapScopeHandoffFromURL(window)
+// Public Browser AK SDKs need origin-level Referer. Restore it only after
+// removing the one-time handoff nonce from the document's URL.
+if(typeof window!=='undefined') xDriveRestoreMapReferrerAfterScrub(window)
 
 type XDriveDesktopMapHandoffState =
   | { state:'none' | 'pending' | 'denied'; revision:number }
@@ -610,6 +622,14 @@ function FileManager({
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
+  const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
+    () => window.xdriveSecureMapBridge ? {state:'none'} : initialWebMapScopeHandoff)
+  // The promise is reused through StrictMode effect replay; never redeem the
+  // same nonce a second time. Token is memory only and Owner-bound on Server.
+  const webMapScopeClaimRef = useRef<{
+    ticket:string;ownerID:number;username:string;api:XDriveApi
+    promise:ReturnType<XDriveApi['mediaBaiduMapScopeHandoffConsume']>
+  } | null>(null)
   const [desktopMapHandoff,setDesktopMapHandoff] = useState<XDriveDesktopMapHandoffState>(
     () => ({state:window.xdriveSecureMapBridge ? 'pending' : 'none',revision:0}))
   // React StrictMode may replay effects. Cache the one-time IPC Promise;
@@ -654,6 +674,73 @@ function FileManager({
     consume()
     return()=>{active=false;unsubscribe()}
   },[profile?.id,profile?.username,profile?.must_change_password,username])
+  useEffect(() => {
+    const handoff=webMapScopeHandoff
+    if (handoff.state!=='pending' || window.xdriveSecureMapBridge) return
+    if (!profile?.id || !profile.username || profile.username !== username ||
+        profile.must_change_password) return
+    let active=true
+    const existing=webMapScopeClaimRef.current
+    // A consumed or in-flight ticket must NEVER become a new user's scope
+    // when this React tree or its Api changes underneath the same browser
+    // document. StrictMode may replay for the SAME Owner only.
+    if(existing && (existing.ticket!==handoff.ticket ||
+        existing.ownerID!==profile.id || existing.username!==profile.username ||
+        existing.api!==api)) {
+      setWebMapScopeHandoff({state:'denied'})
+      return
+    }
+    if (!existing) {
+      // A once-only POST cannot be retried after an Owner/session change;
+      // the Server will reject stale account/session/epoch/album revision.
+      const controller=new AbortController()
+      webMapScopeClaimRef.current={
+        ticket:handoff.ticket,ownerID:profile.id,username:profile.username,api,
+        promise:api.mediaBaiduMapScopeHandoffConsume(
+          handoff.ticket,handoff.target,controller.signal),
+      }
+    }
+    const boundClaim=webMapScopeClaimRef.current
+    // In-flight tickets are scoped to one Owner and one Api instance.
+    // Null or swapped claims must fail closed before reading any Scope.
+    if(!boundClaim || boundClaim.ticket!==handoff.ticket ||
+        boundClaim.ownerID!==profile.id || boundClaim.username!==profile.username ||
+        boundClaim.api!==api) {
+      setWebMapScopeHandoff({state:'denied'})
+      return
+    }
+    const claim=boundClaim.promise
+    const expectedID=profile.id
+    const expectedUsername=profile.username
+    void claim.then(raw=>{
+      const currentClaim=webMapScopeClaimRef.current
+      if(!active || !currentClaim || currentClaim.promise!==claim ||
+          currentClaim.ownerID!==expectedID ||
+          currentClaim.username!==expectedUsername ||
+          currentClaim.api!==api) return
+      const scope=xDriveNormalizeBaiduMapPhotoScope(raw.scope)
+      const camera=raw.camera===null || raw.camera===undefined ? undefined :
+        xDriveValidBaiduNativeCameraSnapshot(raw.camera) ? raw.camera : null
+      if(!scope || camera===null) {
+        setWebMapScopeHandoff({state:'denied'})
+        return
+      }
+      setWebMapScopeHandoff({
+        state:'ready',ownerID:profile.id,username:profile.username,
+        scope,camera,revision:1,
+      })
+    }).catch(()=>{
+      if(active && webMapScopeClaimRef.current?.promise===claim)
+        setWebMapScopeHandoff({state:'denied'})
+    })
+    return()=>{active=false}
+  },[api,webMapScopeHandoff,profile?.id,profile?.username,
+      profile?.must_change_password,username])
+  const webMapScopeOwnerReady=webMapScopeHandoff.state==='ready' && !!profile &&
+    webMapScopeHandoff.ownerID===profile.id &&
+    webMapScopeHandoff.username===profile.username &&
+    profile.username===username &&
+    !profile.must_change_password
   // Compare Owner synchronously in render; there is no frame in which a
   // previous account's accepted scope can appear under a newly logged-in one.
   const secureMapOwnerReady=desktopMapHandoff.state==='ready' && !!profile &&
@@ -2128,18 +2215,47 @@ function FileManager({
               void uploadGalleryFiles(selected)
             }}
           />
-          {window.xdriveSecureMapBridge && !secureMapOwnerReady ? (
+          {(window.xdriveSecureMapBridge && !secureMapOwnerReady) ||
+            (webMapScopeHandoff.state!=='none' && !webMapScopeOwnerReady) ? (
             <Box role="alert" data-xdrive-desktop-map-scope-unavailable sx={{p:2}}>
               <Typography variant="body2">
-                {desktopMapHandoff.state==='denied'
-                  ? 'Desktop 地图范围已失效或 HTTPS 登录账号不匹配。请从 Desktop 重新打开地图。'
-                  : '正在验证 Desktop 地图范围及当前 HTTPS 登录账号；不会自动切换至全图库。'}
+                {window.xdriveSecureMapBridge
+                  ? desktopMapHandoff.state==='denied'
+                    ? 'Desktop 地图范围已失效或 HTTPS 登录账号不匹配。请从 Desktop 重新打开地图。'
+                    : '正在验证 Desktop 地图范围及当前 HTTPS 登录账号；不会自动切换至全图库。'
+                  : webMapScopeHandoff.state==='denied' ||
+                    webMapScopeHandoff.state==='ready'
+                    ? '地图相册筛选范围无法恢复或账号已变化。未切换到全图库。'
+                    : '正在按当前登录账号向 Server 验证一次性地图筛选交接，尚未展示照片。'}
               </Typography>
+              {!window.xdriveSecureMapBridge &&
+                (webMapScopeHandoff.state==='denied' ||
+                 webMapScopeHandoff.state==='ready') ? (
+                <Button variant="outlined" size="small" sx={{mt:1}}
+                  onClick={() => {
+                    // A failed History rewrite is not consent to expose the
+                    // Owner's whole library after a restricted map transition.
+                    if (xDriveAbandonMapScopeRequired(window))
+                      setWebMapScopeHandoff({state:'none'})
+                  }}>
+                  手动返回无筛选图库
+                </Button>
+              ) : null}
             </Box>
           ) : <XDriveMediaGalleryPage
-            key={secureMapOwnerReady ? 'secure-map-'+desktopMapHandoff.revision : 'web-gallery'}
+            key={secureMapOwnerReady ? 'secure-map-'+desktopMapHandoff.revision
+              : webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+                ? 'web-map-scope-'+webMapScopeHandoff.revision : 'web-gallery'}
             initialMapPhotoScope={secureMapOwnerReady && desktopMapHandoff.state==='ready'
-              ? desktopMapHandoff.scope : undefined}
+              ? desktopMapHandoff.scope :
+                webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+                  ? webMapScopeHandoff.scope : undefined}
+            initialBaiduNativeCamera={webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+              ? webMapScopeHandoff.camera : undefined}
+            onMapModeHandoff={!window.xdriveSecureMapBridge
+              ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
+                  scope,target,signal,camera)
+              : undefined}
             mobileWebChrome
             source={gallerySource}
             uploadRevision={galleryUploadRevision}
@@ -2153,7 +2269,7 @@ function FileManager({
             onOpenBaiduMapDiagnostics={profile?.role === 'admin' ? () =>
               launchWebApp({ app: 'admin-services', params: { service: 'baidu-map', tab: 'verify' } })
               : undefined}
-            initialSection={route.app === 'gallery'
+            initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'
               ? route.params.section as MediaGallerySection | undefined
               : undefined}
             onSectionRouteChange={(section) => {

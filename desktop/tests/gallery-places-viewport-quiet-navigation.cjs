@@ -50,6 +50,14 @@ function loadSharedMap() {
         else url.searchParams.delete('places_map_mode')
         return url.href
       },
+      xDrivePlacesMapScopeHandoffURL: (href, mode, ticket) => {
+        if (!/^[a-f0-9]{64}$/.test(ticket)) return null
+        const url = new URL(href)
+        if (mode === 'isolated') url.searchParams.set('places_map_mode', 'isolated')
+        else url.searchParams.delete('places_map_mode')
+        url.searchParams.set('places_map_handoff',ticket)
+        return url.href
+      },
     },
     './MediaGalleryBaiduPrototypeMap': {
       XDriveMediaGalleryBaiduPrototypeMap: props =>
@@ -172,4 +180,47 @@ test('Desktop file renderer offers HTTPS-only map action but never injects third
   await act(async () => { links[0].props.onClick() })
   assert.equal(opened, 1)
   await act(async () => view.unmount())
+})
+
+test('P0-4 scoped mode switch redeems signed Owner ticket before replacing document',async()=>{
+  global.window.location.href = 'https://gallery.example.test/gallery'
+  let invoked=0
+  const restricted={albumKey:'manual:Family',filters:{
+    sort_by:'captured',sort_dir:'desc',favorite:true}}
+  const view=await render({
+    mapPhotoScope:restricted,
+    onMapModeHandoff:async(scope,target,signal)=>{
+      invoked++
+      assert.equal(target,'isolated')
+      assert.equal(scope.albumKey,'manual:Family')
+      assert.equal(scope.filters.favorite,true)
+      assert.equal(signal.aborted,false)
+      return 'abcdef0123456789'.repeat(4)
+    },
+  })
+  const button=view.root.findAll(node=>
+    node.props['data-xdrive-map-mode-isolated']!==undefined)[0]
+  assert.ok(button)
+  await act(async()=>{button.props.onClick();await Promise.resolve();await Promise.resolve()})
+  assert.equal(invoked,1)
+  assert.equal(new URL(global.window.location.href).searchParams.get('places_map_handoff'),
+    'abcdef0123456789'.repeat(4))
+  assert.equal(new URL(global.window.location.href).searchParams.get('places_map_mode'),'isolated')
+  assert.ok(!global.window.location.href.includes('manual:Family'))
+  assert.ok(!global.window.location.href.includes('favorite'))
+  await act(async()=>view.unmount())
+})
+test('P0-4 failed authenticated issue preserves the original restricted map',async()=>{
+  global.window.location.href='https://gallery.example.test/gallery'
+  const original=global.window.location.href
+  const view=await render({
+    mapPhotoScope:{albumKey:'',filters:{sort_by:'added',sort_dir:'asc',favorite:true}},
+    onMapModeHandoff:async()=>{throw Error('deny')}
+  })
+  const button=view.root.findAll(node=>
+    node.props['data-xdrive-map-mode-isolated']!==undefined)[0]
+  await act(async()=>{button.props.onClick();await Promise.resolve();await Promise.resolve()})
+  assert.equal(global.window.location.href,original)
+  assert.ok(view.root.findAll(node=>node.props['data-xdrive-map-mode-scope-warning']!==undefined).length>=1)
+  await act(async()=>view.unmount())
 })

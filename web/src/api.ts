@@ -1651,6 +1651,67 @@ export class XDriveApi {
       })
   }
 
+  /** P0-4: Issue a one-use opaque nonce to carry ONLY a private, reviewed
+   * Owner PhotoScope across a full document map-mode reload. No JWT/AK/GPS
+   * or Album is written into the URL or browser storage. */
+  mediaBaiduMapScopeHandoffIssue(
+    scope: import('../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope,
+    target: 'prototype' | 'isolated', signal: AbortSignal,
+    camera?: import('../../ui/shared/src/media-gallery-baidu-native-camera-session').XDriveBaiduNativeCameraSnapshot,
+  ): Promise<string> {
+    if (!signal || signal.aborted || typeof window === 'undefined' ||
+        window.location.protocol !== 'https:' ||
+        (target !== 'prototype' && target !== 'isolated') ||
+        new URL(API_BASE + '/api/v1/media/places/baidu-jsapi/scope-handoff',
+          window.location.href).origin !== window.location.origin) {
+      return Promise.reject(new Error('map_scope_handoff_unavailable'))
+    }
+    return this.request<{ticket:string;target_mode:string;expires_at:string}>(
+      '/api/v1/media/places/baidu-jsapi/scope-handoff', {
+        method:'POST',signal,cache:'no-store',credentials:'same-origin',
+        body:JSON.stringify({target_mode:target,scope,
+          ...(camera ? {camera} : {})}),
+      }).then(result=>{
+        if (signal.aborted || result?.target_mode !== target ||
+            !/^[a-f0-9]{64}$/.test(result?.ticket ?? '') ||
+            typeof result?.expires_at !== 'string' ||
+            !Number.isFinite(Date.parse(result.expires_at)) ||
+            Date.parse(result.expires_at) <= Date.now()) {
+          throw new Error('map_scope_handoff_denied')
+        }
+        return result.ticket
+      })
+  }
+
+  /** Redeem once, rechecking the current Owner/session/epoch/album revision.
+   * A random URL nonce has ZERO authority without this authenticated POST. */
+  mediaBaiduMapScopeHandoffConsume(
+    ticket: string, target: 'prototype' | 'isolated', signal: AbortSignal,
+  ): Promise<{
+    scope:import('../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope
+    camera?:import('../../ui/shared/src/media-gallery-baidu-native-camera-session').XDriveBaiduNativeCameraSnapshot | null
+  }> {
+    if (!signal || signal.aborted || typeof window === 'undefined' ||
+        window.location.protocol !== 'https:' ||
+        !/^[a-f0-9]{64}$/.test(ticket) ||
+        (target !== 'prototype' && target !== 'isolated') ||
+        new URL(API_BASE + '/api/v1/media/places/baidu-jsapi/scope-handoff/consume',
+          window.location.href).origin !== window.location.origin) {
+      return Promise.reject(new Error('map_scope_handoff_unavailable'))
+    }
+    return this.request<{target_mode:string;
+      scope:import('../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope;
+      camera?:import('../../ui/shared/src/media-gallery-baidu-native-camera-session').XDriveBaiduNativeCameraSnapshot | null}>(
+      '/api/v1/media/places/baidu-jsapi/scope-handoff/consume', {
+        method:'POST',signal,cache:'no-store',credentials:'same-origin',
+        body:JSON.stringify({target_mode:target,ticket}),
+      }).then(result=>{
+        if(signal.aborted || result?.target_mode!==target || !result.scope)
+          throw new Error('map_scope_handoff_denied')
+        return {scope:result.scope,camera:result.camera}
+      })
+  }
+
   // An authenticated native BD09LL viewport is *not* a WGS84 photo
   // query, is not an SDK loader and never carries Browser AK or provider URLs.
   mediaBaiduNativeViewport(

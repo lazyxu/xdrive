@@ -335,3 +335,42 @@ func TestMediaGeoModesRejectPresenceAmbiguity(t *testing.T) {
 		})
 	}
 }
+
+func TestMediaQueryCalendarDateBoundariesMatchMapUIAndDST(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, testcase := range []struct {
+		from, to, zone   string
+		wantFrom, wantTo time.Time
+	}{
+		{
+			"2026-01-01", "2026-01-02", "Asia/Tokyo",
+			time.Date(2025, 12, 31, 15, 0, 0, 0, time.UTC),
+			time.Date(2026, 1, 1, 15, 0, 0, 0, time.UTC),
+		},
+		{
+			"2026-03-08", "2026-03-09", "America/New_York",
+			time.Date(2026, 3, 8, 5, 0, 0, 0, time.UTC),
+			time.Date(2026, 3, 9, 4, 0, 0, 0, time.UTC),
+		},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/media/items?captured_from="+
+			testcase.from+"&captured_to="+testcase.to+"&time_zone="+testcase.zone, nil)
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = req
+		got, ok := mediaQueryFromRequest(c)
+		if !ok || got.CapturedFrom == nil || got.CapturedTo == nil ||
+			!got.CapturedFrom.Equal(testcase.wantFrom) || !got.CapturedTo.Equal(testcase.wantTo) {
+			t.Fatalf("%s %s %s: got %+v, status %d", testcase.from, testcase.to, testcase.zone, got, rec.Code)
+		}
+	}
+	for _, bad := range []string{"2026-02-30", "2026-2-03", "2026-13-01", "2026-00-01", "2026-04-31"} {
+		if _, err := mediaCapturedBoundary(bad, "Asia/Tokyo"); err == nil {
+			t.Errorf("invalid calendar date accepted: %q", bad)
+		}
+	}
+	if got, err := mediaCapturedBoundary("2026-01-01T00:00:00Z", "Asia/Tokyo"); err != nil ||
+		!got.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("existing RFC3339 support changed: %v %v", got, err)
+	}
+}
