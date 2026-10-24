@@ -380,13 +380,30 @@ simulate_committed_host_crash() {
   exec 6>&-
   [[ -f "$dir/caddy-env-active.json" ]]
   local receipt="$dir/caddy-deploy-results/$id.json"
+  # The private retired ingress source must be pinned to this exact
+  # immutable success and never contain AliDNS or unrelated .env values.
   python3 - "$receipt" "$id" "$sha" "$CADDY_LOCAL_WINDOW_GENERATION_SHA256" "$CADDY_LOCAL_WINDOW_LIVE_SHA256" <<'PY'
-import json,sys
-r=json.load(open(sys.argv[1]))
-assert r=={"protocol":"xdrive.caddy.host-env.v1","state":"deployed",
+import hashlib,json,os,pathlib,stat,sys
+terminal=pathlib.Path(sys.argv[1])
+receipt=json.loads(terminal.read_text())
+assert receipt["retired_targets_sha256"] and len(receipt["retired_targets_sha256"])==64
+assert receipt=={"protocol":"xdrive.caddy.host-env.v1","state":"deployed",
           "request_id":sys.argv[2],"sha256":sys.argv[3],
           "host_local_generation_sha256":sys.argv[4],
-          "host_local_live_config_sha256":sys.argv[5]}
+          "host_local_live_config_sha256":sys.argv[5],
+          "retired_targets_sha256":receipt["retired_targets_sha256"]}
+private=terminal.parent.parent/"caddy-retired-targets"/(sys.argv[2]+".json")
+raw=private.read_bytes()
+proof=json.loads(raw)
+assert stat.S_IMODE(private.stat().st_mode)==0o600
+assert stat.S_IMODE(private.parent.stat().st_mode) & 0o077 == 0
+assert hashlib.sha256(raw).hexdigest()==receipt["retired_targets_sha256"]
+assert proof["protocol"]=="xdrive.caddy.retired-targets.v1"
+assert proof["request_id"]==sys.argv[2] and proof["target_sha256"]==sys.argv[3]
+assert proof["retired_domain"] and proof["retired_lan_ip"]==""
+assert proof["retired_domain"]!=os.environ.get("XD_DOMAIN","")
+for secret in ("examplekeysecret","POSTGRES_PASSWORD","ALIYUN_ACCESS_KEY","XD_JWT_SECRET"):
+    assert secret not in raw.decode()
 PY
   # This is the precise crash window between the durable decision and Host
   # journal cleanup. Neither wrong rollback nor a second recreate is allowed.

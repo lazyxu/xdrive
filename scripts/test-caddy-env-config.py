@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real temporary files: byte preservation, CAS, staged recovery and adversarial input."""
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("caddy-env-config.py")
 ORIGINAL = (
@@ -246,6 +248,65 @@ class TestCaddyDeployArchiveBounded(unittest.TestCase):
             self.assertNotIn("ALIYUN_ACCESS_KEY", content)
             self.assertNotIn("POSTGRES_PASSWORD", content)
 
+    def test_private_retired_proof_gc_never_deletes_live_or_unsafe_evidence(self):
+        # A crashed Host can create a private record before a terminal. Keep
+        # it for the 7-day recovery horizon; remove only stale *orphans*.
+        spec = importlib.util.spec_from_file_location("caddy_gc_source", SCRIPT)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        previous = {
+            "XD_DOMAIN": "old.example.com",
+            "XD_LAN_HTTPS_IP": "192.168.1.9",
+            "ALIYUN_ACCESS_KEY_ID": "exampleid123",
+            "ALIYUN_ACCESS_KEY_SECRET": "do-not-store-this",
+        }
+        current = dict(previous, XD_DOMAIN="new.example.com")
+        sha = helper.fingerprint(current)
+        orphan, linked, fresh = ("a" * 24, "b" * 24, "e" * 24)
+        with mock.patch.dict(os.environ, XD_CADDY_DEPLOY_RECEIPT_DIR=str(self.control)):
+            for request in (orphan, linked, fresh):
+                proof = helper.archive_retired_targets(request, sha, previous, current)
+                if request == linked:
+                    linked_digest = proof
+            helper.archive_deploy({
+                "protocol": "xdrive.caddy.host-env.v1", "state": "deployed",
+                "request_id": linked, "sha256": sha,
+                "host_local_generation_sha256": "1" * 64,
+                "host_local_live_config_sha256": "2" * 64,
+                "retired_targets_sha256": linked_digest,
+            })
+        private = self.control / "caddy-retired-targets"
+        day8 = time.time() - 8 * 24 * 60 * 60
+        for request in (orphan, linked):
+            os.utime(private / (request + ".json"), (day8, day8))
+        self.assertEqual(self.archive(31).returncode, 0)
+        self.assertFalse((private / (orphan + ".json")).exists())
+        self.assertTrue((private / (linked + ".json")).exists())
+        # Fresh private records without a terminal are crash recovery input.
+        self.assertTrue((private / (fresh + ".json")).exists())
+        with mock.patch.dict(os.environ, XD_CADDY_DEPLOY_RECEIPT_DIR=str(self.control)):
+            helper.verify_retired_targets_digest(str(self.control), linked, sha, linked_digest)
+        # A malicious or incomplete private object must not be followed.
+        outside = self.control / "not-private"
+        outside.write_text("do not delete me")
+        attack = private / ("c" * 24 + ".json")
+        attack.symlink_to(outside)
+        self.assertEqual(self.archive(32).returncode, 0)
+        self.assertTrue(attack.is_symlink())
+        self.assertEqual(outside.read_text(), "do not delete me")
+        attack.unlink()
+        # An inode with multiple directory links is not safe to prune.
+        aliased = private / ("d" * 24 + ".json")
+        os.link(private / (linked + ".json"), aliased)
+        self.assertEqual(self.archive(33).returncode, 0)
+        self.assertTrue(aliased.exists())
+        aliased.unlink()
+        # The orphan only expires when it actually passes the recovery TTL.
+        os.utime(private / (fresh + ".json"), (day8, day8))
+        self.assertEqual(self.archive(34).returncode, 0)
+        self.assertFalse((private / (fresh + ".json")).exists())
+        self.assertTrue((private / (linked + ".json")).exists())
+
     def test_local_runtime_witness_requires_pair_and_does_not_change_legacy(self):
         # The Host publishes only digest pairs in a completed local-window
         # observation; old deployed receipts without a pair remain readable.
@@ -286,6 +347,92 @@ class TestCaddyDeployArchiveBounded(unittest.TestCase):
         self.assertNotEqual(injected.returncode, 0)
         self.assertFalse((receipt.parent / f"{2:024x}.json").exists())
         self.assertNotIn(b"DONT-STORE", injected.stdout + injected.stderr)
+
+    def test_immutable_private_retired_targets_bound_to_real_host_success(self):
+        spec = importlib.util.spec_from_file_location("caddy_host_retired_source", SCRIPT)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        previous = {
+            "XD_DOMAIN": "former.example.com",
+            "XD_LAN_HTTPS_IP": "192.168.1.9",
+            "ALIYUN_ACCESS_KEY_ID": "LTAIExampleSecretIdentifier",
+            "ALIYUN_ACCESS_KEY_SECRET": "never-store-this-alidns-secret",
+        }
+        current = dict(previous)
+        current["XD_DOMAIN"] = "current.example.com"
+        op = "abcdefabcdefabcdefabcdef"
+        sha = helper.fingerprint(current)
+        with mock.patch.dict(os.environ, XD_CADDY_DEPLOY_RECEIPT_DIR=str(self.control)):
+            proof = helper.archive_retired_targets(op, sha, previous, current)
+            self.assertRegex(proof, "^[0-9a-f]{64}$")
+            helper.verify_retired_targets_digest(str(self.control), op, sha, proof)
+            # Crash recovery for the same exact original writer is idempotent.
+            self.assertEqual(helper.archive_retired_targets(op, sha, previous, current), proof)
+            path = self.control / "caddy-retired-targets" / (op + ".json")
+            raw = path.read_bytes()
+            record = json.loads(raw)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(path.parent.stat().st_mode & 0o077, 0)
+            self.assertEqual(record["retired_domain"], "former.example.com")
+            self.assertEqual(record["retired_lan_ip"], "")
+            self.assertEqual(record["target_sha256"], sha)
+            self.assertEqual(record["request_id"], op)
+            for forbidden in ("never-store-this-alidns-secret", "LTAIExampleSecretIdentifier",
+                              "ALIYUN_ACCESS_KEY", "POSTGRES_PASSWORD"):
+                self.assertNotIn(forbidden.encode(), raw)
+            # A receipt's claimed digest is not sufficient without the
+            # separate immutable, private, original Host record.
+            helper.archive_deploy({
+                "protocol": "xdrive.caddy.host-env.v1", "state": "deployed",
+                "request_id": op, "sha256": sha,
+                "host_local_generation_sha256": "a" * 64,
+                "host_local_live_config_sha256": "b" * 64,
+                "retired_targets_sha256": proof,
+            })
+            archived = json.loads((self.control / "caddy-deploy-results" / (op + ".json")).read_text())
+            self.assertEqual(archived["retired_targets_sha256"], proof)
+            for bad in (dict(previous, XD_DOMAIN="attacker.example.com"),
+                        dict(previous, XD_LAN_HTTPS_IP="127.0.0.1")):
+                with self.assertRaises(helper.Restricted):
+                    helper.archive_retired_targets(op, sha, bad, current)
+            with self.assertRaises(helper.Restricted):
+                helper.verify_retired_targets_digest(str(self.control), op, sha, "0" * 64)
+            # Even a seemingly valid SHA attached to a failed terminal or
+            # a legacy result without generation proof must be refused.
+            for bad_extra in (
+                {"state": "failed", "retired_targets_sha256": proof},
+                {"state": "deployed", "retired_targets_sha256": proof},
+            ):
+                bad_op = "1234567890abcdef12345678"
+                with self.assertRaises(helper.Restricted):
+                    helper.archive_deploy({
+                        "protocol": "xdrive.caddy.host-env.v1", "state": "failed",
+                        "request_id": bad_op, "sha256": sha, **bad_extra,
+                    })
+
+    def test_private_retired_target_symlink_and_corruption_fail_closed(self):
+        spec = importlib.util.spec_from_file_location("caddy_host_retired_fault", SCRIPT)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        before = {
+            "XD_DOMAIN": "retired.example.com", "XD_LAN_HTTPS_IP": "192.168.1.9",
+            "ALIYUN_ACCESS_KEY_ID": "someidsecret", "ALIYUN_ACCESS_KEY_SECRET": "privateexample",
+        }
+        after = dict(before, XD_DOMAIN="new.example.com")
+        op = "1234567890abcdef12345678"
+        with mock.patch.dict(os.environ, XD_CADDY_DEPLOY_RECEIPT_DIR=str(self.control)):
+            folder = self.control / "caddy-retired-targets"
+            folder.mkdir(mode=0o700)
+            path = folder / (op + ".json")
+            path.symlink_to(self.control / "other.txt")
+            with self.assertRaises((helper.Restricted, OSError)):
+                helper.archive_retired_targets(op, helper.fingerprint(after), before, after)
+            path.unlink()
+            expected = helper.archive_retired_targets(op, helper.fingerprint(after), before, after)
+            path.write_bytes(b'{"corrupted":true}')
+            with self.assertRaises(helper.Restricted):
+                helper.verify_retired_targets_digest(str(self.control), op, helper.fingerprint(after), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
