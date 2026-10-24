@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"strings"
 	"testing"
 
@@ -12,13 +13,15 @@ import (
 )
 
 type fakeDurableTransport struct {
-	events    []string
-	plans     map[string]client.LocalPushCommonUploadInput
-	states    map[string]string
-	ids       map[string]uint64
-	failAt    int
-	lostACKAt int
-	uploaded  int
+	events          []string
+	plans           map[string]client.LocalPushCommonUploadInput
+	states          map[string]string
+	ids             map[string]uint64
+	failAt          int
+	readCalls       int
+	receiptFailures map[int]error
+	lostACKAt       int
+	uploaded        int
 }
 
 func (f *fakeDurableTransport) init() {
@@ -65,6 +68,10 @@ func (f *fakeDurableTransport) ReadLocalPushCommonUploadReceipt(_ context.Contex
 	_ client.LocalBoundSourceProof, operationID, key string,
 ) (client.LocalPushCommonUploadReceipt, error) {
 	f.events = append(f.events, "read")
+	f.readCalls++
+	if failure := f.receiptFailures[f.readCalls]; failure != nil {
+		return client.LocalPushCommonUploadReceipt{}, failure
+	}
 	plan, ok := f.plans[operationID]
 	if !ok || plan.ResumeKey != key {
 		return client.LocalPushCommonUploadReceipt{}, ErrUncertain
@@ -138,6 +145,131 @@ func durableProof(p Plan) client.LocalBoundSourceProof {
 }
 func durableOpener(context.Context, int64) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("fixture")), nil
+}
+
+// A transient lost ORIGINAL read response must not cause an extra write.
+// All retries use the identical immutable SQL Operation receipt selector.
+func TestDurableOriginalReceiptTransientReadBackoffAfterLostFinalizeACK(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{
+		lostACKAt: 1,
+		receiptFailures: map[int]error{
+			2: io.EOF,
+			3: io.ErrUnexpectedEOF,
+		},
+	}
+	got, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil)
+	if err != nil || !matchesDurableReceipt(p, got) ||
+		f.uploaded != 1 || f.readCalls != 4 {
+		t.Fatalf("original SQL readback retries fabricated upload: receipt=%+v err=%v uploaded=%d reads=%d",
+			got, err, f.uploaded, f.readCalls)
+	}
+	if strings.Count(strings.Join(f.events, ","), "ordinary-finalize") != 1 {
+		t.Fatal("receipt-only retry repeated finalization")
+	}
+}
+
+func TestDurableOriginalReceiptRestartReplayDoesNotReopenOrUpload(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{}
+	first, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil)
+	if err != nil || !matchesDurableReceipt(p, first) || f.uploaded != 1 {
+		t.Fatalf("first immutable commit not established: result=%+v err=%v", first, err)
+	}
+	before := len(f.events)
+	// The next Agent attempt reuses the same original Operation. Its first
+	// receipt HTTP reply is transiently lost, but a follow-up read proves the
+	// existing COMMIT without another bind, byte stream or Finalize.
+	f.receiptFailures = map[int]error{f.readCalls + 1: io.EOF}
+	openerInvoked := false
+	again, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: func(context.Context, int64) (io.ReadCloser, error) {
+			openerInvoked = true
+			return nil, errors.New("replay must not reopen committed native file")
+		}}, nil)
+	if err != nil || again != first || openerInvoked || f.uploaded != 1 ||
+		strings.Join(f.events[before:], ",") != "admit,read,read" {
+		t.Fatalf("restarted original replay retried writes: result=%+v err=%v events=%v opened=%t",
+			again, err, f.events[before:], openerInvoked)
+	}
+}
+
+func TestDurableOriginalReceiptTransientBeforeUploadBindsOnce(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{receiptFailures: map[int]error{1: io.EOF}}
+	got, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil)
+	if err != nil || !matchesDurableReceipt(p, got) ||
+		f.readCalls != 3 || f.uploaded != 1 {
+		t.Fatalf("transient first read bypassed the original: result=%+v err=%v reads=%d uploads=%d",
+			got, err, f.readCalls, f.uploaded)
+	}
+	if joined := strings.Join(f.events, ","); joined != "admit,read,read,start,bind,ordinary-finalize,read" {
+		t.Fatalf("original binder was repeated or skipped: %s", joined)
+	}
+}
+
+func TestOriginalReceiptBackoffOnlyTransportFailures(t *testing.T) {
+	if !retryableOriginalReceiptReadError(io.EOF) ||
+		!retryableOriginalReceiptReadError(io.ErrUnexpectedEOF) ||
+		!retryableOriginalReceiptReadError(&net.DNSError{Err: "temporary timeout", IsTimeout: true}) ||
+		retryableOriginalReceiptReadError(ErrUncertain) ||
+		retryableOriginalReceiptReadError(errors.New("403 owner revoked")) {
+		t.Fatal("readback error classifier must not retry authorization, plan or protocol failures")
+	}
+}
+
+// Terminal authorization or protocol failures must NEVER be blindly retried.
+func TestDurableOriginalReceiptRejectsNonTransportReadFailure(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{
+		receiptFailures: map[int]error{1: errors.New("403 owner root revoked")},
+	}
+	got, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil)
+	if !errors.Is(err, ErrUncertain) || got.Committed ||
+		f.readCalls != 1 || f.uploaded != 0 {
+		t.Fatalf("non-transport failure retried or committed: got=%+v err=%v reads=%d uploads=%d",
+			got, err, f.readCalls, f.uploaded)
+	}
+}
+
+func TestDurableOriginalReceiptExhaustionFailsClosed(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{
+		receiptFailures: map[int]error{1: io.EOF, 2: io.EOF, 3: io.EOF},
+	}
+	got, err := UploadDurableOne(context.Background(), f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil)
+	if !errors.Is(err, ErrUncertain) || got.Committed ||
+		f.readCalls != 3 || f.uploaded != 0 {
+		t.Fatalf("exhausted reads continued original operation: got=%+v err=%v reads=%d uploads=%d",
+			got, err, f.readCalls, f.uploaded)
+	}
+}
+
+func TestDurableOriginalReceiptCancelledBackoffStopsWithoutMoreRequests(t *testing.T) {
+	p := fixturePlan()
+	f := &fakeDurableTransport{receiptFailures: map[int]error{1: io.EOF}}
+	ctx, cancel := context.WithCancel(context.Background())
+	reads := 0
+	failure, err := ReadOriginalReceiptWithBackoff(ctx, func() (client.LocalPushCommonUploadReceipt, error) {
+		reads++
+		cancel()
+		return client.LocalPushCommonUploadReceipt{}, io.EOF
+	})
+	if !errors.Is(err, context.Canceled) || failure.Committed || reads != 1 {
+		t.Fatalf("cancelled read retried or created success: result=%+v err=%v reads=%d", failure, err, reads)
+	}
+	if _, err := UploadDurableOne(ctx, f, durableProof(p),
+		Task{Plan: p, Open: durableOpener}, nil); !errors.Is(err, ErrInvalidPlan) {
+		t.Fatalf("cancelled owning context touched original Operation: %v", err)
+	}
+	if len(f.events) != 0 {
+		t.Fatalf("cancelled context made transport request: %v", f.events)
+	}
 }
 
 func TestDurableCommonUploadBindsBeforeOrdinaryFinalizeAndReadsOriginal(t *testing.T) {

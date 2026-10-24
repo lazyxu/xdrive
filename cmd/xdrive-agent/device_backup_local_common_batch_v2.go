@@ -13,6 +13,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/localpush"
+	"github.com/lazyxu/xdrive/internal/localpushcommon"
 	"github.com/lazyxu/xdrive/internal/localpushstage"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
@@ -370,8 +371,14 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 						out.UncertainFiles++
 						return errLocalBackupCommonBatchUnavailable
 					}
-					receipt, readErr := api.ReadLocalPushCommonUploadReceipt(
-						workCtx, sourceID, source.Revision, proof, p.OperationID, key)
+					// This is strictly a bounded, cancellable reread of the SAME
+					// authenticated immutable original SQL receipt. It never
+					// allocates or uploads an Operation during incremental scans.
+					receipt, readErr := localpushcommon.ReadOriginalReceiptWithBackoff(
+						workCtx, func() (client.LocalPushCommonUploadReceipt, error) {
+							return api.ReadLocalPushCommonUploadReceipt(
+								workCtx, sourceID, source.Revision, proof, p.OperationID, key)
+						})
 					if readErr != nil {
 						out.UncertainFiles++
 						return errLocalBackupCommonBatchUnavailable

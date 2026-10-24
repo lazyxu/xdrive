@@ -92,7 +92,7 @@ func UploadDurableOne(ctx context.Context, api DurableTransport,
 		return api.ReadLocalPushCommonUploadReceipt(
 			ctx, p.SourceID, p.SourceRevision, proof, p.OperationID, key)
 	}
-	original, err := read()
+	original, err := ReadOriginalReceiptWithBackoff(ctx, read)
 	if err != nil || ctx.Err() != nil || original.SourceID != p.SourceID ||
 		original.Revision != p.SourceRevision ||
 		original.OperationID != p.OperationID {
@@ -135,7 +135,7 @@ func UploadDurableOne(ctx context.Context, api DurableTransport,
 	if ctx.Err() != nil {
 		return zero, ErrUncertain
 	}
-	final, readErr := read()
+	final, readErr := ReadOriginalReceiptWithBackoff(ctx, read)
 	if readErr == nil && matchesDurableReceipt(p, final) {
 		return final, nil // identical original committed Operation, even after lost ACK
 	}
