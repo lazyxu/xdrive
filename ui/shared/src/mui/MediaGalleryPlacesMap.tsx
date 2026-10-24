@@ -193,15 +193,19 @@ export function XDriveMediaGalleryPlacesMap({
     const controller = new AbortController()
     void getBaiduJSAPI4Status(controller.signal).then(result => {
       if (controller.signal.aborted) return
-      if (result?.provider === 'baidu-jsapi-4.0' && result.enabled === true &&
-          result.activation_state === 'authorized_signed_release' &&
-          typeof result.isolated_child_origin === 'string' &&
-          result.isolated_child_origin.startsWith('https://')) {
-        setChildOrigin(result.isolated_child_origin)
+      const child = typeof result?.isolated_child_origin === 'string' &&
+        result.isolated_child_origin.startsWith('https://')
+        ? result.isolated_child_origin : ''
+      const signed = result?.provider === 'baidu-jsapi-4.0' &&
+        result.enabled === true &&
+        result.activation_state === 'authorized_signed_release'
+      if (signed && (mapMode === 'prototype' || child !== '')) {
+        setChildOrigin(child)
         setStatus('authorized')
       } else {
         setStatus('blocked')
-        if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'server_release_blocked')
+        if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope,
+          signed && mapMode === 'isolated' ? 'isolated_origin_unavailable' : 'server_release_blocked')
       }
     }).catch(error => {
       if (controller.signal.aborted) return
@@ -211,7 +215,8 @@ export function XDriveMediaGalleryPlacesMap({
     })
     return () => controller.abort()
   }, [desktopOnly, mapMode, hasMapPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
-  const nativeEnabled = status === 'authorized' && !childFailed && childOrigin !== ''
+  const nativeEnabled = status === 'authorized' && !childFailed &&
+    (mapMode === 'prototype' || childOrigin !== '')
   // Only the parent owns the selected Album/filters; nothing here is sent to
   // Baidu's Child, and the current SDK iframe does not remount on changes.
   const changeMapScope = (patch: Partial<MediaGalleryQuery>, albumKey = mapPhotoScope.albumKey) => {
@@ -424,7 +429,7 @@ export function XDriveMediaGalleryPlacesMap({
               {' '}处理：{xDriveBaiduMapDiagnosticDetails[latestDiagnosis.code].action}
             </Typography>
           ) : childFailed ? (
-            <Typography variant="body2" color="text.secondary">独立动态地图会话加载失败。</Typography>
+            <Typography variant="body2" color="text.secondary">动态地图 SDK 会话加载失败。</Typography>
           ) : null}
           <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
             {hasMapPorts ? <Button variant="outlined" size="small"

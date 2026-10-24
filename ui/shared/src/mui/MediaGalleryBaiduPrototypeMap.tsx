@@ -82,8 +82,9 @@ type Runtime = {
   }>
   rendered: XDriveBaiduConvertedFeatureCollection
 }
+type BaiduJSAPI4CapabilitySet = 'legacy-prototype' | 'authorized-cells'
 const loaded = new WeakMap<Document, {
-  ak: string; promise: Promise<Namespace>
+  ak: string; capabilities: BaiduJSAPI4CapabilitySet; promise: Promise<Namespace>
 }>()
 // Each browser document receives a one-shot, collision-free SDK callback.
 // Baidu JSAPI4's async contract signals readiness via the callback query.
@@ -100,15 +101,22 @@ class XDriveBaiduPrototypeFailure extends Error {
 }
 
 /** Real browser SDK loader; exported only for source-exact failure regressions. */
-export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
+export function loadBaiduJSAPI4(
+  doc: Document, ak: string,
+  capabilities: BaiduJSAPI4CapabilitySet = 'legacy-prototype',
+): Promise<Namespace> {
   if (!validAK(ak)) return Promise.reject(
     new XDriveBaiduPrototypeFailure('prototype_config_invalid'))
   if (!doc.defaultView) return Promise.reject(
     new XDriveBaiduPrototypeFailure('prototype_document_unavailable'))
   const existing = loaded.get(doc)
   if (existing) {
-    return existing.ak === ak ? existing.promise : Promise.reject(
+    if (existing.ak !== ak) return Promise.reject(
       new XDriveBaiduPrototypeFailure('prototype_ak_rotated'))
+    // A document must never silently mix the historical WGS84/ClusterLayer
+    // runtime with the new Owner-authorized BD-09 Cell-only SDK host.
+    return existing.capabilities === capabilities ? existing.promise : Promise.reject(
+      new XDriveBaiduPrototypeFailure('prototype_sdk_namespace_missing'))
   }
   const promise = new Promise<Namespace>((resolve, reject) => {
     let script: HTMLScriptElement
@@ -134,6 +142,13 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
         const api = value as Partial<Namespace>
         if (typeof api.Map !== 'function') return 'sdk_missing_map'
         if (typeof api.Point !== 'function') return 'sdk_missing_point'
+        // The current shared Gallery Cell/Camera/Viewer host consumes only
+        // already-approved BD-09 points; it never converts raw WGS84 or
+        // constructs a legacy client-side ClusterLayer.
+        if (capabilities === 'authorized-cells') {
+          return typeof (api as Partial<Namespace> & { Label?: unknown }).Label === 'function'
+            ? null : 'sdk_missing_label'
+        }
         if (typeof api.Convertor !== 'function') return 'sdk_missing_convertor'
         if (typeof api.ClusterLayer !== 'function') return 'sdk_missing_cluster_layer'
         return null
@@ -213,7 +228,7 @@ export function loadBaiduJSAPI4(doc: Document, ak: string): Promise<Namespace> {
       cleanup(new XDriveBaiduPrototypeFailure('prototype_sdk_script_injection_failed'))
     }
   })
-  loaded.set(doc, { ak, promise })
+  loaded.set(doc, { ak, capabilities, promise })
   void promise.catch(() => {
     if (loaded.get(doc)?.promise === promise) loaded.delete(doc)
   })

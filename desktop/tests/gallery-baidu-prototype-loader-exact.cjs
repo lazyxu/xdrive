@@ -284,3 +284,42 @@ test('concurrent loads share one callback per document; other documents are inde
   assert.equal(await coalesced, a)
   assert.equal(await other, b)
 })
+
+
+test('authorized BD09 Cell host requires only Map, Point and Label, not legacy conversion or cluster', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY', 'authorized-cells')
+  const sdk = { Map: class {}, Point: class {}, Label: class {} }
+  f.window.BMap = sdk
+  f.scripts[0].onload()
+  invokeProviderReady(f)
+  assert.equal(await pending, sdk)
+  assert.equal(f.scripts.length, 1)
+  assert.equal(timers.size, 0)
+  assert.equal(await load(f.document, 'KEY', 'authorized-cells'), sdk)
+  // A historical WGS84/ClusterLayer caller must not inherit a weaker loader.
+  await assert.rejects(load(f.document, 'KEY'), e =>
+    e.code === 'prototype_sdk_namespace_missing')
+})
+
+test('authorized BD09 Cell host fails closed when Label is actually absent', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY', 'authorized-cells')
+  f.window.BMap = { Map: class {}, Point: class {} }
+  f.scripts[0].onload()
+  invokeProviderReady(f)
+  fire(12000)
+  await assert.rejects(pending, e => e.code === 'sdk_missing_label')
+  assert.equal(f.scripts[0].removed, true)
+  assert.equal(timers.size, 0)
+})
+
+test('legacy prototype still requires Convertor and ClusterLayer without Cell-host shortcuts', async () => {
+  const f = fixture()
+  const pending = load(f.document, 'KEY')
+  f.window.BMap = { Map: class {}, Point: class {}, Label: class {} }
+  f.scripts[0].onload()
+  invokeProviderReady(f)
+  fire(12000)
+  await assert.rejects(pending, e => e.code === 'sdk_missing_convertor')
+})
