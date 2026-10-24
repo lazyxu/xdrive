@@ -6,6 +6,7 @@ import { X509Certificate, createHash } from 'node:crypto'
 import * as https from 'node:https'
 import * as tls from 'node:tls'
 import { isIP } from 'node:net'
+import type { LookupOptions, LookupAddress } from 'node:dns'
 import { Readable } from 'node:stream'
 
 export type TrustedLANProfile = { server: string; username: string }
@@ -68,6 +69,27 @@ export function verifiedLANRootPEM(value: string): { pem: string; sha256: string
         Date.parse(cert.validFrom) > now || Date.parse(cert.validTo) <= now) return null
     return { pem, sha256: createHash('sha256').update(cert.raw).digest('hex') }
   } catch { return null }
+}
+
+// Node 20+/Electron may enable autoSelectFamily and invoke custom lookup
+// with { all: true }. In that mode the callback MUST receive an array, not
+// the legacy (address, family) tuple; returning a string makes Node reject
+// the request with ERR_INVALID_IP_ADDRESS. There is no DNS resolution here:
+// the previously trusted domain is authenticated by TLS SNI/hostname checks,
+// while the TCP connection is pinned to the user's exact private IPv4.
+export function directLANIPv4Lookup(ip: string) {
+  if (isIP(ip) !== 4) throw new Error('LAN lookup requires an IPv4 address')
+  return (
+    _hostname: string,
+    options: LookupOptions,
+    callback: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void,
+  ): void => {
+    if (options.all) {
+      callback(null, [{ address: ip, family: 4 }])
+    } else {
+      callback(null, ip, 4)
+    }
+  }
 }
 
 function readHTTPS(options: https.RequestOptions, maxBytes: number): Promise<{ status: number; text: string }> {
@@ -194,7 +216,7 @@ export async function enrollLANRootViaTrustedDomain(
         port: target.port,
         path: CA_PATH,
         servername: domain.hostname,
-        lookup: (_hostname, _options, callback) => callback(null, target.ip, 4),
+        lookup: directLANIPv4Lookup(target.ip),
         ...(fixtureDomainCA ? { ca: fixtureDomainCA } : {}),
       }, MAX_PEM)
       if (response.status !== 200) continue // Never follow 30x.
