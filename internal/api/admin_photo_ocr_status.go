@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -27,24 +28,27 @@ func photoOCRProbeFailureReason(err error) string {
 	if errors.As(err, &opErr) {
 		return "probe_unreachable"
 	}
-	// Only trusted prefixes created by our own Smart HTTP adapter are read.
+	// Only the exact prefix emitted by our Smart HTTP adapter is interpreted.
+	// The upstream response body is never copied into any diagnostic value.
 	message := err.Error()
-	if strings.HasPrefix(message, "smart analyzer returned HTTP 401:") ||
-		strings.HasPrefix(message, "smart analyzer returned HTTP 403:") {
-		return "probe_auth_rejected"
-	}
 	if strings.HasPrefix(message, "unsupported smart analyzer protocol version") ||
 		strings.HasPrefix(message, "decode smart analyzer response:") {
 		return "probe_invalid_response"
 	}
-	if strings.HasPrefix(message, "smart analyzer returned HTTP 404:") {
-		return "probe_endpoint_missing"
-	}
-	if strings.HasPrefix(message, "smart analyzer returned HTTP 500:") ||
-		strings.HasPrefix(message, "smart analyzer returned HTTP 502:") ||
-		strings.HasPrefix(message, "smart analyzer returned HTTP 503:") ||
-		strings.HasPrefix(message, "smart analyzer returned HTTP 504:") {
-		return "probe_server_error"
+	if strings.HasPrefix(message, "smart analyzer returned HTTP ") {
+		statusText, _, ok := strings.Cut(strings.TrimPrefix(message, "smart analyzer returned HTTP "), ":")
+		if ok {
+			if status, parseErr := strconv.Atoi(statusText); parseErr == nil {
+				switch {
+				case status == 401 || status == 403:
+					return "probe_auth_rejected"
+				case status == 404:
+					return "probe_endpoint_missing"
+				case status >= 500 && status <= 599:
+					return "probe_server_error"
+				}
+			}
+		}
 	}
 	return "probe_failed"
 }

@@ -80,6 +80,12 @@ func TestPhotoOCRProbeFailureReasonsDoNotLeakSecrets(t *testing.T) {
 		{"bad JSON", errors.New("decode smart analyzer response: " + secret), "probe_invalid_response"},
 		{"missing endpoint", errors.New("smart analyzer returned HTTP 404: /private/" + secret), "probe_endpoint_missing"},
 		{"model boot failed", errors.New("smart analyzer returned HTTP 503: /private/" + secret), "probe_server_error"},
+		{"model HTTP 501", errors.New("smart analyzer returned HTTP 501: " + secret), "probe_server_error"},
+		{"model HTTP 507", errors.New("smart analyzer returned HTTP 507: " + secret), "probe_server_error"},
+		{"model HTTP 599", errors.New("smart analyzer returned HTTP 599: " + secret), "probe_server_error"},
+		{"unknown 4xx", errors.New("smart analyzer returned HTTP 418: " + secret), "probe_failed"},
+		{"malformed status", errors.New("smart analyzer returned HTTP nonsense: " + secret), "probe_failed"},
+		{"untrusted prefix", errors.New("untrusted smart analyzer returned HTTP 503: " + secret), "probe_failed"},
 		{"other", errors.New("other failure " + secret), "probe_failed"},
 	}
 	for _, tc := range cases {
@@ -120,6 +126,22 @@ func TestAdminServiceDependenciesOCRFailureReasonsAndMalformedInfo(t *testing.T)
 	raw, err := json.Marshal(rejected)
 	if err != nil || strings.Contains(string(raw), secret) || strings.Contains(string(raw), "smart analyzer returned HTTP") {
 		t.Fatal("private model error leaked to service response")
+	}
+
+	// Real authenticated /admin/services inventory must classify every 5xx
+	// as a fixed model-service reason, without any upstream response body.
+	for _, status := range []int{501, 507, 599} {
+		blocked := photoHostInventoryFromAdmin(t, &Server{PhotoSmartAnalyzer: diagnosticOCRAnalyzer{
+			err: fmt.Errorf("smart analyzer returned HTTP %d: %s", status, secret),
+		}})["photo-smart"]
+		if blocked.Status != "unavailable" || blocked.OCRAutoState != "unavailable" ||
+			blocked.OCRReason != "probe_server_error" {
+			t.Fatalf("HTTP %d model error misclassified: %+v", status, blocked)
+		}
+		payload, err := json.Marshal(blocked)
+		if err != nil || strings.Contains(string(payload), secret) {
+			t.Fatalf("HTTP %d leaked raw model error: %v", status, err)
+		}
 	}
 
 	invalid := photoHostInventoryFromAdmin(t, &Server{PhotoSmartAnalyzer: diagnosticOCRAnalyzer{
