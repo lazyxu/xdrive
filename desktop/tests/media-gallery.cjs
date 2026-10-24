@@ -561,7 +561,8 @@ test('Gallery Places explicitly offers prototype and signed HTTPS Child without 
     '查看此地点照片', "activation_state === 'authorized_signed_release'"]) {
     assert.ok(sharedGalleryPlacesMap.includes(token), 'isolated map missing: '+token)
   }
-  assert.match(sharedGalleryPlacesMap, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.doesNotMatch(sharedGalleryPlacesMap, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(sharedGalleryPlacesMap, /mode=\{mapMode === 'prototype' \? 'inline' : 'isolated'\}/)
   assert.match(sharedGalleryPlacesMap, /data-xdrive-places-map-mode/)
   assert.match(sharedGalleryBaiduMap, /xDriveMountBaiduIsolatedFrame/)
   assert.match(sharedGalleryPlacesMap, /startsWith\('https:\/\/'\)/)

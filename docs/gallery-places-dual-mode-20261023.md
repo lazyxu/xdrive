@@ -1,3 +1,5 @@
+> **2026-10-24 更新（P0 双模式同构候选）**：下文“默认原型主动提交 WGS84 64 代表点”和“仅隔离版拥有精确 BD09 Range/筛选”描述的是先前已合并行为。新的改造候选将同页版也接入与安全版**相同**的可信 BD09 Cells/Camera Range、照片墙、筛选及地图展示组件，旧 Browser AK Loader 仅用于同页 SDK 加载，不再从产品入口运行 GPS Convertor。安全版独立 HTTPS Child/Map-only Ticket 不变。详见 [2026-10-24 两个 SDK Host 共享一套照片业务层](gallery-places-shared-dual-map-runtime-20261024.md)。最终以该 PR 实际合并及 CI 为准。
+
 # 图库地点双模式（2026-10-23）
 
 默认 Web/Mobile Web/PWA 的同页原型：BMap.Map + ClusterLayer、官方 Convertor、Owner GPS 聚合代表点（有界 64 样本）、照片封面、原有照片墙和 Viewer。

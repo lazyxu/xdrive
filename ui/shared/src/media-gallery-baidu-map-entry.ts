@@ -90,12 +90,10 @@ export function xDriveGalleryMapEntryScope(input: XDriveGalleryMapEntry): XDrive
   const scope = xDriveNormalizeBaiduMapPhotoScope({ filters: effective, albumKey })
   if (!scope) return deny('unsupported-filter')
 
-  const f = scope.filters
-  // The legacy same-document prototype has no signed, filtered BD09 Count.
-  // A restricted entry must use the isolated Child; silently expanding it
-  // to prototype worldwide GPS is forbidden.
-  const requiresIsolated = Boolean(albumKey || f.favorite !== undefined ||
-    f.asset_kind !== undefined || f.captured_from || f.captured_to ||
-    f.sort_by !== 'captured' || f.sort_dir !== 'desc')
+  // Both SDK hosts now use exactly the same trusted BD09 Cells and Camera
+  // Range, so a valid restricted collection may open either map mode. A
+  // document-mode SWITCH still requires a separate one-use Owner handoff.
+  // Preserve this result field for callers that have not migrated yet.
+  const requiresIsolated = false
   return { ok: true, scope, requiresIsolated }
 }

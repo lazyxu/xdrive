@@ -69,7 +69,7 @@ test('exact Gallery runtime and Admin UI retain specific errors without raw prov
   assert.match(map, /&callback=/)
   assert.match(map, /prototype_sdk_convert_failed/)
   assert.match(map, /script\.onerror = \(\) => cleanup/)
-  assert.match(parent, /diagnosticScope=\{diagnosticScope\}/)
+  assert.match(parent, /scope=\{diagnosticScope\}/)
   assert.match(admin, /Browser 类型 AK/)
   assert.doesNotMatch(map, /error\.message|JSON\.stringify\(error\)|console\.(?:warn|error)/)
 })

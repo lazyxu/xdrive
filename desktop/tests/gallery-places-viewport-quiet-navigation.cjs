@@ -96,11 +96,22 @@ async function render(props) {
   return view
 }
 
-test('default Web runtime mounts old same-document prototype without requiring signed release', async () => {
+test('default Web inline host requires signed release and reuses trusted BD09 Cells surface', async () => {
   global.window.location.href = 'https://gallery.example.test/gallery'
-  const view = await render({})
-  assert.equal(view.root.findAllByType('old-prototype').length, 1)
-  assert.equal(view.root.findAllByType('isolated-child').length, 0)
+  const denied = await render({})
+  assert.equal(denied.root.findAllByType('isolated-child').length, 0)
+  assert.equal(denied.root.findAllByType('old-prototype').length, 0)
+  await act(async () => denied.unmount())
+  const view = await render({ getBaiduJSAPI4Status: async () => ({
+    provider:'baidu-jsapi-4.0', enabled:true, activation_state:'authorized_signed_release',
+    isolated_child_origin:'https://map.example.test',
+  }) })
+  const shared = view.root.findAllByType('isolated-child')
+  assert.equal(shared.length, 1)
+  assert.equal(shared[0].props.mode, 'inline')
+  assert.equal(shared[0].props.listOwnerCells, base.listBaiduNativeCells)
+  assert.equal(shared[0].props.getInlinePrototypeConfig, base.getBaiduJSAPIPrototype)
+  assert.equal(view.root.findAllByType('old-prototype').length, 0)
   await act(async () => view.unmount())
 })
 

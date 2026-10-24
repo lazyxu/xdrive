@@ -93,15 +93,15 @@ test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynami
   // Electron file pages never load the unisolated SDK. Web may opt into the old
   // same-document prototype, but the Desktop action is always an HTTPS Child.
   assert.match(desktopApp, /<XDriveMediaGalleryPage/)
-  assert.match(places, /const hasChildPorts = Boolean\(/)
+  assert.match(places, /const hasMapPorts = Boolean\(/)
   assert.match(places, /activation_state === 'authorized_signed_release'/)
   assert.match(places, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(places, /在独立 HTTPS 安全窗口打开动态地图/)
   assert.doesNotMatch(places, /BaiduStaticMap/)
   assert.match(places, /const desktopOnly = Boolean\(onOpenSecureDesktopMap\)/)
   assert.match(places, /const mapMode = desktopOnly \? 'isolated'/)
-  assert.match(places, /mapMode === 'prototype' && !desktopOnly/)
-  assert.match(places, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(places, /mode=\{mapMode === 'prototype' \? 'inline' : 'isolated'\}/)
+  assert.doesNotMatch(places, /XDriveMediaGalleryBaiduPrototypeMap/)
   assert.match(gallery, /onOpenSecureDesktopMap=\{onOpenSecureDesktopMap\}/)
   assert.match(webApp, /initialSection=\{route\.app === 'gallery'/)
   assert.doesNotMatch(main, /BaiduBrowserAK|BMapSecurityConfig|allowRunningInsecureContent: true/)

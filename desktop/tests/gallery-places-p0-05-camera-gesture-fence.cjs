@@ -23,9 +23,11 @@ test('Baidu native gesture cancel invalidates Owner Camera and current Cells tog
   assert.match(cancel, /acceptedCells\.current = \[\]/)
   assert.match(cancel, /setAcceptedViewport\(null\)/)
   assert.match(cancel, /invalidated\.current\?\.\(\)/)
-  const host = section('    const frame = xDriveMountBaiduIsolatedFrame', '    const queryCells = async')
+  const host = section('    const commonMapOptions = {', '    const queryCells = async')
   assert.match(host, /onCancel:cancel/)
-  assert.match(host, /onViewport: bounds => \{ void queryCells\(bounds, true\) \}/)
+  assert.match(host, /onViewport: \(bounds:Bounds\) => \{ void queryCells\(bounds, true\) \}/)
+  assert.match(host, /xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>/)
+  assert.match(host, /xDriveMountBaiduInlineMap<MediaBaiduNativeCellSelection>/)
 })
 
 test('filter refresh cannot reauthorize the canceled Camera before a new request', () => {

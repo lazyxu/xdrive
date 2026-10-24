@@ -103,7 +103,7 @@ test('signed isolated Child uses neutral photo-style markers with verified count
   assert.match(parent,/\{pin.count.toLocaleString\('zh-CN'\)\}张/)
   assert.match(parent,/bgcolor:'rgba\(15,23,42,\.94\)'/)
   assert.doesNotMatch(parent,/rotate\(9deg\)/)
-  assert.match(places,/const hasChildPorts = Boolean\(/)
+  assert.match(places,/const hasMapPorts = Boolean\(/)
   assert.match(places,/activation_state === 'authorized_signed_release'/)
   assert.match(parent,/xDriveSelectBaiduNativeCell\(page,bounds,cell\)/)
 })
