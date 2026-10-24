@@ -17,7 +17,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err update-github-bad-sha.err update-github-no-sha.err update-github-rollover.err update-github-duplicate-sha.err update-github-malformed-sha.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
+      update.out update.err update-github-attested.err update-github-attestation-missing.err update-github-attestation-bad.err update-github-policy.err update-github-bad-sha.err update-github-no-sha.err update-github-rollover.err update-github-duplicate-sha.err update-github-malformed-sha.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -50,6 +50,13 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$out" && -n "$url" ]]
 printf '%s\n' "$url" >> "$TEST_STATE/curl-urls"
+if [[ "$url" == */xdrive-release-attestation.json ]]; then
+  if [[ "${TEST_CURL_FAIL_ATTESTATION:-0}" == "1" ]]; then
+    exit 22
+  fi
+  printf '{"mock":"release-attestation-bundle"}\n' > "$out"
+  exit 0
+fi
 if [[ "$url" == */SHA256SUMS.txt ]]; then
   if [[ "${TEST_CURL_FAIL_SHA256SUMS:-0}" == "1" ]]; then
     exit 22
@@ -84,6 +91,39 @@ INSTALL
 cp "$out" "$TEST_STATE/last-installer"
 SH
 chmod +x "$TMP/bin/curl"
+
+# Mock the gh CLI signature verifier's interface. The real Sigstore signing
+# and cryptographic bundle verification run inside the publish workflow.
+cat > "$TMP/bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == attestation && "${2:-}" == verify ]]
+artifact="$3"
+shift 3
+repo="" signer="" bundle="" source_ref="" deny_self_hosted=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo) repo="$2"; shift 2 ;;
+    --signer-workflow) signer="$2"; shift 2 ;;
+    --bundle) bundle="$2"; shift 2 ;;
+    --source-ref) source_ref="$2"; shift 2 ;;
+    --deny-self-hosted-runners) deny_self_hosted=1; shift ;;
+    *) echo "unexpected gh verify flag: $1" >&2; exit 9 ;;
+  esac
+done
+[[ "$repo" == lazyxu/xdrive ]]
+[[ "$signer" == lazyxu/xdrive/.github/workflows/release.yml ]]
+[[ "$deny_self_hosted" == 1 ]]
+[[ -s "$bundle" && -s "$artifact" ]]
+case "$artifact" in
+  */install-server.sh|*/install-server.sh.SHA256SUMS.txt) ;;
+  *) echo "unexpected subject: $artifact" >&2; exit 9 ;;
+esac
+[[ -z "$source_ref" || "$source_ref" == refs/heads/master ]]
+printf '%s|%s|%s\n' "$artifact" "$source_ref" "$signer" >> "$TEST_STATE/gh-verifications"
+[[ "${TEST_GH_REJECT:-0}" != 1 ]]
+SH
+chmod +x "$TMP/bin/gh"
 
 cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -287,6 +327,66 @@ bash "$HOST" update --source github --channel master >"$TMP/update-github-master
 grep -q '^https://github.com/lazyxu/xdrive/releases/download/snapshot/xdrive-server-install.sh$' "$TMP/state/curl-url"
 grep -q '^https://github.com/lazyxu/xdrive/releases/download/snapshot/SHA256SUMS.txt$' "$TMP/state/curl-urls"
 grep -q 'GitHub release installer SHA-256 verified' "$TMP/update-github-master.out"
+
+# Explicit strict provenance policy checks the signed installer AND manifest.
+rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls" "$TMP/state/gh-verifications"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+XD_GITHUB_ATTESTATION_POLICY=required \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-attested.out" 2>"$TMP/update-github-attested.err"
+[[ "$(wc -l < "$TMP/state/gh-verifications")" -eq 2 ]]
+grep -q '|refs/heads/master|lazyxu/xdrive/.github/workflows/release.yml$' "$TMP/state/gh-verifications"
+grep -q 'publisher provenance verified' "$TMP/update-github-attested.out"
+grep -q '^--source github --channel master$' "$TMP/state/installer-args"
+
+# Missing or invalid publisher evidence must fail closed after three complete
+# attempts: not even a syntactically valid installer may be executed.
+for case_name in missing bad; do
+  rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+  set +e
+  if [[ "$case_name" == missing ]]; then
+    TEST_CURL_FAIL_ATTESTATION=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/home" XD_GITHUB_ATTESTATION_POLICY=required \
+    bash "$HOST" update --source github --channel master >"$TMP/update-github-attestation-missing.out" 2>"$TMP/update-github-attestation-missing.err"
+  else
+    TEST_GH_REJECT=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/home" XD_GITHUB_ATTESTATION_POLICY=required \
+    bash "$HOST" update --source github --channel master >"$TMP/update-github-attestation-bad.out" 2>"$TMP/update-github-attestation-bad.err"
+  fi
+  attestation_status=$?
+  set -e
+  [[ "$attestation_status" -ne 0 ]]
+  test ! -e "$TMP/state/installer-args"
+  [[ "$(grep -c '/xdrive-release-attestation.json$' "$TMP/state/curl-urls")" -eq 3 ]]
+  grep -q 'no installer was executed' "$TMP/update-github-attestation-$case_name.err"
+done
+
+# Strict mode must not downgrade to a custom URL, GitLab or a misspelled policy.
+for case_name in override gitlab invalid; do
+  rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+  set +e
+  case "$case_name" in
+    override)
+      TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      XD_GITHUB_ATTESTATION_POLICY=required XD_INSTALLER_URL=https://example.invalid/install-server.sh \
+      bash "$HOST" update --source github --channel master >"$TMP/update-github-policy.out" 2>"$TMP/update-github-policy.err"
+      ;;
+    gitlab)
+      TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      XD_GITHUB_ATTESTATION_POLICY=required \
+      bash "$HOST" update --source gitlab --channel master >"$TMP/update-github-policy.out" 2>"$TMP/update-github-policy.err"
+      ;;
+    invalid)
+      TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+      XD_GITHUB_ATTESTATION_POLICY=typo \
+      bash "$HOST" update --source github --channel master >"$TMP/update-github-policy.out" 2>"$TMP/update-github-policy.err"
+      ;;
+  esac
+  policy_status=$?
+  set -e
+  [[ "$policy_status" -ne 0 ]]
+  test ! -e "$TMP/state/installer-args"
+  test ! -e "$TMP/state/curl-urls"
+done
 
 # A rolling snapshot can change between the installer and its checksum.
 # Retry the complete pair and succeed on the second, consistent generation.
