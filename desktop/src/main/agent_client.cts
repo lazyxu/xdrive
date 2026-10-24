@@ -897,6 +897,7 @@ export type AgentAdminCaddyConfigurationSaveResult = {
 }
 export type AgentAdminCaddyDeployHistoryPage = {
   items: AgentAdminCaddyDeployState[]
+  current?: AgentAdminCaddyDeployState | null
   scope: 'host-terminal'
   retention_days: number
 }
@@ -908,6 +909,7 @@ export type AgentAdminCaddyDeployState = {
   rolled_back?: boolean
   error?: string // Fixed Host code; never arbitrary subprocess diagnostics.
   local_runtime_state?: 'matching-local' | 'changed-local' | 'unverified'
+  recorded_at?: string
 }
 
 

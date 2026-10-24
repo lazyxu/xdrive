@@ -149,9 +149,11 @@ export type XDriveCaddyDeployState = {
   error?: string // Strictly enumerated on Server; never raw Host/Docker diagnostics.
   // This is a RECENT UNSIGNED Host-local comparison, never signed Applied.
   local_runtime_state?: 'matching-local' | 'changed-local' | 'unverified'
+  recorded_at?: string // Immutable Host archive file time, not current Applied.
 }
 export type XDriveCaddyDeployHistoryPage = {
   items: XDriveCaddyDeployState[]
+  current?: XDriveCaddyDeployState | null // Read-only queued/active Host request.
   scope: 'host-terminal'
   retention_days: number
 }
