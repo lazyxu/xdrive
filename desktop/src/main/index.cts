@@ -4952,38 +4952,65 @@ function registerIPCHandlers() {
     event,
     nodeID: unknown,
     progressRequestID: unknown,
-  ) => runAgentAction<string>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'media-gallery')
-    requireAgentCapability(hello, 'file-preview-stream')
-    if (
-      typeof nodeID !== 'number' ||
-      !Number.isSafeInteger(nodeID) ||
-      nodeID <= 0
-    ) {
-      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
-    }
-    if (!filePreviewProxy) {
-      throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
-    }
-    const requestID = typeof progressRequestID === 'string' && progressRequestID.length <= 128
-      ? progressRequestID
-      : ''
-    const ticket = await requireAgentClient().mediaLivePhotoMotionTicket(nodeID)
-    return filePreviewProxy.createURLFromTicket(
-      ticket,
-      requestID
-        ? (loadedBytes, totalBytes) => {
-            if (event.sender.isDestroyed()) return
-            event.sender.send('agent:media-live-photo-motion-progress', {
-              request_id: requestID,
-              loaded_bytes: loadedBytes,
-              total_bytes: totalBytes,
-            })
-          }
-        : undefined,
-    )
-  }, false))
+    viewportRequestID: unknown,
+  ) => runAgentAction<string>(
+    () => viewportRequests.run(event.sender, viewportRequestID, async (signal) => {
+      if (signal?.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Live Photo motion ticket was cancelled.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      if (signal?.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Live Photo motion ticket was cancelled.')
+      }
+      requireAgentCapability(hello, 'media-gallery')
+      requireAgentCapability(hello, 'file-preview-stream')
+      if (
+        typeof nodeID !== 'number' ||
+        !Number.isSafeInteger(nodeID) ||
+        nodeID <= 0
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+      }
+      const proxy = filePreviewProxy
+      if (!proxy) {
+        throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
+      }
+      const requestID = typeof progressRequestID === 'string' && progressRequestID.length <= 128
+        ? progressRequestID
+        : ''
+      const ticket = await requireAgentClient().mediaLivePhotoMotionTicket(nodeID, signal)
+      if (signal?.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Live Photo motion ticket was cancelled.')
+      }
+      // createURLFromTicket() starts the local proxy asynchronously. Await the
+      // *actual URL* before registering disposal and checking late aborts;
+      // a Promise is neither a releasable URL nor a valid IPC result.
+      const url = await proxy.createURLFromTicket(
+        ticket,
+        requestID
+          ? (loadedBytes, totalBytes) => {
+              if (signal?.aborted || event.sender.isDestroyed()) return
+              event.sender.send('agent:media-live-photo-motion-progress', {
+                request_id: requestID,
+                loaded_bytes: loadedBytes,
+                total_bytes: totalBytes,
+              })
+            }
+          : undefined,
+      )
+      // Keep the URL guarded through the final viewport manager admission
+      // check, including cancellation between this callback's return and the
+      // manager completing its Promise.
+      const releaseOnAbort = () => { proxy.releaseURL(url) }
+      signal?.addEventListener('abort', releaseOnAbort, { once: true })
+      if (signal?.aborted) {
+        releaseOnAbort()
+        throw new AgentIPCError('aborted', 0, 'Live Photo motion ticket was cancelled.')
+      }
+      return url
+    }),
+    false,
+  ))
 
   ipcMain.handle('agent:release-media-live-photo-motion', (_event, value: unknown) => {
     if (typeof value !== 'string' || value.length > 4096) {

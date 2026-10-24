@@ -608,7 +608,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
   assert.match(desktopPreviewProxy, /createURLFromTicket/)
   assert.match(desktopPreviewProxy, /releaseURL\(value: string\)/)
   assert.match(webAdapter, /mediaLivePhotoMotionURL\(nodeID, signal\)/)
-  assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress\)/)
+  assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress, requestID\)/)
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
   assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')
   assert.match(sharedGallery, /still=\{\([\s\S]*?<XDriveFilePreviewSurface/, 'Live Photo still image should reuse the Preview Engine before thumbnail fallback')
@@ -1210,7 +1210,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   }
 
   assert.ok(
-    agentClient.includes('mediaLivePhotoMotionTicket(nodeID: number)'),
+    agentClient.includes('mediaLivePhotoMotionTicket(nodeID: number, signal?: AbortSignal)'),
     'Desktop Agent client must request a Live Photo motion stream ticket',
   )
   assert.equal(
@@ -1263,9 +1263,11 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /data: ArrayBuffer/)
   assert.match(
     agentClient,
-    /mediaLivePhotoMotionTicket\(nodeID: number\)[\s\S]*AgentFilePreviewTicket/,
+    /mediaLivePhotoMotionTicket\(nodeID: number, signal\?: AbortSignal\)[\s\S]*AgentFilePreviewTicket/,
   )
-  assert.ok(desktopMain.includes('filePreviewProxy.createURLFromTicket('))
+  assert.ok(desktopMain.includes('const url = await proxy.createURLFromTicket('))
+  assert.ok(desktopMain.includes("signal?.addEventListener('abort', releaseOnAbort, { once: true })"),
+    'Late Desktop Live motion proxy URLs must be released on AbortSignal')
   assert.ok(desktopMain.includes("'agent:get-media-live-photo-still'"))
   assert.ok(preload.includes('getMediaLivePhotoStill:'))
   assert.ok(webAPI.includes('mediaLivePhotoStillURL('))
@@ -1642,8 +1644,8 @@ test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler
 
 
 test('Desktop Live Photo motion streams through the protected Range proxy instead of renderer buffers', () => {
-  assert.ok(desktopMain.includes('mediaLivePhotoMotionTicket(nodeID)'))
-  assert.ok(desktopMain.includes('filePreviewProxy.createURLFromTicket('))
+  assert.ok(desktopMain.includes('mediaLivePhotoMotionTicket(nodeID, signal)'))
+  assert.ok(desktopMain.includes('const url = await proxy.createURLFromTicket('))
   assert.ok(desktopPreviewProxy.includes("headers: req.headers.range ? { Range: req.headers.range } : undefined"))
   assert.ok(desktopPreviewProxy.includes('responseByteRange(upstream)'))
   assert.ok(desktopPreviewProxy.includes('mergeByteRanges'))

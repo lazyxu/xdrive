@@ -539,6 +539,7 @@ const agent = Object.freeze({
   getMediaLivePhotoMotion: (
     nodeID: number,
     onProgress?: XDriveByteProgressCallback,
+    viewportRequestID?: string,
   ) => {
     const requestID = `motion-${Date.now()}-${++mediaLivePhotoMotionRequestSequence}`
     const channel = 'agent:media-live-photo-motion-progress'
@@ -564,7 +565,7 @@ const agent = Object.freeze({
       }
     }
     if (onProgress) ipcRenderer.on(channel, listener)
-    return ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID, requestID)
+    return ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID, requestID, viewportRequestID)
       .then((result: unknown) => {
         const value = result as { ok?: unknown; data?: unknown }
         if (!onProgress || value?.ok !== true || typeof value.data !== 'string') {
