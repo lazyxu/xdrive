@@ -1,6 +1,88 @@
 # xd Backup-only CLI (same owning Agent as Desktop)
 
-Supported: Linux and Windows on the device whose existing local-folder **Backup** Source and approved native Root are registered. This is a CLI surface over the **same Agent**, not a separate uploader, scanner, durable task queue or cloud writer.
+> **Architecture decision (2026-10-25):** [CLI-only Backup architecture](./xd-headless-backup-architecture.md) — B internally (`xd` + same-user `xdrive-agent`), C-like unified `xd backup` experience. Desktop is optional for the target headless deployment. **Current status:** existing-source CLI commands are released; first-run `xd backup init`, the no-mount Agent runtime and CLI-only packaging are implemented in Draft PR #2585, pending source-exact CI and merge (not yet released).
+
+**Architecture:** The `xd` CLI controls the **same owning Agent** as Desktop; it does not implement another scanner, durable queue, uploader or cloud CAS writer. Linux/Windows Desktop UI is optional. In the headless distribution, `xd` auto-starts `xdrive-agent --backup-only`, without mounting a filesystem or requiring Electron.
+
+## Headless / Desktop-free setup (PR #2585 — verify exact CI before release)
+
+Install the CLI-only Linux tarball or Windows ZIP containing both `xd` and `xdrive-agent`. Run both as the **same OS user** who owns the local files and their protected credential store. The remote xDrive Server must already be reachable and the account must exist.
+
+~~~sh
+# Example for a Unix shell: do not place the password in shell arguments.
+read -rsp 'xDrive password: ' XD_PASSWORD; echo
+export XD_PASSWORD
+xd login --server https://drive.example.com --username USER
+unset XD_PASSWORD
+
+# Read-only existing xDrive folder IDs, including the root and nested folders.
+xd backup targets
+xd backup targets --parent 123
+
+# Single Agent-driven setup: read-only native preflight, device enrollment,
+# paused Source creation, native Root binding, optional schedule.
+xd backup init --name Photos --path /data/photos --target-id 123 --every 6h
+
+# Take the returned Source ID, then arm the schedule via a verified run.
+xd backup once --source 42
+xd backup status --source 42
+xd backup history --source 42
+
+# If a network failure created an unbound paused Source:
+xd backup drafts
+xd backup bind --source 42 --path /data/photos
+~~~
+
+`--target-id` is an **existing cloud directory Node ID**, not a local path.
+`--path` is a canonical absolute directory on the current machine and is
+validated by the owning Agent. No remote Web request can authorize the Root,
+and no CLI argument can select a foreign Device. An ambiguous Source creation
+is not blindly repeated: inspect the list of same-device paused drafts first.
+A failed Root bind leaves its Source paused for an explicit `bind` command.
+
+The `init` command **does not silently start** the first upload. A later
+`xd backup once --source ID` begins the existing persisted per-file runner;
+after saving or changing a schedule, that explicit verified run arms automatic
+incremental admissions. For backups with weak Linux inode identity, use the
+same fail-closed file/Root preconditions as the Desktop Backup-only Runner;
+strong identity is only additionally mandatory for dangerous deletion modes,
+which the CLI deliberately does not support.
+
+### Independently installing the background Agent
+
+Linux standalone portable archive includes `xdrive-backup-agent.service`,
+which assumes you copy `xd` and `xdrive-agent` to `~/.local/bin` and
+the service unit to `~/.config/systemd/user`. Run
+`systemctl --user daemon-reload` then
+`systemctl --user enable --now xdrive-backup-agent`. If you need unattended
+backups **after logout**, configure your user's login manager/systemd linger
+explicitly; do not run xDrive as root just to keep it alive.
+
+For Windows, place `xd.exe` and `xdrive-agent.exe` together in a user
+directory and configure a **current-user, login-triggered** scheduled task
+running `xdrive-agent.exe --backup-only`. Do not run it as SYSTEM or
+silently elevate privileges. Both platforms can instead use
+`xd backup agent` to foreground the matching Agent under any suitable
+user-level service manager. Existing Desktop Agent detection prevents a
+second concurrent writer.
+
+CLI-only packages are separate from the existing Desktop installers. GitHub
+and GitLab CI package the exact same original client-core binaries and verify
+the byte-identical Linux/Windows archives. A shared PowerShell smoke test
+executes the Windows ZIP on native Windows runners without Electron. GitLab's
+checksum-verified release also publishes these two archives as named assets;
+a missing or mismatched archive blocks publication. Linux smoke tests cover
+no-mount Agent SIGTERM, restart and cooperative foreground-wrapper shutdown.
+These checks do not substitute for authenticated PostgreSQL/CAS end-to-end
+backup and incremental/scheduler regression tests. The
+existing `xd update --install` may install the Desktop distribution, so
+do not use it as an unattended CLI-only upgrader until a dedicated CLI
+update target exists. Update the matching `xd` and Agent binaries together.
+
+### Using an already configured Source
+
+Supported: Linux and Windows on the device whose existing local-folder
+**Backup** Source and approved native Root are registered.
 
 ## Commands
 
@@ -34,21 +116,25 @@ xd backup agent
 ~~~
 
 `xd backup auto --source 42` uses the Desktop's existing six-hour default.
-The Agent is auto-started in the background when needed; `XD_AGENT_PATH` can
+The Agent is auto-started in Backup-only mode in the background when needed; `XD_AGENT_PATH` can
 explicitly point at the installed `xdrive-agent` binary. The local Agent must
 remain running for scheduled backups; configure a user-level login/boot service
 for unattended operation after reboot, or use the Desktop's existing start-at-login
 setting. **The CLI does not install a privileged service.** For a service manager,
 `xd backup agent` keeps the existing Agent in the foreground; if an Agent is
 already running, it reports this rather than creating a second writer.
+On Linux, both direct `xdrive-agent --backup-only` and the foreground
+`xd backup agent` wrapper handle service-manager SIGTERM through the
+Agent's cooperative cancellation path rather than an immediate forced kill.
+The wrapper has a bounded 5-second termination grace period. 
 
 ## Boundary and results
 
-- The Source must already be configured for **Backup-only**, paused Local Push
-  and bound to this same approved device/Root (normally established by Desktop
-  provisioning). The CLI accepts only an existing positive numeric Source ID.
-  It never grants a new Root, requests a path to upload, creates a foreign
-  device Source, or silently enrolls a device.
+- Except for the explicit, local-user `init`/`bind` bootstrap, all run,
+  control and scheduling operations require an **already bound** Backup-only
+  paused Local Push Source ID for this exact device/Root. Bootstrap delegates
+  registration and native authorization to the original Agent methods; it
+  cannot grant a Root from a remote device or browse private OS files remotely.
 - The shared private loopback client reads `desktop-ipc.json` from the current
   account's protected xDrive config directory, validates permissions, localhost
   host/port, bearer format, live Agent PID/protocol/platform/capabilities.

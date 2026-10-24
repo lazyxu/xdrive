@@ -299,12 +299,21 @@ build-client-core:
       set -euo pipefail
       source scripts/ci/client-artifact-version.sh
       bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core
+      # Same immutable core binaries as Desktop; never build a second uploader.
+      if ! command -v python3 >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends python3
+      fi
+      bash scripts/package-backup-cli.sh release/core release/backup-cli
+      bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
   artifacts:
     name: "xdrive-client-core-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
       - release/core/
+      - release/backup-cli/
 
 go-linux:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
@@ -1902,6 +1911,24 @@ server-backup:
   script:
     - bash scripts/ci/gitlab-server-backup.sh
 
+test-backup-cli-windows:
+  # Same exact archive test as GitHub, running on the native Windows runner.
+  # GitLab master may publish if tests fail for environmental reasons;
+  # formal v* and merge-request Final Gate still requires this test.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+      allow_failure: true
+    - when: on_success
+  stage: test
+  needs:
+    - job: build-client-core
+      artifacts: true
+  resource_group: xdrive-backup-cli-windows-smoke
+  tags:
+    - windows
+  script:
+    - bash scripts/ci/gitlab-test-backup-cli-windows.sh
+
 go-windows:
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
@@ -2098,6 +2125,8 @@ final-gate:
     - job: go-linux-api
       artifacts: false
     - job: go-windows
+      artifacts: false
+    - job: test-backup-cli-windows
       artifacts: false
     - job: server-validation
       artifacts: false

@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/localbackupipc"
@@ -26,7 +27,11 @@ const (
 )
 
 func backupUsage(w io.Writer) {
-	fmt.Fprintln(w, "Backup-only (the same owning xdrive-agent Runner as Desktop):")
+	fmt.Fprintln(w, "Backup-only (same owning xdrive-agent; Desktop is optional):")
+	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR --target-id CLOUD_DIR_ID [--every 6h]")
+	fmt.Fprintln(w, "  xd backup bind --source ID --path ABS_DIR")
+	fmt.Fprintln(w, "  xd backup drafts")
+	fmt.Fprintln(w, "  xd backup targets [--parent CLOUD_DIR_ID]")
 	fmt.Fprintln(w, "  xd backup once --source ID [--poll 2s]")
 	fmt.Fprintln(w, "  xd backup auto --source ID [--every 6h]")
 	fmt.Fprintln(w, "  xd backup auto --source ID --cron '0 2 * * *' --timezone Asia/Tokyo")
@@ -37,7 +42,7 @@ func backupUsage(w io.Writer) {
 	fmt.Fprintln(w, "  xd backup pause --source ID")
 	fmt.Fprintln(w, "  xd backup cancel --source ID")
 	fmt.Fprintln(w, "  xd backup agent  (run the owning Agent in foreground for a service manager)")
-	fmt.Fprintln(w, "Only existing, device-bound Backup-only Sources are accepted. Run once")
+	fmt.Fprintln(w, "First-time initialization is available through init; existing Sources use once")
 	fmt.Fprintln(w, "AFTER setting auto; scheduling changes the Source revision and requires\na verified partial checkpoint from a fresh explicit run.")
 	fmt.Fprintln(w, "The Agent must stay running for unattended schedules (and start on login/boot).")
 	fmt.Fprintln(w, "Stopping xd during an upload only stops observing, not the Agent worker.")
@@ -61,11 +66,17 @@ func backupCmd(args []string) error {
 		return errors.New("Backup-only requires the owning Linux/Windows xdrive-agent")
 	}
 	action := args[0]
+	if action == "init" || action == "bind" || action == "drafts" {
+		return backupBootstrapCmd(args)
+	}
+	if action == "targets" {
+		return backupTargetsCmd(args[1:])
+	}
 	if action == "agent" {
 		if len(args) != 1 {
 			return errors.New("xd backup agent does not accept a Source ID or options")
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		return runBackupAgentForeground(ctx)
 	}
@@ -106,7 +117,7 @@ func backupCmd(args []string) error {
 		return errors.New("--poll must be between 250ms and 1m")
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	client, err := connectOwningBackupAgent(ctx)
 	if err != nil {
@@ -363,7 +374,7 @@ func spawnOwningAgent() error {
 	if err != nil {
 		return err
 	}
-	process := exec.Command(command)
+	process := exec.Command(command, "--backup-only")
 	process.SysProcAttr = backupDetachedProcessAttr()
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
@@ -391,9 +402,29 @@ func runBackupAgentForeground(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	command := exec.CommandContext(ctx, binary)
+	command := exec.CommandContext(ctx, binary, "--backup-only")
+	// A service manager can stop "xd backup agent" as well as the Agent
+	// directly. CommandContext's default Cancel is SIGKILL, which would
+	// bypass the owning Agent's normal durable-run shutdown. Forward a
+	// graceful interrupt instead and bound its completion.
+	command.Cancel = func() error {
+		if err := command.Process.Signal(os.Interrupt); err != nil &&
+			!errors.Is(err, os.ErrProcessDone) {
+			// Windows cannot reliably deliver os.Interrupt to a detached
+			// subprocess. Never leave a child unowned on cancellation.
+			return command.Process.Kill()
+		}
+		return nil
+	}
+	command.WaitDelay = 5 * time.Second
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
-	return command.Run()
+	err = command.Run()
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		// Child exited normally after the requested stop. In contrast,
+		// nonzero exit, timeout and killed child results must remain errors.
+		return nil
+	}
+	return err
 }
 
 // Useful for scripts which already store a positive Source ID.

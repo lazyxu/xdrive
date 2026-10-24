@@ -1,5 +1,7 @@
 # xDrive Push Runner v2 — Agent-only automatic incremental scan
 
+> **Delivery decision (2026-10-25):** Keep the Agent as the single scheduler and uploader; expose it via `xd` without requiring Desktop. See [headless CLI decision and pending bootstrap acceptance](./xd-headless-backup-architecture.md). The native watcher remains optional; a periodic full scan is the correctness fallback.
+
 ## One pipeline, no second queue
 
 The owning Windows/Linux Agent schedules the **same** manual v2 worker:

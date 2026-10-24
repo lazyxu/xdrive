@@ -607,12 +607,45 @@ jobs:
           echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
       - name: Build Linux and Windows client core binaries
         run: bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core
+      - name: Package and test CLI-only Backup release (exact same core binaries)
+        run: |
+          bash scripts/package-backup-cli.sh release/core release/backup-cli
+          bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-backup-cli
+          path: release/backup-cli
+          if-no-files-found: error
+          retention-days: 2
       - uses: actions/upload-artifact@v4
         with:
           name: xdrive-client-core
           path: release/core
           if-no-files-found: error
           retention-days: 2
+
+  test-backup-cli-windows:
+    needs: [build-client-core]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-backup-cli
+          path: backup-cli
+      - name: Resolve exact CLI-only release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - name: Execute exact Windows Backup-only archive without Electron
+        shell: pwsh
+        run: |
+          & ./scripts/ci/test-backup-cli-windows.ps1 `
+            -Archive "./backup-cli/xdrive-backup-windows-amd64.zip" `
+            -ExpectedVersion $env:XDRIVE_RELEASE_VERSION
 
   go-linux:
     runs-on: ubuntu-latest
@@ -3375,7 +3408,7 @@ jobs:
           go-version: "1.25.x"
           cache: true
       - run: go mod verify
-      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent
+      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent ./cmd/xd
       - name: Windows CfAPI E2E suite
         run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
 
@@ -4188,6 +4221,7 @@ jobs:
       - go-linux
       - go-linux-api
       - go-windows
+      - test-backup-cli-windows
       - server-validation
       - server-image
       - photo-face-image
