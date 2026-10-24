@@ -34,6 +34,7 @@ jobs:
       - name: Verify shared native UI assets
         run: |
           node --test android/scripts/shared-ui.test.mjs
+          node --test android/scripts/update-asset.test.mjs
           node android/scripts/shared-ui.mjs --check
       - uses: actions/setup-java@v4
         with:

@@ -14,7 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
 @Composable
-fun DriveApp(controller: DriveController) {
+fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false }) {
     val state by controller.state.collectAsStateWithLifecycle()
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     BackHandler(state.selected != null || (state.screen == Screen.FILES && state.path.size > 1)) { controller.back() }
@@ -29,7 +29,7 @@ fun DriveApp(controller: DriveController) {
                 Text("文件", Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 IconButton(onClick = controller::refresh, enabled = !state.loading) { Icon(painterResource(R.drawable.xd_refresh), "刷新") }
-                AccountMenu(state, controller)
+                AccountMenu(state, controller, updates?.let { it::show })
             }
         }
     }) { padding ->
@@ -37,9 +37,9 @@ fun DriveApp(controller: DriveController) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .12f))
             when (state.screen) {
-                Screen.CONNECT -> ConnectionForm(state, controller::connect)
-                Screen.LOGIN -> LoginForm(state, controller::login) { AccountMenu(state, controller) }
-                Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller) }
+                Screen.CONNECT -> ConnectionForm(state, controller::connect) { if (updates != null) AccountMenu(state, controller, updates::show) }
+                Screen.LOGIN -> LoginForm(state, controller::login) { AccountMenu(state, controller, updates?.let { it::show }) }
+                Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
                 Screen.FILES -> Files(state, controller)
             }
         }
@@ -54,21 +54,24 @@ fun DriveApp(controller: DriveController) {
                 }
             }, confirmButton = { TextButton(onClick = controller::dismissDetails, modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
     }
+    if (updates != null) UpdateDialog(updates, openUpdate)
 }
 
 @Composable
-internal fun AccountMenu(state: DriveState, controller: DriveController) {
+internal fun AccountMenu(state: DriveState, controller: DriveController, checkUpdates: (() -> Unit)? = null) {
     var expanded by remember(state.screen) { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) { Icon(painterResource(R.drawable.xd_more_vert), "账户菜单") }
         DropdownMenu(expanded, onDismissRequest = { expanded = false }, containerColor = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.widthIn(max = 280.dp).padding(16.dp)) {
+            if (state.server.isNotEmpty() || state.username.isNotEmpty()) Column(Modifier.widthIn(max = 280.dp).padding(16.dp)) {
                 if (state.username.isNotEmpty()) Text(state.username, style = MaterialTheme.typography.titleSmall)
                 Text(state.server, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (state.screen != Screen.LOGIN) DropdownMenuItem(text = { Text("退出登录") },
+            if (checkUpdates != null) DropdownMenuItem(text = { Text("检查更新") },
+                leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) }, onClick = { expanded = false; checkUpdates() })
+            if (state.screen == Screen.FILES || state.screen == Screen.PASSWORD) DropdownMenuItem(text = { Text("退出登录") },
                 leadingIcon = { Icon(painterResource(R.drawable.xd_logout), null) }, onClick = { expanded = false; controller.logout() })
-            DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
+            if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
                 onClick = { expanded = false; controller.changeServer() })
         }
     }

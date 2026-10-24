@@ -15,12 +15,15 @@ coverage.*
 profile.cov
 /dist/
 /bin/
+/tmp/
+/release/
 
 # Go workspace
 go.work
 go.work.sum
 
 # Local runtime data
+/.signing/
 /data/
 *.db
 .env

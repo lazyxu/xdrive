@@ -9,7 +9,7 @@ Web/Desktop implementations are unchanged.
 First increment: Server configuration, login, mandatory password change, root and
 nested folder browsing, Server-ordered 100-item pages, refresh/retry, file metadata
 and logout. Tokens are memory-only; a process restart requires login. Only the
-Server address and explicit HTTP preference are saved. HTTPS uses platform trust
+Server address, explicit HTTP preference and selected update source are saved. HTTPS uses platform trust
 and hostname validation. HTTP sends credentials and content without encryption;
 it requires explicit opt-in and should only be used on a trusted network.
 
@@ -56,6 +56,7 @@ advisory is expected); it is not a claim of latest Play Store release readiness.
 ```sh
 cd android
 ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+node --test scripts/update-asset.test.mjs
 # With an isolated emulator already running:
 ./gradlew --no-daemon :app:connectedDebugAndroidTest
 ```
@@ -78,6 +79,88 @@ required by the existing Final Gate. Existing Go/Web/Desktop gates stay intact.
 Android's hosted-emulator job is GitHub-specific in this increment, like the
 existing provider-specific jobs. GitLab does not build an Android APK yet; the
 shared Server/Web/Desktop CI parity contract remains enforced unchanged.
+
+## Public update checks (also before login)
+
+Open the top-right menu → **检查更新**, even on the initial Server configuration
+screen. Select GitHub or GitLab and check manually; the selected source survives
+app restarts and logout. This uses a separate anonymous HTTP client, with no
+Drive login/session, cookies, Authorization or background polling. Changing
+source or closing the dialog cancels the request and rejects late responses.
+
+GitHub reads the public `lazyxu/xdrive` Releases API over HTTPS. GitLab reads
+`http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/releases` and
+displays an explicit cleartext warning. Both metadata and APK downloads must be
+publicly accessible without provider credentials; do not embed provider tokens
+or change a private project's visibility just to enable updates. HTTP cannot
+guarantee metadata authenticity: prefer GitHub/HTTPS on untrusted networks.
+
+The checker examines the most recent **100 published releases** (including the
+existing rolling `snapshot`, excluding drafts/upcoming releases), selecting the
+highest Android versionCode from assets named exactly:
+
+```text
+xdrive-android-<versionCode>-<versionName>.apk
+# Example: xdrive-android-3-0.1.2.apk
+```
+
+Server tags and Desktop installer versions are not Android versions. Equal or
+older codes do not offer a downgrade; no Android asset is reported as *unknown*,
+not “already current”. Missing/invalid metadata and provider/network errors are
+retryable. Only official provider download paths are actionable; no arbitrary
+host, credential-bearing URL or metadata redirect is followed.
+
+**下载更新** opens the validated APK URL in the external browser. Android (not
+xDrive) handles download permissions, unknown-source consent, package/version
+and signing-certificate validation and the final install confirmation. This is
+not a silent/background installer. Ordinary in-place updates require the same
+application ID and signing key; switching providers must not change that key.
+
+### Fixed release signing and packaging
+
+The owner's local key is under project-root `.signing/android/`, ignored by Git
+(as are root `tmp/` and `release/`). Keep and independently back up both the
+PKCS12 keystore and its password. At the owner's request the local password file
+is plaintext, **not** DPAPI-protected; Git ignore is neither encryption nor a
+backup. Never upload this directory with CI artifacts or commit it.
+
+Release signing consumes only process environment variables, never committed
+passwords or keys. Example PowerShell after configuring D: task TEMP/TMP/TMPDIR,
+GRADLE_USER_HOME and ANDROID_USER_HOME as above:
+
+```powershell
+$env:ANDROID_KEYSTORE_PATH = 'D:\code\xdrive\.signing\android\xdrive-android.p12'
+$env:ANDROID_KEYSTORE_PASSWORD = [IO.File]::ReadAllText('D:\code\xdrive\.signing\android\keystore-password.txt')
+try {
+    .\gradlew.bat --no-daemon :app:assembleRelease
+    # Before a later release, INCREASE androidVersionCode (max 2100000000).
+    # Optional overrides: -PandroidVersionCode=4 -PandroidVersionName=0.1.3
+} finally {
+    Remove-Item Env:\ANDROID_KEYSTORE_PATH,Env:\ANDROID_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
+}
+# Using the configured Android SDK/JDK:
+apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+node scripts/update-asset.mjs app/build/outputs/apk/release/output-metadata.json ../release/android
+```
+
+The packaging helper copies APK bytes unchanged, uses the build's actual version
+metadata, rejects debug/foreign/split/invalid builds and refuses overwrites. It
+does **not** sign or verify certificates: verify the fixed release certificate
+with `apksigner` before publication. Publish the resulting file as a GitHub
+Release asset, or a same-origin GitLab generic package linked from its Release.
+Preserve its full filename as the Release asset/link name; GitLab's link/direct
+asset URL must point to that APK filename on the configured GitLab origin and
+`xuliang/xdrive` project. Use the canonical `/-/releases/<tag>/downloads/<APK>`
+direct asset link, or a generic-package API URL with encoded project namespace
+`/api/v4/projects/xuliang%2Fxdrive/packages/generic/...`. Unverified numeric
+project IDs are deliberately not accepted as direct download actions.
+
+At implementation time GitHub Releases had no Android APK and GitLab has no
+Android publishing job. This change does not auto-publish debug APKs, install
+keys into hosted CI or alter GitLab project visibility. Both CI providers must
+eventually receive the same private key through their protected secret stores
+before enabling continuous signed APK publication. A local signed APK and
+fixture tests alone do not prove a live provider-to-device upgrade.
 
 ## Test boundaries
 

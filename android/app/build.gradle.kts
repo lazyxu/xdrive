@@ -15,8 +15,8 @@ android {
         applicationId = "com.tfluid.xdrive"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = providers.gradleProperty("androidVersionCode").map { it.toInt().also { code -> require(code in 1..2100000000) } }.getOrElse(3)
+        versionName = providers.gradleProperty("androidVersionName").getOrElse("0.1.2")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -25,7 +25,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildTypes { release { isMinifyEnabled = false } }
+    val keyPath = System.getenv("ANDROID_KEYSTORE_PATH")
+    val storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    if (keyPath != null || storePassword != null) {
+        require(!keyPath.isNullOrBlank() && !storePassword.isNullOrBlank()) { "Both release signing environment variables are required" }
+        signingConfigs.create("privateRelease") {
+            storeFile = file(keyPath)
+            this.storePassword = storePassword
+            keyAlias = "xdrive"
+            keyPassword = storePassword
+        }
+    }
+    buildTypes { release {
+        isMinifyEnabled = false
+        signingConfig = signingConfigs.findByName("privateRelease")
+    } }
     lint { abortOnError = true }
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/xdriveBrand/res"))
 }
