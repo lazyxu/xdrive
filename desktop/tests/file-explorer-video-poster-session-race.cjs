@@ -74,11 +74,17 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
   const posterDecode = deferred()
   const putCallsA = []
   const putCallsB = []
+  const releaseCallsA = []
+  const releaseCallsB = []
   let objectURLCount = 0
 
   const agentA = {
     getMediaThumbnail: async () => ({ ok: false, error: { message: 'miss' } }),
     cloudFilePreviewURL: async () => ({ ok: true, data: 'preview://account-a/7' }),
+    releaseCloudFilePreviewURL: async (url) => {
+      releaseCallsA.push(url)
+      return { ok: true, data: { released: true } }
+    },
     putMediaVideoPoster: async (...args) => {
       putCallsA.push(args)
       return { ok: true, data: null }
@@ -87,6 +93,10 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
   const agentB = {
     getMediaThumbnail: async () => ({ ok: false, error: { message: 'miss' } }),
     cloudFilePreviewURL: async () => ({ ok: true, data: 'preview://account-b/7' }),
+    releaseCloudFilePreviewURL: async (url) => {
+      releaseCallsB.push(url)
+      return { ok: true, data: { released: true } }
+    },
     putMediaVideoPoster: async (...args) => {
       putCallsB.push(args)
       return { ok: true, data: null }
@@ -134,6 +144,9 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
   await pendingA
 
   assert.deepEqual(putCallsA, [])
+  assert.deepEqual(releaseCallsA, ['preview://account-a/7'],
+    'poster cleanup must release the original account token even after an account switch')
+  assert.deepEqual(releaseCallsB, [], 'poster cleanup must not release through the replacement account')
   assert.deepEqual(
     putCallsB,
     [],

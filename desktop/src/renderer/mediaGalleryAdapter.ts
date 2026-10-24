@@ -1,4 +1,5 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import { xDriveLeaseDesktopPreviewURL } from './desktopPreviewURLLease'
 import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
@@ -195,8 +196,15 @@ export function createDesktopMediaGalleryDataSource(
         : await xDriveDesktopViewportRequest(
           signal, (requestID) => agent.cloudFilePreviewURL(nodeID, requestID),
         )
-      signal?.throwIfAborted()
-      return result
+      if (!result.ok) {
+        signal?.throwIfAborted()
+        return result
+      }
+      return {
+        ok: true as const,
+        data: xDriveLeaseDesktopPreviewURL(result.data, signal,
+          (url) => agent.releaseCloudFilePreviewURL(url)),
+      }
     },
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),

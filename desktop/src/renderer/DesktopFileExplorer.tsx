@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import { xDriveLeaseDesktopPreviewURL } from './desktopPreviewURLLease'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -1020,16 +1021,21 @@ export default function DesktopFileExplorer({
         return null
       }
     }
+    const agent = window.xdriveDesktop.agent
     if (kind === 'live_photo') {
-      const result = await window.xdriveDesktop.agent.getMediaLivePhotoStill(Number(item.id))
-      return result.ok ? result.data : null
+      const result = await agent.getMediaLivePhotoStill(Number(item.id))
+      return result.ok
+        ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
+        : null
     }
     if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
     const result = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
     )
-    return result.ok ? result.data : null
+    return result.ok
+      ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
+      : null
   }, [previewStreamSupported])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
@@ -1052,31 +1058,34 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
     onStage?.('video_read')
 
+    const agent = window.xdriveDesktop.agent
     const preview = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
     )
-    if (!isCurrentLifecycle() || !preview.ok) return null
-    onStage?.('poster_capture')
-    const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
-    if (!poster || !isCurrentLifecycle()) return null
-    const revision = Number(item.revision)
-    if (Number.isSafeInteger(revision) && revision > 0) {
-      try {
-        const posterBytes = await poster.arrayBuffer()
-        if (!isCurrentLifecycle()) return null
-        await window.xdriveDesktop.agent.putMediaVideoPoster(
-          Number(item.id),
-          revision,
-          posterBytes,
-        )
-        if (!isCurrentLifecycle()) return null
-      } catch {
-        // Preserve the local poster when the shared Server cache is unavailable.
+    if (!preview.ok) return null
+    try {
+      if (!isCurrentLifecycle()) return null
+      onStage?.('poster_capture')
+      const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
+      if (!poster || !isCurrentLifecycle()) return null
+      const revision = Number(item.revision)
+      if (Number.isSafeInteger(revision) && revision > 0) {
+        try {
+          const posterBytes = await poster.arrayBuffer()
+          if (!isCurrentLifecycle()) return null
+          await agent.putMediaVideoPoster(Number(item.id), revision, posterBytes)
+          if (!isCurrentLifecycle()) return null
+        } catch {
+          // Preserve the local poster when the shared Server cache is unavailable.
+        }
       }
+      if (!isCurrentLifecycle()) return null
+      return URL.createObjectURL(poster)
+    } finally {
+      // Poster capture does not own a persistent mounted playback lease.
+      void agent.releaseCloudFilePreviewURL(preview.data).catch(() => {})
     }
-    if (!isCurrentLifecycle()) return null
-    return URL.createObjectURL(poster)
   }, [previewStreamSupported])
 
   const loadLivePhotoMotion = useCallback(async (
