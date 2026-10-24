@@ -77,6 +77,18 @@ export function XDriveLivePhotoSurface({
   // Invalidate asynchronous HTMLMediaElement.play() completions on release,
   // a new hold, or a different still/source revision.
   const playbackAttemptRef = useRef(0)
+  // play() resolving only means playback has started, not that a video frame
+  // reached the compositor. Keep the decoded still visible until the first
+  // real frame callback (or loaded-data fallback on older browsers).
+  const acceptedPlayAttemptRef = useRef(0)
+  const pendingVideoFrameRef = useRef<{ video: HTMLVideoElement; id: number } | null>(null)
+  const cancelPendingVideoFrame = useCallback(() => {
+    const pending = pendingVideoFrameRef.current
+    pendingVideoFrameRef.current = null
+    if (pending && typeof pending.video.cancelVideoFrameCallback === 'function') {
+      pending.video.cancelVideoFrameCallback(pending.id)
+    }
+  }, [])
   const loadStartedRef = useRef(false)
   // A failed motion-ticket lookup must be retryable on a NEW explicit hold,
   // but never automatically retry while the finger remains down.
@@ -95,6 +107,8 @@ export function XDriveLivePhotoSurface({
 
   const stopPlayback = useCallback(() => {
     playbackAttemptRef.current += 1
+    acceptedPlayAttemptRef.current = 0
+    cancelPendingVideoFrame()
     const video = videoRef.current
     if (video) {
       video.pause()
@@ -105,7 +119,8 @@ export function XDriveLivePhotoSurface({
       }
     }
     setPlaying(false)
-  }, [])
+    setLoading(false)
+  }, [cancelPendingVideoFrame])
 
   const playLoadedMotion = useCallback(() => {
     if (!motionURLRef.current || failed || !holdActiveRef.current) return
@@ -115,6 +130,8 @@ export function XDriveLivePhotoSurface({
     // pause() rejects an earlier pending play(). Fence that rejection before
     // it can turn a new press into a permanent "Live unavailable" state.
     const attempt = ++playbackAttemptRef.current
+    acceptedPlayAttemptRef.current = 0
+    cancelPendingVideoFrame()
     const generation = loadGenerationRef.current
     video.pause()
     try {
@@ -123,9 +140,9 @@ export function XDriveLivePhotoSurface({
       // The subsequent play() call will begin once enough metadata is available.
     }
     video.volume = 1
-    if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setLoading(true)
-    // Keep the still visible until the actual video.play() promise succeeds:
-    // an opaque, not-yet-playing video would otherwise flash black.
+    // A resolved play() promise may precede the first presented frame.
+    // Retain the still and bounded progress until frame presentation.
+    setLoading(true)
     setPlaying(false)
     const isCurrentHold = () => (
       playbackAttemptRef.current === attempt &&
@@ -135,8 +152,24 @@ export function XDriveLivePhotoSurface({
     )
     void video.play().then(() => {
       if (!isCurrentHold()) return
-      setLoading(false)
-      setPlaying(true)
+      acceptedPlayAttemptRef.current = attempt
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        // This callback fires for an actual compositor-bound decoded frame.
+        // A future release, re-hold or source change fences even a callback
+        // that races cancelVideoFrameCallback().
+        const id = video.requestVideoFrameCallback(() => {
+          if (!isCurrentHold() || acceptedPlayAttemptRef.current !== attempt) return
+          pendingVideoFrameRef.current = null
+          setLoading(false)
+          setPlaying(true)
+        })
+        pendingVideoFrameRef.current = { video, id }
+      } else if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        // Older Safari/WebView runtimes lack requestVideoFrameCallback;
+        // loaded-data readiness is the most conservative available signal.
+        setLoading(false)
+        setPlaying(true)
+      }
     }).catch((error: unknown) => {
       if (!isCurrentHold()) return
       setLoading(false)
@@ -148,7 +181,17 @@ export function XDriveLivePhotoSurface({
       )) return
       setFailed(true)
     })
-  }, [failed])
+  }, [cancelPendingVideoFrame, failed])
+
+  const acceptFallbackVideoFrame = useCallback((video: HTMLVideoElement) => {
+    if (typeof video.requestVideoFrameCallback === 'function' ||
+        videoRef.current !== video || !holdActiveRef.current ||
+        acceptedPlayAttemptRef.current === 0 ||
+        acceptedPlayAttemptRef.current !== playbackAttemptRef.current ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    setLoading(false)
+    setPlaying(true)
+  }, [])
 
   const requestMotion = useCallback(() => {
     const loader = loadMotionRef.current
@@ -377,10 +420,17 @@ export function XDriveLivePhotoSurface({
             if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL) return
             if (!holdActiveRef.current) setLoading(false)
           }}
+          onLoadedData={(event) => {
+            if (motionURLRef.current !== motionURL || !stillReady) return
+            acceptFallbackVideoFrame(event.currentTarget)
+          }}
           onCanPlay={(event) => {
-            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL ||
-              !holdActiveRef.current || !stillReady) return
-            setLoading(false)
+            if (motionURLRef.current !== motionURL || !stillReady) return
+            acceptFallbackVideoFrame(event.currentTarget)
+          }}
+          onTimeUpdate={(event) => {
+            if (motionURLRef.current !== motionURL || !stillReady) return
+            acceptFallbackVideoFrame(event.currentTarget)
           }}
           onProgress={(event) => {
             if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL) return

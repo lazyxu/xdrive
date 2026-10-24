@@ -51,7 +51,7 @@ new Function('exports', 'module', 'require', js)(mod.exports, mod, id => {
   return mocks[id]
 })
 const Live = mod.exports.XDriveLivePhotoSurface
-global.HTMLMediaElement = { HAVE_FUTURE_DATA: 3 }
+global.HTMLMediaElement = { HAVE_CURRENT_DATA: 2, HAVE_FUTURE_DATA: 3 }
 const flush = async () => {
   await Promise.resolve()
   await new Promise(resolve => setImmediate(resolve))
@@ -67,7 +67,7 @@ const makePlayer = play => ({
   pauseCalls: 0,
   currentTime: 0,
   volume: 0,
-  readyState: 1,
+  readyState: 3,
   pause() { this.pauseCalls++ },
 })
 const mount = (player, loadMotion, sourceKey = 'node:1') =>
@@ -412,4 +412,108 @@ test('P0-L8 a true current video decoding failure still does not reissue a motio
   assert.equal(plays, 1, 'unsupported video is not replayed without replacing the source')
   assert.equal(video(tree).props.sx.opacity, 0)
   await act(async () => { release(tree); tree.unmount() })
+})
+
+
+test('P1 first-frame: play() success alone cannot cover Live still before actual compositor frame', async () => {
+  const queued = new Map()
+  const cancelled = []
+  let serial = 0, loads = 0
+  const player = makePlayer(() => Promise.resolve())
+  player.requestVideoFrameCallback = callback => {
+    const id = ++serial
+    queued.set(id, callback)
+    return id
+  }
+  player.cancelVideoFrameCallback = id => cancelled.push(id)
+  let tree
+  await act(async () => {
+    tree = mount(player, async () => { loads++; return 'https://example.invalid/p1-first-frame.mov' })
+    await flush()
+  })
+  assert.equal(loads, 0, 'no idle motion preload')
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 1)
+  assert.equal(serial, 1, 'schedule one genuine compositor-frame receipt')
+  assert.equal(video(tree).props.sx.opacity, 0, 'play() is not visual first frame')
+  assert.equal(surface(tree).props['aria-pressed'], false)
+  assert.equal(surface(tree).props['aria-busy'], true)
+  assert.equal(tree.root.findAll(x => x.type === 'mounted-live-still').length, 1)
+  await act(async () => { queued.get(1)(0, { presentedFrames: 1 }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 1, 'first real frame may replace still')
+  assert.equal(surface(tree).props['aria-pressed'], true)
+  assert.equal(surface(tree).props['aria-busy'], false)
+  await act(async () => { release(tree); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0)
+  assert.equal(cancelled.includes(1), false, 'completed receipt is not outstanding')
+  await act(async () => { tree.unmount() })
+})
+
+test('P1 first-frame: stale callback cannot reveal released, re-held or replaced Live source', async () => {
+  const callbacks = []
+  const cancellations = []
+  const player = makePlayer(() => Promise.resolve())
+  player.requestVideoFrameCallback = callback => {
+    callbacks.push(callback)
+    return callbacks.length
+  }
+  player.cancelVideoFrameCallback = id => cancellations.push(id)
+  const element = (key, loader) => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'), stillReady: true,
+    sourceKey: key, loadMotion: loader,
+  })
+  let tree
+  await act(async () => {
+    tree = renderer.create(element('node:1', async () => 'https://example.invalid/old.mov'), {
+      createNodeMock: entry => entry.type === 'mounted-live-box' &&
+        entry.props.component === 'video' ? player : null,
+    })
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(callbacks.length, 1)
+  await act(async () => { release(tree); press(tree); await flush() })
+  assert.ok(cancellations.includes(1), 'release cancels outstanding frame receipt')
+  assert.equal(callbacks.length, 2)
+  await act(async () => { callbacks[0](0, { presentedFrames: 1 }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0, 'old hold callback must not reveal video')
+  await act(async () => { callbacks[1](0, { presentedFrames: 1 }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => {
+    tree.update(element('node:2', async () => 'https://example.invalid/new.mov'))
+    await flush()
+  })
+  assert.equal(video(tree), undefined, 'changing still unmounts the prior video before the new source loads')
+  assert.equal(tree.root.findAll(x => x.type === 'mounted-live-still').length, 1,
+    'the already accepted still remains mounted across source replacement')
+  await act(async () => { press(tree); await flush() })
+  assert.equal(callbacks.length, 3)
+  await act(async () => { callbacks[1](0, { presentedFrames: 9 }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0)
+  await act(async () => { callbacks[2](0, { presentedFrames: 1 }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { release(tree); tree.unmount() })
+})
+
+test('P1 first-frame: legacy browser waits for decoded loadeddata, not just play() or canplay metadata', async () => {
+  const player = makePlayer(() => Promise.resolve())
+  player.readyState = 1
+  let tree
+  await act(async () => {
+    tree = mount(player, async () => 'https://example.invalid/legacy.mov')
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0)
+  assert.equal(surface(tree).props['aria-busy'], true)
+  await act(async () => { video(tree).props.onCanPlay({ currentTarget: player }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0, 'metadata-only readiness is not decoded frame')
+  player.readyState = 2
+  await act(async () => { video(tree).props.onLoadedData({ currentTarget: player }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { release(tree); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0)
+  await act(async () => { video(tree).props.onTimeUpdate({ currentTarget: player }); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0, 'late loaded-data after release cannot reveal motion')
+  await act(async () => { tree.unmount() })
 })
