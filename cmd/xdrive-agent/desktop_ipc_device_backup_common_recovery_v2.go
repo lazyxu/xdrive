@@ -25,6 +25,8 @@ type localCommonRecoveryReviewPage struct {
 	UnsupportedFiles    uint64 `json:"unsupported_files"`
 	UnrecordedFiles     uint64 `json:"unrecorded_files"`
 	HistoricalCommitted uint64 `json:"historical_committed_files"`
+	CurrentNodeMatch    uint64 `json:"current_node_metadata_match_files"`
+	CurrentNodeMismatch uint64 `json:"current_node_metadata_mismatch_files"`
 	PendingFiles        uint64 `json:"pending_original_files"`
 	NextAfterFile       uint64 `json:"next_after_file"`
 	PageEpoch           string `json:"page_epoch"`
@@ -107,6 +109,7 @@ func validLocalCommonRecoveryReviewPage(
 		page.ReviewedFiles > localCommonRecoveryReviewPageSize ||
 		page.ReviewedFiles != page.IgnoredFiles+page.UnsupportedFiles+
 			page.UnrecordedFiles+page.HistoricalCommitted+page.PendingFiles ||
+		page.HistoricalCommitted != page.CurrentNodeMatch+page.CurrentNodeMismatch ||
 		(page.RunState != "partial" && page.RunState != "uncertain" &&
 			page.RunState != "paused" && page.RunState != "cancelled") ||
 		(page.HasMore && (page.ReviewedFiles != localCommonRecoveryReviewPageSize ||

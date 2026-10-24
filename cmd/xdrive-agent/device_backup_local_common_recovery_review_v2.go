@@ -186,6 +186,34 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 					page.PendingFiles++
 				case "historical_committed":
 					page.HistoricalCommitted++
+					// Read ONLY the current Source-authorized cloud
+					// descendant and compare it with the complete
+					// immutable committed Node revision chain. This
+					// observes metadata, NEVER present CAS bytes.
+					parentID, name, parentErr := localCommonFindExistingCloudParent(
+						readCtx, api, sourceID, source.Revision,
+						*source.TargetNodeID, proof, item.Path)
+					if parentErr != nil {
+						return parentErr
+					}
+					currentNode, nodeErr := localCommonRootCurrentChild(
+						readCtx, api, parentID, name)
+					if nodeErr != nil {
+						return nodeErr
+					}
+					if !localCommonHistoricalMatchesCurrentNode(
+						item.Path, parentID, currentNode, originals) {
+						page.CurrentNodeMismatch++
+					} else {
+						// A second read rejects a Node edited during
+						// this page. This still is not current CAS
+						// physical verification or upload permission.
+						if err := localCommonVerifyCloudFileUnchanged(
+							readCtx, api, parentID, currentNode); err != nil {
+							return err
+						}
+						page.CurrentNodeMatch++
+					}
 				default:
 					return errLocalBackupCommonBatchUnavailable
 				}

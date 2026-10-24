@@ -46,11 +46,14 @@ export function safeRecoveryReviewPage(
     (after > 0 && value.page_epoch !== expectedEpoch)) return false
   const counts = [value.reviewed_files, value.ignored_files, value.unsupported_files,
     value.unrecorded_files, value.historical_committed_files, value.pending_original_files,
+    value.current_node_metadata_match_files, value.current_node_metadata_mismatch_files,
     value.next_after_file]
   if (!counts.every((n) => Number.isSafeInteger(n) && n >= 0) ||
     value.reviewed_files > 16 ||
     value.reviewed_files !== value.ignored_files + value.unsupported_files +
-      value.unrecorded_files + value.historical_committed_files + value.pending_original_files) return false
+      value.unrecorded_files + value.historical_committed_files + value.pending_original_files ||
+    value.historical_committed_files !== value.current_node_metadata_match_files +
+      value.current_node_metadata_mismatch_files) return false
   return value.has_more
     ? value.reviewed_files === 16 && value.next_after_file === after + value.reviewed_files &&
         value.next_after_file <= 1_000_000
@@ -345,6 +348,10 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                     历史已提交 {reviewPage.historical_committed_files} ·
                     待确认 {reviewPage.pending_original_files} ·
                     未记录 {reviewPage.unrecorded_files}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    历史已提交文件的当前云端元数据一致 {reviewPage.current_node_metadata_match_files} ·
+                    不一致 {reviewPage.current_node_metadata_mismatch_files}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     已忽略 {reviewPage.ignored_files} · 暂不支持 {reviewPage.unsupported_files}

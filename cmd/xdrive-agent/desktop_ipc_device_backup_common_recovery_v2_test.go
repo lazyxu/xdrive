@@ -95,17 +95,19 @@ func TestLocalCommonRecoveryReviewRejectsForgedControllerPages(t *testing.T) {
 		t.Fatal("verified bounded page rejected")
 	}
 	for label, change := range map[string]func(*localCommonRecoveryReviewPage){
-		"wrong_source":       func(p *localCommonRecoveryReviewPage) { p.SourceID++ },
-		"missing_revision":   func(p *localCommonRecoveryReviewPage) { p.Revision = 0 },
-		"asserts_authority":  func(p *localCommonRecoveryReviewPage) { p.Authoritative = true },
-		"fabricates_counts":  func(p *localCommonRecoveryReviewPage) { p.HistoricalCommitted++ },
-		"oversized_page":     func(p *localCommonRecoveryReviewPage) { p.ReviewedFiles++ },
-		"unknown_terminal":   func(p *localCommonRecoveryReviewPage) { p.RunState = "complete" },
-		"forged_cursor":      func(p *localCommonRecoveryReviewPage) { p.NextAfterFile++ },
-		"no_cursor":          func(p *localCommonRecoveryReviewPage) { p.NextAfterFile = 0 },
-		"missing_epoch":      func(p *localCommonRecoveryReviewPage) { p.PageEpoch = "" },
-		"changed_generation": func(p *localCommonRecoveryReviewPage) { p.PageEpoch = strings.Repeat("b", 64) },
-		"premature_hasmore":  func(p *localCommonRecoveryReviewPage) { p.ReviewedFiles-- },
+		"wrong_source":                 func(p *localCommonRecoveryReviewPage) { p.SourceID++ },
+		"missing_revision":             func(p *localCommonRecoveryReviewPage) { p.Revision = 0 },
+		"asserts_authority":            func(p *localCommonRecoveryReviewPage) { p.Authoritative = true },
+		"fabricates_counts":            func(p *localCommonRecoveryReviewPage) { p.HistoricalCommitted++ },
+		"oversized_page":               func(p *localCommonRecoveryReviewPage) { p.ReviewedFiles++ },
+		"unknown_terminal":             func(p *localCommonRecoveryReviewPage) { p.RunState = "complete" },
+		"forged_cursor":                func(p *localCommonRecoveryReviewPage) { p.NextAfterFile++ },
+		"no_cursor":                    func(p *localCommonRecoveryReviewPage) { p.NextAfterFile = 0 },
+		"missing_epoch":                func(p *localCommonRecoveryReviewPage) { p.PageEpoch = "" },
+		"changed_generation":           func(p *localCommonRecoveryReviewPage) { p.PageEpoch = strings.Repeat("b", 64) },
+		"forged_current_node_match":    func(p *localCommonRecoveryReviewPage) { p.CurrentNodeMatch++ },
+		"forged_current_node_mismatch": func(p *localCommonRecoveryReviewPage) { p.CurrentNodeMismatch++ },
+		"premature_hasmore":            func(p *localCommonRecoveryReviewPage) { p.ReviewedFiles-- },
 	} {
 		t.Run(label, func(t *testing.T) {
 			page := valid
@@ -117,7 +119,8 @@ func TestLocalCommonRecoveryReviewRejectsForgedControllerPages(t *testing.T) {
 	}
 	last := localCommonRecoveryReviewPage{
 		SourceID: 42, Revision: 7, RunState: "partial",
-		ReviewedFiles: 1, UnrecordedFiles: 1, PageEpoch: epoch,
+		ReviewedFiles: 1, HistoricalCommitted: 1, CurrentNodeMatch: 1,
+		PageEpoch: epoch,
 	}
 	if !validLocalCommonRecoveryReviewPage(last, 42, 16, epoch) {
 		t.Fatal("non-authoritative final page was rejected")
