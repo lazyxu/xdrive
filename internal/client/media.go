@@ -145,6 +145,12 @@ type MediaResource struct {
 	Size      int64  `json:"size"`
 }
 
+type MediaOCR struct {
+	State    string `json:"state"`
+	Text     string `json:"text,omitempty"`
+	Language string `json:"language,omitempty"`
+}
+
 type MediaItem struct {
 	Node             Node                   `json:"node"`
 	Metadata         MediaMetadata          `json:"metadata"`
@@ -153,6 +159,7 @@ type MediaItem struct {
 	Tags             []string               `json:"tags,omitempty"`
 	People           []string               `json:"people,omitempty"`
 	Description      string                 `json:"description,omitempty"`
+	OCR              *MediaOCR              `json:"ocr,omitempty"`
 	EditRecipe       *MediaEditRecipe       `json:"edit_recipe,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	FoldMemberIDs    []uint64               `json:"fold_member_ids,omitempty"`

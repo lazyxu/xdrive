@@ -132,7 +132,7 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'media.creative.movie': return '图库自动电影'
     case 'media.creative.collage': return '图库拼图'
     case 'photo.face': return '人脸识别'
-    case 'photo.smart_search': return '图库智能搜索索引'
+    case 'photo.smart_search': return '图库智能搜索索引（OCR 与视觉识别）'
     case 'photo.semantic_search': return '图库语义搜索索引'
     case 'photo.place': return '地点识别'
     case 'photo.person_cluster': return '人物聚类'
@@ -152,6 +152,14 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     default: return kind || '后台任务'
   }
 }
+
+/** OCR and visual classification are one SmartRunner job, not two. */
+export function xDriveBackgroundTaskIsOCR(kind: string) {
+  return kind === 'photo.smart_search'
+}
+
+export const XDRIVE_OCR_TASK_HINT =
+  'OCR 文字识别与视觉分类共用一次后台任务；取消或重新分析将同时作用于两者。'
 
 export function xDriveBackgroundTaskStateLabel(state: string) {
   switch (state) {
@@ -240,6 +248,7 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'waiting_for_cluster_lease': return '等待其他服务器'
     case 'reanalyze_queued': return '重新分析已排队'
     case 'reanalyze_applying': return '正在准备重新分析'
+    case 'photo_ocr_visual': return '正在进行 OCR 文字与视觉识别'
     case 'cancel_requested': return '正在取消'
     case 'finished': return '完成'
     default: return phase || ''

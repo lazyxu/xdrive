@@ -15,6 +15,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     listMusicChildren: (parentID) => api.list(parentID),
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query, signal) => api.mediaItemRange('', limit, offset, query, signal),
+    getItem: (nodeID, signal) => api.mediaItem(nodeID, signal),
     listFacets: (query, albumID) => api.mediaFacets(query, albumID),
     getIndexStatus: () => api.mediaIndexStatus(),
     createSelectionSnapshot: (query, albumID, day) =>

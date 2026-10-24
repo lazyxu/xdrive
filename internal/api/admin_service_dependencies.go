@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/mediaworker"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 )
 
 type serviceDependency struct {
@@ -27,6 +28,8 @@ type serviceDependency struct {
 	HealthState                      string `json:"health_state"`
 	ActivationState                  string `json:"activation_state"`
 	AutomaticPolicyState             string `json:"automatic_policy_state,omitempty"`
+	OCRAutoState                     string `json:"ocr_auto_state,omitempty"`
+	OCRReason                        string `json:"ocr_reason,omitempty"`
 	AutomaticPolicyDesiredRevision   uint64 `json:"automatic_policy_desired_revision,omitempty"`
 	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
@@ -87,6 +90,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 
 	var wg sync.WaitGroup
+	var ocrProbeIssue string // Only a fixed diagnostic code is returned, never raw errors.
 	mediaManaged := false
 	mediaConfigUnreadable := false
 	if s.DB != nil {
@@ -190,6 +194,13 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			defer wg.Done()
 			info, err := s.PhotoSmartAnalyzer.Info(ctx)
 			if err != nil {
+				ocrProbeIssue = photoOCRProbeFailureReason(err)
+				return
+			}
+			// Alternative/legacy SmartAnalyzer implementations may not validate
+			// Info themselves. A malformed manifest cannot turn OCR green.
+			if photointelligence.ValidateSmartAnalyzerInfo(info) != nil {
+				ocrProbeIssue = "probe_invalid_response"
 				return
 			}
 			services[4].Status = "ready"
@@ -357,6 +368,15 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 	// Preserve legacy status. Each new axis uses only its own proof.
 	s.setServiceLifecycleStates(ctx, services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
+	// Smart Info and the container alone cannot execute queued OCR: the
+	// owner SmartRunner and the bounded scheduler must both be initialized.
+	s.photoIntelligenceMu.Lock()
+	runnerInitialized := s.photoSmartRunner != nil
+	s.photoIntelligenceMu.Unlock()
+	services[4].OCRAutoState, services[4].OCRReason = photoOCRAutoDiagnosis(
+		services[4], ocrProbeIssue,
+		runnerInitialized && s.BackgroundScheduler != nil,
+	)
 	// A validated Server deployment-entry declaration is *configuration*
 	// evidence only; it does not imply the original Host Caddy is installed,
 	// reachable, enabled or that administrator intent has been applied.

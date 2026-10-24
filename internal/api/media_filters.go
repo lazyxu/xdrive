@@ -392,6 +392,10 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 			"SELECT 1 FROM xd_photo_ocr_texts AS search_ocr "+
 			"JOIN xd_photo_analysis_states AS search_ocr_state ON search_ocr_state.asset_id = search_ocr.asset_id "+
 			"WHERE search_ocr.asset_id = pa.id AND search_ocr_state.kind = ? AND search_ocr_state.state = ? "+
+			"AND EXISTS (SELECT 1 FROM xd_files AS search_ocr_file WHERE search_ocr_file.node_id = n.id "+
+			"AND xd_media_metadata.index_state = ? AND xd_media_metadata.node_revision = n.revision "+
+			"AND xd_media_metadata.sha256 = search_ocr_file.sha256 "+
+			"AND search_ocr_state.input_fingerprint = "+mediaOCRInputFingerprintSQL("search_ocr_file")+") "+
 			"AND LOWER(search_ocr.text) LIKE ?"+
 			") "+
 			"OR EXISTS ("+
@@ -402,7 +406,7 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 			")",
 		like, like, like, like, like, like, like, like,
 		meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisStateReady, like,
-		meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisStateReady, like,
+		meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisStateReady, meta.MediaIndexStateReady, like,
 		meta.PhotoAnalysisKindPlaceLabel, meta.PhotoAnalysisStateReady, like,
 	)
 }

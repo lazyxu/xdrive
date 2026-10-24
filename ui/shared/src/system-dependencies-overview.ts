@@ -97,6 +97,34 @@ export function xDriveDashboardAssessment(service: XDriveServiceDependency | nul
   if (service.configuration_state === 'unconfigured') return {
     state: 'attention', label: '待配置', summary: '当前服务缺少配置',
   }
+  // Photo Smart may pass the model Info probe while automatic OCR is paused,
+  // its Runner is missing, or the independent host cannot be verified.
+  // Preserve model health as its own axis, but do not show the whole service
+  // as green in the overview unless current-instance OCR admission agrees.
+  if (service.id === 'photo-smart' && service.status === 'ready' &&
+      service.health_state === 'ready') {
+    const ocrReady = service.ocr_auto_state === 'enabled' &&
+      service.ocr_reason === 'ready' &&
+      service.automatic_policy_state === 'enabled' &&
+      service.photo_host_runtime_state === 'healthy' &&
+      service.photo_host_profile_configured === true
+    if (ocrReady) return {
+      state: 'healthy', label: 'OCR 已启用',
+      summary: '模型、自动任务、宿主与 Runner 已核对（仅当前实例；真实照片另验）',
+    }
+    if (service.ocr_auto_state === 'disabled') return {
+      state: 'disabled', label: 'OCR 未启用',
+      summary: '模型可用但自动 OCR 未启用；请查看全局分析策略与原因',
+    }
+    if (service.ocr_auto_state === 'unavailable') return {
+      state: 'failed', label: 'OCR 无法运行',
+      summary: '模型健康不代表后台 OCR 可运行；请检查具体错误原因',
+    }
+    return {
+      state: 'attention', label: 'OCR 待确认',
+      summary: '模型健康，但尚未核验 OCR 自动任务、可信宿主或执行器',
+    }
+  }
   if (service.status === 'ready' && service.health_state === 'ready') return {
     state: 'healthy', label: '健康正常',
     summary: service.activation_state === 'verified'

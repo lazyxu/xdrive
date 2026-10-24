@@ -247,6 +247,7 @@ export interface MediaGalleryDataSource {
     query?: MediaGalleryQuery,
     signal?: AbortSignal,
   ) => Promise<MediaItemRange>
+  getItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
   createSelectionSnapshot?: (
@@ -4034,6 +4035,7 @@ export function XDriveMediaGalleryPage({
           />
         )}
         loadThumbnail={source.loadThumbnail}
+        loadMediaItem={source.getItem}
         loadNodeLocation={source.getNodeLocation}
         onShowInFolder={onShowInFolder}
         loadMusicRoot={source.loadMusicRoot}
@@ -4484,6 +4486,7 @@ export interface XDriveMediaGalleryProps {
   filters?: ReactNode
   querySelectionActions?: XDriveMediaGalleryQuerySelectionActions
   loadThumbnail: MediaThumbnailLoader
+  loadMediaItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
   loadMusicRoot?: () => Promise<Node>
   listMusicChildren?: (parentID: number) => Promise<Node[]>
   loadLivePhotoMotion?: MediaMotionLoader
@@ -6206,6 +6209,7 @@ export function XDriveMediaGallery({
   filters,
   querySelectionActions,
   loadThumbnail,
+  loadMediaItem,
   loadNodeLocation,
   onShowInFolder,
   loadMusicRoot,
@@ -9322,6 +9326,7 @@ export function XDriveMediaGallery({
 
       <XDriveMediaDetailsInspector
         item={selected}
+        loadMediaItem={isTrashSection ? undefined : loadMediaItem}
         overlayZIndex={previewItem ? 1400 : undefined}
         showPreview={!previewItem}
         loadThumbnail={loadThumbnail}

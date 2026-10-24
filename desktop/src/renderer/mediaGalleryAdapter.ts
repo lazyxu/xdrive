@@ -1,4 +1,6 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+
+let mediaOCRDetailRequestSequence = 0
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
 import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '@xdrive/shared'
 import {
@@ -18,6 +20,18 @@ export function createDesktopMediaGalleryDataSource(
       signal,
       (requestID) => agent.getMediaItemRange('', limit, offset, query, requestID),
     ),
+    // Properties has its own existing request cancellation contract in Main.
+    getItem: (nodeID, signal) => {
+      signal?.throwIfAborted()
+      const requestID = 'ocr-detail-' + Date.now().toString(36) + '-' +
+        (++mediaOCRDetailRequestSequence).toString(36)
+      const onAbort = () => { void agent.cancelMediaItem(requestID).catch(() => {}) }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      return agent.getMediaItem(nodeID, requestID).then(result => {
+        signal?.throwIfAborted()
+        return result
+      }).finally(() => signal?.removeEventListener('abort', onAbort))
+    },
     listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
     getIndexStatus: () => agent.getMediaIndexStatus(),
     createSelectionSnapshot: (query, albumID, day) =>

@@ -18,6 +18,8 @@ import {
   xDriveBackgroundTaskControlLabel,
   xDriveBackgroundTaskElapsedMs,
   xDriveBackgroundTaskKindLabel,
+  xDriveBackgroundTaskIsOCR,
+  XDRIVE_OCR_TASK_HINT,
   xDriveBackgroundTaskPercent,
   xDriveBackgroundTaskProgressLabel,
   xDriveBackgroundTaskResourceLabel,
@@ -229,6 +231,11 @@ function BackgroundTaskItem({
                 </Typography>
               ) : null}
             </Stack>
+            {xDriveBackgroundTaskIsOCR(task.kind) ? (
+              <Typography variant="caption" color="text.secondary" data-xdrive-ocr-shared-task>
+                {XDRIVE_OCR_TASK_HINT}
+              </Typography>
+            ) : null}
             {task.progress?.current_item ? (
               <Typography
                 variant="caption"
@@ -358,6 +365,7 @@ export function XDriveBackgroundTaskTable({
   loading = false,
   loaded = true,
   failed = false,
+  emptyMessage = '暂无全局后台任务',
   controlKey = '',
   focusedTaskID = '',
   onControl,
@@ -366,6 +374,7 @@ export function XDriveBackgroundTaskTable({
   loading?: boolean
   loaded?: boolean
   failed?: boolean
+  emptyMessage?: string
   loadEpoch?: number
   controlKey?: string
   focusedTaskID?: string
@@ -391,7 +400,7 @@ export function XDriveBackgroundTaskTable({
     return (
       <Box data-xdrive-global-background-tasks-verified-empty
         sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
-        <XDriveStatePanel variant="plain" message="暂无全局后台任务" />
+        <XDriveStatePanel variant="plain" message={emptyMessage} />
       </Box>
     )
   }
@@ -462,6 +471,11 @@ export function XDriveBackgroundTaskTable({
                       ? task.source_name
                       : xDriveBackgroundTaskKindLabel(task.kind)}
                   </Typography>
+                  {xDriveBackgroundTaskIsOCR(task.kind) ? (
+                    <Typography variant="caption" color="text.secondary" data-xdrive-ocr-global-task>
+                      {XDRIVE_OCR_TASK_HINT}
+                    </Typography>
+                  ) : null}
                   {task.kind === 'source.sync' ? (
                     <Typography variant="caption" color="text.secondary">
                       同步文件夹

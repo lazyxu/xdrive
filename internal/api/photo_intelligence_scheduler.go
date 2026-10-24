@@ -412,6 +412,14 @@ func (s *Server) requestPhotoIntelligenceOwner(
 	return err
 }
 
+// SmartRunner runs OCR and visual classification in one task batch.
+func photoIntelligenceProgressPhase(kind photoIntelligenceTaskKind) string {
+	if kind == photoIntelligenceSmartSearch {
+		return "photo_ocr_visual"
+	}
+	return "processing"
+}
+
 func (s *Server) submitPhotoIntelligenceOwnerTask(
 	key photoIntelligenceOwnerKey,
 	generation uint64,
@@ -476,7 +484,7 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 			}
 
 			background.ReportProgress(taskCtx, background.TaskProgress{
-				Phase: "processing",
+				Phase: photoIntelligenceProgressPhase(key.Kind),
 				Unit:  "item",
 			})
 			processed, runErr := s.runPhotoIntelligenceOwnerBatch(
@@ -510,7 +518,7 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 			}
 			if processed > 0 {
 				background.ReportProgress(taskCtx, background.TaskProgress{
-					Phase:   "processing",
+					Phase:   photoIntelligenceProgressPhase(key.Kind),
 					Current: int64(processed),
 					Unit:    "item",
 				})

@@ -664,6 +664,8 @@ export interface MediaResource {
 export interface MediaItem {
   node: Node
   metadata: MediaMetadata
+  /** Detail-only OCR evidence, excluded from paginated Gallery ranges. */
+  ocr?: { state: 'pending' | 'running' | 'ready' | 'failed' | 'stale' | 'unavailable'; text?: string; language?: string }
   asset_kind?: PhotoAssetKind
   favorite?: boolean
   tags?: string[]
