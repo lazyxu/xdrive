@@ -456,12 +456,25 @@ terminate_pull_process() {
 }
 
 render_pull_json() {
-  local service="$1" pid_file="$2" line id text current total
+  local service="$1" pid_file="$2" watermark_file="$3" line id text current total
   local now sum_current sum_total rate pct elapsed started
   local last_print=0 previous_time previous_current=0
   local last_progress_at last_progress_current=0 last_stall_print=0 stalled_for
+  local watermark_id watermark_total watermark_current watermark_key
   declare -A layer_current=()
   declare -A layer_total=()
+  declare -A download_highwater=()
+
+  # A new Docker process can replay the same downloaded bytes. Track the
+  # highest observed current byte count for each (layer ID, total size)
+  # across attempts, not just within one process.
+  while IFS=$'\t' read -r watermark_id watermark_total watermark_current; do
+    [[ -n "$watermark_id" && "$watermark_total" =~ ^[0-9]+$ && "$watermark_current" =~ ^[0-9]+$ ]] || continue
+    watermark_key="$watermark_id:$watermark_total"
+    if (( watermark_current > ${download_highwater[$watermark_key]:-0} )); then
+      download_highwater["$watermark_key"]="$watermark_current"
+    fi
+  done < "$watermark_file"
 
   started="$(date +%s)"
   previous_time="$started"
@@ -498,9 +511,32 @@ render_pull_json() {
         if [[ -n "$total" && "$total" -gt 0 ]]; then
           layer_total["$id"]="$total"
           layer_current["$id"]="${current:-0}"
+          if [[ "$current" =~ ^[0-9]+$ && "$id" != *$'\t'* && "$id" != *$'\n'* ]]; then
+            watermark_key="$id:$total"
+            if (( current > ${download_highwater[$watermark_key]:-0} )); then
+              download_highwater["$watermark_key"]="$current"
+              printf '%s\t%s\t%s\n' "$id" "$total" "$current" >> "$watermark_file"
+            fi
+          fi
         fi
         ;;
-      "Download complete"|"Pull complete"|"Already exists")
+      "Download complete"|"Pull complete")
+        # Terminal status lacks a byte count in some Docker Compose versions.
+        # Count only if THIS attempt first saw a Downloading event for the layer.
+        if [[ -n "${layer_total[$id]:-}" ]]; then
+          layer_current["$id"]="${layer_total[$id]}"
+          if [[ "$id" != *$'\t'* && "$id" != *$'\n'* ]]; then
+            total="${layer_total[$id]}"
+            watermark_key="$id:$total"
+            if (( total > ${download_highwater[$watermark_key]:-0} )); then
+              download_highwater["$watermark_key"]="$total"
+              printf '%s\t%s\t%s\n' "$id" "$total" "$total" >> "$watermark_file"
+            fi
+          fi
+        fi
+        ;;
+      "Already exists")
+        # Cache hits alone are not proof of new download bytes.
         if [[ -n "${layer_total[$id]:-}" ]]; then
           layer_current["$id"]="${layer_total[$id]}"
         fi
@@ -567,7 +603,7 @@ pull_json_supported() {
 }
 
 pull_service_json() {
-  local service="$1" statuses pid_file
+  local service="$1" watermark_file="$2" statuses pid_file
   pid_file="$LOG_DIR/.pull-${service}-pid"
   rm -f "$pid_file"
 
@@ -586,7 +622,7 @@ pull_service_json() {
     exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
-    render_pull_json "$service" "$pid_file"
+    render_pull_json "$service" "$pid_file" "$watermark_file"
 
   statuses=("${PIPESTATUS[@]}")
   rm -f "$pid_file"
@@ -610,14 +646,28 @@ pull_service_plain() {
 }
 
 pull_service_with_retry() {
-  local service="$1" attempt retry_wait pull_rc
-  for attempt in $(seq 1 "$pull_attempts"); do
-    printf '[xDrive] pull %s attempt %s/%s...\n' "$service" "$attempt" "$pull_attempts"
-    printf '\n===== pull %s attempt %s/%s at %s =====\n' \
-      "$service" "$attempt" "$pull_attempts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$PULL_LOG"
+  local service="$1" attempt=1 retry_wait pull_rc
+  local watermark_file="$LOG_DIR/.pull-${service}-highwater"
+  local watermark_before watermark_after
+  # The install lock serializes installers. Only attempts in this update
+  # share the watermark; a previous install never influences retry decisions.
+  : > "$watermark_file"
+  while true; do
+    if (( attempt <= pull_attempts )); then
+      printf '[xDrive] pull %s attempt %s/%s...\n' "$service" "$attempt" "$pull_attempts"
+      printf '\n===== pull %s attempt %s/%s at %s =====\n' \
+        "$service" "$attempt" "$pull_attempts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$PULL_LOG"
+    else
+      printf '[xDrive] pull %s attempt %s (extended beyond %s minimum attempts)...\n' \
+        "$service" "$attempt" "$pull_attempts"
+      printf '\n===== pull %s attempt %s (extended) at %s =====\n' \
+        "$service" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$PULL_LOG"
+    fi
+    watermark_before="$(wc -c < "$watermark_file")"
 
     if [[ "$pull_progress_mode" == "json" ]]; then
-      if pull_service_json "$service"; then
+      if pull_service_json "$service" "$watermark_file"; then
+        rm -f "$watermark_file"
         printf '[xDrive] pull %s complete.\n' "$service"
         return 0
       else
@@ -628,19 +678,35 @@ pull_service_with_retry() {
       fi
     else
       if pull_service_plain "$service"; then
+        rm -f "$watermark_file"
         printf '[xDrive] pull %s complete.\n' "$service"
         return 0
       fi
     fi
 
-    if (( attempt < pull_attempts )); then
-      retry_wait=$(( pull_retry_delay * attempt ))
-      echo "[xDrive] pull $service failed; retrying in ${retry_wait}s (completed layers are reused)." >&2
-      sleep "$retry_wait"
+    watermark_after="$(wc -c < "$watermark_file")"
+    if (( attempt >= pull_attempts )); then
+      # Without JSON, host RX may be unrelated to this image. Keep the
+      # existing finite fallback rather than extending on unrelated traffic.
+      if [[ "$pull_progress_mode" != "json" ]]; then
+        break
+      fi
+      if (( watermark_after <= watermark_before )); then
+        echo "[xDrive] pull $service attempt $attempt made no new download bytes beyond earlier attempts; stopping after at least $pull_attempts attempts." >&2
+        break
+      fi
+      echo "[xDrive] pull $service attempt $attempt advanced new download bytes; extending retries beyond $pull_attempts attempts." >&2
     fi
+
+    # Do not let backoff grow without bound on genuinely productive pulls.
+    retry_wait=$(( pull_retry_delay * (attempt < pull_attempts ? attempt : pull_attempts) ))
+    echo "[xDrive] pull $service failed; retrying in ${retry_wait}s (completed layers are reused)." >&2
+    sleep "$retry_wait"
+    attempt=$(( attempt + 1 ))
   done
 
-  echo "xDrive server installer: pull $service failed after $pull_attempts attempts. Last Docker pull messages:" >&2
+  rm -f "$watermark_file"
+  echo "xDrive server installer: pull $service failed after $attempt attempts. Last Docker pull messages:" >&2
   tail -n 40 "$PULL_LOG" >&2 || true
   echo "xDrive server installer: repeated registry failures usually mean Docker daemon connectivity is poor." >&2
   echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
