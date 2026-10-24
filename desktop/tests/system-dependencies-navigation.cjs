@@ -126,8 +126,12 @@ test('Only an opened service panel fetches its configuration and history', () =>
   for (const [name, id] of panels) {
     const body = read('ui/shared/src/mui/' + name)
     assert.ok(body.includes("section = 'config'"), 'missing section scope: '+name)
-    assert.ok(body.includes("section === 'history' && source.load" + id + "Revisions"),
-      'eager history loading: ' + name)
+    const allowFullHistory = name === 'PostgresPoolConfigPanel.tsx' ||
+      name === 'SourceWorkerConfigPanel.tsx'
+    assert.ok(body.includes((allowFullHistory
+      ? "(section === 'history' || section === 'all') && source.load"
+      : "section === 'history' && source.load") + id + "Revisions"),
+      'unexpected history loading: ' + name)
     assert.ok(body.includes('onDirtyChange?.('), 'missing draft guard: ' + name)
   }
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
@@ -338,9 +342,11 @@ test('Status refresh preserves mounted editor, saved draft and last successful i
     'health refresh must not unmount active forms; only a source change may clear inventory')
   assert.ok(page.includes("  }, [source, refreshID])"),
     'the independent inventory effect must respond to explicit refresh')
-  for (const service of ['media-worker', 'database', 'background-worker']) {
-    assert.ok(page.includes("selectedPage === '" + service + "' && currentTab !== 'status'"))
-  }
+  assert.ok(page.includes("selectedPage === 'media-worker' && currentTab !== 'status'"))
+  assert.ok(page.includes("<XDriveCoreDependencyDetail"))
+  const core = read('ui/shared/src/mui/CoreDependencyDetail.tsx')
+  assert.ok(core.includes('section="all" singlePage onDirtyChange={onDirtyChange}'))
+  assert.ok(core.includes('if (controlsLocked) return'))
   assert.ok(page.includes("section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"))
   assert.ok(page.includes('refreshID={0}'),
     'read-only inventory refresh must not bump editor instance generations')
@@ -360,34 +366,45 @@ test('Runtime verification tabs load exact service-specific status without eager
     assert.ok(panel.includes("section?: 'config' | 'history' | 'verify'"), name)
     assert.ok(panel.includes("section === 'config'"), name)
     assert.ok(panel.includes("section === 'history'"), name)
-    assert.ok(panel.includes("if (section === 'history' && source.load" + key + "Revisions)"),
-      'verification must not load audit history for '+ name)
+    const flatCore = name === 'PostgresPoolConfigPanel.tsx' ||
+      name === 'SourceWorkerConfigPanel.tsx'
+    assert.ok(panel.includes((flatCore
+      ? "(section === 'history' || section === 'all') && source.load"
+      : "if (section === 'history' && source.load") + key + "Revisions)"),
+      'incorrect history scope for ' + name)
     assert.ok(panel.includes('const reload = async () => {'), name)
   }
   assert.ok(page.includes("!['baidu-map', 'geonames']"),
     'Baidu and GeoNames keep separate bounded verification panels; Caddy also shows current Server evidence')
+  const core = read('ui/shared/src/mui/CoreDependencyDetail.tsx')
+  assert.ok(core.includes('data-xdrive-core-readonly-scope={service.id}'))
+  for (const service of ['database', 'storage', 'background-worker']) {
+    assert.ok(core.includes(service), service + ' must be covered by the shared scope')
+  }
   for (const [service, proof] of [
-    ['database', 'data-xdrive-postgres-liveness-scope'],
-    ['background-worker', 'data-xdrive-pull-worker-liveness-scope'],
     ['media-worker', 'data-xdrive-media-worker-liveness-scope'],
     ['caddy', 'data-xdrive-caddy-liveness-scope'],
   ]) {
-    assert.ok(page.includes("selectedPage === '" + service + "' ? ("),
-      service + ' must own an explicit live read-only status scope')
-    assert.ok(page.includes(proof), service + ' must describe actual proof scope')
+    assert.ok(page.includes("selectedPage === '" + service + "' ? ("))
+    assert.ok(page.includes(proof))
   }
   assert.equal(page.includes('docker.sock'), false)
 })
 
 
-test('Only Caddy uses flat always-visible config; other service sections retain their own lazy history', () => {
+test('Caddy and core services are flat; remaining services retain their lazy history', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const workspace = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   const editor = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
   const preflight = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
 
-  // Existing non-Caddy service sections and history are unchanged.
+  // Other services retain their existing accordion, but core services
+  // bypass it just as Caddy does.
+  const core = read('ui/shared/src/mui/CoreDependencyDetail.tsx')
+  assert.ok(page.includes('<XDriveCoreDependencyDetail'))
+  assert.ok(core.includes('section="all" singlePage'))
+  assert.ok(core.includes('data-xdrive-core-dependency-flat'))
   assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"))
   assert.ok(page.includes('<AccordionSummary'))
   assert.ok(page.includes('<AccordionDetails'))
