@@ -82,8 +82,11 @@ class DriveAppTest {
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
         compose.onNodeWithTag("server").assertTextEquals("http://drive.example:1080")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.onNodeWithTag("request-error").assertIsDisplayed()
-        compose.onNodeWithTag("allow-http").performClick()
+        // CONNECT validation updates the controller before Compose publishes the
+        // error. The keyboard may also cover the inline error on a small device.
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
+        compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("allow-http").performScrollTo().performClick()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.screen == Screen.LOGIN }
         compose.runOnIdle { org.junit.Assert.assertEquals(Screen.LOGIN, controller.state.value.screen) }
