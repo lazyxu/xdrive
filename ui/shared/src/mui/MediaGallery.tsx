@@ -4051,6 +4051,7 @@ export function XDriveMediaGalleryPage({
         onDownloadItems={source.downloadItems ? downloadItems : undefined}
         onExportLivePhoto={source.exportLivePhoto ? exportLivePhoto : undefined}
         onShareItem={shareDialog ? setShareItem : undefined}
+        shareDialogOpen={Boolean(shareItem)}
         onOpenViewer={onOpenViewer ? (item, activeIndex) => {
           const target = collectionTargetRef.current
           if (!target) return
@@ -4501,6 +4502,7 @@ export interface XDriveMediaGalleryProps {
   onUploadRequested?: () => void
   onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShareItem?: (item: MediaItem) => void
+  shareDialogOpen?: boolean
   onOpenViewer?: (item: MediaItem, logicalIndex: number) => void
   onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
   onPermanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
@@ -6226,6 +6228,7 @@ export function XDriveMediaGallery({
   onUploadRequested,
   onExportLivePhoto,
   onShareItem,
+  shareDialogOpen = false,
   onOpenViewer,
   onRestoreTrashItems,
   onPermanentlyDeleteTrashItems,
@@ -9305,6 +9308,7 @@ export function XDriveMediaGallery({
         onFilmstripSelect={requestPreviewIndex}
         onToggleFavorite={onSetFavorite ? toggleFavorite : undefined}
         onInfo={openPreviewInfo}
+        externalInteractionPaused={Boolean(selected) || shareDialogOpen}
         onSaveEditRecipe={onSaveEditRecipe ? saveLocalEditRecipe : undefined}
         onResetEditRecipe={onResetEditRecipe ? resetLocalEditRecipe : undefined}
         onCreateCreativeGeneration={onCreateCreativeGeneration}

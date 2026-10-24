@@ -327,6 +327,7 @@ function WebViewerFrame({
     sourceKey,
     presentationState,
     navigationLoading,
+    interactionPaused: keepChromeVisible,
     canNext,
     onNext,
     onStop: () => setSlideshowState((current) =>
@@ -801,6 +802,10 @@ function WebPreviewApp({
     revision: viewer.node.revision,
   } satisfies XDriveFilePreviewTarget : null
   const presentation = useXDrivePreviewPresentation(target, dialogOwner.session)
+  // Files Quick Look is not a media player slideshow: video/audio/text must
+  // never be timed away after a ready event from their native renderers.
+  const quickLookKind = target ? xDriveClassifyFilePreview(target) : 'none'
+  const quickLookSlideshowEligible = quickLookKind === 'image' || quickLookKind === 'live_photo'
 
   const loadThumbnail = useCallback(async (_target: XDriveFilePreviewTarget, signal?: AbortSignal) => {
     if (!viewer.node) return null
@@ -819,7 +824,8 @@ function WebPreviewApp({
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         quickLook
-        slideshow
+        slideshow={quickLookSlideshowEligible}
+        keepChromeVisible={shareOpen || tagsOpen}
         slideshowOwnerKey={quickLookSlideshowScopeRef.current.session}
         sourceKey={presentation.sourceKey}
         presentationState={viewer.error ? 'failed' : presentation.presentationState}

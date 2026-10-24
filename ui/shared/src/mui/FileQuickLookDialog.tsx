@@ -4,6 +4,7 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import { IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { xDriveClassifyFilePreview } from '../file-preview'
 import type { XDriveFilePreviewTarget } from '../file-preview'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
@@ -58,7 +59,6 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
 }: XDriveFileQuickLookDialogProps<T>) {
   const [fullScreen, setFullScreen] = useState(false)
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
-  const presentation = useXDrivePreviewPresentation(item)
   // A same-ID file opened from another Agent/account must reset pending
   // chrome taps as well as the Preview Engine's existing byte leases.
   const chromeOwnerRef = useRef({
@@ -82,6 +82,20 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     }
   }
 
+  const previewKind = item ? xDriveClassifyFilePreview(item) : 'none'
+  const slideshowEligible = previewKind === 'image' || previewKind === 'live_photo'
+  // Source readiness is session-scoped: identical Node/revision across Agent
+  // rebinding must not inherit an earlier Owner's decoded still.
+  const presentation = useXDrivePreviewPresentation(item, chromeOwnerRef.current.session)
+
+  useEffect(() => {
+    if (!slideshowEligible) setSlideshowPlaying(false)
+  }, [slideshowEligible])
+  // Do not carry a prior Owner's playback intent into a rebound adapter.
+  useEffect(() => { setSlideshowPlaying(false) }, [
+    loadTextPreview, loadImagePreview, loadPreviewURL, loadLivePhotoMotion,
+  ])
+
   useEffect(() => {
     if (open) return
     setFullScreen(false)
@@ -94,7 +108,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   }, [fullScreen])
 
   useXDrivePreviewSlideshow({
-    enabled: open && fullScreen,
+    enabled: open && fullScreen && slideshowEligible,
     playing: slideshowPlaying,
     sourceKey: presentation.sourceKey,
     presentationState: presentation.presentationState,
@@ -104,7 +118,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     intervalMs: slideshowIntervalMs,
   })
 
-  const hasSlideshow = canPrevious || canNext
+  const hasSlideshow = slideshowEligible && (canPrevious || canNext)
   const headerActions = (
     <>
       {actions.map((action) => (
