@@ -201,6 +201,8 @@ export interface XDriveLocalBackupRecoveryReview {
   unsupported_files: number
   unrecorded_files: number
   historical_committed_files: number
+  current_node_metadata_match_files: number
+  current_node_metadata_mismatch_files: number
   pending_original_files: number
   next_after_file: number
   page_epoch: string

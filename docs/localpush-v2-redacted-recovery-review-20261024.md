@@ -133,3 +133,38 @@ and the generic Source adapter receive no access to this private Agent read
 interface. There is no new upload, deletion or automatic uncertain-result
 retry button. Running without a newly updated Agent remains compatible:
 the optional review section is hidden when the capability is absent.
+
+
+## Read-only current Node metadata check (follow-up)
+
+For historical COMMIT groups already validated by the original SQL receipt,
+the owning Agent can additionally **read** the currently existing authorized
+cloud parent/child Node and compare its exact Node identity, revision,
+SHA-256 metadata and size to the complete original Operation chain. It
+reuses the manual Runner's existing `decideLocalCommonRootFile` correctness
+guard and re-reads a matching current Node to catch mutation during the
+review. It **never** calls Admit, Bind, chunk, Finalize or any cloud writer.
+
+The redacted, manual, at-most-16-file review page reports:
+
+- `current_node_metadata_match_files`: historical committed file paths whose
+  CURRENT remote Node *metadata* still exactly matches their latest original
+  committed revision
+- `current_node_metadata_mismatch_files`: past committed paths whose current
+  Node metadata no longer matches, e.g. an externally updated/deleted child
+
+The partition **must** sum to `historical_committed_files`. An inaccessible,
+revoked or untrusted cloud ancestor or network failure denies the **whole**
+page instead of converting an unknown result into a confirmed mismatch.
+
+These are bounded read-only observations, not present-day CAS physical
+verification, a global database snapshot, a backup completeness statement
+or permission to resume a pending Operation. Multiple pages are not
+aggregated into an authoritative SourceRun. Unlike original SQL receipt
+queries, these current Node checks require extra read-only cloud requests
+for each historical COMMIT in the selected page, so they are kept in the
+explicit advanced recovery view and must not run during ordinary backup.
+
+Production-only environment verification remains
+**按用户决定跳过（未验收）**. Negative Owner/Root/Node tests and
+Linux/Windows/PG CI are required on the exact feature HEAD.
