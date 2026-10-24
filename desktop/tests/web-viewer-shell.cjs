@@ -34,6 +34,7 @@ const mui = {
   IconButton: host('button'), Tooltip: ({ children }) => children,
   useMediaQuery: (query) => {
     if (query === '(max-width:899.95px)') return viewportWidth < 900
+    if (query === '(max-width:367.95px)') return viewportWidth < 368
     if (query === '(max-width:899.95px) and (pointer: coarse)') {
       return compactTouch && viewportWidth < 900
     }
@@ -2473,4 +2474,84 @@ test('P2 375px photo Viewer keeps eight 44px controls without horizontal rail ov
     compactTouch = false
     viewportWidth = 390
   }
+})
+
+test('P1-320 routed media Viewer fits six 44px actions and preserves explicit More navigation', async () => {
+  for (const width of [320, 367, 368, 375]) {
+    viewportWidth = width
+    compactTouch = true
+    const contextID = 'p1-gallery-320-actions-' + width
+    const key = 'xdrive.web_app.session.v1:' + contextID
+    const media = [9911, 9912, 9913].map(id => {
+      const node = { id, revision: 1, name: id + '.jpg', type: 'file', size: 42 }
+      return { node, metadata: {
+        mime_type: 'image/jpeg', media_kind: 'image', index_state: 'ready', has_thumbnail: true,
+      } }
+    })
+    storage.set(key, JSON.stringify({ version: 1, context: {
+      kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 1, totalCount: media.length,
+    } }))
+    const navigated = []
+    const api = {
+      node: async id => media.find(item => item.node.id === id)?.node,
+      mediaItem: async id => media.find(item => item.node.id === id),
+    }
+    const gallerySource = {
+      loadThumbnail: async () => null,
+      listItemRange: async (limit, offset) => ({
+        items: media.slice(offset, offset + limit),
+        total_count: media.length, offset, limit,
+      }),
+      setFavorite: async () => {},
+      deleteItems: async () => ({ status: 'queued' }),
+    }
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: 9912, context: contextID } },
+          api, gallerySource, shareDialogAdapter: {},
+          onReplaceRoute(route) { navigated.push(route.params.node) },
+          onClose() {}, onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      for (let n = 0; n < 5; n++) {
+        await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+      }
+      const rail = renderer.root.find(el => el.type === 'div' &&
+        el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+      const controls = rail.findAll(el => el.type === 'button')
+      const ultra = width < 368
+      assert.equal(controls.length, ultra ? 6 : 8,
+        'five Gallery actions plus slideshow, with arrows only when both fit')
+      assert.equal(rail.props.sx.overflowX, 'hidden')
+      assert.equal(rail.props.sx['& .MuiIconButton-root'].width, 44)
+      assert.equal(rail.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
+      if (ultra) {
+        assert.ok(controls.length * 44 + 16 <= width)
+        assert.equal(buttons(renderer, '上一个项目').length, 0)
+        assert.equal(buttons(renderer, '下一个项目').length, 0)
+        await openGalleryMore(renderer)
+        assert.equal(galleryMoreItems(renderer, '上一张').length, 1)
+        assert.equal(galleryMoreItems(renderer, '下一张').length, 1)
+        await act(async () => galleryMoreItems(renderer, '下一张')[0].props.onClick())
+        assert.deepEqual(navigated, [9913],
+          'ultra-narrow More navigates through existing authorized Gallery Range')
+        assert.equal(galleryMoreItems(renderer, '下一张').length, 0)
+      } else {
+        assert.equal(controls.filter(el => el.props['aria-label'] === '上一个项目').length, 1)
+        assert.equal(controls.filter(el => el.props['aria-label'] === '下一个项目').length, 1)
+        await openGalleryMore(renderer)
+        assert.equal(galleryMoreItems(renderer, '上一张').length, 0)
+        assert.equal(galleryMoreItems(renderer, '下一张').length, 0)
+      }
+      const header = renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+      assert.equal(header.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+      storage.delete(key)
+    }
+  }
+  compactTouch = false
+  viewportWidth = 390
 })
