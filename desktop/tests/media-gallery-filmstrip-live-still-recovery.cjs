@@ -108,3 +108,87 @@ test('P0-L15 Web/Mobile and Desktop retain one Viewer, same REST/IPC and 52px Ap
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
 })
+
+test('P1 Gallery filmstrip uses one Tab stop and supports bounded arrow/Home/End navigation', async () => {
+  const React = require('react')
+  const { create, act } = require('react-test-renderer')
+  const host = (name) => React.forwardRef(({ children, ...props }, ref) =>
+    React.createElement(name, { ...props, ref }, children))
+  const sourceFile = read('ui/shared/src/mui/MediaGalleryFilmstrip.tsx')
+  const js = ts.transpileModule(sourceFile, {
+    fileName: 'MediaGalleryFilmstrip.tsx',
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
+    },
+  }).outputText
+  const mod = { exports: {} }
+  const scheduler = class {
+    load() { return Promise.resolve(null) }
+    setRetention() {}
+    dispose() {}
+    invalidateDecodedURL() { return false }
+  }
+  new Function('module', 'exports', 'require', js)(mod, mod.exports, (name) => {
+    if (name === 'react') return React
+    if (name === 'react/jsx-runtime') return require(name)
+    if (name === '@mui/material') return {
+      Box: host('div'), Stack: host('div'), ButtonBase: host('button'), Typography: host('span'),
+    }
+    if (name === './MediaGalleryThumbnailScheduler') return { XDriveMediaThumbnailScheduler: scheduler }
+    if (name === './MediaGalleryPreviewMedia') return {
+      XDriveMediaAsyncThumbnail: () => null, xDriveMediaFallback: () => null,
+    }
+    throw Error('Unexpected filmstrip dependency: ' + name)
+  })
+  const Filmstrip = mod.exports.XDriveMediaGalleryFilmstrip
+  const entries = [10, 11, 12].map((index) => ({
+    index, item: {
+      node: { id: index + 100, revision: 3, name: 'img' + index + '.jpg' },
+      metadata: { media_kind: 'image', has_thumbnail: false },
+    },
+  }))
+  const selected = []
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(Filmstrip, {
+        entries, activeIndex: 11, loadThumbnail: async () => null,
+        onSelect: (index) => selected.push(index),
+      }))
+    })
+    const buttons = renderer.root.findAllByType('button')
+    assert.equal(buttons.length, 3)
+    assert.deepEqual(buttons.map((button) => button.props.tabIndex), [-1, 0, -1],
+      'Tab enters the active thumbnail; other thumbnails use arrow navigation')
+    // ReactTestRenderer returns both the Stack wrapper and its rendered div
+    // for findAllByProps. Count only actual host DOM surfaces here.
+    assert.equal(renderer.root.findAll(node =>
+      node.type === 'div' && node.props.role === 'group').length, 1)
+    const key = (ordinal, value, expectHandled = true) => {
+      let prevented = false
+      let stopped = false
+      buttons[ordinal].props.onKeyDown({
+        key: value,
+        preventDefault() { prevented = true },
+        stopPropagation() { stopped = true },
+      })
+      assert.equal(prevented, expectHandled)
+      assert.equal(stopped, expectHandled)
+    }
+    key(0, 'ArrowRight')
+    key(1, 'ArrowRight')
+    key(2, 'ArrowRight')
+    key(2, 'Home')
+    key(0, 'End')
+    key(1, 'Enter', false)
+    assert.deepEqual(selected, [11, 12, 10, 12])
+    assert.match(sourceFile, /pendingKeyboardFocusRef\.current/)
+    assert.match(sourceFile, /active\.focus\(\)/)
+    assert.match(sourceFile, /pending\.loader === loadThumbnail/,
+      'cross-Owner or changed gallery adapters must discard queued keyboard focus')
+    assert.match(sourceFile, /\[activeIndex, entryIDs, loadThumbnail\]/)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
