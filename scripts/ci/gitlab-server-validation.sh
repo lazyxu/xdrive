@@ -75,6 +75,8 @@ bash -n scripts/ci/gitlab-promote-images.sh
 sh -n scripts/ci/gitlab-publish-release.sh
 bash -n scripts/ci/test-gitlab-release-version.sh
 bash scripts/ci/test-gitlab-release-version.sh
+bash -n scripts/ci/test-gitlab-release-assets.sh
+bash scripts/ci/test-gitlab-release-assets.sh
 bash -n scripts/build-source-agent.sh
 bash -n scripts/build-client-core.sh
 bash -n scripts/ci/gitlab-desktop-windows.sh
