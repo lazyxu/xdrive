@@ -769,7 +769,8 @@ function WebPreviewApp({
                 ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision)
                 : api.filePreviewURL(viewer.node!.id, signal)
           )}
-          loadLivePhotoMotion={() => api.mediaLivePhotoMotionURL(viewer.node!.id)}
+          loadLivePhotoMotion={(currentTarget, _progress, signal) =>
+            api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal)}
           onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
@@ -1251,6 +1252,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         ) : !mediaItem || mediaItem.node.id !== viewer.node.id ? (
           <WebViewerQuietFirstRead />
         ) : <XDriveMediaViewerContent
+          key={modalOwner.session}
           item={mediaItem}
           loadThumbnail={gallerySource.loadThumbnail}
           loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}

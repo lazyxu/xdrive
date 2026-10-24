@@ -222,6 +222,7 @@ export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revisi
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
+  signal?: AbortSignal,
 ) => Promise<XDriveLivePhotoMotionSource | null>
 export type MediaPreviewURLLoader = (
   nodeID: number,

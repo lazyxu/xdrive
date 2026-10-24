@@ -22,7 +22,7 @@ test('Web and Gallery use one semantic media content layer', () => {
     "item.live_photo || item.asset_kind === 'live_photo'",
     '<XDriveLivePhotoSurface',
     'xDriveMediaEditPreviewTransform(item.edit_recipe)',
-    'loadLivePhotoMotion(item.node.id, onProgress)',
+    'loadLivePhotoMotion(item.node.id, onProgress, signal)',
     'loadThumbnail(item.node.id, signal, item.node.revision)',
     'loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal) =>',
     'loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision, onProgress)',

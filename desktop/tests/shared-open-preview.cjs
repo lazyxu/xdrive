@@ -207,17 +207,17 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   assert.ok(webMotionStart >= 0 && webMotionEnd > webMotionStart)
   const webMotionBlock = web.slice(webMotionStart, webMotionEnd)
   assert.ok(
-    webMotionBlock.includes('api.mediaLivePhotoMotionURL(Number(item.id))') &&
+    webMotionBlock.includes('api.mediaLivePhotoMotionURL(Number(item.id), signal)') &&
       !webMotionBlock.includes('URL.createObjectURL(') &&
       !webMotionBlock.includes('new Blob('),
     'Web LIVP motion must use the signed streaming URL rather than a complete Blob',
   )
   assert.ok(
-    preview.includes('loadLivePhotoMotion(target, onProgress)'),
+    preview.includes('loadLivePhotoMotion(target, onProgress, signal)'),
     'shared FilePreviewSurface must forward byte progress into LIVP transport',
   )
   assert.ok(
-    livePhoto.includes('loader(onProgress)') &&
+    livePhoto.includes('loader(onProgress, controller.signal)') &&
       livePhoto.includes('loadMotionRef.current = loadMotion') &&
       livePhoto.includes('按住播放，松开停止'),
     'shared Live Photo surface must fetch motion only after the first hold and preserve hold/release semantics',

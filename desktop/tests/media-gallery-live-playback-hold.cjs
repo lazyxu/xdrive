@@ -20,7 +20,7 @@ const source = [
   "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
-  'type XDriveLivePhotoMotionLoader = (progress?: XDriveByteProgressHandler) => Promise<XDriveLivePhotoMotionSource | null>',
+  'type XDriveLivePhotoMotionLoader = (progress?: XDriveByteProgressHandler, signal?: AbortSignal) => Promise<XDriveLivePhotoMotionSource | null>',
   'type XDriveLivePhotoSurfaceProps = { still: any; stillReady?: boolean; loadMotion?: XDriveLivePhotoMotionLoader; sourceKey?: string | number; label?: string }',
   'type PointerEvent<T> = any; type KeyboardEvent<T> = any',
   original.slice(start),
@@ -219,7 +219,7 @@ test('P0-L6 mobile and wide Web reuse shared Live presentation, API and virtual 
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   assert.match(viewer, /<XDriveLivePhotoSurface/)
   assert.match(webApp, /createWebMediaGalleryDataSource\(\s*api\s*(?:,\s*\{\s*onAuthorizedAlbums\s*:|\))/)
-  assert.match(adapter, /mediaLivePhotoMotionURL\(nodeID\)/)
+  assert.match(adapter, /mediaLivePhotoMotionURL\(nodeID, signal\)/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
   assert.match(gallery, /<MediaVirtualTimeline/)
@@ -516,4 +516,72 @@ test('P1 first-frame: legacy browser waits for decoded loadeddata, not just play
   await act(async () => { video(tree).props.onTimeUpdate({ currentTarget: player }); await flush() })
   assert.equal(video(tree).props.sx.opacity, 0, 'late loaded-data after release cannot reveal motion')
   await act(async () => { tree.unmount() })
+})
+
+
+test('P1 Live motion aborts stale ticket on source replacement and unmount while re-hold reuses it', async () => {
+  const requests = []
+  const disposed = []
+  const player = makePlayer(() => Promise.resolve())
+  const loader = (_progress, signal) => new Promise(resolve => requests.push({ signal, resolve }))
+  const item = key => React.createElement(Live, {
+    sourceKey: key,
+    still: React.createElement('mounted-live-still'),
+    stillReady: true,
+    loadMotion: loader,
+  })
+  let tree
+  try {
+    await act(async () => {
+      tree = renderer.create(item('Owner-A'), {
+        createNodeMock: el => el.type === 'mounted-live-box' && el.props.component === 'video' ? player : null,
+      })
+    })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(requests.length, 1)
+    assert.ok(requests[0].signal instanceof AbortSignal)
+    assert.equal(requests[0].signal.aborted, false)
+    await act(async () => { release(tree); press(tree); await flush() })
+    assert.equal(requests.length, 1, 'same-still re-hold may reuse the pending ticket')
+    assert.equal(requests[0].signal.aborted, false)
+
+    await act(async () => { tree.update(item('Owner-B')); await flush() })
+    assert.equal(requests[0].signal.aborted, true, 'Owner/source switch cancels the old HTTP ticket')
+    await act(async () => {
+      requests[0].resolve({
+        url: 'https://example.invalid/old-owner.mov',
+        dispose() { disposed.push('A') },
+      })
+      await flush()
+    })
+    assert.deepEqual(disposed, ['A'], 'late cancelled source must release its resource')
+    assert.equal(video(tree), undefined, 'old Owner motion must never appear in new Viewer')
+
+    await act(async () => { press(tree); await flush() })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[1].signal.aborted, false)
+    await act(async () => { tree.unmount(); tree = null })
+    assert.equal(requests[1].signal.aborted, true, 'unmount cancels the pending source ticket')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+  }
+})
+
+test('P1 Web Live Photo adapters pass one AbortSignal to authenticated motion ticket', () => {
+  const webAPI = read('web/src/api.ts')
+  const explorer = read('web/src/WebFileExplorer.tsx')
+  const gallery = read('web/src/mediaGalleryAdapter.ts')
+  const routed = read('web/src/WebFileViewerApps.tsx')
+  const shared = read('ui/shared/src/mui/FilePreviewSurface.tsx')
+  const semantic = read('ui/shared/src/mui/MediaViewerContent.tsx')
+  for (const [label, code, needle] of [
+    ['Web API', webAPI, 'mediaLivePhotoMotionURL(nodeID: number, signal?: AbortSignal)'],
+    ['Web auth transport', webAPI, "{ method: 'POST', signal }"],
+    ['FileExplorer', explorer, 'api.mediaLivePhotoMotionURL(Number(item.id), signal)'],
+    ['Gallery adapter', gallery, 'api.mediaLivePhotoMotionURL(nodeID, signal)'],
+    ['Routed Quick Look', routed, 'api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal)'],
+    ['Shared FilePreview', shared, 'loadLivePhotoMotion(target, onProgress, signal)'],
+    ['Semantic Gallery Viewer', semantic, 'loadLivePhotoMotion(item.node.id, onProgress, signal)'],
+    ['Routed Owner isolation', routed, 'key={modalOwner.session}'],
+  ]) assert.ok(code.includes(needle), label + ' must retain signal / ownership')
 })

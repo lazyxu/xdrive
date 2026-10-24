@@ -991,6 +991,7 @@ export function XDriveFileExplorer({
   loadLivePhotoMotion?: (
     item: XDriveFileExplorerItem,
     onProgress?: XDriveByteProgressHandler,
+    signal?: AbortSignal,
   ) => Promise<XDriveLivePhotoMotionSource | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   loadMediaDetails?: (

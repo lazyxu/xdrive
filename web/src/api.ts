@@ -2413,13 +2413,15 @@ export class XDriveApi {
     }
   }
 
-  async mediaLivePhotoMotionURL(nodeID: number): Promise<string> {
+  async mediaLivePhotoMotionURL(nodeID: number, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'video'
       mime_type: string
-    }>(`/api/v1/media/items/${nodeID}/live-photo-motion-ticket`, { method: 'POST' })
+    }>(`/api/v1/media/items/${nodeID}/live-photo-motion-ticket`, { method: 'POST', signal })
+    signal?.throwIfAborted()
     if (
       !ticket.url.startsWith('/api/v1/media-live-photo-motion/') ||
       ticket.url.startsWith('//')
