@@ -221,6 +221,19 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		videos = append(videos, headVideos...)
 		liveCount += headLive
 	}
+	// Test-only P1-C: hydrate ONLY real Owner Live Motion pairs from the
+	// already-accepted Mobile chronological tail, preserving all source IDs.
+	// Parent P0-C2/P1-A/P1-B fixtures are byte-for-byte unchanged otherwise.
+	if os.Getenv("XD_PWA_P1_LIVE_MOTION_HOLD") == "1" {
+		if !p0c2SPAMode || physicalViewportMode {
+			t.Fatal("P1-C Live hold requires bounded authenticated Mobile SPA mode")
+		}
+		seeded := pwaP1SeedLiveMotionForTail(
+			t, db, countingStore, ownerRoot.OwnerID, folder.ID, viewport,
+		)
+		t.Logf("P1C_LIVE_REAL_MOTION_CAS_READY count=%d", seeded)
+	}
+
 	if len(images) < 12 || len(videos) == 0 || liveCount == 0 {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
 			len(images), len(videos), liveCount)
