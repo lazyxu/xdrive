@@ -14,11 +14,13 @@ const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
 const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
+const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
+assert(!p1LiveMode || p1H264Mode, 'Live native hold requires genuine P1 H264 video stage')
 assert(!p1H264Mode || p1Mode,
   'H264 presented-frame mode requires real Owner P1 Gallery Viewer')
 assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
+const out = path.join(__dirname, '..', p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -572,6 +574,184 @@ async function p1MeasureRealH264ViewerMotion(win) {
   }
 }
 
+
+// P1-C: the real shared Live Photo Viewer is activated only by user-owned
+// native pointer hold. RVFC records compositor-bound advancing motion frames
+// without injecting fake video events, calling play() from a test or caching
+// private media. Short taps/touch controls are separate future OS acceptance.
+function p1VisibleLivePhotoTile() {
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  if(!(grid instanceof HTMLElement)||!(host instanceof HTMLElement))return null
+  const extent=host.scrollHeight-host.clientHeight
+  if(extent<10000)return null
+  const clip=host.getBoundingClientRect()
+  for(const tile of grid.querySelectorAll('[data-xdrive-media-tile]')){
+    if(!tile.getAttribute('aria-label')?.includes('实况照片'))continue
+    const rect=tile.getBoundingClientRect()
+    if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
+    const x=Math.round(rect.left+rect.width/2)
+    const y=Math.round(Math.max(clip.top+16,Math.min(rect.top+rect.height/2,clip.bottom-16)))
+    const hit=document.elementFromPoint(x,y)
+    if(hit!==tile&&!tile.contains(hit))continue
+    window.__xdriveP1Entry={document:document.documentElement,host,grid,
+      scrollTop:host.scrollTop,route:location.hash}
+    return {x,y,depth:host.scrollTop/extent,tiles:grid.querySelectorAll('[data-xdrive-media-tile]').length}
+  }
+  const seek=window.__xdriveP1LiveSeek||(window.__xdriveP1LiveSeek={steps:0})
+  if(seek.steps<12&&host.scrollTop>extent*0.7){
+    seek.steps++
+    host.scrollTop=Math.max(extent*0.7,host.scrollTop-Math.max(80,host.clientHeight*0.7))
+    host.dispatchEvent(new Event('scroll'))
+  }
+  return null
+}
+function p1LiveStillReady(){
+  const viewer=document.querySelector('[data-xdrive-web-viewer]')
+  const surface=Array.from(viewer?.querySelectorAll('[role="button"]')||[]).find(x=>
+    x.getAttribute('aria-label')?.includes('按住播放'))
+  if(!(surface instanceof HTMLElement)||surface.getAttribute('aria-disabled')==='true')return null
+  const imgs=Array.from(surface.querySelectorAll('img'))
+  if(!imgs.some(x=>x.complete&&x.naturalWidth>0&&x.naturalHeight>0))return null
+  const rect=surface.getBoundingClientRect()
+  if(rect.width<50||rect.height<50)return null
+  const x=Math.round(rect.left+rect.width/2)
+  const y=Math.round(rect.top+rect.height/2)
+  const hit=document.elementFromPoint(x,y)
+  if(hit!==surface&&!surface.contains(hit))return null
+  return {x,y,stillReady:true}
+}
+function p1StartLiveVideoFrameObservation(){
+  const viewer=document.querySelector('[data-xdrive-web-viewer]')
+  const surface=Array.from(viewer?.querySelectorAll('[role="button"]')||[]).find(x=>
+    x.getAttribute('aria-label')?.includes('按住播放'))
+  if(!(surface instanceof HTMLElement))return false
+  const probe={frames:[],video:null,observer:null,disposed:false,requestID:null}
+  window.__xdriveP1LiveProbe=probe
+  const connect=()=>{
+    if(probe.disposed)return
+    const video=surface.querySelector('video')
+    if(!(video instanceof HTMLVideoElement)||probe.video===video)return
+    if(typeof video.requestVideoFrameCallback!=='function')return
+    probe.video=video
+    const frame=(now,metadata)=>{
+      if(probe.disposed||!video.isConnected)return
+      const last=probe.frames[probe.frames.length-1]
+      if(metadata.presentedFrames>0&&Number.isFinite(metadata.mediaTime)&&
+        metadata.width>0&&metadata.height>0&&
+        (!last||metadata.mediaTime>last.time+0.001)){
+        probe.frames.push({time:metadata.mediaTime,count:metadata.presentedFrames})
+      }
+      if(probe.frames.length<4)
+        probe.requestID=video.requestVideoFrameCallback(frame)
+    }
+    probe.requestID=video.requestVideoFrameCallback(frame)
+  }
+  probe.observer=new MutationObserver(connect)
+  probe.observer.observe(surface,{subtree:true,childList:true,attributes:true,attributeFilter:['src']})
+  connect()
+  return true
+}
+function p1LiveMotionFrameStatus(){
+  const probe=window.__xdriveP1LiveProbe
+  if(!probe)return null
+  const surface=Array.from(document.querySelectorAll('[data-xdrive-web-viewer] [role="button"]')).find(x=>
+    x.getAttribute('aria-label')?.includes('按住播放'))
+  if(!surface)return null
+  const frames=probe.frames
+  if(frames.length<2||!probe.video?.isConnected)return null
+  const first=frames[0],last=frames[frames.length-1]
+  if(last.time<=first.time+0.005||last.count<=first.count)return null
+  if(surface.getAttribute('aria-pressed')!=='true')return null
+  const video=probe.video
+  // Real held Live motion must use this Owner's same-origin signed original.
+  // Inspect only URI shape/ticket presence; do not persist signed URLs.
+  const signed=video.currentSrc ? new URL(video.currentSrc,location.href) : null
+  if(!signed||signed.origin!==location.origin||
+    !/^\/api\/v1\/media-live-photo-motion\/\d+$/.test(signed.pathname)||
+    !signed.searchParams.has('ticket'))return null
+  return {frames:frames.length,mediaDeltaMs:(last.time-first.time)*1000,
+    frameDelta:last.count-first.count,width:video.videoWidth,height:video.videoHeight,
+    held:true,decodeFrames:video.getVideoPlaybackQuality?.().totalVideoFrames??null}
+}
+function p1LiveReleasedStatus(){
+  const probe=window.__xdriveP1LiveProbe
+  if(!probe)return null
+  const surface=Array.from(document.querySelectorAll('[data-xdrive-web-viewer] [role="button"]')).find(x=>
+    x.getAttribute('aria-label')?.includes('按住播放'))
+  if(!surface)return null
+  const video=probe.video
+  if(!(video instanceof HTMLVideoElement))return null
+  const hasStill=Array.from(surface.querySelectorAll('img')).some(img=>
+    img.complete&&img.naturalWidth>0&&img.naturalHeight>0)
+  const opacity=Number(getComputedStyle(video).opacity)
+  if(surface.getAttribute('aria-pressed')!=='false'||!video.paused||
+    !hasStill||!Number.isFinite(opacity)||opacity>0.05)return null
+  probe.disposed=true
+  probe.observer?.disconnect()
+  if(probe.requestID!==null&&typeof video.cancelVideoFrameCallback==='function')
+    video.cancelVideoFrameCallback(probe.requestID)
+  delete window.__xdriveP1LiveProbe
+  return {released:true,stillDecoded:true,paused:true,videoOpacity:opacity}
+}
+async function p1MeasureLivePhotoHold(win){
+  const tile=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1VisibleLivePhotoTile.toString()+')()',true
+  ),25000,'real deep Owner Live Photo pair tile')
+  assert(tile.depth>=0.7&&tile.tiles>0&&tile.tiles<1000,'real Live tile missing')
+  sendActualPointer(win,tile)
+  await until(async()=>win.webContents.executeJavaScript(
+    "location.hash.startsWith('#/app/media-viewer?') && !!document.querySelector('[data-xdrive-web-viewer]')",
+    true),30000,'real shared Live Photo Viewer')
+  const point=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1LiveStillReady.toString()+')()',true
+  ),30000,'decoded original Live still ready before motion')
+  assert(await win.webContents.executeJavaScript(
+    '('+p1StartLiveVideoFrameObservation.toString()+')()',true))
+  // REAL native Chromium mouse down is held through the signed ticket,
+  // playback and two distinct compositor frames; no forced play() or URL.
+  win.focus()
+  win.webContents.focus()
+  win.webContents.sendInputEvent({type:'mouseMove',x:point.x,y:point.y})
+  const started=performance.now()
+  win.webContents.sendInputEvent({type:'mouseDown',x:point.x,y:point.y,
+    button:'left',clickCount:1})
+  let presented,release,back
+  try{
+    presented=await until(async()=>win.webContents.executeJavaScript(
+      '('+p1LiveMotionFrameStatus.toString()+')()',true
+    ),25000,'actual held Live motion two advancing compositor frames')
+  }finally{
+    win.webContents.sendInputEvent({type:'mouseUp',x:point.x,y:point.y,
+      button:'left',clickCount:1})
+  }
+  release=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1LiveReleasedStatus.toString()+')()',true
+  ),12000,'Live pointer-up pauses motion and displays original still')
+  const displayedMs=performance.now()-started
+  win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
+  back=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1BackPoint.toString()+')()',true
+  ),12000,'real Live Viewer Back chrome')
+  sendActualPointer(win,back)
+  const returned=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1ReturnedToCaller.toString()+')()',true
+  ),20000,'real Live Viewer returns to same mounted Gallery')
+  assert(presented.mediaDeltaMs>5&&presented.frameDelta>=1&&
+    release.paused&&release.stillDecoded&&returned.sameCaller&&returned.sameGrid)
+  return {passed:true,deepFraction:tile.depth,displayedMs,
+    mediaDeltaMs:presented.mediaDeltaMs,frameDelta:presented.frameDelta,
+    width:presented.width,height:presented.height,
+    decodedVideoFrames:presented.decodeFrames,
+    pausedOnRelease:release.paused,stillAfterRelease:release.stillDecoded,
+    videoOpacityAfterRelease:release.videoOpacity,
+    sameCaller:returned.sameCaller,sameDocument:returned.sameDocument,
+    sameHost:returned.sameHost,sameGrid:returned.sameGrid,
+    restoredScrollDelta:returned.scrollDelta,
+    scope:'actual native Chromium mouse hold shared Live still and paired CAS MP4 motion',
+    notMeasured:'native iOS touch long press; owner revoke while Video Range inflight; 115k physical CAS'}
+}
+
 async function sampleOnce(sample, ready) {
   let fixture = null, win = null, resourceSampler = null
   try {
@@ -727,11 +907,12 @@ async function sampleOnce(sample, ready) {
     const healthy = await newIndependentRange(fixture)
     const p1ViewerBack = p1Mode ? await p1MeasureRealViewerBack(win) : null
     const p1H264Frames = p1H264Mode ? await p1MeasureRealH264ViewerMotion(win) : null
+    const p1LiveMotion = p1LiveMode ? await p1MeasureLivePhotoHold(win) : null
     const row = {
       sample, viewport, streamCount, resources, logicalAssets: 100000, physicalNodes: 115000,
       firstImageNodes: fixture.config.first_image_nodes,
       seedMsExcluded: fixture.config.seed_ms,
-      scroll, healthy, p1ViewerBack, p1H264Frames, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
+      scroll, healthy, p1ViewerBack, p1H264Frames, p1LiveMotion, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
       go: {
         started: started.started, canceled: after.cancelled - started.cancelled,
         contextDone: after.context_done - started.context_done,
@@ -780,18 +961,29 @@ async function main() {
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
-      status: p1H264Mode ? 'measured-P1-100k-real-Owner-H264-presented-motion' : p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
+      status: p1LiveMode ? 'measured-P1-100k-real-Owner-Live-hold-motion' : p1H264Mode ? 'measured-P1-100k-real-Owner-H264-presented-motion' : p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
         'measured-CURRENT-P0-C2b2-authenticated-Files-Gallery-Files-SPA-Go-cancellation' :
         p0c2PageLeaveMode ?
         'measured-CURRENT-P0-C2b1-390px-Gallery-pageleave-Go-cancellation' :
         'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
       mobileCancelMode: true, cssWindowWidth:390, pageLeaveMode:p0c2PageLeaveMode,
       spaMode:p0c2SPAMode, p1ViewerBackMode:p1Mode, p1H264ViewerMode:p1H264Mode,
+      p1LiveHoldMode:p1LiveMode, p1LivePresentedP50Ms:p1LiveMode ? rows.map(x=>x.p1LiveMotion.displayedMs).sort((a,b)=>a-b)[1] : null,
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!p1LiveMode || (row.p1LiveMotion?.passed===true &&
+          row.p1LiveMotion.deepFraction>=0.7 &&
+          row.p1LiveMotion.mediaDeltaMs>5 &&
+          row.p1LiveMotion.frameDelta>=1 &&
+          row.p1LiveMotion.pausedOnRelease &&
+          row.p1LiveMotion.stillAfterRelease &&
+          row.p1LiveMotion.videoOpacityAfterRelease<=0.05 &&
+          row.p1LiveMotion.sameCaller && row.p1LiveMotion.sameDocument &&
+          row.p1LiveMotion.sameHost && row.p1LiveMotion.sameGrid &&
+          row.p1LiveMotion.restoredScrollDelta<=2)) &&
         (!p1H264Mode || (row.p1H264Frames?.passed===true &&
           row.p1H264Frames.deepFraction>=0.7 &&
           row.p1H264Frames.presentedMs>0 &&
@@ -823,7 +1015,7 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
+      limits: p1LiveMode ? 'n3 authentic 390px Owner 100k Live still + real signed motion CAS, held pointer via shared LivePhotoSurface RVFC two advancing frames, release pause/restore, Viewer Back exact virtual anchor; parent H264/JPEG/Go Abort gates retained, not physical iOS touch or full 115k physical files' : p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
         'Actual Web App.tsx real Files→Gallery→Files same-document route click in Chromium 390px, true Go/Gin/PG17/CAS, 100k logical Gallery/115k nodes, 4-6 active JPEG requests, exact Context.Done + RSS/CPU; not iPhone/Safari, 100k independent originals or durable transfer.' :
         p0c2PageLeaveMode ?
         'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :
