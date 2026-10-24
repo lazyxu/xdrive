@@ -10,10 +10,7 @@ import (
 
 // Every prior entry must have a current, independently authenticated ORIGINAL
 // Server SQL receipt. No local JSON state authorizes an overwrite by itself.
-type localCommonVerifiedOriginal struct {
-	Plan    localpushcommon.Plan
-	Receipt client.LocalPushCommonUploadReceipt
-}
+type localCommonVerifiedOriginal = localpushcommon.VerifiedOriginalReceipt
 
 var errLocalCommonBatchConflict = errors.New("local Push file requires original Operation reconciliation")
 
