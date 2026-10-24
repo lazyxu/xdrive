@@ -25,6 +25,14 @@ export function XDriveMediaGalleryFilmstrip({
   onSelect: (index: number) => void
 }) {
   const stripRef = useRef<HTMLDivElement>(null)
+  // Keep keyboard focus on the selected thumbnail when a bounded window
+  // changes its React buttons after navigation.
+  const pendingKeyboardFocusRef = useRef<{
+    index: number
+    nodeID: MediaItem['node']['id']
+    revision: MediaItem['node']['revision']
+    loader: MediaThumbnailLoader
+  } | null>(null)
   // A Viewer filmstrip owns its small bounded queue. Sharing the wall's
   // Scheduler instance would let Grid/Timeline viewport retention cancel
   // these independently visible Viewer thumbnails while the Viewer is open.
@@ -48,13 +56,28 @@ export function XDriveMediaGalleryFilmstrip({
     thumbnailScheduler.dispose()
   }, [thumbnailScheduler])
 
-  const entryIDs = entries.map(({ item }) => item.node.id).join(',')
+  const entryIDs = entries.map(({ index, item }) => `${index}:${item.node.id}:${item.node.revision ?? ''}`).join(',')
   useLayoutEffect(() => {
     const strip = stripRef.current
     if (!strip) return
     const centerActive = () => {
       const active = strip.querySelector<HTMLElement>('[aria-current="true"]')
       if (!active) return
+      const pending = pendingKeyboardFocusRef.current
+      if (pending) {
+        // The same Node/revision might be visible through a different
+        // authenticated Owner. Never transfer keyboard intent across loaders.
+        const sameOwner = pending.loader === loadThumbnail
+        const targetStillVisible = sameOwner && entries.some(({ index, item }) =>
+          index === pending.index && item.node.id === pending.nodeID &&
+          item.node.revision === pending.revision)
+        if (!targetStillVisible) {
+          pendingKeyboardFocusRef.current = null
+        } else if (activeIndex === pending.index) {
+          active.focus()
+          pendingKeyboardFocusRef.current = null
+        }
+      }
       const bounds = strip.getBoundingClientRect()
       const itemBounds = active.getBoundingClientRect()
       strip.scrollLeft += itemBounds.left - bounds.left - (strip.clientWidth - itemBounds.width) / 2
@@ -63,9 +86,10 @@ export function XDriveMediaGalleryFilmstrip({
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(centerActive)
     observer?.observe(strip)
     return () => observer?.disconnect()
-  }, [activeIndex, entryIDs])
+  }, [activeIndex, entryIDs, loadThumbnail])
 
   if (entries.length === 0) return null
+  const activeEntryVisible = entries.some(({ index }) => index === activeIndex)
 
   return (
     <Stack
@@ -75,6 +99,8 @@ export function XDriveMediaGalleryFilmstrip({
       alignItems="center"
       justifyContent="flex-start"
       data-xdrive-gallery-filmstrip
+      role="group"
+      aria-label="照片缩略图导航"
       sx={{
         width: 'max-content',
         maxWidth: '100%',
@@ -92,7 +118,31 @@ export function XDriveMediaGalleryFilmstrip({
             key={item.node.id}
             aria-label={`预览 ${item.node.name}`}
             aria-current={active ? 'true' : undefined}
+            tabIndex={active || (!activeEntryVisible && index === entries[0].index) ? 0 : -1}
             onClick={() => onSelect(index)}
+            onKeyDown={(event) => {
+              const ordinal = entries.findIndex(({ index: entryIndex, item: entryItem }) =>
+                entryIndex === index && entryItem.node.id === item.node.id)
+              if (ordinal < 0) return
+              let nextOrdinal = ordinal
+              if (event.key === 'ArrowLeft') nextOrdinal = Math.max(0, ordinal - 1)
+              else if (event.key === 'ArrowRight') nextOrdinal = Math.min(entries.length - 1, ordinal + 1)
+              else if (event.key === 'Home') nextOrdinal = 0
+              else if (event.key === 'End') nextOrdinal = entries.length - 1
+              else return
+              // Do not also scroll the page or run the outer Viewer shortcut.
+              event.preventDefault()
+              event.stopPropagation()
+              if (nextOrdinal === ordinal) return
+              const next = entries[nextOrdinal]
+              pendingKeyboardFocusRef.current = {
+                index: next.index,
+                nodeID: next.item.node.id,
+                revision: next.item.node.revision,
+                loader: loadThumbnail,
+              }
+              onSelect(next.index)
+            }}
             sx={{
               flex: '0 0 auto',
               width: 58,
