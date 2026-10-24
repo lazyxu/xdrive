@@ -534,7 +534,8 @@ const agent = Object.freeze({
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-analysis-preview', [nodeID, requestID], onProgress),
   cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),
-  getMediaLivePhotoStill: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID),
+  getMediaLivePhotoStill: (nodeID: number, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID, requestID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),
   getMediaLivePhotoMotion: (
     nodeID: number,
