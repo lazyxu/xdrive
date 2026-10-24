@@ -36,9 +36,12 @@ test('shared decoded Viewer owns derived-JPEG request lifetime and keeps thumbna
   const ui = source('ui/shared/src/mui/FilePreviewSurface.tsx')
   const details = source('ui/shared/src/mui/MediaGalleryDetails.tsx')
   const viewer = source('ui/shared/src/mui/MediaViewerContent.tsx')
-  assert.ok(image.includes('const requestController = new AbortController()'))
-  assert.ok(image.includes('requestController.abort()'))
-  assert.ok(image.includes('currentLoaders.target, kind, requestController.signal'))
+  // Original-only retry must abort just its request; a decoded thumbnail
+  // remains mounted until the Viewer source closes or changes.
+  assert.ok(image.includes('const controllers = new Map<ImageRole, AbortController>()'))
+  assert.ok(image.includes('controllers.get(role)?.abort()'))
+  assert.ok(image.includes('for (const controller of controllers.values()) controller.abort()'))
+  assert.ok(image.includes('current.target, kind, signal,'))
   assert.ok(image.includes("start('thumbnail'"))
   assert.ok(ui.includes('signal?: AbortSignal'))
   assert.ok(details.includes('signal, item.node.name'))

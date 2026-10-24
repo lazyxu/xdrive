@@ -240,3 +240,216 @@ test('image preview with no configured source stays fallback-only, not an inert 
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+const originalRetryButtons = (renderer) => renderer.root.findAll((node) =>
+  node.type === 'button' && node.props['aria-label'] === '重试原图')
+
+test('P1 failed original renews only its ticket while preserving the decoded thumbnail element', async () => {
+  const originalReads = [], thumbnailReads = []
+  const revoked = []
+  const priorRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = (url) => revoked.push(url)
+  let renderer
+  const original = (_node, _kind, signal) => {
+    const pending = deferred()
+    originalReads.push({ pending, signal })
+    return pending.promise
+  }
+  const thumbnail = (_node, signal) => {
+    thumbnailReads.push(signal)
+    return Promise.resolve('blob:live-thumbnail')
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(777), loadPreviewURL: original, loadImagePreview: thumbnail,
+      }))
+    })
+    await decodeImage(renderer, 'blob:live-thumbnail')
+    const savedThumbnail = imageWithURL(renderer, 'blob:live-thumbnail')
+    assert.equal(savedThumbnail.props.style.visibility, 'visible')
+    await act(async () => {
+      originalReads[0].pending.reject(new Error('signed original unavailable'))
+      await Promise.resolve()
+    })
+    assert.equal(originalRetryButtons(renderer).length, 1)
+    assert.equal(retryButtons(renderer).length, 0, 'keep thumbnail; never expose full-surface retry')
+    const savedRetry = originalRetryButtons(renderer)[0].props.onClick
+    await act(async () => { savedRetry(); savedRetry(); await Promise.resolve() })
+    assert.equal(originalReads.length, 2)
+    assert.equal(thumbnailReads.length, 1, 'do not reissue the valid thumbnail')
+    assert.equal(originalReads[0].signal.aborted, true, 'retire the old original request')
+    assert.equal(thumbnailReads[0].aborted, false, 'the thumbnail lifetime survives original retry')
+    assert.equal(imageWithURL(renderer, 'blob:live-thumbnail'), savedThumbnail,
+      'do not remount or flicker the decoded thumbnail')
+    assert.equal(savedThumbnail.props.style.visibility, 'visible')
+    const originalDecode = deferred()
+    await act(async () => originalReads[1].pending.resolve('blob:new-original'))
+    await decodeImage(renderer, 'blob:new-original', originalDecode.promise)
+    assert.equal(savedThumbnail.props.style.visibility, 'visible', 'original must decode before replacing thumbnail')
+    await act(async () => { originalDecode.resolve(); await Promise.resolve() })
+    assert.equal(imageWithURL(renderer, 'blob:new-original').props.style.visibility, 'visible')
+    assert.equal(originalRetryButtons(renderer).length, 0)
+    await act(async () => { savedRetry(); await Promise.resolve() })
+    assert.equal(originalReads.length, 2, 'retained attempt callback cannot renew a new ticket')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.deepEqual(revoked.sort(), ['blob:live-thumbnail', 'blob:new-original'].sort())
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = priorRevoke
+  }
+})
+
+test('P0 original-only retry rejects retired same-URL renderer events', async () => {
+  const thumb = 'https://example.invalid/thumb.jpg'
+  const original = 'https://example.invalid/same-original.jpg'
+  let calls = 0, renderer
+  const firstDecode = deferred(), nextDecode = deferred()
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(778), loadImagePreview: async () => thumb,
+        loadPreviewURL: async () => { calls += 1; return original },
+      }))
+    })
+    await decodeImage(renderer, thumb)
+    const previousOriginal = imageWithURL(renderer, original)
+    const staleOnError = previousOriginal.props.onError
+    await decodeImage(renderer, original, firstDecode.promise)
+    await act(async () => staleOnError())
+    assert.equal(originalRetryButtons(renderer).length, 1)
+    await act(async () => {
+      originalRetryButtons(renderer)[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(calls, 2)
+    assert.equal(originalRetryButtons(renderer).length, 0)
+    assert.notEqual(imageWithURL(renderer, original), previousOriginal,
+      'identical renewed signed URLs still need a new native image element')
+    await act(async () => staleOnError())
+    assert.equal(originalRetryButtons(renderer).length, 0,
+      'old image error must not fail same URL on second attempt')
+    await decodeImage(renderer, original, nextDecode.promise)
+    await act(async () => { firstDecode.resolve(); await Promise.resolve() })
+    assert.equal(imageWithURL(renderer, thumb).props.style.visibility, 'visible')
+    await act(async () => { nextDecode.resolve(); await Promise.resolve() })
+    assert.equal(imageWithURL(renderer, original).props.style.visibility, 'visible')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P1 a repeated original failure can retry once more without restarting a good thumbnail', async () => {
+  let originalReads = 0, thumbnailReads = 0, renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(779),
+        loadPreviewURL: async () => {
+          originalReads += 1
+          return originalReads <= 2 ? null : 'https://example.invalid/recovered.jpg'
+        },
+        loadImagePreview: async () => {
+          thumbnailReads += 1
+          return 'https://example.invalid/still-valid.jpg'
+        },
+      }))
+    })
+    await decodeImage(renderer, 'https://example.invalid/still-valid.jpg')
+    assert.equal(originalRetryButtons(renderer).length, 1)
+    const attempt1 = originalRetryButtons(renderer)[0].props.onClick
+    await act(async () => { attempt1(); await Promise.resolve() })
+    assert.equal(originalReads, 2)
+    assert.equal(originalRetryButtons(renderer).length, 1)
+    await act(async () => { attempt1(); await Promise.resolve() })
+    assert.equal(originalReads, 2)
+    const attempt2 = originalRetryButtons(renderer)[0].props.onClick
+    await act(async () => { attempt2(); attempt2(); await Promise.resolve() })
+    assert.equal(originalReads, 3)
+    assert.equal(thumbnailReads, 1)
+    assert.equal(imageWithURL(renderer, 'https://example.invalid/still-valid.jpg').props.style.visibility, 'visible')
+    await decodeImage(renderer, 'https://example.invalid/recovered.jpg')
+    assert.equal(originalRetryButtons(renderer).length, 0)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P1 original-only retry revokes failed original Blob, not the still-displayed thumbnail', async () => {
+  const revoked = []
+  const previous = URL.revokeObjectURL
+  URL.revokeObjectURL = (url) => revoked.push(url)
+  let renderer, originalCalls = 0
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(780),
+        loadPreviewURL: async () => `blob:original-retry-${++originalCalls}`,
+        loadImagePreview: async () => 'blob:thumbnail-survives',
+      }))
+    })
+    await decodeImage(renderer, 'blob:thumbnail-survives')
+    await act(async () => imageWithURL(renderer, 'blob:original-retry-1').props.onError())
+    const retainedThumbnail = imageWithURL(renderer, 'blob:thumbnail-survives')
+    assert.equal(originalRetryButtons(renderer).length, 1)
+    await act(async () => {
+      originalRetryButtons(renderer)[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(originalCalls, 2)
+    assert.deepEqual(revoked, ['blob:original-retry-1'],
+      'failed original Blob is disposed immediately, not delayed until close')
+    assert.equal(imageWithURL(renderer, 'blob:thumbnail-survives'), retainedThumbnail)
+    await decodeImage(renderer, 'blob:original-retry-2')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.deepEqual(revoked.sort(), [
+      'blob:original-retry-1', 'blob:original-retry-2', 'blob:thumbnail-survives',
+    ].sort(), 'every Blob is released exactly once')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = previous
+  }
+})
+
+
+test('P0 an old original-only retry callback cannot acquire a replaced image Node', async () => {
+  const calls = []
+  const { XDriveDecodedImagePreview } = loadShared(path.join(
+    repo, 'ui/shared/src/mui/FilePreviewImage.tsx',
+  ))
+  const props = (id) => ({
+    target: photo(id), kind: 'image', minHeight: 176, imageFit: 'contain', fallback: null,
+    loadPreviewURL: async (node) => {
+      calls.push(node.id)
+      return null
+    },
+    loadImagePreview: async (node) => `https://example.invalid/thumbnail-${node.id}.jpg`,
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveDecodedImagePreview, props(781)))
+    })
+    await decodeImage(renderer, 'https://example.invalid/thumbnail-781.jpg')
+    const oldRetry = originalRetryButtons(renderer)[0].props.onClick
+    await act(async () => {
+      renderer.update(React.createElement(XDriveDecodedImagePreview, props(782)))
+    })
+    assert.deepEqual(calls, [781, 782])
+    await act(async () => { oldRetry(); await Promise.resolve() })
+    assert.deepEqual(calls, [781, 782], 'former Node cannot reacquire an original')
+    await decodeImage(renderer, 'https://example.invalid/thumbnail-782.jpg')
+    assert.equal(originalRetryButtons(renderer).length, 1,
+      'new Node still owns its own independent retry action')
+    await act(async () => {
+      originalRetryButtons(renderer)[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.deepEqual(calls, [781, 782, 782])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
