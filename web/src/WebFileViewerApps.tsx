@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
@@ -90,6 +90,7 @@ function WebViewerFrame({
   immersive = false,
   photosViewer = false,
   keepChromeVisible = false,
+  chromeSessionKey = '',
   quickLook = false,
   canPrevious = false,
   canNext = false,
@@ -112,6 +113,7 @@ function WebViewerFrame({
   // the same Web browse-context, REST source and shared preview engine.
   photosViewer?: boolean
   keepChromeVisible?: boolean
+  chromeSessionKey?: string | number
   quickLook?: boolean
   canPrevious?: boolean
   canNext?: boolean
@@ -148,6 +150,10 @@ function WebViewerFrame({
   } | null>(null)
   const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
+  // A→B→A must mint a new token; a previous A's delayed tap is not the new A.
+  const chromeSession = useMemo(() => ({}), [chromeSessionKey])
+  const activeChromeSessionRef = useRef<object | null>(chromeSession)
+  const isCurrentChromeSession = () => activeChromeSessionRef.current === chromeSession
   const chromeFocusRef = useRef(false)
   const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
     '[data-xdrive-web-viewer-chrome]',
@@ -155,24 +161,25 @@ function WebViewerFrame({
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
 
   const showChrome = useCallback(() => {
+    if (!isCurrentChromeSession()) return
     setChromeVisible(true)
     if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
     hideTimerRef.current = null
     if (immersive && !keepChromeVisible && !chromeFocusRef.current) {
       hideTimerRef.current = window.setTimeout(() => {
         hideTimerRef.current = null
-        if (!chromeFocusRef.current) setChromeVisible(false)
+        if (activeChromeSessionRef.current === chromeSession && !chromeFocusRef.current) setChromeVisible(false)
       }, 2200)
     }
-  }, [immersive, keepChromeVisible])
+  }, [immersive, keepChromeVisible, chromeSession])
 
   const handleChromeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!hasChromeFocus(event.target)) return
+    if (!isCurrentChromeSession() || !hasChromeFocus(event.target)) return
     chromeFocusRef.current = true
     showChrome()
   }
   const handleChromeBlurCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!chromeFocusRef.current) return
+    if (!isCurrentChromeSession() || !chromeFocusRef.current) return
     chromeFocusRef.current = hasChromeFocus(event.relatedTarget)
     if (!chromeFocusRef.current) showChrome()
   }
@@ -184,8 +191,32 @@ function WebViewerFrame({
     }
   }, [])
 
+  // Run before paint when a mounted Viewer receives another Node/Owner.
+  // Clearing the browser timer is insufficient if its callback was queued;
+  // the immutable per-session token also fences those callbacks.
+  useLayoutEffect(() => {
+    activeChromeSessionRef.current = chromeSession
+    clearTouchTapTimer()
+    if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+    hideTimerRef.current = null
+    touchPointersRef.current.clear()
+    touchTapRef.current = null
+    lastTouchTapRef.current = null
+    chromeFocusRef.current = typeof document !== 'undefined' &&
+      hasChromeFocus(document.activeElement)
+    setChromeVisible(true)
+    return () => {
+      if (activeChromeSessionRef.current === chromeSession) {
+        clearTouchTapTimer()
+        if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+        activeChromeSessionRef.current = null
+      }
+    }
+  }, [chromeSession, clearTouchTapTimer])
+
   const handleTouchPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!compactImmersive || event.pointerType !== 'touch') return
+    if (!isCurrentChromeSession() || !compactImmersive || event.pointerType !== 'touch') return
     touchPointersRef.current.add(event.pointerId)
     if (touchPointersRef.current.size > 1) {
       if (touchTapRef.current) touchTapRef.current.multi = true
@@ -208,12 +239,14 @@ function WebViewerFrame({
   }
 
   const handleTouchPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!isCurrentChromeSession()) return
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
     if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) tap.moved = true
   }
 
   const handleTouchPointerRelease = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!isCurrentChromeSession()) return
     if (event.pointerType !== 'touch') return
     touchPointersRef.current.delete(event.pointerId)
     const tap = touchTapRef.current
@@ -238,6 +271,7 @@ function WebViewerFrame({
     const hideChrome = chromeVisible && !keepChromeVisible && !chromeFocusRef.current
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
+      if (!isCurrentChromeSession()) return
       touchTapTimerRef.current = null
       if (hideChrome) {
         if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
@@ -250,6 +284,7 @@ function WebViewerFrame({
   }
 
   const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!isCurrentChromeSession()) return
     touchPointersRef.current.delete(event.pointerId)
     if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
     lastTouchTapRef.current = null
@@ -287,6 +322,7 @@ function WebViewerFrame({
   })
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!isCurrentChromeSession()) return
     showChrome()
     const target = event.target instanceof HTMLElement ? event.target : null
     const interactive = Boolean(target?.closest(
@@ -749,6 +785,7 @@ function WebPreviewApp({
   return (
     <>
       <WebViewerFrame
+        chromeSessionKey={dialogOwner.session}
         title={viewer.node?.name ?? '文件预览'}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
@@ -1241,6 +1278,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
   return (
     <>
       <WebViewerFrame
+        chromeSessionKey={modalOwner.session}
         title={viewer.node?.name ?? '媒体查看器'}
         subtitle={mediaItem && mediaItem.node.id === viewer.node?.id ? xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at) : undefined}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}

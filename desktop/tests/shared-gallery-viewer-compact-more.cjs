@@ -217,6 +217,7 @@ test('P0 changing media loaders remounts the inner preview without recreating th
     await act(async () => { renderer = create(React.createElement(Viewer, props(initial))) })
     const first = renderer.root.findByType('test-media-content')
     const shell = renderer.root.findByType('test-shared-viewer')
+    const firstChromeSession = shell.props.chromeSessionKey
     await act(async () => { renderer.update(React.createElement(Viewer, props(initial))) })
     assert.equal(renderer.root.findByType('test-media-content'), first,
       'stable authenticated loader must preserve preview zoom and motion state')
@@ -225,6 +226,8 @@ test('P0 changing media loaders remounts the inner preview without recreating th
     assert.equal(renderer.root.findByType('test-shared-viewer'), shell)
     assert.notEqual(renderer.root.findByType('test-media-content'), first,
       'switching a source with the same Node/revision must remount its media bytes')
+    assert.notEqual(renderer.root.findByType('test-shared-viewer').props.chromeSessionKey,
+      firstChromeSession, 'same-Node replacement rotates the visible chrome session')
   } finally {
     if (renderer) await act(async () => renderer.unmount())
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
@@ -59,6 +59,28 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   const [fullScreen, setFullScreen] = useState(false)
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
   const presentation = useXDrivePreviewPresentation(item)
+  // A same-ID file opened from another Agent/account must reset pending
+  // chrome taps as well as the Preview Engine's existing byte leases.
+  const chromeOwnerRef = useRef({
+    id: item?.id, revision: item?.revision,
+    text: loadTextPreview, image: loadImagePreview,
+    url: loadPreviewURL, motion: loadLivePhotoMotion, session: 0,
+  })
+  if (
+    chromeOwnerRef.current.id !== item?.id ||
+    chromeOwnerRef.current.revision !== item?.revision ||
+    chromeOwnerRef.current.text !== loadTextPreview ||
+    chromeOwnerRef.current.image !== loadImagePreview ||
+    chromeOwnerRef.current.url !== loadPreviewURL ||
+    chromeOwnerRef.current.motion !== loadLivePhotoMotion
+  ) {
+    chromeOwnerRef.current = {
+      id: item?.id, revision: item?.revision,
+      text: loadTextPreview, image: loadImagePreview,
+      url: loadPreviewURL, motion: loadLivePhotoMotion,
+      session: chromeOwnerRef.current.session + 1,
+    }
+  }
 
   useEffect(() => {
     if (open) return
@@ -121,6 +143,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
       title={item?.name ?? ''}
       positionLabel={positionLabel}
       quickLook
+      chromeSessionKey={chromeOwnerRef.current.session}
       actions={headerActions}
       immersive={fullScreen}
       fullScreen={fullScreen}
