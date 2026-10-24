@@ -409,6 +409,7 @@ export function XDriveMediaGalleryViewer({
     <>
       <XDriveOpenPreviewDialog
         open={Boolean(item)}
+        chromeSessionKey={actionOwner.session}
         title={item?.node.name ?? ''}
         subtitle={item ? xDriveMediaCaptureTimeLabel(item.metadata.captured_at) : undefined}
         positionLabel={positionLabel}

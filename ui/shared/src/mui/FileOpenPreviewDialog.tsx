@@ -28,6 +28,7 @@ export type XDriveOpenPreviewDialogProps = {
   onFullScreenChange?: (fullScreen: boolean) => void
   chromeAutoHideMs?: number
   keepChromeVisible?: boolean
+  chromeSessionKey?: string | number
   onClose: () => void
   children: ReactNode
 }
@@ -50,6 +51,7 @@ export function XDriveOpenPreviewDialog({
   onFullScreenChange,
   chromeAutoHideMs = 2200,
   keepChromeVisible = false,
+  chromeSessionKey = '',
   onClose,
   children,
 }: XDriveOpenPreviewDialogProps) {
@@ -65,6 +67,9 @@ export function XDriveOpenPreviewDialog({
   const effectiveFullScreen = fullScreen || compactTouch
   const hasNavigation = canPrevious || canNext
   const [chromeVisible, setChromeVisible] = useState(true)
+  // Keep chrome callbacks bound to the owning Viewer source while the shell is reused.
+  const chromeSessionRef = useRef(chromeSessionKey)
+  chromeSessionRef.current = chromeSessionKey
   const chromeFocusRef = useRef(false)
   const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
     '[data-xdrive-preview-chrome], [data-xdrive-preview-mobile-actions], [data-xdrive-preview-mobile-filmstrip], [data-xdrive-preview-navigation]',
@@ -90,25 +95,27 @@ export function XDriveOpenPreviewDialog({
   }, [])
 
   const showChrome = useCallback(() => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     setChromeVisible(true)
     clearChromeTimer()
     if (immersive && open && !keepChromeVisible && !chromeFocusRef.current) {
       chromeTimerRef.current = window.setTimeout(() => {
+        if (chromeSessionRef.current !== chromeSessionKey) return
         chromeTimerRef.current = null
         if (!chromeFocusRef.current) setChromeVisible(false)
       }, chromeAutoHideMs)
     }
-  }, [chromeAutoHideMs, clearChromeTimer, immersive, keepChromeVisible, open])
+  }, [chromeAutoHideMs, chromeSessionKey, clearChromeTimer, immersive, keepChromeVisible, open])
 
   // Keyboard users must not lose visibly focused controls to the timer.
   // Moving focus to media restores normal immersive auto-hide behavior.
   const handleChromeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!hasChromeFocus(event.target)) return
+    if (chromeSessionRef.current !== chromeSessionKey || !hasChromeFocus(event.target)) return
     chromeFocusRef.current = true
     showChrome()
   }
   const handleChromeBlurCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!chromeFocusRef.current) return
+    if (chromeSessionRef.current !== chromeSessionKey || !chromeFocusRef.current) return
     chromeFocusRef.current = hasChromeFocus(event.relatedTarget)
     if (!chromeFocusRef.current) showChrome()
   }
@@ -121,7 +128,8 @@ export function XDriveOpenPreviewDialog({
   }, [])
 
   const handleTouchPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!compactTouch || !immersive || event.pointerType !== 'touch') return
+    if (chromeSessionRef.current !== chromeSessionKey ||
+        !compactTouch || !immersive || event.pointerType !== 'touch') return
     touchPointersRef.current.add(event.pointerId)
     if (touchPointersRef.current.size > 1) {
       if (touchTapRef.current) touchTapRef.current.multi = true
@@ -144,13 +152,14 @@ export function XDriveOpenPreviewDialog({
   }
 
   const handleTouchPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
     if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) tap.moved = true
   }
 
   const handleTouchPointerRelease = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType !== 'touch') return
+    if (chromeSessionRef.current !== chromeSessionKey || event.pointerType !== 'touch') return
     touchPointersRef.current.delete(event.pointerId)
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
@@ -174,6 +183,7 @@ export function XDriveOpenPreviewDialog({
     const hideChrome = chromeVisible && !keepChromeVisible && !chromeFocusRef.current
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
+      if (chromeSessionRef.current !== chromeSessionKey) return
       touchTapTimerRef.current = null
       if (hideChrome) {
         clearChromeTimer()
@@ -185,6 +195,7 @@ export function XDriveOpenPreviewDialog({
   }
 
   const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     touchPointersRef.current.delete(event.pointerId)
     if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
     lastTouchTapRef.current = null
@@ -198,17 +209,34 @@ export function XDriveOpenPreviewDialog({
   }, [clearTouchTapTimer])
 
   useEffect(() => {
+    // An old A tap cannot toggle B after a Filmstrip/Owner A→B→A replacement.
+    clearTouchTapTimer()
+    touchPointersRef.current.clear()
+    touchTapRef.current = null
+    lastTouchTapRef.current = null
+    if (typeof document !== 'undefined') {
+      chromeFocusRef.current = hasChromeFocus(document.activeElement)
+    }
+    setChromeVisible(true)
+  }, [chromeSessionKey, clearTouchTapTimer])
+
+  useEffect(() => {
     if (!open) {
       chromeFocusRef.current = false
+      clearTouchTapTimer()
+      lastTouchTapRef.current = null
+      touchPointersRef.current.clear()
+      touchTapRef.current = null
       clearChromeTimer()
       setChromeVisible(true)
       return () => undefined
     }
     showChrome()
     return clearChromeTimer
-  }, [clearChromeTimer, open, showChrome])
+  }, [clearChromeTimer, clearTouchTapTimer, open, showChrome])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     showChrome()
     event.stopPropagation()
     if (event.key === 'Escape') {

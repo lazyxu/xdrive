@@ -90,6 +90,7 @@ function WebViewerFrame({
   immersive = false,
   photosViewer = false,
   keepChromeVisible = false,
+  chromeSessionKey = '',
   quickLook = false,
   canPrevious = false,
   canNext = false,
@@ -112,6 +113,7 @@ function WebViewerFrame({
   // the same Web browse-context, REST source and shared preview engine.
   photosViewer?: boolean
   keepChromeVisible?: boolean
+  chromeSessionKey?: string | number
   quickLook?: boolean
   canPrevious?: boolean
   canNext?: boolean
@@ -148,6 +150,8 @@ function WebViewerFrame({
   } | null>(null)
   const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
+  const chromeSessionRef = useRef(chromeSessionKey)
+  chromeSessionRef.current = chromeSessionKey
   const chromeFocusRef = useRef(false)
   const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
     '[data-xdrive-web-viewer-chrome]',
@@ -155,24 +159,26 @@ function WebViewerFrame({
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
 
   const showChrome = useCallback(() => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     setChromeVisible(true)
     if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
     hideTimerRef.current = null
     if (immersive && !keepChromeVisible && !chromeFocusRef.current) {
       hideTimerRef.current = window.setTimeout(() => {
+        if (chromeSessionRef.current !== chromeSessionKey) return
         hideTimerRef.current = null
         if (!chromeFocusRef.current) setChromeVisible(false)
       }, 2200)
     }
-  }, [immersive, keepChromeVisible])
+  }, [chromeSessionKey, immersive, keepChromeVisible])
 
   const handleChromeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!hasChromeFocus(event.target)) return
+    if (chromeSessionRef.current !== chromeSessionKey || !hasChromeFocus(event.target)) return
     chromeFocusRef.current = true
     showChrome()
   }
   const handleChromeBlurCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
-    if (!chromeFocusRef.current) return
+    if (chromeSessionRef.current !== chromeSessionKey || !chromeFocusRef.current) return
     chromeFocusRef.current = hasChromeFocus(event.relatedTarget)
     if (!chromeFocusRef.current) showChrome()
   }
@@ -185,7 +191,8 @@ function WebViewerFrame({
   }, [])
 
   const handleTouchPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!compactImmersive || event.pointerType !== 'touch') return
+    if (chromeSessionRef.current !== chromeSessionKey ||
+        !compactImmersive || event.pointerType !== 'touch') return
     touchPointersRef.current.add(event.pointerId)
     if (touchPointersRef.current.size > 1) {
       if (touchTapRef.current) touchTapRef.current.multi = true
@@ -208,13 +215,14 @@ function WebViewerFrame({
   }
 
   const handleTouchPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
     if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) tap.moved = true
   }
 
   const handleTouchPointerRelease = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType !== 'touch') return
+    if (chromeSessionRef.current !== chromeSessionKey || event.pointerType !== 'touch') return
     touchPointersRef.current.delete(event.pointerId)
     const tap = touchTapRef.current
     if (!tap || tap.pointerID !== event.pointerId) return
@@ -238,6 +246,7 @@ function WebViewerFrame({
     const hideChrome = chromeVisible && !keepChromeVisible && !chromeFocusRef.current
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
+      if (chromeSessionRef.current !== chromeSessionKey) return
       touchTapTimerRef.current = null
       if (hideChrome) {
         if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
@@ -250,6 +259,7 @@ function WebViewerFrame({
   }
 
   const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     touchPointersRef.current.delete(event.pointerId)
     if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
     lastTouchTapRef.current = null
@@ -265,6 +275,18 @@ function WebViewerFrame({
       chromeFocusRef.current = false
     }
   }, [clearTouchTapTimer])
+
+  useEffect(() => {
+    // Reset pending touch/double-tap intent when the mounted Viewer changes Owner.
+    clearTouchTapTimer()
+    touchPointersRef.current.clear()
+    touchTapRef.current = null
+    lastTouchTapRef.current = null
+    if (typeof document !== 'undefined') {
+      chromeFocusRef.current = hasChromeFocus(document.activeElement)
+    }
+    setChromeVisible(true)
+  }, [chromeSessionKey, clearTouchTapTimer])
 
   useEffect(() => {
     clearTouchTapTimer()
@@ -287,6 +309,7 @@ function WebViewerFrame({
   })
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (chromeSessionRef.current !== chromeSessionKey) return
     showChrome()
     const target = event.target instanceof HTMLElement ? event.target : null
     const interactive = Boolean(target?.closest(
@@ -749,6 +772,7 @@ function WebPreviewApp({
   return (
     <>
       <WebViewerFrame
+        chromeSessionKey={dialogOwner.session}
         title={viewer.node?.name ?? '文件预览'}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
@@ -1241,6 +1265,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
   return (
     <>
       <WebViewerFrame
+        chromeSessionKey={modalOwner.session}
         title={viewer.node?.name ?? '媒体查看器'}
         subtitle={mediaItem && mediaItem.node.id === viewer.node?.id ? xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at) : undefined}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
