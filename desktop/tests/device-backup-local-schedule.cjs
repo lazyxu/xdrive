@@ -61,3 +61,20 @@ test('Only the owning Agent controls local schedule; automatic runs need an expl
   assert.doesNotMatch(remoteModel, /schedule_expression|schedule_timezone/)
   assert.doesNotMatch(dialog, /(?:triggerSource|startUpload|cancelSourceRun|deleteSource)\(/)
 })
+
+test('simple local backup intervals reuse existing Agent schedule transport without losing advanced options', () => {
+  const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalScheduleDialog.tsx')
+  for (const preset of [
+    "{ label: '每小时', value: '1h' }",
+    "{ label: '每 6 小时', value: '6h' }",
+    "{ label: '每天', value: '24h' }",
+  ]) assert.ok(dialog.includes(preset), preset)
+  assert.ok(dialog.includes('INTERVAL_PRESETS.map((preset) => ('))
+  assert.ok(dialog.includes('onClick={() => setExpression(preset.value)}'))
+  assert.ok(dialog.includes("variant={expression === preset.value ? 'contained' : 'outlined'}"))
+  assert.ok(dialog.includes('value={expression}'), 'previous custom intervals remain visible and editable')
+  assert.ok(dialog.includes("schedule_type: 'cron'"), 'advanced Cron schedules remain supported')
+  assert.ok(dialog.includes('schedule_timezone: zone'))
+  assert.ok(dialog.includes('sourceID, loaded.revision, proposal'), 'same Source revision and own-device save fencing')
+  assert.ok(dialog.includes("disabled={loading || busy || !loaded}"))
+})

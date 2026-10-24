@@ -84,3 +84,30 @@ test('pause and cancel are owning-Desktop-only scheduling requests, never physic
     assert.ok(dto.includes(flag), 'control cannot assert ' + flag)
   }
 })
+
+test('manual backup shows truthful per-file run outcome without claiming whole-Source success', () => {
+  const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalCommonBatchDialog.tsx')
+  assert.ok(dialog.includes('本轮扫描及已支持文件的处理已结束'))
+  assert.ok(dialog.includes('status.confirmed_files + status.skipped_files === status.inspected_files'))
+  assert.ok(dialog.includes('本轮扫描已结束，仍有未支持或未确认的文件'))
+  assert.ok(dialog.includes('整库现时 CAS 完整性证明'))
+  assert.ok(dialog.includes("item.unsupported_files > 0"))
+  assert.ok(dialog.includes('待核对 {item.uncertain_files}'))
+  assert.ok(dialog.includes('value.backup_complete !== false'))
+  assert.ok(dialog.includes('value.retirement_safe !== false'))
+  assert.ok(dialog.includes('value.current_cas_verified !== false'))
+  assert.ok(dialog.includes('核对并恢复原始任务'), 'uncertain operations still require original replay')
+})
+
+test('personal backup keeps read-only SQL recovery diagnosis behind an advanced disclosure', () => {
+  const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalCommonBatchDialog.tsx')
+  assert.ok(dialog.includes('const [showRecoveryDetails, setShowRecoveryDetails] = useState(false)'))
+  assert.ok(dialog.includes('故障诊断（高级）'))
+  assert.ok(dialog.includes('收起故障诊断'))
+  assert.ok(dialog.includes('{showRecoveryDetails ? ('))
+  assert.ok(dialog.includes('disabled={reviewLoading}'))
+  assert.ok(dialog.includes('setShowRecoveryDetails(false)'))
+  assert.ok(dialog.includes('原始任务恢复核查（只读）'), 'recovery audit is preserved when expanded')
+  assert.ok(dialog.includes('开始只读恢复核查'))
+  assert.ok(dialog.includes('read-only historical SQL receipt review'))
+})
