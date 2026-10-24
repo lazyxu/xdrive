@@ -2218,3 +2218,138 @@ test('P1 shared immersive Gallery/Quick Look chrome honors keyboard focus withou
     viewportWidth = 390
   }
 })
+
+
+test('P1 Gallery A→B→A fences old 260ms tap timers and allows current tap', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const nodes = [3011, 3012].map(id => ({ id, revision: 2, name: id + '.jpg', type: 'file', size: 10 }))
+  const forID = id => nodes.find(node => node.id === id)
+  const api = { node: async id => forID(id), mediaItem: async id => ({
+    node: forID(id), metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' },
+  }) }
+  const common = { api, gallerySource: { loadThumbnail: async () => null },
+    shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {}, onError(error) { throw error } }
+  const props = id => ({ ...common, route: { app: 'media-viewer', params: { node: id } } })
+  const pointer = { pointerType: 'touch', pointerId: 91, clientX: 150, clientY: 210,
+    target: { closest() { return null } } }
+  let renderer
+  const frame = () => renderer.root.find(el => el.type === 'div' && el.props['data-xdrive-web-viewer'] !== undefined)
+  const header = () => renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+  const queueTap = async () => {
+    const before = new Set(timers.keys())
+    await act(async () => {
+      frame().props.onPointerDownCapture(pointer)
+      frame().props.onPointerUpCapture(pointer)
+    })
+    const pair = [...timers].find(([id, value]) => !before.has(id) && value.delay === 260)
+    assert.ok(pair, 'current touch queues a 260ms visual toggle')
+    return pair
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(3011)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const A = await queueTap()
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(3012))))
+    assert.equal(timers.has(A[0]), false)
+    await act(async () => A[1].callback())
+    assert.equal(header().props.sx.opacity, 1, 'old A tap cannot hide B toolbar')
+    const B = await queueTap()
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(3011))))
+    assert.equal(timers.has(B[0]), false)
+    await act(async () => { A[1].callback(); B[1].callback() })
+    assert.equal(header().props.sx.opacity, 1, 'old A/B callbacks cannot hide new A toolbar')
+    const activeA = await queueTap()
+    await act(async () => activeA[1].callback())
+    assert.equal(header().props.sx.opacity, 0, 'new A tap still hides current chrome')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1 routed Quick Look same Node/revision Owner rebind cancels prior tap', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 3055, revision: 3, name: 'same.jpg', type: 'file', size: 10 }
+  const makeAPI = () => ({ node: async () => node })
+  const source = { loadThumbnail: async () => null }
+  const props = api => ({ route: { app: 'preview', params: { node: node.id } },
+    api, gallerySource: source, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error } })
+  const pointer = { pointerType: 'touch', pointerId: 7, clientX: 160, clientY: 140,
+    target: { closest() { return null } } }
+  let renderer
+  const frame = () => renderer.root.find(el => el.type === 'div' && el.props['data-xdrive-web-viewer'] !== undefined)
+  const header = () => renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(makeAPI())),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const before = new Set(timers.keys())
+    await act(async () => {
+      frame().props.onPointerDownCapture(pointer)
+      frame().props.onPointerUpCapture(pointer)
+    })
+    const old = [...timers].find(([id, value]) => !before.has(id) && value.delay === 260)
+    assert.ok(old)
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(makeAPI()))))
+    assert.equal(timers.has(old[0]), false)
+    await act(async () => old[1].callback())
+    assert.equal(header().props.sx.opacity, 1, 'same ID from new API must not inherit previous Owner tap')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1 shared Viewer cancels A→B→A and close/reopen delayed touch callbacks', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const element = (session, open = true) => React.createElement(XDriveOpenPreviewDialog, {
+    open, chromeSessionKey: session, immersive: true, mobileEdgeToEdge: true,
+    title: 'shared.jpg', onClose() {}, canNext: true, onNext() {},
+  }, React.createElement('div', null, 'media'))
+  const pointer = { pointerType: 'touch', pointerId: 12, clientX: 160, clientY: 200,
+    target: { closest() { return null } } }
+  let renderer
+  const content = () => renderer.root.find(el => el.type === 'div' && typeof el.props.onPointerDownCapture === 'function')
+  const header = () => renderer.root.find(el => el.props['data-xdrive-preview-chrome'] === 'header')
+  const queueTap = async () => {
+    const before = new Set(timers.keys())
+    await act(async () => {
+      content().props.onPointerDownCapture(pointer)
+      content().props.onPointerUpCapture(pointer)
+    })
+    const pair = [...timers].find(([id, value]) => !before.has(id) && value.delay === 260)
+    assert.ok(pair)
+    return pair
+  }
+  try {
+    await act(async () => { renderer = create(element('A')) })
+    const oldA = await queueTap()
+    await act(async () => renderer.update(element('B')))
+    assert.equal(timers.has(oldA[0]), false)
+    const oldB = await queueTap()
+    await act(async () => renderer.update(element('A')))
+    await act(async () => { oldA[1].callback(); oldB[1].callback() })
+    assert.equal(header().props.sx.opacity, 1)
+    const newA = await queueTap()
+    await act(async () => newA[1].callback())
+    assert.equal(header().props.sx.opacity, 0)
+    await act(async () => renderer.update(element('A', false)))
+    await act(async () => renderer.update(element('A', true)))
+    assert.equal(header().props.sx.opacity, 1)
+    await act(async () => newA[1].callback())
+    assert.equal(header().props.sx.opacity, 1, 'previous open tap may not hide reopened Viewer')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})

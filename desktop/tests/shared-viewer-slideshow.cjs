@@ -168,3 +168,20 @@ test('a failed presentation stops the slideshow without silently skipping it', a
   assert.equal(calls(), 0)
   assert.ok(renderer.root.findAllByProps({ 'aria-label': '开始幻灯片' }).length)
 }))
+
+test('Quick Look rotates chrome session on A→B→A and same-revision loader rebind', async () => scenario(async ({ renderer, update }) => {
+  const session = () => renderer.root.findByType('viewer-shell').props.chromeSessionKey
+  const A = session()
+  await update({ item: { id: 8, revision: 1, name: 'other.jpg', kind: 'file' } })
+  const B = session()
+  assert.notEqual(B, A)
+  await update({ item: { id: 1, revision: 1, name: 'same.jpg', kind: 'file' } })
+  const freshA = session()
+  assert.notEqual(freshA, B)
+  assert.notEqual(freshA, A)
+  await update({ loadPreviewURL: async () => null })
+  const loaderA = session()
+  assert.notEqual(loaderA, freshA)
+  await update({ loadPreviewURL: async () => null })
+  assert.notEqual(session(), loaderA, 'new authorized loader resets same Node chrome ownership')
+}))
