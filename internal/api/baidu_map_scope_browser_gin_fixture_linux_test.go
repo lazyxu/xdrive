@@ -3,9 +3,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +26,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -82,12 +88,41 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.User{}, &meta.AdminServiceSecret{}, &meta.InternalServiceKeyAnchor{},
 		&meta.BaiduJSAPIMapEpoch{}, &meta.PhotoCollection{},
 		&meta.BaiduMapScopeHandoff{},
-		&meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.Node{}, &meta.File{}, &meta.FileVersion{},
+		&meta.ContentBlob{}, &meta.MediaMetadata{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 	); err != nil {
+		t.Fatal(err)
+	}
+
+	// The two SDK Hosts use the *actual* protected original preview pipeline:
+	// ten independently owned Nodes share one tiny generated PNG in physical
+	// local CAS. No real user image, outside Provider, or synthetic /api mock.
+	picture := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	picture.Set(0, 0, color.RGBA{R: 25, G: 95, B: 175, A: 255})
+	var pngData bytes.Buffer
+	if err := png.Encode(&pngData, picture); err != nil {
+		t.Fatal(err)
+	}
+	checksum := fmt.Sprintf("%x", sha256.Sum256(pngData.Bytes()))
+	casKey, err := storage.ContentAddressedKey(checksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written, err := local.Put(context.Background(), casKey, bytes.NewReader(pngData.Bytes())); err != nil || written != int64(pngData.Len()) {
+		t.Fatal("failed to seed real local CAS original for map Viewer")
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: checksum, Size: int64(pngData.Len()), StorageKey: casKey,
+		RefCount: 10, State: meta.ContentBlobStateReady,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	keyring, err := connectorsecret.NewKeyring(1,
@@ -96,7 +131,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := &Server{
-		DB: db, ConnectorSecrets: keyring,
+		DB: db, Store: local, ConnectorSecrets: keyring,
 		Auth:          auth.New("p04-mounted-chromium-gin-only", time.Hour),
 		AllowedOrigin: origin,
 	}
@@ -124,8 +159,8 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	// The same signed Owner Cells used by the mounted Browser are now sourced
 	// from real PostgreSQL. Only 3 of 9 photos are favorites; another Owner
 	// has an overlapping BD09 location which must never enter this scope.
-	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "owner", 9, 3)
-	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0)
+	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "owner", 9, 3, casKey, checksum, int64(pngData.Len()))
+	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0, casKey, checksum, int64(pngData.Len()))
 	v, ciphertext, err := keyring.Seal(baiduJSAPISecretAADID,
 		baiduJSAPISecretKind, []byte("SYNTHETIC_BROWSER_AK_NEVER_USED_WITH_PROVIDER"))
 	if err != nil {
@@ -218,13 +253,14 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 // coordinate conversion or unreviewed GPS send is performed.
 func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
 	ownerID uint64, prefix string, total, favorites int,
+	storageKey, checksum string, byteSize int64,
 ) {
 	t.Helper()
 	sourceLatitude, sourceLongitude := 30.13, 119.97
 	derivedLatitude, derivedLongitude := 30.135, 119.975
 	stamp := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	for i := 0; i < total; i++ {
-		name := fmt.Sprintf("p04-%s-%02d.jpg", prefix, i+1)
+		name := fmt.Sprintf("p04-%s-%02d.png", prefix, i+1)
 		node := meta.Node{
 			OwnerID: ownerID, Name: name, Type: meta.NodeTypeFile, Revision: 1,
 		}
@@ -232,15 +268,21 @@ func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
 			t.Fatal(err)
 		}
 		file := meta.File{
-			NodeID: node.ID, Size: 12, StorageKey: name, SHA256: strings.Repeat("a", 64),
+			NodeID: node.ID, Size: byteSize, StorageKey: storageKey, SHA256: checksum,
 		}
 		if err := db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.FileVersion{
+			NodeID: node.ID, Revision: 1, Size: byteSize,
+			StorageKey: storageKey, SHA256: checksum,
+		}).Error; err != nil {
 			t.Fatal(err)
 		}
 		indexed := meta.MediaMetadata{
 			NodeID: node.ID, OwnerID: ownerID, NodeRevision: 1,
 			SHA256: file.SHA256, IndexState: meta.MediaIndexStateReady,
-			MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+			MediaKind: meta.MediaKindImage, MIMEType: "image/png",
 			Latitude: &sourceLatitude, Longitude: &sourceLongitude,
 			CapturedAt: &stamp,
 		}
@@ -259,7 +301,7 @@ func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
 		}
 		if err := db.Create(&meta.PhotoMetadata{
 			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
-			MIMEType: "image/jpeg", Latitude: &sourceLatitude,
+			MIMEType: "image/png", Latitude: &sourceLatitude,
 			Longitude: &sourceLongitude, CapturedAt: &stamp,
 			Favorite: i < favorites,
 		}).Error; err != nil {
@@ -270,7 +312,7 @@ func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
 			ResourceKind: meta.PhotoResourceKindNode,
 			Role:         meta.PhotoResourceRolePrimary,
 			Name:         name, MediaKind: meta.MediaKindImage, Size: file.Size,
-			MIMEType: "image/jpeg",
+			MIMEType: "image/png", SHA256: checksum,
 		}).Error; err != nil {
 			t.Fatal(err)
 		}

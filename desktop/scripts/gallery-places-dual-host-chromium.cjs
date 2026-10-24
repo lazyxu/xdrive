@@ -307,6 +307,70 @@ async function testMode(browser,mode,port){
     }
     record(mode+': no SDK/runtime failure',!scoped.failed&&errors.length===0)
     await testActualGinIssueRedeem(page,mode)
+
+    if(ginURL){
+      const before=await page.evaluate(()=>{
+        const map=document.querySelector('[data-xdrive-places-cluster-overview]')
+        window.__mapProbe.mapElement=map
+        return {valid:!!map,camera:window.__mapProbe.cameras.at(-1)}
+      })
+      record(mode+': map Parent still mounted before genuine Viewer',before.valid)
+      // Foreign Owner cannot obtain a signed preview for the selected Node.
+      const foreignStatus=await page.evaluate(async()=>{
+        const ownerNode=window.__mapProbe.viewerSourceItem?.node?.id
+        if(!Number.isSafeInteger(ownerNode))return 0
+        const foreign=await fetch('/__fixture/map-owner?account=foreign',
+          {cache:'no-store'}).then(r=>r.json())
+        const response=await fetch('/api/v1/files/'+ownerNode+'/preview-ticket',{
+          method:'POST',cache:'no-store',
+          headers:{Authorization:'Bearer '+foreign.token}})
+        return response.status
+      })
+      record(mode+': foreign Owner cannot mint map Viewer original ticket',
+        foreignStatus===404)
+      const pngResponse=page.waitForResponse(response=>{
+        const url=new URL(response.url())
+        return url.pathname.startsWith('/api/v1/file-preview/') &&
+          response.status()===200
+      },{timeout:30000})
+      await page.locator('#open-real-viewer').click()
+      // This data attribute is on the decoded-image *surface*, not an IMG.
+      // Select its visible original IMG after the actual decode-ready phase.
+      const original=page.locator('[data-xdrive-image-phase="original"]').first()
+      await original.waitFor({state:'visible',timeout:30000})
+      const image=original.locator('img:not([aria-hidden="true"])').first()
+      await image.waitFor({state:'visible',timeout:15000})
+      const binary=await (await pngResponse).body()
+      record(mode+': real signed Gin preview loads physical PNG CAS bytes',
+        binary.length>50&&binary.subarray(0,8).equals(
+          Buffer.from([137,80,78,71,13,10,26,10])))
+      record(mode+': shared Gallery Viewer decodes genuine CAS original',
+        await image.evaluate(img=>img instanceof HTMLImageElement&&
+          img.complete&&img.naturalWidth===2&&img.naturalHeight===2))
+      if(mode==='isolated'){
+        const child=page.frames().find(frame=>frame.url().includes(childHost))
+        const safety=await child.evaluate(()=>{
+          try{return !!parent.document.querySelector('[data-xdrive-image-phase="original"]')}
+          catch{return 'cross-origin-blocked'}
+        })
+        record('isolated: actual Viewer original remains hidden from untrusted Child',
+          safety==='cross-origin-blocked')
+      }
+      record(mode+': private Viewer bytes never requested by map Child',
+        requests.every(item=>item.host!=='child'||
+          !item.path.startsWith('/api/v1/')))
+      await page.getByRole('button',{name:'关闭预览'}).click()
+      record(mode+': Viewer return retains exact trusted map DOM and BD09 camera',
+        await page.evaluate((camera)=>{
+          const p=window.__mapProbe
+          const next=p.cameras.at(-1)
+          return p.viewerOpened===1&&p.viewerClosed===1&&
+            document.querySelector('[data-xdrive-places-cluster-overview]')===p.mapElement&&
+            next?.coordinate_space==='bd09ll' &&
+            next?.latitude===camera?.latitude&&
+            next?.longitude===camera?.longitude&&next?.zoom===camera?.zoom
+        },before.camera))
+    }
     return {mode,count:9,favoriteCount:3,selectedCount:selected.count,
       coordinateSpace:scoped.wall.bounds.coordinate_space,cameraSpace:scoped.camera.coordinate_space}
   }finally{await context.close()}
@@ -316,7 +380,8 @@ async function main(){
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
     outfile:path.join(temp,'bundle.js'),
     nodePaths:[path.join(root,'desktop/node_modules')],
-    alias:{'@fixture/surface':path.join(root,'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')},
+    alias:{'@fixture/surface':path.join(root,'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),
+      '@fixture/viewer':path.join(root,'ui/shared/src/mui/MediaGalleryViewer.tsx')},
     define:{'process.env.NODE_ENV':'"production"'}
   })
   let galleryOrigin=''
@@ -335,7 +400,9 @@ async function main(){
         '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML)
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
-        pathname.startsWith('/api/v1/media/places/baidu-jsapi/')))
+        pathname.startsWith('/api/v1/media/places/baidu-jsapi/') ||
+        pathname.startsWith('/api/v1/files/') ||
+        pathname.startsWith('/api/v1/file-preview/')))
       return proxyRealGin(req,res)
     if(gallery&&pathname==='/bundle.js')
       return content(res,200,'text/javascript',fs.readFileSync(path.join(temp,'bundle.js')))
