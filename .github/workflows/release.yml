@@ -315,18 +315,76 @@ jobs:
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          if gh api "repos/$repo/git/ref/tags/snapshot" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/$repo/git/refs/tags/snapshot" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          title="xDrive snapshot $(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          notes="$(printf 'Rolling development snapshot from master at \x60%s\x60. Exact CI-produced artifacts are published without rebuilding; full master CI continues independently.' "$GITHUB_SHA")"
+          previous_snapshot=""
+
+          # Retain the previous public Release while replacing rolling assets.
+          # The installer/manifest/signature checks still protect each partial
+          # asset-replacement window; multi-asset GitHub uploads are not atomic.
+          if gh release view snapshot --repo "$repo" >/dev/null 2>&1; then
+            previous_snapshot="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
+            [[ "$previous_snapshot" =~ ^[0-9a-fA-F]{40}$ ]] || {
+              echo "Snapshot tag is not a commit; refusing publication." >&2
+              exit 1
+            }
+            ancestry="$(gh api "repos/$repo/compare/$previous_snapshot...$GITHUB_SHA" --jq '.status')"
+            case "$ancestry" in
+              ahead|identical) ;;
+              *) echo "Refusing stale or diverged Snapshot publication: $ancestry" >&2; exit 1 ;;
+            esac
+            gh release upload snapshot release/* --repo "$repo" --clobber
           else
-            gh api --method POST "repos/$repo/git/refs" -f ref='refs/tags/snapshot' -f sha="$GITHUB_SHA" >/dev/null
+            # On initial creation there is no previous Release to preserve.
+            gh release create snapshot release/* --repo "$repo" --prerelease \
+              --target "$GITHUB_SHA" --title "$title" --notes "$notes"
           fi
 
-          if gh release view snapshot --repo "$repo" >/dev/null 2>&1; then
-            gh release delete snapshot --repo "$repo" -y
+          # Never advertise a tag until every remote asset actually has the
+          # expected SHA-256 and no old or unexpected asset remains.
+          expected_names="$(for path in release/*; do basename "$path"; done | LC_ALL=C sort)"
+          remote_complete=0
+          for check_attempt in 1 2 3 4 5; do
+            release_json="$(gh api "repos/$repo/releases/tags/snapshot")"
+            actual_names="$(jq -r '.assets[].name' <<< "$release_json" | LC_ALL=C sort)"
+            if [[ "$actual_names" == "$expected_names" ]]; then
+              digest_mismatch=0
+              for path in release/*; do
+                name="$(basename "$path")"
+                expected_digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
+                actual_digest="$(jq -r --arg n "$name" '[.assets[] | select(.name == $n) | .digest] | if length == 1 then .[0] else empty end' <<< "$release_json")"
+                if [[ "$actual_digest" != "$expected_digest" ]]; then
+                  digest_mismatch=1
+                  break
+                fi
+              done
+              if [[ "$digest_mismatch" == 0 ]]; then
+                remote_complete=1
+                break
+              fi
+            fi
+            if [[ "$check_attempt" -lt 5 ]]; then
+              echo "[xDrive] remote Snapshot digests not yet consistent ($check_attempt/5); retrying..." >&2
+              sleep 2
+            fi
+          done
+          if [[ "$remote_complete" != 1 ]]; then
+            echo "Snapshot asset verification incomplete; preserving previous tag." >&2
+            exit 1
           fi
-          gh release create snapshot release/* --repo "$repo" --prerelease \
-            --title "xDrive snapshot ${GITHUB_SHA::12}" \
-            --notes "Rolling development snapshot from master at \`${GITHUB_SHA}\`. Exact CI-produced artifacts are published without rebuilding; full master CI continues independently."
+          echo "[xDrive] all published Snapshot asset SHA-256 digests verified."
+
+          # Re-read the floating ref so a superseding publisher is never
+          # silently overwritten by an older delayed CI run.
+          if [[ -n "$previous_snapshot" ]]; then
+            current_tag="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
+            [[ "$current_tag" == "$previous_snapshot" ]] || {
+              echo "Snapshot tag changed while assets were uploaded; refusing stale promotion." >&2
+              exit 1
+            }
+            gh api --method PATCH "repos/$repo/git/refs/tags/snapshot" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          fi
+          gh release edit snapshot --repo "$repo" --prerelease --title "$title" --notes "$notes"
 
           # Remove legacy immutable snapshot-<sha> releases/tags from the previous policy.
           mapfile -t legacy_snapshot_releases < <(

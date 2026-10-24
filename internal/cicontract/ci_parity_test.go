@@ -1004,12 +1004,27 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if strings.Contains(githubRelease, "docker/setup-buildx-action@") {
 		t.Errorf("GitHub release must use the Buildx already validated on ubuntu-latest instead of setup-buildx-action")
 	}
-	requireRaw(t, "GitHub rolling snapshot recreation", githubRelease,
-		"gh release delete snapshot --repo \"$repo\" -y",
+	// An already published Snapshot must stay accessible during the next upload.
+	// The old recreate/delete contract would create an outage and advance the
+	// mutable tag before assets had been independently verified.
+	requireRaw(t, "GitHub rolling snapshot asset-verified promotion", githubRelease,
+		"gh release upload snapshot release/* --repo \"$repo\" --clobber",
 		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
+		"gh release edit snapshot --repo \"$repo\" --prerelease",
+		`gh api "repos/$repo/compare/$previous_snapshot...$GITHUB_SHA"`,
+		`actual_names="$(jq -r '.assets[].name' <<< "$release_json" | LC_ALL=C sort)"`,
+		`expected_digest="sha256:$(sha256sum "$path" | awk '{print $1}')"`,
+		`if [[ "$remote_complete" != 1 ]]; then`,
+		`[[ "$current_tag" == "$previous_snapshot" ]]`,
+		`gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"`,
 	)
-	if strings.Contains(githubRelease, "gh release delete-asset snapshot") {
-		t.Errorf("GitHub rolling snapshot update must recreate the release instead of deleting assets one by one")
+	for _, forbidden := range []string{
+		`gh release delete snapshot --repo "$repo"`,
+		"gh release delete-asset snapshot",
+	} {
+		if strings.Contains(githubRelease, forbidden) {
+			t.Errorf("Snapshot publisher must not delete the existing release or its assets outside the verified upload path: %q", forbidden)
+		}
 	}
 	for _, forbidden := range []string{"snapshot-${GITHUB_SHA::12}", "Publish immutable master snapshot", "Prune old immutable master snapshots"} {
 		if strings.Contains(githubRelease, forbidden) {
