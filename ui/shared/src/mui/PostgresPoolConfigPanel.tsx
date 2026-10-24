@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import type {
   XDrivePostgresPoolConfig,
   XDrivePostgresPoolValues,
@@ -125,7 +126,7 @@ export function XDrivePostgresPoolConfigPanel({
         }
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '刷新 PostgreSQL 连接池状态失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'postgres', 'refresh'))
     } finally {
       if (epoch === epochRef.current) {
         setLoading(false)
@@ -163,7 +164,7 @@ export function XDrivePostgresPoolConfigPanel({
       }
     } catch (err) {
       if (epoch !== epochRef.current) return
-      setError(err instanceof Error ? err.message : 'PostgreSQL 连接池配置未确认保存。')
+      setError(xDriveCoreDependencyErrorMessage(err, 'postgres', 'save'))
       const current = await source.loadPostgresPoolConfig?.().catch(() => null)
       // An unconfirmed Save must not silently destroy the operator's draft.
       if (current && epoch === epochRef.current) setConfig(current)
@@ -201,7 +202,7 @@ export function XDrivePostgresPoolConfigPanel({
         if (page && epoch === epochRef.current) { setHistory(page.items); setHistoryError('') }
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : 'PostgreSQL 连接池回滚失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'postgres', 'rollback'))
     } finally {
       if (epoch === epochRef.current) { setBusy(false); setConfirmRollback(false) }
     }
