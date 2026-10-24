@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
 import type { XDriveServiceDependency } from '../service-dependencies'
 import type { XDriveSystemDependencyTab } from '../system-dependencies-navigation'
@@ -31,6 +31,7 @@ export function XDriveCoreDependencyDetail({
   const coreID = service.id as CoreID // The fixed-service parent only mounts these three IDs.
   const [configRefreshID, setConfigRefreshID] = useState(0)
   const [editorBusy, setEditorBusy] = useState(false)
+  const lastScrolledAnchorRef = useRef<string | null>(null)
   const isStorage = service.id === 'storage'
   const hasConfig = !isStorage
   const controlsLocked = refreshing || hasUnsavedEdits || editorBusy
@@ -50,11 +51,21 @@ export function XDriveCoreDependencyDetail({
   }
 
   useEffect(() => {
-    if (activeTab === 'status') return
+    if (activeTab === 'status') {
+      lastScrolledAnchorRef.current = null
+      return
+    }
+    // The history header may appear only after the configuration GET settles.
+    // Keep the retry on editorBusy transitions, but never scroll a second
+    // time for the same deep link when Save/Rollback changes busy state.
+    const anchorKey = `${service.id}:${activeTab}`
+    if (lastScrolledAnchorRef.current === anchorKey) return
     const anchor = activeTab === 'verify' ? 'verify'
       : activeTab === 'config' ? 'config' : 'history'
-    document.getElementById(`dependency-${service.id}-${anchor}-header`)
-      ?.scrollIntoView({ block: 'start', behavior: 'auto' })
+    const target = document.getElementById(`dependency-${service.id}-${anchor}-header`)
+    if (!target) return
+    lastScrolledAnchorRef.current = anchorKey
+    target.scrollIntoView({ block: 'start', behavior: 'auto' })
   }, [activeTab, service.id, editorBusy])
 
   return (
