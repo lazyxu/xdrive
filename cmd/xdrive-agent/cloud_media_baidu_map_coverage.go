@@ -14,3 +14,12 @@ func (c *agentController) CloudMediaBaiduMapCoverage(ctx context.Context) (clien
 	}
 	return cli.MediaBaiduMapCoverage(ctx)
 }
+
+// Read-only authenticated Owner query; no raw GPS, id or provider request.
+func (c *agentController) CloudMediaBaiduMapCoverageReasons(ctx context.Context) (client.MediaBaiduMapCoverageReasons, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapCoverageReasons{}, err
+	}
+	return cli.MediaBaiduMapCoverageReasons(ctx)
+}

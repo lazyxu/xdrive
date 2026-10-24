@@ -924,6 +924,19 @@ export type MediaBaiduMapCoverage = {
   map_runtime_verified: false
 }
 
+/** Read-only source-version and current map eligibility diagnostic; never consent. */
+export type MediaBaiduMapCoverageReasons = {
+  scope: 'indexed_ready_photoassets'
+  valid_gps_assets: number
+  eligible_bd09_assets: number
+  not_eligible_bd09_assets: number
+  consent_unavailable_assets: number
+  consent_source_changed_assets: number
+  derived_missing_assets: number
+  derived_invalid_assets: number
+  map_runtime_verified: false
+}
+
 export type MediaBaiduMapConsent = {
   status: 'not_granted' | 'authorized' | 'revoked' | 'expired' | 'source_changed'
   revision: number

@@ -324,6 +324,7 @@ export interface MediaGalleryDataSource {
     signal: AbortSignal,
   ) => Promise<MediaItemRange>
   getBaiduMapCoverage?: (signal: AbortSignal) => Promise<import('../models').MediaBaiduMapCoverage>
+  getBaiduMapCoverageReasons?: (signal: AbortSignal) => Promise<import('../models').MediaBaiduMapCoverageReasons>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string;
     isolated_child_origin?: string
@@ -3876,6 +3877,7 @@ export function XDriveMediaGalleryPage({
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduMapCoverage={source.getBaiduMapCoverage}
+        getBaiduMapCoverageReasons={source.getBaiduMapCoverageReasons}
         mapPhotoScope={mapPhotoScope}
         onMapPhotoScopeChange={changeBaiduMapPhotoScope}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
@@ -4385,6 +4387,7 @@ export interface XDriveMediaGalleryProps {
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
   listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
   getBaiduMapCoverage?: MediaGalleryDataSource['getBaiduMapCoverage']
+  getBaiduMapCoverageReasons?: MediaGalleryDataSource['getBaiduMapCoverageReasons']
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
   getBaiduJSAPIPrototype?: MediaGalleryDataSource['getBaiduJSAPIPrototype']
   mintBaiduIsolatedChildTicket?: MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
@@ -6107,6 +6110,7 @@ export function XDriveMediaGallery({
   listBaiduNativeViewport,
   listBaiduNativeCells,
   getBaiduMapCoverage,
+  getBaiduMapCoverageReasons,
   getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype,
   mintBaiduJSAPI4Session,
@@ -8365,6 +8369,7 @@ export function XDriveMediaGallery({
             listPlacesMapOverview={listPlacesMapOverview}
             loadPhotoCoverThumbnail={loadThumbnail}
             getBaiduMapCoverage={getBaiduMapCoverage}
+            getBaiduMapCoverageReasons={getBaiduMapCoverageReasons}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             getBaiduJSAPIPrototype={getBaiduJSAPIPrototype}
             mintBaiduIsolatedChildTicket={mintBaiduIsolatedChildTicket}

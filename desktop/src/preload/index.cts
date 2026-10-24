@@ -220,6 +220,8 @@ const agent = Object.freeze({
   getMediaPlacesPage: (limit = 48, offset = 0) => ipcRenderer.invoke('agent:get-media-places-page', limit, offset),
   getMediaBaiduMapCoverage: (requestID?: string) =>
     ipcRenderer.invoke('agent:get-media-baidu-map-coverage', requestID),
+  getMediaBaiduMapCoverageReasons: (requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-baidu-map-coverage-reasons', requestID),
   getMediaPlaceHierarchy: (
     request: { level: 'country' | 'region' | 'city'; country?: string; region?: string;
       cursor?: string; search?: string; limit?: number },

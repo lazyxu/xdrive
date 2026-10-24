@@ -205,6 +205,7 @@ import {
   type AgentMediaPlaceFacet,
   type AgentMediaPlacesPage,
   type AgentMediaBaiduMapCoverage,
+  type AgentMediaBaiduMapCoverageReasons,
   type AgentMediaPlaceHierarchyPage,
   type AgentMediaPlaceHierarchyRequest,
   type AgentMediaBaiduMapConsent,
@@ -3467,6 +3468,15 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       return requireAgentClient().mediaBaiduMapCoverage(signal)
+    }), false))
+
+  ipcMain.handle('agent:get-media-baidu-map-coverage-reasons', (
+    event, requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaBaiduMapCoverageReasons>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaBaiduMapCoverageReasons(signal)
     }), false))
 
   ipcMain.handle('agent:get-media-places-page', (_event, limit: unknown = 48, offset: unknown = 0) =>

@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
-import type { MediaBaiduMapCoverage } from '../models'
-import { xDriveBaiduMapCoverageState, xDriveValidBaiduMapCoverage } from '../media-gallery-baidu-coverage'
+import type { MediaBaiduMapCoverage, MediaBaiduMapCoverageReasons } from '../models'
+import { xDriveBaiduMapCoverageState, xDriveValidBaiduMapCoverage, xDriveValidBaiduMapCoverageReasons, xDriveBaiduMapCoverageReasonTotalsMatch } from '../media-gallery-baidu-coverage'
 
 /** No automatic SDK requests, bulk consent, raw GPS or cross-account count cache. */
 export function XDriveMediaGalleryMapGPSCoverage({
-  getCoverage, ownerScope = '',
+  getCoverage, getReasons, ownerScope = '',
 }: {
   getCoverage?: (signal: AbortSignal) => Promise<MediaBaiduMapCoverage>
+  getReasons?: (signal: AbortSignal) => Promise<MediaBaiduMapCoverageReasons>
   ownerScope?: string
 }) {
-  type View = { owner:string; phase:'idle'|'loading'|'ready'|'error'; data:MediaBaiduMapCoverage|null }
-  const [view, setView] = useState<View>({owner:ownerScope,phase:'idle',data:null})
+  type ReasonPhase = 'idle' | 'loading' | 'ready' | 'unavailable' | 'changed'
+  type View = {
+    owner:string
+    phase:'idle'|'loading'|'ready'|'error'
+    data:MediaBaiduMapCoverage|null
+    reasons:MediaBaiduMapCoverageReasons|null
+    reasonPhase:ReasonPhase
+  }
+  const emptyView = (owner:string):View => ({
+    owner,phase:'idle',data:null,reasons:null,reasonPhase:'idle',
+  })
+  const [view, setView] = useState<View>(emptyView(ownerScope))
   const serial = useRef(0)
   const inFlight = useRef<AbortController|null>(null)
   const ownerRef = useRef(ownerScope)
@@ -20,10 +31,10 @@ export function XDriveMediaGalleryMapGPSCoverage({
     serial.current++
     inFlight.current?.abort()
     inFlight.current = null
-    setView({owner:ownerScope,phase:'idle',data:null})
+    setView(emptyView(ownerScope))
     return () => { serial.current++; inFlight.current?.abort(); inFlight.current=null }
-  }, [ownerScope,getCoverage])
-  const current = view.owner === ownerScope ? view : {owner:ownerScope,phase:'idle' as const,data:null}
+  }, [ownerScope,getCoverage,getReasons])
+  const current = view.owner === ownerScope ? view : emptyView(ownerScope)
   const coverageState = current.phase === 'ready' && current.data
     ? xDriveBaiduMapCoverageState(current.data) : 'unverified'
   const load = () => {
@@ -32,22 +43,46 @@ export function XDriveMediaGalleryMapGPSCoverage({
     const owner = ownerScope
     const controller = new AbortController()
     inFlight.current = controller
-    setView({owner,phase:'loading',data:null})
+    setView({...emptyView(owner),phase:'loading'})
     if (!getCoverage) {
-      setView({owner,phase:'error',data:null})
+      setView({...emptyView(owner),phase:'error'})
+      inFlight.current = null
       return
     }
-    void getCoverage(controller.signal).then(result => {
+    const apply = (fn:(previous:View)=>View) => {
       if (controller.signal.aborted || serial.current !== request || ownerRef.current !== owner) return
-      const verified = xDriveValidBaiduMapCoverage(result)
-      setView({owner,phase:verified ? 'ready' : 'error',data:verified})
-    }).catch(() => {
-      if (!controller.signal.aborted && serial.current === request && ownerRef.current === owner) {
-        setView({owner,phase:'error',data:null})
+      setView(previous => previous.owner === owner ? fn(previous) : previous)
+    }
+    void (async () => {
+      try {
+        const coverage = xDriveValidBaiduMapCoverage(await getCoverage(controller.signal))
+        if (!coverage) throw new Error('invalid_coverage')
+        // Most users should not pay a second potentially 100k-row SQL
+        // aggregation when every indexed GPS PhotoAsset is already visible.
+        const needReasons = Boolean(getReasons && coverage.not_eligible_bd09_assets > 0)
+        apply(previous => ({
+          ...previous,phase:'ready',data:coverage,
+          reasons:null,reasonPhase:needReasons ? 'loading' : 'unavailable',
+        }))
+        if (!needReasons || !getReasons) return
+        try {
+          const reasons = xDriveValidBaiduMapCoverageReasons(await getReasons(controller.signal))
+          // Two independent SQL snapshots can differ. Reject count drift;
+          // matching counts alone do not establish identical member IDs.
+          const sameTotals = xDriveBaiduMapCoverageReasonTotalsMatch(coverage, reasons)
+          apply(previous => ({
+            ...previous, reasons:sameTotals ? reasons : null,
+            reasonPhase:!reasons ? 'unavailable' : sameTotals ? 'ready' : 'changed',
+          }))
+        } catch {
+          apply(previous => ({...previous,reasons:null,reasonPhase:'unavailable'}))
+        }
+      } catch {
+        apply(previous => ({...previous,phase:'error',data:null,reasons:null,reasonPhase:'idle'}))
+      } finally {
+        if (inFlight.current === controller) inFlight.current=null
       }
-    }).finally(() => {
-      if (inFlight.current === controller) inFlight.current=null
-    })
+    })()
   }
   return <Box component="details" data-xdrive-map-gps-coverage
     sx={{mt:1,borderTop:1,borderColor:'divider',pt:0.75}}>
@@ -89,6 +124,39 @@ export function XDriveMediaGalleryMapGPSCoverage({
           差额可能来自授权、来源修订或派生索引；不等于 GPS 错误，也不证明动态地图已启用。
         </Typography>
       </Box> : null}
+      {current.phase === 'ready' && current.data &&
+          current.data.not_eligible_bd09_assets > 0 ? (
+        <Box data-xdrive-map-gps-coverage-reasons sx={{mt:0.75}}>
+          {current.reasonPhase === 'loading' ? (
+            <Typography variant="caption" role="status" color="text.secondary">
+              正在核对不可显示照片的原因…
+            </Typography>
+          ) : current.reasonPhase === 'ready' && current.reasons ? (
+            <>
+              <Typography variant="caption" sx={{fontWeight:700}}>
+                当前不可显示原因（互斥统计）
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:0.5}}>
+                两次独立查询的数量已匹配；若期间有照片或授权变更，请重新核对。
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap" sx={{mt:0.5}}>
+                <Typography variant="caption">授权未生效或已撤销：{current.reasons.consent_unavailable_assets.toLocaleString('zh-CN')} 张</Typography>
+                <Typography variant="caption">授权来源已改变：{current.reasons.consent_source_changed_assets.toLocaleString('zh-CN')} 张</Typography>
+                <Typography variant="caption">尚无派生位置：{current.reasons.derived_missing_assets.toLocaleString('zh-CN')} 张</Typography>
+                <Typography variant="caption">派生位置不可用：{current.reasons.derived_invalid_assets.toLocaleString('zh-CN')} 张</Typography>
+              </Stack>
+            </>
+          ) : current.reasonPhase === 'changed' ? (
+            <Typography role="status" variant="caption" color="text.secondary">
+              查询期间照片或授权数量已变化，请重新核对；不会混合两个快照显示原因。
+            </Typography>
+          ) : (
+            <Typography role="status" variant="caption" color="text.secondary">
+              原因明细暂不可用（可能是旧 Server 或 Agent）；不代表这些分类都是 0 张。
+            </Typography>
+          )}
+        </Box>
+      ) : null}
     </Stack>
   </Box>
 }
