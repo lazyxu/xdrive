@@ -24,3 +24,17 @@ export function xDriveValidBaiduMapCoverage(value: unknown): MediaBaiduMapCovera
     eligible_bd09_assets:eligible, not_eligible_bd09_assets:missing,
     source_outside_camera_latitude_assets:outside, map_runtime_verified:false }
 }
+
+/** Explanation only, never consent or proof that the map SDK is running.
+ * Based on a single validated Owner-local, indexed-ready coverage snapshot. */
+export type XDriveBaiduMapCoverageState =
+  | 'unverified' | 'no-valid-gps' | 'none-displayable'
+  | 'partial' | 'complete'
+
+export function xDriveBaiduMapCoverageState(value: unknown): XDriveBaiduMapCoverageState {
+  const counts = xDriveValidBaiduMapCoverage(value)
+  if (!counts) return 'unverified'
+  if (counts.valid_gps_assets === 0) return 'no-valid-gps'
+  if (counts.eligible_bd09_assets === 0) return 'none-displayable'
+  return counts.not_eligible_bd09_assets > 0 ? 'partial' : 'complete'
+}
