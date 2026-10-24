@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent, Syntheti
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
-import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material'
+import { Box, Button, CircularProgress, IconButton, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material'
 import {
   xDriveClassifyFilePreview,
 } from '../file-preview'
@@ -103,6 +103,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     target?.size,
   ])
   const [textPreview, setTextPreview] = useState<XDriveFileTextPreview | null>(null)
+  const [previewRetryNonce, setPreviewRetryNonce] = useState(0)
+  // A stale retry handler must not fetch media after Node/Owner replacement,
+  // or re-submit a previous attempt once a newer one has started.
+  const retryOwnerRef = useRef({ sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]) })
   const [previewURL, setPreviewURL] = useState('')
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -126,6 +130,13 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const presentationCallbackRef = useRef(onPresentationStateChange)
   presentationCallbackRef.current = onPresentationStateChange
   const sourceIdentity = JSON.stringify([target?.id, target?.revision, previewKind])
+  if (retryOwnerRef.current.sourceIdentity !== sourceIdentity) {
+    retryOwnerRef.current = { sourceIdentity }
+  }
+  const retryOwner = retryOwnerRef.current
+  const retryNonceRef = useRef(previewRetryNonce)
+  retryNonceRef.current = previewRetryNonce
+  const retryQueuedRef = useRef(false)
   const currentSourceIdentityRef = useRef(sourceIdentity)
   currentSourceIdentityRef.current = sourceIdentity
   const acquiredIdentityRef = useRef('')
@@ -374,6 +385,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
   useEffect(() => {
     let active = true
+    retryQueuedRef.current = false
     const generation = previewGenerationRef.current + 1
     previewGenerationRef.current = generation
     acquiredIdentityRef.current = currentSourceIdentityRef.current
@@ -453,7 +465,16 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewKind,
     previewTargetID,
     previewTargetRevision,
+    previewRetryNonce,
   ])
+
+  const retryPreview = () => {
+    if (retryOwnerRef.current !== retryOwner ||
+        retryNonceRef.current !== previewRetryNonce ||
+        retryQueuedRef.current || !failed || loading) return
+    retryQueuedRef.current = true
+    setPreviewRetryNonce((value) => value + 1)
+  }
 
   const mediaGeneration = previewGenerationRef.current
   const isCurrentMedia = useCallback(() => (
@@ -670,7 +691,17 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         </Box>
       )
     }
-    if (failed) return fallback
+    if (failed) {
+      return (
+        <Stack data-xdrive-preview-retry spacing={1} alignItems="center"
+          justifyContent="center" sx={{ p: 2, minHeight: 96, minWidth: 0, textAlign: 'center' }}>
+          {fallback}
+          <Typography variant="caption" color="text.secondary">预览失败，可重新尝试加载。</Typography>
+          <Button size="small" variant="outlined" aria-label="重试预览"
+            onClick={retryPreview}>重试预览</Button>
+        </Stack>
+      )
+    }
     if (previewKind === 'text' && textPreview) {
       return (
         <Stack spacing={0.5} sx={{ width: '100%', minWidth: 0, minHeight: 0, p: 1, alignSelf: 'stretch' }}>

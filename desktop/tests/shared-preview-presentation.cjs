@@ -6,7 +6,7 @@ const ts = require('typescript')
 const React = require('react')
 const { create, act } = require('react-test-renderer')
 const Box = React.forwardRef(({ component = 'div', children, ...props }, ref) => React.createElement(component, { ...props, ref }, children))
-const mui = { Box, Chip: Box, LinearProgress: Box, CircularProgress: Box, IconButton: Box, Stack: Box, Tooltip: Box, Typography: Box, useMediaQuery: () => true }
+const mui = { Box, Button: Box, Chip: Box, LinearProgress: Box, CircularProgress: Box, IconButton: Box, Stack: Box, Tooltip: Box, Typography: Box, useMediaQuery: () => true }
 function load(filename, cache = new Map()) {
   if (cache.has(filename)) return cache.get(filename).exports
   const mod = { exports: {} }; cache.set(filename, mod)
