@@ -93,7 +93,7 @@ test('UI reuses Server-verified /cells -> /cell-items, not a new photo source',(
   const child=read('deploy/baidu-isolated-child/child.js')
   for(const fragment of [
     'xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection))',
-    'scopeIsCurrent && phase',
+    'scopeIsCurrent && acceptedViewport && phase',
     'data-xdrive-places-photo-collection-strip',
     'onClick={() => openVerifiedCell(pin.selection)}',
     'XDriveMediaGalleryCoverThumbnail',

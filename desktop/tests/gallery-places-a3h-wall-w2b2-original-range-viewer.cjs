@@ -29,7 +29,7 @@ test('W2b2 atomically commits a real Owner first page before showing photo wall'
   assert.match(gallery, /!nativeCellWall/)
 })
 test('W2b2 navigation and Refresh must never turn a cell into an unscoped all-items Range', () => {
-  assert.match(gallery, /const selectSection = useCallback\([^\n]*\n\s*if \(nextSection !== 'places'\) mapGalleryEntryReturnRef\.current = null\n\s*\/\/[^\n]*\n\s*nativeCellOpenAbort\.current\?\.abort\(\)/)
+  assert.match(gallery, /const selectSection = useCallback\([^\n]*\n\s*if \(nextSection !== 'places'\) \{\n\s*mapGalleryEntryReturnRef\.current = null\n\s*xDriveClearPlacesDrawerViewerReturn\(preferenceScope\)\n\s*\}\n\s*\/\/[^\n]*\n\s*nativeCellOpenAbort\.current\?\.abort\(\)/)
   assert.match(gallery, /const refreshGallery = \(\) => \{\n\s*if \(collectionTargetRef\.current\?\.kind === 'baidu-cell' \|\|\n\s*collectionTargetRef\.current\?\.kind === 'baidu-viewport'\)/)
   assert.match(gallery, /const showCollectionFilters =\s*showPhotoCollection &&\s*!nativeCellWall/)
   assert.match(gallery, /const leaveBaiduCellWall = useCallback/)

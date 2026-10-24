@@ -120,5 +120,5 @@ test('W3b2b leaves original source physical privacy/Provider boundaries intact',
   const session = fs.readFileSync(path.join(root, sessionPath), 'utf8')
   assert.doesNotMatch(session, /localStorage|sessionStorage|document\.cookie|window\.BMap/)
   assert.match(session, /not media authority/i)
-  assert.match(gallery, /if \(!returning\) xDriveClearBaiduCellViewerReturn\(preferenceScope\)/)
+  assert.match(gallery, /if \(!returning\) \{\s*xDriveClearBaiduCellViewerReturn\(preferenceScope\)\s*xDriveClearPlacesDrawerViewerReturn\(preferenceScope\)\s*\}/)
 })

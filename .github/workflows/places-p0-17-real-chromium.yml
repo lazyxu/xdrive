@@ -10,6 +10,12 @@ on:
       - 'desktop/scripts/gallery-places-dual-host-chromium.*'
       - 'internal/api/baidu_map_scope_browser_gin_fixture_linux_test.go'
       - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/tests/gallery-places-ios27-map-first-ui.cjs'
       - 'ui/shared/src/media-gallery-baidu-inline-map-host.ts'
       - 'desktop/src/main/baidu_map_*.cts'
       - 'desktop/src/main/index.cts'
@@ -24,6 +30,12 @@ on:
       - 'desktop/scripts/gallery-places-dual-host-chromium.*'
       - 'internal/api/baidu_map_scope_browser_gin_fixture_linux_test.go'
       - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/tests/gallery-places-ios27-map-first-ui.cjs'
       - 'ui/shared/src/media-gallery-baidu-inline-map-host.ts'
       - 'desktop/src/main/baidu_map_*.cts'
       - 'desktop/src/main/index.cts'
@@ -102,6 +114,13 @@ jobs:
             echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
           fi
           echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-places-dual-chromium/node_modules/playwright-core" >> "$GITHUB_ENV"
+      - name: Bounded Owner Cell drawer, Viewer return and map-first TSX regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --test desktop/tests/gallery-places-ios27-map-first-ui.cjs \
+            desktop/tests/gallery-places-ios27-photo-drawer.cjs
       - name: Actual mounted Gallery Parent in inline and independent HTTPS Child
         shell: bash
         env:
@@ -181,7 +200,7 @@ jobs:
           node --check desktop/scripts/gallery-places-dual-host-chromium.cjs
           export XD_PR_HEAD="$(git rev-parse HEAD)"
           node desktop/scripts/gallery-places-dual-host-chromium.cjs
-          node -e "const s=require('./desktop/places-p04-real-gin-chromium-results/summary.json');if(!s.passed||!s.realGin||s.realBaiduProvider||!s.realReactParent||s.checks.length<36||!Array.isArray(s.fullGalleryPageModes)||s.fullGalleryPageModes.join(',')!=='inline,isolated'||s.checks.some(c=>!c.passed)||s.errors.length)process.exit(1)"
+          node -e "const s=require('./desktop/places-p04-real-gin-chromium-results/summary.json');if(!s.passed||!s.realGin||s.realBaiduProvider||!s.realReactParent||s.checks.length<36||!Array.isArray(s.fullGalleryPageModes)||s.fullGalleryPageModes.join(',')!=='inline,isolated'||!Array.isArray(s.fullGalleryDirectPhotoModes)||s.fullGalleryDirectPhotoModes.join(',')!=='inline,isolated'||s.checks.some(c=>!c.passed)||s.errors.length)process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
