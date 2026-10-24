@@ -1955,6 +1955,17 @@ export type AgentMediaBaiduMapCoverage = {
   map_runtime_verified: false
 }
 
+/** Only a CURRENT signed Server release can name a second HTTPS Origin.
+ * Main-only read; never expose through the normal Desktop Renderer preload.
+ */
+export type AgentMediaBaiduJSAPI4Release = {
+  provider: 'baidu-jsapi-4.0'
+  enabled: true
+  activation_state: 'authorized_signed_release'
+  attribution: '© 百度地图'
+  isolated_child_origin: string
+}
+
 export type AgentMediaBaiduMapCoverageReasons = {
   scope: 'indexed_ready_photoassets'
   valid_gps_assets: number
@@ -2852,6 +2863,11 @@ export class AgentIPCClient {
   mediaBaiduMapCoverage(signal?: AbortSignal) {
     return this.request<AgentMediaBaiduMapCoverage>(
       'GET', '/v1/media/places/baidu-coverage', undefined, 10_000, signal)
+  }
+
+  mediaBaiduJSAPI4Release(signal?: AbortSignal) {
+    return this.request<AgentMediaBaiduJSAPI4Release>(
+      'GET', '/v1/media/places/baidu-jsapi4-release', undefined, 10_000, signal)
   }
 
   mediaBaiduMapCoverageReasons(signal?: AbortSignal) {

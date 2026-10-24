@@ -729,6 +729,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/media/album/folder", h.moveMediaAlbumToFolder)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/places/page", h.mediaPlacesPage)
+	mux.HandleFunc("GET /v1/media/places/baidu-jsapi4-release", h.mediaBaiduJSAPI4Release)
 	mux.HandleFunc("GET /v1/media/places/baidu-coverage", h.mediaBaiduMapCoverage)
 	mux.HandleFunc("GET /v1/media/places/baidu-coverage-reasons", h.mediaBaiduMapCoverageReasons)
 	mux.HandleFunc("GET /v1/media/places/hierarchy", h.mediaPlacesHierarchy)
