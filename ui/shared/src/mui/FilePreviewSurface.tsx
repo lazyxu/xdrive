@@ -69,6 +69,54 @@ function revokePreviewURL(value: string) {
   if (value.startsWith('blob:')) URL.revokeObjectURL(value)
 }
 
+/**
+ * Only HEAD-check xDrive's Go signed PDF streams on Web. Generic URLs,
+ * Desktop private-loopback proxy and Blob adapters retain their renderer lifecycle.
+ * A PDF iframe's onLoad alone can report an HTML 401/404 error page as ready.
+ */
+function isXDriveSignedPDFStream(url: string): boolean {
+  try {
+    const base = typeof window === 'undefined' ? 'https://xdrive.invalid/' : window.location.href
+    const pageOrigin = new URL(base).origin
+    const parsed = new URL(url, base)
+    // Never HEAD an arbitrary origin merely because its path looks like an
+    // xDrive ticket endpoint. Only same-origin authenticated Web URLs may
+    // be preflighted. A cross-origin deployment needs an explicit trusted
+    // API-origin contract, never path-only discovery of another host.
+    if (parsed.origin !== pageOrigin ||
+        (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+        parsed.username || parsed.password) return false
+    if (/^\/api\/v1\/file-preview\/[0-9]+$/.test(parsed.pathname)) {
+      return parsed.searchParams.size === 1 && Boolean(parsed.searchParams.get('ticket'))
+    }
+    // Desktop's private loopback proxy is iframe-authorized but NOT allowed
+    // by Electron's connect-src CSP. Do not broaden CSP or issue a fetch here;
+    // its native proxy requires a distinct, main-process status verifier.
+    return false
+  } catch {
+    return false
+  }
+}
+
+async function verifySignedPDFPreview(url: string, signal: AbortSignal): Promise<void> {
+  if (!isXDriveSignedPDFStream(url)) return
+  const response = await fetch(url, {
+    method: 'HEAD',
+    signal,
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'error',
+    referrerPolicy: 'no-referrer',
+  })
+  if (response.status !== 200 && response.status !== 206) {
+    throw new Error('PDF signed preview stream is not available')
+  }
+  const type = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  if (type !== 'application/pdf') {
+    throw new Error('PDF signed preview returned a non-PDF resource')
+  }
+}
+
 export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   target,
   loadTextPreview,
@@ -437,12 +485,22 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const controller = new AbortController()
     setLoading(true)
     void loaders.url(currentTarget, previewKind, controller.signal)
-      .then((value) => {
+      .then(async (value) => {
         if (!value) {
           if (active) setFailed(true)
           return
         }
-        if (!active || previewGenerationRef.current !== generation) {
+        if (!active || controller.signal.aborted ||
+            previewGenerationRef.current !== generation) {
+          revokePreviewURL(value)
+          return
+        }
+        // Signed PDF streams can return an HTML error document which still
+        // fires iframe.onLoad. Check HTTP status and PDF MIME before mounting.
+        // This HEAD shares the request's AbortSignal and never forwards cookies.
+        if (previewKind === 'pdf') await verifySignedPDFPreview(value, controller.signal)
+        if (!active || controller.signal.aborted ||
+            previewGenerationRef.current !== generation) {
           revokePreviewURL(value)
           return
         }
