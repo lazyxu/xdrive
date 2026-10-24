@@ -1076,23 +1076,46 @@ export default function DesktopFileExplorer({
   const loadLivePhotoMotion = useCallback(async (
     item: XDriveFileExplorerItem,
     onProgress?: XDriveByteProgressHandler,
+    signal?: AbortSignal,
   ) => {
     if (
+      signal?.aborted ||
       item.kind !== 'file' ||
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
     const lifecycleGeneration = actionGenerationRef.current
-    const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id), onProgress)
-    if (
-      lifecycleGeneration !== actionGenerationRef.current ||
-      !result.ok
-    ) return null
+    const agent = window.xdriveDesktop.agent
+    const fetchMotion = async (requestID?: string) => {
+      const result = await agent.getMediaLivePhotoMotion(Number(item.id), onProgress, requestID)
+      if (signal?.aborted && result.ok) {
+        // A canceled response can still own a local proxy URL.
+        void agent.releaseMediaLivePhotoMotion(result.data)
+      }
+      return result
+    }
+    const result = signal
+      ? await xDriveDesktopViewportRequest(signal, fetchMotion)
+      : await fetchMotion()
+    if (!result.ok) return null
+    // The local proxy URL belongs to the original request. A completed ticket
+    // that arrives after switching accounts still needs cleanup by the
+    // captured Agent; never hand it to the new account or the new Viewer.
+    if (lifecycleGeneration !== actionGenerationRef.current) {
+      if (!signal?.aborted) void agent.releaseMediaLivePhotoMotion(result.data)
+      return null
+    }
+    // fetchMotion already released a response that completed after abort.
+    if (signal?.aborted) return null
     const motionURL = result.data
+    let disposed = false
     return {
       url: motionURL,
       dispose: () => {
-        if (lifecycleGeneration !== actionGenerationRef.current) return
-        void window.xdriveDesktop.agent.releaseMediaLivePhotoMotion(motionURL)
+        if (disposed) return
+        disposed = true
+        // Revoking an already-issued local proxy token is safe across account
+        // changes; it never issues a new request under the replacement Agent.
+        void agent.releaseMediaLivePhotoMotion(motionURL)
       },
     }
   }, [])

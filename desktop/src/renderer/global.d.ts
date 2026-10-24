@@ -757,6 +757,7 @@ declare global {
         getMediaLivePhotoMotion: (
           nodeID: number,
           onProgress?: XDriveByteProgressHandler,
+          viewportRequestID?: string,
         ) => Promise<DesktopResult<string>>
         releaseMediaLivePhotoMotion: (
           url: string,

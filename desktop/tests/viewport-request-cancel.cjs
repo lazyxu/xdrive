@@ -167,3 +167,42 @@ test('Desktop text preview cancel-before-admission avoids an Agent HTTP read', a
     assert.equal(events.started, 0)
   })
 })
+
+
+test('Desktop Live Photo motion-ticket cancellation closes actual Agent HTTP before response bytes', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const sender = new WindowSender(165)
+    const pending = mgr.run(sender, 'live-motion-ticket', signal =>
+      client.mediaLivePhotoMotionTicket(71, signal))
+    await until(() => events.started === 1)
+    mgr.cancel(sender, 'live-motion-ticket')
+    await assert.rejects(pending, /cancel|abort/i)
+    await until(() => events.aborted === 1, 160)
+    assert.equal(events.bytes, 0, 'abandoned ticket must not read Agent response bytes')
+  })
+})
+
+test('Desktop Live motion ticket cancellation is sender-scoped, including pre-admission', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const firstSender = new WindowSender(166)
+    const secondSender = new WindowSender(167)
+    const first = mgr.run(firstSender, 'live-same-id', signal =>
+      client.mediaLivePhotoMotionTicket(71, signal))
+    const second = mgr.run(secondSender, 'live-same-id', signal =>
+      client.mediaLivePhotoMotionTicket(72, signal))
+    await until(() => events.started === 2)
+    mgr.cancel(firstSender, 'live-same-id')
+    await assert.rejects(first, /cancel|abort/i)
+    await until(() => events.aborted === 1, 160)
+    assert.equal(events.bytes, 0)
+    secondSender.emit('destroyed')
+    await assert.rejects(second, /cancel|abort/i)
+    await until(() => events.aborted === 2, 160)
+    mgr.cancel(firstSender, 'live-before-admission')
+    await assert.rejects(mgr.run(firstSender, 'live-before-admission', signal =>
+      client.mediaLivePhotoMotionTicket(73, signal)), /before admission/i)
+    assert.equal(events.started, 2, 'cancel-before-admission must not fetch ticket')
+  })
+})

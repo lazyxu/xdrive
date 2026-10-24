@@ -147,9 +147,20 @@ export function createDesktopMediaGalleryDataSource(
       signal?.throwIfAborted()
       return agent.putMediaVideoPoster(nodeID, revision, bytes)
     },
-    loadLivePhotoMotion: async (nodeID, onProgress) => {
-      const result = await agent.getMediaLivePhotoMotion(nodeID, onProgress)
+    loadLivePhotoMotion: async (nodeID, onProgress, signal) => {
+      signal?.throwIfAborted()
+      const result = await xDriveDesktopViewportRequest(signal, async (requestID) => {
+        const value = await agent.getMediaLivePhotoMotion(nodeID, onProgress, requestID)
+        if (signal?.aborted && value.ok) {
+          void agent.releaseMediaLivePhotoMotion(value.data)
+        }
+        return value
+      })
       if (!result.ok) return result
+      if (signal?.aborted) {
+        void agent.releaseMediaLivePhotoMotion(result.data)
+        signal.throwIfAborted()
+      }
       return {
         ok: true as const,
         data: {
