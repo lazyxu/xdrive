@@ -3330,6 +3330,38 @@ jobs:
         id: photo-face-build
         shell: bash
         run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+      # On OCR-specific PRs reuse the exact tested/pinned model Docker image.
+      # No new service or queue; this is an isolated model-to-PostgreSQL fixture.
+      - uses: actions/setup-go@v5
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Real JPEG PP-OCR and Gallery search PostgreSQL integration
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          postgres_container="xdrive-ocr-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker run -d --rm --name "$postgres_container" \
+            -e POSTGRES_USER=xdrive -e POSTGRES_PASSWORD=xdrive \
+            -e POSTGRES_DB=xdrive_test -p 127.0.0.1:5432:5432 postgres:17-alpine
+          trap 'docker rm -f "$postgres_container" >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for trial in $(seq 1 60); do
+            if docker exec "$postgres_container" pg_isready -U xdrive -d xdrive_test >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "1" ]]; then docker logs "$postgres_container"; exit 1; fi
+          XD_TEST_DATABASE_URL="postgres://xdrive:xdrive@127.0.0.1:5432/xdrive_test?sslmode=disable" \
+          XD_OCR_REAL_MODEL_E2E=1 \
+          XD_OCR_REAL_MODEL_IMAGE=xdrive/photo-face:test \
+            go test ./internal/api -run 'TestQueryMediaItemsFilters/real_JPEG_pinned_OCR_model_to_Gallery_search' \
+            -count=1 -timeout=15m -v
+
       - name: Save Photo Intelligence model download progress
         if: always() && steps.photo-face-build.outputs.model_cache_attempted == 'true'
         uses: actions/cache/save@v4
