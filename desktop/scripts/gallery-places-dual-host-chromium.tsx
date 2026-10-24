@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
+import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 
 type Bounds = {coordinate_space:'bd09ll';west:number;east:number;south:number;north:number}
 type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favorite?:boolean}}
@@ -33,6 +34,7 @@ const probe = ((window as any).__mapProbe = {
   clicks:[] as any[], viewports:[] as any[], cameras:[] as any[],
   invalidations:0, realGin:genuineGin, ownerCellRange:null as any,
   ownerViewportRange:null as any, rangeError:false,
+  viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -84,6 +86,7 @@ const onOpenCell=(selection:any,scope:Scope)=>{
     }))params.set(key,String(value))
     if(scope.filters.favorite)params.set('favorite','true')
     void ownerRequest('cell-items',params).then(page=>{
+      probe.viewerSourceItem=(page.items||[])[0]||null
       probe.ownerCellRange={
         total:page.total_count,items:page.items?.length||0,
         consistent:(page.items||[]).every((item:any)=>item.node?.id>0),
@@ -118,8 +121,24 @@ const getInlineSignedStatus=async()=>({provider:'baidu-jsapi-4.0' as const,enabl
   activation_state:'authorized_signed_release',isolated_child_origin:childOrigin})
 const mintChildTicket=async()=>({provider:'baidu-jsapi-4.0' as const,child_origin:childOrigin,
   ticket:'b'.repeat(64)})
+
+const signedPreviewURL=async(nodeID:number,kind:'image'|'video'|'live_photo',
+  signal?:AbortSignal):Promise<string|null>=>{
+  if(!genuineGin||kind!=='image')return null
+  const token=await ownerToken()
+  const response=await fetch('/api/v1/files/'+nodeID+'/preview-ticket',{
+    method:'POST',signal,cache:'no-store',
+    headers:{Authorization:'Bearer '+token}})
+  if(!response.ok)throw Error('real Gin preview ticket denied')
+  const receipt=await response.json()
+  if(typeof receipt.url!=='string'||
+      !receipt.url.startsWith('/api/v1/file-preview/')||
+      receipt.url.startsWith('//'))throw Error('untrusted preview URL')
+  return receipt.url
+}
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
+  const [viewerItem,setViewerItem]=useState<any|null>(null)
   const scope:Scope={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',
     ...(favorite?{favorite:true}:{})}}
   return <div>
@@ -136,6 +155,24 @@ function TestApp(){
       onCamera={onCamera} onInvalidated={onInvalidated}
       onReady={onReady} onFailure={onFailure}/>
     <output id="trusted-cell-open"/>
+    {genuineGin ? (
+      <>
+        <button id="open-real-viewer" type="button"
+          disabled={Boolean(viewerItem)}
+          onClick={()=>{
+            if(!probe.viewerSourceItem)return
+            probe.viewerOpened++
+            setViewerItem(probe.viewerSourceItem)
+          }}>Open verified Cell original in shared Viewer</button>
+        <XDriveMediaGalleryViewer
+          item={viewerItem} positionLabel="1 / 3"
+          canPrevious={false} canNext={false}
+          filmstripEntries={[]} activeIndex={0}
+          loadThumbnail={async()=>null} loadPreviewURL={signedPreviewURL}
+          onPrevious={()=>{}} onNext={()=>{}} onFilmstripSelect={()=>{}}
+          onClose={()=>{setViewerItem(null);probe.viewerClosed++}}/>
+      </>
+    ) : null}
   </div>
 }
 createRoot(document.getElementById('root')!).render(<TestApp />)
