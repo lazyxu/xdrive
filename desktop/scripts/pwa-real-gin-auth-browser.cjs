@@ -63,10 +63,13 @@ async function verifyCase(browser, mobile) {
     deepLinkPreserved: false,
     galleryDeepLinkMounted: false, galleryColdReloadMounted: false, galleryHistoryRestored: false,
     mediaRange200: false, mediaViewer200: false, mediaViewerColdReload: false, mediaForeign404: false,
+    galleryTileViewer200: false, galleryTileOriginalDecoded: false, galleryTileViewerReturn: false,
+    wrongPasswordTicketStatuses: [],
     publicShareAnonymous: false, publicShareWrongPassword: false,
     publicShareHistoryIsolation: false, publicShareRevoked: false,
     publicShareViewerReturn: false, publicSharePublicOnlyCache: false,
   }
+  let checkpoint = 'initial-auth'
   try {
     const page = await context.newPage()
     page.setDefaultTimeout(25000)
@@ -178,6 +181,89 @@ async function verifyCase(browser, mobile) {
     assert.equal(mediaRange.noStore, true)
     sample.mediaRange200 = true
 
+    checkpoint = 'gallery-tile-original-back'
+    // S2B8: native Chromium clicks a genuine authenticated Gallery tile into
+    // the routed Viewer. Decode the original CAS PNG, then use the visible
+    // Viewer Back button; no mocked /api/v1 response or forced hash return.
+    const tileGalleryRoute = '#/app/gallery'
+    await galleryTab.goto(ready.url + '/' + tileGalleryRoute, { waitUntil: 'domcontentloaded' })
+    const tile = galleryTab.locator('[data-xdrive-media-tile]').first()
+    await tile.waitFor({ state: 'visible' })
+    const beforeTile = await galleryTab.evaluate(() => {
+      // Mobile Gallery may normalize its current section with replaceState.
+      // Returning to the actual route is the contract, not a hardcoded root hash.
+      const callerHash = window.location.hash
+      const host = document.querySelector('[data-xdrive-workspace-background] main')
+      const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+      if (!(host instanceof HTMLElement) || !(grid instanceof HTMLElement))
+        return { valid: false }
+      window.__xdriveS2b8GalleryEntry = {
+        document: document.documentElement, host, grid, offset: host.scrollTop, callerHash,
+      }
+      return { valid: true, callerHash, count: grid.querySelectorAll('[data-xdrive-media-tile]').length }
+    })
+    assert(beforeTile.valid && beforeTile.count >= 1, 'authenticated Gallery tile is not mounted')
+    assert.match(beforeTile.callerHash, /^#\/app\/gallery(?:\?section=[a-z-]+)?$/,
+      'Gallery click must originate from its actual, authorized section route')
+    await tile.click()
+    await galleryTab.waitForFunction(nodeID => {
+      const hash = location.hash
+      return hash.startsWith('#/app/media-viewer?') &&
+        new URLSearchParams(hash.split('?')[1]).get('node') === String(nodeID)
+    }, ready.media_node_id)
+    const interactiveViewer = galleryTab.locator('[data-xdrive-web-viewer]')
+    await interactiveViewer.waitFor({ state: 'visible' })
+    await interactiveViewer.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+    sample.galleryTileViewer200 = true
+
+    // Original image decode, not a Grid thumbnail/poster or ready placeholder.
+    const originalSurface = interactiveViewer.locator('[data-xdrive-image-phase="original"]')
+    await originalSurface.waitFor({ state: 'visible', timeout: 30000 })
+    const originalDecoded = await originalSurface.evaluate(element =>
+      Array.from(element.querySelectorAll('img')).some(image =>
+        image.complete && image.naturalWidth > 0 && image.naturalHeight > 0))
+    assert(originalDecoded, 'genuine private PNG original was not decoded in Viewer')
+    sample.galleryTileOriginalDecoded = true
+
+    await galleryTab.mouse.move(18, 20)
+    await interactiveViewer.getByRole('button', { name: '返回', exact: true }).first().click()
+    try {
+      await galleryTab.waitForFunction(hash => location.hash === hash, beforeTile.callerHash)
+    } catch (error) {
+      // Diagnostics are route-category booleans only; never expose the Owner
+      // Node, context ID, JWT, share token or private document URL.
+      sample.galleryBackDiagnostic = await galleryTab.evaluate(() => ({
+        sameCaller: location.hash === window.__xdriveS2b8GalleryEntry?.callerHash,
+        isGallery: location.hash.startsWith('#/app/gallery'),
+        isViewer: location.hash.startsWith('#/app/media-viewer'),
+        viewerReturn: window.history.state?.viewerReturn === true,
+      }))
+      throw error
+    }
+    await interactiveViewer.waitFor({ state: 'detached' })
+    const returned = await galleryTab.evaluate(() => {
+      const entry = window.__xdriveS2b8GalleryEntry
+      const host = document.querySelector('[data-xdrive-workspace-background] main')
+      const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+      const snapshot = {
+        sameDocument: entry?.document === document.documentElement,
+        sameCallerRoute: entry?.callerHash === location.hash,
+        sameHost: entry?.host === host && Boolean(entry?.host?.isConnected),
+        sameGrid: entry?.grid === grid && Boolean(entry?.grid?.isConnected),
+        scrollOffsetRestored: typeof entry?.offset === 'number' &&
+          Math.abs((host?.scrollTop ?? -1) - entry.offset) <= 2,
+        visibleTiles: grid?.querySelectorAll('[data-xdrive-media-tile]').length ?? 0,
+      }
+      delete window.__xdriveS2b8GalleryEntry
+      return snapshot
+    })
+    assert(returned.sameDocument && returned.sameCallerRoute &&
+      returned.sameHost && returned.sameGrid &&
+      returned.scrollOffsetRestored && returned.visibleTiles >= 1,
+      'Gallery Viewer Back lost same-document mounted caller/scroll position')
+    sample.galleryTileViewerReturn = true
+
+    checkpoint = 'owner-viewer-direct-reload'
     // Real Viewer cold launch + hard reload must issue actual Gin MediaItem
     // reads, not merely keep the URL or mount a loading-only frame.
     const viewerTab = await context.newPage()
@@ -225,6 +311,7 @@ async function verifyCase(browser, mobile) {
     sample.mediaForeign404 = true
 
 
+    checkpoint = 'public-share-authorization'
     // S2B7: create ONLY synthetic, test-private links using the real owner's
     // live Gin JWT and the existing file-share API. Neither share capability
     // nor account JWT is ever placed in the ready file or summary.json.
@@ -282,14 +369,26 @@ async function verifyCase(browser, mobile) {
       assert.equal(await anonymousPage.locator('#web-login-username').count(), 0)
       sample.publicShareAnonymous = true
 
-      // Wrong password cannot issue a download ticket or consume the share.
-      const badTicket = anonymousPage.waitForResponse(response =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname === '/api/v1/public/share/download-ticket' &&
-        response.status() === 401)
+      // Wrong password must still produce precisely HTTP 401 with 0 issued
+      // tickets. Attach the response waiter to Promise.all before clicking, so
+      // a timed-out fixture cannot produce an unhandled browser-driver rejection
+      // that hides the sanitized diagnostic summary.
+      checkpoint = 'public-share-wrong-password'
+      // Record status codes only for this particular public ticket endpoint.
+      // Do not log URL query, Share token, cookies, headers, body, or password.
+      anonymousPage.on('response', response => {
+        if (new URL(response.url()).pathname === '/api/v1/public/share/download-ticket') {
+          sample.wrongPasswordTicketStatuses.push(response.status())
+        }
+      })
       await anonymousPage.locator('input[type="password"]').fill('wrong-pwa-test-password')
-      await anonymousPage.getByRole('button', { name: '下载', exact: true }).click()
-      await badTicket
+      const [badTicket] = await Promise.all([
+        anonymousPage.waitForResponse(response =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/v1/public/share/download-ticket'),
+        anonymousPage.getByRole('button', { name: '下载文件', exact: true }).click(),
+      ])
+      assert.equal(badTicket.status(), 401)
       await anonymousPage.getByText('分享密码错误。', { exact: true }).waitFor()
       const currentMeta = await anonymousPage.evaluate(async token => {
         const response = await fetch('/api/v1/public/share', {
@@ -302,6 +401,7 @@ async function verifyCase(browser, mobile) {
       assert.equal(currentMeta.count, 0)
       sample.publicShareWrongPassword = true
 
+      checkpoint = 'public-share-history'
       // Without a page reload, switching to a DIFFERENT share removes the
       // password+error from the first. Browser Back reinstates its own empty
       // password form; Forward returns to the passwordless share.
@@ -310,7 +410,7 @@ async function verifyCase(browser, mobile) {
       await anonymousPage.evaluate(token => { window.location.hash = '#/s/' + token }, secondShare.token)
       await secondMetadata
       await anonymousPage.locator('input[type="password"]').waitFor({ state: 'detached' })
-      await anonymousPage.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+      await anonymousPage.getByRole('heading', { name: 'pwa-s2b6-private.png', exact: true }).waitFor()
       assert.equal(await anonymousPage.getByText('分享密码错误。', { exact: true }).count(), 0)
       await anonymousPage.evaluate(() => window.history.back())
       await anonymousPage.locator('input[type="password"]').waitFor()
@@ -324,7 +424,7 @@ async function verifyCase(browser, mobile) {
       await anonymousPage.evaluate(hash => { window.location.hash = hash }, deepLink)
       await anonymousPage.locator('#web-login-username').waitFor()
       await anonymousPage.evaluate(() => window.history.back())
-      await anonymousPage.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+      await anonymousPage.getByRole('heading', { name: 'pwa-s2b6-private.png', exact: true }).waitFor()
       assert.equal(await anonymousPage.locator('#web-login-username').count(), 0)
       sample.publicShareHistoryIsolation = true
 
@@ -351,7 +451,7 @@ async function verifyCase(browser, mobile) {
       await viewerTab.evaluate(token => { window.location.hash = '#/s/' + token }, secondShare.token)
       await ownerShareMetadata
       await viewerTab.locator('[data-xdrive-web-viewer]').waitFor({ state: 'detached' })
-      await viewerTab.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+      await viewerTab.getByRole('heading', { name: 'pwa-s2b6-private.png', exact: true }).waitFor()
       const returnedViewer = viewerTab.waitForResponse(response =>
         new URL(response.url()).pathname === viewerItemPath && response.status() === 200)
       await viewerTab.evaluate(() => window.history.back())
@@ -361,6 +461,7 @@ async function verifyCase(browser, mobile) {
         viewerMarker, 'share/history traversal must not force reload')
       sample.publicShareViewerReturn = true
 
+      checkpoint = 'public-share-revocation'
       // Owner-controlled revocation must invalidate anonymous fresh reload,
       // without retaining any previous metadata in the share UI or SW cache.
       const revokeStatus = await page.evaluate(async id => {
@@ -396,6 +497,11 @@ async function verifyCase(browser, mobile) {
     sample.publicOnlyWorkerCache = true
     assert.deepEqual(errors, [], 'production Chrome JavaScript errors are not allowed')
     summary.cases.push(sample)
+  } catch (error) {
+    // Preserve only booleans, numeric HTTP statuses and a fixed checkpoint
+    // on failure; the outer main() still fails this exact-head CI.
+    summary.cases.push({ ...sample, failedAt: checkpoint })
+    throw error
   } finally {
     await context.close()
   }
@@ -417,6 +523,7 @@ async function main() {
       x.publicOnlyWorkerCache && x.deepLinkPreserved &&
       x.galleryDeepLinkMounted && x.galleryColdReloadMounted && x.galleryHistoryRestored &&
       x.mediaRange200 && x.mediaViewer200 && x.mediaViewerColdReload && x.mediaForeign404 &&
+       x.galleryTileViewer200 && x.galleryTileOriginalDecoded && x.galleryTileViewerReturn &&
       x.publicShareAnonymous && x.publicShareWrongPassword && x.publicShareHistoryIsolation &&
       x.publicSharePublicOnlyCache && x.publicShareViewerReturn && x.publicShareRevoked))
     const completed = await browser.newContext()
