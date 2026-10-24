@@ -75,6 +75,7 @@ function harness(mobile) {
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p98-a') },
+    xDriveClearPlacesDrawerViewerReturn: scope => { assert.equal(scope, 'p98-a') },
     useCallback: value => value,
     mobileGalleryViewport: mobile,
     source, preferenceScope: 'p98-a', requestID,

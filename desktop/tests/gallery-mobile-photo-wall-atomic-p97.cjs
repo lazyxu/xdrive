@@ -74,6 +74,7 @@ function owner(mobile) {
     nativeCellOpenAbort: { current: null },
     preferenceScope: 'p97',
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p97') },
+    xDriveClearPlacesDrawerViewerReturn: scope => { assert.equal(scope, 'p97') },
     useCallback: fn => fn,
     mobileGalleryViewport: mobile,
     placesReturnPageRef: { current: null },

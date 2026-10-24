@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Button, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
@@ -22,8 +22,8 @@ import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
-  getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
+  listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
@@ -34,6 +34,7 @@ export function XDriveMediaGalleryPlacesMap({
   onNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onNativeCameraClear?: () => void
   listBaiduNativeCells?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCells']
+  listBaiduNativeCellItems?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCellItems']
   listPlacesMapOverview?: import('./MediaGallery').MediaGalleryDataSource['listPlacesMapOverview']
   getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
@@ -44,6 +45,9 @@ export function XDriveMediaGalleryPlacesMap({
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection,
     scope: XDriveBaiduMapPhotoScope) => void
+  onOpenBaiduNativeCellPhoto?: (selection: MediaBaiduNativeCellSelection,
+    scope: XDriveBaiduMapPhotoScope, nodeID: number, revision: number,
+    presentation: import('../media-gallery-places-photo-drawer').XDrivePlacesDrawerPresentation) => void
   onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
     scope: XDriveBaiduMapPhotoScope) => void
   onBaiduNativeCellInvalidated?: () => void
@@ -228,96 +232,55 @@ export function XDriveMediaGalleryPlacesMap({
   }
   const sortValue = (mapPhotoScope.filters.sort_by ?? 'captured') + ':' +
     (mapPhotoScope.filters.sort_dir ?? 'desc')
+  const hasMapActiveFilters = Boolean(mapPhotoScope.albumKey ||
+    mapPhotoScope.filters.asset_kind || mapPhotoScope.filters.favorite !== undefined ||
+    mapPhotoScope.filters.captured_from || mapPhotoScope.filters.captured_to ||
+    (mapPhotoScope.filters.sort_by && mapPhotoScope.filters.sort_by !== 'captured') ||
+    (mapPhotoScope.filters.sort_dir && mapPhotoScope.filters.sort_dir !== 'desc'))
 
   return (
     <Paper variant="outlined" data-xdrive-gallery-places-map
-      sx={{ borderRadius: compact ? 0 : { xs: 0, sm: 2 }, borderWidth: compact ? 0 : 1, overflow: 'hidden' }}>
-      {!compact ? (
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
-          alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ p: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-            缩放百度动态地图浏览照片，点击聚集标记进入照片墙。
+      sx={{ borderRadius: compact ? 0 : { xs: 0, sm: 2 }, borderWidth: compact ? 0 : 1, overflow: 'visible' }}>
+      <Stack data-xdrive-places-map-toolbar direction="row"
+        alignItems="center" justifyContent="space-between" spacing={1}
+        sx={{px:compact ? 1 : 1.5,py:0.5,minHeight:52,position:'relative',zIndex:12}}>
+        <Box sx={{minWidth:0}}>
+          <Stack direction="row" alignItems="center" spacing={0.75}>
+            <Typography variant="body2" fontWeight={700} noWrap>地图照片</Typography>
+            <Typography variant="caption" data-xdrive-places-map-runtime-boundary
+              aria-label={desktopOnly ? 'Desktop 地图仅经独立 HTTPS 安全窗口运行' :
+                mapMode === 'prototype' ? '同页百度地图，第三方脚本不具备独立 Origin 隔离' :
+                '百度地图在独立 HTTPS Origin 隔离运行'}
+              sx={{fontSize:11,color:'text.secondary',whiteSpace:'nowrap'}}>
+              {desktopOnly ? '独立窗口' : mapMode === 'prototype' ? '同页 · 未隔离' : '安全隔离'}
+            </Typography>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" noWrap
+            sx={{display:'block',maxWidth:{xs:170,sm:420}}}>
+            {totalCount === null || totalCount === undefined
+              ? '轻点照片查看拍摄地点'
+              : `探索 ${totalCount.toLocaleString('zh-CN')} 个地点`}
           </Typography>
-          <Chip size="small" label={totalCount === null || totalCount === undefined
-            ? `本页 ${places.length.toLocaleString('zh-CN')} 个地点`
-            : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} />
-        </Stack>
-      ) : null}
-      {!desktopOnly ? (
-        <Stack data-xdrive-places-map-mode direction="row" spacing={1}
-          sx={{ px: 1.5, py: 1, flexWrap: 'wrap' }}>
-          <Button size="small" data-xdrive-map-mode-prototype
-            disabled={modeSwitching}
-            variant={mapMode === 'prototype' ? 'contained' : 'outlined'}
-            aria-pressed={mapMode === 'prototype'}
-            onClick={() => changeMapMode('prototype')}>同页原型（默认）</Button>
-          <Button size="small" data-xdrive-map-mode-isolated
-            disabled={modeSwitching}
-            variant={mapMode === 'isolated' ? 'contained' : 'outlined'}
-            aria-pressed={mapMode === 'isolated'}
-            onClick={() => changeMapMode('isolated')}>安全隔离版</Button>
-        </Stack>
-      ) : null}
-      {modeWarning ? <Typography data-xdrive-map-mode-scope-warning
-        role="alert" variant="caption" color="text.secondary"
-        sx={{display:'block',px:1.5,pb:1}}>
-        {modeWarning}
-      </Typography> : null}
-      {mapMode === 'prototype' && !desktopOnly ? (
-        <Typography variant="caption" color="text.secondary"
-          data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>
-          同页地图与安全隔离版使用相同的已授权 BD-09 照片范围，但第三方百度脚本直接运行在图库主文档，不具备独立 Origin 隔离；切换安全版会重新加载页面。
-        </Typography>
-      ) : null}
-      <Box component="details" data-xdrive-places-map-options sx={{ px: 1.5, pb: 1 }}>
-        <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
-          typography: 'caption', minHeight: 28 }}>地点筛选与更多操作</Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ py: 1 }}>
-          <Autocomplete size="small" options={places} disabled={placeListScoped} getOptionLabel={p => p.name}
-            isOptionEqualToValue={(a, b) => a.id === b.id} value={selectedPlace ?? null}
-            onChange={(_event, p) => {
-              // A different list selection must cancel an in-flight singleton
-              // opened from a previous map pin, before changing the camera.
-              onBaiduNativeCellInvalidated?.()
-              clearCamera()
-              setSelectedPlaceID(p?.id ?? null)
-            }}
-            renderInput={params => <TextField {...params} size="small" label="选择地点" />}
-            sx={{ flex: 1, minWidth: 0 }} />
-          {openSelectedPlace ? (
-            <Button variant="outlined" size="small" disabled={!selectedPlace}
-              onClick={() => { if (selectedPlace) openSelectedPlace(selectedPlace) }}>查看此地点照片</Button>
-          ) : null}
-          {onOpenNearby && !placeListScoped ? (
-            <>
-              <TextField select size="small" label="附近半径" value={nearbyRadiusKM}
-                onChange={event => setNearbyRadiusKM(Number(event.target.value))} sx={{ minWidth: 120 }}>
-                {[1, 5, 25, 100].map(km => <MenuItem key={km} value={km}>{km} 公里</MenuItem>)}
-              </TextField>
-              <Button variant="outlined" size="small"
-                disabled={!selectedPlace || !Number.isFinite(selectedPlace.sample_latitude) ||
-                  !Number.isFinite(selectedPlace.sample_longitude)}
-                onClick={() => {
-                  onBaiduNativeCellInvalidated?.()
-                  if (selectedPlace) onOpenNearby(selectedPlace, nearbyRadiusKM)
-                }}>查看附近照片</Button>
-            </>
-          ) : null}
-        </Stack>
-        <Typography variant="caption" color="text.secondary">
-          两种模式只显示当前账户获授权且来源有效的 BD-09 照片；地图 Count、相册筛选、Cell/Camera 照片墙和 Viewer 均使用同一 Server Range。
-        </Typography>
-        {placeListScoped ? (
-          <Typography variant="caption" color="text.secondary">
-            当前相册或筛选已生效：请从地图标记或「查看此地图的全部照片」进入已授权照片范围；普通地点和附近操作暂不可用。
-          </Typography>
-        ) : null}
-      </Box>
-      <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
-        getCoverage={getBaiduMapCoverage} getReasons={getBaiduMapCoverageReasons}
-        ownerScope={diagnosticScope}/></Box>
-      {onMapPhotoScopeChange && !desktopOnly ? (
-        <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
+        </Box>
+        <Stack direction="row" spacing={0.75} alignItems="center">
+          {onMapPhotoScopeChange && !desktopOnly ? (
+            <Box component="details" data-xdrive-places-map-filter-menu sx={{position:'relative'}}>
+              <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                minWidth:60,minHeight:44,px:1.25,borderRadius:2,
+                bgcolor:hasMapActiveFilters ? 'action.selected' : 'action.hover',
+                color:hasMapActiveFilters ? 'primary.main' : 'text.primary',
+                fontSize:13,fontWeight:600,
+                '&::-webkit-details-marker':{display:'none'},
+                '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
+                {hasMapActiveFilters ? '筛选中' : '筛选'}
+              </Box>
+              <Paper elevation={8} data-xdrive-places-map-filter-panel
+                sx={{position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:25,
+                  width:{xs:'min(94vw,390px)',sm:480},maxWidth:'calc(100vw - 24px)',
+                  maxHeight:'min(70dvh,640px)',overflowY:'auto',
+                  p:1.25,borderRadius:2}}>
+      <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
           <Stack direction="row" flexWrap="wrap" gap={1} sx={{ alignItems:'center' }}>
             <TextField select size="small" label="照片类型" value={mapPhotoScope.filters.asset_kind ?? 'all'}
               disabled={!mapReady || !nativeEnabled}
@@ -380,7 +343,108 @@ export function XDriveMediaGalleryPlacesMap({
               }}>清除筛选</Button>
           </Stack>
         </Box>
+
+              </Paper>
+            </Box>
+          ) : null}
+          <Box component="details" data-xdrive-places-map-more-menu sx={{position:'relative'}}>
+            <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              minWidth:60,minHeight:44,px:1.25,borderRadius:2,bgcolor:'action.hover',
+              fontSize:13,fontWeight:600,
+              '&::-webkit-details-marker':{display:'none'},
+              '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
+              更多
+            </Box>
+            <Paper elevation={8} data-xdrive-places-map-more-panel
+              sx={{position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:25,
+                width:{xs:'min(94vw,420px)',sm:520},maxWidth:'calc(100vw - 24px)',
+                maxHeight:'min(70dvh,640px)',overflowY:'auto',pt:1,pb:1,
+                borderRadius:2}}>
+              <Typography variant="subtitle2" sx={{px:1.5,pb:0.5}}>
+                地图设置与诊断
+              </Typography>
+      {!desktopOnly ? (
+        <Stack data-xdrive-places-map-mode direction="row" spacing={1}
+          sx={{ px: 1.5, py: 1, flexWrap: 'wrap' }}>
+          <Button size="small" data-xdrive-map-mode-prototype
+            disabled={modeSwitching}
+            variant={mapMode === 'prototype' ? 'contained' : 'outlined'}
+            aria-pressed={mapMode === 'prototype'}
+            onClick={() => changeMapMode('prototype')}>同页原型（默认）</Button>
+          <Button size="small" data-xdrive-map-mode-isolated
+            disabled={modeSwitching}
+            variant={mapMode === 'isolated' ? 'contained' : 'outlined'}
+            aria-pressed={mapMode === 'isolated'}
+            onClick={() => changeMapMode('isolated')}>安全隔离版</Button>
+        </Stack>
       ) : null}
+
+      {mapMode === 'prototype' && !desktopOnly ? (
+        <Typography variant="caption" color="text.secondary"
+          data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>
+          同页地图与安全隔离版使用相同的已授权 BD-09 照片范围，但第三方百度脚本直接运行在图库主文档，不具备独立 Origin 隔离；切换安全版会重新加载页面。
+        </Typography>
+      ) : null}
+
+      <Box component="details" data-xdrive-places-map-options sx={{ px: 1.5, pb: 1 }}>
+        <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
+          typography: 'caption', minHeight: 28 }}>地点筛选与更多操作</Box>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ py: 1 }}>
+          <Autocomplete size="small" options={places} disabled={placeListScoped} getOptionLabel={p => p.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id} value={selectedPlace ?? null}
+            onChange={(_event, p) => {
+              // A different list selection must cancel an in-flight singleton
+              // opened from a previous map pin, before changing the camera.
+              onBaiduNativeCellInvalidated?.()
+              clearCamera()
+              setSelectedPlaceID(p?.id ?? null)
+            }}
+            renderInput={params => <TextField {...params} size="small" label="选择地点" />}
+            sx={{ flex: 1, minWidth: 0 }} />
+          {openSelectedPlace ? (
+            <Button variant="outlined" size="small" disabled={!selectedPlace}
+              onClick={() => { if (selectedPlace) openSelectedPlace(selectedPlace) }}>查看此地点照片</Button>
+          ) : null}
+          {onOpenNearby && !placeListScoped ? (
+            <>
+              <TextField select size="small" label="附近半径" value={nearbyRadiusKM}
+                onChange={event => setNearbyRadiusKM(Number(event.target.value))} sx={{ minWidth: 120 }}>
+                {[1, 5, 25, 100].map(km => <MenuItem key={km} value={km}>{km} 公里</MenuItem>)}
+              </TextField>
+              <Button variant="outlined" size="small"
+                disabled={!selectedPlace || !Number.isFinite(selectedPlace.sample_latitude) ||
+                  !Number.isFinite(selectedPlace.sample_longitude)}
+                onClick={() => {
+                  onBaiduNativeCellInvalidated?.()
+                  if (selectedPlace) onOpenNearby(selectedPlace, nearbyRadiusKM)
+                }}>查看附近照片</Button>
+            </>
+          ) : null}
+        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          两种模式只显示当前账户获授权且来源有效的 BD-09 照片；地图 Count、相册筛选、Cell/Camera 照片墙和 Viewer 均使用同一 Server Range。
+        </Typography>
+        {placeListScoped ? (
+          <Typography variant="caption" color="text.secondary">
+            当前相册或筛选已生效：请从地图标记或「查看此地图的全部照片」进入已授权照片范围；普通地点和附近操作暂不可用。
+          </Typography>
+        ) : null}
+      </Box>
+
+      <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
+        getCoverage={getBaiduMapCoverage} getReasons={getBaiduMapCoverageReasons}
+        ownerScope={diagnosticScope}/></Box>
+
+            </Paper>
+          </Box>
+        </Stack>
+      </Stack>
+      {modeWarning ? <Typography data-xdrive-map-mode-scope-warning
+        role="alert" variant="caption" color="text.secondary"
+        sx={{display:'block',px:1.5,pb:1}}>
+        {modeWarning}
+      </Typography> : null}
       {nativeEnabled && !mapReady ? (
         <Typography variant="caption" role="status" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
           正在初始化百度动态地图…
@@ -402,8 +466,10 @@ export function XDriveMediaGalleryPlacesMap({
           getInlinePrototypeConfig={getBaiduJSAPIPrototype}
           getInlineSignedStatus={getBaiduJSAPI4Status}
           mintChildTicket={mintBaiduIsolatedChildTicket}
-          listOwnerCells={listBaiduNativeCells} loadThumbnail={loadPhotoCoverThumbnail}
+          listOwnerCells={listBaiduNativeCells} listOwnerCellItems={listBaiduNativeCellItems}
+          loadThumbnail={loadPhotoCoverThumbnail}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}
+          onOpenCellPhoto={onOpenBaiduNativeCellPhoto}
           onOpenViewport={onOpenBaiduNativeViewport}
           onInvalidated={onBaiduNativeCellInvalidated} onCamera={rememberCamera}
           onCameraClear={clearCamera} onReady={setMapReady}

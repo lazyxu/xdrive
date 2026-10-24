@@ -32,7 +32,8 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-places-dual-'))
 const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
-  fullGalleryPageModes:[],checks:[],passed:false,errors:[]}
+  fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],
+  checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const sdkStub='('+function sdkFactory(){
   class Point {constructor(lng,lat){this.lng=lng;this.lat=lat}}
@@ -272,10 +273,22 @@ async function testMode(browser,mode,port){
     await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
     record(mode+': Owner favorite filter refreshes same Cells',
       await page.locator('[data-xdrive-places-cluster-list] button').count()===1)
-    // The production accessible Cell list lives inside a closed <details>.
-    // Open it with an actual browser action before clicking a visible Cell.
-    await page.locator('[data-xdrive-places-cluster-list] summary').click()
-    await page.locator('[data-xdrive-places-cluster-list] button').first().click()
+    // Click the same trusted photo cover a real user sees; the diagnostic
+    // <details> can remount when Owner filter requests race and is not the UI.
+    const mapCover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await mapCover.waitFor({state:'visible'})
+    await mapCover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    const photoPreview=await page.evaluate(()=>({
+      count:document.querySelectorAll('[data-xdrive-places-photo-drawer-items] button').length,
+      queries:window.__mapProbe.photoPreviewRanges.length,
+      total:window.__mapProbe.photoPreviewRanges.at(-1)?.total,
+      failed:window.__mapProbe.failed,
+    }))
+    record(mode+': signed Owner Cell opens current bounded Parent photo drawer',
+      photoPreview.count===3 && photoPreview.total===3 &&
+      photoPreview.queries>=1 && !photoPreview.failed)
+    await page.locator('[data-xdrive-places-photo-drawer-open-all]').click()
     await page.waitForFunction(()=>window.__mapProbe.clicks.length===1)
     const selected=await page.evaluate(()=>window.__mapProbe.clicks[0])
     record(mode+': Cell click retains trusted Owner identity and revision',
@@ -376,6 +389,80 @@ async function testMode(browser,mode,port){
             next?.longitude===camera?.longitude&&next?.zoom===camera?.zoom
         },before.camera))
     }
+    // This deliberately unmounts the map to exercise the ephemeral selection
+    // return. The production Gallery Viewer is tested separately above.
+    await mapCover.waitFor({state:'visible'})
+    await mapCover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    // Shrink ONLY the synthetic drawer viewport so the three real Owner cells
+    // visibly scroll; this tests pixel-offset return, not an iOS screenshot.
+    await page.addStyleTag({content:
+      '[data-xdrive-places-photo-drawer]{max-height:190px!important}'+
+      '[data-xdrive-places-photo-drawer-items]{max-width:135px!important;'+
+      'max-height:100px!important;min-height:0!important;'+
+      'grid-template-columns:minmax(92px,1fr)!important;'+
+      'grid-auto-rows:minmax(140px,auto)!important;'+
+      'overflow-y:scroll!important}'})
+    await page.locator('[data-xdrive-places-photo-drawer-expand]').click()
+    record(mode+': genuine React photo drawer opens expanded',
+      await page.locator('[aria-label="收起照片抽屉"]').count()===1)
+    const scrolled=await page.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(element=>{
+        // A test-only one-column viewport guarantees overflow even when the
+        // Drawer is nested in a flex layout with intrinsic grid sizing.
+        for(const [name,value] of [
+          ['width','135px'],['height','90px'],['max-height','90px'],
+          ['min-height','0'],['flex','0 0 90px'],
+          ['grid-template-columns','minmax(0, 1fr)'],
+          ['overflow-y','scroll'],
+        ])element.style.setProperty(name,value,'important')
+        element.scrollTop=70
+        return {top:element.scrollTop,client:element.clientHeight,
+          content:element.scrollHeight,display:getComputedStyle(element).display}
+      })
+    if(!(scrolled.content>scrolled.client+2 && scrolled.top>0))
+      console.error('real drawer scroll geometry '+mode+' '+JSON.stringify(scrolled))
+    record(mode+': expanded drawer owns a scrollable thumbnail area'+
+      ' (top='+scrolled.top+',client='+scrolled.client+
+      ',content='+scrolled.content+')',
+      scrolled.content>scrolled.client+2 && scrolled.top>0)
+    // Choose an on-screen thumbnail without letting Playwright auto-scroll
+    // the last tile to the bottom and rewrite the user-owned scroll position.
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').nth(1).click()
+    const reachedOwnerRange=await page.waitForFunction(()=>
+      window.__mapProbe.photoOpens.length>0 || window.__mapProbe.rangeError,
+      null,{timeout:8000}).then(()=>true).catch(()=>false)
+    const photoClick=await page.evaluate(()=>({
+      opens:window.__mapProbe.photoOpens.length,
+      rangeError:window.__mapProbe.rangeError,
+      previewReads:window.__mapProbe.photoPreviewRanges.length,
+      drawerVisible:!!document.querySelector('[data-xdrive-places-photo-drawer]'),
+    }))
+    record(mode+': photo click reaches a distinct Owner Range'+
+      ' (opens='+photoClick.opens+',error='+photoClick.rangeError+
+      ',reads='+photoClick.previewReads+',drawer='+photoClick.drawerVisible+')',
+      reachedOwnerRange && photoClick.opens>0 && !photoClick.rangeError)
+    await page.locator('#fixture-viewer').waitFor()
+    const viewer=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
+    record(mode+': selected thumbnail rechecks a distinct Owner Cell Range',
+      viewer?.valid===true)
+    record(mode+': selected thumbnail retains bounded expanded drawer state',
+      viewer?.expanded===true && Number.isSafeInteger(viewer?.scrollTop) &&
+      viewer.scrollTop>0 && Number.isSafeInteger(viewer?.scrollLeft))
+    await page.locator('#fixture-viewer-back').click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    record(mode+': Viewer Back restores only freshly matched Cell drawer and expansion',
+      await page.locator('[aria-label="收起照片抽屉"]').count()===1)
+    const restoredScroll=await page.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(element=>element.scrollTop)
+    record(mode+': real scroll position survives Viewer Back and fresh Range',
+      restoredScroll>0&&Math.abs(restoredScroll-viewer.scrollTop)<=2)
+    const returned=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges)
+    record(mode+': Viewer Back refreshes bounded signed Owner range, never stale media',
+      returned.length>=3&&returned.every(v=>v.total===3&&v.items===3&&
+        (v.limit===12||v.limit===48)))
+    record(mode+': no SDK/runtime failure after Viewer remount',
+      await page.evaluate(()=>!window.__mapProbe.failed)&&errors.length===0)
     return {mode,count:9,favoriteCount:3,selectedCount:selected.count,
       coordinateSpace:scoped.wall.bounds.coordinate_space,cameraSpace:scoped.camera.coordinate_space}
   }finally{await context.close()}
@@ -385,8 +472,16 @@ async function testMode(browser,mode,port){
 // immediately; photo-first Gallery opens a trusted Owner photo drawer first.
 // Never mock this transition or make the SDK Child responsible for media.
 async function openActualOwnerCellFromMap(page,mode){
-  await page.locator('[data-xdrive-places-cluster-list] summary').click()
-  await page.locator('[data-xdrive-places-cluster-list] button').first().click()
+  const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+  if(shippedPhotoDrawer){
+    // Photo-first UI must expose an actual Parent-owned image marker.
+    // Do not silently fall back to the diagnostic Cell list if its cover is late.
+    await cover.waitFor({state:'visible',timeout:30000})
+    await cover.click()
+  }else{
+    await page.locator('[data-xdrive-places-cluster-list] summary').click()
+    await page.locator('[data-xdrive-places-cluster-list] button').first().click()
+  }
   await page.waitForFunction(()=>
     Boolean(document.querySelector('[data-xdrive-media-tile]') ||
       document.querySelector('[data-xdrive-places-photo-drawer]')),
@@ -518,6 +613,118 @@ async function testFullGalleryPage(browser,mode,port){
     return {mode,drawerUsed}
   } finally {await context.close()}
 }
+async function testFullGalleryDirectPhoto(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const url='https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&full_gallery=1&full_gallery_direct=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto(url,{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    await cover.click()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.waitFor({state:'visible'})
+    const photo=drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+    await photo.waitFor({state:'visible'})
+    record(mode+': shipped Gallery Page shows 3 authorized thumbnail cells',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
+    const before=await page.evaluate(()=>{
+      const r=window.__mapProbe.galleryPageReads.filter(x=>x.kind==='cell')
+      return {count:r.length,range:r.at(-1)}
+    })
+    record(mode+': Page drawer thumbnails originated in Gin Owner Cell Range',
+      before.count>=1&&before.range?.total===3&&
+      before.range.nodeIDs?.length===3)
+    const originalBytes=page.waitForResponse(response=>{
+      const path=new URL(response.url()).pathname
+      return path.startsWith('/api/v1/file-preview/')&&response.status()===200
+    })
+    await photo.click()
+    const original=page.locator('[data-xdrive-image-phase="original"]').first()
+    await original.waitFor({state:'visible'})
+    const img=original.locator('img:not([aria-hidden="true"])').first()
+    await img.waitFor({state:'visible'})
+    const binary=await (await originalBytes).body()
+    const opened=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {opens:p.galleryPageDirectOpens,
+        ranges:p.galleryPageReads.filter(x=>x.kind==='cell'),
+        errors:p.galleryPageErrors}
+    })
+    const photoOpen=opened.opens.at(-1)
+    record(mode+': Photo drawer used separate signed Owner Cell Range before Viewer',
+      opened.opens.length===1&&opened.ranges.length>before.count&&
+      opened.ranges.at(-1)?.total===3&&
+      photoOpen?.kind==='baidu-cell'&&photoOpen.total===3&&
+      before.range.nodeIDs.includes(photoOpen.nodeID)&&
+      photoOpen.revision>0&&opened.errors.length===0)
+    record(mode+': direct Page Viewer loads and decodes physical PNG CAS bytes',
+      binary.length>50&&binary.subarray(0,8).equals(
+        Buffer.from([137,80,78,71,13,10,26,10]))&&
+      await img.evaluate(x=>x instanceof HTMLImageElement&&
+        x.complete&&x.naturalWidth===2&&x.naturalHeight===2))
+    if(mode==='isolated'){
+      record('isolated: direct Viewer disposes map SDK Child before loading original',
+        !page.frames().some(frame=>frame.url().includes(childHost))&&
+        await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
+    }
+    await page.getByRole('button',{name:'关闭预览'}).click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const restored=page.locator('[data-xdrive-places-photo-drawer]')
+    try {
+      await restored.waitFor({state:'visible',timeout:11000})
+      await restored.locator('[data-xdrive-places-photo-drawer-item]').first()
+        .waitFor({state:'visible'})
+    } catch (error) {
+      // A missing return is not a pass. Record only synthetic test identities
+      // and counts; never print auth tokens, media URLs, or Owner credentials.
+      const diagnostic=await page.evaluate(()=>{
+        const p=window.__mapProbe
+        const cell=p.galleryPageReads.filter(x=>x.kind==='cell')
+        return {closed:p.galleryPageDirectClosed,
+          map:!!document.querySelector('[data-xdrive-places-cluster-overview]'),
+          drawer:!!document.querySelector('[data-xdrive-places-photo-drawer]'),
+          selection:p.galleryPageDirectOpens.at(-1)?.nodeID,
+          cameraCount:p.cameras.length,ownerCells:p.queries.length,
+          recentScopes:p.queries.slice(-2).map(x=>({
+            count:x.count,favorite:x.favorite,bounds:x.bounds})),
+          ownerMemberReads:cell.length,lastMember:cell.at(-1),
+          errors:p.galleryPageErrors.slice(-3),failed:p.failed}
+      })
+      throw Error(mode+': trusted drawer missing after Viewer Back: '+
+        JSON.stringify(diagnostic)+'; '+String(error))
+    }
+    const returning=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {closed:p.galleryPageDirectClosed,
+        ranges:p.galleryPageReads.filter(x=>x.kind==='cell'),
+        errors:p.galleryPageErrors}
+    })
+    const ids=items=>JSON.stringify([...items].sort((a,b)=>a-b))
+    record(mode+': direct Viewer Back restores drawer using fresh Gin Owner Range',
+      returning.closed===1&&returning.ranges.length>opened.ranges.length&&
+      returning.ranges.at(-1)?.total===3&&
+      ids(returning.ranges.at(-1)?.nodeIDs||[])===
+        ids(before.range.nodeIDs)&&returning.errors.length===0)
+    record(mode+': restored Page has no runtime or cross-Origin media leak',
+      errors.length===0&&requests.every(x=>x.host!=='child'||
+        !x.path.startsWith('/api/v1/')))
+    summary.fullGalleryDirectPhotoModes.push(mode)
+  }finally{await context.close()}
+}
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -601,8 +808,8 @@ async function main(){
       inline.cameraSpace===isolated.cameraSpace)
     record('one browser-direct inline SDK, no unintended network',
       inlineSDKLoads===1)
-    record('Child SDK loaded only after one Child map ticket',
-      childSDKLoads===1&&childSessionRedeems===1)
+    record('Child SDK loaded only after each separate HTTPS map session',
+      childSDKLoads===2&&childSessionRedeems===2)
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
     if(ginURL){
@@ -612,6 +819,10 @@ async function main(){
         summary.fullGalleryPageModes.join(',')==='inline,isolated')
       record('inline and isolated Hosts use identical trusted Cell entry flow',
         inlinePage.drawerUsed===isolatedPage.drawerUsed)
+      await testFullGalleryDirectPhoto(browser,'inline',port)
+      await testFullGalleryDirectPhoto(browser,'isolated',port)
+      record('both Hosts passed real Page thumbnail→Viewer→drawer Back',
+        summary.fullGalleryDirectPhotoModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
 import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
+import { xDriveRememberPlacesDrawerViewerReturn } from '../../ui/shared/src/media-gallery-places-photo-drawer'
 import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 
 type Bounds = {coordinate_space:'bd09ll';west:number;east:number;south:number;north:number}
@@ -11,6 +12,7 @@ const mode = new URLSearchParams(location.search).get('mode') === 'isolated' ? '
 const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
+const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
   {cache:'no-store'}).then(async response=>{
@@ -39,6 +41,8 @@ const probe = ((window as any).__mapProbe = {
   ownerViewportRange:null as any, rangeError:false,
   viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
+  galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
+  photoPreviewRanges:[] as any[], photoOpens:[] as any[],
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -73,6 +77,46 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
   probe.queries.push({favorite,albumKey,count:data.total_count,
     bounds:JSON.parse(JSON.stringify(bounds))})
   return data
+}
+/** Preview/Viewer use the same Owner Cell Range as the real Gallery Page.
+ * Non-Gin previews contain synthetic metadata and entirely local thumbnails. */
+const listOwnerCellItems=async(selection:any,limit:number,offset:number,
+  sort:any,signal:AbortSignal)=>{
+  if(signal.aborted)throw Error('cancelled')
+  let range:any
+  if(genuineGin){
+    const params=geometry(selection.bounds)
+    for(const [key,value] of Object.entries({
+      cell_x:selection.cell_x,cell_y:selection.cell_y,
+      asset_id:selection.asset_id,node_id:selection.node_id,
+      node_revision:selection.node_revision,photo_count:selection.photo_count,
+      limit,offset,range:true,sort_by:sort.by,sort_dir:sort.dir,
+    }))params.set(key,String(value))
+    if(sort.filters?.favorite===true)params.set('favorite','true')
+    if(sort.albumKey)params.set('album',sort.albumKey)
+    range=await ownerRequest('cell-items',params,signal)
+  }else{
+    const count=selection.photo_count
+    range={offset,limit,total_count:count,items:Array.from(
+      {length:Math.min(limit,Math.max(0,count-offset))},(_,i)=>{
+        const id=selection.node_id+offset+i
+        return {node:{id,revision:selection.node_revision,type:'file',
+          name:'test-photo-'+id+'.png',size:512,
+          created_at:'2026-01-01T00:00:00Z',
+          updated_at:'2026-01-01T00:00:00Z'},
+          metadata:{mime_type:'image/png',has_thumbnail:true}}
+      })}
+  }
+  probe.photoPreviewRanges.push({limit,offset,total:range.total_count,
+    items:range.items?.length||0,realGin:genuineGin})
+  return range
+}
+const loadThumbnail=async(_id:number,signal?:AbortSignal)=>{
+  if(signal?.aborted)throw Error('cancelled')
+  return 'data:image/svg+xml,'+encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96">'+
+    '<rect width="96" height="96" fill="#3b82f6"/>'+
+    '<circle cx="48" cy="48" r="22" fill="#e0f2fe"/></svg>')
 }
 const onOpenCell=(selection:any,scope:Scope)=>{
   probe.clicks.push({node:selection.node_id,asset:selection.asset_id,
@@ -206,32 +250,81 @@ const galleryDataSource={
   loadPreviewURL:signedPreviewURL,
 }
 function FullGalleryPage(){
+  const [directViewer,setDirectViewer]=useState<{item:any;context:any}|null>(null)
+  if(fullGalleryDirectPhoto && directViewer){
+    // Use the shipped shared Viewer; the map and untrusted Child unmount.
+    return <XDriveMediaGalleryViewer
+      item={directViewer.item}
+      positionLabel={String(directViewer.context.activeIndex+1)+' / '+
+        String(directViewer.context.totalCount)}
+      canPrevious={false} canNext={false}
+      filmstripEntries={[]} activeIndex={directViewer.context.activeIndex}
+      loadThumbnail={async()=>null} loadPreviewURL={signedPreviewURL}
+      onPrevious={()=>{}} onNext={()=>{}} onFilmstripSelect={()=>{}}
+      onClose={()=>{probe.galleryPageDirectClosed++;setDirectViewer(null)}}/>
+  }
   return <XDriveMediaGalleryPage source={galleryDataSource as any}
     preferenceScope="p04-authenticated-full-gallery"
     initialSection="places" pageSize={48}
     initialMapPhotoScope={{albumKey:'',filters:{
       sort_by:'captured',sort_dir:'desc',favorite:true}}}
+    onOpenViewer={fullGalleryDirectPhoto ? (item,context)=>{
+      // Production Page checks fresh Owner Cell Range before this callback.
+      probe.galleryPageDirectOpens.push({
+        nodeID:item.node.id,revision:item.node.revision,
+        kind:context.target.kind,index:context.activeIndex,
+        total:context.totalCount,
+      })
+      setDirectViewer({item,context})
+    } : undefined}
     onError={(error)=>{probe.galleryPageErrors.push(
       error instanceof Error?error.name:'GalleryError')}}/>
 }
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
   const [viewerItem,setViewerItem]=useState<any|null>(null)
+  const [drawerViewer,setDrawerViewer]=useState<number|null>(null)
   const scope:Scope={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',
     ...(favorite?{favorite:true}:{})}}
+  const openDrawerPhoto=async(selection:any,approved:Scope,nodeID:number,
+    revision:number,presentation:any)=>{
+    try{
+      // Test fixture's second Owner authorization; production Gallery also
+      // performs its own revalidation before opening the real Viewer.
+      const range=await listOwnerCellItems(selection,48,0,{
+        by:approved.filters.sort_by,dir:approved.filters.sort_dir,
+        filters:approved.filters,albumKey:approved.albumKey,
+      },new AbortController().signal)
+      const valid=range.total_count===selection.photo_count &&
+        range.items.some((item:any)=>item.node?.id===nodeID &&
+          item.node?.revision===revision)
+      if(valid)xDriveRememberPlacesDrawerViewerReturn(
+        'synthetic-private-owner',selection,approved,Date.now(),presentation)
+      probe.photoOpens.push({valid,expanded:presentation.expanded,
+        scrollTop:presentation.scrollTop,scrollLeft:presentation.scrollLeft})
+      if(valid)setDrawerViewer(nodeID)
+    }catch{probe.rangeError=true}
+  }
   return <div>
     <button type="button" id="toggle-favorite" onClick={()=>setFavorite(x=>!x)}>
       Switch Owner favorite scope
     </button>
     <div id="private-parent">PRIVATE_PARENT_DOM_SENTINEL</div>
-    <XDriveMediaGalleryBaiduIsolatedPhotoSurface
+    {drawerViewer!==null ? <section id="fixture-viewer" aria-label="Fixture photo viewer">
+      <button type="button" id="fixture-viewer-back" onClick={()=>setDrawerViewer(null)}>
+        Return to Map
+      </button>
+    </section> : <XDriveMediaGalleryBaiduIsolatedPhotoSurface
       mode={mode} childOrigin={childOrigin} mapPhotoScope={scope}
       scope="synthetic-private-owner" getInlinePrototypeConfig={getInlinePrototypeConfig}
       getInlineSignedStatus={getInlineSignedStatus}
       mintChildTicket={mintChildTicket} listOwnerCells={listOwnerCells}
-      onOpenCell={onOpenCell} onOpenViewport={onOpenViewport}
+      listOwnerCellItems={listOwnerCellItems} loadThumbnail={loadThumbnail}
+      onOpenCell={onOpenCell} onOpenCellPhoto={openDrawerPhoto}
+      initialCamera={probe.cameras.at(-1)}
+      onOpenViewport={onOpenViewport}
       onCamera={onCamera} onInvalidated={onInvalidated}
-      onReady={onReady} onFailure={onFailure}/>
+      onReady={onReady} onFailure={onFailure}/>}
     <output id="trusted-cell-open"/>
     {genuineGin ? (
       <>

@@ -4,13 +4,23 @@ import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
-import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection } from '../models'
+import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
+import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
+import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
+import {
+  XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, xDrivePlacesDrawerValidRange,
+  xDrivePlacesDrawerMatchesFresh, xDriveTakePlacesDrawerViewerReturn,
+} from '../media-gallery-places-photo-drawer'
+import type {
+  XDrivePlacesDrawerReturn, XDrivePlacesDrawerPresentation,
+} from '../media-gallery-places-photo-drawer'
+import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveCurrentMapPhotoCollections } from '../media-gallery-places-map-strip'
 import {
@@ -35,9 +45,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   getInlineSignedStatus,
   mode = 'isolated',
   listOwnerCells,
+  listOwnerCellItems,
   loadThumbnail,
   edgeToEdge = false,
   onOpenCell,
+  onOpenCellPhoto,
   onOpenViewport,
   onInvalidated,
   onCamera,
@@ -58,9 +70,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mode?: 'inline' | 'isolated'
   listOwnerCells: (bounds: Bounds, signal: AbortSignal,
     filters?: XDriveBaiduMapPhotoScope['filters'], albumKey?: string) => Promise<MediaBaiduNativeCellsPage>
+  listOwnerCellItems?: (selection: MediaBaiduNativeCellSelection,
+    limit: number, offset: number, sort: XDriveBaiduCellRangeSort,
+    signal: AbortSignal) => Promise<import('../models').MediaItemRange>
   loadThumbnail?: MediaThumbnailLoader
   edgeToEdge?: boolean
   onOpenCell: (selection: MediaBaiduNativeCellSelection, scope: XDriveBaiduMapPhotoScope) => void
+  onOpenCellPhoto?: (selection: MediaBaiduNativeCellSelection,
+    scope: XDriveBaiduMapPhotoScope, nodeID: number, revision: number,
+    presentation: XDrivePlacesDrawerPresentation) => void
   onOpenViewport?: (bounds: Bounds, scope: XDriveBaiduMapPhotoScope) => void
   onInvalidated?: () => void
   onCamera?: (camera: XDriveBaiduNativeCameraSnapshot) => void
@@ -75,6 +93,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
+  const photoOpener = useRef(onOpenCellPhoto)
+  const previewPort = useRef(listOwnerCellItems)
+  const selectCellRef = useRef<(selection: MediaBaiduNativeCellSelection,
+    presentation?: XDrivePlacesDrawerPresentation) => void>(() => {})
+  const drawerFetch = useRef<AbortController | null>(null)
+  const restoreOwner = useRef<string | null>(null)
+  const restoreHint = useRef<XDrivePlacesDrawerReturn | null>(null)
+  // Consume only after commit, not during speculative React renders.
+  // The map's mount effect runs after this earlier effect.
+  useEffect(() => {
+    if (restoreOwner.current === (scope ?? '')) return
+    restoreOwner.current = scope ?? ''
+    restoreHint.current = scope ? (xDriveTakePlacesDrawerViewerReturn(scope) ?? null) : null
+  }, [scope])
   const openViewport = useRef(onOpenViewport)
   const latestAcceptedViewport = useRef<Bounds | null>(null)
   // Owner-approved cells, their camera and filter signature form one scope.
@@ -91,6 +123,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const cameraUpdate = useRef(onCamera)
   const cameraClear = useRef(onCameraClear)
   opened.current = onOpenCell
+  photoOpener.current = onOpenCellPhoto
+  previewPort.current = listOwnerCellItems
   openViewport.current = onOpenViewport
   invalidated.current = onInvalidated
   cameraUpdate.current = onCamera
@@ -103,6 +137,89 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const [projected,setProjected] = useState<
     XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
   const [error,setError] = useState(false)
+  type DrawerView = {
+    selection: MediaBaiduNativeCellSelection
+    key: string
+    phase: 'loading' | 'ready' | 'error'
+    items: MediaItem[]
+    total: number
+    expanded: boolean
+    returnPresentation?: XDrivePlacesDrawerPresentation
+  }
+  const [drawer,setDrawer] = useState<DrawerView | null>(null)
+  const closeDrawer = () => {
+    drawerFetch.current?.abort()
+    drawerFetch.current = null
+    setDrawer(null)
+  }
+  const hasAcceptedCell = (selection: MediaBaiduNativeCellSelection): boolean =>
+    acceptedCells.current.some(fresh =>
+      xDriveBaiduCellReturnMatchesFreshSelection(selection, fresh))
+  const selectCell = (selection: MediaBaiduNativeCellSelection,
+    presentation?: XDrivePlacesDrawerPresentation) => {
+    const approved=acceptedScope.current
+    if (!approved || approved.key !== filterRef.current.key ||
+        !hasAcceptedCell(selection)) return
+    const preview=previewPort.current
+    if (!preview || !loadThumbnail) {
+      opened.current(selection, approved.scope)
+      return
+    }
+    const scopeCopy=xDriveCopyBaiduMapPhotoScope(approved.scope)
+    if (!scopeCopy) return
+    closeDrawer()
+    const controller=new AbortController()
+    drawerFetch.current=controller
+    const cell={...selection,bounds:{...selection.bounds}}
+    const key=approved.key
+    setDrawer({selection:cell,key,phase:'loading',items:[],
+      total:cell.photo_count,expanded:presentation?.expanded ?? false,
+      returnPresentation:presentation})
+    void preview(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,{
+      by:scopeCopy.filters.sort_by ?? 'captured',
+      dir:scopeCopy.filters.sort_dir ?? 'desc',
+      filters:scopeCopy.filters,albumKey:scopeCopy.albumKey,
+    },controller.signal).then(range => {
+      if (controller.signal.aborted || drawerFetch.current !== controller ||
+          acceptedScope.current?.key !== key || !hasAcceptedCell(cell)) return
+      const valid=xDrivePlacesDrawerValidRange(cell,range)
+      setDrawer(current => current && current.key===key &&
+        xDriveBaiduCellReturnMatchesFreshSelection(current.selection,cell)
+        ? { ...current,phase:valid?'ready':'error',
+            items:valid?[...range.items]:[],total:cell.photo_count }
+        : current)
+    }).catch(() => {
+      if (!controller.signal.aborted && drawerFetch.current===controller &&
+          acceptedScope.current?.key===key) {
+        setDrawer(current => current && current.key===key
+          ? { ...current,phase:'error',items:[] } : current)
+      }
+    }).finally(() => {
+      if (drawerFetch.current===controller)drawerFetch.current=null
+    })
+  }
+  selectCellRef.current=selectCell
+  const activeDrawer = drawer && phase === 'ready' &&
+    acceptedScope.current?.key === drawer.key && hasAcceptedCell(drawer.selection)
+    ? drawer : null
+  const openDrawerAll = () => {
+    const state=activeDrawer,approved=acceptedScope.current
+    if (!state || state.phase!=='ready' || !approved ||
+        approved.key!==filterRef.current.key) return
+    opened.current(state.selection,approved.scope)
+    closeDrawer()
+  }
+  const openDrawerPhoto = (item: MediaItem,
+    presentation: XDrivePlacesDrawerPresentation) => {
+    const state=activeDrawer,approved=acceptedScope.current
+    if (!state || state.phase!=='ready' || !approved ||
+        approved.key!==filterRef.current.key ||
+        !state.items.some(source => source.node.id===item.node.id &&
+          source.node.revision===item.node.revision)) return
+    if (!photoOpener.current) { openDrawerAll();return }
+    photoOpener.current(state.selection,approved.scope,item.node.id,item.node.revision,
+      presentation)
+  }
   const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
   const trustedSummary = scopeIsCurrent ? summary : null
   // Refresh the existing isolated map: never remount its SDK for a filter.
@@ -145,6 +262,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       activeQuery = null
       acceptedScope.current = null
       acceptedCells.current = []
+      closeDrawer()
       setAccessible([])
       setSummary(null)
       setAcceptedViewport(null)
@@ -170,12 +288,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       host:node,parentWindow:win,
       onActivateCell:(selection:MediaBaiduNativeCellSelection) => {
         const approved=acceptedScope.current
-        if(!lifetime.signal.aborted && approved && approved.key===filterRef.current.key &&
+        if(!lifetime.signal.aborted && latestAcceptedViewport.current &&
+          approved && approved.key===filterRef.current.key &&
           acceptedCells.current.some(cell=>cell.node_id===selection.node_id &&
             cell.asset_id===selection.asset_id && cell.node_revision===selection.node_revision &&
             cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
             cell.photo_count===selection.photo_count)) {
-          opened.current(selection,approved.scope)
+          selectCellRef.current(selection)
         }
       },
       onCancel:cancel,
@@ -229,7 +348,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       lastViewport.current={bounds:{...bounds},live:liveCamera}
       frame.replaceAuthorizedCells([])
       const approved=filterRef.current
-      if(!approved.snapshot)return false
+      // Preserve the current Owner-approved scope for the async callback.
+      const verifiedScope=approved.snapshot
+      if(!verifiedScope)return false
       const request = new AbortController()
       const onLifetime = () => request.abort()
       lifetime.signal.addEventListener('abort',onLifetime,{once:true})
@@ -237,7 +358,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       const run = generation
       try {
         const page = await listOwnerCells(bounds,request.signal,
-          approved.snapshot.filters,approved.snapshot.albumKey)
+          verifiedScope.filters,verifiedScope.albumKey)
         if(request.signal.aborted || lifetime.signal.aborted || run!==generation ||
            approved.key!==filterRef.current.key)return false
         if(!xDriveValidBaiduNativeCellsPage(page,bounds) ||
@@ -253,8 +374,26 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         if(!frame.replaceAuthorizedCells(cells)) throw new Error('map_cells_unavailable')
         if(approved.key!==filterRef.current.key || run!==generation)return false
-        acceptedScope.current={key:approved.key,scope:approved.snapshot}
+        acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
+        // A one-shot Viewer hint never grants media access. Restore only if
+        // THIS freshly authenticated Owner /cells response contains precisely
+        // the same scope, bounds, Cell identity, revision and photo count.
+        // The initial worldwide query can also be the original selected
+        // Cell; requiring a later SDK viewport here loses that valid return.
+        // Conversely, retain a nonmatching hint until the first true camera
+        // Range can check it. That Range must fail closed when different.
+        if (restoreHint.current) {
+          const hint=restoreHint.current
+          const current=cells.find(entry =>
+            xDrivePlacesDrawerMatchesFresh(hint,verifiedScope,entry.selection))
+          if (current) {
+            restoreHint.current=null
+            selectCellRef.current(current.selection, hint.presentation)
+          } else if (liveCamera) {
+            restoreHint.current=null
+          }
+        }
         setAccessible(cells.map((item,index)=>({
           label:'区域 '+(page.cells[index].cell_y*8+page.cells[index].cell_x+1)+
             ' · '+page.cells[index].photo_count.toLocaleString('zh-CN'),
@@ -320,33 +459,33 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // All 64 map numbers remain in the provider map; only 24 thumbnails load.
   const coverPins: Array<{selection:MediaBaiduNativeCellSelection;
     count:number;x:number;y:number}> = []
-  if (scopeIsCurrent && projected?.width && projected.height && loadThumbnail && phase === 'ready') {
+  // The worldwide Owner /cells bootstraps SDK fit only: photo cover clicks
+  // must await a true camera viewport, which can regrid the 8x8 Cells.
+  if (scopeIsCurrent && acceptedViewport && projected?.width && projected.height &&
+      loadThumbnail && phase === 'ready') {
     for (const candidate of [...projected.cells].sort((a,b) => b.count-a.count)) {
       if (coverPins.length >= 24) break
-      if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 72)) continue
+      // Projected SDK coordinates never authorize obsolete Owner selections.
+      if (!hasAcceptedCell(candidate.selection)) continue
+      if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 88)) continue
       coverPins.push(candidate)
     }
   }
   // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
   // key as private media authority. A pan/revoke clears both inputs.
-  const photoStrip = scopeIsCurrent && phase === 'ready'
+  const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
     ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
   const openVerifiedCell=(selection:MediaBaiduNativeCellSelection)=>{
-    const approved=acceptedScope.current
-    if(approved && approved.key===filterRef.current.key &&
-        acceptedCells.current.some(cell=>cell.node_id===selection.node_id &&
-          cell.asset_id===selection.asset_id && cell.node_revision===selection.node_revision &&
-          cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
-          cell.photo_count===selection.photo_count))opened.current(selection,approved.scope)
+    selectCellRef.current(selection)
   }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
       <Box data-xdrive-places-cluster-overview role="region" aria-label="定位照片聚集地图"
         sx={{position:'relative',width:'100%',height:{
-          xs:'max(460px, calc(100dvh - 190px))',
-          sm:'max(540px, calc(100dvh - 185px))'},
-          maxHeight:1024,borderRadius:edgeToEdge ? 0 : 1.5,
+          xs:'max(520px, calc(100dvh - 148px))',
+          sm:'max(640px, calc(100dvh - 165px))'},
+          maxHeight:1400,borderRadius:edgeToEdge ? 0 : 1.5,
           overflow:'hidden',backgroundColor:'background.default'}}>
         <Box ref={mount} sx={{position:'absolute',inset:0,
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
@@ -361,8 +500,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 sx={{position:'absolute',
                   left:`${pin.x/projected.width*100}%`,
                   top:`${pin.y/projected.height*100}%`,
-                  transform:'translate(-50%,-50%)',width:60,height:60,p:0,
-                  border:'2px solid white',borderRadius:2,overflow:'visible',
+                  transform:'translate(-50%,-50%)',width:{xs:64,sm:72},height:{xs:64,sm:72},p:0,
+                  border:'3px solid white',borderRadius:2,overflow:'visible',
                   cursor:'pointer',pointerEvents:'auto',
                   bgcolor:'background.paper',boxShadow:'0 3px 12px rgba(15,23,42,.28)',
                   isolation:'isolate',
@@ -395,14 +534,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             ))}
           </Box>
         ) : null}
-        {loadThumbnail && photoStrip.length > 0 ? (
+        {!activeDrawer && loadThumbnail && photoStrip.length > 0 ? (
           <Box data-xdrive-places-photo-collection-strip
             aria-label="地图照片区域封面"
             sx={{position:'absolute',left:{xs:8,sm:16},right:{xs:8,sm:16},
               bottom:{xs:10,sm:16},zIndex:5,pointerEvents:'none'}}>
             <Box sx={{pointerEvents:'auto',p:0.8,px:1,borderRadius:2,
               bgcolor:'background.paper',boxShadow:3,
-              border:'1px solid',borderColor:'divider',maxWidth:560,
+              border:'1px solid',borderColor:'divider',maxWidth:{xs:'100%',sm:720},
               mx:'auto',backdropFilter:'blur(14px)'}}>
               <Typography variant="caption" sx={{display:'block',mb:0.5,
                 fontWeight:700}}>
@@ -443,11 +582,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             </Box>
           </Box>
         ) : null}
-      </Box>
-      {trustedSummary ? (
-        <Box sx={{ px:edgeToEdge ? 1 : 0, display:'flex',alignItems:'center',
-          justifyContent:'space-between',gap:1,flexWrap:'wrap',mt:0.75 }}>
-          <Typography variant="caption" color="text.secondary">
+      {!activeDrawer && trustedSummary ? (
+        <Box data-xdrive-places-map-photo-summary
+          sx={{position:'absolute',left:{xs:10,sm:16},right:{xs:10,sm:16},
+            bottom:photoStrip.length>0 ? {xs:135,sm:145} : {xs:12,sm:16},
+            zIndex:5,display:'flex',alignItems:'center',justifyContent:'space-between',
+            gap:1,flexWrap:'wrap',pointerEvents:'none'}}>
+          <Typography variant="caption" color="text.primary"
+            sx={{bgcolor:'background.paper',px:1,py:0.75,borderRadius:2,boxShadow:2}}>
             {trustedSummary.total_count > 0
               ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
               : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
@@ -455,7 +597,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-full-camera-wall
-              sx={{minHeight:44,textTransform:'none'}}
+              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
+                bgcolor:'background.paper',boxShadow:2}}
               onClick={() => {
                 const accepted = latestAcceptedViewport.current
                 if (accepted && accepted.west===acceptedViewport.west &&
@@ -472,6 +615,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           ) : null}
         </Box>
       ):null}
+        {activeDrawer && loadThumbnail ? (
+          <XDriveMediaGalleryPlacesPhotoDrawer
+            items={activeDrawer.items} total={activeDrawer.total}
+            phase={activeDrawer.phase} expanded={activeDrawer.expanded}
+            initialPresentation={activeDrawer.returnPresentation}
+            loadThumbnail={loadThumbnail}
+            onClose={closeDrawer}
+            onExpand={expanded => setDrawer(current => current
+              ? {...current,expanded} : current)}
+            onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}
+            onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
+          />
+        ) : null}
+      </Box>
       {phase==='unavailable' ? (
         <Typography role="alert" variant="caption" color="text.secondary">
           {mode === 'inline'
