@@ -82,7 +82,9 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
         Text(label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
         OutlinedTextField(value, onValueChange, enabled = enabled, singleLine = true,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag).semantics { contentDescription = label }
-                .onFocusChanged { if (!it.isFocused) visible = false },
+                // Keep reveal state while the trailing icon owns focus inside this field.
+                // Blur outside the whole field must still reset it immediately.
+                .onFocusChanged { if (!it.hasFocus) visible = false },
             shape = RoundedCornerShape(12.5.dp),
             placeholder = placeholder?.let { { Text(it) } },
             visualTransformation = if (secret && (!visible || value.isEmpty())) PasswordVisualTransformation() else VisualTransformation.None,
