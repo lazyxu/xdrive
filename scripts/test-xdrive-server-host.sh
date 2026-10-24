@@ -43,13 +43,21 @@ url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o|--output) out="$2"; shift 2 ;;
-    --retry|--retry-delay|--connect-timeout) shift 2 ;;
+    --retry|--retry-delay|--connect-timeout|--max-time|--noproxy) shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
-[[ -n "$out" && -n "$url" ]]
+[[ -n "$url" ]]
 printf '%s\n' "$url" >> "$TEST_STATE/curl-urls"
+if [[ "$url" == "http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive" ]]; then
+  case "${TEST_LOCAL_GITLAB_PROJECT:-unavailable}" in
+    valid) printf '{"path_with_namespace":"xuliang/xdrive"}\n'; exit 0 ;;
+    wrong) printf '{"path_with_namespace":"another/xdrive"}\n'; exit 0 ;;
+    *) exit 7 ;;
+  esac
+fi
+[[ -n "$out" ]]
 if [[ "$url" == */xdrive-release-attestation.json ]]; then
   if [[ "${TEST_CURL_FAIL_ATTESTATION:-0}" == "1" ]]; then
     exit 22
@@ -539,6 +547,45 @@ grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/inst
 grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
 grep -q 'downloading master host installer from gitlab' "$TMP/update-gitlab.out"
 
+
+# A matching local GitLab should win without attempting the unreachable domain.
+rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
+TEST_LOCAL_GITLAB_PROJECT=valid TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source gitlab --channel master \
+  >"$TMP/update-gitlab-local-first.out" 2>"$TMP/update-gitlab-local-first.err"
+grep -q '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive$' "$TMP/state/curl-urls"
+grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+if grep -q '^http://gitlab.t-fluid.com:1080/' "$TMP/state/curl-urls"; then
+  echo "Valid local GitLab must bypass the remote installer URL" >&2
+  exit 1
+fi
+grep -q '^http://127.0.0.1:1080$' "$TMP/state/installer-gitlab-base"
+grep -q 'found matching local GitLab' "$TMP/update-gitlab-local-first.err"
+
+# A different local GitLab project does not get to supply the installer.
+rm -f "$TMP/state/curl-urls"
+TEST_LOCAL_GITLAB_PROJECT=wrong TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source gitlab --channel master \
+  >"$TMP/update-gitlab-wrong-project.out" 2>"$TMP/update-gitlab-wrong-project.err"
+grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"; then
+  echo "Wrong local project must not be used" >&2
+  exit 1
+fi
+
+# Explicit provider configuration overrides local autodetection.
+rm -f "$TMP/state/curl-urls"
+TEST_LOCAL_GITLAB_PROJECT=valid XD_GITLAB_BASE_URL=http://gitlab.t-fluid.com:1080 \
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source gitlab --channel master \
+  >"$TMP/update-gitlab-explicit.out" 2>"$TMP/update-gitlab-explicit.err"
+grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+if grep -q '/api/v4/projects/xuliang%2Fxdrive$' "$TMP/state/curl-urls"; then
+  echo "Explicit GitLab provider must not be probed or replaced" >&2
+  exit 1
+fi
 rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
 TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
 TEST_STATE="$TMP/state" \
@@ -562,8 +609,8 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-http-e
 gitlab_http_status=$?
 set -e
 [[ "$gitlab_http_status" -eq 22 ]]
-if grep -q '^http://127.0.0.1:1080/' "$TMP/state/curl-urls"; then
-  echo "GitLab HTTP errors must not fall back to localhost" >&2
+if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/' "$TMP/state/curl-urls"; then
+  echo "GitLab HTTP errors must not fall back to localhost installer" >&2
   exit 1
 fi
 

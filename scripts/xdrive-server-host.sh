@@ -175,13 +175,49 @@ installer_url_for_source() {
   esac
 }
 
+
+# Probe only when the default GitLab provider was implicitly selected.
+# A loopback HTTP listener alone is not proof: match the configured project.
+prefer_local_gitlab() {
+  [[ -z "${XD_GITLAB_BASE_URL+x}" && -z "$INSTALLER_URL_OVERRIDE" ]] || return 0
+  [[ "${GITLAB_BASE_URL%/}" == "http://gitlab.t-fluid.com:1080" ]] || return 0
+  local candidate="${GITLAB_LOCAL_FALLBACK_URL%/}"
+  [[ "$candidate" =~ ^http://(127[.]0[.]0[.]1|localhost):[0-9]{1,5}$ ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local project="${GITLAB_PROJECT#/}" key metadata actual
+  key="${project//\//%2F}"
+  metadata="$(curl -fsS --noproxy '*' --connect-timeout 1 --max-time 3 \
+    "$candidate/api/v4/projects/$key" 2>/dev/null)" || return 0
+  actual="$(printf '%s' "$metadata" | grep -oE '"path_with_namespace"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | cut -d'"' -f4 || true)"
+  [[ "$actual" == "$project" ]] || return 0
+
+  GITLAB_BASE_URL="$candidate"
+  export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
+  echo "[xDrive] found matching local GitLab $project at $candidate; using loopback before remote DNS." >&2
+}
+
+# The nested installer also fetches raw files: bypass proxies for loopback.
+prepare_local_gitlab_proxy() {
+  case "$GITLAB_BASE_URL" in
+    http://127.0.0.1:*|http://localhost:*)
+      export NO_PROXY="${NO_PROXY:+$NO_PROXY,}127.0.0.1,localhost"
+      export no_proxy="${no_proxy:+$no_proxy,}127.0.0.1,localhost"
+      ;;
+  esac
+}
+
 LAST_DOWNLOAD_TOOL=""
 
 download_installer_url() {
   local installer_url="$1" destination="$2" status
+  local -a local_curl_opts=()
+  case "$installer_url" in
+    http://127.0.0.1:*|http://localhost:*) local_curl_opts=(--noproxy '*') ;;
+  esac
   if command -v curl >/dev/null 2>&1; then
     LAST_DOWNLOAD_TOOL="curl"
-    if curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
+    if curl -fsSL "${local_curl_opts[@]}" --retry 5 --retry-delay 2 --connect-timeout 10 \
       "$installer_url" -o "$destination" </dev/null; then
       return 0
     else
@@ -331,6 +367,10 @@ download_installer() {
       return 1
     fi
   fi
+  if [[ "$source" == gitlab ]]; then
+    prefer_local_gitlab
+    prepare_local_gitlab_proxy
+  fi
   installer_url="$(installer_url_for_source "$source" "$channel")"
 
   # The official GitHub master/stable Release publishes SHA256SUMS.txt beside
@@ -372,6 +412,7 @@ download_installer() {
   echo "[xDrive] GitLab ${GITLAB_BASE_URL%/} is unreachable; retrying via local fallback $fallback_url..." >&2
   GITLAB_BASE_URL="$fallback_url"
   export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
+  prepare_local_gitlab_proxy
   installer_url="$(installer_url_for_source "$source" "$channel")"
   download_installer_url "$installer_url" "$destination"
 }
