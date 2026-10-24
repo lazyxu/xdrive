@@ -277,6 +277,7 @@ export interface MediaGalleryDataSource {
   listTrashItemRange?: (
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   restoreTrashItems?: (items: MediaItem[]) => Promise<void>
   permanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
@@ -347,24 +348,28 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
     timeZone?: string,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listDuplicateGroups?: (limit?: number, offset?: number) => Promise<MediaDuplicateGroupList>
   listDuplicateItemRange?: (
     duplicateID: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listBurstReviews?: (limit?: number, offset?: number) => Promise<MediaBurstReviewList>
   listBurstReviewItemRange?: (
     burstID: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listPets?: () => Promise<MediaPetFacet[]>
   listPetItemRange?: (
     petKind: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listSuggestedPeople?: (
     includeReviewed?: boolean,
@@ -381,6 +386,7 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listPeople?: (
     includeHidden?: boolean,
@@ -398,6 +404,7 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   reviewSuggestedPerson?: (
     suggestionID: string,
@@ -439,6 +446,7 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader

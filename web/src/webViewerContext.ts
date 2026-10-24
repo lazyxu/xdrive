@@ -43,25 +43,25 @@ async function loadGalleryRange(
   switch (target.kind) {
     case 'trash':
       if (!source.listTrashItemRange) throw new Error('当前客户端不支持图库回收站范围加载。')
-      return source.listTrashItemRange(limit, offset)
+      return source.listTrashItemRange(limit, offset, signal)
     case 'person':
       if (!target.id || !source.listPersonItemRange) throw new Error('当前客户端不支持人物图库范围加载。')
-      return source.listPersonItemRange(target.id, limit, offset, target.query)
+      return source.listPersonItemRange(target.id, limit, offset, target.query, signal)
     case 'memory':
       if (!target.id || !source.listMemoryItemRange) throw new Error('当前客户端不支持回忆范围加载。')
-      return source.listMemoryItemRange(target.id, limit, offset)
+      return source.listMemoryItemRange(target.id, limit, offset, target.query.time_zone, signal)
     case 'duplicate-review':
       if (!target.id || !source.listDuplicateItemRange) throw new Error('当前客户端不支持重复项审查范围加载。')
-      return source.listDuplicateItemRange(target.id, limit, offset)
+      return source.listDuplicateItemRange(target.id, limit, offset, signal)
     case 'burst-review':
       if (!target.id || !source.listBurstReviewItemRange) throw new Error('当前客户端不支持连拍审查范围加载。')
-      return source.listBurstReviewItemRange(target.id, limit, offset)
+      return source.listBurstReviewItemRange(target.id, limit, offset, signal)
     case 'pet':
       if (!target.id || !source.listPetItemRange) throw new Error('当前客户端不支持宠物集合范围加载。')
-      return source.listPetItemRange(target.id, limit, offset)
+      return source.listPetItemRange(target.id, limit, offset, signal)
     case 'suggested-person':
       if (!target.id || !source.listSuggestedPersonItemRange) throw new Error('当前客户端不支持人物建议范围加载。')
-      return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+      return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query, signal)
     case 'baidu-viewport': {
       if (!target.baiduViewport || !source.listBaiduNativeViewportItems)
         throw new Error('当前客户端不支持地图视窗照片范围加载。')
@@ -84,9 +84,9 @@ async function loadGalleryRange(
     }
     case 'album':
       if (!target.id) throw new Error('相册 ID 缺失。')
-      return source.listAlbumItemRange(target.id, limit, offset, target.query)
+      return source.listAlbumItemRange(target.id, limit, offset, target.query, signal)
     default:
-      return source.listItemRange(limit, offset, target.query)
+      return source.listItemRange(limit, offset, target.query, signal)
   }
 }
 
@@ -110,6 +110,7 @@ async function loadRange(
       context.sort.direction,
       true,
       context.grouping,
+      signal,
     )
     return {
       items: page.items.map((node) => ({ node })),
@@ -126,6 +127,7 @@ async function loadRange(
       context.sort.key,
       context.sort.direction,
       context.grouping,
+      signal,
     )
     return {
       items: page.items.map((item) => ({ node: item.node })),
@@ -209,6 +211,10 @@ export function createXDriveWebViewerSession(
     if (!rangeController.signal.aborted) return
     rangeController = new AbortController()
     pages.clear()
+    // A StrictMode effect replay must not reuse pending reads issued under
+    // the cancelled signal. Keep only complete, same-session point metadata.
+    for (const [id, entry] of nodes) if (!entry.value) nodes.delete(id)
+    for (const [id, entry] of media) if (!entry.value) media.delete(id)
   }
   function dispose() {
     rangeController.abort()
@@ -250,8 +256,10 @@ export function createXDriveWebViewerSession(
       api, gallerySource, context, offset, pageSize, signal,
     ))
   }
-  const nodeAt = (id: number) => read(nodes, id, nodeLimit, () => api.node(id))
-  const mediaAt = (id: number) => read(media, id, nodeLimit, () => api.mediaItem(id))
+  const nodeAt = (id: number, signal = rangeController.signal) =>
+    read(nodes, id, nodeLimit, () => api.node(id, signal))
+  const mediaAt = (id: number, signal = rangeController.signal) =>
+    read(media, id, nodeLimit, () => api.mediaItem(id, signal))
   const sameSource = (a: Node, b: Node) => a.id === b.id && a.revision === b.revision &&
     (!a.sha256 || !b.sha256 || a.sha256 === b.sha256)
   const withAcknowledgedPatch = (item: MediaItem) => {
@@ -265,24 +273,32 @@ export function createXDriveWebViewerSession(
   }
 
   async function candidateAt(index: number): Promise<XDriveWebViewerCandidate | null> {
+    // The same Viewer session can reactivate on React StrictMode replay.
+    // A prior operation must never borrow its replacement AbortController.
+    const signal = rangeController.signal
     if (!context || !Number.isInteger(index) || index < 0) return null
     if (context.kind === 'selection') {
       const id = context.nodeIDs[index]
       if (id === undefined) return null
-      return { node: await nodeAt(id), index, totalCount: context.nodeIDs.length }
+      const node = await nodeAt(id, signal)
+      signal.throwIfAborted()
+      return { node, index, totalCount: context.nodeIDs.length }
     }
     const offset = Math.floor(index / pageSize) * pageSize
     const page = await pageAt(offset)
+    signal.throwIfAborted()
     const item = page.items[index - offset]
     return item ? { ...item, mediaItem: item.mediaItem ? withAcknowledgedPatch(item.mediaItem) : undefined,
       index, totalCount: page.totalCount } : null
   }
 
   async function neighbor(index: number, direction: -1 | 1, predicate: XDriveWebViewerPredicate) {
+    const signal = rangeController.signal
     if (!context) return null
     if (context.kind === 'selection') {
       for (let cursor = index + direction; cursor >= 0 && cursor < context.nodeIDs.length; cursor += direction) {
         const candidate = await candidateAt(cursor)
+        signal.throwIfAborted()
         if (candidate && predicate(candidate.node)) return candidate
       }
       return null
@@ -291,6 +307,7 @@ export function createXDriveWebViewerSession(
     while (cursor >= 0) {
       const offset = Math.floor(cursor / pageSize) * pageSize
       const page = await pageAt(offset)
+      signal.throwIfAborted()
       if (cursor >= page.totalCount) {
         if (direction > 0) return null
         cursor = page.totalCount - 1
@@ -311,7 +328,14 @@ export function createXDriveWebViewerSession(
   }
 
   async function current(nodeID: number, index: number, wantsMedia = false, expectedNode?: Node) {
-    const candidate = await candidateAt(index).catch(() => null)
+    const signal = rangeController.signal
+    const candidate = await candidateAt(index).catch((error) => {
+      // A page failure may fall back to its Node, but a cancelled Owner session
+      // must never issue new authorized point reads after leaving Viewer.
+      if (signal.aborted) throw error
+      return null
+    })
+    signal.throwIfAborted()
     const usable = candidate?.node.id === nodeID && (!expectedNode || sameSource(candidate.node, expectedNode))
     if (!usable && expectedNode) {
       const cached = nodes.get(nodeID)?.value ?? media.get(nodeID)?.value?.node
@@ -321,8 +345,9 @@ export function createXDriveWebViewerSession(
       }
     }
     let mediaItem = wantsMedia && usable ? candidate.mediaItem : undefined
-    if (wantsMedia && !mediaItem) mediaItem = await mediaAt(nodeID)
-    const node = usable ? candidate.node : mediaItem?.node ?? await nodeAt(nodeID)
+    if (wantsMedia && !mediaItem) mediaItem = await mediaAt(nodeID, signal)
+    const node = usable ? candidate.node : mediaItem?.node ?? await nodeAt(nodeID, signal)
+    signal.throwIfAborted()
     if (node.id !== nodeID || (expectedNode && !sameSource(node, expectedNode))) {
       invalidate(nodeID)
       throw new Error('文件版本已更改，请重新打开。')
@@ -331,6 +356,8 @@ export function createXDriveWebViewerSession(
       invalidate(nodeID)
       throw new Error('媒体信息与当前文件版本不一致，请重试。')
     }
+    // A late completion must not publish OR cache data from a cancelled Owner read.
+    signal.throwIfAborted()
     remember(nodes, nodeID, node)
     if (mediaItem) {
       mediaItem = withAcknowledgedPatch(mediaItem)
