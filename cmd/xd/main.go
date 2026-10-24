@@ -70,7 +70,7 @@ Usage:
   xd update [--source github|gitlab] [--channel stable|master] [--install]
   xd update --status
   xd doctor [--strict]
-  xd backup once|auto|schedule|status|history|pause|cancel|agent [options]
+  xd backup init|bind|drafts|list|once|auto|schedule|status|history|pause|cancel|agent [options]
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.

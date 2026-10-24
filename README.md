@@ -39,6 +39,10 @@ Not in the MVP: content-defined chunking (CDC), small-file packs, thumbnails/tra
 
 `*` The Linux background agent is optional; the Windows installer enables the Windows agent automatically for the current user.
 
+### Headless Backup-only CLI (architecture decision)
+
+The [headless Backup-only CLI architecture](docs/xd-headless-backup-architecture.md) adopts a Docker Engine-style two-process design: the `xd` CLI controls the existing `xdrive-agent` through authenticated same-user IPC, while Desktop is an optional UI. The eventual **CLI-only** installation must work without Electron or a mounted drive. First-run CLI setup, a no-mount Agent mode and separate CLI-only release packages are under development; existing `xd backup once/auto/status` commands currently require an already authorized local backup Source. No second upload queue, native scanner or CAS writer will be introduced.
+
 ## Server: Docker only
 
 The supported server deployment is Docker Compose. The installer uses these default paths:

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/lazyxu/xdrive/internal/version"
 )
@@ -19,6 +20,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+
+	backupOnly, err := agentBackupOnlyRequested(os.Args[1:])
+	if err != nil {
+		writeEarlyError(err)
+		os.Exit(2)
 	}
 
 	closeInstance, err := acquireSingleInstance()
@@ -38,7 +45,7 @@ func main() {
 	log.SetPrefix("xdrive-agent: ")
 	log.Printf("starting version %s", version.String())
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	ctrl := newAgentController(ctx, cancel)
@@ -51,7 +58,11 @@ func main() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ctrl.Run()
+		if backupOnly {
+			ctrl.RunBackupOnly()
+		} else {
+			ctrl.Run()
+		}
 	}()
 
 	<-ctx.Done()

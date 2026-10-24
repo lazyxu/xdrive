@@ -34,6 +34,11 @@ jobs:
         with:
           name: xdrive-source-agent-linux
           path: source-agent
+      - name: Download exact CLI-only backup archives produced by CI
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-backup-cli
+          path: backup-cli
       - name: Verify exact client artifact contract
         shell: bash
         run: |
@@ -48,6 +53,13 @@ jobs:
           }
           test -f source-agent/xdrive-source-agent-linux-amd64
           test -f source-agent/xdrive-source-agent-linux-arm64
+          test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
+          test -s backup-cli/xdrive-backup-windows-amd64.zip
+          cli_count="$(find backup-cli -maxdepth 1 -type f | wc -l)"
+          [[ "$cli_count" == "2" ]] || {
+            echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
+            exit 1
+          }
           source_count="$(find source-agent -maxdepth 1 -type f | wc -l)"
           [[ "$source_count" == "2" ]] || {
             echo "expected exactly two source-agent binaries; found $source_count" >&2
@@ -216,6 +228,11 @@ jobs:
         with:
           name: xdrive-source-agent-linux
           path: release
+      - name: Download exact CLI-only backup archives
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-backup-cli
+          path: release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
@@ -229,6 +246,8 @@ jobs:
           test -f release/xDriveSetup-amd64.exe
           test -f release/xdrive-source-agent-linux-amd64
           test -f release/xdrive-source-agent-linux-arm64
+          test -s release/xdrive-backup-linux-amd64.tar.gz
+          test -s release/xdrive-backup-windows-amd64.zip
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
             exit 1
@@ -243,6 +262,8 @@ jobs:
             xDriveSetup-amd64.exe \
             xdrive-source-agent-linux-amd64 \
             xdrive-source-agent-linux-arm64 \
+            xdrive-backup-linux-amd64.tar.gz \
+            xdrive-backup-windows-amd64.zip \
             xdrive-server-install.sh \
             server-backup.sh \
             server-backup-scheduled.sh \

@@ -15,5 +15,5 @@ echo "GOSUMDB=$(go env GOSUMDB)"
 # The self-hosted Windows runner may use Go newer than the module baseline.
 bash scripts/ci/prepare-go-mod-cache.sh
 git diff --exit-code -- go.mod go.sum
-go test -mod=readonly ./internal/... ./cmd/xdrive-agent
+go test -mod=readonly ./internal/... ./cmd/xdrive-agent ./cmd/xd
 go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1

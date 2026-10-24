@@ -10,6 +10,7 @@ printf '%s' "$CI_COMMIT_SHA" | grep -Eq '^[a-f0-9]{40}$' || { echo "GitLab relea
 set -- \
   xdrive-linux-amd64.deb xDriveSetup-amd64.exe \
   xdrive-source-agent-linux-amd64 xdrive-source-agent-linux-arm64 \
+  xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip \
   xdrive-server-install.sh server-backup.sh server-backup-scheduled.sh \
   server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh \
   xdrive-server docker-compose.yml xdrive.env.example
@@ -18,10 +19,15 @@ for name in "$@"; do
 done
 ( cd release; sha256sum "$@" > SHA256SUMS.txt )
 set -- "$@" SHA256SUMS.txt
-if find release -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | grep -q .; then
-  echo "release assets must be individual files, not archives" >&2
-  exit 1
-fi
+# Only the two source-exact, byte-verified Backup-only archives are allowed.
+# Reject unrelated archives rather than disabling the release-asset whitelist.
+for archive in release/*.zip release/*.tar.gz release/*.tgz; do
+  [ -e "$archive" ] || continue
+  case "$archive" in
+    release/xdrive-backup-linux-amd64.tar.gz|release/xdrive-backup-windows-amd64.zip) ;;
+    *) echo "unexpected GitLab release archive: $archive" >&2; exit 1 ;;
+  esac
+done
 
 unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN || true
 export GLAB_ENABLE_CI_AUTOLOGIN=true
@@ -127,7 +133,7 @@ for attempt in 1 2 3 4 5; do
   [ "$attempt" = 5 ] || sleep 2
 done
 [ "$verified" = 1 ] || { echo "GitLab remote package verification incomplete; snapshot unchanged" >&2; exit 1; }
-echo "[xDrive] all 15 GitLab package files SHA-256 verified"
+echo "[xDrive] all 17 GitLab package files SHA-256 verified"
 
 # Create the initial floating Release only after complete package verification.
 # Subsequent runs keep the old Release and update each existing asset link.

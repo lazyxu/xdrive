@@ -16,6 +16,7 @@ B = 'b' * 40
 FILES = (
     'xdrive-linux-amd64.deb', 'xDriveSetup-amd64.exe',
     'xdrive-source-agent-linux-amd64', 'xdrive-source-agent-linux-arm64',
+    'xdrive-backup-linux-amd64.tar.gz', 'xdrive-backup-windows-amd64.zip',
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
     'server-migrate-user.sh', 'xdrive-server', 'docker-compose.yml',
@@ -237,6 +238,12 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     assert failed_upload.returncode != 0
     unchanged(new,after)
     assert not any('promote-marker' in e for e in after['events'][len(new['events']):])
+
+    # No partially staged standalone ZIP may promote a new snapshot.
+    (tmp/'state.json').write_text(json.dumps(new))
+    failed_zip,after=run(tmp,B,MOCK_FAIL_ASSET='xdrive-backup-windows-amd64.zip')
+    assert failed_zip.returncode != 0
+    unchanged(new,after)
 
     # Even if all bytes uploaded, a mismatching remote digest prohibits links.
     (tmp/'state.json').write_text(json.dumps(new))

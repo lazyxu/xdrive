@@ -81,6 +81,9 @@ for name in ("promote-server-images", "publish-release"):
 publisher = jobs["publish-release"]
 assert "package-linux-client" in publisher
 assert "package-windows-client" in publisher
+assert "build-client-core" in publisher, "exact CLI-only archives must be a release input"
+assert "xdrive-backup-windows-amd64.zip" in publisher, "Windows CLI-only release artifact missing"
+assert "rm -rf release/core release/backup-cli" in publisher, "stable GitLab release must not upload binary build directories"
 assert "release-assets" in publisher
 assert "promote-server-images" in publisher
 image_publisher = jobs["publish-server-images"]

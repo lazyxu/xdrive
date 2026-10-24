@@ -58,8 +58,64 @@ func validateLocalFolderBoundaries(root, mountPath, configDir string) error {
 	return nil
 }
 
-// AuthorizeLocalFolder can be invoked from the Desktop native-picking IPC path.
-// It never starts a scan or lifts the Server's fail-closed execution gate.
+// preflightLocalFolderRoot is the ONE native/Owner/path precondition shared
+// by both Desktop's picker and xd's explicit local --path. It does not
+// register a device, create a Source, or persist any Root authorization.
+func preflightLocalFolderRoot(ctx context.Context, selectedPath string) (userconfig.Config, string, error) {
+	var empty userconfig.Config
+	if ctx == nil || ctx.Err() != nil ||
+		(runtime.GOOS != "windows" && runtime.GOOS != "linux") ||
+		!filepath.IsAbs(selectedPath) || len([]byte(selectedPath)) > 4096 {
+		return empty, "", errors.New("a valid absolute local backup directory is required")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return empty, "", err
+	}
+	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
+		return empty, "", errors.New("login is required for local folder preflight")
+	}
+	configDir, err := userconfig.Dir()
+	if err != nil {
+		return empty, "", err
+	}
+	mountPath, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return empty, "", err
+	}
+	if err := validateLocalFolderBoundaries(selectedPath, mountPath, configDir); err != nil {
+		return empty, "", err
+	}
+	// Temporary read-only inspection; the actual Root identity is minted once
+	// by AuthorizeLocalFolder, and no preflight token is stored or sent remotely.
+	if _, err := localpush.PrepareRootGrant(cfg.Server, cfg.Username, 1,
+		uuid.NewString(), selectedPath); err != nil {
+		return empty, "", err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return empty, "", err
+	}
+	if latest.SessionInvalid || latest.SessionID != cfg.SessionID ||
+		latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return empty, "", errors.New("account changed during local backup directory validation")
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, "", err
+	}
+	return cfg, configDir, nil
+}
+
+// PreflightLocalFolderPath exposes only the shared read-only native check.
+func (c *agentController) PreflightLocalFolderPath(ctx context.Context, selectedPath string) error {
+	_, _, err := preflightLocalFolderRoot(ctx, selectedPath)
+	return err
+}
+
+// AuthorizeLocalFolder accepts local-user consent from either Desktop's native
+// directory picker or the explicit --path argument to the same-user xd CLI.
+// Neither a remote Web call nor a renderer-supplied arbitrary device grant is
+// permitted. It never starts a scan or lifts the Server's execution gate.
 func (c *agentController) AuthorizeLocalFolder(ctx context.Context, sourceID uint64, selectedPath string) (localFolderGrantResult, error) {
 	var out localFolderGrantResult
 	if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
@@ -71,27 +127,8 @@ func (c *agentController) AuthorizeLocalFolder(ctx context.Context, sourceID uin
 	c.localFolderGrantMu.Lock()
 	defer c.localFolderGrantMu.Unlock()
 
-	cfg, err := userconfig.Load()
+	cfg, configDir, err := preflightLocalFolderRoot(ctx, selectedPath)
 	if err != nil {
-		return out, err
-	}
-	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
-		return out, errors.New("login is required for local folder authorization")
-	}
-	configDir, err := userconfig.Dir()
-	if err != nil {
-		return out, err
-	}
-	mountPath, err := userconfig.EffectiveMountPath(cfg)
-	if err != nil {
-		return out, err
-	}
-	if err := validateLocalFolderBoundaries(selectedPath, mountPath, configDir); err != nil {
-		return out, err
-	}
-	// Fail before any server registration if a picker path is not an ordinary,
-	// accessible, stable local directory.
-	if _, err := localpush.PrepareRootGrant(cfg.Server, cfg.Username, sourceID, uuid.NewString(), selectedPath); err != nil {
 		return out, err
 	}
 	cli, err := userconfig.NewClient(cfg)

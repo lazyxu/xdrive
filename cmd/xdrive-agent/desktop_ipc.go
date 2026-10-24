@@ -816,6 +816,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/device-backups/local-schedule", h.setLocalBoundBackupSchedule)
 	mux.HandleFunc("DELETE /v1/device-backups/local-bound", h.removeLocalBoundBackup)
 	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
+	mux.HandleFunc("POST /v1/device-backups/local-cli-preflight", h.preflightLocalBackupCLI)
 	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -6297,8 +6298,9 @@ type localFolderAuthorizer interface {
 }
 
 // authorizeLocalFolder is a loopback/Agent-token-protected endpoint for the
-// Desktop MAIN process, never a remote Web path selection API. The path
-// originates from Electron's native folder picker, not from renderer input.
+// Same-user Desktop MAIN or local xd CLI, never a remote Web path selection.
+// The path comes from an explicit local-user picker or --path instruction,
+// and is checked against the current native Root, device and Owner.
 func (h *desktopIPCHandler) authorizeLocalFolder(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		SourceID uint64 `json:"source_id"`

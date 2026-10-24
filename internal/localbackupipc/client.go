@@ -172,7 +172,8 @@ func (c *Client) request(ctx context.Context, method, path string, body any, tar
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted &&
+		resp.StatusCode != http.StatusCreated {
 		// Never relay remote error bodies; they can contain private data.
 		return fmt.Errorf("owning Agent rejected %s (HTTP %d)", method, resp.StatusCode)
 	}

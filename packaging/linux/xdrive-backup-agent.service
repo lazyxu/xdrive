@@ -1,0 +1,15 @@
+[Unit]
+Description=xDrive Backup-only owning Agent (no Desktop or mounted drive)
+Documentation=https://github.com/lazyxu/xdrive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/xdrive-agent --backup-only
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
