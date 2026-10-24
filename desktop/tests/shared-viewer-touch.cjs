@@ -132,3 +132,38 @@ test('Viewer mobile design keeps touch gestures separate from video and Live Pho
   assert.ok(runtimeDocs.includes('移动 Viewer'), 'Web App Runtime must document mobile Viewer behavior')
   assert.ok(previewDocs.includes('pinch'), 'Preview Engine must document touch image gestures')
 })
+
+test('Live Photo still pinch/pan uses the same two callers and does not create a second media renderer', () => {
+  const liveSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
+  assert.ok(preview.includes('deferTouchHold={interactiveImage}') &&
+    preview.includes('interactiveImage={interactiveImage}'),
+    'single-file LIVP must opt into the same authorized still-only gesture surface')
+  assert.ok(mediaViewerContent.includes('deferTouchHold={interactiveImage}') &&
+    mediaViewerContent.includes('interactiveImage={interactiveImage}'),
+    'paired Live Photo must share the gesture surface')
+  for (const feature of ['data-xdrive-live-zoom', 'zoomPointersRef',
+    'pinchRef', 'panRef', 'xDriveClampPreviewViewport', 'xDriveAnchorPreviewZoom']) {
+    assert.ok(liveSurface.includes(feature), 'shared Live zoom is missing ' + feature)
+  }
+  assert.ok(liveSurface.includes("touchAction: interactiveImage ? 'none' : 'pan-y pinch-zoom'"))
+  assert.ok(liveSurface.includes('viewportRef.current.scale > 1.01'),
+    'zoomed still must not start motion and must not navigate during pan')
+  assert.equal(liveSurface.includes("fetch("), false, 'zoom may never acquire media bytes')
+})
+
+test('shared Live still viewport guards slow swipe, decoded pan, mouse double-click and Owner changes', () => {
+  const live = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
+  for (const token of [
+    'useLayoutEffect(() => {',
+    'measureViewport(viewportElementRef.current)',
+    'lastTouchZoomAtRef',
+    'onDoubleClick={handleDoubleClick}',
+    'Date.now() - gesture.startedAt > 700',
+    'viewportRef.current.scale > 1.01',
+    'xDriveAnchorPreviewZoom(',
+    'xDriveClampPreviewViewport(',
+    'gestureSessionRef.current !== gestureSession',
+    'cancelPendingMotion()',
+  ]) assert.ok(live.includes(token), 'Live still zoom/pan parity missing ' + token)
+  assert.ok(!live.includes('fetch('), 'zoom must never have a second media transport')
+})

@@ -16,13 +16,14 @@ const original = read('ui/shared/src/mui/LivePhotoSurface.tsx')
 const start = original.indexOf('function livePhotoMotionURL(')
 assert.ok(start > 0, 'the production Live Photo helpers and component must exist')
 const source = [
-  "import { useCallback, useEffect, useMemo, useRef, useState } from 'react'",
-  "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress } from './fixture'",
+  "import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'",
+  "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress, xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
   'type XDriveLivePhotoMotionLoader = (progress?: XDriveByteProgressHandler, signal?: AbortSignal) => Promise<XDriveLivePhotoMotionSource | null>',
   'type XDriveLivePhotoSurfaceProps = { still: any; stillReady?: boolean; loadMotion?: XDriveLivePhotoMotionLoader; sourceKey?: string | number; label?: string; onSwipePrevious?: () => void; onSwipeNext?: () => void; deferTouchHold?: boolean }',
-  'type PointerEvent<T> = any; type KeyboardEvent<T> = any',
+  'type PointerEvent<T> = any; type KeyboardEvent<T> = any; type WheelEvent<T> = any',
+  'type XDrivePreviewPoint = { x: number; y: number }; type XDrivePreviewViewport = { scale: number; offset: XDrivePreviewPoint }; type XDrivePreviewImageDimensions = { width: number; height: number; noUpscale?: boolean }',
   original.slice(start),
 ].join('\n')
 const js = ts.transpileModule(source, {
@@ -34,6 +35,13 @@ const js = ts.transpileModule(source, {
     esModuleInterop: true,
   },
 }).outputText
+// Import the same pure viewport math used by ordinary still previews.
+const viewportModule = { exports: {} }
+const viewportJS = ts.transpileModule(read('ui/shared/src/file-preview-viewport.ts'), {
+  fileName: 'file-preview-viewport.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+new Function('exports', 'module', viewportJS)(viewportModule.exports, viewportModule)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -43,6 +51,8 @@ const mocks = {
     CircularProgress: 'mounted-live-circular-progress',
     XDriveLivePhotoGlyph: 'mounted-live-glyph',
     XDriveMediaLoadingProgress: 'mounted-live-progress',
+    xDriveAnchorPreviewZoom: viewportModule.exports.xDriveAnchorPreviewZoom,
+    xDriveClampPreviewViewport: viewportModule.exports.xDriveClampPreviewViewport,
   },
 }
 const mod = { exports: {} }
@@ -78,9 +88,17 @@ const mount = (player, loadMotion, sourceKey = 'node:1', extra = {}) =>
     loadMotion,
     ...extra,
   }), {
-    createNodeMock: element =>
-      element.type === 'mounted-live-box' && element.props.component === 'video'
-        ? player : null,
+    createNodeMock: element => {
+      if (element.type === 'mounted-live-box' && element.props.component === 'video') return player
+      if (element.type === 'mounted-live-box' && element.props.role === 'button') {
+        return {
+          getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+          querySelector: selector => selector.includes('img:not')
+            ? { naturalWidth: 400, naturalHeight: 300 } : null,
+        }
+      }
+      return null
+    },
   })
 const surface = tree => tree.root.find(x =>
   x.type === 'mounted-live-box' && x.props.role === 'button')
@@ -764,4 +782,293 @@ test('P1 single-photo Viewer defers touch even with no neighboring media, and st
     global.setTimeout = set
     global.clearTimeout = clear
   }
+})
+
+test('P1 Live still double tap and wheel zoom never acquire motion without a hold', async () => {
+  let loads = 0
+  const player = makePlayer(() => Promise.resolve())
+  const extra = { interactiveImage: true, deferTouchHold: true }
+  let tree
+  const e = (id, x, y, primary = true) => ({
+    ...pointer, pointerId: id, isPrimary: primary,
+    clientX: x, clientY: y, preventDefault() {},
+    currentTarget: {
+      ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    },
+  })
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  try {
+    await act(async () => { tree = mount(player, async () => { loads++; return '/motion.mov' }, 'zoom:first', extra) })
+    const tap = async () => {
+      surface(tree).props.onPointerDown(e(1, 250, 150))
+      surface(tree).props.onPointerUp(e(1, 250, 150))
+    }
+    await act(async () => { await tap(); await tap() })
+    assert.equal(transform(), 'translate(-50px, 0px) scale(2)')
+    assert.equal(loads, 0, 'a quick double tap must never request Live motion')
+    await act(async () => {
+      surface(tree).props.onWheel({ ...e(1, 250, 150), deltaY: -1 })
+    })
+    assert.ok(transform().includes('scale(2.3)'), 'wheel uses existing 1.15x anchored zoom')
+    assert.equal(loads, 0)
+    await act(async () => { await tap(); await tap() })
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)', 'double tap again resets zoom')
+    assert.equal(loads, 0)
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 Live pinch/pan stays in the same still, not navigation or motion', async () => {
+  let loads = 0, navigation = 0
+  const player = makePlayer(() => Promise.resolve())
+  const extra = { interactiveImage: true, deferTouchHold: true,
+    onSwipeNext: () => navigation++ }
+  let tree
+  const e = (id, x, y, primary = true) => ({
+    ...pointer, pointerId: id, isPrimary: primary, clientX: x, clientY: y,
+    preventDefault() {}, currentTarget: {
+      ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    },
+  })
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  const load = async () => { loads++; return '/motion.mov' }
+  try {
+    await act(async () => { tree = mount(player, load, 'zoom:A', extra) })
+    await act(async () => {
+      surface(tree).props.onPointerDown(e(1, 250, 150))
+      surface(tree).props.onPointerDown(e(2, 350, 150, false))
+      surface(tree).props.onPointerMove(e(2, 450, 150, false))
+    })
+    assert.equal(transform(), 'translate(-50px, 0px) scale(2)')
+    await act(async () => {
+      surface(tree).props.onPointerUp(e(2, 450, 150, false))
+      surface(tree).props.onPointerUp(e(1, 250, 150))
+    })
+    await act(async () => {
+      surface(tree).props.onPointerDown(e(1, 200, 150))
+      surface(tree).props.onPointerMove(e(1, 100, 150))
+      surface(tree).props.onPointerUp(e(1, 100, 150))
+    })
+    assert.equal(loads, 0, 'pinch or zoomed pan must not download Live motion')
+    assert.equal(navigation, 0, 'zoomed pan must not navigate')
+    await act(async () => tree.update(React.createElement(Live, {
+      still: React.createElement('mounted-live-still'),
+      stillReady: true, sourceKey: 'zoom:B', loadMotion: load, ...extra,
+    })))
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)', 'new source clears prior zoom')
+    assert.equal(navigation, 0)
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 Live owner A→B rejects retained old zoom, hold, swipe and wheel callbacks', async () => {
+  let loads = 0, navigation = 0, tree
+  const player = makePlayer(() => Promise.resolve())
+  const loader = async () => { loads++; return '/motion.mov' }
+  const extra = { interactiveImage: true, deferTouchHold: true,
+    onSwipeNext: () => navigation++ }
+  const event = { ...pointer, pointerId: 1, isPrimary: true,
+    clientX: 280, clientY: 150, preventDefault() {},
+    currentTarget: { ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }) } }
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  try {
+    await act(async () => { tree = mount(player, loader, 'owner:A', extra) })
+    const old = surface(tree).props
+    await act(async () => tree.update(React.createElement(Live, {
+      still: React.createElement('mounted-live-still'),
+      stillReady: true, sourceKey: 'owner:B', loadMotion: loader, ...extra,
+    })))
+    await act(async () => {
+      old.onPointerDown(event)
+      old.onPointerMove({ ...event, clientX: 100 })
+      old.onPointerUp({ ...event, clientX: 100 })
+      old.onWheel({ ...event, deltaY: -1 })
+      old.onDoubleClick(event)
+      old.onKeyDown({ key: 'Enter', repeat: false, preventDefault() {}, stopPropagation() {} })
+      old.onPointerCancel(event)
+    })
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)')
+    assert.equal(loads, 0, 'retired A gesture cannot request current Owner B motion')
+    assert.equal(navigation, 0, 'retired A gesture cannot navigate current Owner B range')
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 a second touch aborts an already-pending authorized Live motion ticket', async () => {
+  const ticket = deferred()
+  let controllerSignal, disposed = 0, loads = 0, tree
+  const player = makePlayer(() => Promise.resolve())
+  const loader = (_progress, signal) => { loads++; controllerSignal = signal; return ticket.promise }
+  const extra = { interactiveImage: true, deferTouchHold: true }
+  const event = (id, x, primary = true) => ({
+    ...pointer, pointerId: id, isPrimary: primary,
+    clientX: x, clientY: 150, preventDefault() {},
+    currentTarget: { ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }) },
+  })
+  try {
+    await act(async () => { tree = mount(player, loader, 'motion:pending', extra) })
+    await act(async () =>
+      surface(tree).props.onKeyDown({ key: 'Enter', repeat: false, preventDefault() {}, stopPropagation() {} }))
+    assert.equal(loads, 1, 'explicit keyboard hold may request a ticket')
+    assert.equal(controllerSignal.aborted, false)
+    await act(async () => {
+      surface(tree).props.onPointerDown(event(1, 250))
+      surface(tree).props.onPointerDown(event(2, 350, false))
+    })
+    assert.equal(controllerSignal.aborted, true, 'pinch immediately aborts pending motion')
+    await act(async () => {
+      ticket.resolve({ url: '/stale-motion.mov', dispose() { disposed++ } })
+      await flush()
+    })
+    assert.equal(disposed, 1, 'late motion ticket is released, never adopted')
+    assert.equal(loads, 1)
+    assert.equal(surface(tree).props['aria-pressed'], false)
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 Live still unavailable cannot zoom a loading/error placeholder and resets old pan', async () => {
+  let loads = 0, tree
+  const player = makePlayer(() => Promise.resolve())
+  const loader = async () => { loads++; return '/motion.mov' }
+  const extra = { interactiveImage: true, deferTouchHold: true }
+  const event = (id, x, primary = true) => ({
+    ...pointer, pointerId: id, isPrimary: primary, clientX: x, clientY: 150,
+    preventDefault() {}, currentTarget: {
+      ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    },
+  })
+  const make = ready => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'),
+    stillReady: ready, sourceKey: 'still:error', loadMotion: loader, ...extra,
+  })
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  try {
+    await act(async () => { tree = renderer.create(make(false), {
+      createNodeMock: el => el.type === 'mounted-live-box' && el.props.role === 'button'
+        ? { getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+          querySelector: () => ({ naturalWidth: 400, naturalHeight: 300 }) } : null,
+    }) })
+    await act(async () => {
+      surface(tree).props.onWheel({ ...event(1, 250), deltaY: -1 })
+      surface(tree).props.onPointerDown(event(1, 250))
+      surface(tree).props.onPointerDown(event(2, 350, false))
+      surface(tree).props.onPointerMove(event(2, 450, false))
+    })
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)')
+    assert.equal(loads, 0)
+    await act(async () => tree.update(make(true)))
+    await act(async () => {
+      surface(tree).props.onWheel({ ...event(1, 250), deltaY: -1 })
+    })
+    assert.ok(transform().includes('scale(1.15)'))
+    await act(async () => tree.update(make(false)))
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)')
+    assert.equal(loads, 0, 'decoder loss must not authorize playback')
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 Live mouse double-click zooms one existing still and never fetches motion', async () => {
+  let loads = 0, tree
+  const player = makePlayer(() => Promise.resolve())
+  const event = {
+    clientX: 250, clientY: 150,
+    currentTarget: {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    },
+  }
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  try {
+    await act(async () => {
+      tree = mount(player, async () => { loads++; return '/motion.mov' }, 'mouse:double', {
+        interactiveImage: true, deferTouchHold: true,
+      })
+    })
+    await act(async () => surface(tree).props.onDoubleClick(event))
+    assert.equal(transform(), 'translate(-50px, 0px) scale(2)')
+    await act(async () => surface(tree).props.onDoubleClick(event))
+    assert.equal(transform(), 'translate(0px, 0px) scale(1)')
+    assert.equal(loads, 0, 'mouse zoom never requests Live motion')
+  } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+test('P1 slow horizontal Live drag never navigates, even when distance exceeds swipe threshold', async () => {
+  const originalNow = Date.now
+  let now = 1000, navigation = 0, loads = 0, tree
+  Date.now = () => now
+  const player = makePlayer(() => Promise.resolve())
+  const event = x => ({
+    ...pointer, pointerId: 1, isPrimary: true,
+    clientX: x, clientY: 150, preventDefault() {},
+    currentTarget: {
+      ...pointer.currentTarget,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    },
+  })
+  try {
+    await act(async () => {
+      tree = mount(player, async () => { loads++; return '/motion.mov' }, 'slow:drag', {
+        interactiveImage: true, deferTouchHold: true,
+        onSwipeNext: () => navigation++,
+      })
+    })
+    await act(async () => surface(tree).props.onPointerDown(event(300)))
+    now += 800
+    await act(async () => {
+      surface(tree).props.onPointerMove(event(100))
+      surface(tree).props.onPointerUp(event(100))
+    })
+    assert.equal(navigation, 0, 'slow drag is pan/interaction, never a photo swipe')
+    assert.equal(loads, 0, 'slow drag is not a motion hold')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    Date.now = originalNow
+  }
+})
+
+test('P1 Live decoding ready later refreshes actual portrait pan bounds', async () => {
+  let decoded = false, loads = 0, tree
+  const node = {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    querySelector: () => decoded ? { naturalWidth: 100, naturalHeight: 300 } : null,
+    setPointerCapture() {}, hasPointerCapture() { return false }, releasePointerCapture() {},
+  }
+  const extra = { interactiveImage: true, deferTouchHold: true }
+  const render = stillReady => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'), stillReady,
+    loadMotion: async () => { loads++; return '/motion.mov' },
+    sourceKey: 'portrait:ready', ...extra,
+  })
+  const gesture = (x, y) => ({
+    ...pointer, pointerId: 1, isPrimary: true, clientX: x, clientY: y,
+    preventDefault() {}, currentTarget: node,
+  })
+  const transform = () => tree.root.find(x => x.type === 'mounted-live-box' &&
+    typeof x.props.sx?.transform === 'string').props.sx.transform
+  try {
+    await act(async () => {
+      tree = renderer.create(render(false), {
+        createNodeMock: el => el.type === 'mounted-live-box' &&
+          el.props.role === 'button' ? node : null,
+      })
+    })
+    decoded = true
+    await act(async () => tree.update(render(true)))
+    await act(async () => surface(tree).props.onDoubleClick(gesture(200, 150)))
+    assert.equal(transform(), 'translate(0px, 0px) scale(2)')
+    await act(async () => {
+      surface(tree).props.onPointerDown(gesture(200, 150))
+      surface(tree).props.onPointerMove(gesture(2200, 2150))
+      surface(tree).props.onPointerUp(gesture(2200, 2150))
+    })
+    assert.equal(transform(), 'translate(0px, 150px) scale(2)',
+      'decoded portrait contain-fit clamp prevents phantom horizontal pan')
+    assert.equal(loads, 0, 'reclamping decoded still must not reload motion')
+  } finally { if (tree) await act(async () => tree.unmount()) }
 })

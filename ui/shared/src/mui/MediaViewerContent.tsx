@@ -124,6 +124,7 @@ export function XDriveMediaViewerContent({
         onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}
         onSwipeNext={interactiveImage ? onSwipeNext : undefined}
         deferTouchHold={interactiveImage}
+        interactiveImage={interactiveImage}
         still={(
           <XDriveFilePreviewSurface
             target={target}

@@ -654,7 +654,7 @@ Web 的 `preview`、`media-viewer`、`pdf-viewer`、`audio-player` 都是 Previe
 
 交互式图片预览在 coarse pointer 设备上使用原生触屏手势：双指 pinch 在 1×–6× 范围缩放，双击在 1× / 2× 间切换，放大后单指 pan；仅在约 1× 时，水平位移至少 56 CSS px 且明显大于垂直位移才触发可选的上一项/下一项 swipe。触屏时不显示桌面缩放按钮，鼠标滚轮、双击和拖动 pan 契约保持不变。
 
-视频、音频、PDF 和 Live Photo 不进入这套图片 swipe 状态机。特别是 Live Photo 仍由按住/松开控制 motion，避免与横向浏览手势争抢。
+视频、音频和 PDF 不进入图片手势状态机。Live Photo（可信配对和单文件 `.livp`）复用相同的 1×–6× viewport 边界数学，但通过 `XDriveLivePhotoSurface` 统一判别短按、双击、缩放、拖动、水平滑动和长按：短按/双指缩放/放大拖动不请求 motion，只有约 1× 的合法水平 swipe 才导航相邻项；静止长按约 260ms 才读取动态视频，松开回到静态帧。切换 Node/revision/Owner 时立即重置 zoom 与手势意图，不创建另一套媒体解码或下载入口。 Live 静态帧在首次 decode-ready 时重新测量 contain-fit 视口，避免竖图/全景的虚假平移区域；有效换张需在约 700ms 内完成水平 56px 滑动，慢速拖拽不能换张。鼠标双击沿用 1×/2×，并抑制移动端触摸双击后的合成 dblclick。
 
 
 ### Viewer navigation scope
