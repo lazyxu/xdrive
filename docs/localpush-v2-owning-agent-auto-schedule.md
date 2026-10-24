@@ -131,3 +131,25 @@ Required regression evidence: Linux nested file changes, invalid Root
 rejection, Owner-session and Source-revision rotation, coalesced wakes,
 cross-platform Go builds and true PostgreSQL API Race. Watching alone is
 not a current-CAS verification or a whole-Source backup success proof.
+
+## Transient discovery outage throttle
+
+After a failed owning-Agent device-list or Server discovery probe, the
+existing periodic scheduler keeps a separate **in-memory advisory** retry
+deadline of 1, 2, 4, then at most 8 minutes. Native event storms cannot
+bypass this deadline and cause repeated offline discovery requests. A fresh
+successful discovery clears the penalty; explicit account/session rotation
+also clears the previous Owner's penalty. No login secret or native pathname
+is persisted in this throttle.
+
+This throttle does **not** create another task queue, start or retry an
+original per-file Operation, change the existing fsynced per-Source admission
+cooldown, or delay the owning Desktop's explicit manual backup action.
+If the Agent is stopped or an original SQL result is uncertain, reboot and
+connectivity recovery still require the current immutable receipt and
+authorization checks; the discovery backoff itself provides no resumption
+or complete-Source certification.
+
+Code regressions must verify the 1/2/4/8-minute cap, restart/Owner
+rotation separation, success reset, no event-storm bypass and unchanged
+manual, Source lease, and SQL/CAS fences.

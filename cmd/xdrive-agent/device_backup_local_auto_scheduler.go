@@ -167,19 +167,30 @@ func (c *agentController) runLocalPushAutoScheduler() {
 	attempts := make(map[string]time.Time)
 	watches := newLocalPushAutoWatchRegistry(c.ctx)
 	defer watches.close()
+	var discovery localPushAutoDiscoveryBackoff
 	lastProbe := time.Time{}
 	poll := func() {
-		// Session rotation/logout drops OS subscriptions immediately at
-		// the next probe. No watched file event is itself upload authority.
+		// Session rotation/logout drops OS subscriptions and resets any
+		// previous Owner's discovery delay before network work.
 		account, err := userconfig.Load()
+		ownerKey := ""
 		if err != nil || account.SessionInvalid {
 			watches.close()
 		} else {
+			ownerKey = localPushAutoOwnerKey(
+				account.Server, account.Username, account.SessionID)
 			watches.setOwner(account.Server, account.Username, account.SessionID)
 		}
-		ctx, cancel := context.WithTimeout(c.ctx, localPushAutoTickTimeout)
-		_ = c.localPushAutoTick(ctx, time.Now().UTC(), attempts, watches)
-		cancel()
+		discovery.setOwner(ownerKey)
+		now := time.Now().UTC()
+		// Native event bursts must not hammer an offline Server. A skipped
+		// probe has no authority to defer an explicit manual backup.
+		if discovery.ready(now) {
+			ctx, cancel := context.WithTimeout(c.ctx, localPushAutoTickTimeout)
+			tickErr := c.localPushAutoTick(ctx, now, attempts, watches)
+			cancel()
+			discovery.complete(time.Now().UTC(), tickErr)
+		}
 		lastProbe = time.Now()
 	}
 	for {
