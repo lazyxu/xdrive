@@ -6,47 +6,15 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/lazyxu/xdrive/internal/localbackupipc"
 )
 
-type localBackupCommonBatchSummary struct {
-	SourceID           uint64 `json:"source_id"`
-	Revision           uint64 `json:"revision"`
-	State              string `json:"state"`
-	Running            bool   `json:"running"`
-	InspectedFiles     int64  `json:"inspected_files"`
-	ConfirmedFiles     int64  `json:"confirmed_files"`
-	SkippedFiles       int64  `json:"skipped_files"`
-	UnsupportedFiles   int64  `json:"unsupported_files"`
-	UncertainFiles     int64  `json:"uncertain_files"`
-	ConfirmedBytes     int64  `json:"confirmed_bytes"`
-	StopRequested      string `json:"stop_requested,omitempty"`
-	BackupComplete     bool   `json:"backup_complete"`
-	RetirementSafe     bool   `json:"retirement_safe"`
-	CurrentCASVerified bool   `json:"current_cas_verified"`
-}
-
-// A private owning-Desktop history projection. There are no file names,
-// Root fingerprints, JWTs, content digests or Operation IDs in this payload.
-type localBackupCommonBatchHistoryItem struct {
-	RunID            string    `json:"run_id"`
-	SourceID         uint64    `json:"source_id"`
-	Revision         uint64    `json:"revision"`
-	State            string    `json:"state"`
-	InspectedFiles   int64     `json:"inspected_files"`
-	ConfirmedFiles   int64     `json:"confirmed_files"`
-	SkippedFiles     int64     `json:"skipped_files"`
-	UnsupportedFiles int64     `json:"unsupported_files"`
-	UncertainFiles   int64     `json:"uncertain_files"`
-	ConfirmedBytes   int64     `json:"confirmed_bytes"`
-	StartedAt        time.Time `json:"started_at"`
-	FinishedAt       time.Time `json:"finished_at"`
-}
-
-type localBackupCommonBatchHistoryPage struct {
-	SourceID uint64                              `json:"source_id"`
-	Items    []localBackupCommonBatchHistoryItem `json:"items"`
-}
+// Desktop and xd share these redacted wire contracts. The Agent remains
+// the only native Runner and the only owner of persistent SQL Operations.
+type localBackupCommonBatchSummary = localbackupipc.Summary
+type localBackupCommonBatchHistoryItem = localbackupipc.HistoryItem
+type localBackupCommonBatchHistoryPage = localbackupipc.HistoryPage
 
 type desktopIPCLocalCommonBatchHistoryReader interface {
 	CloudLocalBoundBackupCommonBatchHistory(context.Context, uint64) (localBackupCommonBatchHistoryPage, error)
