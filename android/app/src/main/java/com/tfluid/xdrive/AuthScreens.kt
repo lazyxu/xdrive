@@ -109,10 +109,10 @@ private fun Submit(label: String, loading: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ConnectionForm(state: DriveState, connect: (String, Boolean) -> Unit) {
+internal fun ConnectionForm(state: DriveState, connect: (String, Boolean) -> Unit, actions: @Composable () -> Unit = {}) {
     var server by remember { mutableStateOf(state.server) }
     var allow by remember { mutableStateOf(state.allowHttp) }
-    AuthCard("连接你的 xDrive", "连接到你的 xDrive 服务器。") {
+    AuthCard("连接你的 xDrive", "连接到你的 xDrive 服务器。", actions) {
         AuthField("服务器地址", server, { server = it }, "server", !state.loading, keyboardType = KeyboardType.Uri, placeholder = "https://drive.example")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(allow, { allow = it }, modifier = Modifier.testTag("allow-http"), colors = CheckboxDefaults.colors(
