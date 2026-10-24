@@ -20,6 +20,7 @@ const mui = Object.fromEntries([
 ].map((name) => [name, name.toLowerCase()]))
 mui.useMediaQuery = (query) => {
   if (query === '(max-width:899.95px)') return viewport.width < 900
+  if (query === '(max-width:367.95px)') return viewport.width < 368
   if (query === '(max-width:899.95px) and (pointer: coarse)') {
     return viewport.width < 900 && viewport.coarse
   }
@@ -52,7 +53,8 @@ const Preview = loaded.exports.XDriveOpenPreviewDialog
 const findData = (tree, key) => tree.root.findAll((node) => node.props?.[key] !== undefined)
 const findType = (tree, kind) => tree.root.findAll((node) => node.type === kind)
 
-async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false, keepChromeVisible = false }, verify) {
+async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false, keepChromeVisible = false,
+  canPrevious = false, canNext = false }, verify) {
   viewport = { width, coarse }
   const originalWindow = global.window
   const originalHTMLElement = global.HTMLElement
@@ -82,6 +84,10 @@ async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false,
       mobileEdgeToEdge,
       keepChromeVisible,
       quickLook: !immersive,
+      canPrevious,
+      canNext,
+      onPrevious() {},
+      onNext() {},
       actions: React.createElement('button', {
         'data-shared-media-action': true,
         onClick() { clicked++ },
@@ -361,5 +367,38 @@ test('P1 shared Viewer keeps chrome accessible while an action menu or modal own
       assert.equal(header.props.sx.opacity, 1,
         'background tap cannot hide controls behind an open action menu')
       assert.equal([...timers.values()].some(t => t.delay === 2200), false)
+    })
+})
+
+test('P1-320 shared Gallery rail preserves 44px actions and delegates navigation only below 368px', async () => {
+  for (const width of [320, 367, 368, 375]) {
+    for (const coarse of [true, false]) {
+      await withPreview({ width, coarse, immersive: true, mobileEdgeToEdge: true,
+        canPrevious: true, canNext: true }, async ({ view }) => {
+        const rail = findData(view, 'data-xdrive-preview-mobile-actions')[0]
+        const buttons = rail.findAll(node => node.type === 'iconbutton')
+        const previous = buttons.filter(node => node.props['aria-label'] === '预览上一个项目')
+        const next = buttons.filter(node => node.props['aria-label'] === '预览下一个项目')
+        assert.equal(previous.length, width < 368 ? 0 : 1)
+        assert.equal(next.length, width < 368 ? 0 : 1)
+        assert.equal(rail.props.spacing, 0, 'Gallery rail must spend no width on invisible gaps')
+        assert.equal(rail.props.sx.overflowX, 'hidden', 'Gallery actions must not depend on horizontal scrolling')
+        assert.equal(rail.props.sx['& .MuiIconButton-root'].height, 44)
+        assert.equal(rail.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
+        assert.equal(findData(view, 'data-xdrive-preview-mobile-filmstrip').length, 1,
+          'filmstrip stays navigable when the two arrows move to More')
+      })
+    }
+  }
+})
+
+test('P1 reduced-motion shared Viewer chrome removes opacity animation without changing visibility', async () => {
+  await withPreview({ width: 390, coarse: false, immersive: true, mobileEdgeToEdge: true },
+    async ({ view }) => {
+      const header = view.root.findAll(n => n.props?.['data-xdrive-preview-chrome'] === 'header')[0]
+      assert.equal(header.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
+      assert.equal(header.props.sx.opacity, 1)
+      const strip = findData(view, 'data-xdrive-preview-mobile-filmstrip')[0]
+      assert.equal(strip.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
     })
 })

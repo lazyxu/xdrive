@@ -134,10 +134,12 @@ function WebViewerFrame({
   // mobile-width device has a paired fine pointer. Keep Files Quick Look and
   // the standalone Text/PDF/Audio apps on their existing pointer contract.
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const ultraNarrowViewport = useMediaQuery('(max-width:367.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const compactTouch = coarseMobilePointer || (photosViewer && immersive && narrowViewport)
   const compactImmersive = compactTouch && immersive
   const hasNavigation = canPrevious || canNext
+  const showMobileNavigation = hasNavigation && !(compactImmersive && photosViewer && ultraNarrowViewport)
   const rootRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<number | null>(null)
   const touchTapTimerRef = useRef<number | null>(null)
@@ -414,6 +416,7 @@ function WebViewerFrame({
           opacity: immersive && !chromeVisible ? 0 : 1,
           pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
           transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
         }}
       >
         <Tooltip title="返回">
@@ -471,6 +474,7 @@ function WebViewerFrame({
               opacity: immersive && !chromeVisible ? 0 : 1,
               pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
               transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '&:hover': { bgcolor: 'background.paper' },
             }}
           >
@@ -491,6 +495,7 @@ function WebViewerFrame({
               opacity: immersive && !chromeVisible ? 0 : 1,
               pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
               transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '&:hover': { bgcolor: 'background.paper' },
             }}
           >
@@ -522,6 +527,7 @@ function WebViewerFrame({
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
             transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
           {filmstrip}
@@ -551,17 +557,18 @@ function WebViewerFrame({
             pl: 'max(8px, env(safe-area-inset-left))',
             pr: 'max(8px, env(safe-area-inset-right))',
             pb: 'env(safe-area-inset-bottom)',
-            overflowX: 'auto',
+            overflowX: photosViewer ? 'hidden' : 'auto',
             bgcolor: immersive ? 'rgba(0,0,0,.72)' : 'background.paper',
             color: immersive ? 'common.white' : 'text.primary',
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
             transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
             '& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0, color: 'inherit' },
             '& .MuiIconButton-colorError': { color: 'error.main' },
           }}
         >
-          {hasNavigation ? <IconButton aria-label="上一个项目" disabled={!canPrevious} onClick={onPrevious}>
+          {showMobileNavigation ? <IconButton aria-label="上一个项目" disabled={!canPrevious} onClick={onPrevious}>
             <KeyboardArrowLeftRoundedIcon />
           </IconButton> : null}
           <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{actions}</Box>
@@ -573,7 +580,7 @@ function WebViewerFrame({
               {slideshowPlaying ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
             </IconButton>
           ) : null}
-          {hasNavigation ? <IconButton aria-label="下一个项目" disabled={!canNext} onClick={onNext}>
+          {showMobileNavigation ? <IconButton aria-label="下一个项目" disabled={!canNext} onClick={onNext}>
             <KeyboardArrowRightRoundedIcon />
           </IconButton> : null}
         </Stack>
@@ -588,6 +595,7 @@ function WebViewerFrame({
             flexShrink: 0,
             opacity: immersive && !chromeVisible ? 0 : 0.72,
             transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
           Space / Esc 返回 · ← / → 切换
@@ -934,6 +942,7 @@ function WebMediaViewerApp({
   // compact rail cannot show ten 44px controls at 390px without sideways
   // scrolling; move only the presentation of secondary actions to More.
   const narrowMediaViewer = useMediaQuery('(max-width:899.95px)')
+  const ultraNarrowMediaViewer = useMediaQuery('(max-width:367.95px)')
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
@@ -1409,6 +1418,20 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         onClose={() => setMoreAnchor(null)}
         MenuListProps={{ 'aria-label': '更多照片操作' }}
       >
+        {ultraNarrowMediaViewer && viewer.previous ? (
+          <MenuItem aria-label="上一张" onClick={() => {
+            if (modalOwnerRef.current !== modalOwner) return
+            setMoreAnchor(null)
+            viewer.goPrevious()
+          }}>上一张</MenuItem>
+        ) : null}
+        {ultraNarrowMediaViewer && viewer.next ? (
+          <MenuItem aria-label="下一张" onClick={() => {
+            if (modalOwnerRef.current !== modalOwner) return
+            setMoreAnchor(null)
+            viewer.goNext()
+          }}>下一张</MenuItem>
+        ) : null}
         {canEdit && mediaItem ? (
           <MenuItem aria-label="编辑媒体" onClick={() => {
             setMoreAnchor(null)

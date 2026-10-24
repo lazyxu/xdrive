@@ -167,3 +167,14 @@ test('shared Live still viewport guards slow swipe, decoded pan, mouse double-cl
   ]) assert.ok(live.includes(token), 'Live still zoom/pan parity missing ' + token)
   assert.ok(!live.includes('fetch('), 'zoom must never have a second media transport')
 })
+
+test('P1 reduced motion and 320px modes are shared by routed and inline Viewer shells', () => {
+  for (const source of [openPreview, webViewers]) {
+    assert.ok(source.includes("useMediaQuery('(max-width:367.95px)')"),
+      'both media Viewer shells must select the same ultra-narrow breakpoint')
+    assert.ok(source.includes("'@media (prefers-reduced-motion: reduce)': { transition: 'none' }"),
+      'all immersive chrome opacity transitions must respect OS Reduced Motion')
+  }
+  assert.ok(openPreview.includes("overflowX: mobileOverlay ? 'hidden' : 'auto'"))
+  assert.ok(webViewers.includes("overflowX: photosViewer ? 'hidden' : 'auto'"))
+})

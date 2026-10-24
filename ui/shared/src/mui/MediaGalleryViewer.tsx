@@ -134,6 +134,7 @@ export function XDriveMediaGalleryViewer({
 }) {
   const [fullScreen, setFullScreen] = useState(false)
   const narrowViewer = useMediaQuery('(max-width:899.95px)')
+  const ultraNarrowViewer = useMediaQuery('(max-width:367.95px)')
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   // Dialog visibility belongs to the actual Node/revision action session.
   // Closing a filmstrip item must not leave a previous confirmation or editor
@@ -489,6 +490,20 @@ export function XDriveMediaGalleryViewer({
         onClose={closeMore}
         MenuListProps={{ 'aria-label': '更多照片操作' }}
       >
+        {ultraNarrowViewer && canPrevious ? (
+          <MenuItem aria-label="上一张" onClick={() => {
+            if (actionOwnerRef.current !== actionOwner) return
+            closeMore()
+            onPrevious()
+          }}>上一张</MenuItem>
+        ) : null}
+        {ultraNarrowViewer && canNext ? (
+          <MenuItem aria-label="下一张" onClick={() => {
+            if (actionOwnerRef.current !== actionOwner) return
+            closeMore()
+            onNext()
+          }}>下一张</MenuItem>
+        ) : null}
         {slideshowEligible && (canNext || slideshowPlaying) ? (
           <MenuItem aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'} onClick={() => {
             closeMore()

@@ -785,3 +785,27 @@ Verification requires source-coupled fold renderer contract plus actual compiled
 ## Places 1:1 parity contract and staged implementation (2026-10-13)
 
 The Gallery [Places staged roadmap](gallery-places-ios27-roadmap.md) is the feature-by-feature iOS 27 Photos acceptance checklist and A1–C1 delivery order. Mobile Web and wide Web MUST use the same owner-scoped real GPS cells/count/page, the same virtual PhotoAsset grid/range and Viewer, and the same Server-side spatial and map-provider services. Stage A1 adds truthful total/page and distinguishes a real source point from a synthetic cell center; do **not** call a Baidu static image a native iOS Maps interaction. A3 JSAPI 4.0 browser-AK hidden-proxy review is approved but subject to security/licence/physical-browser gates before implementation, with Baidu-only and 52px App Frame unchanged. Physical iOS 27 screenshot/pinch/pan/VoiceOver tests remain pending.
+
+## 2026-10-25 · Viewer 320px ultra-compact and Reduced Motion
+
+In both the **routed Web/Mobile media Viewer** and the **shared Desktop/inline
+Gallery Viewer**, widths below 368 CSS px cannot fit two 44px neighbor arrows
+plus five direct Gallery actions (and slideshow on routed Web) inside the
+minimum 8px horizontal padding. The Gallery-only ultra-compact mode retains
+all existing primary actions/44px hit targets, keeps Filmstrip, image swipe,
+keyboard navigation and the current 52px App Frame, and moves authorized
+previous/next actions to the existing `更多照片操作` menu. Menu action handlers
+retain the exact Owner/Node/revision identity fences. At width >=368px,
+the original arrow rail is unchanged, including 375px. Ordinary Files Quick
+Look, Text, Audio and PDF keep their existing pointer/navigation UI.
+
+Gallery rails never require horizontal scrolling to discover their standard
+controls. Shared and routed Viewer chrome retains existing 2200ms auto-hide,
+while `prefers-reduced-motion: reduce` removes the 160ms opacity transitions.
+Shared Filmstrip focus and hover stop using motion transforms when the OS
+preference requests reduced motion. No new REST/Agent transport or preview
+renderer is introduced. Source-backed mounted React regression must prove
+320/367/368/375 × fine/coarse, menu navigation, all 44px hit targets, bounded
+Filmstrip and unchanged PDF/Quick Look. Exact HEAD CI, Final Gate and native
+iOS 27 visual acceptance remain distinct; production-only inaccessible
+security acceptance stays **按用户决定跳过（未验收）**.

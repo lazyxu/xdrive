@@ -155,6 +155,10 @@ export function XDriveMediaGalleryFilmstrip({
               opacity: active ? 1 : 0.72,
               transition: 'opacity 120ms ease, border-color 120ms ease, transform 120ms ease',
               '&:hover': { opacity: 1, transform: 'translateY(-1px)' },
+              '@media (prefers-reduced-motion: reduce)': {
+                transition: 'none',
+                '&:hover': { transform: 'none' },
+              },
               '&:focus-visible': {
                 outline: '2px solid',
                 outlineColor: 'primary.main',

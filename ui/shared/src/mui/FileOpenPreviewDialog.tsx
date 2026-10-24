@@ -61,11 +61,16 @@ export function XDriveOpenPreviewDialog({
   // Non-immersive Files / Quick Look retain their existing pointer contract.
   // Fine-pointer immersive Viewer still wakes its chrome on mouse movement.
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const ultraNarrowViewport = useMediaQuery('(max-width:367.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const compactTouch = coarseMobilePointer || (immersive && narrowViewport)
   const mobileOverlay = mobileEdgeToEdge && immersive && compactTouch
   const effectiveFullScreen = fullScreen || compactTouch
   const hasNavigation = canPrevious || canNext
+  // Below 368px two 44px arrows cannot coexist with Gallery's five actions.
+  // Move only Gallery navigation to its existing More menu; Files Quick Look
+  // keeps the original navigation contract and all existing touch targets.
+  const showMobileNavigation = hasNavigation && !(mobileOverlay && ultraNarrowViewport)
   const [chromeVisible, setChromeVisible] = useState(true)
   // A source returning after A→B→A must not accept its older A tap callback.
   const chromeSession = useMemo(() => ({}), [chromeSessionKey, open])
@@ -329,6 +334,7 @@ export function XDriveOpenPreviewDialog({
           opacity: immersive && !chromeVisible ? 0 : 1,
           pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
           transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
         }}
       >
         {mobileOverlay ? (
@@ -411,6 +417,7 @@ export function XDriveOpenPreviewDialog({
                   opacity: immersive && !chromeVisible ? 0 : 1,
                   pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
                   transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
                   '&:hover': { bgcolor: 'background.paper' },
                 }}
               >
@@ -436,6 +443,7 @@ export function XDriveOpenPreviewDialog({
                   opacity: immersive && !chromeVisible ? 0 : 1,
                   pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
                   transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
                   '&:hover': { bgcolor: 'background.paper' },
                 }}
               >
@@ -467,6 +475,7 @@ export function XDriveOpenPreviewDialog({
                 opacity: chromeVisible ? 1 : 0,
                 pointerEvents: chromeVisible ? 'auto' : 'none',
                 transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               }}
             >
               {footer}
@@ -476,7 +485,7 @@ export function XDriveOpenPreviewDialog({
             direction="row"
             alignItems="center"
             justifyContent="flex-start"
-            spacing={0.5}
+            spacing={mobileOverlay ? 0 : 0.5}
             data-xdrive-preview-mobile-actions
             sx={{
               position: mobileOverlay ? 'absolute' : undefined,
@@ -490,7 +499,7 @@ export function XDriveOpenPreviewDialog({
               pr: 'max(8px, env(safe-area-inset-right))',
               pb: 'env(safe-area-inset-bottom)',
               flexShrink: 0,
-              overflowX: 'auto',
+              overflowX: mobileOverlay ? 'hidden' : 'auto',
               borderTop: 1,
               borderColor: mobileOverlay ? 'rgba(255,255,255,0.16)' : 'divider',
               bgcolor: mobileOverlay ? 'rgba(0,0,0,0.72)' : 'background.paper',
@@ -498,19 +507,20 @@ export function XDriveOpenPreviewDialog({
               opacity: chromeVisible ? 1 : 0,
               pointerEvents: chromeVisible ? 'auto' : 'none',
               transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '& .MuiIconButton-root': {
                 width: 44, height: 44, flexShrink: 0,
                 color: mobileOverlay ? 'common.white' : undefined,
               },
             }}
           >
-            {hasNavigation ? <IconButton aria-label="预览上一个项目" disabled={!canPrevious} onClick={onPrevious}>
+            {showMobileNavigation ? <IconButton aria-label="预览上一个项目" disabled={!canPrevious} onClick={onPrevious}>
               <KeyboardArrowLeftRoundedIcon />
             </IconButton> : null}
             <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', '& .MuiStack-root': { flexWrap: 'nowrap' } }}>
               {actions}
             </Box>
-            {hasNavigation ? <IconButton aria-label="预览下一个项目" disabled={!canNext} onClick={onNext}>
+            {showMobileNavigation ? <IconButton aria-label="预览下一个项目" disabled={!canNext} onClick={onNext}>
               <KeyboardArrowRightRoundedIcon />
             </IconButton> : null}
           </Stack>
@@ -529,6 +539,7 @@ export function XDriveOpenPreviewDialog({
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
             transition: 'opacity 160ms ease',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
           {footer ?? (

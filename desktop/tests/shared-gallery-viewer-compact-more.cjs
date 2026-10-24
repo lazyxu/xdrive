@@ -15,8 +15,9 @@ const mui = {
   Menu: ({ open, children, ...props }) => open ? React.createElement('menu', props, children) : null,
   Tooltip: ({ children }) => children,
   useMediaQuery: query => {
-    assert.equal(query, '(max-width:899.95px)')
-    return width < 900
+    if (query === '(max-width:899.95px)') return width < 900
+    if (query === '(max-width:367.95px)') return width < 368
+    throw new Error('unexpected Gallery responsive query: ' + query)
   },
 }
 const ui = {
@@ -314,6 +315,46 @@ test('Gallery slideshow uses decoded still readiness, 5s dwell and compact More 
       global.window = oldWindow
       global.document = oldDocument
       Date.now = oldNow
+    }
+  }
+  width = 390
+})
+
+test('P1-320 shared Gallery Viewer moves only authorized neighbors to More below 368px', async () => {
+  for (const nextWidth of [320, 367, 368, 375]) {
+    width = nextWidth
+    const navigations = []
+    let renderer
+    const loadThumbnail = async () => null
+    const props = selected => ({
+      item: selected, activeIndex: 1, canPrevious: true, canNext: true,
+      filmstripEntries: [], loadThumbnail, onClose() {},
+      onPrevious() { navigations.push('previous') },
+      onNext() { navigations.push('next') },
+      onFilmstripSelect() {},
+      onInfo() {}, onShare() {}, onDelete: async () => {},
+    })
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(Viewer, props(item)))
+      })
+      await act(async () => findButton(renderer, '更多照片操作')[0].props.onClick({ currentTarget: {} }))
+      const compact = nextWidth < 368
+      assert.equal(findMenuAction(renderer, '上一张').length, compact ? 1 : 0)
+      assert.equal(findMenuAction(renderer, '下一张').length, compact ? 1 : 0)
+      if (compact) {
+        const obsoleteNext = findMenuAction(renderer, '下一张')[0].props.onClick
+        await act(async () => findMenuAction(renderer, '上一张')[0].props.onClick())
+        assert.deepEqual(navigations, ['previous'])
+        assert.equal(findMenuAction(renderer, '下一张').length, 0, 'navigation closes More')
+        await act(async () => renderer.update(React.createElement(Viewer, props({
+          ...item, node: { ...item.node, id: 2991, revision: 9 },
+        }))))
+        await act(async () => obsoleteNext())
+        assert.deepEqual(navigations, ['previous'], 'stale navigation cannot affect B after A')
+      }
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
     }
   }
   width = 390
