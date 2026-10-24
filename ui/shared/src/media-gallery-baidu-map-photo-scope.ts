@@ -53,6 +53,23 @@ export function xDriveBaiduMapPhotoScopeKey(value: XDriveBaiduMapPhotoScope): st
       .sort(([a],[b]) => a.localeCompare(b))])
 }
 
+/** An explicit mode switch destroys the JavaScript document. Until an
+ * authenticated, one-use Server handoff exists, never drop a restricted
+ * Album/date/favorite/media/sort membership in EITHER direction.
+ *
+ * A time zone with no captured date bound is not a membership restriction;
+ * no private Owner/GPS/Album identity is placed in the navigation URL,
+ * history state or storage shared with the same-document third-party SDK.
+ */
+export function xDriveBaiduMapScopeSurvivesFullReload(value: unknown): boolean {
+  const scope = xDriveNormalizeBaiduMapPhotoScope(value)
+  if (!scope || scope.albumKey !== '') return false
+  const filters = scope.filters
+  return filters.favorite === undefined && filters.asset_kind === undefined &&
+    filters.captured_from === undefined && filters.captured_to === undefined &&
+    filters.sort_by === 'captured' && filters.sort_dir === 'desc'
+}
+
 export function xDriveCopyBaiduMapPhotoScope(
   scope: XDriveBaiduMapPhotoScope,
 ): XDriveBaiduMapPhotoScope | null {

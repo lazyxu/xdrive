@@ -94,8 +94,11 @@ test('scoped map mode changes retain filter protections but allow cleared timezo
   const map = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
   assert.ok(map.includes('data-xdrive-map-mode-scope-warning'))
-  assert.ok(map.includes("f?.favorite !== undefined"))
-  assert.ok(map.includes("f?.sort_by !== 'captured'"))
+  assert.ok(map.includes('xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)'))
+  assert.ok(!map.includes("next === 'prototype' && (!approved"))
+  // Both full-document directions must use the same fail-closed predicate.
+  assert.ok(map.indexOf('xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)') <
+    map.indexOf('window.location.replace(href)'))
   assert.ok(!map.includes('xDriveBaiduMapPhotoScopeKey(mapPhotoScope) !=='))
 })
 test('Owner and private identities never appear in the map entry scope', () => {
@@ -151,4 +154,23 @@ test('map Back restores the original Owner Range before Album UI and scroll anch
   assert.ok(!back.includes("loadFirstPage(null, {}) // map-return"))
   assert.ok(g.includes('canReturnToMapEntry={Boolean(section'))
   assert.ok(g.includes('mapGalleryVisibleAnchorRef.current = {'))
+})
+
+test('both full-document map runtime transitions reject signed Owner scope loss', () => {
+  const safe = scope.xDriveBaiduMapScopeSurvivesFullReload
+  assert.equal(safe({albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}),true)
+  assert.equal(safe({albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',
+    time_zone:'Asia/Tokyo'}}),true)
+  for(const scopeValue of [
+    {albumKey:'manual:Private',filters:{sort_by:'captured',sort_dir:'desc'}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',favorite:false}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',favorite:true}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',asset_kind:'video'}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',captured_from:'2026-01-01'}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',captured_to:'2026-12-31'}},
+    {albumKey:'',filters:{sort_by:'added',sort_dir:'asc'}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'asc'}},
+    {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',owner_id:42}},
+    null,
+  ]) assert.equal(safe(scopeValue),false,JSON.stringify(scopeValue))
 })
