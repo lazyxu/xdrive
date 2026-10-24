@@ -673,4 +673,29 @@ if caddy_rescue_manual "606060606060606060606060"; then
   exit 1
 fi
 [[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$before" ]]
+
+# Maintenance restart: the unchanged HTTPS-only Host CAS Save creates the
+# existing rollback journal; the proven Caddy-only Deploy consumes it.
+restart_before="$(fingerprint)"
+restart_domain="$(sed -n 's/^XD_DOMAIN=//p' "$XD_CONFIG_DIR/config/.env")"
+restart_lan="$(sed -n 's/^XD_LAN_HTTPS_IP=//p' "$XD_CONFIG_DIR/config/.env")"
+[[ -n "$restart_domain" && -n "$restart_lan" ]]
+restart_count="$(wc -l < "$MOCK_DOCKER_LOG")"
+printf '{"operation":"save","request_id":"747474747474747474747474","expected_sha256":"%s","https":{"enabled":true,"domain":"%s","lan_enabled":true,"lan_ip":"%s"}}\n' \
+  "$restart_before" "$restart_domain" "$restart_lan" |
+  XD_CONFIG_DIR="$XD_CONFIG_DIR" python3 "$XD_CONFIG_DIR/bin/caddy-env-config.py" save >/dev/null
+[[ "$(fingerprint)" == "$restart_before" ]]
+[[ -f "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+[[ -f "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+deploy "$restart_before" 757575757575757575757575
+[[ "$(fingerprint)" == "$restart_before" ]]
+[[ "$(wc -l < "$MOCK_DOCKER_LOG")" == "$((restart_count + 1))" ]]
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/previous.env" ]]
+[[ ! -e "$XD_CONFIG_DIR/state/caddy-env/pending.json" ]]
+python3 - "$TMP/result.json" <<'PY_RESTART'
+import json,sys
+value=json.load(open(sys.argv[1]))
+assert value["state"] == "deployed" and value["request_id"] == "757575757575757575757575"
+PY_RESTART
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"

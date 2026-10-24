@@ -301,14 +301,48 @@ export function XDriveCaddyDetailV1({
   const canDeploy = !!source.startCaddyDeploy && !!source.getCaddyDeployStatus &&
     validPendingTarget && !alreadyCompletedThisTarget &&
     !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy
+  // A maintenance restart uses the original Host CAS Save and Caddy-only Deploy.
+  // No-op HTTPS Save retains AliDNS credentials and prepares a rollback journal.
+  const canRestart = !!source.saveCaddyConfiguration && !!source.startCaddyDeploy &&
+    !!source.getCaddyDeployStatus && config?.source === 'host-env' &&
+    config.host_env_pending_redeploy === false &&
+    /^[0-9a-f]{64}$/.test(config.host_env_sha256 ?? '') &&
+    (config.desired_enabled || config.desired_lan_enabled === true) &&
+    !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy
   const startDeploy = async () => {
-    if (!canDeploy || !source.startCaddyDeploy || deployPendingRef.current) return
+    if ((!canDeploy && !canRestart) || !source.startCaddyDeploy ||
+        deployPendingRef.current) return
+    const restarting = !canDeploy && canRestart
     deployPendingRef.current = true
     const epoch = ++deployEpoch.current
     setDeployBusy(true)
     setConfirmDeploy(false)
     setDeployError('')
+    setDeployReceipt(null)
     try {
+      if (restarting) {
+        if (config?.source !== 'host-env' || !source.saveCaddyConfiguration) return
+        const target = config.host_env_sha256
+        // One unchanged, revision-fenced HTTPS Save creates the original
+        // backup/rollback journal. Neither key is read or overwritten.
+        // If its ACK is lost, do not deploy or blindly retry the Save.
+        const saveResult = await source.saveCaddyConfiguration({
+          host_env_sha256: target,
+          https_revision: 0, alidns_revision: 0,
+          https: {
+            enabled: config.desired_enabled, domain: config.desired_domain,
+            lan_enabled: config.desired_lan_enabled === true,
+            lan_ip: config.desired_lan_ip ?? '',
+          },
+        })
+        if (epoch !== deployEpoch.current) return
+        if (!saveResult || saveResult.saved !== true ||
+            saveResult.host_applied !== false || saveResult.apply_supported !== false ||
+            saveResult.host_env_sha256 !== target ||
+            saveResult.https_revision !== 0 || saveResult.alidns_revision !== 0) {
+          throw new Error('maintenance restart Save unconfirmed')
+        }
+      }
       const status = await source.startCaddyDeploy()
       if (epoch !== deployEpoch.current) return
       if (!status || status.protocol !== 'xdrive.caddy.host-env.v1' ||
@@ -468,9 +502,10 @@ export function XDriveCaddyDetailV1({
                 保存配置
               </Button>
               {config?.source === 'host-env' && (
-                <Button size="small" variant="outlined" disabled={!canDeploy}
-                  onClick={() => setConfirmDeploy(true)} data-xdrive-caddy-host-env-deploy>
-                  {inDeploy ? '正在重新部署…' : '重新部署 Caddy'}
+                <Button size="small" variant="outlined" disabled={!canDeploy && !canRestart}
+                  onClick={() => setConfirmDeploy(true)} data-xdrive-caddy-host-env-deploy
+                  data-xdrive-caddy-maintenance-restart={canRestart || undefined}>
+                  {inDeploy ? '正在处理 Caddy…' : canRestart ? '重启 Caddy' : '重新部署 Caddy'}
                 </Button>
               )}
               {dirtyAtomic && (
@@ -508,9 +543,13 @@ export function XDriveCaddyDetailV1({
             description="Host 模式保存至宿主机 .env；不会立即重新部署 Caddy。"
             confirmLabel="仅保存配置" onCancel={() => setConfirmAtomic(false)}
             onConfirm={() => { void saveAtomic() }} />
-          <XDriveConfirmDialog open={confirmDeploy} title="重新部署 Caddy"
-            description="将已保存的宿主机 .env 应用到 Caddy。此操作只重新创建 Caddy；失败时尝试恢复上一份运行配置。"
-            confirmLabel="重新部署" onCancel={() => setConfirmDeploy(false)}
+          <XDriveConfirmDialog open={confirmDeploy}
+            title={canRestart ? '重启 Caddy' : '重新部署 Caddy'}
+            description={canRestart
+              ? '不修改域名、局域网 IP 或 AliDNS；仅重建 Caddy，继续使用已有本机 HTTPS 验证与失败回滚。其他容器不重启。'
+              : '将已保存的宿主机 .env 应用到 Caddy。此操作只重新创建 Caddy；失败时尝试恢复上一份运行配置。'}
+            confirmLabel={canRestart ? '确认重启' : '重新部署'}
+            onCancel={() => setConfirmDeploy(false)}
             onConfirm={() => { void startDeploy() }} />
           <XDriveConfirmDialog open={confirmDiscard} loading={savingAtomic}
             title="放弃未保存的 Caddy 草稿"
