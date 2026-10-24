@@ -108,7 +108,8 @@ test('P0-L16 shared Gallery covers use one provider, same Web/Mobile backend and
   assert.match(gallery, /<XDriveMediaGalleryCoverProvider\b/)
   assert.match(gallery, /key=\{preferenceScope \|\| "gallery-default"\}/)
   assert.match(gallery, /loadThumbnail=\{source\.loadThumbnail\}/)
-  assert.equal((gallery.match(/<XDriveMediaGalleryCoverThumbnail\b/g) || []).length, 4)
+  // P0-L17 adds the verified duplicate-fold still to the four Gallery cover card entries.
+  assert.equal((gallery.match(/<XDriveMediaGalleryCoverThumbnail\b/g) || []).length, 5)
   for (const name of [
     'MobileGalleryCollections.tsx', 'MediaGalleryAlbumOrganizer.tsx',
     'MediaGalleryMemories.tsx', 'MediaGalleryCleanup.tsx', 'MediaGalleryPets.tsx',
