@@ -25,12 +25,14 @@ test('one AliDNS field per value; no shadow current-value inputs', () => {
   assert.match(caddy, /access_key_id: action === 'replace'/)
   assert.match(caddy, /Math\.min\(30, shown\.expires_in_seconds\)/)
 })
-test('static-map and external source settings reuse one password-style editor', () => {
+test('Baidu Server API and external source settings reuse one password-style editor', () => {
   const map = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const mapDetail = read('ui/shared/src/mui/BaiduServerAPIDetail.tsx')
   const source = read('ui/shared/src/mui/SourceManagerSettingsDialog.tsx')
   const dsm = read('ui/shared/src/mui/SourceCredentialFields.tsx')
-  assert.match(map, /XDriveSensitiveField label="Server AK"/)
-  assert.doesNotMatch(map, /<XDriveStoredCredentialField/)
+  assert.match(map, /<XDriveBaiduServerAPIDetail/)
+  assert.match(mapDetail, /<XDriveSensitiveField label="Server AK"/)
+  assert.doesNotMatch(map + mapDetail, /<XDriveStoredCredentialField/)
   assert.match(source, /XDriveSensitiveField label="一刻相册 Cookie"/)
   assert.doesNotMatch(source, /<XDriveStoredCredentialField/)
   assert.match(dsm, /XDriveSensitiveField label="DSM 密码"/)

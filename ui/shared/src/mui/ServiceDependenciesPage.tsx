@@ -17,7 +17,7 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import { alpha } from '@mui/material/styles'
-import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
+import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencyForDisplay, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
 import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals, xDriveDashboardAssessment, xDriveDashboardCounts, xDriveDashboardMatches } from '../system-dependencies-overview'
 import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
@@ -54,7 +54,7 @@ import type {
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
-import { XDriveSensitiveField } from './SensitiveField'
+import { XDriveBaiduServerAPIDetail } from './BaiduServerAPIDetail'
 import { XDriveBaiduJSAPIDesiredPanel } from './BaiduJSAPIDesiredPanel'
 import type { XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
 import { XDriveCoreDependencyDetail } from './CoreDependencyDetail'
@@ -662,6 +662,8 @@ export function XDriveServiceDependenciesPage({
   const [baiduError, setBaiduError] = useState('')
   const [baiduNotice, setBaiduNotice] = useState('')
   const [baiduBusy, setBaiduBusy] = useState(false)
+  const [baiduReadBusy, setBaiduReadBusy] = useState(false)
+  const baiduConfigEpochRef = useRef(0)
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [baiduReveal, setBaiduReveal] = useState<XDriveBaiduMapAKReveal | null>(null)
   const [revealingAK, setRevealingAK] = useState(false)
@@ -839,8 +841,13 @@ export function XDriveServiceDependenciesPage({
     setPhotoHistoryError('')
     setPhotoRollbackTarget('')
     setPhotoRollbackConfirmOpen(false)
+    ++revealEpochRef.current
+    ++baiduConfigEpochRef.current
     setBaiduReveal(null)
     setRevealingAK(false)
+    setBaiduReadBusy(false)
+    setBaiduBusy(false)
+    setClearConfirmOpen(false)
     setGeoNamesBusy(false)
     setGeoNamesConfig(null)
     setGeoNamesDraftDistance('')
@@ -871,12 +878,17 @@ export function XDriveServiceDependenciesPage({
       })
     }
     if (selectedPage === 'baidu-map' && source.loadBaiduMapConfig) {
+      const epoch = baiduConfigEpochRef.current
+      setBaiduReadBusy(true)
       void source.loadBaiduMapConfig().then((config) => {
-        if (!active) return
+        if (!active || epoch !== baiduConfigEpochRef.current) return
         setBaiduConfig(config)
         setBaiduEnabled(config.enabled)
       }).catch(() => {
-        if (active) setBaiduError('无法读取百度地图管理配置，请检查 Server 或更新客户端。')
+        if (active && epoch === baiduConfigEpochRef.current)
+          setBaiduError('无法读取 Server API 配置；请检查登录状态、Server 与 Agent 版本。')
+      }).finally(() => {
+        if (active && epoch === baiduConfigEpochRef.current) setBaiduReadBusy(false)
       })
     }
     if (selectedPage === 'geonames' && source.loadGeoNamesConfig) {
@@ -895,6 +907,7 @@ export function XDriveServiceDependenciesPage({
     return () => {
       active = false
       ++revealEpochRef.current
+      ++baiduConfigEpochRef.current
       ++geoNamesEpochRef.current
       ++photoPolicyEpochRef.current
       ++photoHistoryEpochRef.current
@@ -963,7 +976,8 @@ export function XDriveServiceDependenciesPage({
   }, [source, refreshID])
 
   const revealBaiduAK = async () => {
-    if (!baiduConfig?.configured || !source.revealBaiduMapAK || revealingAK || baiduBusy) return
+    if (!baiduConfig?.configured || !source.revealBaiduMapAK || revealingAK || baiduBusy ||
+        baiduReadBusy || refreshing) return
     const epoch = ++revealEpochRef.current
     setBaiduReveal(null)
     setRevealingAK(true)
@@ -971,45 +985,97 @@ export function XDriveServiceDependenciesPage({
     try {
       const revealed = await source.revealBaiduMapAK(baiduConfig.revision)
       if (epoch !== revealEpochRef.current) return
-      if (revealed.field !== 'ak' || !revealed.value) throw new Error('读取 AK 响应无效')
+      if (revealed?.field !== 'ak' || typeof revealed.value !== 'string' || !revealed.value ||
+          !Number.isFinite(revealed.expires_in_seconds) || revealed.expires_in_seconds <= 0 ||
+          revealed.expires_in_seconds > 30) throw new Error('invalid_reveal')
       setBaiduReveal(revealed)
-    } catch (err) {
+    } catch {
       if (epoch !== revealEpochRef.current) return
       setBaiduReveal(null)
-      setBaiduError(err instanceof Error ? err.message : '显示 AK 失败，请重试。')
+      setBaiduError('显示 Server AK 失败或当前修订已变化，请核对权限后重试。')
     } finally {
       if (epoch === revealEpochRef.current) setRevealingAK(false)
     }
   }
 
+  // A readonly refresh is independent of JSAPI 4.0 and cannot replace an edit.
+  const refreshBaiduServerAPI = () => {
+    if (baiduReadBusy || baiduBusy || refreshing || hasUnsavedEdits || revealingAK) return
+    hideBaiduAK()
+    setRefreshID((value) => value + 1)
+    if (!source.loadBaiduMapConfig) return
+    const epoch = ++baiduConfigEpochRef.current
+    setBaiduReadBusy(true)
+    setBaiduError('')
+    void source.loadBaiduMapConfig().then((next) => {
+      if (epoch !== baiduConfigEpochRef.current) return
+      setBaiduConfig(next)
+      setBaiduEnabled(next.enabled)
+    }).catch(() => {
+      if (epoch === baiduConfigEpochRef.current)
+        setBaiduError('读取 Server API 配置失败；保留当前草稿和上次成功读取的状态。')
+    }).finally(() => {
+      if (epoch === baiduConfigEpochRef.current) setBaiduReadBusy(false)
+    })
+  }
+
+  const discardBaiduDraft = () => {
+    if (!baiduConfig || baiduBusy || baiduReadBusy) return
+    hideBaiduAK()
+    setBaiduAK('')
+    setBaiduEnabled(baiduConfig.enabled)
+    setBaiduError('')
+  }
+
   const applyBaiduMap = async (clearAK = false) => {
-    if (!baiduConfig || !source.saveBaiduMapConfig || baiduBusy) return
+    if (!baiduConfig?.editable || !source.saveBaiduMapConfig || baiduBusy || baiduReadBusy ||
+        (clearAK ? !baiduConfig.configured : !dirtyBaidu)) return
     hideBaiduAK()
     const ak = baiduAK.trim()
     if (!clearAK && baiduEnabled && !baiduConfig.configured && !ak) {
-      setBaiduError('启用百度地图前，请先填写有效的 Server AK。')
+      setBaiduError('启用坐标转换前，请先填写有效的 Server AK。')
       return
     }
+    const epoch = ++baiduConfigEpochRef.current
     setBaiduBusy(true)
     setBaiduError('')
     setBaiduNotice('')
+    let saved = false
     try {
       const next = await source.saveBaiduMapConfig({
         enabled: clearAK ? false : baiduEnabled,
         revision: baiduConfig.revision,
         ...(clearAK ? { clear_ak: true } : ak ? { ak } : {}),
       })
+      if (epoch !== baiduConfigEpochRef.current) return
       setBaiduConfig(next)
       setBaiduEnabled(next.enabled)
       setBaiduAK('')
-      setBaiduNotice('配置已保存并热应用到新请求，无需重启 xDrive Server；百度上游是否接受当前 AK 仍需单独在线验证。')
-      const status = await source.load()
-      setSnapshot(status)
-    } catch (err) {
-      setBaiduError(err instanceof Error ? err.message : '保存百度地图配置失败；请刷新后重试。')
+      saved = true
+      setBaiduNotice(next.requires_restart
+        ? '配置已保存；当前 Server 指示需要重启。百度上游授权另行验证。'
+        : '配置已保存；当前 Server 新请求将使用新配置。百度上游授权另行验证。')
+    } catch {
+      if (epoch === baiduConfigEpochRef.current)
+        setBaiduError('Server API 保存结果尚未确认，可能已经提交。草稿已保留，请核对配置，勿盲目重试。')
     } finally {
-      setBaiduBusy(false)
-      setClearConfirmOpen(false)
+      if (epoch === baiduConfigEpochRef.current) {
+        setBaiduBusy(false)
+        setClearConfirmOpen(false)
+      }
+    }
+    if (saved && epoch === baiduConfigEpochRef.current) {
+      // A failed post-save inventory GET does NOT turn a committed config
+      // update into a false "save failed" message.
+      try {
+        const status = await source.load()
+        if (epoch !== baiduConfigEpochRef.current || snapshotSourceRef.current !== source) return
+        cachedSnapshotRef.current = status
+        setSnapshot(status)
+      } catch {
+        if (epoch === baiduConfigEpochRef.current)
+          setBaiduNotice('配置已保存；当前服务状态重新检测失败，旧状态不能视为最新结果。')
+      }
     }
   }
 
@@ -1382,7 +1448,7 @@ export function XDriveServiceDependenciesPage({
     ? new Date(snapshot.checked_at).toLocaleString()
     : ''
   // Ignore user-level connector rows returned by older Server versions.
-  const systemServices = xDriveVisibleSystemDependencies(snapshot?.services ?? [])
+  const systemServices = xDriveVisibleSystemDependencies(snapshot?.services ?? []).map(xDriveSystemDependencyForDisplay)
   const photoKindsChanged = !!photoPolicy?.kinds && photoAutoKindChoices.some(
     (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
   )
@@ -1428,7 +1494,7 @@ export function XDriveServiceDependenciesPage({
       presentation="page"
       title="系统依赖"
       subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
-      pageActions={['caddy', 'database', 'storage', 'background-worker'].includes(selectedPage) ? null : (
+      pageActions={['caddy', 'database', 'storage', 'background-worker', 'baidu-map'].includes(selectedPage) ? null : (
         <Button
           size="small"
           variant="outlined"
@@ -1796,6 +1862,51 @@ export function XDriveServiceDependenciesPage({
                       onRefreshStatus={() => setRefreshID((value) => value + 1)}
                       onDirtyChange={setChildDirty}
                     />
+                  ) : selectedPage === 'baidu-map' && selectedItem ? (
+                    <>
+                      <XDriveBaiduServerAPIDetail
+                        service={selectedItem} checkedAt={checkedAt}
+                        config={baiduConfig} enabled={baiduEnabled} draftAK={baiduAK}
+                        revealedAK={baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
+                        loading={baiduReadBusy} refreshing={refreshing} busy={baiduBusy}
+                        revealingAK={revealingAK} hasUnsavedEdits={hasUnsavedEdits}
+                        dirty={dirtyBaidu} error={baiduError} notice={baiduNotice}
+                        clearOpen={clearConfirmOpen}
+                        canReadConfig={Boolean(source.loadBaiduMapConfig)}
+                        canSaveConfig={Boolean(source.saveBaiduMapConfig)}
+                        canRevealAK={Boolean(source.revealBaiduMapAK)}
+                        onRefreshStatus={refreshBaiduServerAPI}
+                        onEnabledChange={setBaiduEnabled} onAKChange={setBaiduAK}
+                        onRevealAK={() => { void revealBaiduAK() }} onHideAK={hideBaiduAK}
+                        onSave={() => { void applyBaiduMap() }} onDiscard={discardBaiduDraft}
+                        onClearRequest={() => setClearConfirmOpen(true)}
+                        onClearCancel={() => setClearConfirmOpen(false)}
+                        onClearConfirm={() => { void applyBaiduMap(true) }}
+                      />
+                      <Box id="dependency-baidu-map-verify-header"
+                        data-xdrive-baidu-jsapi-separate sx={{ mt: 2, scrollMarginTop: 72 }}>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between"
+                          gap={1} flexWrap="wrap">
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            动态地图 JSAPI 4.0（独立 Browser AK）
+                          </Typography>
+                          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                            <Button size="small" variant={currentTab !== 'verify' ? 'contained' : 'outlined'}
+                              onClick={() => navigateTo({ service: 'baidu-map', tab: 'config' })}>
+                              JSAPI 配置
+                            </Button>
+                            <Button size="small" variant={currentTab === 'verify' ? 'contained' : 'outlined'}
+                              onClick={() => navigateTo({ service: 'baidu-map', tab: 'verify' })}>
+                              JSAPI 检测
+                            </Button>
+                          </Stack>
+                        </Stack>
+                        <XDriveBaiduJSAPIDesiredPanel source={source}
+                          mode={currentTab === 'verify' ? 'verify' : 'config'}
+                          diagnosticScope={diagnosticScope}
+                          onDirtyChange={setBaiduJSAPIDirty} />
+                      </Box>
+                    </>
                   ) : (<>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
@@ -2118,79 +2229,6 @@ export function XDriveServiceDependenciesPage({
                     {photoPolicyNotice && <XDriveStatusAlert tone="good">{photoPolicyNotice}</XDriveStatusAlert>}
                   </Stack>
                 </Paper>
-              )}
-              {selectedPage === 'baidu-map' && currentTab === 'config' && (
-                <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
-                  <Stack spacing={1.5}>
-                    <Typography variant="subtitle2" fontWeight={700}>
-                      百度地图 Server AK
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Server AK 供百度 Server API 位置坐标转换使用。地图显示使用独立的 JSAPI 4.0 配置与签名发布；
-                      管理员点击“显示”才临时解密 AK，30 秒后自动隐藏。
-                    </Typography>
-                    {currentTab === 'config' && baiduConfig && (
-                      <Typography variant="caption" color="text.secondary">
-                        {baiduConfig.source === 'environment' ? '部署环境变量' : '管理员持久化设置'}
-                        {' · '}修订 #{baiduConfig.revision}
-                        {' · '}{baiduConfig.requires_restart ? '需重启' : '无需重启'}
-                      </Typography>
-                    )}
-                    {currentTab === 'config' && (baiduConfig?.editable ? (
-                      <>
-                        <FormControlLabel
-                          label="启用百度地图"
-                          control={
-                            <Switch checked={baiduEnabled} onChange={(_event, value) => setBaiduEnabled(value)}
-                              disabled={baiduBusy} />
-                          }
-                        />
-                        <XDriveSensitiveField label="Server AK" value={baiduAK}
-                          configured={baiduConfig.configured}
-                          revealedValue={baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
-                          onReveal={() => { void revealBaiduAK() }} onHide={hideBaiduAK}
-                          revealLoading={revealingAK}
-                          revealDisabled={!source.revealBaiduMapAK}
-                          disabled={baiduBusy} maxLength={256}
-                          onChange={setBaiduAK} />
-                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                          <Button variant="contained" size="small" disabled={baiduBusy}
-                            onClick={() => { void applyBaiduMap() }}>
-                            {baiduBusy ? '正在保存…' : '保存并立即生效'}
-                          </Button>
-                          <Button color="error" variant="outlined" size="small"
-                            disabled={baiduBusy || !baiduConfig.configured}
-                            onClick={() => setClearConfirmOpen(true)}>
-                            清除 AK
-                          </Button>
-                        </Stack>
-                      </>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        {baiduConfig
-                          ? '当前部署尚未配置服务端凭据加密密钥环，无法在线修改 AK。请先配置 XD_CONNECTOR_SECRET_KEYS 并重新部署一次。'
-                          : '当前 Server/Agent 不支持在线配置 AK；更新后即可在此编辑。'}
-                      </Typography>
-                    ))}
-                    {baiduError && <XDriveStatusAlert tone="bad">{baiduError}</XDriveStatusAlert>}
-                    {baiduNotice && <XDriveStatusAlert tone="good">{baiduNotice}</XDriveStatusAlert>}
-                  </Stack>
-                  <XDriveConfirmDialog
-                    open={clearConfirmOpen}
-                    title="确认清除百度地图 AK"
-                    description="清除后百度地图将立即停用，但不会回退到其他地图。普通图库、文件服务及同步不受影响。"
-                    confirmLabel="清除 AK 并停用地图"
-                    confirmIntent="danger"
-                    loading={baiduBusy}
-                    onCancel={() => setClearConfirmOpen(false)}
-                    onConfirm={() => { void applyBaiduMap(true) }}
-                  />
-                </Paper>
-              )}
-              {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
-                <XDriveBaiduJSAPIDesiredPanel source={source} mode={currentTab}
-                  diagnosticScope={diagnosticScope}
-                  onDirtyChange={currentTab === 'config' ? setBaiduJSAPIDirty : undefined} />
               )}
               {selectedPage === 'geonames' && currentTab === 'verify' && (
                 <Stack spacing={1.5} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>

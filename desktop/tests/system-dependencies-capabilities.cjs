@@ -86,7 +86,8 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
     'loadCaddyHTTPSConfig', 'saveCaddyHTTPSConfig', 'loadCaddyHTTPSPreflight',
     'loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker',
     'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight', 'applyPhotoHost',
-    'loadBaiduMapConfig', 'saveBaiduMapConfig', 'verifyBaiduMap',
+    'loadBaiduMapConfig', 'saveBaiduMapConfig',
+    'loadBaiduJSAPIConfig', 'verifyBaiduJSAPI4Loader', 'verifyBaiduMap',
     'loadGeoNamesConfig', 'saveGeoNamesConfig',
   ].map((key) => [key, () => Promise.resolve()]))
   assert.deepEqual(resolve('caddy', [row('caddy')], {}), {})

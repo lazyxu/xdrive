@@ -43,8 +43,9 @@ test('one service title and four honest axes, with verbose hints only after disc
   }
 })
 test('Server AK and signed dynamic JSAPI4 remain separate authorities', () => {
-  assert.match(page, /XDriveSensitiveField label="Server AK"/)
-  assert.match(page, /XDriveBaiduJSAPIDesiredPanel source=\{source\} mode=\{currentTab\}/)
+  assert.match(read('ui/shared/src/mui/BaiduServerAPIDetail.tsx'), /XDriveSensitiveField label="Server AK"/)
+  assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
+  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
   assert.doesNotMatch(page, /data-xdrive-baidu-static-unverified-hint|固定 128×128|verifyBaiduMap\(/)
   assert.equal((panel.match(/XDriveBaiduJSAPIConfigSnapshot config=/g) || []).length, 1)
   assert.match(snapshot, /detailsOpen && \(/)

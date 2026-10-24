@@ -22,7 +22,7 @@ for (const [name, source] of [['ServiceDependenciesPage.tsx', parent], ['BaiduJS
 test('Admin Server AK remains separate from the signed dynamic JSAPI release', () => {
   assert.match(parent, /case 'baidu-map': return \['status', 'config', 'verify'\]/)
   assert.match(parent, /XDriveBaiduJSAPIDesiredPanel/)
-  assert.match(parent, /XDriveSensitiveField label="Server AK"/)
+  assert.match(read('ui/shared/src/mui/BaiduServerAPIDetail.tsx'), /XDriveSensitiveField label="Server AK"/)
   assert.doesNotMatch(parent, /data-xdrive-baidu-static-unverified-hint|静态地图 · 在线生效验证|验证当前 AK 在线生效/)
 })
 

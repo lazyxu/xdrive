@@ -15,6 +15,8 @@ test('PG, storage and Worker share a flat all-expanded detail without new backen
   const page = parent(), core = detail()
   assert.match(page, /<XDriveCoreDependencyDetail/)
   assert.match(page, /\['database', 'storage', 'background-worker'\]\.includes\(selectedPage\)/)
+  assert.match(page, /selectedPage === 'baidu-map' && selectedItem \? \(/)
+  assert.match(page, /<XDriveBaiduServerAPIDetail/)
   assert.match(core, /data-xdrive-core-dependency-flat/)
   assert.doesNotMatch(core, /Accordion|collapse|showHistory|setHistoryOpen/)
   assert.match(core, /id=\{`dependency-\$\{service\.id\}-config-header`\}/)
@@ -26,7 +28,7 @@ test('PG, storage and Worker share a flat all-expanded detail without new backen
 
 test('one refresh rereads inventory plus local config, but cannot destroy dirty or saving edits', () => {
   const page = parent(), core = detail(), pg = db(), wk = worker()
-  assert.match(page, /pageActions=\{\['caddy', 'database', 'storage', 'background-worker'\]\.includes\(selectedPage\) \? null : \(/)
+  assert.match(page, /pageActions=\{\['caddy', 'database', 'storage', 'background-worker', 'baidu-map'\]\.includes\(selectedPage\) \? null : \(/)
   assert.match(core, /const controlsLocked = refreshing \|\| hasUnsavedEdits \|\| editorBusy/)
   assert.match(core, /if \(controlsLocked\) return/)
   assert.match(core, /setConfigRefreshID\(\(id\) => id \+ 1\)/)
