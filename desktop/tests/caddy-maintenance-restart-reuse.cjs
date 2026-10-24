@@ -1,0 +1,36 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '..', '..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+
+test('Caddy maintenance restart reuses exactly the existing Host CAS and deploy path', () => {
+  const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const host = read('scripts/server-control.sh')
+  assert.match(page, /config\.host_env_pending_redeploy === false/)
+  assert.match(page, /const canRestart = !!source\.saveCaddyConfiguration/)
+  assert.match(page, /!savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy/)
+  assert.match(page, /data-xdrive-caddy-maintenance-restart/)
+  assert.match(page, /https_revision: 0, alidns_revision: 0/)
+  assert.match(page, /saveResult\.host_env_sha256 !== target/)
+  assert.match(page, /saveResult\.host_applied !== false/)
+  assert.match(page, /await source\.startCaddyDeploy\(\)/)
+  assert.ok(page.indexOf('const saveResult = await source.saveCaddyConfiguration(') <
+    page.indexOf('const status = await source.startCaddyDeploy()'))
+  assert.match(page, /lan_enabled: config\.desired_lan_enabled === true/)
+  assert.doesNotMatch(page, /docker restart|\.saveCaddyAliDNS\(|source\.saveCaddyHTTPSConfig\(/)
+  assert.match(host, /up -d --no-deps --force-recreate caddy/)
+  assert.match(host, /caddy_env_verify_local_runtime_window/)
+})
+
+test('restart confirms only unchanged Host target and never crosses pending edits', () => {
+  const page = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  assert.match(page, /validPendingTarget && !alreadyCompletedThisTarget/)
+  assert.match(page, /const restarting = !canDeploy && canRestart/)
+  assert.match(page, /config\.host_env_pending_redeploy === false/)
+  assert.match(page, /confirmLabel=\{canRestart \? '确认重启' : '重新部署'\}/)
+  assert.match(page, /setDeployReceipt\(null\)/)
+  assert.match(page, /epoch !== deployEpoch\.current/)
+})
