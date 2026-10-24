@@ -23,6 +23,14 @@ docker build \
 
 version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' xdrive/media-worker:test)"
 test "$version" = "$XDRIVE_BUILD_VERSION"
+# Publishing an exact image must not depend on runner-level bind-mount,
+# user namespace or live socket test capability. Preserve full tests for v*
+# and MR, and run master smoke diagnostics after the Release is published.
+if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" == "1" ]]; then
+  bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"
+  echo "GitLab master Media Worker package exported; live socket smoke is post-release"
+  exit 0
+fi
 metadata="$(docker run --rm --entrypoint /usr/local/bin/xdrive-server xdrive/media-worker:test version)"
 grep -Fqx "server version: $XDRIVE_BUILD_VERSION" <<<"$metadata"
 ffmpeg_version="$(docker run --rm --entrypoint /usr/bin/ffmpeg xdrive/media-worker:test -version)"

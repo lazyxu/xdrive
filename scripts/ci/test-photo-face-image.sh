@@ -126,6 +126,7 @@ fi
 # GitLab uses a mutable cache namespace; retain only the current environment.
 find "$runtime_cache_dir" -maxdepth 1 -type f -name '*.tar.gz' ! -name "$runtime_contract_hash.tar.gz" -delete
 
+if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
 docker run --rm \
   --mount "$runtime_mount" \
   --workdir /workspace \
@@ -143,6 +144,7 @@ docker run --rm \
   --workdir /workspace \
   "$runtime_image" \
   python analyzer.py --benchmark --iterations 1
+fi
 
 # The final image is the release artifact. Build and validate it separately so
 # bind mounts never mask the packaged business code that will be published.
@@ -174,8 +176,10 @@ revision_label="$(docker image inspect --format '{{ index .Config.Labels "org.op
   exit 1
 }
 
-docker run --rm "$final_image" --self-test
-docker run --rm "$final_image" --benchmark --iterations 1
+if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
+  docker run --rm "$final_image" --self-test
+  docker run --rm "$final_image" --benchmark --iterations 1
+fi
 
 rm -rf "$artifact_dir"
 bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"

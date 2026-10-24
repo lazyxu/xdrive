@@ -489,6 +489,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"release-build",
 		"promote",
 		"release",
+		"post-release-test",
 	})
 	requireRaw(t, "GitLab installer packaging contract", gitlabRaw,
 		"package-linux-client:",
