@@ -51,7 +51,7 @@
     new TextEncoder().encode(JSON.stringify(data)).length <= MAX_BYTES
   let active = false, parentOrigin = '', generation = 0, nonce = ''
   let cells = [], allowedKeys = new Set(), map = null, sdk = null
-  let script = null, pending = false, disposed = false, labelBindings = []
+  let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null
   const send = (kind, fields = {}) => {
@@ -222,7 +222,7 @@
     try { document.head.appendChild(script) } catch { stop(false) }
   })
   const redeem = async incoming => {
-    if (pending || disposed || !active || !/^[a-f0-9]{64}$/.test(incoming)) return
+    if (pending || sessionFailed || disposed || !active || !/^[a-f0-9]{64}$/.test(incoming)) return
     pending=true
     let ticket=incoming
     try {
@@ -239,16 +239,23 @@
           receipt.provider!=='baidu-jsapi-4.0' || receipt.runtime_enabled!==true) throw Error('unavailable')
       if (!map) bindNative(await loadSDK())
     } catch {
-      clearLabels()
-      try {map?.destroy?.()} catch {}
-      map=null
-      if(status)status.textContent='隔离地图会话或 SDK 不可用，保留图库静态地图。'
-      send('map-failed')
+      // This Child instance can never retry an invalid map-only redemption.
+      // Parent may create a fresh, separately signed Child if authorized.
+      if (!sessionFailed && !disposed) {
+        sessionFailed=true
+        clearLabels()
+        allowedKeys.clear()
+        cells=[]
+        try {map?.destroy?.()} catch {}
+        map=null
+        if(status)status.textContent='隔离地图会话或 SDK 不可用；地点列表和照片墙仍可使用。'
+        send('map-failed')
+      }
     } finally { ticket=''; pending=false }
   }
   const accept=event=>{
     if (!parentOrigin || event.origin!==parentOrigin || event.source!==window.parent ||
-        disposed || !isRecord(event.data)) return
+        disposed || sessionFailed || !isRecord(event.data)) return
     const data=event.data
     try { if (!validEnvelope(data)) return } catch { return }
     if (data.kind==='cells') {

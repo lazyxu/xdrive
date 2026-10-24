@@ -10,8 +10,8 @@ const src = read('deploy/baidu-isolated-child/child.js')
 const html = read('deploy/baidu-isolated-child/index.html')
 const caddy = read('deploy/baidu-isolated-child/Caddyfile.example')
 
-function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false) {
-  const events = new Map(), sent=[], moves=[], nativeEvents=new Map()
+function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false,options={}) {
+  const events = new Map(), sent=[], moves=[], nativeEvents=new Map(), redeems=[]
   const parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin})}}
   const messageTarget={textContent:''}
   const scripts=[]
@@ -33,13 +33,21 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
     ...(sdkEnabled?{BMap:fakeSDK}:{}),
     addEventListener(type,cb){events.set(type,cb)}},
     ...(sdkEnabled?{
-      fetch:async()=>({ok:true,json:async()=>({provider:'baidu-jsapi-4.0',runtime_enabled:true})}),
+      fetch:async()=>{
+        redeems.push(true)
+        if(options.sessionNetworkFailure)throw Error('controlled-session-failure')
+        return {ok:!options.sessionDenied,
+          json:async()=>options.sessionReceipt ?? {provider:'baidu-jsapi-4.0',runtime_enabled:true}}
+      },
       setTimeout,clearTimeout,
     }:{}),
     document:{
       getElementById(){return messageTarget},
       ...(sdkEnabled?{
-        head:{appendChild(script){scripts.push(script);queueMicrotask(()=>script.onload?.())}},
+        head:{appendChild(script){scripts.push(script);queueMicrotask(()=>{
+          if(options.sdkScriptError)script.onerror?.()
+          else script.onload?.()
+        })}},
         createElement(){return {remove(){},set src(value){this._src=value}}},
       }:{}),
       querySelector(selector){
@@ -49,7 +57,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   const context=vm.createContext(env)
   const code=new vm.Script(src,{filename:'deploy/baidu-isolated-child/child.js'})
   code.runInContext(context,{timeout:1500})
-  return {events,sent,moves,nativeEvents,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
+  return {events,sent,moves,nativeEvents,redeems,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
     const literal=JSON.stringify(obj)
     context.payload=literal
     const shaped=vm.runInContext('JSON.parse(payload)',context)
@@ -171,4 +179,79 @@ test('native zoomend/moveend coalesce into ONE viewport after 500ms; start cance
   f.events.get('pagehide')()
   await new Promise(resolve=>setTimeout(resolve,550))
   assert.equal(count('viewport'),originalViewportCount+1,'disposed Child must not emit stale viewport')
+})
+
+async function waitForChild(condition, reason) {
+  for(let attempt=0;attempt<100&&!condition();attempt++) {
+    await new Promise(resolve=>setTimeout(resolve,15))
+  }
+  assert(condition(),reason)
+}
+
+test('failed Child Session/SDK denies map rendering without Static fallback or ticket disclosure',async()=>{
+  for(const options of [{sessionDenied:true},{sessionNetworkFailure:true},{sdkScriptError:true}]) {
+    const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true,options)
+    f.sendObject(f.parent,'https://gallery.example.net',init)
+    f.sendObject(f.parent,'https://gallery.example.net',{
+      version:1,generation:7,nonce:'a'.repeat(64),kind:'map-session',ticket:'b'.repeat(64)})
+    await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-failed'),'one map failure was delivered')
+    assert.equal(f.moves.length,0,'failed Session/SDK cannot mount an active map')
+    assert.equal(f.sent.filter(e=>e.message.kind==='map-failed').length,1)
+    assert.match(f.messageTarget.textContent,/地点列表和照片墙仍可使用/)
+    assert.doesNotMatch(f.messageTarget.textContent,/静态地图|静态底图/)
+    if(options.sessionDenied||options.sessionNetworkFailure)
+      assert.equal(f.scripts.length,0,'SDK must never load before map-session redemption')
+    else assert.equal(f.scripts.length,1,'SDK failure follows a valid Session')
+    assert(!JSON.stringify(f.sent).includes('b'.repeat(64)),'ticket never echoes to Parent')
+    // No same-frame retries or stale SDK bootstraps after a failed redemption.
+    const sent=f.sent.length, scripts=f.scripts.length
+    f.sendObject(f.parent,'https://gallery.example.net',{
+      version:1,generation:7,nonce:'a'.repeat(64),kind:'map-session',ticket:'c'.repeat(64)})
+    f.sendObject(f.parent,'https://gallery.example.net',init)
+    assert.equal(f.redeems.length,1,'failed Child must not redeem a second ticket')
+    assert.equal(f.sent.length,sent,'failed Child must not revive a map channel')
+    assert.equal(f.scripts.length,scripts,'failed Child must not reinject SDK')
+    f.events.get('pagehide')?.()
+  }
+})
+
+test('native map gestures cancel Owner queries synchronously and never after dispose',async()=>{
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind:'map-session',ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.nativeEvents.has('moveend'),'SDK native listener attached')
+  const count=()=>f.sent.filter(e=>e.message.kind==='cancel').length
+  for(const kind of ['movestart','zoomstart']) {
+    const callback=f.nativeEvents.get(kind)
+    assert.equal(typeof callback,'function')
+    const before=count()
+    callback()
+    assert.equal(count(),before+1,kind+' sends immediate Parent cancel')
+  }
+  f.events.get('pagehide')?.()
+  const after=count()
+  f.nativeEvents.get('movestart')?.()
+  assert.equal(count(),after,'disposed SDK gestures are inert')
+})
+
+test('invalid Child map-only Session receipts never load third-party SDK',async()=>{
+  for(const receipt of [
+    {provider:'baidu-jsapi-4.0',runtime_enabled:false},
+    {provider:'other-provider',runtime_enabled:true},
+    {provider:'baidu-jsapi-4.0',runtime_enabled:true,owner_token:'forbidden'},
+    {},
+  ]) {
+    const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true,
+      {sessionReceipt:receipt})
+    f.sendObject(f.parent,'https://gallery.example.net',init)
+    f.sendObject(f.parent,'https://gallery.example.net',{
+      version:1,generation:7,nonce:'a'.repeat(64),kind:'map-session',ticket:'b'.repeat(64)})
+    await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-failed'),'invalid Session rejected')
+    assert.equal(f.scripts.length,0)
+    assert.equal(f.moves.length,0)
+    assert.equal(f.sent.filter(e=>e.message.kind==='map-failed').length,1)
+    assert(!JSON.stringify(f.sent).includes('b'.repeat(64)))
+    f.events.get('pagehide')?.()
+  }
 })
