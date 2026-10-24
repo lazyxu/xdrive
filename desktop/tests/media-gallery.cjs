@@ -590,7 +590,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'playsInline',
     "preload={holdActiveRef.current && stillReady ? 'metadata' : 'none'}",
     'loadStartedRef.current',
-    'loader(onProgress)',
+    'loader(onProgress, controller.signal)',
     "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",
     '按住播放，松开停止',
     'aria-pressed={playing}',
@@ -600,14 +600,14 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
   }
   assert.equal(sharedLivePhotoSurface.includes('muted'), false, 'Live Photo motion must preserve audio capability')
   assert.match(webAPI, /live-photo-motion-ticket/)
-  assert.match(webAPI, /mediaLivePhotoMotionURL\(nodeID: number\)/)
+  assert.match(webAPI, /mediaLivePhotoMotionURL\(nodeID: number, signal\?: AbortSignal\)/)
   assert.equal(webAPI.includes('responseBlobWithProgress'), false, 'Web Live Photo motion must not buffer the complete response Blob')
   assert.match(preload, /agent:media-live-photo-motion-progress/)
   assert.match(desktopMain, /agent:media-live-photo-motion-progress/)
   assert.match(desktopPreviewProxy, /coveredRanges/)
   assert.match(desktopPreviewProxy, /createURLFromTicket/)
   assert.match(desktopPreviewProxy, /releaseURL\(value: string\)/)
-  assert.match(webAdapter, /mediaLivePhotoMotionURL\(nodeID\)/)
+  assert.match(webAdapter, /mediaLivePhotoMotionURL\(nodeID, signal\)/)
   assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress\)/)
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
   assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')

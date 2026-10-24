@@ -35,6 +35,7 @@ export function XDriveLivePhotoGlyph({ size = 14 }: { size?: number }) {
 
 export type XDriveLivePhotoMotionLoader = (
   onProgress?: XDriveByteProgressHandler,
+  signal?: AbortSignal,
 ) => Promise<XDriveLivePhotoMotionSource | null | undefined>
 
 export type XDriveLivePhotoSurfaceProps = {
@@ -94,6 +95,14 @@ export function XDriveLivePhotoSurface({
   // but never automatically retry while the finger remains down.
   const retryableMotionLoadRef = useRef(false)
   const motionLoadAttemptRef = useRef(0)
+  // Keep the current source's ticket available for a quick release/re-hold,
+  // but cancel it promptly when the Viewer source or Owner is invalidated.
+  const pendingMotionControllerRef = useRef<AbortController | null>(null)
+  const cancelPendingMotion = useCallback(() => {
+    const controller = pendingMotionControllerRef.current
+    pendingMotionControllerRef.current = null
+    controller?.abort()
+  }, [])
   const loadMotionRef = useRef(loadMotion)
   loadMotionRef.current = loadMotion
   const holdActiveRef = useRef(false)
@@ -209,7 +218,10 @@ export function XDriveLivePhotoSurface({
     retryableMotionLoadRef.current = false
     const generation = loadGenerationRef.current
     const attempt = ++motionLoadAttemptRef.current
+    const controller = new AbortController()
+    pendingMotionControllerRef.current = controller
     const isCurrentRequest = () => (
+      !controller.signal.aborted &&
       loadGenerationRef.current === generation &&
       motionLoadAttemptRef.current === attempt &&
       loadStartedRef.current
@@ -226,7 +238,7 @@ export function XDriveLivePhotoSurface({
       setMotionBytes({ loadedBytes, totalBytes })
     }
 
-    void loader(onProgress)
+    void loader(onProgress, controller.signal)
       .then((value) => {
         if (!value) {
           if (isCurrentRequest()) {
@@ -261,6 +273,10 @@ export function XDriveLivePhotoSurface({
           setLoading(false)
           setFailed(true)
         }
+      }).finally(() => {
+        if (pendingMotionControllerRef.current === controller) {
+          pendingMotionControllerRef.current = null
+        }
       })
   }, [failed])
 
@@ -290,11 +306,16 @@ export function XDriveLivePhotoSurface({
     if (!stillReady) {
       holdActiveRef.current = false
       stopPlayback()
+      cancelPendingMotion()
+      motionLoadAttemptRef.current += 1
+      loadStartedRef.current = false
+      retryableMotionLoadRef.current = false
       setLoading(false)
     }
-  }, [stillReady, stopPlayback])
+  }, [cancelPendingMotion, stillReady, stopPlayback])
 
   useEffect(() => {
+    cancelPendingMotion()
     loadGenerationRef.current += 1
     motionLoadAttemptRef.current += 1
     loadStartedRef.current = false
@@ -312,6 +333,7 @@ export function XDriveLivePhotoSurface({
     if (current) disposeLivePhotoMotion(current)
 
     return () => {
+      cancelPendingMotion()
       loadGenerationRef.current += 1
       holdActiveRef.current = false
       stopPlayback()
@@ -320,7 +342,7 @@ export function XDriveLivePhotoSurface({
       motionURLRef.current = ''
       if (resolved) disposeLivePhotoMotion(resolved)
     }
-  }, [sourceKey, stopPlayback])
+  }, [cancelPendingMotion, sourceKey, stopPlayback])
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary) return

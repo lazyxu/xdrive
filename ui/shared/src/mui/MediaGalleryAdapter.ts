@@ -316,6 +316,7 @@ export interface XDriveMediaGalleryPort {
   loadLivePhotoMotion?: (
     nodeID: number,
     onProgress?: XDriveByteProgressHandler,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryLivePhotoResource>>
   loadPreviewURL?: (
     nodeID: number,
@@ -759,8 +760,8 @@ export function createXDriveMediaGalleryDataSource(
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion
-      ? async (nodeID, onProgress) => mediaLivePhotoSource(
-          await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID, onProgress)),
+      ? async (nodeID, onProgress, signal) => mediaLivePhotoSource(
+          await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID, onProgress, signal)),
           'video/quicktime',
         )
       : undefined,

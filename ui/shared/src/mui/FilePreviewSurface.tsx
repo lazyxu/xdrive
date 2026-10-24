@@ -38,6 +38,7 @@ export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDr
 export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
   onProgress?: XDriveByteProgressHandler,
+  signal?: AbortSignal,
 ) => Promise<XDriveLivePhotoMotionSource | null | undefined>
 
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
@@ -90,8 +91,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   )
   const livePhotoMotionLoader = useMemo(() => {
     if (!target || !loadLivePhotoMotion) return undefined
-    return (onProgress?: XDriveByteProgressHandler) =>
-      loadLivePhotoMotion(target, onProgress)
+    return (onProgress?: XDriveByteProgressHandler, signal?: AbortSignal) =>
+      loadLivePhotoMotion(target, onProgress, signal)
   }, [
     loadLivePhotoMotion,
     target?.id,

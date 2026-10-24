@@ -68,9 +68,10 @@ export function XDriveMediaViewerContent({
 
   const loadOpenLivePhotoMotion = useCallback((
     onProgress?: Parameters<MediaMotionLoader>[1],
+    signal?: AbortSignal,
   ) => {
-    if (!loadLivePhotoMotion) return Promise.resolve(null)
-    return loadLivePhotoMotion(item.node.id, onProgress)
+    if (!loadLivePhotoMotion || signal?.aborted) return Promise.resolve(null)
+    return loadLivePhotoMotion(item.node.id, onProgress, signal)
   }, [item.node.id, loadLivePhotoMotion])
 
   const previewKind = xDriveClassifyFilePreview(target)
@@ -80,7 +81,8 @@ export function XDriveMediaViewerContent({
   const loadSurfaceLivePhotoMotion = useCallback((
     _target: typeof target,
     onProgress?: Parameters<MediaMotionLoader>[1],
-  ) => loadOpenLivePhotoMotion(onProgress), [loadOpenLivePhotoMotion])
+    signal?: AbortSignal,
+  ) => loadOpenLivePhotoMotion(onProgress, signal), [loadOpenLivePhotoMotion])
 
   // A .livp container already has native Live Photo semantics in Preview Engine.
   // Only image+motion semantic pairs need the outer shared Live Photo composition.
