@@ -2894,6 +2894,7 @@ jobs:
           bash -n scripts/xdrive-server-host.sh
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
+          python3 scripts/test-release-attestation-contract.py
           bash -n scripts/test-server-status-summary.sh
           bash scripts/test-server-status-summary.sh
           bash -n scripts/ci/test-server-rootless-e2e.sh
@@ -4141,6 +4142,8 @@ jobs:
       contents: write
       packages: write
       actions: read
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/release.yml
     with:
       publish: true
@@ -4153,6 +4156,8 @@ jobs:
       contents: write
       packages: write
       actions: read
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/release.yml
     with:
       publish: true

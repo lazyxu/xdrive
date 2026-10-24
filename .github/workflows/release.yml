@@ -176,6 +176,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Download exact Linux installer produced by CI
         uses: actions/download-artifact@v4
@@ -229,6 +231,37 @@ jobs:
             xdrive-server \
             docker-compose.yml \
             xdrive.env.example > SHA256SUMS.txt
+      # Sigstore signs both file digests and the immutable OIDC workflow identity.
+      - name: Attest release installer and checksum manifest
+        id: release_attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            release/xdrive-server-install.sh
+            release/SHA256SUMS.txt
+      - name: Publish independent release provenance bundle
+        shell: bash
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.release_attestation.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "$ATTESTATION_BUNDLE"
+          cp "$ATTESTATION_BUNDLE" release/xdrive-release-attestation.json
+      - name: Cryptographically verify signed bundle before releasing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          verify_args=(
+            --repo "$GITHUB_REPOSITORY"
+            --bundle release/xdrive-release-attestation.json
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+            --source-ref "$GITHUB_REF"
+            --deny-self-hosted-runners
+          )
+          gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
+          gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
       - name: Log in to GHCR for channel promotion
         uses: docker/login-action@v3
         with:
