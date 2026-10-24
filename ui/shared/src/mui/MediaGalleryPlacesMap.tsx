@@ -3,6 +3,7 @@ import { Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Sta
 import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
+  xDriveBaiduMapScopeSurvivesFullReload,
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -79,15 +80,12 @@ export function XDriveMediaGalleryPlacesMap({
   )
   const changeMapMode = (next: 'prototype' | 'isolated') => {
     if (desktopOnly || mapMode === next || typeof window === 'undefined') return
-    // A full reload cannot retain a filtered Owner snapshot. Refuse to
-    // broaden a signed collection into the unfiltered same-document prototype.
-    const approved = xDriveNormalizeBaiduMapPhotoScope(mapPhotoScope)
-    const f = approved?.filters
-    if (next === 'prototype' && (!approved || approved.albumKey ||
-        f?.favorite !== undefined || f?.asset_kind !== undefined ||
-        f?.captured_from || f?.captured_to ||
-        f?.sort_by !== 'captured' || f?.sort_dir !== 'desc')) {
-      setModeWarning('请先清除地图筛选，再切换到同页原型；当前集合不会自动扩大为全图库。')
+    // A full document reload destroys the Owner's in-memory authorized
+    // scope. Both transitions must fail closed until an authenticated,
+    // one-use Server handoff can restore the exact same scope. The legacy
+    // same-document SDK must never read a private scope from URL/storage.
+    if (!xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)) {
+      setModeWarning('当前地图包含相册或筛选范围，整页切换会丢失该范围；请先清除筛选。不会自动切换到全图库。')
       return
     }
     setModeWarning('')
