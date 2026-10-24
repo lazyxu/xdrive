@@ -61,7 +61,7 @@ test('OCR activation must distinguish model health, automatic pause and Host obs
     'data-xdrive-ocr-auto-state', 'data-xdrive-ocr-diagnostic-reason',
     'data-xdrive-ocr-overview-activation', 'ocrAutoStateLabel(selectedItem)',
     'ocrAutoReasonLabel(selectedItem)', 'probe_auth_rejected', 'auto_paused',
-    'host_unverified', 'probe_invalid_response', 'legacy_unverified',
+    'host_unverified', 'probe_invalid_response', 'probe_busy', 'legacy_unverified',
   ]) {
     assert.ok(page.includes(marker), 'shared OCR readiness UI missing: ' + marker)
   }

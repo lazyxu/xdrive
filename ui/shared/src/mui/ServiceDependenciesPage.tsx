@@ -215,6 +215,7 @@ const ocrReasonLabels: Record<NonNullable<XDriveServiceDependency['ocr_reason']>
   probe_failed: 'OCR 模型 Info 检测失败；检查共享容器、模型文件和服务日志。',
   probe_endpoint_missing: 'OCR 模型接口不存在（HTTP 404）；请核对 Server 和模型镜像版本。',
   probe_server_error: 'OCR 模型进程报告服务错误（HTTP 5xx）；请检查模型加载、文件和容器运行日志。',
+  probe_busy: 'OCR 模型暂时繁忙或达到并发上限（HTTP 429）；请稍后重新检测并检查模型负载。',
   auto_paused: '自动分析策略已在当前实例暂停；检查全局开关及「视觉识别 / OCR」开关。',
   auto_pending: '自动分析配置的目标修订尚未在当前实例确认生效；请重新检测。',
   auto_unmanaged: '当前采用默认自动策略，缺少管理员受审计的确认修订；不能把默认允许当成已验证启用。',
@@ -1993,7 +1994,7 @@ export function XDriveServiceDependenciesPage({
                           原因：{ocrAutoReasonLabel(selectedItem)}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          模型健康：{selectedItem.status === 'ready'
+                          模型健康：{selectedItem.status === 'ready' && selectedItem.health_state === 'ready'
                             ? 'Smart Info 已验证，真实照片识别另验'
                             : selectedItem.status === 'disabled'
                               ? '本实例未配置分析器'
@@ -2003,7 +2004,7 @@ export function XDriveServiceDependenciesPage({
                           {' · '}宿主：{photoHostStateLabels[selectedItem.photo_host_runtime_state ?? 'unknown']}
                           {' · '}自动准入：{automaticPolicyLabels[selectedItem.automatic_policy_state ?? 'unknown']}
                           {' · '}执行器：{selectedItem.ocr_reason === 'runner_unavailable'
-                            ? '未就绪' : selectedItem.ocr_auto_state === 'enabled' ? '已核验' : '待确认'}
+                            ? '未就绪' : xDrivePhotoOCRVerified(selectedItem) ? '已核验' : '待确认'}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
                           OCR 与动物／物体识别共用自动任务开关和 photo.smart_search 队列；

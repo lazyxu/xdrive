@@ -19,7 +19,7 @@ new Function('exports', 'require', compiled.outputText)(result.exports, () => {
 })
 const verified = result.exports.xDrivePhotoOCRVerified
 const healthy = {
-  id: 'photo-smart', status: 'ready',
+  id: 'photo-smart', status: 'ready', health_state: 'ready', configuration_state: 'configured',
   ocr_auto_state: 'enabled', ocr_reason: 'ready',
   automatic_policy_state: 'enabled', photo_host_runtime_state: 'healthy',
   photo_host_profile_configured: true,
@@ -30,6 +30,12 @@ test('OCR green requires real Info, applied policy and fresh healthy managed hos
   for (const mismatch of [
     { id: 'photo-face' },
     { status: 'unavailable' },
+    // An Agent/Server packet can contain contradictory or missing
+    // independent health/configuration evidence; neither is proof of OCR.
+    { health_state: 'failed' },
+    { health_state: undefined },
+    { configuration_state: 'unconfigured' },
+    { configuration_state: undefined },
     { ocr_auto_state: 'unavailable' },
     { ocr_reason: 'probe_auth_rejected' },
     { automatic_policy_state: 'paused' },
@@ -50,7 +56,7 @@ test('Web, Mobile Web and Desktop share sanitized OCR diagnostic codes and fail 
   const go = read('internal/api/admin_photo_ocr_status.go')
   const server = read('internal/api/admin_service_dependencies.go')
   const client = read('internal/client/client.go')
-  for (const code of ['probe_auth_rejected', 'probe_unreachable', 'probe_invalid_response',
+  for (const code of ['probe_busy', 'probe_auth_rejected', 'probe_unreachable', 'probe_invalid_response',
     'probe_endpoint_missing', 'probe_server_error', 'auto_paused', 'host_unverified']) {
     assert.ok(page.includes(code), 'missing safe OCR diagnosis label: ' + code)
     assert.ok(agent.includes(code), 'desktop type dropped OCR reason: ' + code)
@@ -58,10 +64,15 @@ test('Web, Mobile Web and Desktop share sanitized OCR diagnostic codes and fail 
   assert.match(page, /xDrivePhotoOCRVerified\(selectedItem\)/)
   assert.match(page, /!xDrivePhotoOCRVerified\(service\)/)
   assert.match(page, /data-xdrive-ocr-diagnostic-reason/)
+  // No green sublabel or "model verified" text from an internally
+  // contradictory legacy packet (the main enabled predicate also fails).
+  assert.ok(page.includes("模型健康：{selectedItem.status === 'ready' && selectedItem.health_state === 'ready'"))
+  assert.ok(page.includes("? '未就绪' : xDrivePhotoOCRVerified(selectedItem) ? '已核验' : '待确认'"))
   assert.match(server, /photoOCRAutoDiagnosis\(/)
   assert.ok(server.includes('runnerInitialized && s.BackgroundScheduler != nil'))
   assert.ok(page.includes('runner_unavailable'))
   assert.match(go, /photoOCRProbeFailureReason/)
+  assert.match(go, /photointelligence\.SmartFailureCode\(err\)/)
   assert.match(client, /OCRAutoState/)
   for (const field of ['ocr_auto_state', 'ocr_reason']) {
     assert.ok(agent.includes(field + '?:'))
@@ -106,6 +117,21 @@ test('system dependency dashboard never shows green OCR when the model alone is 
   for (const [name, service, state, label] of cases) {
     const actual = assess(service)
     assert.deepEqual([actual.state, actual.label], [state, label], name)
+  }
+  // Detail and overview must agree when independent model health fails.
+  const contradictoryHealth = { ...ready, health_state: 'failed' }
+  assert.equal(verified(contradictoryHealth), false)
+  assert.deepEqual(
+    [assess(contradictoryHealth).state, assess(contradictoryHealth).label],
+    ['failed', '健康异常'],
+  )
+  // A legacy Agent omitting configuration evidence must never make the
+  // overview green when the detail predicate correctly stays unverified.
+  for (const configuration_state of [undefined, 'unknown', 'unconfigured']) {
+    const partial = { ...ready, configuration_state }
+    assert.equal(verified(partial), false)
+    assert.notEqual(assess(partial).state, 'healthy',
+      'dashboard incorrectly trusted OCR without configuration proof')
   }
   const mixed = count(cases.map(([, service]) => ({ service })))
   assert.equal(mixed.total, 8)

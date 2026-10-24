@@ -1,56 +1,34 @@
 package api
 
-import (
-	"context"
-	"errors"
-	"net"
-	"strconv"
-	"strings"
-)
+import "github.com/lazyxu/xdrive/internal/photointelligence"
 
-// Fixed nonsecret diagnostic codes; never return model response bodies,
-// private Unix socket paths, bearer tokens, or raw upstream failures.
+// Reuse the same allowlisted classifier as per-photo OCR failures.
+// HTTP 408/429, wrapped network failures and legacy errors must produce
+// actionable but nonsecret status codes, never upstream response text.
 func photoOCRProbeFailureReason(err error) string {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	switch photointelligence.SmartFailureCode(err) {
+	case "model_timeout":
 		return "probe_timeout"
-	}
-	if errors.Is(err, context.Canceled) {
+	case "interrupted":
 		return "probe_interrupted"
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return "probe_timeout"
-	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	case "model_unreachable":
 		return "probe_unreachable"
-	}
-	// Only the exact prefix emitted by our Smart HTTP adapter is interpreted.
-	// The upstream response body is never copied into any diagnostic value.
-	message := err.Error()
-	if strings.HasPrefix(message, "unsupported smart analyzer protocol version") ||
-		strings.HasPrefix(message, "decode smart analyzer response:") {
+	case "model_auth_rejected":
+		return "probe_auth_rejected"
+	case "model_endpoint_missing":
+		return "probe_endpoint_missing"
+	case "model_busy":
+		return "probe_busy"
+	case "model_server_error":
+		return "probe_server_error"
+	case "invalid_model_response":
 		return "probe_invalid_response"
+	default:
+		return "probe_failed"
 	}
-	if strings.HasPrefix(message, "smart analyzer returned HTTP ") {
-		statusText, _, ok := strings.Cut(strings.TrimPrefix(message, "smart analyzer returned HTTP "), ":")
-		if ok {
-			if status, parseErr := strconv.Atoi(statusText); parseErr == nil {
-				switch {
-				case status == 401 || status == 403:
-					return "probe_auth_rejected"
-				case status == 404:
-					return "probe_endpoint_missing"
-				case status >= 500 && status <= 599:
-					return "probe_server_error"
-				}
-			}
-		}
-	}
-	return "probe_failed"
 }
 
 // This is current-Server automatic OCR readiness, NOT proof of real photo
