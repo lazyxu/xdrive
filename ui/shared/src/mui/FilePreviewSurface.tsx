@@ -629,6 +629,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               stillReady={ready}
               loadMotion={livePhotoMotionLoader}
               sourceKey={`${target.id}:${target.revision ?? ''}`}
+              onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}
+              onSwipeNext={interactiveImage ? onSwipeNext : undefined}
+              deferTouchHold={interactiveImage}
               label={target.name ? `${target.name} 实况照片` : '实况照片'}
             />
           )}

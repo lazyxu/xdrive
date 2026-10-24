@@ -378,6 +378,32 @@ The interaction contract is:
   behind a new `img onError` fallback. Do not present a generic
   play button or a persistent instructional pill over an idle Live Photo.
 
+### Live Photo browsing gestures (P1)
+
+In Gallery Viewer or Quick Look with an authorized previous/next range, the
+shared Live Photo surface distinguishes short taps, stationary touch holds and
+horizontal swipes. Deferred touch holds apply even at the first/last photo,
+where both neighbor callbacks may be absent. Touch contact alone cannot
+acquire motion bytes:
+after 260 ms of stationary contact, the explicit hold begins and uses the
+existing lazy motion ticket and decoded-frame contract. Releasing a short tap
+does not acquire motion. A drag beyond the gesture movement threshold, a
+second pointer, cancellation, leaving the surface or source replacement
+revokes pending hold intent; a qualifying unzoomed horizontal swipe
+(`abs(dx) >= 56` and `abs(dx) > abs(dy) * 1.25`) changes the bounded
+authorized neighbor without starting motion. A completed hold cannot turn
+into navigation when the finger subsequently moves.
+
+This opt-in applies to both validated single-file LIVP and reliable paired
+Live Photos through the same `XDriveLivePhotoSurface`. An interactive browsing Viewer opts in to deferred touch holds independent
+of whether a neighbor exists; standalone surfaces not opting in retain
+immediate mouse/touch/keyboard hold behavior. Mouse and Enter/Space behavior remain immediate;
+the delay is limited to touch gestures in an authorized browsing Viewer.
+There is no second motion renderer, speculative Range request or inferred
+JPG/MOV relation. Independent bounded zoom/pinch integration remains
+outstanding; browser-native pinch and vertical pan are not treated as
+horizontal item navigation.
+
 Do not migrate inferred/grouped Live Photo semantics into FileExplorer.
 
 A structurally validated `.livp` is the deliberate exception because the single
