@@ -28,8 +28,17 @@ export async function xDriveProbePwaServer(
       if (!/^application\/json\b/i.test(type)) return { state: 'unexpected-response', httpStatus: 200 }
       try {
         const body = (await response.json()) as { ok?: unknown }
+        // fetch() resolves when headers arrive, not when its JSON body is read.
+        // A cancellation or deadline during body consumption must not look
+        // like malformed HTTP 200 (or a late successful readiness result).
+        if (options.signal?.aborted) return { state: 'cancelled' }
+        if (timedOut) return { state: 'timed-out' }
         if (body?.ok === true) return { state: 'ready', httpStatus: 200 }
-      } catch { /* Malformed readiness is never healthy. */ }
+      } catch {
+        if (options.signal?.aborted) return { state: 'cancelled' }
+        if (timedOut) return { state: 'timed-out' }
+        // An actually malformed JSON body remains an unexpected response.
+      }
       return { state: 'unexpected-response', httpStatus: 200 }
     }
     if (response.status === 503) return { state: 'server-unavailable', httpStatus: 503 }
