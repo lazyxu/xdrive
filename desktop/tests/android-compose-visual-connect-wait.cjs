@@ -1,0 +1,22 @@
+'use strict'
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const path=require('node:path')
+const src=fs.readFileSync(path.join(__dirname,
+  '../../android/app/src/androidTest/java/com/tfluid/xdrive/VisualParityTest.kt'),'utf8')
+const start=src.indexOf('    private fun loginScreen(')
+const end=src.indexOf('    private fun login()',start)
+const fixture=src.slice(start,end)
+test('Android narrow-large-font visual fixture waits for actual asynchronous Connect to Login state',()=>{
+  assert.ok(start>=0&&end>start)
+  const click=fixture.indexOf('compose.onNodeWithText("连接服务器").performScrollTo().performClick()')
+  const wait=fixture.indexOf('compose.waitUntil(timeoutMillis = 10_000)')
+  const login=fixture.indexOf('controller.state.value.screen == Screen.LOGIN',wait)
+  const visible=fixture.indexOf('compose.onNodeWithTag("username").assertExists()',wait)
+  const resize=fixture.indexOf('compactViewport = true',wait)
+  assert.ok(click>=0&&click<wait&&wait<login&&login<visible&&visible<resize)
+  assert.match(fixture,/compose.waitForIdle\(\)/)
+  assert.match(src,/@Test fun narrowLargeFontSubmitRemainsReachable\(\)/)
+  assert.match(src,/compose.onNodeWithText\("登录"\)\.performScrollTo\(\)\.assertIsDisplayed\(\)/)
+})

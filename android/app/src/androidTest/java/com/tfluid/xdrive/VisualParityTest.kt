@@ -63,6 +63,14 @@ class VisualParityTest {
         }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
+        // connect() runs in the Controller's Main coroutine scope, which is
+        // independent of Compose's current idle frame. A runOnIdle-only
+        // assertion races the CONNECT -> LOGIN StateFlow transition on CI.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("username").assertExists()
         compose.runOnIdle {
             Assert.assertEquals(Screen.LOGIN, controller.state.value.screen)
             compactViewport = true
