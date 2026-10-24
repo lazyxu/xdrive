@@ -18,6 +18,34 @@ album synchronization or full Web/Desktop parity. Next increments add manual
 media uploads and Gallery, then opt-in one-way album backup with a durable queue.
 It does not activate unfinished Local Push v2 or create another content writer.
 
+## Shared Web/Desktop appearance
+
+The native Compose adapter uses the canonical xDrive brand from
+`assets/icon/web/pwa-512.png`, the resolved shared MUI light/dark auth palette,
+and the shared filename classification and Rounded Material action/file glyphs.
+Phone folders use the actual blue iOS-style PWA `MobileFolderIcon` from
+`web/src/MobileFiles.tsx`, including both gradients and the highlight, with that
+page's flat list surfaces. This intentionally differs from Desktop's yellow
+folders. Android keeps its system font, Back/IME behavior and at least 48dp touch
+targets; visual consistency is not a claim of identical font rasterization or
+full feature parity.
+
+Generated native assets are checked in so an ordinary Gradle build needs no
+Node/npm installation. After changing a canonical UI source, regenerate and
+review the native snapshot rather than editing its generated colors or glyphs:
+
+```sh
+node android/scripts/shared-ui.mjs --write
+node --test android/scripts/shared-ui.test.mjs
+node android/scripts/shared-ui.mjs --check
+```
+
+Regeneration requires the existing Web/Desktop TypeScript and MUI dependencies;
+the check and tests are dependency-free and run in the Android CI job. The icon
+archive must match the version and integrity pinned by `web/package-lock.json`;
+the retained MIT notice records the upstream icon license. The canonical SVG and
+Web/Desktop assets are not changed by this adapter.
+
 ## Build and test
 
 Use JDK 17 or 21, Android SDK platform 35 and build-tools 35.0.0. Set ANDROID_HOME
@@ -41,6 +69,10 @@ emulator you started. Android Studio may open this `android` directory directly.
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. It is debug-signed for
 testing, **not** a production-signed release or an automatic update channel.
+Isolated local builds and CI can use different debug certificates. Android will
+not install one over an APK signed by a different key: uninstall that earlier
+test build first (this removes its saved Server address/HTTP preference), then
+install and sign in again. Do not treat a debug APK as a stable update channel.
 GitHub CI's `android-native` job uploads the exact tested APK and reports and is
 required by the existing Final Gate. Existing Go/Web/Desktop gates stay intact.
 Android's hosted-emulator job is GitHub-specific in this increment, like the
