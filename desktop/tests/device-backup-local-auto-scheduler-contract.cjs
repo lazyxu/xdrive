@@ -24,6 +24,7 @@ test('automatic incremental runs only on the owning Agent and reuses the origina
   assert.ok(scheduler.includes('checkpoint.State != "partial" || checkpoint.UncertainFiles != 0'))
   assert.ok(scheduler.includes('sourceschedule.NextRunAt('))
   assert.ok(scheduler.includes('localPushAutoAttemptCooldown'))
+  assert.ok(scheduler.includes('localpush.ReserveVerifiedCommonAutoAdmission('))
   assert.ok(scheduler.includes('if busy {'))
   assert.ok(dialog.includes('请先手动完成一次当前 Source 版本的增量备份'))
   assert.ok(dialog.includes('暂停、取消、不确定任务及撤权不会自动重启'))

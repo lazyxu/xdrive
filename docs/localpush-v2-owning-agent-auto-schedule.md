@@ -58,3 +58,41 @@ confused with Server active-run semantics.
 
 Production-only inaccessible validation: **按用户决定跳过（未验收）**; this
 does not replace code-level security and exact-head CI checks.
+
+## Crash-persistent admission cooldown (follow-up)
+
+The existing verified owning-Agent scheduler also writes one small 0600,
+fsynced, atomically published cooldown observation inside the **existing**
+private Root/Source Operation journal before admitting a scheduled run. It
+does not hold per-file tasks, remote credentials, paths or SourceRun status.
+An unchanged Owner-session/Source-revision/checkpoint is cooled down across
+Agent restarts for 15, 30, 60 and at most 120 minutes on repeated admission;
+this is an advisory guard against repeated failing attempts, not a retry
+authority. A genuinely new, authenticated terminal `partial` checkpoint
+resets the old cooldown immediately (including short 1m schedules).
+
+Before publishing a new admission, the Agent re-opens the original private
+latest-batch-run checkpoint and verifies the exact current RunID, Root,
+Owner session, Source revision, terminal state, counts and timestamp. A
+well-formed but unpersisted checkpoint cannot reset cooldown. Only a
+*different* authenticated terminal run whose updated time is strictly later
+than the prior admission can reset the old delay; changed session/revision
+identifiers alone do not grant a reset.
+
+Missing records begin a new admission window. A corrupt, symlinked, revoked
+or incorrectly scoped private cooldown fails closed. Nothing changes the
+`uncertain`, `paused` or `cancelled` no-auto-resume rules or infers
+physical cancellation. Offline discovery still runs no faster than the
+existing one-minute Agent tick; end-to-end network recovery still depends
+on the verified original-Operation reconciliation.
+
+## Multi-source fairness (same owning Agent)
+
+The one-Source-per-minute admission bound stays in effect. Before rechecking
+Source/Device/Root proof, the Agent sorts its already owner-scoped candidate
+IDs by their most recent **in-process admission attempt** (oldest first),
+including prior Source revisions. This prevents a frequently successful 1m
+Source from starving later IDs; it does not bypass due-time, cooldown,
+credentials, existing Source leases or manual-run priority. After an Agent
+restart the rotation starts afresh, while the separate fsynced per-Source
+admission cooldown still prevents repeated stale-checkpoint work.

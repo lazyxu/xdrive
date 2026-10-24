@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -115,6 +117,47 @@ func localPushAutoAdmissionCoolingDown(lastAttempt, checkpointUpdatedAt, now tim
 		!checkpointUpdatedAt.After(lastAttempt)
 }
 
+// localPushAutoFairOrder gives the Source least recently considered by
+// THIS owning Agent the first chance on the next tick. Without this rotation,
+// a healthy one-minute Source can starve every higher-ID Source forever.
+// Attempt timestamps are advisory fairness only: they do not confer Root or
+// Server authority and cannot override the durable admission cooldown.
+func localPushAutoFairOrder(
+	ids []uint64, attempts map[string]time.Time, server, account string,
+) []uint64 {
+	if len(ids) < 2 {
+		return ids
+	}
+	last := make(map[uint64]time.Time)
+	prefix := server + "\x00" + account + "\x00"
+	for key, timestamp := range attempts {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rawSource, rawRevision, ok := strings.Cut(strings.TrimPrefix(key, prefix), "\x00")
+		if !ok || rawRevision == "" || strings.Contains(rawRevision, "\x00") {
+			continue
+		}
+		id, sourceErr := strconv.ParseUint(rawSource, 10, 64)
+		revision, revisionErr := strconv.ParseUint(rawRevision, 10, 64)
+		if sourceErr != nil || revisionErr != nil || id == 0 || revision == 0 {
+			continue
+		}
+		if old, ok := last[id]; !ok || timestamp.After(old) {
+			last[id] = timestamp
+		}
+	}
+	out := append([]uint64(nil), ids...)
+	sort.Slice(out, func(i, j int) bool {
+		left, right := last[out[i]], last[out[j]]
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
 func (c *agentController) runLocalPushAutoScheduler() {
 	if c == nil || c.ctx == nil {
 		return
@@ -182,7 +225,7 @@ func (c *agentController) localPushAutoTick(
 	if busy {
 		return nil
 	}
-	for _, sourceID := range ids {
+	for _, sourceID := range localPushAutoFairOrder(ids, attempts, account.Server, account.Username) {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -233,6 +276,15 @@ func (c *agentController) localPushAutoTick(
 			if len(attempts) >= localPushAutoMaxAttemptMemory {
 				return errLocalPushAutoUnavailable
 			}
+		}
+		// Preserve the admission cooldown across Agent restarts. This is
+		// advisory scheduling state, not a separate durable work queue:
+		// the worker's Source lease and original SQL Operation remain sole
+		// write authority. Missing/corrupt/private journal fails closed.
+		admitted, throttleErr := localpush.ReserveVerifiedCommonAutoAdmission(
+			ctx, configDir, grant, account.SessionID, checkpoint, now)
+		if throttleErr != nil || !admitted {
+			continue
 		}
 		attempts[key] = now
 		// This may fail if another owning Desktop starts manually; the
