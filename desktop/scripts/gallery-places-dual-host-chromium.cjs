@@ -274,8 +274,19 @@ async function testMode(browser,mode,port){
     await page.waitForFunction(()=>window.__mapProbe.clicks.length===1)
     const selected=await page.evaluate(()=>window.__mapProbe.clicks[0])
     record(mode+': Cell click retains trusted Owner identity and revision',
-      selected.node===75&&selected.asset===33&&selected.revision===2&&
-      selected.count===3&&selected.favorite===true)
+      ginURL
+        ? Number.isSafeInteger(selected.node)&&selected.node>0&&
+          Number.isSafeInteger(selected.asset)&&selected.asset>0&&
+          selected.revision===1&&selected.count===3&&selected.favorite===true
+        : selected.node===75&&selected.asset===33&&selected.revision===2&&
+          selected.count===3&&selected.favorite===true)
+    if(ginURL){
+      await page.waitForFunction(()=>
+        window.__mapProbe.ownerCellRange!==null||window.__mapProbe.rangeError)
+      const range=await page.evaluate(()=>window.__mapProbe.ownerCellRange)
+      record(mode+': actual signed Gin Cell/Viewer member Range is Owner-filtered',
+        range?.total===3&&range?.items===3&&range?.consistent===true)
+    }
     await page.locator('[data-xdrive-places-full-camera-wall]').waitFor()
     await page.locator('[data-xdrive-places-full-camera-wall]').click()
     await page.waitForFunction(()=>window.__mapProbe.viewports.length>=1)
@@ -287,6 +298,13 @@ async function testMode(browser,mode,port){
       scoped.wall.favorite===true&&scoped.wall.bounds.coordinate_space==='bd09ll')
     record(mode+': SDK reports BD09 camera',
       scoped.camera?.coordinate_space==='bd09ll'&&scoped.camera.zoom>=3)
+    if(ginURL){
+      await page.waitForFunction(()=>
+        window.__mapProbe.ownerViewportRange!==null||window.__mapProbe.rangeError)
+      const range=await page.evaluate(()=>window.__mapProbe.ownerViewportRange)
+      record(mode+': actual signed Gin Camera/Viewer member Range matches Owner',
+        range?.total===3&&range?.items===3&&range?.consistent===true)
+    }
     record(mode+': no SDK/runtime failure',!scoped.failed&&errors.length===0)
     await testActualGinIssueRedeem(page,mode)
     return {mode,count:9,favoriteCount:3,selectedCount:selected.count,
@@ -312,7 +330,9 @@ async function main(){
     const child=host===childHost+':'+port
     const pathname=new URL(req.url||'/','https://'+host).pathname
     requests.push({host:gallery?'gallery':child?'child':'unexpected',path:pathname})
-    if(gallery&&pathname==='/')return content(res,200,'text/html',resultHTML)
+    if(gallery&&pathname==='/')return content(res,200,'text/html',
+      ginURL?resultHTML.replace('</head>',
+        '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML)
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
         pathname.startsWith('/api/v1/media/places/baidu-jsapi/')))
