@@ -13,9 +13,12 @@ const dist = path.join(root, 'web', 'dist')
 const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
 const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
+const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
+assert(!p1H264Mode || p1Mode,
+  'H264 presented-frame mode requires real Owner P1 Gallery Viewer')
 assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
+const out = path.join(__dirname, '..', p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -412,6 +415,163 @@ async function p1MeasureRealViewerBack(win) {
     notMeasured:'dynamic H264 or Live motion, full 115k physical CAS, installed iOS Safari'}
 }
 
+
+// P1 stage B uses the SAME already-mounted authenticated 100k Mobile Gallery
+// that passed the original JPEG Viewer Back and Go Context.Done controls.
+// A signed MP4 H264 CAS resource must present two genuinely advancing browser
+// video frames; "canplay", poster decode, play() resolution or static rAF
+// alone cannot establish motion.
+function p1VisibleH264Tile() {
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  if(!(grid instanceof HTMLElement)||!(host instanceof HTMLElement))return null
+  const extent=host.scrollHeight-host.clientHeight
+  if(extent<10000)return null
+  const clip=host.getBoundingClientRect()
+  for(const tile of grid.querySelectorAll('[data-xdrive-media-tile]')){
+    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
+    if(!/^video-\d+\.mp4$/.test(name))continue
+    const rect=tile.getBoundingClientRect()
+    if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
+    const x=Math.round(rect.left+rect.width/2)
+    const y=Math.round(Math.max(clip.top+16,Math.min(rect.top+rect.height/2,clip.bottom-16)))
+    const hit=document.elementFromPoint(x,y)
+    if(hit!==tile&&!tile.contains(hit))continue
+    window.__xdriveP1Entry={
+      document:document.documentElement,host,grid,
+      scrollTop:host.scrollTop,route:location.hash,
+    }
+    return {x,y,depth:host.scrollTop/extent,tiles:grid.querySelectorAll('[data-xdrive-media-tile]').length}
+  }
+  const scan=window.__xdriveP1H264Scan||(window.__xdriveP1H264Scan={steps:0})
+  if(scan.steps<7&&host.scrollTop>extent*0.997){
+    scan.steps++
+    host.scrollTop=Math.max(extent*0.997,host.scrollTop-Math.max(80,host.clientHeight*0.65))
+    host.dispatchEvent(new Event('scroll'))
+  }
+  return null
+}
+function p1H264PlayerReady() {
+  const video=document.querySelector(
+    '[data-xdrive-web-viewer] [data-xdrive-preview-media-state="video"] video'
+  )
+  // The original must be the current Owner-scoped, same-origin signed CAS
+  // preview stream. A thumbnail/poster, remote URL or Blob substitute cannot
+  // count as native H264 Viewer motion; never print the private ticket.
+  const signed=video instanceof HTMLVideoElement && video.currentSrc
+    ? new URL(video.currentSrc, location.href) : null
+  return video instanceof HTMLVideoElement &&
+    video.isConnected && Boolean(signed) &&
+    signed.origin===location.origin &&
+    /^\/api\/v1\/file-preview\/\d+$/.test(signed.pathname) &&
+    signed.searchParams.has('ticket') &&
+    typeof video.requestVideoFrameCallback==='function' &&
+    video.videoWidth>0 && video.videoHeight>0
+}
+async function p1ObserveAdvancingVideoFrames() {
+  const video=document.querySelector(
+    '[data-xdrive-web-viewer] [data-xdrive-preview-media-state="video"] video'
+  )
+  if(!(video instanceof HTMLVideoElement)||!video.currentSrc||
+    typeof video.requestVideoFrameCallback!=='function'){
+    throw Error('actual signed original HTMLVideoElement RVFC unavailable')
+  }
+  let callbackID=null,timeoutID=null
+  const frames=[]
+  let rejectFrame
+  const presented=new Promise((resolve,reject)=>{
+    rejectFrame=reject
+    timeoutID=setTimeout(()=>reject(Error('two distinct presented H264 frames not observed')),18000)
+    const frame=(now,metadata)=>{
+      if(!video.isConnected){
+        reject(Error('Owner video unmounted before presented frame'))
+        return
+      }
+      if(metadata.presentedFrames>0&&Number.isFinite(metadata.mediaTime)&&
+        metadata.width>0&&metadata.height>0){
+        const last=frames[frames.length-1]
+        if(!last||metadata.mediaTime>last.mediaTime+0.001){
+          frames.push({mediaTime:metadata.mediaTime,presentedFrames:metadata.presentedFrames})
+        }
+        if(frames.length>=2){
+          const first=frames[0],latest=frames[frames.length-1]
+          if(latest.mediaTime>first.mediaTime+0.005&&
+            latest.presentedFrames>first.presentedFrames){
+            resolve({
+              h264Presented:true,
+              frameMediaDeltaMs:(latest.mediaTime-first.mediaTime)*1000,
+              presentedFrameDelta:latest.presentedFrames-first.presentedFrames,
+              width:video.videoWidth,height:video.videoHeight,
+              decodedVideoFrames:video.getVideoPlaybackQuality?.().totalVideoFrames??null,
+            })
+            return
+          }
+        }
+      }
+      callbackID=video.requestVideoFrameCallback(frame)
+    }
+    callbackID=video.requestVideoFrameCallback(frame)
+  })
+  // Prevent an unhandled rejection if the OS rejects the play() gesture first.
+  void presented.catch(()=>{})
+  try{
+    // Real Chromium media pipeline, actual signed CAS byte response. This is
+    // explicit in-browser play() initiation, not a fake "playing" event.
+    await video.play()
+    return await presented
+  }catch(error){
+    throw Error('original H264 playback/frame failure: '+(error?.name||'unknown'))
+  }finally{
+    if(timeoutID!==null)clearTimeout(timeoutID)
+    if(callbackID!==null&&typeof video.cancelVideoFrameCallback==='function')
+      video.cancelVideoFrameCallback(callbackID)
+    video.pause()
+  }
+}
+async function p1MeasureRealH264ViewerMotion(win) {
+  // Caller is already in deep Gallery after genuine JPEG Viewer Back.
+  const tile=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1VisibleH264Tile.toString()+')()',true
+  ),25000,'real 100k Owner visible deep H264 tile')
+  assert(tile.depth>=0.7&&tile.tiles>0&&tile.tiles<1000,
+    'real deep bounded Gallery H264 tile not visible')
+  const started=performance.now()
+  sendActualPointer(win,tile)
+  await until(async()=>win.webContents.executeJavaScript(
+    "location.hash.startsWith('#/app/media-viewer?') && !!document.querySelector('[data-xdrive-web-viewer]')",
+    true),30000,'actual Gallery H264 tile clicked into shared Viewer')
+  await until(async()=>win.webContents.executeJavaScript(
+    '('+p1H264PlayerReady.toString()+')()',true
+  ),30000,'signed H264 original Video ready for native Chromium decoder')
+  const played=await win.webContents.executeJavaScript(
+    '('+p1ObserveAdvancingVideoFrames.toString()+')()',true
+  )
+  assert(played.h264Presented&&played.frameMediaDeltaMs>5&&
+    played.presentedFrameDelta>=1&&played.width>0&&played.height>0,
+    'requestVideoFrameCallback did not prove advancing decoded H264 motion')
+  const presentedMs=performance.now()-started
+  win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
+  const back=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1BackPoint.toString()+')()',true
+  ),12000,'actual video Viewer chrome Back')
+  sendActualPointer(win,back)
+  const returned=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1ReturnedToCaller.toString()+')()',true
+  ),20000,'H264 Viewer Back returns to exact Gallery route and scroll')
+  return {
+    passed:true,deepFraction:tile.depth,presentedMs,
+    frameMediaDeltaMs:played.frameMediaDeltaMs,
+    presentedFrameDelta:played.presentedFrameDelta,
+    videoWidth:played.width,videoHeight:played.height,
+    decodedVideoFrames:played.decodedVideoFrames,
+    sameCaller:returned.sameCaller,sameDocument:returned.sameDocument,
+    sameHost:returned.sameHost,sameGrid:returned.sameGrid,
+    restoredScrollDelta:returned.scrollDelta,
+    claim:'two distinct H264 original presented video mediaTime frames in native Chromium after explicit play()',
+    excluded:'iOS Safari installed, Live Motion hold, 115k full CAS, Go video Range cancel',
+  }
+}
+
 async function sampleOnce(sample, ready) {
   let fixture = null, win = null, resourceSampler = null
   try {
@@ -566,11 +726,12 @@ async function sampleOnce(sample, ready) {
       JSON.stringify(cancelDiagnostic))
     const healthy = await newIndependentRange(fixture)
     const p1ViewerBack = p1Mode ? await p1MeasureRealViewerBack(win) : null
+    const p1H264Frames = p1H264Mode ? await p1MeasureRealH264ViewerMotion(win) : null
     const row = {
       sample, viewport, streamCount, resources, logicalAssets: 100000, physicalNodes: 115000,
       firstImageNodes: fixture.config.first_image_nodes,
       seedMsExcluded: fixture.config.seed_ms,
-      scroll, healthy, p1ViewerBack, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
+      scroll, healthy, p1ViewerBack, p1H264Frames, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
       go: {
         started: started.started, canceled: after.cancelled - started.cancelled,
         contextDone: after.context_done - started.context_done,
@@ -619,17 +780,27 @@ async function main() {
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
-      status: p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
+      status: p1H264Mode ? 'measured-P1-100k-real-Owner-H264-presented-motion' : p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
         'measured-CURRENT-P0-C2b2-authenticated-Files-Gallery-Files-SPA-Go-cancellation' :
         p0c2PageLeaveMode ?
         'measured-CURRENT-P0-C2b1-390px-Gallery-pageleave-Go-cancellation' :
         'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
       mobileCancelMode: true, cssWindowWidth:390, pageLeaveMode:p0c2PageLeaveMode,
-      spaMode:p0c2SPAMode, p1ViewerBackMode:p1Mode,
+      spaMode:p0c2SPAMode, p1ViewerBackMode:p1Mode, p1H264ViewerMode:p1H264Mode,
+      p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!p1H264Mode || (row.p1H264Frames?.passed===true &&
+          row.p1H264Frames.deepFraction>=0.7 &&
+          row.p1H264Frames.presentedMs>0 &&
+          row.p1H264Frames.presentedMs<=60000 &&
+          row.p1H264Frames.presentedFrameDelta>=1 &&
+          row.p1H264Frames.frameMediaDeltaMs>5 &&
+          row.p1H264Frames.sameCaller && row.p1H264Frames.sameDocument &&
+          row.p1H264Frames.sameHost && row.p1H264Frames.sameGrid &&
+          row.p1H264Frames.restoredScrollDelta<=2)) &&
         (!p1Mode || (row.p1ViewerBack?.passed === true && row.p1ViewerBack.depth >= 0.7 &&
           row.p1ViewerBack.originalDecodedMs > 0 && row.p1ViewerBack.originalDecodedMs <= 30000 &&
           row.p1ViewerBack.returnMs > 0 && row.p1ViewerBack.returnMs <= 20000 &&
@@ -652,7 +823,7 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
+      limits: p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
         'Actual Web App.tsx real Files→Gallery→Files same-document route click in Chromium 390px, true Go/Gin/PG17/CAS, 100k logical Gallery/115k nodes, 4-6 active JPEG requests, exact Context.Done + RSS/CPU; not iPhone/Safari, 100k independent originals or durable transfer.' :
         p0c2PageLeaveMode ?
         'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :
