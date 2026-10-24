@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from xDrive's own PWA MobileFolderIcon; see android/design. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt" android:width="38dp" android:height="32.0625dp" android:viewportWidth="64" android:viewportHeight="54">
+    <path android:pathData="M6 8h15c1.1 0 2.1.4 2.9 1.2l4.8 4.6H58a4 4 0 0 1 4 4v28.7H2V12a4 4 0 0 1 4-4Z" android:strokeColor="#399abf" android:strokeWidth="0.75">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="8" android:endX="0" android:endY="46.5" android:tileMode="clamp">
+                <item android:offset="0" android:color="#69c8ee" />
+                <item android:offset="1" android:color="#49add9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M6 18.5h52a4 4 0 0 1 4 4v24a4.5 4.5 0 0 1-4.5 4.5h-51A4.5 4.5 0 0 1 2 46.5v-24a4 4 0 0 1 4-4Z" android:strokeColor="#399abf" android:strokeWidth="0.75">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="18.5" android:endX="0" android:endY="51" android:tileMode="clamp">
+                <item android:offset="0" android:color="#7dceeb" />
+                <item android:offset="0.26" android:color="#5dbce3" />
+                <item android:offset="1" android:color="#4caddb" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M6 19.5h52" android:fillColor="#00000000" android:strokeColor="#e8fbff" android:strokeWidth="1.1" android:strokeAlpha="0.95" android:strokeLineCap="round" />
+</vector>

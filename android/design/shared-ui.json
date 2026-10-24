@@ -1,0 +1,174 @@
+{
+  "fingerprints": {
+    "theme": "15807124d8e1e6306dd0f730259215db6dcf5b64f0d3cb3b5b245b17d290f9d0",
+    "extensions": "a82488a8b626faf3e915db490f2c8bc256837204b0ba19cd3b463c52d8d0b70f",
+    "extension": "ec03fc8863830025ae5a3466134512049ed404619ce65a336f39c200cfa72f58",
+    "classifier": "d0dddceec2d559a315ddf49eb9c554a1474e7df2d7f2d22fab1401228a5f71ef",
+    "iconMapping": "bf0efbb8ca9e9d1f73be7fba09c385d39f4f48aa89b9ff082cf64aeded47dd56",
+    "mobile": "125b84701971ab7b7e994b1819358a7970f6315b3daca4080bd6a2e4e98867d0"
+  },
+  "packages": {
+    "@mui/icons-material": {
+      "version": "7.3.11",
+      "integrity": "sha512-+hz5ilwHZ3djd5es3sCErLioqe/NhZcYTsV/TNXZAMdJdb23F4xzJjqnnZdnurc3S1+ietcssRNqieOhPQLZ7Q==",
+      "resolved": "https://registry.npmjs.org/@mui/icons-material/-/icons-material-7.3.11.tgz"
+    },
+    "@mui/material": {
+      "version": "7.3.11",
+      "integrity": "sha512-yq8bPc3LxOwKRWpcjRgDkYFmpM6aKlARfESTmOQcvLYFeJwtHte2tw6hJDrb8sk8wcvpDprHEHVaoUU0MslIkw==",
+      "resolved": "https://registry.npmjs.org/@mui/material/-/material-7.3.11.tgz"
+    }
+  },
+  "palette": {
+    "light": {
+      "primary": "#4177e6",
+      "onPrimary": "#fff",
+      "background": "#f5f7fb",
+      "surface": "#ffffff",
+      "text": "rgba(0, 0, 0, 0.87)",
+      "secondaryText": "rgba(0, 0, 0, 0.6)",
+      "divider": "rgba(0, 0, 0, 0.12)",
+      "error": "#d32f2f"
+    },
+    "dark": {
+      "primary": "#5f8ff4",
+      "onPrimary": "#fff",
+      "background": "#0f141d",
+      "surface": "#171d27",
+      "text": "#fff",
+      "secondaryText": "rgba(255, 255, 255, 0.7)",
+      "divider": "rgba(255, 255, 255, 0.12)",
+      "error": "#f44336"
+    }
+  },
+  "sets": {
+    "image": [
+      "arw",
+      "avif",
+      "bmp",
+      "cr3",
+      "dng",
+      "gif",
+      "heic",
+      "heif",
+      "jpeg",
+      "jpg",
+      "livp",
+      "nef",
+      "png",
+      "tif",
+      "tiff",
+      "webp"
+    ],
+    "video": [
+      "3g2",
+      "3gp",
+      "avi",
+      "m2ts",
+      "m4v",
+      "mkv",
+      "mov",
+      "mp4",
+      "mpeg",
+      "mpg",
+      "mts",
+      "webm"
+    ],
+    "audio": [
+      "aac",
+      "flac",
+      "m4a",
+      "mp3",
+      "ogg",
+      "wav",
+      "wma"
+    ],
+    "document": [
+      "doc",
+      "docx",
+      "odt",
+      "rtf"
+    ],
+    "spreadsheet": [
+      "csv",
+      "ods",
+      "xls",
+      "xlsx"
+    ],
+    "presentation": [
+      "odp",
+      "ppt",
+      "pptx"
+    ],
+    "archive": [
+      "7z",
+      "bz2",
+      "gz",
+      "rar",
+      "tar",
+      "tgz",
+      "xz",
+      "zip"
+    ],
+    "code": [
+      "c",
+      "cc",
+      "cpp",
+      "css",
+      "go",
+      "h",
+      "hpp",
+      "html",
+      "java",
+      "js",
+      "json",
+      "jsx",
+      "kt",
+      "md",
+      "php",
+      "py",
+      "rb",
+      "rs",
+      "sh",
+      "sql",
+      "swift",
+      "toml",
+      "ts",
+      "tsx",
+      "xml",
+      "yaml",
+      "yml"
+    ],
+    "text": [
+      "ini",
+      "log",
+      "text",
+      "txt"
+    ]
+  },
+  "mobileDesign": {
+    "geometrySha256": "d2d9fc95f89131d59cc81dc76b16343b184ed9ddab1287b10bd93b9b84deabde",
+    "paths": [
+      "M6 8h15c1.1 0 2.1.4 2.9 1.2l4.8 4.6H58a4 4 0 0 1 4 4v28.7H2V12a4 4 0 0 1 4-4Z",
+      "M6 18.5h52a4 4 0 0 1 4 4v24a4.5 4.5 0 0 1-4.5 4.5h-51A4.5 4.5 0 0 1 2 46.5v-24a4 4 0 0 1 4-4Z",
+      "M6 19.5h52"
+    ],
+    "colors": {
+      "folderBackTop": "#69c8ee",
+      "folderBackBottom": "#49add9",
+      "folderFrontTop": "#7dceeb",
+      "folderFrontMiddle": "#5dbce3",
+      "folderOutline": "#399abf",
+      "folderHighlight": "#e8fbff",
+      "folderFrontBottom": "#4caddb"
+    },
+    "surfaces": {
+      "lightMobilePage": "#ffffff",
+      "darkMobilePage": "#000000",
+      "lightMobileRow": "#ffffff",
+      "darkMobileRow": "#1c1c1e"
+    }
+  },
+  "iconsSha256": "90b51b92486d303826b86f5f5f1b9657d38cc5c18fdc95ba74b955d1ce57eee0",
+  "licenseSha256": "f776953f07d3086635fd33953bcde47ba66fedaeb9a7cbc6ece2d4cb03cc56f8"
+}

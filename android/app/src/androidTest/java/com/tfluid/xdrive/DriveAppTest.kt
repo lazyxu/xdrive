@@ -1,6 +1,5 @@
 package com.tfluid.xdrive
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -19,6 +18,7 @@ class DriveAppTest {
     @get:Rule val compose = createComposeRule()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var failNext = false
+    private var paging = false
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
@@ -27,16 +27,17 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext) { failNext = false; throw ApiException(503, "unavailable") }
-            val rows = if (parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir"))
+            val rows = if (paging && offset == 100) listOf(DriveNode(4, 1, "第二页.txt", "file", 2048))
+                else if (parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir"))
                 else listOf(DriveNode(3, 2, "测试.txt", "file", 12, updatedAt = "2026-10-23T00:00:00Z"))
-            return NodeRange(rows, rows.size.toLong(), offset)
+            return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
         }
     }
     private val controller = DriveController(scope, { service })
     @After fun cleanup() { controller.close(); scope.cancel() }
 
     private fun startAndLogin() {
-        compose.setContent { MaterialTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
         compose.onNodeWithTag("username").performTextInput("owner")
@@ -70,7 +71,7 @@ class DriveAppTest {
     }
 
     @Test fun cleartextRequiresExplicitOptIn() {
-        compose.setContent { MaterialTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
         compose.onNodeWithTag("request-error").assertIsDisplayed()
@@ -78,5 +79,19 @@ class DriveAppTest {
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(Screen.LOGIN, controller.state.value.screen) }
         compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun pagingFailureRetainsRowsAndRetryLoadsRequestedPage() {
+        paging = true
+        startAndLogin()
+        compose.runOnIdle { failNext = true }
+        compose.onNodeWithText("下一页").performClick()
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+        compose.onNodeWithText("保留上次成功读取的目录。").assertIsDisplayed()
+        compose.onNodeWithText("重试").performClick()
+        compose.onNodeWithText("第二页.txt").assertIsDisplayed()
+        compose.onNodeWithText("假期照片").assertDoesNotExist()
+        compose.onNodeWithText("上一页").performClick()
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 }
