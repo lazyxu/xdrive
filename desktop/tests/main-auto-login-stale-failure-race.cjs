@@ -82,6 +82,7 @@ async function fixture() {
     // auth-request race rather than hanging before requireAgentClient().login.
     ensurePrivateLANRoot: async () => null,
     requiresApprovedLANPin: () => false,
+    beginPrivateLANAuthentication: () => () => {},
     runAgentAction: async (action) => action(),
     requireAgentClient: () => ({ login: async (input) => {
       assert.equal(input.server, oldServer)

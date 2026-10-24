@@ -78,6 +78,7 @@ import {
 import {
   automaticLoginProfile,
   clearSavedPassword,
+  clearSavedPasswordsForOrigin,
   disableAutomaticLogin,
   emptyLoginHistory,
   findLoginProfile,
@@ -396,6 +397,24 @@ let privateLANTrustStoreCorrupt = false
 const privateLANEnrollments = new Map<string, Promise<{ root: string; version: string } | null>>()
 let privateLANSaveQueue: Promise<void> = Promise.resolve()
 
+// Track all Desktop-originated credentials in flight so a native revoke dialog
+// cannot race an unfinished login and leave an active session behind.
+const privateLANAuthentications = new Map<string, number>()
+function beginPrivateLANAuthentication(server: string): () => void {
+  const origin = privateLANOrigin(server)?.origin
+  if (!origin) return () => {}
+  privateLANAuthentications.set(origin, (privateLANAuthentications.get(origin) || 0) + 1)
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    const remaining = (privateLANAuthentications.get(origin) || 1) - 1
+    if (remaining > 0) privateLANAuthentications.set(origin, remaining)
+    else privateLANAuthentications.delete(origin)
+  }
+}
+
+
 function desktopLifecycleLogDirectory() {
   if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
     return path.join(process.env.LOCALAPPDATA, 'xDrive')
@@ -601,11 +620,32 @@ async function loadPrivateLANRoots(): Promise<void> {
     }
     const roots = (parsed as { roots: unknown[] }).roots
     if (roots.length > 50) { privateLANTrustStoreCorrupt = true; return }
+    // Explicit revocation must persist across Desktop restarts. Otherwise
+    // an older trusted-domain profile could silently re-enroll the same CA.
+    const blocked: unknown = (parsed as { blocked_origins?: unknown }).blocked_origins
+    if (blocked !== undefined) {
+      if (!Array.isArray(blocked) || blocked.length > 200) {
+        privateLANTrustStoreCorrupt = true
+        return
+      }
+      for (const value of blocked) {
+        if (typeof value !== 'string' || privateLANOrigin(value)?.origin !== value) {
+          privateLANTrustStoreCorrupt = true
+          return
+        }
+        rejectedManualLANOrigins.add(value)
+      }
+    }
+    const durableBlockedOrigins = new Set(rejectedManualLANOrigins)
     for (const raw of roots) {
       if (!raw || typeof raw !== 'object') { privateLANTrustStoreCorrupt = true; continue }
       const pin = raw as Partial<TrustedLANRoot>
       const target = typeof pin.server === 'string' ? privateLANOrigin(pin.server) : null
       if (!target) { privateLANTrustStoreCorrupt = true; continue }
+      // Revocation tombstones are authoritative over stale CA entries. A
+      // legacy/partially written store containing both must never revive the
+      // CA, even if the stale manual pin has a valid signature and expiry.
+      if (durableBlockedOrigins.has(target.origin)) continue
       // Record explicit trust first: an expired, corrupt or replaced CA cannot
       // cause a known IP to silently revert to normal platform CA trust.
       if (pin.source === 'user-approved-lan') rejectedManualLANOrigins.add(target.origin)
@@ -628,27 +668,46 @@ async function loadPrivateLANRoots(): Promise<void> {
   }
 }
 
+async function persistPrivateLANTrustState(
+  roots: TrustedLANRoot[], blocked: ReadonlySet<string>,
+): Promise<void> {
+  const selected = roots.slice(0, 30)
+  if (blocked.size > 200) throw new Error('too many blocked LAN origins')
+  const payload = JSON.stringify({
+    version: 1, roots: selected,
+    blocked_origins: [...blocked].sort(),
+  }, null, 2) + '\n'
+  const dir = app.getPath('userData')
+  await mkdir(dir, { recursive: true })
+  const dest = path.join(dir, privateLANRootsName)
+  const temp = path.join(dir, privateLANRootsName + '.' + process.pid + '.tmp')
+  try {
+    await writeFile(temp, payload, { encoding: 'utf8', mode: 0o600 })
+    await rename(temp, dest)
+  } finally {
+    await rm(temp, { force: true }).catch(() => {})
+  }
+}
+
 async function savePrivateLANRoot(pin: TrustedLANRoot): Promise<void> {
-  // Serialize read-modify-write as well as filesystem writes. Do not publish
-  // a new in-memory trust anchor until its durable write has succeeded.
+  // All trust writes serialize. A revoked origin cannot auto-enroll through
+  // a previously stored public-domain profile; only explicit native
+  // reapproval may remove the durable block.
   const save = privateLANSaveQueue.then(async () => {
+    if (pin.source !== 'user-approved-lan' &&
+        rejectedManualLANOrigins.has(pin.server)) {
+      throw new Error('private LAN trust is blocked until explicit approval')
+    }
     const next = privateLANRoots.filter(
       old => old.server !== pin.server || old.username !== pin.username)
     next.unshift(pin)
     const selected = next.slice(0, 30)
-    const payload = JSON.stringify({ version: 1, roots: selected }, null, 2) + '\n'
-    const dir = app.getPath('userData')
-    await mkdir(dir, { recursive: true })
-    const dest = path.join(dir, privateLANRootsName)
-    const temp = path.join(dir, privateLANRootsName + '.' + process.pid + '.tmp')
-    try {
-      await writeFile(temp, payload, { encoding: 'utf8', mode: 0o600 })
-      await rename(temp, dest)
-    } finally {
-      await rm(temp, { force: true }).catch(() => {})
-    }
+    const blocked = new Set(rejectedManualLANOrigins)
+    if (pin.source === 'user-approved-lan') blocked.delete(pin.server)
+    await persistPrivateLANTrustState(selected, blocked)
     privateLANRoots = selected
-    if (pin.source === 'user-approved-lan') rejectedManualLANOrigins.delete(pin.server)
+    rejectedManualLANOrigins.clear()
+    for (const origin of blocked) rejectedManualLANOrigins.add(origin)
     privateLANTrustStoreCorrupt = false
   })
   privateLANSaveQueue = save.catch(() => {})
@@ -667,6 +726,29 @@ function requiresApprovedLANPin(server: string): boolean {
   const target = privateLANOrigin(server)
   return !!target && (privateLANTrustStoreCorrupt ||
     rejectedManualLANOrigins.has(target.origin) || !!approvedManualLANPin(target.origin))
+}
+
+type DesktopPrivateLANTrustSummary = {
+  status: 'none' | 'trusted' | 'blocked'
+  sha256?: string
+  source?: 'user-approved-lan' | 'verified-domain'
+}
+
+function privateLANTrustSummary(server: string): DesktopPrivateLANTrustSummary {
+  const target = privateLANOrigin(server)
+  if (!target) return { status: 'none' }
+  if (privateLANTrustStoreCorrupt || rejectedManualLANOrigins.has(target.origin)) {
+    return { status: 'blocked' }
+  }
+  const pin = approvedManualLANPin(target.origin) ||
+    privateLANRoots.find(entry => entry.server === target.origin)
+  if (!pin) return { status: 'none' }
+  // Deliberately never send the PEM, account, or full trust store to Renderer.
+  return {
+    status: 'trusted',
+    sha256: pin.sha256,
+    source: pin.source === 'user-approved-lan' ? 'user-approved-lan' : 'verified-domain',
+  }
 }
 
 async function ensurePrivateLANRoot(
@@ -777,6 +859,125 @@ async function trustPrivateLANServer(serverValue: string): Promise<DesktopResult
     } }
   }
   return { ok: true, data: { trusted: true, version, sha256: candidate.sha256 } }
+}
+
+// Trust revocation is an independent user decision. Never implement it by
+// deleting the Windows CA store or by silently re-enrolling from a trusted
+// public-domain login. Require logout first so the Go Agent has removed its
+// own persisted credentials/CA and no live sync or media task keeps running.
+async function revokePrivateLANServer(
+  serverValue: string,
+): Promise<DesktopResult<{ revoked: boolean }>> {
+  const target = privateLANOrigin(serverValue)
+  if (!target) return { ok: false, error: {
+    code: 'invalid_lan_origin',
+    message: '只能管理规范私有 IPv4 HTTPS 服务器的专属信任。',
+  } }
+  const summary = privateLANTrustSummary(target.origin)
+  if (summary.status === 'none') return { ok: false, error: {
+    code: 'lan_trust_missing', message: '这个服务器没有已保存的应用内 CA 信任。',
+  } }
+  if (!agentState.connected) return { ok: false, error: {
+    code: 'lan_trust_agent_unavailable',
+    message: '无法确认 Agent 已退出登录；请重新连接本地 Agent 后再撤销。',
+  } }
+  if (privateLANAuthentications.has(target.origin)) return { ok: false, error: {
+    code: 'lan_trust_login_in_flight',
+    message: '此服务器仍有登录请求正在执行，请结束登录后再撤销信任。',
+  } }
+  try {
+    const current = await requireAgentClient().status()
+    if (current.configured && privateLANOrigin(current.server || '')?.origin === target.origin) {
+      return { ok: false, error: {
+        code: 'lan_trust_logout_first',
+        message: '请先退出当前服务器的登录会话，再撤销其局域网证书信任。',
+      } }
+    }
+  } catch {
+    return { ok: false, error: {
+      code: 'lan_trust_agent_unavailable',
+      message: '无法确认 Agent 是否仍持有服务器会话；为避免残留信任，撤销已取消。',
+    } }
+  }
+  const hash = summary.sha256?.toUpperCase().match(/.{1,8}/g)?.join(' ') || '原证书无效'
+  const options = {
+    type: 'warning' as const,
+    title: '撤销局域网 HTTPS 信任',
+    message: '确认撤销此局域网服务器的信任？',
+    detail: '服务器：' + target.origin + '\n根证书 SHA-256：\n' + hash + '\n\n' +
+      '撤销后将禁止自动登录及可信域名静默重新配对；' +
+      '本机该服务器所有帐号已保存的密码也将清除。' +
+      '只有再次明确批准证书，才能重新启用连接。\n\n' +
+      '不会修改 Windows 系统证书库，也不会影响其他服务器。',
+    buttons: ['取消', '确认撤销并清除保存的密码'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  }
+  const confirmation = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options)
+  if (confirmation.response !== 1) return { ok: true, data: { revoked: false } }
+  if (privateLANAuthentications.has(target.origin)) return { ok: false, error: {
+    code: 'lan_trust_login_in_flight',
+    message: '确认期间此服务器发起了登录请求。请先结束登录，再撤销信任。',
+  } }
+
+  // The user may leave this dialog open while an automatic/manual login
+  // completes. Re-check Agent session state immediately after confirmation.
+  try {
+    const latest = await requireAgentClient().status()
+    if (latest.configured && privateLANOrigin(latest.server || '')?.origin === target.origin) {
+      return { ok: false, error: {
+        code: 'lan_trust_logout_first',
+        message: '确认期间该服务器已重新登录。请先退出会话，再撤销证书信任。',
+      } }
+    }
+  } catch {
+    return { ok: false, error: {
+      code: 'lan_trust_agent_unavailable',
+      message: '确认期间无法验证 Agent 会话状态，未执行撤销。',
+    } }
+  }
+
+  if (privateLANAuthentications.has(target.origin)) return { ok: false, error: {
+    code: 'lan_trust_login_in_flight',
+    message: '此服务器的登录尚未结束，撤销操作未执行。',
+  } }
+
+  // Block new credential-bearing logins immediately. Persist the tombstone
+  // first: even if password-history persistence fails, the CA cannot be
+  // reused or silently re-enrolled after restarting Desktop.
+  rejectedManualLANOrigins.add(target.origin)
+  const save = privateLANSaveQueue.then(async () => {
+    const remaining = privateLANRoots.filter(pin => pin.server !== target.origin)
+    await persistPrivateLANTrustState(remaining, rejectedManualLANOrigins)
+    privateLANRoots = remaining
+  })
+  privateLANSaveQueue = save.catch(() => {})
+  try {
+    await save
+  } catch {
+    return { ok: false, error: {
+      code: 'lan_trust_revoke_save_failed',
+      message: '撤销未成功持久化；当前进程继续阻止此服务器登录，请检查本地配置写入权限。',
+    } }
+  }
+
+  loginHistory = clearSavedPasswordsForOrigin(loginHistory, target.origin)
+  try {
+    await saveLoginHistory()
+    lastAutoLoginError = ''
+  } catch {
+    return { ok: false, error: {
+      code: 'lan_trust_credentials_clear_failed',
+      message: '服务器信任已撤销，但保存密码的历史文件未能写入；请检查本地文件权限后重试。',
+    } }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop:login-history', loginHistorySnapshot())
+  }
+  return { ok: true, data: { revoked: true } }
 }
 
 async function probeDesktopServer(serverValue: string, username = ''): Promise<DesktopResult<{ version?: string }>> {
@@ -2184,6 +2385,7 @@ async function attemptAutomaticLogin() {
   // Keep the history identity of this attempt; newer user saves replace it.
   const attemptedLoginHistory = loginHistory
   lastAutoLoginError = ''
+  const endLANAuthentication = beginPrivateLANAuthentication(profile.server)
   try {
     // Check saved server identity BEFORE decrypting or sending stored credentials.
     // A changed approved pin must never fall back to platform or public CA trust.
@@ -2215,6 +2417,8 @@ async function attemptAutomaticLogin() {
     loginHistory = disableAutomaticLogin(loginHistory)
     await persistLoginHistoryBestEffort()
     lifecycleLog?.record('auto_login_failed', { error: lastAutoLoginError })
+  } finally {
+    endLANAuthentication()
   }
 }
 
@@ -2446,6 +2650,20 @@ function registerIPCHandlers() {
       } }
     }
     return trustPrivateLANServer(serverValue)
+  })
+  ipcMain.handle('desktop:get-lan-trust', (_event, serverValue: unknown) => {
+    if (typeof serverValue !== 'string') {
+      return { ok: false, error: {
+        code: 'invalid_input', message: 'Server must be a string.',
+      } }
+    }
+    return { ok: true, data: privateLANTrustSummary(serverValue) }
+  })
+  ipcMain.handle('desktop:revoke-lan-trust', (_event, serverValue: unknown) => {
+    if (typeof serverValue !== 'string') return { ok: false, error: {
+      code: 'invalid_input', message: 'Server must be a string.',
+    } }
+    return revokePrivateLANServer(serverValue)
   })
   ipcMain.handle('desktop:clear-saved-password', async (_event, serverValue: unknown, usernameValue: unknown) => {
     if (typeof serverValue !== 'string' || typeof usernameValue !== 'string') {
@@ -7408,6 +7626,8 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'secure_storage_unavailable', message: 'Secure password storage is unavailable on this system.' } }
     }
 
+    const endLANAuthentication = beginPrivateLANAuthentication(server)
+    try {
     // A saved user-approved IP identity is a hard trust boundary. On
     // expiration, SAN mismatch or CA rotation no password may leave Desktop.
     const trustedLAN = await ensurePrivateLANRoot(server, username).catch(() => null)
@@ -7469,6 +7689,9 @@ function registerIPCHandlers() {
       await persistLoginHistoryBestEffort()
     }
     return result
+    } finally {
+      endLANAuthentication()
+    }
   })
   ipcMain.handle('agent:logout', () => {
     closeSecureBaiduMapWindow()

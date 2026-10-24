@@ -334,6 +334,11 @@ export default function App({
     code?: string
   }>({ key: 'idle' })
   const [serverProbeRetry, setServerProbeRetry] = useState(0)
+  const [lanTrust, setLANTrust] = useState<{
+    status: 'none' | 'trusted' | 'blocked'
+    sha256?: string
+    source?: 'user-approved-lan' | 'verified-domain'
+  }>({ status: 'none' })
   const [loginDiagnosticsOpen, setLoginDiagnosticsOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -1274,6 +1279,23 @@ export default function App({
     setRememberPassword(loginHistory.secure_password_storage && matchingLoginProfile.remember_password)
     setAutoLogin(loginHistory.secure_password_storage && matchingLoginProfile.auto_login)
   }, [loginHistory.secure_password_storage, matchingLoginProfile])
+
+  useEffect(() => {
+    const candidate = server.trim()
+    if (configured || !candidate) {
+      setLANTrust({ status: 'none' })
+      return
+    }
+    let active = true
+    // Read only the current origin's status and SHA-256. Never obtain the
+    // private CA PEM, Agent token, or another account's login history.
+    void window.xdriveDesktop.getLANTrust(candidate).then(result => {
+      if (active) setLANTrust(result.ok ? result.data : { status: 'none' })
+    }).catch(() => {
+      if (active) setLANTrust({ status: 'none' })
+    })
+    return () => { active = false }
+  }, [configured, server, serverProbeRetry])
 
   useEffect(() => {
     if (configured) {
@@ -2334,13 +2356,43 @@ export default function App({
               />
             </XDriveAuthField>
 
+            {lanTrust.status === 'trusted' ? (
+              <XDriveStatusAlert tone="warning">
+                <Stack spacing={0.75}>
+                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                    已信任此局域网服务器的 HTTPS 根 CA。
+                    此信任仅限当前 IP 和端口，不会修改 Windows 系统根证书。
+                    {lanTrust.sha256 ? ' 根证书 SHA-256：' + lanTrust.sha256.toUpperCase() : ''}
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <XDriveActionButton
+                      compact
+                      disabled={!!busy || !agent.connected}
+                      onClick={() => {
+                        const selected = server.trim()
+                        void run('revoke-lan', () => window.xdriveDesktop.revokeLANTrust(selected))
+                          .then(result => {
+                            if (result?.revoked && server.trim() === selected) {
+                              setServerProbeRetry(current => current + 1)
+                              setNotice('已撤销此服务器的信任并清除保存的登录密码。')
+                            }
+                          })
+                      }}
+                    >
+                      撤销此服务器信任
+                    </XDriveActionButton>
+                  </Stack>
+                </Stack>
+              </XDriveStatusAlert>
+            ) : null}
+
             {serverProbe.key === 'error' && (serverProbe.code === 'server_tls_trust' ||
               serverProbe.code === 'server_tls_pin_changed') ? (
               <XDriveStatusAlert tone="warning">
                 <Stack spacing={0.75}>
                   <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
                     {serverProbe.code === 'server_tls_pin_changed'
-                      ? '之前已信任的局域网服务器证书无法验证，可能已发生 CA 更换或服务器身份变化。'
+                      ? '之前的局域网信任已被撤销，或原证书无法验证；需重新明确确认服务器身份。'
                       : '当前设备尚未信任此局域网服务器的 HTTPS 证书。'}
                     如果这是你自己部署的 xDrive，可以点击「信任此局域网服务器」；
                     Desktop 会先检查证书链、有效期和 IP SAN，再显示证书指纹供你确认。

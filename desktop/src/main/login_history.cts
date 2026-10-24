@@ -214,3 +214,33 @@ export function clearSavedPassword(
     }),
   })
 }
+
+
+/**
+ * Explicitly revoking a private-IP server's app-local CA also invalidates
+ * stored Desktop credentials for every account using that exact origin.
+ * Preserve the account's metadata for convenient, manual re-pairing.
+ * Comparing canonical URL origins prevents wiping adjacent IPs or ports.
+ */
+export function clearSavedPasswordsForOrigin(history: LoginHistory, origin: string): LoginHistory {
+  const normalized = normalizeLoginHistory(history)
+  return normalizeLoginHistory({
+    version: 1,
+    profiles: normalized.profiles.map(profile => {
+      let matches = false
+      try {
+        const target = new URL(profile.server)
+        matches = target.origin === origin && target.protocol === 'https:'
+      } catch { /* A malformed unrelated profile cannot authorize a wipe. */ }
+      if (!matches) return profile
+      return {
+        server: profile.server,
+        username: profile.username,
+        ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+        last_used_at: profile.last_used_at,
+        remember_password: false,
+        auto_login: false,
+      }
+    }),
+  })
+}

@@ -473,6 +473,12 @@ declare global {
       onLoginHistory: (callback: (history: DesktopLoginHistory) => void) => () => void
       probeServer: (server: string, username?: string) => Promise<DesktopResult<{ version?: string }>>
       trustLANServer: (server: string) => Promise<DesktopResult<{ trusted: boolean; version?: string; sha256?: string }>>
+      getLANTrust: (server: string) => Promise<DesktopResult<{
+        status: 'none' | 'trusted' | 'blocked'
+        sha256?: string
+        source?: 'user-approved-lan' | 'verified-domain'
+      }>>
+      revokeLANTrust: (server: string) => Promise<DesktopResult<{ revoked: boolean }>>
       clearSavedPassword: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>
       getWindowState: () => Promise<DesktopWindowState>
       minimizeWindow: () => void
