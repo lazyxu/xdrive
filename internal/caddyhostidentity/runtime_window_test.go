@@ -1,6 +1,8 @@
 package caddyhostidentity
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,6 +20,10 @@ func TestBindPrivateCaddyRuntimeWindowAcceptsStableHealthyLiveConfig(t *testing.
 	got, err := bindPrivateCaddyRuntimeWindow(s, s, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	hostExpected := sha256.Sum256([]byte("xdrive.caddy.host.local-generation.v1\n" + s.dockerInspection + "\n"))
+	if got.hostLocalGenerationSHA != hex.EncodeToString(hostExpected[:]) {
+		t.Fatal("Host Collector generation digest differs from locked Host deploy witness")
 	}
 	if !validDigest(got.instanceSHA) || !validDigest(got.generationSHA) ||
 		got.liveConfigSHA != s.activeConfigSHA ||

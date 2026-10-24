@@ -25,7 +25,8 @@ const (
 // Caddy generation proof, signed applied receipt, or WAN/client reachability.
 // Only a digest is retained, never the hostname/IP or raw TLS/HTTP response.
 type localTLSReadyEvidence struct {
-	digest string
+	digest      string
+	peerLeafSHA string // SHA-256 of the verified TLS leaf DER, not an unverified peer claim
 }
 
 // probeCaddyDomainReady performs an actual local TLS SNI, public-root and
@@ -134,5 +135,8 @@ func probeBoundLocalTLSReady(ctx context.Context, identity string, roots *x509.C
 	_, _ = io.WriteString(sum, identity+"\n"+port+"\n"+fixedAddr+"\n")
 	_, _ = sum.Write(peer.Raw)
 	_, _ = sum.Write(raw)
-	return localTLSReadyEvidence{digest: hex.EncodeToString(sum.Sum(nil))}, nil
+	leaf := sha256.Sum256(peer.Raw)
+	return localTLSReadyEvidence{
+		digest: hex.EncodeToString(sum.Sum(nil)), peerLeafSHA: hex.EncodeToString(leaf[:]),
+	}, nil
 }

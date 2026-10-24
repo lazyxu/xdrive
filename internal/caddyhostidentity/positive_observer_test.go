@@ -6,9 +6,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -74,13 +76,15 @@ func TestRealLocalTLSReadyAcceptsPinnedDomainAndPrivateIPSAN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	actualLeaf := sha256.Sum256(server.TLS.Certificates[0].Certificate[0])
 	for _, identity := range []string{"photos.example.test", "192.168.2.4"} {
 		observed, err := probeBoundLocalTLSReady(context.Background(), identity, roots, server.Listener.Addr().String(), port)
 		if err != nil {
 			t.Fatalf("real trusted Ready observation failed for %s: %v", identity, err)
 		}
-		if len(observed.digest) != 64 || strings.Contains(observed.digest, identity) {
-			t.Fatal("unexpected retained proof content")
+		if len(observed.digest) != 64 || strings.Contains(observed.digest, identity) ||
+			observed.peerLeafSHA != hex.EncodeToString(actualLeaf[:]) {
+			t.Fatal("Ready did not retain the expected independently verified leaf fingerprint")
 		}
 		if len(fmt.Sprintf("%+v", observed)) > 200 {
 			t.Fatal("private observation serialization overlarge")

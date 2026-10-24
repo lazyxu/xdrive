@@ -73,10 +73,10 @@ func TestPositiveHostIngressMissingIsNeverNegativeEvidence(t *testing.T) {
 			var order []string
 			got, err := privateObserveEnabledIngressWith(ctx, test.targets, privatePositiveTestRunner(&order),
 				func(context.Context, string) (localTLSReadyEvidence, error) {
-					return localTLSReadyEvidence{strings.Repeat("c", 64)}, nil
+					return localTLSReadyEvidence{digest: strings.Repeat("c", 64)}, nil
 				},
 				func(context.Context, string, *x509.CertPool) (localTLSReadyEvidence, error) {
-					return localTLSReadyEvidence{strings.Repeat("d", 64)}, nil
+					return localTLSReadyEvidence{digest: strings.Repeat("d", 64)}, nil
 				}, now)
 			if err != nil || (got.domainDigest != "") != test.wantDomain || (got.lanDigest != "") != test.wantLAN {
 				t.Fatalf("absent positive proof was upgraded to negative: %v", err)

@@ -23,9 +23,10 @@ type privateCaddyRuntimeSample struct {
 // boundPrivateCaddyRuntime contains only derived identities and digests. It
 // grants no adoption, deployment, signing or applied-receipt authority.
 type boundPrivateCaddyRuntime struct {
-	instanceSHA   string
-	generationSHA string
-	liveConfigSHA string
+	instanceSHA            string
+	generationSHA          string
+	hostLocalGenerationSHA string
+	liveConfigSHA          string
 }
 
 const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -70,6 +71,7 @@ func bindPrivateCaddyRuntimeWindow(before, after privateCaddyRuntimeSample, now 
 		instanceSHA: digest("xdrive.caddy.host.instance.v1", fields[0]),
 		generationSHA: digest("xdrive.caddy.host.start-generation.v1",
 			fields[0], fields[1], fields[2]),
-		liveConfigSHA: before.activeConfigSHA,
+		hostLocalGenerationSHA: digest("xdrive.caddy.host.local-generation.v1", before.dockerInspection),
+		liveConfigSHA:          before.activeConfigSHA,
 	}, nil
 }

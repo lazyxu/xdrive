@@ -255,6 +255,9 @@ def finish(data, env, backup, marker, commit):
         replace_atomic(env, render(raw, before))
         _, old = parse(read_secure(env))
     if durable:
+        _, prior = parse(read_secure(backup))
+        retired_digest = archive_retired_targets(
+            data["request_id"], data["expected_sha256"], prior, old)
         # The local Generation+Live Config window and Ready+TLS checks happened
         # under the inherited install.lock. Publish the window witness in
         # the SAME immutable decision as the original Request ID and .env SHA.
@@ -264,6 +267,7 @@ def finish(data, env, backup, marker, commit):
             "request_id": data["request_id"], "sha256": data["expected_sha256"],
             "host_local_generation_sha256": data["host_local_generation_sha256"],
             "host_local_live_config_sha256": data["host_local_live_config_sha256"],
+            "retired_targets_sha256": retired_digest,
         })
         # Offline fault injection: power loss after durable decision, before
         # marker/backup cleanup. Never reachable from browser input.
@@ -310,9 +314,228 @@ def reveal(data, env, backup, marker):
 # Receipt, live Caddy proof, authorization token or history of .env secrets.
 # Archive is Host-only and deliberately does not take install.lock: a proven
 # installer-busy outcome must remain publishable while an upgrade owns it.
+
+# Private, immutable Host-only source of retired HTTPS targets. The original
+# successful terminal pins this file's canonical digest, Request ID and target
+# SHA. Server/browser may read the terminal digest but never this private file.
+RETIRED_TARGET_DIR = "caddy-retired-targets"
+RETIRED_TARGET_SCOPE = "xdrive.caddy.retired-targets.v1"
+
+
+def _private_retired_directory(home, create):
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if not home or not os.path.isabs(home):
+        raise Restricted("invalid-private-target-home")
+    parent = os.open(home, flags)
+    try:
+        info = os.fstat(parent)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o007:
+            raise Restricted("unsafe-private-target-home")
+        if create:
+            try:
+                os.mkdir(RETIRED_TARGET_DIR, mode=0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+        directory = os.open(RETIRED_TARGET_DIR, flags, dir_fd=parent)
+    finally:
+        os.close(parent)
+    info = os.fstat(directory)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or \
+            stat.S_IMODE(info.st_mode) not in (0o700, 0o2700):
+        os.close(directory)
+        raise Restricted("unsafe-private-target-directory")
+    return directory
+
+
+def _read_retired_record(home, request_id):
+    if not isinstance(request_id, str) or REQ_ID.fullmatch(request_id) is None:
+        raise Restricted("invalid-private-target-id")
+    directory = _private_retired_directory(home, False)
+    try:
+        fd = os.open(request_id + ".json",
+                     os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+                    info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600 or
+                    info.st_size < 2 or info.st_size > 1024):
+                raise Restricted("unsafe-private-target-file")
+            data = os.read(fd, 1025)
+            if len(data) != info.st_size:
+                raise Restricted("changed-private-target-file")
+            return data
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+
+
+def _canonical_retired_lan(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        addr = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        return False
+    return str(addr) == value and any(addr in n for n in (
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+    ))
+
+
+def archive_retired_targets(request_id, current_sha, previous, current):
+    """Host install.lock only: archive target identities, NEVER AliDNS secrets.
+
+    A killed writer before the receipt is published leaves no trusted terminal.
+    A partial private record deliberately fails closed on retry. If the exact
+    original record already exists, it may be reused without overwriting.
+    """
+    if (not isinstance(request_id, str) or REQ_ID.fullmatch(request_id) is None or
+            not isinstance(current_sha, str) or HEX.fullmatch(current_sha) is None or
+            fingerprint(current) != current_sha):
+        raise Restricted("untrusted-private-target-source")
+    # The original rollback journal remains available until immutable commit.
+    old_domain = previous["XD_DOMAIN"].lower()
+    old_lan = previous["XD_LAN_HTTPS_IP"]
+    new_domain = current["XD_DOMAIN"].lower()
+    new_lan = current["XD_LAN_HTTPS_IP"]
+    retired_domain = old_domain if old_domain and old_domain != new_domain else ""
+    retired_lan = old_lan if old_lan and old_lan != new_lan else ""
+    if old_domain and HOST.fullmatch(old_domain) is None:
+        raise Restricted("invalid-retired-domain")
+    if old_lan and not _canonical_retired_lan(old_lan):
+        raise Restricted("invalid-retired-lan")
+    record = {
+        "protocol": RETIRED_TARGET_SCOPE,
+        "request_id": request_id,
+        "target_sha256": current_sha,
+        "previous_sha256": fingerprint(previous),
+        "retired_domain": retired_domain,
+        "retired_lan_ip": retired_lan,
+    }
+    raw = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    if len(raw) > 1024:
+        raise Restricted("oversized-private-target")
+    home = os.environ.get("XD_CADDY_DEPLOY_RECEIPT_DIR", "")
+    directory = _private_retired_directory(home, True)
+    try:
+        name = request_id + ".json"
+        try:
+            fd = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                         getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=directory)
+        except FileExistsError:
+            existing = _read_retired_record(home, request_id)
+            if existing != raw:
+                raise Restricted("conflicting-private-target")
+        else:
+            try:
+                with os.fdopen(fd, "wb", closefd=False) as f:
+                    f.write(raw)
+                    f.flush()
+                    os.fsync(f.fileno())
+            finally:
+                os.close(fd)
+            os.fsync(directory)
+    finally:
+        os.close(directory)
+    return hashlib.sha256(raw).hexdigest()
+
+
+def verify_retired_targets_digest(home, request_id, target_sha, expected_digest):
+    if not isinstance(expected_digest, str) or HEX.fullmatch(expected_digest) is None:
+        raise Restricted("invalid-private-target-digest")
+    raw = _read_retired_record(home, request_id)
+    if hashlib.sha256(raw).hexdigest() != expected_digest:
+        raise Restricted("mismatched-private-target-digest")
+    try:
+        payload = json.loads(raw, object_pairs_hook=lambda pairs:
+                             _reject_duplicate_retired_pairs(pairs))
+    except (ValueError, UnicodeError) as exc:
+        raise Restricted("invalid-private-target-json") from exc
+    if (set(payload) != {"protocol", "request_id", "target_sha256", "previous_sha256",
+                         "retired_domain", "retired_lan_ip"} or
+            payload["protocol"] != RETIRED_TARGET_SCOPE or
+            payload["request_id"] != request_id or
+            payload["target_sha256"] != target_sha or
+            not isinstance(payload["previous_sha256"], str) or
+            HEX.fullmatch(payload["previous_sha256"]) is None or
+            not isinstance(payload["retired_domain"], str) or
+            not isinstance(payload["retired_lan_ip"], str) or
+            (payload["retired_domain"] and HOST.fullmatch(payload["retired_domain"]) is None)):
+        raise Restricted("untrusted-private-target-record")
+    if payload["retired_lan_ip"] and not _canonical_retired_lan(payload["retired_lan_ip"]):
+        raise Restricted("invalid-private-target-lan")
+
+
+def _reject_duplicate_retired_pairs(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Restricted("duplicate-private-target-field")
+        obj[key] = value
+    return obj
+
+
 DEPLOY_ARCHIVE_DIR = "caddy-deploy-results"
 DEPLOY_ARCHIVE_MAX = 64
 DEPLOY_ARCHIVE_TTL = 7 * 24 * 60 * 60
+
+
+def _prune_orphan_retired_targets(home, now):
+    """Expire *orphaned* private evidence without invalidating retained receipts.
+
+    A crashed Host may publish a private original before its immutable terminal;
+    keep such records for the same seven-day recovery horizon. Never follow or
+    delete symlinks, hard links, unknown names, directories, non-Host files or
+    proofs still referenced by an immutable terminal. This is best-effort
+    maintenance after a successfully fsynced terminal/retention decision.
+    """
+    try:
+        directory = _private_retired_directory(home, False)
+    except FileNotFoundError:
+        # Legacy Host installations have no separate private retired evidence.
+        return
+    terminal_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
+                      getattr(os, "O_NOFOLLOW", 0))
+    try:
+        parent = os.open(home, terminal_flags)
+        try:
+            receipts = os.open(DEPLOY_ARCHIVE_DIR, terminal_flags, dir_fd=parent)
+        finally:
+            os.close(parent)
+    except OSError:
+        os.close(directory)
+        raise
+    try:
+        changed = False
+        for name in os.listdir(directory):
+            if not name.endswith(".json") or REQ_ID.fullmatch(name[:-5]) is None:
+                continue
+            evidence = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if (not stat.S_ISREG(evidence.st_mode) or
+                    evidence.st_uid != os.geteuid() or evidence.st_nlink != 1 or
+                    stat.S_IMODE(evidence.st_mode) != 0o600 or
+                    now - evidence.st_mtime <= DEPLOY_ARCHIVE_TTL):
+                continue
+            try:
+                result = os.stat(name, dir_fd=receipts, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                # A retained terminal, even an older source-compatible record,
+                # is never removed by a private evidence GC.
+                if stat.S_ISREG(result.st_mode):
+                    continue
+                raise Restricted("untrusted-retired-terminal-entry")
+            os.unlink(name, dir_fd=directory)
+            changed = True
+        if changed:
+            os.fsync(directory)
+    finally:
+        os.close(receipts)
+        os.close(directory)
+
 DEPLOY_ERRORS = frozenset((
     "installer-busy", "deploy-refused", "interrupted-deploy",
     "caddy-deploy-or-verify-failed",
@@ -350,7 +573,8 @@ def archive_deploy(receipt=None):
         except (ValueError, UnicodeError) as exc:
             raise Restricted("invalid-receipt") from exc
     local_keys = {"host_local_generation_sha256", "host_local_live_config_sha256"}
-    allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error"} | local_keys
+    allowed = {"protocol", "state", "request_id", "sha256", "rolled_back", "error",
+               "retired_targets_sha256"} | local_keys
     if not isinstance(receipt, dict) or set(receipt) - allowed:
         raise Restricted("unexpected-receipt-field")
     if receipt.get("protocol") != "xdrive.caddy.host-env.v1":
@@ -363,6 +587,14 @@ def archive_deploy(receipt=None):
     if state not in ("deployed", "failed"):
         raise Restricted("nonterminal-receipt")
     present_local = set(receipt) & local_keys
+    private_digest = receipt.get("retired_targets_sha256")
+    if private_digest is not None:
+        if (state != "deployed" or present_local != local_keys or
+                not isinstance(private_digest, str) or HEX.fullmatch(private_digest) is None):
+            raise Restricted("invalid-private-target-digest")
+        # A group-reachable legacy terminal bridge is not a trust source.
+        # Require a separately written Host-private, exact-identity record.
+        verify_retired_targets_digest(home_dir, request_id, sha, private_digest)
     # Legacy v1 success rows have neither field. Modern trusted Host commits
     # include BOTH; never accept a partial, malformed or failed-row witness.
     if present_local and (state != "deployed" or present_local != local_keys or
@@ -389,6 +621,8 @@ def archive_deploy(receipt=None):
     if present_local:
         for key in local_keys:
             clean[key] = receipt[key]
+    if private_digest is not None:
+        clean["retired_targets_sha256"] = private_digest
     output = (json.dumps(clean, sort_keys=True, separators=(",", ":")) + "\n").encode()
     if len(output) > 512:
         raise Restricted("oversized-receipt")
@@ -467,6 +701,9 @@ def archive_deploy(receipt=None):
             os.close(folder)
     finally:
         os.close(parent)
+    # Keep the Host-private former-domain/IP lifecycle aligned with the seven
+    # day terminal history. Never remove any proof referenced by a terminal.
+    _prune_orphan_retired_targets(home_dir, now)
 
 
 def reconcile_committed(data, env, backup, marker):
@@ -543,14 +780,21 @@ def reconcile_committed(data, env, backup, marker):
         "sha256": data["expected_sha256"],
     }
     modern_keys = {"host_local_generation_sha256", "host_local_live_config_sha256"}
+    extended_keys = modern_keys | {"retired_targets_sha256"}
     if not isinstance(receipt, dict):
         raise Restricted("mismatched-commit-receipt")
     if receipt != legacy_success:
-        if (set(receipt) != set(legacy_success) | modern_keys or
+        keys = set(receipt)
+        if (keys not in (set(legacy_success) | modern_keys,
+                         set(legacy_success) | extended_keys) or
                 any(receipt.get(k) != v for k, v in legacy_success.items()) or
                 any(not isinstance(receipt[k], str) or HEX.fullmatch(receipt[k]) is None
-                    for k in modern_keys)):
+                    for k in keys - set(legacy_success))):
             raise Restricted("mismatched-commit-receipt")
+        if "retired_targets_sha256" in receipt:
+            verify_retired_targets_digest(home_dir, data["request_id"],
+                                          data["expected_sha256"],
+                                          receipt["retired_targets_sha256"])
     _, present = parse(read_secure(env))
     if fingerprint(present) != data["expected_sha256"]:
         raise Restricted("changed-host-env")
