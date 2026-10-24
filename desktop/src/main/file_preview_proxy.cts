@@ -66,7 +66,7 @@ function validateUpstreamTicket(ticket: DesktopFilePreviewTicket) {
   ) {
     throw new Error('Invalid file preview ticket URL.')
   }
-  return { url: url.toString(), expiresAt }
+  return { url: url.toString(), expiresAt, kind: ticket.kind }
 }
 
 function mergeByteRanges(ranges: ByteRange[]) {
@@ -124,7 +124,7 @@ export class DesktopFilePreviewProxy {
   private readonly tickets = new Map<string, LocalPreviewTicket>()
 
   constructor(
-    private readonly loadTicket: (nodeID: number) => Promise<DesktopFilePreviewTicket>,
+    private readonly loadTicket: (nodeID: number, signal?: AbortSignal) => Promise<DesktopFilePreviewTicket>,
     private readonly fetcher: DesktopFilePreviewFetcher,
   ) {}
 
@@ -150,19 +150,56 @@ export class DesktopFilePreviewProxy {
     this.baseURL = `http://127.0.0.1:${address.port}`
   }
 
-  async createURL(nodeID: number) {
+  async createURL(nodeID: number, signal?: AbortSignal) {
     if (!Number.isSafeInteger(nodeID) || nodeID <= 0) {
       throw new Error('File preview node id is required.')
     }
-    return this.createURLFromTicket(await this.loadTicket(nodeID))
+    signal?.throwIfAborted()
+    const ticket = await this.loadTicket(nodeID, signal)
+    signal?.throwIfAborted()
+    return this.createURLFromTicket(ticket, undefined, signal)
+  }
+
+  private async verifyPDFStream(url: string, signal?: AbortSignal) {
+    signal?.throwIfAborted()
+    let verified: Response
+    try {
+      verified = await this.fetcher(url, {
+        method: 'HEAD',
+        signal,
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+      })
+    } catch {
+      // Upstream network errors may contain the signed URL. Never reveal it
+      // through IPC or application logs.
+      if (signal?.aborted) throw new Error('File preview PDF verification was cancelled.')
+      throw new Error('File preview PDF status verification failed.')
+    }
+    signal?.throwIfAborted()
+    const contentType = verified.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+    if (![200, 206].includes(verified.status) || contentType !== 'application/pdf') {
+      throw new Error('File preview PDF is unavailable or returned invalid content.')
+    }
   }
 
   async createURLFromTicket(
     upstreamTicket: DesktopFilePreviewTicket,
     onProgress?: DesktopFilePreviewProgressHandler,
+    signal?: AbortSignal,
   ) {
-    await this.start()
     const ticket = validateUpstreamTicket(upstreamTicket)
+    signal?.throwIfAborted()
+    // A signed PDF iframe can render HTTP error HTML and still fire onLoad.
+    // Verify via trusted Main process BEFORE minting a local renderer token.
+    // Electron's restricted connect-src is unchanged.
+    if (ticket.kind === 'pdf') await this.verifyPDFStream(ticket.url, signal)
+    signal?.throwIfAborted()
+    if (ticket.expiresAt <= Date.now()) throw new Error('File preview ticket is expired.')
+    await this.start()
+    signal?.throwIfAborted()
     this.purgeExpiredTickets()
     const localToken = randomBytes(32).toString('hex')
     this.tickets.set(localToken, {
@@ -171,10 +208,20 @@ export class DesktopFilePreviewProxy {
       onProgress,
       coveredRanges: [],
       loadedBytes: 0,
+      totalBytes: 0,
       lastProgressAt: 0,
       controllers: new Set(),
     })
-    return `${this.baseURL}${localPreviewPathPrefix}${localToken}`
+    const localURL = `${this.baseURL}${localPreviewPathPrefix}${localToken}`
+    // Abort during Main-to-Renderer request handoff invalidates the token.
+    if (signal) {
+      signal.addEventListener('abort', () => { this.releaseURL(localURL) }, { once: true })
+      if (signal.aborted) {
+        this.releaseURL(localURL)
+        throw new Error('File preview request was cancelled.')
+      }
+    }
+    return localURL
   }
 
   releaseURL(value: string) {

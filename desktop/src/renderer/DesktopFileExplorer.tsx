@@ -1025,7 +1025,10 @@ export default function DesktopFileExplorer({
       return result.ok ? result.data : null
     }
     if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
-    const result = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
+    const result = await xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id), requestID),
+    )
     return result.ok ? result.data : null
   }, [previewStreamSupported])
 
@@ -1049,7 +1052,10 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
     onStage?.('video_read')
 
-    const preview = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
+    const preview = await xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id), requestID),
+    )
     if (!isCurrentLifecycle() || !preview.ok) return null
     onStage?.('poster_capture')
     const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)

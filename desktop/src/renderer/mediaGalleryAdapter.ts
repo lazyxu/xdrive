@@ -192,7 +192,9 @@ export function createDesktopMediaGalleryDataSource(
       signal?.throwIfAborted()
       const result = kind === 'live_photo'
         ? await agent.getMediaLivePhotoStill(nodeID)
-        : await agent.cloudFilePreviewURL(nodeID)
+        : await xDriveDesktopViewportRequest(
+          signal, (requestID) => agent.cloudFilePreviewURL(nodeID, requestID),
+        )
       signal?.throwIfAborted()
       return result
     },
