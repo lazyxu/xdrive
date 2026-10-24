@@ -35,6 +35,24 @@ test('coverage accepts only coherent Owner aggregates, never coordinates or part
     {...counts,browser_ak:'public'},
   ]) assert.equal(validate(bad),null)
 })
+test('P0-01 coverage interpretation is separate from map release or provider consent',()=>{
+  const state=mod.exports.xDriveBaiduMapCoverageState
+  assert.equal(state(null),'unverified')
+  assert.equal(state({...counts,map_runtime_verified:true}),'unverified')
+  assert.equal(state({...counts,valid_gps_assets:0,eligible_bd09_assets:0,
+    not_eligible_bd09_assets:0,source_outside_camera_latitude_assets:0}),'no-valid-gps')
+  assert.equal(state({...counts,eligible_bd09_assets:0,
+    not_eligible_bd09_assets:100}),'none-displayable')
+  assert.equal(state(counts),'partial')
+  assert.equal(state({...counts,eligible_bd09_assets:100,
+    not_eligible_bd09_assets:0}),'complete')
+  const ui=read('ui/shared/src/mui/MediaGalleryMapGPSCoverage.tsx')
+  assert.match(ui,/xDriveBaiduMapCoverageState\(current\.data\)/)
+  assert.match(ui,/data-xdrive-map-gps-coverage-explanation/)
+  assert.match(ui,/不会自动向百度发送这些坐标/)
+  assert.match(ui,/这不代表百度动态地图已运行成功/)
+})
+
 test('Web Mobile and Desktop use the original read-only Owner endpoint and cancellation',()=>{
   const required=[
     ['web/src/api.ts','/api/v1/media/places/baidu-jsapi/coverage'],

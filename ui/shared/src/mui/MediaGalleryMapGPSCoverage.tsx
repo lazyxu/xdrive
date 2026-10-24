@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import type { MediaBaiduMapCoverage } from '../models'
-import { xDriveValidBaiduMapCoverage } from '../media-gallery-baidu-coverage'
+import { xDriveBaiduMapCoverageState, xDriveValidBaiduMapCoverage } from '../media-gallery-baidu-coverage'
 
 /** No automatic SDK requests, bulk consent, raw GPS or cross-account count cache. */
 export function XDriveMediaGalleryMapGPSCoverage({
@@ -24,6 +24,8 @@ export function XDriveMediaGalleryMapGPSCoverage({
     return () => { serial.current++; inFlight.current?.abort(); inFlight.current=null }
   }, [ownerScope,getCoverage])
   const current = view.owner === ownerScope ? view : {owner:ownerScope,phase:'idle' as const,data:null}
+  const coverageState = current.phase === 'ready' && current.data
+    ? xDriveBaiduMapCoverageState(current.data) : 'unverified'
   const load = () => {
     inFlight.current?.abort()
     const request = ++serial.current
@@ -72,6 +74,16 @@ export function XDriveMediaGalleryMapGPSCoverage({
           <Typography variant="caption">当前 BD-09 可显示：{current.data.eligible_bd09_assets.toLocaleString('zh-CN')} 张</Typography>
           <Typography variant="caption">尚不可显示：{current.data.not_eligible_bd09_assets.toLocaleString('zh-CN')} 张</Typography>
         </Stack>
+        <Typography variant="caption" role="status" color="text.secondary"
+          data-xdrive-map-gps-coverage-explanation sx={{display:'block',mt:0.75}}>
+          {coverageState === 'no-valid-gps'
+            ? '当前已完成索引的照片没有有效原始 GPS；不代表磁盘上其他照片没有定位信息。'
+            : coverageState === 'none-displayable'
+              ? '已有有效原始 GPS，但目前没有符合授权、来源修订和 BD-09 派生索引要求的可显示照片。不会自动向百度发送这些坐标。'
+              : coverageState === 'partial'
+                ? '只有部分有效 GPS 照片可在 BD-09 地图显示；差额可能来自授权、来源更新或派生索引状态，不能直接认定为 GPS 错误。'
+                : '在本次已完成索引的统计范围内，全部有效 GPS 均具备 BD-09 显示资格；这不代表百度动态地图已运行成功。'}
+        </Typography>
         <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:0.5}}>
           来源纬度超出当前地图范围：{current.data.source_outside_camera_latitude_assets.toLocaleString('zh-CN')} 张。
           差额可能来自授权、来源修订或派生索引；不等于 GPS 错误，也不证明动态地图已启用。
