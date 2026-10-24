@@ -37,7 +37,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     applyDuplicateOrganize: (input) => api.mediaDuplicateOrganizeApply(input),
     listSyncFolders: () => api.mediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => api.mediaSyncFolder(sourceID, folderID),
-    listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),
+    listTrashItemRange: (limit, offset, signal?: AbortSignal) => api.mediaTrashRange(limit, offset, signal),
     restoreTrashItems: async (items) => {
       for (const root of xDriveMediaGalleryTrashRoots(items)) {
         await api.restoreTrash(root.id, root.revision)
@@ -92,29 +92,29 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     cancelBaiduMapIndexJob: (nodeID, revision) => api.cancelMediaBaiduMapIndexJob(nodeID, revision),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       api.mediaMemories(anchorDate, limit, timeZone),
-    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>
-      api.mediaMemoryItemRange(memoryID, limit, offset, timeZone),
+    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC', signal?: AbortSignal) =>
+      api.mediaMemoryItemRange(memoryID, limit, offset, timeZone, signal),
     listDuplicateGroups: (limit = 24, offset = 0) => api.mediaDuplicateGroups(limit, offset),
-    listDuplicateItemRange: (duplicateID, limit, offset) =>
-      api.mediaDuplicateItemRange(duplicateID, limit, offset),
+    listDuplicateItemRange: (duplicateID, limit, offset, signal?: AbortSignal) =>
+      api.mediaDuplicateItemRange(duplicateID, limit, offset, signal),
     listBurstReviews: (limit = 24, offset = 0) => api.mediaBurstReviews(limit, offset),
-    listBurstReviewItemRange: (burstID, limit, offset) =>
-      api.mediaBurstReviewItemRange(burstID, limit, offset),
+    listBurstReviewItemRange: (burstID, limit, offset, signal?: AbortSignal) =>
+      api.mediaBurstReviewItemRange(burstID, limit, offset, signal),
     listPets: () => api.mediaPets(),
-    listPetItemRange: (petKind, limit, offset) =>
-      api.mediaPetItemRange(petKind, limit, offset),
+    listPetItemRange: (petKind, limit, offset, signal?: AbortSignal) =>
+      api.mediaPetItemRange(petKind, limit, offset, signal),
     listSuggestedPeople: (includeReviewed = false, limit = 24) =>
       api.mediaSuggestedPeopleWithReview(includeReviewed, limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       api.mediaSuggestedPersonItems(personID, limit, offset, query),
-    listSuggestedPersonItemRange: (personID, limit, offset, query) =>
-      api.mediaSuggestedPersonItemRange(personID, limit, offset, query),
+    listSuggestedPersonItemRange: (personID, limit, offset, query = {}, signal?: AbortSignal) =>
+      api.mediaSuggestedPersonItemRange(personID, limit, offset, query, signal),
     listPeople: (includeHidden = false, limit = 100, offset = 0) =>
       api.mediaPeople(includeHidden, limit, offset),
     listPersonItems: (personID, limit, offset, query) =>
       api.mediaPersonItems(personID, limit, offset, query),
-    listPersonItemRange: (personID, limit, offset, query) =>
-      api.mediaPersonItemRange(personID, limit, offset, query),
+    listPersonItemRange: (personID, limit, offset, query = {}, signal?: AbortSignal) =>
+      api.mediaPersonItemRange(personID, limit, offset, query, signal),
     reviewSuggestedPerson: (suggestionID, state) =>
       api.reviewMediaSuggestedPerson(suggestionID, state),
     addSuggestedPersonToPerson: (suggestionID, personID, revision) =>
@@ -133,8 +133,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
       api.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       api.mediaAlbumItems(albumID, limit, offset, query),
-    listAlbumItemRange: (albumID, limit, offset, query) =>
-      api.mediaAlbumItemRange(albumID, limit, offset, query),
+    listAlbumItemRange: (albumID, limit, offset, query = {}, signal?: AbortSignal) =>
+      api.mediaAlbumItemRange(albumID, limit, offset, query, signal),
     loadThumbnail: (nodeID, signal, revision, onProgress, bypassHTTPCache) => api.mediaThumbnail(nodeID, signal, revision, onProgress, bypassHTTPCache),
     saveVideoPoster: (nodeID, revision, poster, signal) => api.mediaVideoPoster(nodeID, revision, poster, signal),
     loadLivePhotoMotion: (nodeID, _onProgress, signal) => api.mediaLivePhotoMotionURL(nodeID, signal),

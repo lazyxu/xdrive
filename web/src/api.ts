@@ -1399,12 +1399,12 @@ export class XDriveApi {
     )
   }
 
-  mediaTrashRange(limit = 200, offset = 0) {
+  mediaTrashRange(limit = 200, offset = 0, signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
       offset: String(Math.max(0, Math.trunc(offset))),
     })
-    return this.request<MediaItemRange>(`/api/v1/media/trash?${query.toString()}`)
+    return this.request<MediaItemRange>(`/api/v1/media/trash?${query.toString()}`, { signal })
   }
 
   mediaAlbums() {
@@ -1835,6 +1835,7 @@ export class XDriveApi {
     limit = 200,
     offset = 0,
     timeZone = 'UTC',
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       time_zone: timeZone,
@@ -1844,6 +1845,7 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/memories/${encodeURIComponent(memoryID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -1876,6 +1878,7 @@ export class XDriveApi {
     duplicateID: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -1884,6 +1887,7 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/duplicates/${encodeURIComponent(duplicateID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -1901,6 +1905,7 @@ export class XDriveApi {
     burstID: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -1909,6 +1914,7 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/bursts/${encodeURIComponent(burstID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -1920,6 +1926,7 @@ export class XDriveApi {
     petKind: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -1928,6 +1935,7 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/pets/${encodeURIComponent(petKind)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -1965,6 +1973,7 @@ export class XDriveApi {
     limit = 200,
     offset = 0,
     filters: MediaGalleryQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -1974,6 +1983,7 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItemRange>(
       `/api/v1/media/people/suggestions/${encodeURIComponent(personID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -2037,6 +2047,7 @@ export class XDriveApi {
     limit = 200,
     offset = 0,
     filters: MediaGalleryQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -2046,6 +2057,7 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItemRange>(
       `/api/v1/media/people/identities/${encodeURIComponent(personID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -2215,6 +2227,7 @@ export class XDriveApi {
     limit = 200,
     offset = 0,
     filters: MediaGalleryQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -2224,6 +2237,7 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItemRange>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
+      { signal },
     )
   }
 

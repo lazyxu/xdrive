@@ -131,6 +131,7 @@ export interface XDriveMediaGalleryPort {
   listTrashItemRange?: (
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   restoreTrashItems?: (
     items: MediaItem[],
@@ -209,6 +210,7 @@ export interface XDriveMediaGalleryPort {
     limit: number,
     offset: number,
     timeZone?: string,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listDuplicateGroups?: (
     limit?: number,
@@ -218,6 +220,7 @@ export interface XDriveMediaGalleryPort {
     duplicateID: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listBurstReviews?: (
     limit?: number,
@@ -227,12 +230,14 @@ export interface XDriveMediaGalleryPort {
     burstID: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listPets?: () => Promise<XDriveMediaGalleryTransportResult<MediaPetFacet[]>>
   listPetItemRange?: (
     petKind: string,
     limit: number,
     offset: number,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listSuggestedPeople?: (
     includeReviewed?: boolean,
@@ -249,6 +254,7 @@ export interface XDriveMediaGalleryPort {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listPeople?: (
     includeHidden?: boolean,
@@ -266,6 +272,7 @@ export interface XDriveMediaGalleryPort {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   reviewSuggestedPerson?: (
     suggestionID: string,
@@ -307,6 +314,7 @@ export interface XDriveMediaGalleryPort {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   loadThumbnail: (
     nodeID: number,
@@ -543,8 +551,8 @@ export function createXDriveMediaGalleryDataSource(
       ? (sourceID, folderID) => resolveXDriveTransport(port.getSyncFolder!(sourceID, folderID))
       : undefined,
     listTrashItemRange: port.listTrashItemRange
-      ? (limit, offset) => resolveXDriveTransport(
-          port.listTrashItemRange!(limit, offset),
+      ? (limit, offset, signal) => resolveXDriveTransport(
+          port.listTrashItemRange!(limit, offset, signal),
         )
       : undefined,
     restoreTrashItems: port.restoreTrashItems
@@ -662,32 +670,32 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listMemoryItemRange: port.listMemoryItemRange
-      ? (memoryID, limit, offset, timeZone) => resolveXDriveTransport(
-          port.listMemoryItemRange!(memoryID, limit, offset, timeZone),
+      ? (memoryID, limit, offset, timeZone, signal) => resolveXDriveTransport(
+          port.listMemoryItemRange!(memoryID, limit, offset, timeZone, signal),
         )
       : undefined,
     listDuplicateGroups: port.listDuplicateGroups
       ? (limit, offset) => resolveXDriveTransport(port.listDuplicateGroups!(limit, offset))
       : undefined,
     listDuplicateItemRange: port.listDuplicateItemRange
-      ? (duplicateID, limit, offset) => resolveXDriveTransport(
-          port.listDuplicateItemRange!(duplicateID, limit, offset),
+      ? (duplicateID, limit, offset, signal) => resolveXDriveTransport(
+          port.listDuplicateItemRange!(duplicateID, limit, offset, signal),
         )
       : undefined,
     listBurstReviews: port.listBurstReviews
       ? (limit, offset) => resolveXDriveTransport(port.listBurstReviews!(limit, offset))
       : undefined,
     listBurstReviewItemRange: port.listBurstReviewItemRange
-      ? (burstID, limit, offset) => resolveXDriveTransport(
-          port.listBurstReviewItemRange!(burstID, limit, offset),
+      ? (burstID, limit, offset, signal) => resolveXDriveTransport(
+          port.listBurstReviewItemRange!(burstID, limit, offset, signal),
         )
       : undefined,
     listPets: port.listPets
       ? () => resolveXDriveTransport(port.listPets!())
       : undefined,
     listPetItemRange: port.listPetItemRange
-      ? (petKind, limit, offset) => resolveXDriveTransport(
-          port.listPetItemRange!(petKind, limit, offset),
+      ? (petKind, limit, offset, signal) => resolveXDriveTransport(
+          port.listPetItemRange!(petKind, limit, offset, signal),
         )
       : undefined,
     listSuggestedPeople: port.listSuggestedPeople
@@ -701,8 +709,8 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listSuggestedPersonItemRange: port.listSuggestedPersonItemRange
-      ? (personID, limit, offset, query) => resolveXDriveTransport(
-          port.listSuggestedPersonItemRange!(personID, limit, offset, query),
+      ? (personID, limit, offset, query, signal) => resolveXDriveTransport(
+          port.listSuggestedPersonItemRange!(personID, limit, offset, query, signal),
         )
       : undefined,
     listPeople: port.listPeople
@@ -716,8 +724,8 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listPersonItemRange: port.listPersonItemRange
-      ? (personID, limit, offset, query) => resolveXDriveTransport(
-          port.listPersonItemRange!(personID, limit, offset, query),
+      ? (personID, limit, offset, query, signal) => resolveXDriveTransport(
+          port.listPersonItemRange!(personID, limit, offset, query, signal),
         )
       : undefined,
     reviewSuggestedPerson: port.reviewSuggestedPerson
@@ -757,8 +765,8 @@ export function createXDriveMediaGalleryDataSource(
     listAlbumItems: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItems(albumID, limit, offset, query),
     ),
-    listAlbumItemRange: (albumID, limit, offset, query) => resolveXDriveTransport(
-      port.listAlbumItemRange(albumID, limit, offset, query),
+    listAlbumItemRange: (albumID, limit, offset, query, signal) => resolveXDriveTransport(
+      port.listAlbumItemRange(albumID, limit, offset, query, signal),
     ),
     loadThumbnail: async (nodeID, signal, revision, onProgress, bypassHTTPCache) => mediaResourceURL(
       await resolveXDriveTransport(port.loadThumbnail(nodeID, signal, revision, onProgress, bypassHTTPCache)),
