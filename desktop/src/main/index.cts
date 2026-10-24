@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import os = require('node:os')
 import path = require('node:path')
 import { randomUUID } from 'node:crypto'
@@ -29,6 +29,11 @@ import {
 import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { probeDesktopServer as probeDesktopServerWithChromium } from './server_probe.cjs'
+import {
+  enrollLANRootViaTrustedDomain, fetchWithPinnedLANRoot, inspectPrivateLANFirstUse,
+  privateLANOrigin, probeWithTrustedLANRoot, trustedDomainCandidates,
+  verifiedLANRootPEM, type TrustedLANRoot,
+} from './lan_root_auto.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import {
@@ -362,6 +367,14 @@ const hardwareAccelerationDisabled = process.argv.includes('--disable-gpu')
 if (hardwareAccelerationDisabled) app.disableHardwareAcceleration()
 const desktopPreferencesName = 'desktop-settings.json'
 const loginHistoryName = 'desktop-login-history.json'
+const privateLANRootsName = 'desktop-private-lan-roots.json'
+let privateLANRoots: TrustedLANRoot[] = []
+// Preserve a previously accepted IP trust boundary even if its CA expires or
+// the local file becomes malformed. An invalid pin must not become 'no pin'.
+const rejectedManualLANOrigins = new Set<string>()
+let privateLANTrustStoreCorrupt = false
+const privateLANEnrollments = new Map<string, Promise<{ root: string; version: string } | null>>()
+let privateLANSaveQueue: Promise<void> = Promise.resolve()
 
 function desktopLifecycleLogDirectory() {
   if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
@@ -553,9 +566,249 @@ async function persistLoginHistoryBestEffort() {
   }
 }
 
-async function probeDesktopServer(serverValue: string): Promise<DesktopResult<{ version?: string }>> {
-  return probeDesktopServerWithChromium(serverValue, (url, options) =>
+async function loadPrivateLANRoots(): Promise<void> {
+  privateLANRoots = []
+  rejectedManualLANOrigins.clear()
+  privateLANTrustStoreCorrupt = false
+  try {
+    const file = await readFile(path.join(app.getPath('userData'), privateLANRootsName), 'utf8')
+    if (file.length > 65536) { privateLANTrustStoreCorrupt = true; return }
+    const parsed: unknown = JSON.parse(file)
+    if (!parsed || typeof parsed !== 'object' ||
+        !Array.isArray((parsed as { roots?: unknown }).roots)) {
+      privateLANTrustStoreCorrupt = true
+      return
+    }
+    const roots = (parsed as { roots: unknown[] }).roots
+    if (roots.length > 50) { privateLANTrustStoreCorrupt = true; return }
+    for (const raw of roots) {
+      if (!raw || typeof raw !== 'object') { privateLANTrustStoreCorrupt = true; continue }
+      const pin = raw as Partial<TrustedLANRoot>
+      const target = typeof pin.server === 'string' ? privateLANOrigin(pin.server) : null
+      if (!target) { privateLANTrustStoreCorrupt = true; continue }
+      // Record explicit trust first: an expired, corrupt or replaced CA cannot
+      // cause a known IP to silently revert to normal platform CA trust.
+      if (pin.source === 'user-approved-lan') rejectedManualLANOrigins.add(target.origin)
+      if (typeof pin.username !== 'string' || typeof pin.domain !== 'string' ||
+          typeof pin.root_pem !== 'string' || typeof pin.sha256 !== 'string') continue
+      const root = verifiedLANRootPEM(pin.root_pem)
+      if (!root || root.sha256 !== pin.sha256) continue
+      if (pin.source === 'user-approved-lan' &&
+          (pin.domain !== '' || pin.username !== '')) continue
+      if (pin.source !== 'user-approved-lan' &&
+          (!pin.username || !pin.domain)) continue
+      privateLANRoots.push(pin as TrustedLANRoot)
+      if (pin.source === 'user-approved-lan') rejectedManualLANOrigins.delete(target.origin)
+    }
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error &&
+      (error as { code?: unknown }).code === 'ENOENT')) {
+      privateLANTrustStoreCorrupt = true
+    }
+  }
+}
+
+async function savePrivateLANRoot(pin: TrustedLANRoot): Promise<void> {
+  // Serialize read-modify-write as well as filesystem writes. Do not publish
+  // a new in-memory trust anchor until its durable write has succeeded.
+  const save = privateLANSaveQueue.then(async () => {
+    const next = privateLANRoots.filter(
+      old => old.server !== pin.server || old.username !== pin.username)
+    next.unshift(pin)
+    const selected = next.slice(0, 30)
+    const payload = JSON.stringify({ version: 1, roots: selected }, null, 2) + '\n'
+    const dir = app.getPath('userData')
+    await mkdir(dir, { recursive: true })
+    const dest = path.join(dir, privateLANRootsName)
+    const temp = path.join(dir, privateLANRootsName + '.' + process.pid + '.tmp')
+    try {
+      await writeFile(temp, payload, { encoding: 'utf8', mode: 0o600 })
+      await rename(temp, dest)
+    } finally {
+      await rm(temp, { force: true }).catch(() => {})
+    }
+    privateLANRoots = selected
+    if (pin.source === 'user-approved-lan') rejectedManualLANOrigins.delete(pin.server)
+    privateLANTrustStoreCorrupt = false
+  })
+  privateLANSaveQueue = save.catch(() => {})
+  await save
+}
+
+function approvedManualLANPin(server: string): TrustedLANRoot | undefined {
+  const target = privateLANOrigin(server)
+  if (!target) return undefined
+  return privateLANRoots.find(pin =>
+    pin.server === target.origin && pin.source === 'user-approved-lan' &&
+    pin.username === '' && pin.domain === '')
+}
+
+function requiresApprovedLANPin(server: string): boolean {
+  const target = privateLANOrigin(server)
+  return !!target && (privateLANTrustStoreCorrupt ||
+    rejectedManualLANOrigins.has(target.origin) || !!approvedManualLANPin(target.origin))
+}
+
+async function ensurePrivateLANRoot(
+  server: string, username: string,
+): Promise<{ root: string; version: string } | null> {
+  const target = privateLANOrigin(server)
+  if (!target) return null
+  if (privateLANTrustStoreCorrupt || rejectedManualLANOrigins.has(target.origin)) return null
+  const manual = approvedManualLANPin(target.origin)
+  if (manual) {
+    if (verifiedLANRootPEM(manual.root_pem)?.sha256 !== manual.sha256) return null
+    const version = await probeWithTrustedLANRoot(target.origin, manual.root_pem)
+    // CA rotation or a changed identity requires a NEW explicit local approval.
+    // In particular, do not fall back to silent domain enrollment after a
+    // manually approved pin fails certificate verification.
+    return version ? { root: manual.root_pem, version } : null
+  }
+  if (!username.trim()) return null
+  const trustedDomains = trustedDomainCandidates(loginHistory.profiles, username)
+  if (trustedDomains.length === 0) return null
+  const key = target.origin + '\0' + username.trim()
+  const active = privateLANEnrollments.get(key)
+  if (active) return active
+  const request = (async () => {
+    const current = privateLANRoots.find(pin =>
+      pin.server === target.origin && pin.username === username.trim() &&
+      trustedDomains.some(domain => domain.hostname === pin.domain))
+    if (current && verifiedLANRootPEM(current.root_pem)?.sha256 === current.sha256) {
+      const version = await probeWithTrustedLANRoot(target.origin, current.root_pem)
+      if (version) return { root: current.root_pem, version }
+    }
+    // No network credentials and no unverified IP CA in this automatic route:
+    // existing public-domain TLS verifies the Caddy before trusting its CA.
+    const enrolled = await enrollLANRootViaTrustedDomain(
+      target.origin, username, loginHistory.profiles)
+    if (!enrolled) return null
+    await savePrivateLANRoot(enrolled.pin)
+    return { root: enrolled.pin.root_pem, version: enrolled.version }
+  })()
+  privateLANEnrollments.set(key, request)
+  try { return await request } finally {
+    if (privateLANEnrollments.get(key) === request) privateLANEnrollments.delete(key)
+  }
+}
+
+// This is the ONLY user-approved TOFU entry. Called from a real Renderer button
+// and protected with an independent native dialog owned by Electron Main.
+// Never send account credentials during first-use inspection.
+async function trustPrivateLANServer(serverValue: string): Promise<DesktopResult<{
+  trusted: boolean; version?: string; sha256?: string
+}>> {
+  const target = privateLANOrigin(serverValue)
+  if (!target) {
+    return { ok: false, error: {
+      code: 'invalid_lan_origin',
+      message: '只支持规范私有 IPv4 HTTPS 根地址，不能包含路径、账号或参数。',
+    } }
+  }
+  const candidate = await inspectPrivateLANFirstUse(target.origin).catch(() => null)
+  if (!candidate) {
+    return { ok: false, error: {
+      code: 'lan_certificate_unavailable',
+      message: '无法读取并验证此 IP 的 Caddy 根证书及 HTTPS IP SAN；请确认服务器已启用新版局域网 HTTPS。',
+    } }
+  }
+  const hash = candidate.sha256.toUpperCase().match(/.{1,8}/g)?.join(' ') || candidate.sha256
+  const options = {
+    type: 'warning' as const,
+    title: 'xDrive 局域网服务器首次信任',
+    message: '确认信任这个局域网 xDrive 服务器？',
+    detail: '服务器：' + target.origin + '\n' +
+      '根证书 SHA-256：\n' + hash + '\n\n' +
+      '首次信任无法单凭局域网确认服务器身份。若网络中存在冒充设备，' +
+      '错误批准可能导致密码被发送给冒充服务器。\n\n' +
+      '仅信任这个 IP 和端口的 xDrive Desktop/Agent 连接；' +
+      '不会修改 Windows 系统根证书库。证书身份变化时需要重新批准。',
+    buttons: ['取消', '我确认信任此服务器'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  }
+  const confirmation = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options)
+  if (confirmation.response !== 1) {
+    return { ok: true, data: { trusted: false } }
+  }
+  // A second strict TLS handshake re-checks chain and actual IP SAN after
+  // the user sees the fingerprint, before writing a durable scoped pin.
+  const version = await probeWithTrustedLANRoot(target.origin, candidate.root_pem)
+  if (!version) {
+    return { ok: false, error: {
+      code: 'lan_certificate_changed',
+      message: '局域网 HTTPS 证书在确认期间发生变化或校验失败；未保存信任。',
+    } }
+  }
+  const root: TrustedLANRoot = {
+    server: target.origin, username: '', domain: '',
+    root_pem: candidate.root_pem, sha256: candidate.sha256,
+    source: 'user-approved-lan',
+  }
+  try {
+    await savePrivateLANRoot(root)
+  } catch {
+    return { ok: false, error: {
+      code: 'lan_trust_save_failed',
+      message: '无法持久保存此服务器的局域网信任；没有修改系统 CA。',
+    } }
+  }
+  return { ok: true, data: { trusted: true, version, sha256: candidate.sha256 } }
+}
+
+async function probeDesktopServer(serverValue: string, username = ''): Promise<DesktopResult<{ version?: string }>> {
+  // A previously approved IP pin is authoritative. Never let a new Windows
+  // system root (or a now-trusted rogue leaf) silently bypass that decision.
+  if (requiresApprovedLANPin(serverValue)) {
+    const pinned = await ensurePrivateLANRoot(serverValue, username).catch(() => null)
+    if (pinned) return { ok: true, data: { version: pinned.version } }
+    return { ok: false, error: {
+      code: 'server_tls_pin_changed',
+      message: '这个局域网服务器的已信任证书无法通过验证。证书可能已轮换；请重新明确确认服务器身份。',
+    } }
+  }
+  const original = await probeDesktopServerWithChromium(serverValue, (url, options) =>
     net.fetch(url, { ...options, bypassCustomProtocolHandlers: true }))
+  if (original.ok || original.error.code !== 'server_tls_trust') return original
+  const root = await ensurePrivateLANRoot(serverValue, username).catch(() => null)
+  if (root) return { ok: true, data: { version: root.version } }
+  return original
+}
+
+// File previews and Live Photo range tickets use net.fetch by default, but
+// Chromium does not inherit Go Agent's app-local CA. Enforce the same CA for
+// exact-origin signed media streams after the user approves an IP; other
+// origins retain ordinary Chromium certificate verification.
+async function fetchDesktopPreview(input: string, init: RequestInit): Promise<Response> {
+  let url: URL
+  try { url = new URL(input) } catch { throw new Error('invalid preview URL') }
+  const server = agentState.status?.server || ''
+  const session = privateLANOrigin(server)
+  // A signed token minted for a HTTPS-paired private IP must not be relayed to
+  // plaintext HTTP even if an outdated server supplies such a ticket URL.
+  if (session && url.hostname === session.ip && url.protocol !== 'https:') {
+    throw new Error('private LAN media ticket requires HTTPS')
+  }
+  const target = privateLANOrigin(url.origin)
+  if (!target) return net.fetch(input, init)
+  const approved = approvedManualLANPin(target.origin)
+  const previouslyPinned = requiresApprovedLANPin(target.origin)
+  if (previouslyPinned && (!session || session.origin !== target.origin)) {
+    throw new Error('private LAN preview session mismatch')
+  }
+  if (previouslyPinned && !approved) {
+    throw new Error('previously approved LAN preview identity is invalid')
+  }
+  const pin = approved || (session && session.origin === target.origin
+    ? privateLANRoots.find(item =>
+      item.server === target.origin && item.source === 'verified-domain' &&
+      item.username === agentState.status?.username)
+    : undefined)
+  if (pin) return fetchWithPinnedLANRoot(input, init, pin)
+  return net.fetch(input, init)
 }
 
 function quoteDesktopExec(value: string) {
@@ -1790,12 +2043,19 @@ async function attemptAutomaticLogin() {
   const attemptedLoginHistory = loginHistory
   lastAutoLoginError = ''
   try {
+    // Check saved server identity BEFORE decrypting or sending stored credentials.
+    // A changed approved pin must never fall back to platform or public CA trust.
+    const trustedLAN = await ensurePrivateLANRoot(profile.server, profile.username).catch(() => null)
+    if (requiresApprovedLANPin(profile.server) && !trustedLAN) {
+      throw new Error('局域网服务器证书与已批准的身份不匹配；已拒绝自动登录。')
+    }
     const password = decryptLoginPassword(profile.encrypted_password)
     const result = await runAgentAction(() => requireAgentClient().login({
       server: profile.server,
       username: profile.username,
       password,
       ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+      ...(trustedLAN ? { trusted_lan_root_pem: trustedLAN.root } : {}),
     }))
     if (!result.ok) {
       // An obsolete failure must not disable a more recently accepted login.
@@ -2031,11 +2291,19 @@ function registerIPCHandlers() {
       return { ok: false, error: agentError(error) }
     }
   })
-  ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown) => {
+  ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown, username: unknown) => {
     if (typeof serverValue !== 'string' || !serverValue.trim()) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server is required.' } }
     }
-    return probeDesktopServer(serverValue)
+    return probeDesktopServer(serverValue, typeof username === 'string' ? username.trim() : '')
+  })
+  ipcMain.handle('desktop:trust-lan-server', async (_event, serverValue: unknown) => {
+    if (typeof serverValue !== 'string') {
+      return { ok: false, error: {
+        code: 'invalid_input', message: '请输入规范的局域网 HTTPS IP 地址。',
+      } }
+    }
+    return trustPrivateLANServer(serverValue)
   })
   ipcMain.handle('desktop:clear-saved-password', async (_event, serverValue: unknown, usernameValue: unknown) => {
     if (typeof serverValue !== 'string' || typeof usernameValue !== 'string') {
@@ -6934,6 +7202,16 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'secure_storage_unavailable', message: 'Secure password storage is unavailable on this system.' } }
     }
 
+    // A saved user-approved IP identity is a hard trust boundary. On
+    // expiration, SAN mismatch or CA rotation no password may leave Desktop.
+    const trustedLAN = await ensurePrivateLANRoot(server, username).catch(() => null)
+    if (requiresApprovedLANPin(server) && !trustedLAN) {
+      return { ok: false, error: {
+        code: 'server_tls_pin_changed',
+        message: '局域网服务器证书与已批准的身份不一致。请重新明确批准后再登录。',
+      } }
+    }
+
     const existing = findLoginProfile(loginHistory, server, username)
     let password = value.password
     if (!password && useSavedPassword) {
@@ -6963,11 +7241,14 @@ function registerIPCHandlers() {
       }
     }
 
+    // Only the identity-fenced verified CA may reach the loopback Agent. No
+    // credentials are used during CA discovery; Go rechecks IP TLS itself.
     const result = await runAgentAction(() => requireAgentClient().login({
       server,
       username,
       password,
       ...(mountPath ? { mount_path: mountPath } : {}),
+      ...(trustedLAN ? { trusted_lan_root_pem: trustedLAN.root } : {}),
     }))
     if (result.ok) {
       loginHistory = recordSuccessfulLogin(loginHistory, {
@@ -7340,6 +7621,7 @@ if (!primaryInstance) {
     desktopPreferences = await loadDesktopPreferences()
     nativeTheme.themeSource = desktopPreferences.appearance
     loginHistory = await loadLoginHistory()
+    await loadPrivateLANRoots()
     startupCheckpoint('preferences_loaded')
     await applyStartAtLogin(desktopPreferences.start_at_login).catch((error) => {
       lifecycleLog?.record('startup_preference_failed', { error: formatLifecycleError(error) })
@@ -7349,7 +7631,7 @@ if (!primaryInstance) {
     agentLifecycle = new AgentLifecycle(agentClient)
     filePreviewProxy = new DesktopFilePreviewProxy(
       (nodeID) => requireAgentClient().cloudFilePreviewTicket(nodeID),
-      (input, init) => net.fetch(input, init),
+      (input, init) => fetchDesktopPreview(input, init),
     )
     registerIPCHandlers()
     startupCheckpoint('ipc_ready')

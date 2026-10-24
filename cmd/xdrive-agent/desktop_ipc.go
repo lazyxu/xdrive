@@ -955,15 +955,29 @@ func (h *desktopIPCHandler) events(w http.ResponseWriter, r *http.Request) {
 
 func (h *desktopIPCHandler) login(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Server    string `json:"server"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
-		MountPath string `json:"mount_path,omitempty"`
+		Server            string `json:"server"`
+		Username          string `json:"username"`
+		Password          string `json:"password"`
+		MountPath         string `json:"mount_path,omitempty"`
+		TrustedLANRootPEM string `json:"trusted_lan_root_pem,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
-	if err := h.ctrl.Authenticate(input.Server, input.Username, input.Password, input.MountPath); err != nil {
+	var err error
+	if input.TrustedLANRootPEM != "" {
+		enroller, ok := h.ctrl.(interface {
+			AuthenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "agent_lan_trust_unsupported", "Update xDrive Agent to support per-server LAN trust.")
+			return
+		}
+		err = enroller.AuthenticateWithTrustedLANRoot(input.Server, input.Username, input.Password, input.MountPath, input.TrustedLANRootPEM)
+	} else {
+		err = h.ctrl.Authenticate(input.Server, input.Username, input.Password, input.MountPath)
+	}
+	if err != nil {
 		writeDesktopIPCLoginError(w, err)
 		return
 	}

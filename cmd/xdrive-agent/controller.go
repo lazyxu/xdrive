@@ -701,6 +701,17 @@ func waitMountDone(ch <-chan error) {
 }
 
 func (c *agentController) Authenticate(server, username, password, mountPath string) error {
+	return c.authenticateWithTrustedLANRoot(server, username, password, mountPath, "")
+}
+
+// AuthenticateWithTrustedLANRoot accepts CA material only through the existing
+// authenticated loopback Desktop IPC and only after Desktop has independently
+// verified it through a previously authenticated public HTTPS domain.
+func (c *agentController) AuthenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error {
+	return c.authenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM)
+}
+
+func (c *agentController) authenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error {
 	server = strings.TrimRight(strings.TrimSpace(server), "/")
 	username = strings.TrimSpace(username)
 	mountPath = strings.TrimSpace(mountPath)
@@ -708,9 +719,33 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 		return fmt.Errorf("服务器、用户名和密码不能为空")
 	}
 
+	// Persisted trust is authoritative for every Agent login entry, including
+	// legacy IPC and automatic reauthentication paths that omit the optional
+	// Desktop TLS field. Never downgrade a previously paired LAN origin to
+	// the platform CA pool merely because a caller omitted root_pem.
+	if rootPEM == "" {
+		previous, loadErr := userconfig.Load()
+		if loadErr == nil {
+			if strings.EqualFold(strings.TrimRight(previous.Server, "/"), server) {
+				rootPEM = previous.TrustedLANRootPEM
+			}
+		} else if previousPath, pathErr := userconfig.Path(); pathErr == nil {
+			if _, statErr := os.Stat(previousPath); statErr == nil {
+				// A corrupt/expired persisted trust identity must not make the
+				// Agent silently fall back to the system's CA set. The user
+				// can still explicitly approve a replacement CA in Desktop.
+				return errors.New("stored xDrive trust could not be validated; explicit reapproval is required")
+			}
+		}
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	publicClient := client.New(server, "")
+	if rootPEM != "" {
+		if err := publicClient.ConfigurePrivateLANRoot(rootPEM); err != nil {
+			return err
+		}
+	}
 	resp, err := publicClient.Login(ctx, username, password)
 	if err != nil {
 		return err
@@ -731,12 +766,13 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 		}
 	}
 	cfg := userconfig.Config{
-		Server:          server,
-		MountPath:       mountPath,
-		SessionID:       sessionID,
-		Paused:          false,
-		SyncRules:       syncRules,
-		CacheLimitBytes: cacheLimitBytes,
+		Server:            server,
+		TrustedLANRootPEM: rootPEM,
+		MountPath:         mountPath,
+		SessionID:         sessionID,
+		Paused:            false,
+		SyncRules:         syncRules,
+		CacheLimitBytes:   cacheLimitBytes,
 	}
 	if err := cfg.ApplyAuth(resp, true); err != nil {
 		return err

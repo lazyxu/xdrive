@@ -77,6 +77,11 @@ async function fixture() {
     },
     securePasswordStorageAvailable: () => true,
     decryptLoginPassword: (ciphertext) => ciphertext,
+    // Old/new profiles are public DNS test origins, so the new preflight
+    // never has an approved private LAN identity. Preserve the original
+    // auth-request race rather than hanging before requireAgentClient().login.
+    ensurePrivateLANRoot: async () => null,
+    requiresApprovedLANPin: () => false,
     runAgentAction: async (action) => action(),
     requireAgentClient: () => ({ login: async (input) => {
       assert.equal(input.server, oldServer)

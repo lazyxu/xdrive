@@ -470,7 +470,8 @@ declare global {
       getBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheStats>>
       clearBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheClearResult>>
       onLoginHistory: (callback: (history: DesktopLoginHistory) => void) => () => void
-      probeServer: (server: string) => Promise<DesktopResult<{ version?: string }>>
+      probeServer: (server: string, username?: string) => Promise<DesktopResult<{ version?: string }>>
+      trustLANServer: (server: string) => Promise<DesktopResult<{ trusted: boolean; version?: string; sha256?: string }>>
       clearSavedPassword: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>
       getWindowState: () => Promise<DesktopWindowState>
       minimizeWindow: () => void
