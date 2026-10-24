@@ -280,9 +280,16 @@ export function xDriveMountBaiduInlineMap<T>(
           // No WGS84 representative is sent through BMap.Convertor.
           if (cells.length === 1) {
             map.centerAndZoom(new sdk.Point(cells[0].longitude,cells[0].latitude),12)
-          } else if (cells.length > 1 && map.setViewport) {
-            map.setViewport(cells.map(c=>new nativeSDK.Point(c.longitude,c.latitude)),
-              {margins:[64,64,64,64]})
+          } else if (cells.length > 1) {
+            if (map.setViewport) {
+              map.setViewport(cells.map(c=>new nativeSDK.Point(c.longitude,c.latitude)),
+                {margins:[64,64,64,64]})
+            } else {
+              // Match the isolated HTTPS Child when JSAPI lacks setViewport.
+              const latitude = cells.reduce((sum,cell) => sum+cell.latitude,0)/cells.length
+              const longitude = cells.reduce((sum,cell) => sum+cell.longitude,0)/cells.length
+              map.centerAndZoom(new sdk.Point(longitude,latitude),3)
+            }
           }
           try {
             map.enableScrollWheelZoom?.(true)
