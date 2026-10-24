@@ -419,6 +419,7 @@ export function XDriveMediaGalleryViewer({
         actions={actions}
         footer={footer}
         keepChromeVisible={moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
+        chromeSessionKey={actionOwner.session}
         immersive
         mobileEdgeToEdge
         fullScreen={fullScreen}
