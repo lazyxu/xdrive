@@ -101,3 +101,35 @@ Each page streams the full 100k-scale manifest to verify its checksum,
 re-reading no more than 16 historical file groups. Large-scale review
 throughput remains to be benchmarked independently; this P0 diagnostic
 must not be used as a fast 100k upload/reconciliation engine.
+
+## Owning Desktop viewer integration
+
+The existing local manual incremental backup dialog now provides a separate
+**read-only recovery review** action when the current owning Agent advertises
+the `device-backup-local-common-recovery-review` capability. The UI reads
+one 16-file page on explicit user request. A next-page action carries the
+numeric ordinal and the exact private generation epoch returned by the Agent;
+it never accepts a pathname or an arbitrary Operation selector. No automatic
+page sweep or "backup complete" projection is provided.
+
+Electron main validates Source ID, ordinal, HMAC text and a per-window UUID,
+then forwards the request only through the normal capability-gated Agent
+client. The Go Server receives a normal loopback-authenticated GET; response
+remains `private, no-store`. The operation uses a per-request AbortController;
+closing the dialog cancels the Electron HTTP request and Go request context.
+Stale responses after a Source/account change are discarded.
+
+Renderer independently checks page Source/revision, the 16-file bound,
+nonnegative counts and exact partition sum, ordinal consistency, unchanged
+epoch for continuation and `authoritative === false`. It only shows the
+current page's historical counts: committed, reserved/bound, missing,
+ignored and unsupported. The UI intentionally does not sum successive
+pages into a point-in-time complete Source claim; historical COMMITs alone
+do not guarantee current Node or physical CAS availability.
+
+A review cannot run alongside a pending manual start, and a fresh manual
+backup clears stale displayed review counts. Web/Mobile Web, remote Desktop,
+and the generic Source adapter receive no access to this private Agent read
+interface. There is no new upload, deletion or automatic uncertain-result
+retry button. Running without a newly updated Agent remains compatible:
+the optional review section is hidden when the capability is absent.

@@ -437,6 +437,24 @@ export type AgentLocalBackupCommonBatchHistoryPage = {
   items: AgentLocalBackupCommonBatchHistoryItem[]
 }
 
+// Same redacted wire contract as the private owning Agent's
+// /local-common-batch/recovery-review endpoint; never a write authority.
+export type AgentLocalBackupRecoveryReview = {
+  source_id: number
+  revision: number
+  run_state: 'partial' | 'uncertain' | 'paused' | 'cancelled'
+  reviewed_files: number
+  ignored_files: number
+  unsupported_files: number
+  unrecorded_files: number
+  historical_committed_files: number
+  pending_original_files: number
+  next_after_file: number
+  page_epoch: string
+  has_more: boolean
+  authoritative: false
+}
+
 export type AgentLocalBackupSnapshot = {
   source_id: number
   revision: number
@@ -3680,6 +3698,21 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupCommonBatchHistoryPage>(
       'GET', `/v1/device-backups/local-common-batch/history?${query.toString()}`, undefined, 15_000,
+    )
+  }
+
+  // A bounded, strictly read-only original SQL recovery view. Continuation
+  // needs the Agent-issued private generation fence, never an OS path or ID.
+  localBoundBackupRecoveryReview(sourceID: number, afterFile: number,
+    pageEpoch: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    if (afterFile > 0) {
+      query.set('after_file', String(afterFile))
+      query.set('page_epoch', pageEpoch)
+    }
+    return this.request<AgentLocalBackupRecoveryReview>(
+      'GET', `/v1/device-backups/local-common-batch/recovery-review?${query.toString()}`,
+      undefined, 75_000, signal,
     )
   }
 
