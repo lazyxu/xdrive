@@ -364,26 +364,15 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 					out.UncertainFiles++
 					return errLocalBackupCommonBatchUnavailable
 				}
-				originals := make([]localCommonVerifiedOriginal, 0, len(prior))
-				for _, p := range prior {
-					key, keyErr := p.ResumeKey()
-					if keyErr != nil {
-						out.UncertainFiles++
-						return errLocalBackupCommonBatchUnavailable
-					}
-					// This is strictly a bounded, cancellable reread of the SAME
-					// authenticated immutable original SQL receipt. It never
-					// allocates or uploads an Operation during incremental scans.
-					receipt, readErr := localpushcommon.ReadOriginalReceiptWithBackoff(
-						workCtx, func() (client.LocalPushCommonUploadReceipt, error) {
-							return api.ReadLocalPushCommonUploadReceipt(
-								workCtx, sourceID, source.Revision, proof, p.OperationID, key)
-						})
-					if readErr != nil {
-						out.UncertainFiles++
-						return errLocalBackupCommonBatchUnavailable
-					}
-					originals = append(originals, localCommonVerifiedOriginal{Plan: p, Receipt: receipt})
+				// Reconcile the complete original per-file Operation group by
+				// its authenticated immutable SQL receipts BEFORE any new
+				// target decision or native file upload. No Admit, Bind,
+				// Chunk, Finalize or disk mutation is permitted by this read.
+				originals, err := localpushcommon.ReadVerifiedOriginalFileReceipts(
+					workCtx, api, proof, sourceID, source.Revision, prior)
+				if err != nil {
+					out.UncertainFiles++
+					return errLocalBackupCommonBatchUnavailable
 				}
 				// Historical file paths are read-only until their prior
 				// Operations and current Node identity are reconciled.
