@@ -31,7 +31,11 @@ function loadSharedMap() {
     '@mui/material': mui,
     '../media-gallery-baidu-map-photo-scope': mapScopeHelper,
     '../media-gallery-baidu-native-camera-session': {
-      xDriveValidBaiduNativeCameraSnapshot: () => false,
+      xDriveValidBaiduNativeCameraSnapshot: camera => Boolean(camera &&
+        camera.coordinate_space === 'bd09ll' && Number.isFinite(camera.latitude) &&
+        Math.abs(camera.latitude) <= 85 && Number.isFinite(camera.longitude) &&
+        Math.abs(camera.longitude) <= 180 && Number.isInteger(camera.zoom) &&
+        camera.zoom >= 3 && camera.zoom <= 18),
     },
     '../media-gallery-baidu-diagnostics': {
       xDriveRecordBaiduMapDiagnostic: () => {},
@@ -222,5 +226,54 @@ test('P0-4 failed authenticated issue preserves the original restricted map',asy
   await act(async()=>{button.props.onClick();await Promise.resolve();await Promise.resolve()})
   assert.equal(global.window.location.href,original)
   assert.ok(view.root.findAll(node=>node.props['data-xdrive-map-mode-scope-warning']!==undefined).length>=1)
+  await act(async()=>view.unmount())
+})
+
+test('P0-4 preserves unrestricted BD09 camera in both map-mode directions',async()=>{
+  const camera={coordinate_space:'bd09ll',latitude:30.135,longitude:119.975,zoom:12}
+  const token='abcdef0123456789'.repeat(4)
+  const scope={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
+  for(const [from,to] of [['prototype','isolated'],['isolated','prototype']]){
+    global.window.location.href='https://gallery.example.test/gallery'+
+      (from==='isolated'?'?places_map_mode=isolated':'')
+    let issued=0
+    const view=await render({
+      initialNativeCamera:camera,mapPhotoScope:scope,
+      onMapModeHandoff:async(actualScope,target,signal,actualCamera)=>{
+        issued++
+        assert.equal(target,to)
+        assert.equal(signal.aborted,false)
+        assert.deepEqual(actualScope,scope)
+        assert.deepEqual(actualCamera,camera)
+        return token
+      },
+    })
+    const button=view.root.findAll(node=>
+      node.props['data-xdrive-map-mode-'+to]!==undefined)[0]
+    assert.ok(button)
+    await act(async()=>{button.props.onClick();await Promise.resolve();await Promise.resolve()})
+    assert.equal(issued,1)
+    const href=new URL(global.window.location.href)
+    assert.equal(href.searchParams.get('places_map_handoff'),token)
+    assert.equal(href.searchParams.get('places_map_mode'),to==='isolated'?'isolated':null)
+    assert.ok(!href.href.includes('30.135') && !href.href.includes('119.975'))
+    await act(async()=>view.unmount())
+  }
+})
+
+test('unrestricted map without a valid camera switches directly without a ticket',async()=>{
+  global.window.location.href='https://gallery.example.test/gallery'
+  let issued=0
+  const view=await render({
+    initialNativeCamera:{coordinate_space:'wgs84',latitude:30,longitude:119,zoom:12},
+    mapPhotoScope:{albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}},
+    onMapModeHandoff:async()=>{issued++;throw Error('must not issue')},
+  })
+  const button=view.root.findAll(node=>
+    node.props['data-xdrive-map-mode-isolated']!==undefined)[0]
+  await act(async()=>{button.props.onClick();await Promise.resolve()})
+  assert.equal(issued,0)
+  assert.equal(new URL(global.window.location.href).searchParams.get('places_map_mode'),'isolated')
+  assert.equal(new URL(global.window.location.href).searchParams.has('places_map_handoff'),false)
   await act(async()=>view.unmount())
 })

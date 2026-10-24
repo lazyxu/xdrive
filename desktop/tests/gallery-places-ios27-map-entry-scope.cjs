@@ -96,13 +96,14 @@ test('scoped map mode changes retain filter protections but allow cleared timezo
   assert.ok(map.includes('data-xdrive-map-mode-scope-warning'))
   assert.ok(map.includes('xDriveBaiduMapScopeSurvivesFullReload(scope)'))
   assert.ok(!map.includes("next === 'prototype' && (!approved"))
-  // Unrestricted scope can reload directly; restricted scope MUST use a
-  // signed, one-use Server handoff before replacement in EITHER direction.
+  // Unrestricted scope can reload directly ONLY before a valid BD-09 camera
+  // is available; otherwise both directions use the same one-use handoff.
+  assert.match(map,/xDriveBaiduMapScopeSurvivesFullReload\(scope\) &&\s*!xDriveValidBaiduNativeCameraSnapshot\(cameraRef\.current\)/)
   assert.ok(map.indexOf('xDriveBaiduMapScopeSurvivesFullReload(scope)') <
     map.indexOf('window.location.replace(href)'))
   assert.match(map,/onMapModeHandoff\(scope, next, controller.signal,/)
   assert.match(map,/xDrivePlacesMapScopeHandoffURL\(window.location.href, next, ticket\)/)
-  assert.match(map,/setModeWarning\('当前照片筛选的安全交接失败/)
+  assert.match(map,/setModeWarning\('地图状态交接失败/)
   assert.doesNotMatch(map,/localStorage|sessionStorage/)
   assert.ok(!map.includes('xDriveBaiduMapPhotoScopeKey(mapPhotoScope) !=='))
 })
