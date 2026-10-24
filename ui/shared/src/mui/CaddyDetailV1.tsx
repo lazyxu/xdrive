@@ -8,6 +8,7 @@ import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './Cadd
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 import { caddyHostDeployFailureMessage } from './caddyHostDeployFailure'
+import { xDriveReconcileCaddyDeployReceipt } from '../caddy-operation-recovery'
 
 // Host .env is authoritative in v1; DB desired is legacy compatibility only.
 type AtomicDesiredSave = {
@@ -174,35 +175,24 @@ export function XDriveCaddyDetailV1({
         return
       }
       setHistoryItems(clean)
-      // The server may recover a queued/active Host Deploy ID that never
-      // reached this browser. Never infer physical success from "deploying".
-      const current = page.current
-      const valid = (item: XDriveCaddyDeployState | null | undefined) =>
-        !!item && item.protocol === 'xdrive.caddy.host-env.v1' &&
-        /^[0-9a-f]{24}$/.test(item.request_id) &&
-        /^[0-9a-f]{64}$/.test(item.sha256) &&
-        (item.state === 'deploying' || item.state === 'deployed' || item.state === 'failed')
-      const latest = clean[0]
-      const timestamp = latest?.recorded_at ? Date.parse(latest.recorded_at) : NaN
-      const recent = Number.isFinite(timestamp) &&
-        timestamp <= Date.now() && Date.now() - timestamp < 5 * 60 * 1000
-      const recovered = valid(current) ? current : recent && valid(latest) ? latest : null
-      if (recovered) {
-        setDeployReceipt((prior) =>
-          !prior || (recovered.state === 'deploying' && prior.state !== 'deploying')
-            ? recovered : prior)
-        if (recovered.state === 'failed') {
-          setDeployError(caddyHostDeployFailureMessage(recovered))
-        } else if (recovered.state === 'deploying') {
-          setDeployError('')
-        }
-      }
+      // Reconcile only matching operation IDs, or a newer Host-active task.
+      // An unrelated historical failure must not replace the visible task.
+      setDeployReceipt((prior) =>
+        xDriveReconcileCaddyDeployReceipt(prior, page.current, clean[0], Date.now()))
       setHistoryState('ready')
     }).catch(() => {
       if (alive) setHistoryState('unavailable')
     })
     return () => { alive = false }
   }, [source, deployReceipt?.request_id, deployReceipt?.state, historyRefreshID])
+
+  // When a newer operation is recovered, clear transport errors from the
+  // previous operation. Read failures during this operation remain visible.
+  useEffect(() => {
+    if (deployReceipt?.state === 'deploying' || deployReceipt?.state === 'deployed') {
+      setDeployError('')
+    }
+  }, [deployReceipt?.request_id, deployReceipt?.state])
 
   // Never render the prior Server/account's sensitive Host/desired state.
   const readFailed = snapshot?.source === source && snapshot.failed
@@ -235,6 +225,9 @@ export function XDriveCaddyDetailV1({
   // evidence that Caddy has actually applied a desired revision.
   const https = httpsDraft?.source === source ? httpsDraft : null
   const ali = aliDraft?.source === source ? aliDraft : null
+  const inDeploy = deployReceipt?.state === 'deploying'
+  // A Host operation freezes both editors, including credential reveal/clear.
+  const editorsLocked = savingAtomic || deployBusy || inDeploy
   const safeRevision = (v: number) => Number.isSafeInteger(v) && v >= 0 && v < Number.MAX_SAFE_INTEGER
   const readyRevisions = !!https && !!ali && safeRevision(https.revision) && safeRevision(ali.revision) &&
     (!https.host_env_sha256 || (https.host_env_sha256 === ali.host_env_sha256 &&
@@ -244,7 +237,7 @@ export function XDriveCaddyDetailV1({
     !(https?.host_pending || ali?.host_pending) &&
     (!https?.changed || !!https.valid) &&
     (ali?.action === 'keep' || !!ali?.valid)
-  const canSaveAtomic = !!source.saveCaddyConfiguration && readyAtomic && dirtyAtomic && !savingAtomic
+  const canSaveAtomic = !!source.saveCaddyConfiguration && readyAtomic && dirtyAtomic && !editorsLocked
 
   const saveAtomic = async () => {
     if (!canSaveAtomic || !https || !ali || !source.saveCaddyConfiguration ||
@@ -314,7 +307,8 @@ export function XDriveCaddyDetailV1({
     service.health_state === 'ready' && service.local_tls_state === 'verified'
   const bad = service.health_state === 'failed'
   const primary = healthy ? '网关运行正常' : bad ? '网关检查异常' : '网关状态未确认'
-  const inDeploy = deployReceipt?.state === 'deploying'
+  const displayedDeployError = deployReceipt?.state === 'failed'
+    ? caddyHostDeployFailureMessage(deployReceipt) : deployError
   // A historical success blocks retries of THAT precise four-field target,
   // not a later, independently saved Host .env CAS fingerprint.
   const validPendingTarget = config?.source === 'host-env' &&
@@ -334,6 +328,16 @@ export function XDriveCaddyDetailV1({
     /^[0-9a-f]{64}$/.test(config.host_env_sha256 ?? '') &&
     (config.desired_enabled || config.desired_lan_enabled === true) &&
     !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy
+
+  const refreshAllCaddy = () => {
+    // Refresh is read-only, but rereading editor models would discard drafts.
+    if (refreshing || hasUnsavedEdits || dirtyAtomic || savingAtomic || deployBusy ||
+        savePendingRef.current || deployPendingRef.current) return
+    setConfigRevision((value) => value + 1)
+    setAtomicRefreshID((value) => value + 1)
+    setHistoryRefreshID((value) => value + 1)
+    onRefreshStatus()
+  }
   const startDeploy = async () => {
     if ((!canDeploy && !canRestart) || !source.startCaddyDeploy ||
         deployPendingRef.current) return
@@ -388,15 +392,18 @@ export function XDriveCaddyDetailV1({
       }
       if (status.state === 'deployed') {
         setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
+        setAtomicRefreshID((value) => value + 1)
         changed()
       } else if (status.state === 'failed') {
         setDeployError(caddyHostDeployFailureMessage(status))
+        setAtomicRefreshID((value) => value + 1)
         changed()
       }
     } catch {
       if (epoch === deployEpoch.current) {
         setDeployError('重新部署结果尚未确认；正在从宿主机记录恢复，勿重复操作。')
         setHistoryRefreshID((n) => n + 1)
+        setAtomicRefreshID((value) => value + 1)
         changed()
       }
     } finally {
@@ -427,6 +434,7 @@ export function XDriveCaddyDetailV1({
           } else {
             setDeployError(caddyHostDeployFailureMessage(next))
           }
+          setAtomicRefreshID((value) => value + 1)
           changed()
         } else {
           setDeployPollSeq((n) => n + 1)
@@ -479,12 +487,9 @@ export function XDriveCaddyDetailV1({
                 </Typography>
               )}
             </Box>
-            <Button size="small" variant="outlined" onClick={() => {
-              if (hasUnsavedEdits) return
-              setConfigRevision((value) => value + 1)
-              setHistoryRefreshID((value) => value + 1)
-              onRefreshStatus()
-            }} disabled={refreshing || hasUnsavedEdits} aria-busy={refreshing || undefined}>
+            <Button size="small" variant="outlined" onClick={refreshAllCaddy}
+              disabled={refreshing || hasUnsavedEdits || dirtyAtomic || savingAtomic || deployBusy}
+              aria-busy={refreshing || undefined}>
               重新检测
             </Button>
           </Stack>
@@ -514,7 +519,8 @@ export function XDriveCaddyDetailV1({
           <Stack direction="row" alignItems="center" spacing={1}
             data-xdrive-caddy-v1-config-read-failed sx={{ mt: 1 }}>
             <Typography variant="caption" color="text.secondary">无法读取管理配置。</Typography>
-            <Button size="small" onClick={() => setConfigRevision((v) => v + 1)}>重试</Button>
+            <Button size="small" onClick={refreshAllCaddy}
+              disabled={refreshing || hasUnsavedEdits || dirtyAtomic || editorsLocked}>重试</Button>
           </Stack>
         )}
       </Box>
@@ -522,13 +528,13 @@ export function XDriveCaddyDetailV1({
       <Box id="caddy-v1-config" data-xdrive-caddy-v1-config sx={{ scrollMarginTop: 72 }}>
         <Stack spacing={1.5}>
           <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={atomicRefreshID}
-            inlineEdit atomicMode atomicSaving={savingAtomic} onAtomicDraft={setHTTPSDraft}
+            inlineEdit atomicMode atomicSaving={editorsLocked} onAtomicDraft={setHTTPSDraft}
             onDirtyChange={onHTTPSDirtyChange} onConfigurationChanged={changed} />
           <XDriveCaddyAliDNSPanel source={source} refreshID={atomicRefreshID}
-            atomicMode atomicSaving={savingAtomic} onAtomicDraft={setAliDraft}
+            atomicMode atomicSaving={editorsLocked} onAtomicDraft={setAliDraft}
             onDirtyChange={onAliDNSDirtyChange} onConfigurationChanged={changed} />
           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}
-            data-xdrive-caddy-v11-atomic-save aria-busy={savingAtomic || undefined}>
+            data-xdrive-caddy-v11-atomic-save aria-busy={editorsLocked || undefined}>
             <Stack spacing={1} alignItems="flex-start">
               <Button variant="contained" size="small" disabled={!canSaveAtomic}
                 data-xdrive-caddy-v11-save-only onClick={() => setConfirmAtomic(true)}>
@@ -542,7 +548,7 @@ export function XDriveCaddyDetailV1({
                 </Button>
               )}
               {dirtyAtomic && (
-                <Button size="small" variant="text" disabled={savingAtomic}
+                <Button size="small" variant="text" disabled={editorsLocked}
                   onClick={() => setConfirmDiscard(true)}>放弃未保存的修改</Button>
               )}
               {(!source.saveCaddyConfiguration || !readyRevisions ||
@@ -557,7 +563,7 @@ export function XDriveCaddyDetailV1({
               <Box sx={{ minHeight: 24, width: '100%' }} aria-live="polite">
                 {atomicError && <XDriveStatusAlert tone="bad">{atomicError}</XDriveStatusAlert>}
                 {atomicNotice && <XDriveStatusAlert tone="good">{atomicNotice}</XDriveStatusAlert>}
-                {deployError && <XDriveStatusAlert tone="bad">{deployError}</XDriveStatusAlert>}
+                {displayedDeployError && <XDriveStatusAlert tone="bad">{displayedDeployError}</XDriveStatusAlert>}
                 {deployReceipt?.state === 'deployed' && (
                   <Typography variant="caption" color="text.secondary"
                     data-xdrive-caddy-local-runtime-state>
@@ -584,7 +590,7 @@ export function XDriveCaddyDetailV1({
             confirmLabel={canRestart ? '确认重启' : '重新部署'}
             onCancel={() => setConfirmDeploy(false)}
             onConfirm={() => { void startDeploy() }} />
-          <XDriveConfirmDialog open={confirmDiscard} loading={savingAtomic}
+          <XDriveConfirmDialog open={confirmDiscard} loading={editorsLocked}
             title="放弃未保存的 Caddy 草稿"
             description="重新读取已保存的配置；未保存的输入和凭据操作将被清除。"
             confirmLabel="放弃草稿" onCancel={() => setConfirmDiscard(false)}

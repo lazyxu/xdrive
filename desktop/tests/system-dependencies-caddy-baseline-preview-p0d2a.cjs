@@ -96,7 +96,10 @@ test('P0-D2a: removed baseline UI cannot accidentally adopt Host state or reflow
 test('P0-D2a: page refresh and atomic Save still guard unsaved drafts after UI cleanup', () => {
   const owner = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   const legacy = read('ui/shared/src/mui/CaddyHostBaselinePreviewPanel.tsx')
-  assert.match(owner, /if \(hasUnsavedEdits\) return/)
+  assert.match(owner, /const refreshAllCaddy = \(\) =>/)
+  assert.match(owner, /refreshing \|\| hasUnsavedEdits \|\| dirtyAtomic/)
+  assert.match(owner, /savePendingRef.current \|\| deployPendingRef.current/)
+  assert.match(owner, /setAtomicRefreshID\(\(value\) => value \+ 1\)/)
   assert.match(owner, /savePendingRef\.current/)
   assert.match(owner, /epoch !== saveEpoch\.current/)
   assert.match(owner, /onDirtyChange=\{onHTTPSDirtyChange\}/)
