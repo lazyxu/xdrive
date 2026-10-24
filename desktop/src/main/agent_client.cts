@@ -1955,6 +1955,18 @@ export type AgentMediaBaiduMapCoverage = {
   map_runtime_verified: false
 }
 
+export type AgentMediaBaiduMapCoverageReasons = {
+  scope: 'indexed_ready_photoassets'
+  valid_gps_assets: number
+  eligible_bd09_assets: number
+  not_eligible_bd09_assets: number
+  consent_unavailable_assets: number
+  consent_source_changed_assets: number
+  derived_missing_assets: number
+  derived_invalid_assets: number
+  map_runtime_verified: false
+}
+
 export type AgentMediaPlacesPage = {
   items: AgentMediaPlaceFacet[]
   total_count: number
@@ -2840,6 +2852,11 @@ export class AgentIPCClient {
   mediaBaiduMapCoverage(signal?: AbortSignal) {
     return this.request<AgentMediaBaiduMapCoverage>(
       'GET', '/v1/media/places/baidu-coverage', undefined, 10_000, signal)
+  }
+
+  mediaBaiduMapCoverageReasons(signal?: AbortSignal) {
+    return this.request<AgentMediaBaiduMapCoverageReasons>(
+      'GET', '/v1/media/places/baidu-coverage-reasons', undefined, 10_000, signal)
   }
 
   mediaPlacesPage(limit = 48, offset = 0) {

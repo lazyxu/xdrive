@@ -22,7 +22,7 @@ import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduJSAPI4Status,
+  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, onOpenViewportPhotos,
   mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
@@ -40,6 +40,7 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   getBaiduMapCoverage?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverage']
+  getBaiduMapCoverageReasons?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverageReasons']
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduIsolatedChildTicket?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduIsolatedChildTicket']
   onOpenBaiduNativeCell?: (selection: MediaBaiduNativeCellSelection,
@@ -267,7 +268,8 @@ export function XDriveMediaGalleryPlacesMap({
         </Typography>
       </Box>
       <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
-        getCoverage={getBaiduMapCoverage} ownerScope={diagnosticScope}/></Box>
+        getCoverage={getBaiduMapCoverage} getReasons={getBaiduMapCoverageReasons}
+        ownerScope={diagnosticScope}/></Box>
       {onMapPhotoScopeChange && mapMode === 'isolated' && !desktopOnly ? (
         <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
           <Stack direction="row" flexWrap="wrap" gap={1} sx={{ alignItems:'center' }}>

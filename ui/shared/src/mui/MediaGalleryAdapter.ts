@@ -177,6 +177,8 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   getBaiduMapCoverage?: (signal: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<import('../models').MediaBaiduMapCoverage>>
+  getBaiduMapCoverageReasons?: (signal: AbortSignal) => Promise<
+    XDriveMediaGalleryTransportResult<import('../models').MediaBaiduMapCoverageReasons>>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
@@ -620,6 +622,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     getBaiduMapCoverage: port.getBaiduMapCoverage
       ? (signal) => resolveXDriveTransport(port.getBaiduMapCoverage!(signal))
+      : undefined,
+    getBaiduMapCoverageReasons: port.getBaiduMapCoverageReasons
+      ? (signal) => resolveXDriveTransport(port.getBaiduMapCoverageReasons!(signal))
       : undefined,
     getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
       ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))

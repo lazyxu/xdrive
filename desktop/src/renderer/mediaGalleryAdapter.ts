@@ -89,6 +89,8 @@ export function createDesktopMediaGalleryDataSource(
       ),
     getBaiduMapCoverage: signal => xDriveDesktopViewportRequest(signal, requestID =>
       agent.getMediaBaiduMapCoverage(requestID)),
+    getBaiduMapCoverageReasons: signal => xDriveDesktopViewportRequest(signal, requestID =>
+      agent.getMediaBaiduMapCoverageReasons(requestID)),
     getBaiduMapConsent: (nodeID) => agent.getMediaBaiduConsent(nodeID),
     saveBaiduMapConsent: (nodeID, input) => agent.saveMediaBaiduConsent(nodeID, input),
     revokeBaiduMapConsent: (nodeID, revision) => agent.revokeMediaBaiduConsent(nodeID, revision),

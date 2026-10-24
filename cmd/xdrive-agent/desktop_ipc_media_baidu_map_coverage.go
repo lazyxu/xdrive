@@ -34,3 +34,30 @@ func (h *desktopIPCHandler) mediaBaiduMapCoverage(w http.ResponseWriter, r *http
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, counts)
 }
+
+func (h *desktopIPCHandler) mediaBaiduMapCoverageReasons(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.URL.RawQuery != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_map_coverage_reasons", "invalid map coverage reasons query")
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaBaiduMapCoverageReasons(context.Context) (client.MediaBaiduMapCoverageReasons, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "unsupported_map_coverage_reasons", "update Agent for map coverage reasons")
+		return
+	}
+	counts, err := provider.CloudMediaBaiduMapCoverageReasons(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	if !counts.ValidForTransport() {
+		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_map_coverage_reasons", "map coverage reasons unavailable")
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, counts)
+}
