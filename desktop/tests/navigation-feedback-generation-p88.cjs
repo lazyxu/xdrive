@@ -35,27 +35,31 @@ test('P88 actual React hook has zero stale visible paints on changed delay and r
   }
   let renderer
   try {
-    await act(async () => {
+    // The initial paint must be inspected before advancing the event loop.
+    // Async act can run the real 5ms timer first on a loaded CI runner and
+    // mistake the legitimate delayed Spinner for a stale first-frame paint.
+    act(() => {
       renderer = Renderer.create(React.createElement(Probe, { pending: true, delay: 5 }))
     })
     assert.equal(renderer.root.findByType('output').children[0], 'quiet')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
     assert.equal(renderer.root.findByType('output').children[0], 'shown')
     paints.length = 0
-    await act(async () => {
+    act(() => {
       renderer.update(React.createElement(Probe, { pending: true, delay: 5000 }))
     })
     assert.ok(paints.length)
     assert.ok(paints.every(paint => paint.visible === false),
       'old Boolean spinner must not appear in even the FIRST new render')
     assert.equal(renderer.root.findByType('output').children[0], 'quiet')
-    await act(async () => {
+    act(() => {
       renderer.update(React.createElement(Probe, { pending: false, delay: 5000 }))
     })
     paints.length = 0
-    await act(async () => {
+    act(() => {
       renderer.update(React.createElement(Probe, { pending: true, delay: 5 }))
     })
+    assert.equal(renderer.root.findByType('output').children[0], 'quiet')
     assert.ok(paints.every(paint => !paint.visible),
       'next same-component request must begin visually quiet')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
