@@ -12,11 +12,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Superseded PR heads can be cancelled. Master runs must survive newer
-  # pushes long enough to publish their exact snapshot artifacts; otherwise
-  # frequent merges can starve the rolling release indefinitely.
-  # GitHub coalesces pending runs in this group, retaining the running run.
+  # PRs share a group so newer commits cancel obsolete PR runs. Pushes/tags
+  # use unique run IDs: GitHub otherwise cancels an earlier *pending* master
+  # workflow on every new commit, even with cancel-in-progress set to false.
+  # More runs may consume extra CI minutes; the existing SHA/ancestry release
+  # guards fence stale publisher runs without discarding pending artifacts.
+  # Keep each snapshot's build/publish prerequisites alive until completed.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

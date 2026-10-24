@@ -207,6 +207,12 @@ jobs:
     if: inputs.publish
     needs: [verify-client-artifacts, server-images, server-deploy]
     runs-on: ubuntu-latest
+    # Master builds run independently, but floating edge/Snapshot promotion
+    # must be serialized. queue:max preserves every pending publisher.
+    concurrency:
+      group: xdrive-release-promote-${{ github.ref }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: write
       packages: write
@@ -305,6 +311,27 @@ jobs:
           )
           gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
           gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
+      - name: Reject stale master snapshot before channel promotion
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          # Build completion order differs from commit order. Reject an old
+          # finished build BEFORE it changes floating GHCR edge image tags.
+          # This project has a snapshot tag; an unreadable tag fails closed.
+          published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
+          [[ "$published" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Snapshot tag is unavailable or is not a commit; refusing channel promotion." >&2
+            exit 1
+          }
+          relation="$(gh api "repos/$repo/compare/$published...$GITHUB_SHA" --jq '.status')"
+          case "$relation" in
+            ahead|identical) ;;
+            *) echo "Refusing stale Snapshot promotion before channel update: $relation" >&2; exit 1 ;;
+          esac
       - name: Log in to GHCR for channel promotion
         uses: docker/login-action@v3
         with:
