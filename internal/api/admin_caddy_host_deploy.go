@@ -20,6 +20,7 @@ type caddyEnvDeployStatus struct {
 	RolledBack        bool   `json:"rolled_back,omitempty"`
 	Error             string `json:"error,omitempty"`
 	LocalRuntimeState string `json:"local_runtime_state,omitempty"`
+	RecordedAt        string `json:"recorded_at,omitempty"`
 }
 
 // These are fixed Host Control protocol error codes, never raw Docker, env,
@@ -79,6 +80,12 @@ func (s *Server) readCaddyEnvDeployStatus(id string) (caddyEnvDeployStatus, erro
 	if status.State != "deploying" && status.State != "deployed" && status.State != "failed" ||
 		(archived && status.State == "deploying") {
 		return status, errCaddyHostEnvUnavailable
+	}
+	// Read-only archive metadata; a Host terminal is historical, never current
+	// Applied. Ignore a caller-supplied recorded_at in all receipt bytes.
+	status.RecordedAt = ""
+	if archived {
+		status.RecordedAt = info.ModTime().UTC().Format(time.RFC3339)
 	}
 	if status.State == "failed" {
 		status.Error = safeCaddyEnvDeployError(status.Error)

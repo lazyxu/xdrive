@@ -52,6 +52,7 @@ type AdminCaddyDeployState struct {
 	RolledBack        bool   `json:"rolled_back,omitempty"`
 	Error             string `json:"error,omitempty"`
 	LocalRuntimeState string `json:"local_runtime_state,omitempty"`
+	RecordedAt        string `json:"recorded_at,omitempty"`
 }
 
 func (c *Client) StartAdminCaddyDeploy(ctx context.Context) (AdminCaddyDeployState, error) {
@@ -67,6 +68,7 @@ func (c *Client) AdminCaddyDeployStatus(ctx context.Context, id string) (AdminCa
 
 type AdminCaddyDeployHistoryPage struct {
 	Items         []AdminCaddyDeployState `json:"items"`
+	Current       *AdminCaddyDeployState  `json:"current,omitempty"`
 	Scope         string                  `json:"scope"`
 	RetentionDays int                     `json:"retention_days"`
 }

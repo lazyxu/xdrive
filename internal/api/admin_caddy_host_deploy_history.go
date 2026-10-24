@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -11,6 +12,57 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// Recover a lost Start ACK from the existing single-slot Host queue/active
+// operation. This read never restarts Caddy, authorizes a deployment, or
+// exposes a queued Save/reveal payload (which may contain AliDNS credentials).
+// A synthetic "deploying" here means accepted/pending, not physically applied.
+func (s *Server) currentCaddyHostDeploy() *caddyEnvDeployStatus {
+	if s == nil || s.HostControlDir == "" {
+		return nil
+	}
+	for _, name := range []string{"caddy-env-active.json", caddyHostEnvRequestName} {
+		path := filepath.Join(s.HostControlDir, name)
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0007 != 0 ||
+			info.Size() == 0 || info.Size() > 4096 ||
+			time.Since(info.ModTime()) > 10*time.Minute ||
+			time.Until(info.ModTime()) > 15*time.Second {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil || len(raw) == 0 || len(raw) > 4096 {
+			return nil
+		}
+		var op struct {
+			Operation string `json:"operation"`
+			RequestID string `json:"request_id"`
+			SHA256    string `json:"expected_sha256"`
+		}
+		if json.Unmarshal(raw, &op) != nil {
+			return nil
+		}
+		if op.Operation != "deploy" {
+			return nil
+		}
+		if len(op.RequestID) != 24 || strings.Trim(op.RequestID, "0123456789abcdef") != "" ||
+			!validCaddyHostEnvSHA(op.SHA256) {
+			return nil
+		}
+		if status, err := s.readCaddyEnvDeployStatus(op.RequestID); err == nil &&
+			status.SHA256 == op.SHA256 {
+			return &status
+		}
+		return &caddyEnvDeployStatus{
+			Protocol: caddyHostEnvProtocol, RequestID: op.RequestID,
+			SHA256: op.SHA256, State: "deploying",
+		}
+	}
+	return nil
+}
 
 // Caddy Deploy history is the existing immutable Host terminal archive,
 // NOT PostgreSQL Desired, an Applied Receipt or an unbounded audit log.
@@ -26,7 +78,7 @@ func (s *Server) adminCaddyEnvDeployHistory(c *gin.Context) {
 	d, err := os.Lstat(folder)
 	if errors.Is(err, os.ErrNotExist) {
 		c.JSON(http.StatusOK, gin.H{"items": []caddyEnvDeployStatus{},
-			"scope": "host-terminal", "retention_days": 7})
+			"scope": "host-terminal", "retention_days": 7, "current": s.currentCaddyHostDeploy()})
 		return
 	}
 	if err != nil || !d.IsDir() || d.Mode().Perm()&0o027 != 0 {
@@ -88,5 +140,6 @@ func (s *Server) adminCaddyEnvDeployHistory(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"items": items, "scope": "host-terminal", "retention_days": 7,
+		"current": s.currentCaddyHostDeploy(),
 	})
 }
