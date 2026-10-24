@@ -43,7 +43,7 @@ export function xDriveResolveSecureBaiduMapTarget(
         url.username || url.password || url.search || url.hash ||
         (url.pathname !== '/' && url.pathname !== '') ||
         !/^https:\/\/[^/?#]+$/.test(url.origin)) return null
-    return { origin: url.origin, url: url.origin + '/#/app/gallery?section=places' }
+    return { origin: url.origin, url: url.origin + '/?places_map_mode=isolated#/app/gallery?section=places' }
   } catch { return null }
 }
 
@@ -54,7 +54,8 @@ export function xDriveBaiduMapNavigationAllowed(
   try {
     const url = new URL(rawURL)
     return url.protocol === 'https:' && url.origin === trustedOrigin &&
-      !url.username && !url.password && !url.search &&
+      !url.username && !url.password &&
+      url.search === '?places_map_mode=isolated' &&
       (url.pathname === '/' || url.pathname === '/index.html')
   } catch { return false }
 }

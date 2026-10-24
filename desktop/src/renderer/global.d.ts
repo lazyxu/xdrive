@@ -495,7 +495,7 @@ declare global {
         }
       }>>
       openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
-      openBaiduMapSecure: () => Promise<DesktopResult<{
+      openBaiduMapSecure: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{
         opened: true; separate_login_required: true
       }>>
       startNativeDragOut: (relativePath: string) => void

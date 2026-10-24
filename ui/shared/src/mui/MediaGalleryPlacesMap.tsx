@@ -48,7 +48,7 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenBaiduNativeViewport?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
     scope: XDriveBaiduMapPhotoScope) => void
   onBaiduNativeCellInvalidated?: () => void
-  onOpenSecureDesktopMap?: () => void
+  onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   diagnosticScope?: string
   onOpenDiagnostics?: () => void
   activePlaceID?: string
@@ -363,7 +363,7 @@ export function XDriveMediaGalleryPlacesMap({
         )
       ) : desktopOnly ? (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
-          <Button variant="outlined" onClick={onOpenSecureDesktopMap}>在独立 HTTPS 安全窗口打开动态地图</Button>
+          <Button variant="outlined" onClick={() => onOpenSecureDesktopMap?.(mapPhotoScope)}>在独立 HTTPS 安全窗口打开动态地图</Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             动态地图由 Server 签名发布，不在 Electron file 页面加载第三方脚本。
           </Typography>
