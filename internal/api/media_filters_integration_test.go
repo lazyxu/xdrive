@@ -500,4 +500,13 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatalf("unsafe OCR failure detail: %+v error=%v", failedDetail, err)
 	}
 	assertIDs("failed OCR must not match", mediaQueryOptions{Search: "invoice 2026"}, "")
+	// Opt-in real JPEG -> pinned PP-OCR/CRNN -> PostgreSQL -> Gallery search.
+	// Keep normal Go/API CI independent of model/Docker network conditions.
+	if os.Getenv("XD_OCR_REAL_MODEL_E2E") == "1" {
+		t.Run("real JPEG pinned OCR model to Gallery search", func(t *testing.T) {
+			runOCRRealModelGalleryFixture(t, db, server, owner.ID,
+				owner.SessionVersion, nodes[0], files[0], metadata[0],
+				assets[0], nodes[1].ID)
+		})
+	}
 }
