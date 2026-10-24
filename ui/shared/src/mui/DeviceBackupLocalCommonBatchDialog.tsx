@@ -80,6 +80,9 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
   const [reviewPage, setReviewPage] = useState<XDriveLocalBackupRecoveryReview | null>(null)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewError, setReviewError] = useState('')
+  // Day-to-day backup should not expose a technical SQL receipt audit panel.
+  // Preserve the read-only diagnostics, but require deliberate expansion.
+  const [showRecoveryDetails, setShowRecoveryDetails] = useState(false)
 
   const refresh = useCallback(async () => {
     const ticket = epoch.current
@@ -143,6 +146,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     reviewGeneration.current += 1
     setReviewPage(null)
     setReviewError('')
+    setShowRecoveryDetails(false)
     setReviewLoading(false)
     setStatus(null)
     setHistory([])
@@ -265,10 +269,9 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
       <DialogTitle>本机文件夹备份 · 手动增量</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          <Alert severity="warning">
-            此操作会真实写入云端。当前版本处理已授权 Root 中通过安全验证的普通文件（含嵌套目录），
-            单文件受 Server 上传额度约束。尚未验证整轮备份完成；仅 Backup，不删除本地或云端内容，
-            不会标记整轮备份完成。已使用旧版首文件 Stage 的来源必须先完成单独迁移。
+          <Alert severity="info">
+            本机增量备份只上传新增或修改的普通文件（含嵌套目录），不删除本地或云端文件。
+            单文件受 Server 上传额度约束。旧版首文件 Stage 来源需要先单独迁移。
           </Alert>
           <Typography variant="body2">
             Agent 先完成本机差异扫描，再逐文件读取私有持久任务、核对原始 SQL 回执，
@@ -276,15 +279,21 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
           </Typography>
           {pending || status?.running ? (
             <Typography role="status" variant="body2">
-              Agent 正在扫描、上传和核对结果；请使用下方只读查询查看状态。
+              {status?.running
+                ? `本轮进行中：已检查 ${status.inspected_files} 个文件，已上传 ${status.confirmed_files} 个，已跳过 ${status.skipped_files} 个未变化文件。`
+                : '正在请求本机 Agent 启动增量备份…'}
             </Typography>
           ) : null}
           {status?.state === 'partial' && !pending ? (
             <Alert severity="info">
-              本轮已核实 {status.confirmed_files} 个写入文件（{formatBytes(status.confirmed_bytes)}），
+              {status.uncertain_files === 0 && status.unsupported_files === 0 &&
+              status.confirmed_files + status.skipped_files === status.inspected_files
+                ? '本轮扫描及已支持文件的处理已结束。'
+                : '本轮扫描已结束，仍有未支持或未确认的文件。'}
+              已上传 {status.confirmed_files} 个（{formatBytes(status.confirmed_bytes)}），
               跳过 {status.skipped_files} 个未变化文件。
-              {status.unsupported_files > 0 ? `另有 ${status.unsupported_files} 个暂未支持的文件未上传。` : ''}
-              这不是完整备份成功回执。
+              {status.unsupported_files > 0 ? `另有 ${status.unsupported_files} 个未支持的文件未上传。` : ''}
+              这是文件级运行结果，不代表整库现时 CAS 完整性证明。
             </Alert>
           ) : null}
           {status?.state === 'paused' || status?.state === 'cancelled' ? (
@@ -310,7 +319,13 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
           </Button>
           {actions.review && actions.cancelReview ? (
             <Stack spacing={0.75}>
-              <Typography variant="subtitle2">原始任务恢复核查（只读）</Typography>
+              <Button size="small" variant="text" disabled={reviewLoading}
+                onClick={() => setShowRecoveryDetails((value) => !value)}>
+                {showRecoveryDetails ? '收起故障诊断' : '故障诊断（高级）'}
+              </Button>
+              {showRecoveryDetails ? (
+                <Stack spacing={0.75}>
+                  <Typography variant="subtitle2">原始任务恢复核查（只读）</Typography>
               <Typography variant="caption" color="text.secondary">
                 仅核对当前 Owner 的持久原始 SQL 回执，每页最多 16 个文件。
                 已提交仅代表历史回执，不证明当前云端文件或 CAS 数据仍然完整。
@@ -347,7 +362,9 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                   ) : <Typography variant="caption" color="text.secondary">当前清单已无更多可核查文件</Typography>}
                 </Stack>
               ) : null}
-              {reviewError ? <Alert severity="warning">{reviewError}</Alert> : null}
+                  {reviewError ? <Alert severity="warning">{reviewError}</Alert> : null}
+                </Stack>
+              ) : null}
             </Stack>
           ) : null}
           <Stack spacing={0.75}>
@@ -359,12 +376,12 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
               <Stack key={item.run_id} spacing={0.25} sx={{ py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
                 <Typography variant="body2">
                   {new Date(item.finished_at).toLocaleString('zh-CN')} ·
-                  {item.state === 'partial' ? '部分完成' : item.state === 'uncertain' ? '结果待核对' :
+                  {item.state === 'partial' ? (item.unsupported_files > 0 ? '本轮已结束（有未支持文件）' : '本轮已结束') : item.state === 'uncertain' ? '结果待核对' :
                     item.state === 'paused' ? '已暂停' : '已结束本轮'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   已上传 {item.confirmed_files} · 已跳过 {item.skipped_files} ·
-                  不确定 {item.uncertain_files} · {formatBytes(item.confirmed_bytes)}
+                  未支持 {item.unsupported_files} · 待核对 {item.uncertain_files} · {formatBytes(item.confirmed_bytes)}
                 </Typography>
               </Stack>
             ))}
