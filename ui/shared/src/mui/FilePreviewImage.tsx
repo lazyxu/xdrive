@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Box, Typography } from '@mui/material'
+import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
@@ -50,6 +50,18 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     original: pendingImage(), thumbnail: pendingImage(),
   })
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [retryNonce, setRetryNonce] = useState(0)
+  const sourceIdentity = JSON.stringify([target.id, target.revision, kind])
+  // Capture the source AND attempt in each retry handler. A retained callback
+  // must never restart the previous Node's authorized image request.
+  const retrySourceRef = useRef({ identity: sourceIdentity })
+  if (retrySourceRef.current.identity !== sourceIdentity) {
+    retrySourceRef.current = { identity: sourceIdentity }
+  }
+  const retrySource = retrySourceRef.current
+  const retryNonceRef = useRef(retryNonce)
+  retryNonceRef.current = retryNonce
+  const retryQueuedRef = useRef(false)
   const generationRef = useRef(0)
   const decodingRef = useRef(new Set<string>())
   const acquireSourcesRef = useRef<(() => void) | null>(null)
@@ -63,6 +75,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const hasImagePreview = Boolean(loadImagePreview)
 
   useEffect(() => {
+    retryQueuedRef.current = false
     const generation = ++generationRef.current
     const requestController = new AbortController()
     const ownedURLs = new Set<string>()
@@ -126,7 +139,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       if (acquireSourcesRef.current === acquireAvailableSources) acquireSourcesRef.current = null
       for (const url of ownedURLs) release(url)
     }
-  }, [kind, target.id, target.revision])
+  }, [kind, target.id, target.revision, retryNonce])
 
   // Web metadata can supply a thumbnail loader after the Viewer has mounted.
   // Acquire that role once without restarting an already-pending original.
@@ -134,17 +147,20 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     acquireSourcesRef.current?.()
   }, [hasImagePreview, hasPreviewURL])
 
-  const failImage = useCallback((role: ImageRole, url: string) => {
+  const failImage = useCallback((role: ImageRole, url: string, generation: number) => {
+    // A retired img/canvas event must not fail a new attempt, including when
+    // two signed image tickets happen to resolve to the same URL.
+    if (generationRef.current !== generation) return
     setSources((current) => current[role].url === url ? {
       ...current, [role]: { url, status: 'failed' },
     } : current)
   }, [])
 
-  const decodeImage = (role: ImageRole, url: string, image: HTMLImageElement) => {
+  const decodeImage = (role: ImageRole, url: string, image: HTMLImageElement, generation: number) => {
+    if (generationRef.current !== generation) return
     const key = `${role}:${url}`
     if (decodingRef.current.has(key)) return
     decodingRef.current.add(key)
-    const generation = generationRef.current
     void (async () => {
       if (typeof image.decode === 'function') await image.decode()
       if (image.naturalWidth <= 0 || image.naturalHeight <= 0) throw new Error('Empty preview image')
@@ -153,20 +169,29 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         ...current, [role]: { url, status: 'ready', image },
       } : current)
     })().catch(() => {
-      if (generationRef.current === generation) failImage(role, url)
+      if (generationRef.current === generation) failImage(role, url, generation)
     })
   }
 
+  const renderGeneration = generationRef.current
   const readyRole = sources.original.status === 'ready' ? 'original'
     : sources.thumbnail.status === 'ready' ? 'thumbnail' : null
   const readySource = readyRole ? sources[readyRole] : null
   const readyURL = readySource?.url || ''
   const handleTransformError = useCallback(() => {
-    if (readyRole) failImage(readyRole, readyURL)
-  }, [failImage, readyRole, readyURL])
+    if (readyRole) failImage(readyRole, readyURL, renderGeneration)
+  }, [failImage, readyRole, readyURL, renderGeneration])
   const loading = sources.original.status === 'loading' ||
     (!readySource && sources.thumbnail.status === 'loading')
   const failed = !readySource && !loading
+  const canRetry = hasPreviewURL || hasImagePreview
+  const retryPreview = () => {
+    if (retrySourceRef.current !== retrySource ||
+        retryNonceRef.current !== retryNonce ||
+        retryQueuedRef.current || !failed || !canRetry) return
+    retryQueuedRef.current = true
+    setRetryNonce((value) => value + 1)
+  }
   const presentationState: XDriveFilePreviewPresentationState = readySource ? 'ready' : failed ? 'failed' : 'loading'
   useEffect(() => {
     presentationCallbackRef.current?.(presentationState)
@@ -211,8 +236,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
             aria-hidden={!visible || undefined}
             decoding="async"
             draggable={false}
-            onLoad={(event) => decodeImage(role, source.url, event.currentTarget)}
-            onError={() => failImage(role, source.url)}
+            onLoad={(event) => decodeImage(role, source.url, event.currentTarget, renderGeneration)}
+            onError={() => failImage(role, source.url, renderGeneration)}
             style={{ visibility: visible ? 'visible' : 'hidden' }}
             sx={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -244,7 +269,18 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
           />
         </Box>
       ) : null}
-      {failed ? (fallback ?? <Typography role="alert" color="text.secondary">图片预览失败</Typography>) : null}
+      {failed ? (
+        <Stack data-xdrive-image-preview-retry spacing={1} alignItems="center"
+          justifyContent="center" sx={{ position: 'absolute', inset: 0, p: 2, textAlign: 'center' }}>
+          {fallback ?? <Typography role="alert" color="text.secondary">图片预览失败</Typography>}
+          {canRetry ? (
+            <Button size="small" variant="outlined" aria-label="重试预览"
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              onClick={retryPreview}>重试预览</Button>
+          ) : null}
+        </Stack>
+      ) : null}
     </Box>
   )
   return <>{children ? children(still, Boolean(readySource)) : still}</>
