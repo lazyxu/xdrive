@@ -40,9 +40,15 @@ class DriveAppTest {
         compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
+        // Controller.connect() advances the Main coroutine separately from the
+        // current Compose frame. Waiting only for idleness races on CI.
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.screen == Screen.LOGIN }
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithText("登录", useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
@@ -77,6 +83,7 @@ class DriveAppTest {
         compose.onNodeWithTag("request-error").assertIsDisplayed()
         compose.onNodeWithTag("allow-http").performClick()
         compose.onNodeWithText("连接服务器").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.screen == Screen.LOGIN }
         compose.runOnIdle { org.junit.Assert.assertEquals(Screen.LOGIN, controller.state.value.screen) }
         compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
     }
