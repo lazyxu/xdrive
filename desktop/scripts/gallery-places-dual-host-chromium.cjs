@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 'use strict'
 // Genuine mounted React Gallery map surface in Chromium, with two local HTTPS
-// site origins and controlled synthetic SDK/Owner Cells. Never a claim of
-// live Baidu, real Gin owner traffic, production credentials or physical iOS.
+// site origins and controlled synthetic SDK/Owner Cells. An opt-in separate
+// job connects BOTH actual mounted Hosts to real Gin/PostgreSQL Owner scope
+// issue/redeem via a loopback-only proxy. No live Baidu or physical iOS.
 const assert=require('node:assert/strict')
 const fs=require('node:fs')
 const path=require('node:path')
 const os=require('node:os')
 const https=require('node:https')
-const {execFileSync}=require('node:child_process')
+const http=require('node:http')
+const {execFileSync,spawn}=require('node:child_process')
 const {createRequire}=require('node:module')
 const root=path.resolve(__dirname,'../..')
 const requireRepo=createRequire(path.join(root,'desktop/package.json'))
@@ -81,9 +83,141 @@ const certified=()=>{
   return {key:fs.readFileSync(key),cert:fs.readFileSync(cert)}
 }
 let appServer,childSessionRedeems=0,childSDKLoads=0,inlineSDKLoads=0
+let ginURL='',ginProcess=null
+const ginReady=path.join(temp,'real-gin-ready.json')
+const ginStop=path.join(temp,'real-gin-finished')
+async function startRealGin(galleryOrigin){
+  const binary=process.env.XD_PLACES_P04_GO_BINARY
+  if(!binary)return
+  assert(fs.existsSync(binary),'compiled real Gin fixture required')
+  ginProcess=spawn(binary,['-test.run=^TestPlacesP04MountedBrowserRealGinFixture$',
+    '-test.count=1','-test.timeout=4m'],{
+    env:{...process.env,XD_PLACES_P04_BROWSER_GIN:'1',
+      XD_PLACES_P04_GALLERY_ORIGIN:galleryOrigin,
+      XD_PLACES_P04_READY_FILE:ginReady,XD_PLACES_P04_STOP_FILE:ginStop},
+    stdio:['ignore','pipe','pipe'],
+  })
+  // Never echo fixture stdout/stderr: no token, key or database URL is
+  // eligible for CI logs/artifacts. Only bounded JSON readiness is read.
+  ginProcess.stdout.resume()
+  ginProcess.stderr.resume()
+  for(let tries=0;tries<100;tries++){
+    if(fs.existsSync(ginReady)){
+      const ready=JSON.parse(fs.readFileSync(ginReady,'utf8'))
+      const target=new URL(ready.url)
+      assert(ready.real_gin===true&&ready.postgresql===true &&
+        target.protocol==='http:'&&target.hostname==='127.0.0.1'&&
+        Number(target.port)>0,'real Gin is not loopback-only')
+      ginURL=target.origin
+      summary.realGin=true
+      return
+    }
+    if(ginProcess.exitCode!==null)throw Error('real Gin exited before readiness')
+    await new Promise(resolve=>setTimeout(resolve,350))
+  }
+  throw Error('real Gin startup timeout')
+}
+function proxyRealGin(req,res){
+  if(!ginURL)return content(res,503,'text/plain','unavailable')
+  const destination=new URL(req.url,ginURL)
+  const headers={...req.headers} // preserve browser Host, Origin and Fetch Metadata
+  const forward=http.request(destination,{method:req.method,headers,timeout:12000},
+    upstream=>{
+      const safe={}
+      for(const key of ['content-type','cache-control','referrer-policy',
+        'cross-origin-resource-policy','x-content-type-options']){
+        if(upstream.headers[key])safe[key]=upstream.headers[key]
+      }
+      res.writeHead(upstream.statusCode||502,safe)
+      upstream.pipe(res)
+    })
+  forward.on('timeout',()=>forward.destroy())
+  forward.on('error',()=>{if(!res.headersSent)content(res,502,'text/plain','unavailable')
+    else res.destroy()})
+  req.pipe(forward)
+}
+async function stopRealGin(){
+  if(!ginProcess)return
+  try{fs.writeFileSync(ginStop,'complete\n',{mode:0o600})}catch{}
+  const code=await new Promise(resolve=>{
+    if(ginProcess.exitCode!==null)return resolve(ginProcess.exitCode)
+    const timer=setTimeout(()=>{ginProcess.kill('SIGTERM');resolve(null)},15000)
+    ginProcess.once('exit',exitCode=>{clearTimeout(timer);resolve(exitCode)})
+  })
+  if(code!==0){
+    summary.passed=false
+    summary.errors.push('non-production Gin fixture failed')
+    process.exitCode=1
+  }
+}
 const requests=[]
 const listen=server=>new Promise((resolve,reject)=>
   server.listen(0,'127.0.0.1',error=>error?reject(error):resolve()))
+async function testActualGinIssueRedeem(page,mode){
+  if(!ginURL)return
+  // Execute real authenticated HTTP from the same Chromium document as
+  // the mounted SDK Host. Return only booleans: never a bearer or ticket.
+  const result=await page.evaluate(async target=>{
+    const base='/api/v1/media/places/baidu-jsapi/scope-handoff'
+    const authReply=await fetch('/__fixture/map-owner',{cache:'no-store'})
+    const foreignReply=await fetch('/__fixture/map-owner?account=foreign',{cache:'no-store'})
+    if(!authReply.ok||!foreignReply.ok)return {auth:false}
+    const auth=await authReply.json(),foreign=await foreignReply.json()
+    const post=async(url,token,body)=>{
+      const response=await fetch(url,{method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body:JSON.stringify(body)})
+      return {status:response.status,text:await response.text()}
+    }
+    const health=await fetch('/api/v1/media/places/baidu-jsapi/status',{
+      cache:'no-store',headers:{Authorization:'Bearer '+auth.token}})
+    const status=await health.json()
+    const scope={albumKey:'manual:Family',
+      filters:{sort_by:'captured',sort_dir:'desc',favorite:true}}
+    const camera={coordinate_space:'bd09ll',latitude:35.42,longitude:119.2,zoom:11}
+    const issued=await post(base,auth.token,{target_mode:target,scope,camera})
+    let receipt=null
+    try{receipt=JSON.parse(issued.text)}catch{}
+    const ticket=receipt?.ticket
+    if(issued.status!==200||typeof ticket!=='string')return{
+      auth:true,signed:status?.enabled===true&&
+        status?.activation_state==='authorized_signed_release' &&
+        status?.isolated_child_origin==='',issue:false}
+    const targetOther=target==='prototype'?'isolated':'prototype'
+    const foreignResult=await post(base+'/consume',foreign.token,{target_mode:target,ticket})
+    const wrong=await post(base+'/consume',auth.token,{target_mode:targetOther,ticket})
+    const correct=await post(base+'/consume',auth.token,{target_mode:target,ticket})
+    const replay=await post(base+'/consume',auth.token,{target_mode:target,ticket})
+    let accepted=null
+    try{accepted=JSON.parse(correct.text)}catch{}
+    return {
+      auth:true,
+      signed:status?.enabled===true&&
+        status?.activation_state==='authorized_signed_release' &&
+        status?.isolated_child_origin==='',
+      issue:issued.status===200&&/^[a-f0-9]{64}$/.test(ticket)&&
+        !issued.text.includes('manual:Family')&&!issued.text.includes('35.42'),
+      foreignBlocked:foreignResult.status===403,
+      wrongModeBlocked:wrong.status===403,
+      valid:correct.status===200&&accepted?.target_mode===target&&
+        accepted?.scope?.albumKey==='manual:Family'&&
+        accepted?.scope?.filters?.favorite===true&&
+        accepted?.camera?.coordinate_space==='bd09ll'&&
+        accepted?.camera?.zoom===11,
+      replayBlocked:replay.status===403,
+    }
+  },mode==='inline'?'prototype':'isolated')
+  for(const [key,label] of [
+    ['auth','synthetic test-only Owner JWT is available'],
+    ['signed','actual Gin signed release requires no Child DNS for inline'],
+    ['issue','private Owner scope issued as opaque one-use ticket'],
+    ['foreignBlocked','cross-Owner ticket consumption rejected'],
+    ['wrongModeBlocked','wrong SDK mode ticket consumption rejected'],
+    ['valid','actual Gin/PostgreSQL Owner Scope and Camera restored'],
+    ['replayBlocked','consumed Owner scope ticket cannot replay'],
+  ])record(mode+': '+label,result[key]===true)
+}
+
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -154,6 +288,7 @@ async function testMode(browser,mode,port){
     record(mode+': SDK reports BD09 camera',
       scoped.camera?.coordinate_space==='bd09ll'&&scoped.camera.zoom>=3)
     record(mode+': no SDK/runtime failure',!scoped.failed&&errors.length===0)
+    await testActualGinIssueRedeem(page,mode)
     return {mode,count:9,favoriteCount:3,selectedCount:selected.count,
       coordinateSpace:scoped.wall.bounds.coordinate_space,cameraSpace:scoped.camera.coordinate_space}
   }finally{await context.close()}
@@ -178,6 +313,10 @@ async function main(){
     const pathname=new URL(req.url||'/','https://'+host).pathname
     requests.push({host:gallery?'gallery':child?'child':'unexpected',path:pathname})
     if(gallery&&pathname==='/')return content(res,200,'text/html',resultHTML)
+    if(gallery&&ginURL&&
+      (pathname==='/__fixture/map-owner' ||
+        pathname.startsWith('/api/v1/media/places/baidu-jsapi/')))
+      return proxyRealGin(req,res)
     if(gallery&&pathname==='/bundle.js')
       return content(res,200,'text/javascript',fs.readFileSync(path.join(temp,'bundle.js')))
     if(child&&pathname==='/_xdrive_baidu_isolated/index.html')
@@ -211,6 +350,7 @@ async function main(){
   await listen(appServer)
   const port=appServer.address().port
   galleryOrigin='https://'+galleryHost+':'+port
+  await startRealGin(galleryOrigin)
   const exe=process.env.XDRIVE_BROWSER_EXECUTABLE
   assert(exe&&fs.existsSync(exe),'real Chromium executable required')
   const browser=await chromium.launch({executablePath:exe,headless:true,
@@ -238,7 +378,8 @@ async function main(){
 main().catch(error=>{
   summary.errors.push(String(error?.message||error).slice(0,600))
   process.exitCode=1
-}).finally(async()=>{
+ }).finally(async()=>{
+  await stopRealGin()
   if(appServer)await new Promise(resolve=>appServer.close(resolve))
   fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(summary,null,2)+'\n')
   console.log(JSON.stringify({sourceCommit:summary.sourceCommit,
