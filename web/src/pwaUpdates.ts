@@ -11,6 +11,8 @@ export interface XDrivePwaUpdateSnapshot {
 
 let started = false
 let registration: ServiceWorkerRegistration | null = null
+// Latest registration lookup wins: never resurrect an unregistered worker.
+let registrationLookupEpoch = 0
 let channel: BroadcastChannel | null = null
 let remoteUpdateHint = false
 let snapshot: XDrivePwaUpdateSnapshot | null = null
@@ -51,28 +53,54 @@ function markWaiting() {
   if (newlyWaiting) channel?.postMessage({ kind: 'xdrive-public-update-ready' })
 }
 function observeRegistration(found: ServiceWorkerRegistration) {
+  const replaced = registration !== found
   registration = found
   if (!observedRegistrations.has(found)) {
     observedRegistrations.add(found)
     found.addEventListener('updatefound', () => {
+      if (registration !== found) return
       const candidate = found.installing
       if (!candidate) return
       candidate.addEventListener('statechange', () => {
-        if (candidate.state === 'installed' && found.waiting && navigator.serviceWorker?.controller) {
+        if (registration === found && candidate.state === 'installed' &&
+          found.waiting && navigator.serviceWorker?.controller) {
           markWaiting()
         }
       })
     })
   }
   if (found.waiting && navigator.serviceWorker?.controller) markWaiting()
-  else refresh()
+  else if (snapshot?.phase !== 'checking' && (replaced || snapshot?.phase === 'error')) {
+    // Successful discovery of a registered worker clears previous lookup
+    // failures and obsolete 'checked' status from a retired registration.
+    publish(makeSnapshot('idle'))
+  } else refresh()
 }
 async function locateRegistration() {
+  const epoch = ++registrationLookupEpoch
   try {
     const found = await navigator.serviceWorker.getRegistration()
-    if (found) observeRegistration(found)
+    if (epoch !== registrationLookupEpoch) return
+    // A lifecycle lookup supersedes an earlier manual check. The browser may
+    // still be running the old update(), but future user clicks must not reuse
+    // its obsolete promise. Its epoch guard prevents late state mutation.
+    updateCheckInFlight = null
+    if (!found) {
+      registration = null
+      remoteUpdateHint = false
+      publish(makeSnapshot('idle'))
+      return
+    }
+    observeRegistration(found)
+    // An observed lifecycle change supersedes an earlier explicit update
+    // check. If no waiting worker exists, finish its display-only 'checking'
+    // state so a later user click is not permanently disabled.
+    if (snapshot?.phase === 'checking') publish(makeSnapshot('idle'))
   } catch {
-    publish(makeSnapshot('error', '无法读取当前应用版本状态。'))
+    if (epoch === registrationLookupEpoch) {
+      updateCheckInFlight = null
+      publish(makeSnapshot('error', '无法读取当前应用版本状态。'))
+    }
   }
 }
 export function xDrivePwaUpdateSnapshot(): XDrivePwaUpdateSnapshot {
@@ -103,10 +131,16 @@ export function startXDrivePwaUpdateObservation(): void {
   window.addEventListener('offline', refresh)
   window.addEventListener('pageshow', () => { void locateRegistration() })
   window.addEventListener('xdrive-pwa-registered', () => { void locateRegistration() })
-  navigator.serviceWorker.addEventListener('controllerchange', refresh)
+  // A controller replacement can invalidate the cached registration without
+  // navigation. Refresh the controller synchronously, then verify the currently
+  // installed registration (including browser-side unregister) asynchronously.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    refresh()
+    void locateRegistration()
+  })
   void locateRegistration()
   // First-time S1 registration happens AFTER window.load; ready resolves when it becomes active.
-  void navigator.serviceWorker.ready.then(observeRegistration).catch(() => {})
+  void navigator.serviceWorker.ready.then(() => { void locateRegistration() }).catch(() => {})
 }
 /** An internal ServiceWorkerRegistration.update has no AbortSignal. Bound the
  * caller's wait without pretending to cancel the browser's own operation. */
@@ -123,26 +157,36 @@ async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promis
       reject(new Error('update-check-deadline'))
     }, budget)
   })
+  // Never use a cached registration object for an explicit check: browsers can
+  // revoke it after site-data clearing or unregister() while this tab stays open.
+  const epoch = ++registrationLookupEpoch
+  let fresh: ServiceWorkerRegistration | null = null
   try {
     // Registration discovery and update share ONE timeout; neither is aborted.
-    const found = registration ?? await Promise.race([
+    const found = await Promise.race([
       navigator.serviceWorker.getRegistration(), deadline,
     ])
+    if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     if (!found) {
+      registration = null
+      remoteUpdateHint = false
       publish(makeSnapshot('error', '尚未检测到此网站的 Service Worker。请联网重新打开后再检查。'))
       return 'error'
     }
+    fresh = found
     if (registration !== found) observeRegistration(found)
     await Promise.race([found.update(), deadline])
+    if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     remoteUpdateHint = false
     const phase: XDrivePwaUpdatePhase = found.waiting && navigator.serviceWorker.controller
       ? 'waiting' : 'checked'
     publish(makeSnapshot(phase))
     return phase
   } catch {
-    // A real worker's waiting status is stronger evidence than the result of
-    // this one user-initiated check. Preserve it when the timeout expires.
-    if (registration?.waiting && navigator.serviceWorker?.controller) {
+    if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
+    // A freshly discovered worker's waiting status is stronger evidence than
+    // this check's timeout; a retired registration is never such evidence.
+    if (fresh?.waiting && navigator.serviceWorker?.controller) {
       markWaiting()
       return 'waiting'
     }
