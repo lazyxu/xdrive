@@ -149,6 +149,7 @@ type MediaOCR struct {
 	State    string `json:"state"`
 	Text     string `json:"text,omitempty"`
 	Language string `json:"language,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type MediaItem struct {

@@ -3,6 +3,19 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { MediaItem } from '../models'
 
+const ocrFailureLabels: Record<string, string> = {
+  analysis_failed: '分析任务执行失败',
+  model_timeout: '识别模型响应超时',
+  model_unreachable: '无法连接识别模型',
+  model_auth_rejected: '识别模型拒绝认证',
+  model_endpoint_missing: '识别模型接口不可用',
+  model_server_error: '识别模型发生内部错误',
+  model_busy: '识别模型暂时繁忙',
+  invalid_model_response: '识别模型返回了无效结果',
+  preview_unavailable: '照片分析预览暂时不可用',
+  interrupted: '识别任务已中断',
+}
+
 /** A single Owner-authorized detail read on opening Properties: no OCR text
  * is loaded, cached or streamed for the virtualized Gallery grid. */
 export function XDriveMediaOCRDetails({
@@ -50,7 +63,8 @@ export function XDriveMediaOCRDetails({
     : phase === 'error' ? '无法读取识别结果，请重新打开属性'
     : ocr?.state === 'running' ? '正在识别照片文字…'
     : ocr?.state === 'pending' ? '尚未识别，等待后台自动分析'
-    : ocr?.state === 'failed' ? '识别失败，将由后台定时重试'
+    : ocr?.state === 'failed'
+      ? `识别失败：${ocrFailureLabels[ocr.reason ?? 'analysis_failed'] ?? ocrFailureLabels.analysis_failed}；自动分析启用后会重试`
     : ocr?.state === 'stale' ? '照片已更新，等待重新识别'
     : ocr?.state === 'ready' ? '已识别，未检测到文字'
     : '暂无可用 OCR 结果，请检查模型配置'

@@ -62,10 +62,10 @@ func (r *SmartRunner) CandidateOwnerIDs(
 	}
 	info, err := r.Analyzer.Info(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("photo smart Info: %s", SmartFailureCode(err))
 	}
 	if err := ValidateSmartAnalyzerInfo(info); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("photo smart Info: invalid_model_response")
 	}
 	visualVersion := SmartVisualAnalyzerVersion(info)
 	ocrVersion := SmartOCRAnalyzerVersion(info)
@@ -113,10 +113,10 @@ func (r *SmartRunner) runBatch(
 
 	info, err := r.Analyzer.Info(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("photo smart Info: %s", SmartFailureCode(err))
 	}
 	if err := ValidateSmartAnalyzerInfo(info); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("photo smart Info: invalid_model_response")
 	}
 	visualVersion := SmartVisualAnalyzerVersion(info)
 	ocrVersion := SmartOCRAnalyzerVersion(info)
@@ -161,9 +161,9 @@ func (r *SmartRunner) runBatch(
 			candidate.NodeRevision,
 		)
 		if previewErr != nil {
-			r.failSmartAnalysis(ctx, candidate.AssetID, previewErr, now)
+			r.failSmartAnalysis(ctx, candidate.AssetID, "preview_unavailable", now)
 			if firstError == nil {
-				firstError = previewErr
+				firstError = fmt.Errorf("photo smart analysis: preview_unavailable")
 			}
 			processed++
 			continue
@@ -175,9 +175,9 @@ func (r *SmartRunner) runBatch(
 			InputFingerprint: candidate.InputFingerprint,
 		}
 		if err := ValidateSmartAnalysisTask(task); err != nil {
-			r.failSmartAnalysis(ctx, candidate.AssetID, err, now)
+			r.failSmartAnalysis(ctx, candidate.AssetID, "preview_unavailable", now)
 			if firstError == nil {
-				firstError = err
+				firstError = fmt.Errorf("photo smart analysis: preview_unavailable")
 			}
 			processed++
 			continue
@@ -185,18 +185,19 @@ func (r *SmartRunner) runBatch(
 
 		result, analyzeErr := r.Analyzer.Analyze(ctx, task)
 		if analyzeErr != nil {
-			r.failSmartAnalysis(ctx, candidate.AssetID, analyzeErr, now)
+			reason := SmartFailureCode(analyzeErr)
+			r.failSmartAnalysis(ctx, candidate.AssetID, reason, now)
 			if firstError == nil {
-				firstError = analyzeErr
+				firstError = fmt.Errorf("photo smart analysis: %s", reason)
 			}
 			processed++
 			continue
 		}
 		result, validateErr := ValidateSmartAnalysisResult(result)
 		if validateErr != nil {
-			r.failSmartAnalysis(ctx, candidate.AssetID, validateErr, now)
+			r.failSmartAnalysis(ctx, candidate.AssetID, "invalid_model_response", now)
 			if firstError == nil {
-				firstError = validateErr
+				firstError = fmt.Errorf("photo smart analysis: invalid_model_response")
 			}
 			processed++
 			continue
@@ -210,9 +211,9 @@ func (r *SmartRunner) runBatch(
 			candidate.InputFingerprint,
 			now,
 		); err != nil {
-			r.failSmartAnalysis(ctx, candidate.AssetID, err, now)
+			r.failSmartAnalysis(ctx, candidate.AssetID, "analysis_failed", now)
 			if firstError == nil {
-				firstError = err
+				firstError = fmt.Errorf("photo smart analysis: analysis_failed")
 			}
 		}
 		processed++
@@ -429,13 +430,12 @@ func (r *SmartRunner) finishSmartAnalysis(
 func (r *SmartRunner) failSmartAnalysis(
 	ctx context.Context,
 	assetID uint64,
-	cause error,
+	reason string,
 	now time.Time,
 ) {
-	message := strings.TrimSpace(cause.Error())
-	if len(message) > 2000 {
-		message = message[:2000]
-	}
+	// Never persist signed preview URLs, model response bodies, tokens or
+	// private socket paths. Both OCR and visual analysis use fixed codes.
+	message := SmartFailureCodeFromStored(reason)
 	for _, kind := range []string{
 		meta.PhotoAnalysisKindVisualLabel,
 		meta.PhotoAnalysisKindOCRText,
