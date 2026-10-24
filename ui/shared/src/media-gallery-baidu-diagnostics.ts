@@ -91,6 +91,10 @@ export const xDriveBaiduMapDiagnosticDetails = {
     title: '读取 Server 动态地图状态失败',
     action: '检查 HTTPS 网关、Server 连通性和浏览器网络；不能把状态请求失败当作地图已授权。',
   },
+  isolated_origin_unavailable: {
+    title: '安全隔离版缺少独立 HTTPS 地图子站',
+    action: '签名地图运行时已经就绪，但 Server 没有提供独立可信的 Child Origin。配置不同注册站点的有效 HTTPS 地图子站；同一 IP、另一个端口或同一 Cookie 站点不构成隔离。',
+  },
   server_release_blocked: {
     title: 'Server 尚未签名放行 JSAPI 4.0',
     action: '优先查看下方 Server 返回的 release_blockers；不要仅凭已保存 Browser AK 或启用开关判断生效。',
@@ -154,6 +158,10 @@ export const xDriveBaiduMapDiagnosticDetails = {
   sdk_missing_point: {
     title: 'BMap 已存在，但缺少 Point 坐标能力',
     action: '加载后检测不到 BMap.Point；检查 SDK 版本与子资源完整性，不使用其他坐标库进行未经授权的替代。',
+  },
+  sdk_missing_label: {
+    title: 'BMap 已存在，但缺少地图照片标记 Label',
+    action: '当前地图只需要 Map、Point、Label；检查百度 JSAPI 4.0 实际加载是否提供这三个核心能力。无需为已授权 BD-09 照片强制加载旧 Convertor 或 ClusterLayer。',
   },
   sdk_missing_convertor: {
     title: 'BMap 已存在，但缺少 Convertor 官方坐标转换',

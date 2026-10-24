@@ -75,33 +75,30 @@ func (s *Server) baiduJSAPIDesired(ctx context.Context) (baiduJSAPIDesiredConfig
 	}, nil
 }
 
+// Both SDK Hosts require a current signed release; only the isolated Host
+// additionally requires an independently hosted HTTPS Child Origin.
+func baiduJSAPI4RuntimeStatus(signed bool, childOrigin string) (bool, string, string) {
+	if !signed {
+		return false, "blocked_pending_licence_and_proxy", ""
+	}
+	return true, "authorized_signed_release", childOrigin
+}
+
 // Status deliberately reveals neither the Browser AK nor other users' GPS.
 // The runtime is not enabled merely because an administrator saved intent.
 func (s *Server) mediaBaiduJSAPIStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
-	approved := false
-	if s.approvedBaiduIsolatedChildOrigin() != "" {
-		if _, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); err == nil {
-			approved = true
-		}
-	}
-	state := "blocked_pending_licence_and_proxy"
-	if approved {
-		state = "authorized_signed_release"
-	}
+	_, releaseErr := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context())
+	approved, state, childOrigin := baiduJSAPI4RuntimeStatus(
+		releaseErr == nil, s.approvedBaiduIsolatedChildOrigin())
 	c.JSON(http.StatusOK, gin.H{
-		"provider":         "baidu-jsapi-4.0",
-		"enabled":          approved,
-		"activation_state": state,
-		"attribution":      "© 百度地图",
-		"isolated_child_origin": func() string {
-			if approved {
-				return s.approvedBaiduIsolatedChildOrigin()
-			}
-			return ""
-		}(),
+		"provider":              "baidu-jsapi-4.0",
+		"enabled":               approved,
+		"activation_state":      state,
+		"attribution":           "© 百度地图",
+		"isolated_child_origin": childOrigin,
 	})
 }
 

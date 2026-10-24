@@ -251,15 +251,14 @@ export function xDriveMountBaiduInlineMap<T>(
           // map-only Cookies; this host never attempts that forbidden path.
           const status = await options.getSignedStatus(signal)
           if (!alive || signal.aborted || status?.provider !== 'baidu-jsapi-4.0' ||
-              !status.enabled || status.activation_state !== 'authorized_signed_release' ||
-              !status.isolated_child_origin?.startsWith('https://')) return false
+              !status.enabled || status.activation_state !== 'authorized_signed_release') return false
           const config = await options.getPrototypeConfig(signal)
           if (!alive || signal.aborted || config?.provider !== 'baidu-jsapi-4.0' ||
               typeof config.browser_ak !== 'string' || !config.browser_ak) return false
           if (ready) return config.browser_ak === browserAK
           // This is intentionally NOT an isolated/privileged SDK Loader.
           // Only the signed BD09 Cell DTO reaches native map labels.
-          const namespace = await loadBaiduJSAPI4(doc,config.browser_ak)
+          const namespace = await loadBaiduJSAPI4(doc,config.browser_ak,'authorized-cells')
           if (!alive || signal.aborted) return false
           const nativeSDK = namespace as unknown as NativeNamespace
           if (typeof nativeSDK.Map !== 'function' ||

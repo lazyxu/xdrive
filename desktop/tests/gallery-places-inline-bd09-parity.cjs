@@ -88,7 +88,8 @@ function buildInlineFixture() {
   const map = new Map()
   const mocks={
     './mui/MediaGalleryBaiduPrototypeMap': {
-      async loadBaiduJSAPI4(document, browserAK) {
+      async loadBaiduJSAPI4(document, browserAK, capabilities) {
+        assert.equal(capabilities,'authorized-cells')
         assert.equal(browserAK,'test-browser-ak')
         return {Map:class {constructor(){return map}},Point,Label}
       },
@@ -121,8 +122,7 @@ function buildInlineFixture() {
       assert.equal(signal.aborted,false)
       grants++
       return {provider:'baidu-jsapi-4.0',enabled:true,
-        activation_state:'authorized_signed_release',
-        isolated_child_origin:'https://isolated-map.example.net'}
+        activation_state:'authorized_signed_release'}
     },
     getPrototypeConfig:async signal=>{
       assert.equal(signal.aborted,false)
@@ -186,4 +186,14 @@ test('authenticated inline map retains exact Cell identities; gesture invalidate
   assert.equal(f.disposed(),1)
   assert.equal(f.host.replaceAuthorizedCells([original]),false)
   assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),false)
+})
+
+test('standalone inline status uses signed release while isolated keeps an Origin gate', () => {
+  const status=read('internal/api/baidu_jsapi_config.go')
+  assert.match(status,/func baiduJSAPI4RuntimeStatus\(signed bool, childOrigin string\)/)
+  assert.match(status,/releaseErr == nil, s\.approvedBaiduIsolatedChildOrigin\(\)/)
+  assert.match(parent,/signed && \(mapMode === 'prototype' \|\| child !== ''\)/)
+  assert.match(parent,/mapMode === 'prototype' \|\| childOrigin !== ''/)
+  assert.match(parent,/isolated_origin_unavailable/)
+  assert.doesNotMatch(inline,/!status\.isolated_child_origin\?\.startsWith/)
 })

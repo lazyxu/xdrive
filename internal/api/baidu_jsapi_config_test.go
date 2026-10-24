@@ -43,3 +43,26 @@ func TestBaiduJSAPISeparateConfigRejectsUnencryptedWrites(t *testing.T) {
 		t.Fatalf("browser AK must not affect old Server AK or unencrypted settings: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestBaiduJSAPIStatusSignedInlineIndependentOfChildDNS(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		release   bool
+		child     string
+		enabled   bool
+		state     string
+		wantChild string
+	}{
+		{name: "no-release-no-child", state: "blocked_pending_licence_and_proxy"},
+		{name: "no-release-despite-child", child: "https://map.other-example.org", state: "blocked_pending_licence_and_proxy"},
+		{name: "signed-inline-no-child", release: true, enabled: true, state: "authorized_signed_release"},
+		{name: "signed-isolated-with-child", release: true, child: "https://map.other-example.org", enabled: true, state: "authorized_signed_release", wantChild: "https://map.other-example.org"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enabled, state, child := baiduJSAPI4RuntimeStatus(tc.release, tc.child)
+			if enabled != tc.enabled || state != tc.state || child != tc.wantChild {
+				t.Fatalf("unexpected map admission enabled=%v state=%q child=%q", enabled, state, child)
+			}
+		})
+	}
+}
