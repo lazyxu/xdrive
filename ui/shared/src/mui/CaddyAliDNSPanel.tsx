@@ -189,7 +189,12 @@ export function XDriveCaddyAliDNSPanel({
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
       data-xdrive-admin-caddy-alidns>
       <Stack spacing={1.5}>
-        <Typography variant="subtitle2" fontWeight={700}>AliDNS DNS-01 凭据</Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+          <Typography variant="subtitle2" fontWeight={700}>阿里云 DNS (AliDNS)</Typography>
+          {config && <Typography variant="caption" color="text.secondary">
+            {config.configured ? '已配置' : '未配置'}
+          </Typography>}
+        </Stack>
         {config ? (
           <>
             {config.host_apply_pending && <Typography variant="caption" color="text.secondary"
@@ -223,6 +228,9 @@ export function XDriveCaddyAliDNSPanel({
               {atomicMode && pendingClear && <Button size="small" variant="text"
                 onClick={() => setPendingClear(false)}>撤销清除</Button>}
             </Stack>
+            {atomicMode && pendingClear && <Typography variant="caption" color="text.secondary">
+              待清除凭据；保存配置后才会生效。
+            </Typography>}
             {!atomicMode && <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="加密保存 AliDNS 凭据"
               description="保存新 ID/Secret 将创建审计修订，但不替换宿主机凭据，也不会操作 Caddy。"
@@ -254,8 +262,10 @@ export function XDriveCaddyAliDNSPanel({
               <Typography variant="body2" color="text.secondary">
                 未能读取凭据状态；为避免误操作，暂时禁止保存、清除和显示凭据。这不等于缺少加密密钥。
               </Typography>
-              <Button size="small" variant="outlined" disabled={busy || atomicSaving}
-                onClick={() => setRetryReadID((value) => value + 1)}>重试读取 AliDNS 配置</Button>
+              {atomicMode ? <Typography variant="caption" color="text.secondary">
+                点击上方「重新检测」重试。
+              </Typography> : <Button size="small" variant="outlined" disabled={busy || atomicSaving}
+                onClick={() => setRetryReadID((value) => value + 1)}>重试读取 AliDNS 配置</Button>}
             </Stack>
           ) : <Typography variant="body2" color="text.secondary">
               此客户端尚未提供 AliDNS 管理接口，请更新匹配的客户端与 Server/Agent 版本。

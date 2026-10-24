@@ -30,7 +30,7 @@ test('restart confirms only unchanged Host target and never crosses pending edit
   assert.match(page, /validPendingTarget && !alreadyCompletedThisTarget/)
   assert.match(page, /const restarting = !canDeploy && canRestart/)
   assert.match(page, /config\.host_env_pending_redeploy === false/)
-  assert.match(page, /confirmLabel=\{canRestart \? '确认重启' : '重新部署'\}/)
+  assert.match(page, /confirmLabel=\{canRestart \? '确认重启' : '应用配置'\}/)
   assert.match(page, /setDeployReceipt\(null\)/)
   assert.match(page, /epoch !== deployEpoch\.current/)
 })

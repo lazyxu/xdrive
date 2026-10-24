@@ -1371,7 +1371,7 @@ export function XDriveServiceDependenciesPage({
       presentation="page"
       title="系统依赖"
       subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
-      pageActions={(
+      pageActions={selectedPage === 'caddy' ? null : (
         <Button
           size="small"
           variant="outlined"
