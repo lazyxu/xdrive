@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { FocusEvent as ReactFocusEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import FullscreenRoundedIcon from '@mui/icons-material/FullscreenRounded'
@@ -65,6 +65,10 @@ export function XDriveOpenPreviewDialog({
   const effectiveFullScreen = fullScreen || compactTouch
   const hasNavigation = canPrevious || canNext
   const [chromeVisible, setChromeVisible] = useState(true)
+  const chromeFocusRef = useRef(false)
+  const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
+    '[data-xdrive-preview-chrome], [data-xdrive-preview-mobile-actions], [data-xdrive-preview-mobile-filmstrip], [data-xdrive-preview-navigation]',
+  ))
   const chromeTimerRef = useRef<number | null>(null)
   const touchTapTimerRef = useRef<number | null>(null)
   const touchPointersRef = useRef(new Set<number>())
@@ -88,13 +92,26 @@ export function XDriveOpenPreviewDialog({
   const showChrome = useCallback(() => {
     setChromeVisible(true)
     clearChromeTimer()
-    if (immersive && open && !keepChromeVisible) {
+    if (immersive && open && !keepChromeVisible && !chromeFocusRef.current) {
       chromeTimerRef.current = window.setTimeout(() => {
         chromeTimerRef.current = null
-        setChromeVisible(false)
+        if (!chromeFocusRef.current) setChromeVisible(false)
       }, chromeAutoHideMs)
     }
   }, [chromeAutoHideMs, clearChromeTimer, immersive, keepChromeVisible, open])
+
+  // Keyboard users must not lose visibly focused controls to the timer.
+  // Moving focus to media restores normal immersive auto-hide behavior.
+  const handleChromeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
+    if (!hasChromeFocus(event.target)) return
+    chromeFocusRef.current = true
+    showChrome()
+  }
+  const handleChromeBlurCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
+    if (!chromeFocusRef.current) return
+    chromeFocusRef.current = hasChromeFocus(event.relatedTarget)
+    if (!chromeFocusRef.current) showChrome()
+  }
 
   const clearTouchTapTimer = useCallback(() => {
     if (touchTapTimerRef.current !== null) {
@@ -154,7 +171,7 @@ export function XDriveOpenPreviewDialog({
     }
 
     lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
-    const hideChrome = chromeVisible && !keepChromeVisible
+    const hideChrome = chromeVisible && !keepChromeVisible && !chromeFocusRef.current
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
       touchTapTimerRef.current = null
@@ -182,6 +199,7 @@ export function XDriveOpenPreviewDialog({
 
   useEffect(() => {
     if (!open) {
+      chromeFocusRef.current = false
       clearChromeTimer()
       setChromeVisible(true)
       return () => undefined
@@ -228,6 +246,8 @@ export function XDriveOpenPreviewDialog({
       open={open}
       onClose={onClose}
       onKeyDown={handleKeyDown}
+      onFocusCapture={handleChromeFocusCapture}
+      onBlurCapture={handleChromeBlurCapture}
       maxWidth="lg"
       fullWidth
       fullScreen={effectiveFullScreen}
@@ -347,6 +367,7 @@ export function XDriveOpenPreviewDialog({
             <span>
               <IconButton
                 aria-label="预览上一个项目"
+                data-xdrive-preview-navigation
                 disabled={!canPrevious}
                 onClick={onPrevious}
                 sx={{
@@ -371,6 +392,7 @@ export function XDriveOpenPreviewDialog({
             <span>
               <IconButton
                 aria-label="预览下一个项目"
+                data-xdrive-preview-navigation
                 disabled={!canNext}
                 onClick={onNext}
                 sx={{

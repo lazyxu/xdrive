@@ -2146,3 +2146,75 @@ test('P0 PDF/Audio standalone Viewer A→B→A never revives old metadata before
     }
   }
 })
+
+test('P1 immersive Web Gallery chrome stays visible while keyboard focus remains on an action', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const renderer = await mount('media-viewer', 'focused-photo.jpg')
+  const frame = () => renderer.root.find(el =>
+    el.type === 'div' && el.props['data-xdrive-web-viewer'] !== undefined)
+  const header = () => renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+  const chromeTarget = { closest(selector) { return selector === '[data-xdrive-web-viewer-chrome]' ? {} : null } }
+  const ordinaryMediaTarget = { closest() { return null } }
+  const fireHideTimer = async () => {
+    const due = [...timers].find(([, t]) => t.delay === 2200)
+    if (!due) return false
+    timers.delete(due[0])
+    await act(async () => due[1].callback())
+    return true
+  }
+  try {
+    await act(async () => frame().props.onFocusCapture({ target: chromeTarget }))
+    assert.equal(header().props.sx.opacity, 1)
+    assert.equal(await fireHideTimer(), false, 'focused primary action cancels and prevents the hide timer')
+    assert.equal(header().props.sx.opacity, 1)
+    await act(async () => frame().props.onBlurCapture({ relatedTarget: ordinaryMediaTarget }))
+    assert.equal(await fireHideTimer(), true, 'leaving the action rail restores ordinary auto-hide')
+    assert.equal(header().props.sx.opacity, 0)
+    await act(async () => frame().props.onFocusCapture({ target: chromeTarget }))
+    assert.equal(header().props.sx.opacity, 1, 'Tab onto invisible chrome restores it immediately')
+  } finally {
+    await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1 shared immersive Gallery/Quick Look chrome honors keyboard focus without locking media forever', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  let renderer
+  await act(async () => {
+    renderer = create(React.createElement(XDriveOpenPreviewDialog, {
+      open: true, immersive: true, mobileEdgeToEdge: true, chromeAutoHideMs: 111,
+      title: 'focused-photo.jpg', onClose() {}, canPrevious: true, onPrevious() {},
+    }, React.createElement('div', null, 'media')))
+  })
+  const dialog = () => renderer.root.findByType('dialog')
+  const header = () => renderer.root.find(el => el.props['data-xdrive-preview-chrome'] === 'header')
+  const chromeTarget = { closest(selector) {
+    return selector.includes('[data-xdrive-preview-chrome]') ? {} : null
+  } }
+  const mediaTarget = { closest() { return null } }
+  const fireHideTimer = async () => {
+    const due = [...timers].find(([, t]) => t.delay === 111)
+    if (!due) return false
+    timers.delete(due[0])
+    await act(async () => due[1].callback())
+    return true
+  }
+  try {
+    await act(async () => dialog().props.onFocusCapture({ target: chromeTarget }))
+    assert.equal(header().props.sx.opacity, 1)
+    assert.equal(await fireHideTimer(), false)
+    await act(async () => dialog().props.onBlurCapture({ relatedTarget: mediaTarget }))
+    assert.equal(await fireHideTimer(), true)
+    assert.equal(header().props.sx.opacity, 0)
+    await act(async () => dialog().props.onFocusCapture({ target: chromeTarget }))
+    assert.equal(header().props.sx.opacity, 1)
+  } finally {
+    await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
