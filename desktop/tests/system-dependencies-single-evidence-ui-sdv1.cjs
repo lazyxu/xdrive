@@ -9,6 +9,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 
 test('SD-UX-V1 shared page preserves typed React source, one default detail section and on-demand evidence', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const baiduDetail = read('ui/shared/src/mui/BaiduServerAPIDetail.tsx')
   const compiled = ts.transpileModule(page, {
     fileName: 'ServiceDependenciesPage.tsx', reportDiagnostics: true,
     compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS,
@@ -21,11 +22,13 @@ test('SD-UX-V1 shared page preserves typed React source, one default detail sect
   assert.match(page, /data-xdrive-service-lifecycle/)
   assert.match(page, /data-xdrive-service-evidence-toggle aria-expanded=\{showLifecycleEvidence\}/)
   assert.match(page, /showLifecycleEvidence && \(/)
-  assert.match(page, /XDriveSensitiveField label="Server AK"/)
+  assert.match(page, /<XDriveBaiduServerAPIDetail/)
+  assert.match(baiduDetail, /<XDriveSensitiveField label="Server AK"/)
   assert.match(page, /data-xdrive-unified-detail-intro/)
   assert.match(page, /unsavedRef\.current/)
   assert.doesNotMatch(page, /onClick=\{\(\) => \{ void verifyBaiduMap\(\) \}\}/)
-  assert.match(page, /XDriveBaiduJSAPIDesiredPanel source=\{source\} mode=\{currentTab\}/)
+  assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
+  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
 })
 
 test('Baidu six authoritative Server fields are technical disclosure only in Verify, not a duplicate in Config', () => {
@@ -66,7 +69,8 @@ test('one real shared UI applies to Web/Mobile Web and Desktop without extra adm
   assert.match(web, /XDriveServiceDependenciesPage/)
   assert.match(desktop, /XDriveServiceDependenciesPage/)
   assert.match(page, /XDriveBaiduJSAPIDesiredPanel/)
-  assert.match(page, /XDriveSensitiveField/)
+  assert.match(page, /<XDriveBaiduServerAPIDetail/)
+  assert.match(read('ui/shared/src/mui/BaiduServerAPIDetail.tsx'), /<XDriveSensitiveField label="Server AK"/)
   assert.doesNotMatch(page, /docker\.sock/)
 })
 

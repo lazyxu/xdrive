@@ -43,8 +43,15 @@ const missingServiceLabels: Record<XDriveSystemDependencyID, string> = {
   'photo-smart': '动物／物体识别与 OCR',
   'photo-semantic': '图片语义搜索',
   'photo-creative': '照片创作处理',
-  'baidu-map': '百度地图 Server API',
+  'baidu-map': '百度地图',
   geonames: 'GeoNames 离线地名',
+}
+
+// Normalize service names only for rendering, never for backend IDs, state,
+// capabilities or persisted config. Older Servers can report the legacy title.
+export function xDriveSystemDependencyForDisplay<T extends { id: string; label: string }>(service: T): T {
+  if (service.id !== 'baidu-map') return service
+  return { ...service, label: missingServiceLabels['baidu-map'] }
 }
 
 export function xDriveVisibleSystemDependencies<T extends { id: string; group: string }>(

@@ -251,6 +251,53 @@ test('mobile selector keeps all eleven fixed dependencies navigable when Server 
   assert.ok(source.includes('不会伪造默认绿色状态'))
 })
 
+test('Baidu map uses one concise UI name for reported and unreported services', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const missing = nav.xDriveSystemDependenciesOverviewEntries([]).find((item) => item.id === 'baidu-map')
+  assert.equal(missing.label, '百度地图')
+  const observed = { id: 'baidu-map', group: 'location', label: '百度地图 Server API',
+    status: 'ready', detail: 'Server API for coordinate conversion', revision: 7 }
+  const display = nav.xDriveSystemDependencyForDisplay(observed)
+  assert.notStrictEqual(display, observed)
+  assert.equal(display.label, '百度地图')
+  assert.equal(observed.label, '百度地图 Server API', 'Server response must be unchanged')
+  assert.equal(display.status, 'ready')
+  assert.equal(display.detail, observed.detail)
+  assert.equal(display.revision, 7)
+  const other = { id: 'database', label: 'PostgreSQL' }
+  assert.strictEqual(nav.xDriveSystemDependencyForDisplay(other), other)
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(page.includes('xDriveVisibleSystemDependencies(snapshot?.services ?? []).map(xDriveSystemDependencyForDisplay)'),
+    'project names once before sidebar, compact selector, overview cards and selected title')
+  assert.ok(page.includes('service.service?.label ?? service.label'))
+  assert.ok(page.includes('item.service?.label ?? item.label'))
+  assert.ok(page.includes('selectedItem?.label'))
+})
+
+test('Baidu capability links require real JSAPI4 API rather than retired Static Map probe', () => {
+  const mod = loadTs('ui/shared/src/system-dependencies-capabilities.ts')
+  const capability = mod.XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES['baidu-map']
+  assert.equal(capability.enable, 'Server API 坐标转换开关可编辑')
+  assert.match(capability.verify, /JSAPI 4\.0 .*Loader.*Browser AK/)
+  assert.equal(capability.activationLabel, '管理坐标转换与 Server AK')
+  const runtime = [{ id: 'baidu-map', status: 'ready',
+    config_mode: 'in-app', apply_mode: 'immediate' }]
+  const oldPort = { loadBaiduMapConfig() {}, saveBaiduMapConfig() {}, verifyBaiduMap() {} }
+  const resolvedLegacy = mod.xDriveSystemDependencyAvailableTargets('baidu-map', runtime, oldPort)
+  assert.equal(resolvedLegacy.verifyTarget, undefined,
+    'retired Static Map probing must not unlock JSAPI4 verification')
+  assert.deepEqual(resolvedLegacy.configTarget, { service: 'baidu-map', tab: 'config' })
+  const readOnlyJSAPI4 = { ...oldPort, loadBaiduJSAPIConfig() {} }
+  assert.equal(mod.xDriveSystemDependencyAvailableTargets('baidu-map', runtime, readOnlyJSAPI4).verifyTarget,
+    undefined, 'Loader probe API must also be present')
+  const fullJSAPI4 = { ...readOnlyJSAPI4, verifyBaiduJSAPI4Loader() {} }
+  assert.deepEqual(mod.xDriveSystemDependencyAvailableTargets('baidu-map', runtime, fullJSAPI4).verifyTarget,
+    { service: 'baidu-map', tab: 'verify' })
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
+  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
+})
+
 test('shared Web and Desktop service rows expose true configuration ownership, not fake activation', () => {
   const model = read('ui/shared/src/service-dependencies.ts')
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')

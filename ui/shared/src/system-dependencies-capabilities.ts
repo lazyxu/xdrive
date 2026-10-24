@@ -97,13 +97,13 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
   },
   'baidu-map': {
     configure: 'Server AK 可加密修改',
-    enable: '地图服务开关可编辑',
-    verify: '按需实际取图验证',
+    enable: 'Server API 坐标转换开关可编辑',
+    verify: 'JSAPI 4.0 发布状态与 Loader 检测（独立 Browser AK）',
     history: '无独立配置回滚页',
     configTarget: { service: 'baidu-map', tab: 'config' },
     verifyTarget: { service: 'baidu-map', tab: 'verify' },
     activationTarget: { service: 'baidu-map', tab: 'config' },
-    activationLabel: '管理地图开关与 AK',
+    activationLabel: '管理坐标转换与 Server AK',
   },
   geonames: {
     configure: '匹配距离可编辑和热加载',
@@ -127,7 +127,8 @@ type XDriveSystemDependencyRuntimeMethod =
   | 'loadCaddyHTTPSConfig' | 'saveCaddyHTTPSConfig' | 'loadCaddyHTTPSPreflight'
   | 'loadMediaWorkerConfig' | 'saveMediaWorkerConfig' | 'applyMediaWorker'
   | 'loadPhotoHostConfig' | 'savePhotoHostConfig' | 'loadPhotoHostPreflight' | 'applyPhotoHost'
-  | 'loadBaiduMapConfig' | 'saveBaiduMapConfig' | 'verifyBaiduMap'
+  | 'loadBaiduMapConfig' | 'saveBaiduMapConfig'
+  | 'loadBaiduJSAPIConfig' | 'verifyBaiduJSAPI4Loader'
   | 'loadGeoNamesConfig' | 'saveGeoNamesConfig'
 export type XDriveSystemDependencyRuntimePort =
   Partial<Record<XDriveSystemDependencyRuntimeMethod, unknown>>
@@ -161,7 +162,8 @@ const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   'photo-smart': ['loadPhotoHostPreflight'],
   'photo-semantic': ['loadPhotoHostPreflight'],
   'photo-creative': ['loadPhotoHostPreflight'],
-  'baidu-map': ['verifyBaiduMap'],
+  // The Verify tab is the separate JSAPI4 panel, not the retired Static Map probe.
+  'baidu-map': ['loadBaiduJSAPIConfig', 'verifyBaiduJSAPI4Loader'],
   geonames: ['load', 'loadGeoNamesConfig'],
 }
 
