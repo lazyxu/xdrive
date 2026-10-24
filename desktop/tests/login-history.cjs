@@ -12,6 +12,20 @@ const {
   replaceSavedPassword,
 } = require('../dist/main/login_history.cjs')
 
+test('route preferences remain scoped to a profile through password clearing and reject corrupt auto-login routes', () => {
+  const route = { mode: 'auto', lan_ip: '192.168.2.4', public_ip: '' }
+  let history = recordSuccessfulLogin({ version: 1, profiles: [] }, {
+    server: 'https://drive.example', username: 'alice', last_used_at: '2026-10-25T00:00:00Z',
+    remember_password: true, auto_login: true, encrypted_password: 'synthetic-ciphertext', connection_route: route,
+  })
+  assert.deepEqual(publicLoginHistory(history, true).profiles[0].connection_route, route)
+  history = clearSavedPassword(history, 'https://drive.example', 'alice')
+  assert.deepEqual(history.profiles[0].connection_route, route)
+  assert.equal(automaticLoginProfile(history), undefined)
+  const invalid = normalizeLoginHistory({ profiles: [{ ...history.profiles[0], connection_route: { mode: 'invalid' }, remember_password: true, auto_login: true, encrypted_password: 'synthetic' }] })
+  assert.equal(automaticLoginProfile(invalid), undefined)
+})
+
 test('login history normalizes, de-duplicates and sorts newest first', () => {
   const history = normalizeLoginHistory({
     profiles: [

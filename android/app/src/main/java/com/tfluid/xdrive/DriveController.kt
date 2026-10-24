@@ -12,6 +12,8 @@ data class DriveState(
     val screen: Screen = Screen.CONNECT,
     val server: String = "",
     val allowHttp: Boolean = false,
+    val route: ConnectionRoute = ConnectionRoute(),
+    val connectionIp: String? = null,
     val username: String = "",
     val loading: Boolean = false,
     val error: String? = null,
@@ -32,8 +34,13 @@ class DriveController(
     private val saveConnection: (String, Boolean) -> Unit = { _, _ -> },
     initialServer: String = "",
     initialAllowHttp: Boolean = false,
+    private val routeSelector: suspend (ServerAddress, ConnectionRoute) -> String? = { address, route -> ConnectionRouteSelector().select(address, route) },
+    private val routedServiceFactory: (ServerAddress, String) -> XDriveService = { address, ip -> XDriveApi(address, connectionIp = ip) },
+    private val saveRoute: (String, ConnectionRoute) -> Unit = { _, _ -> },
+    private val loadRoute: (String) -> ConnectionRoute = { ConnectionRoute() },
 ) : Closeable {
-    private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp))
+    private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp,
+        route = savedRoute(initialServer, initialAllowHttp)))
     val state = mutableState.asStateFlow()
     private var address: ServerAddress? = null
     private var api: XDriveService? = null
@@ -43,20 +50,37 @@ class DriveController(
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
 
-    fun connect(input: String, allowHttp: Boolean) {
+    fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
+        loadRoute(ServerAddress.parse(input, allowHttp).url)
+    } catch (_: IllegalArgumentException) { ConnectionRoute() }
+
+    fun connect(input: String, allowHttp: Boolean, route: ConnectionRoute = ConnectionRoute()) {
         if (state.value.screen != Screen.CONNECT) return
         try {
             val next = ServerAddress.parse(input, allowHttp)
-            val service = serviceFactory(next)
+            route.validate(next)
             invalidate()
             (api as? Closeable)?.close()
-            api = service
-            address = next
-            saveConnection(next.url, allowHttp)
-            mutableState.value = DriveState(screen = Screen.LOGIN, server = next.url, allowHttp = allowHttp)
+            api = null
+            address = null
+            mutableState.value = DriveState(server = next.url, allowHttp = allowHttp, route = route)
+            if (!route.enabled) install(next, allowHttp, route, null)
+            else request { ticket ->
+                val ip = routeSelector(next, route) ?: throw ApiException(0, "Unable to select route", ApiFailureReason.CONNECTION)
+                checkCurrent(ticket)
+                install(next, allowHttp, route, ip)
+            }
         } catch (_: IllegalArgumentException) {
-            mutableState.value = state.value.copy(error = "请输入有效的服务器地址，例如 https://drive.example；HTTP 需要明确允许。")
+            mutableState.value = state.value.copy(error = "请检查服务器地址及连接设置。内网仅支持私有 IP，公网仅支持公共 IP；连接方式设置需要 HTTPS 域名。")
         }
+    }
+
+    private fun install(next: ServerAddress, allowHttp: Boolean, route: ConnectionRoute, ip: String?) {
+        api = if (ip == null) serviceFactory(next) else routedServiceFactory(next, ip)
+        address = next
+        saveConnection(next.url, allowHttp)
+        saveRoute(next.url, route)
+        mutableState.value = DriveState(screen = Screen.LOGIN, server = next.url, allowHttp = allowHttp, route = route, connectionIp = ip)
     }
 
     fun login(username: String, password: String) {
@@ -65,8 +89,15 @@ class DriveController(
             mutableState.value = state.value.copy(error = "请输入用户名和密码。")
             return
         }
-        val service = api ?: return
         request {
+            if (api == null && state.value.route.enabled) {
+                val next = address ?: return@request
+                val ip = routeSelector(next, state.value.route) ?: throw ApiException(0, "Unable to select route", ApiFailureReason.CONNECTION)
+                checkCurrent(it)
+                api = routedServiceFactory(next, ip)
+                mutableState.value = state.value.copy(connectionIp = ip)
+            }
+            val service = api ?: return@request
             val result = service.login(username.trim(), password)
             checkCurrent(it)
             session = result
@@ -177,8 +208,10 @@ class DriveController(
                         failure.reason != ApiFailureReason.CURRENT_PASSWORD_INCORRECT && session != null) {
                         session = null
                         retryPath = null
+                        if (state.value.route.enabled) { (api as? Closeable)?.close(); api = null }
                         mutableState.value = DriveState(
                             screen = Screen.LOGIN, server = state.value.server, allowHttp = state.value.allowHttp,
+                            route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
                     } else mutableState.value = state.value.copy(error = safeError(failure))
@@ -199,10 +232,11 @@ class DriveController(
         session = null
         retryPath = null
         retryOffset = 0
-        api = if (!changeServer) address?.let(serviceFactory) else null
+        api = if (!changeServer && !state.value.route.enabled) address?.let(serviceFactory) else null
         mutableState.value = DriveState(
             screen = if (changeServer) Screen.CONNECT else Screen.LOGIN,
             server = state.value.server, allowHttp = state.value.allowHttp,
+            route = state.value.route,
         )
         scope.launch {
             try {
@@ -220,6 +254,14 @@ class DriveController(
     override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }
 
     private fun safeError(failure: Exception): String {
+        when ((failure as? ApiException)?.reason) {
+            ApiFailureReason.DNS -> return "DNS 解析失败，未找到可用公网地址。可填写公网 IP。"
+            ApiFailureReason.CONNECTION -> return "连接被拒绝或不可达。请检查所选网络和服务器端口。"
+            ApiFailureReason.TIMEOUT -> return "连接超时，请检查所选网络后重新连接。"
+            ApiFailureReason.TLS -> return "HTTPS 证书验证失败。请检查域名与证书；不会自动切换连接。"
+            ApiFailureReason.INVALID_RESPONSE -> return "服务器响应无效，请检查地址和服务状态。"
+            else -> Unit
+        }
         if (failure is ApiException && failure.reason == ApiFailureReason.CURRENT_PASSWORD_INCORRECT) {
             return "当前密码不正确，请重新输入。"
         }

@@ -23,6 +23,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.selected
+import com.tfluid.xdrive.core.ConnectionRoute
+import com.tfluid.xdrive.core.RouteMode
+import com.tfluid.xdrive.core.ServerAddress
 
 @Composable
 private fun AuthCard(title: String, subtitle: String, actions: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
@@ -109,11 +113,32 @@ private fun Submit(label: String, loading: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ConnectionForm(state: DriveState, connect: (String, Boolean) -> Unit, actions: @Composable () -> Unit = {}) {
+internal fun ConnectionForm(state: DriveState, connect: (String, Boolean, ConnectionRoute) -> Unit,
+    savedRoute: (String, Boolean) -> ConnectionRoute = { _, _ -> ConnectionRoute() }, actions: @Composable () -> Unit = {}) {
     var server by remember { mutableStateOf(state.server) }
     var allow by remember { mutableStateOf(state.allowHttp) }
+    var route by remember { mutableStateOf(state.route) }
+    fun origin(input: String) = try { ServerAddress.parse(input, true).url } catch (_: IllegalArgumentException) { null }
     AuthCard("连接你的 xDrive", "连接到你的 xDrive 服务器。", actions) {
-        AuthField("服务器地址", server, { server = it }, "server", !state.loading, keyboardType = KeyboardType.Uri, placeholder = "https://drive.example")
+        AuthField("服务器地址", server, {
+            if (origin(it) != origin(server)) route = savedRoute(it, allow)
+            server = it
+        }, "server", !state.loading, keyboardType = KeyboardType.Uri, placeholder = "https://drive.example")
+        Text("连接方式", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(RouteMode.AUTO to "自动", RouteMode.LAN to "仅内网", RouteMode.PUBLIC to "仅公网").forEach { (mode, label) ->
+                FilterChip(selected = route.mode == mode, enabled = !state.loading,
+                    onClick = { route = route.copy(mode = mode) }, label = { Text(label) },
+                    modifier = Modifier.testTag("route-${mode.name.lowercase()}").semantics { selected = route.mode == mode })
+            }
+        }
+        AuthField("内网 IP（仅内网必填）", route.lanIp, { route = route.copy(lanIp = it) }, "lan-ip", !state.loading,
+            keyboardType = KeyboardType.Uri, placeholder = "192.168.x.x")
+        AuthField("公网 IP（可选）", route.publicIp, { route = route.copy(publicIp = it) }, "public-ip", !state.loading,
+            keyboardType = KeyboardType.Uri)
+        if (route.mode == RouteMode.INVALID) ErrorNotice("已保存的连接方式无效，请重新选择。")
+        Text("连接方式设置需要 HTTPS 域名地址。自动优先使用填写的内网 IP，不可达时再尝试公网。公网留空使用本设备 DNS。始终保留域名和证书验证；证书错误停止连接。",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(allow, { allow = it }, modifier = Modifier.testTag("allow-http"), colors = CheckboxDefaults.colors(
                 checkedColor = MaterialTheme.colorScheme.primary, checkmarkColor = MaterialTheme.colorScheme.onPrimary, uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant))
@@ -121,7 +146,7 @@ internal fun ConnectionForm(state: DriveState, connect: (String, Boolean) -> Uni
         }
         if (allow) Text("HTTP 不加密密码和文件信息，仅在可信网络中使用。", color = MaterialTheme.colorScheme.error)
         ErrorNotice(state.error)
-        Submit("连接服务器", state.loading) { connect(server, allow) }
+        Submit("连接服务器", state.loading) { connect(server, allow, route) }
     }
 }
 
@@ -132,6 +157,7 @@ internal fun LoginForm(state: DriveState, login: (String, String) -> Unit, actio
     var password by remember { mutableStateOf("") }
     AuthCard("欢迎回来", state.server, actions) {
         if (state.server.startsWith("http:")) Text("此连接未加密", color = MaterialTheme.colorScheme.error)
+        if (state.connectionIp != null) Text("已选择连接 IP：${state.connectionIp}", style = MaterialTheme.typography.bodySmall)
         AuthField("用户名", username, { username = it }, "username", !state.loading)
         AuthField("密码", password, { password = it }, "password", !state.loading, secret = true)
         ErrorNotice(state.error)

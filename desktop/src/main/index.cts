@@ -35,6 +35,9 @@ import { xDriveParseDesktopBaiduMapScope, xDriveDesktopBaiduMapClaimAllowed,
 import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { probeDesktopServer as probeDesktopServerWithChromium } from './server_probe.cjs'
+import { DesktopLoginIntents } from './login_intents.cjs'
+import { ConnectionRouteError, fetchWithConnectionIP, hasConnectionRoute, parseConnectionRoute,
+  selectConnectionRoute, type ConnectionRoute } from './connection_route.cjs'
 import {
   enrollLANRootViaTrustedDomain, fetchWithPinnedLANRoot, inspectPrivateLANFirstUse,
   privateLANOrigin, probeWithTrustedLANRoot, trustedDomainCandidates,
@@ -389,6 +392,8 @@ const hardwareAccelerationDisabled = process.argv.includes('--disable-gpu')
 if (hardwareAccelerationDisabled) app.disableHardwareAcceleration()
 const desktopPreferencesName = 'desktop-settings.json'
 const loginHistoryName = 'desktop-login-history.json'
+const desktopLoginIntents = new DesktopLoginIntents()
+let desktopServerProbe: AbortController | null = null
 const privateLANRootsName = 'desktop-private-lan-roots.json'
 let privateLANRoots: TrustedLANRoot[] = []
 // Preserve a previously accepted IP trust boundary even if its CA expires or
@@ -981,7 +986,17 @@ async function revokePrivateLANServer(
   return { ok: true, data: { revoked: true } }
 }
 
-async function probeDesktopServer(serverValue: string, username = ''): Promise<DesktopResult<{ version?: string }>> {
+async function probeDesktopServer(serverValue: string, username = '', routeValue?: unknown, signal?: AbortSignal): Promise<DesktopResult<{ version?: string }>> {
+  try {
+    const route = parseConnectionRoute(routeValue)
+    if (hasConnectionRoute(route)) {
+      const selected = await selectConnectionRoute(serverValue, route, signal)
+      return { ok: true, data: { version: selected.version } }
+    }
+  } catch (error) {
+    return { ok: false, error: { code: error instanceof ConnectionRouteError ? error.code : 'server_network',
+      message: error instanceof ConnectionRouteError ? error.message : '服务器连接检查失败。' } }
+  }
   // A previously approved IP pin is authoritative. Never let a new Windows
   // system root (or a now-trusted rogue leaf) silently bypass that decision.
   if (requiresApprovedLANPin(serverValue)) {
@@ -993,7 +1008,7 @@ async function probeDesktopServer(serverValue: string, username = ''): Promise<D
     } }
   }
   const original = await probeDesktopServerWithChromium(serverValue, (url, options) =>
-    net.fetch(url, { ...options, bypassCustomProtocolHandlers: true }))
+    net.fetch(url, { ...options, bypassCustomProtocolHandlers: true }), 5000, signal)
   if (original.ok || original.error.code !== 'server_tls_trust') return original
   const root = await ensurePrivateLANRoot(serverValue, username).catch(() => null)
   if (root) return { ok: true, data: { version: root.version } }
@@ -1008,6 +1023,11 @@ async function fetchDesktopPreview(input: string, init: RequestInit): Promise<Re
   let url: URL
   try { url = new URL(input) } catch { throw new Error('invalid preview URL') }
   const server = agentState.status?.server || ''
+  const connectionIP = agentState.status?.connection_ip
+  if (connectionIP) {
+    // An alternate origin from a stale or malicious ticket cannot escape through net.fetch.
+    return fetchWithConnectionIP(input, init, server, connectionIP)
+  }
   const session = privateLANOrigin(server)
   // A signed token minted for a HTTPS-paired private IP must not be relayed to
   // plaintext HTTP even if an outdated server supplies such a ticket URL.
@@ -2385,6 +2405,7 @@ async function attemptAutomaticLogin() {
 
   // Keep the history identity of this attempt; newer user saves replace it.
   const attemptedLoginHistory = loginHistory
+  const attempt = desktopLoginIntents.begin()
   lastAutoLoginError = ''
   const endLANAuthentication = beginPrivateLANAuthentication(profile.server)
   try {
@@ -2394,14 +2415,19 @@ async function attemptAutomaticLogin() {
     if (requiresApprovedLANPin(profile.server) && !trustedLAN) {
       throw new Error('局域网服务器证书与已批准的身份不匹配；已拒绝自动登录。')
     }
+    const route = parseConnectionRoute(profile.connection_route)
+    const selected = hasConnectionRoute(route) ? await selectConnectionRoute(profile.server, route, attempt.signal) : null
+    if (loginHistory !== attemptedLoginHistory || !attempt.current()) return
     const password = decryptLoginPassword(profile.encrypted_password)
-    const result = await runAgentAction(() => requireAgentClient().login({
+    const result = await desktopLoginIntents.run(attempt, () => runAgentAction(() => requireAgentClient().login({
       server: profile.server,
       username: profile.username,
       password,
       ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
       ...(trustedLAN ? { trusted_lan_root_pem: trustedLAN.root } : {}),
-    }))
+      connection_ip: selected?.ip || '',
+    })))
+    if (!attempt.current()) return
     if (!result.ok) {
       // An obsolete failure must not disable a more recently accepted login.
       if (loginHistory !== attemptedLoginHistory) return
@@ -2413,7 +2439,7 @@ async function attemptAutomaticLogin() {
     }
     lastAutoLoginError = ''
   } catch (error) {
-    if (loginHistory !== attemptedLoginHistory) return
+    if (loginHistory !== attemptedLoginHistory || !attempt.current()) return
     lastAutoLoginError = formatLifecycleError(error)
     loginHistory = disableAutomaticLogin(loginHistory)
     await persistLoginHistoryBestEffort()
@@ -2638,12 +2664,16 @@ function registerIPCHandlers() {
       return { ok: false, error: agentError(error) }
     }
   })
-  ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown, username: unknown) => {
+  ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown, username: unknown, routeValue: unknown) => {
+    desktopServerProbe?.abort()
+    const probe = new AbortController(); desktopServerProbe = probe
     if (typeof serverValue !== 'string' || !serverValue.trim()) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server is required.' } }
     }
-    return probeDesktopServer(serverValue, typeof username === 'string' ? username.trim() : '')
+    try { return await probeDesktopServer(serverValue, typeof username === 'string' ? username.trim() : '', routeValue, probe.signal) }
+    finally { if (desktopServerProbe === probe) desktopServerProbe = null }
   })
+  ipcMain.handle('desktop:cancel-server-probe', () => { desktopServerProbe?.abort(); desktopServerProbe = null })
   ipcMain.handle('desktop:trust-lan-server', async (_event, serverValue: unknown) => {
     if (typeof serverValue !== 'string') {
       return { ok: false, error: {
@@ -7651,6 +7681,7 @@ function registerIPCHandlers() {
   }, false))
   ipcMain.handle('agent:retry', () => refreshAgentState())
   ipcMain.handle('agent:restart', async () => {
+    desktopLoginIntents.cancel()
     try {
       const hello = await requireAgentLifecycle().restart()
       const status = await requireAgentClient().status()
@@ -7672,6 +7703,7 @@ function registerIPCHandlers() {
       remember_password: boolean
       auto_login: boolean
       use_saved_password: boolean
+      connection_route: ConnectionRoute
     }>
     if (!value || typeof value.server !== 'string' || typeof value.username !== 'string' || typeof value.password !== 'string') {
       return { ok: false, error: { code: 'invalid_input', message: 'Server, username and password are required.' } }
@@ -7693,6 +7725,7 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'secure_storage_unavailable', message: 'Secure password storage is unavailable on this system.' } }
     }
 
+    const attempt = desktopLoginIntents.begin()
     const endLANAuthentication = beginPrivateLANAuthentication(server)
     try {
     // A saved user-approved IP identity is a hard trust boundary. On
@@ -7703,6 +7736,16 @@ function registerIPCHandlers() {
         code: 'server_tls_pin_changed',
         message: '局域网服务器证书与已批准的身份不一致。请重新明确批准后再登录。',
       } }
+    }
+    let route: ConnectionRoute
+    let selected: { ip: string } | null
+    try {
+      route = parseConnectionRoute(value.connection_route)
+      selected = hasConnectionRoute(route) ? await selectConnectionRoute(server, route, attempt.signal) : null
+      if (!attempt.current()) throw new ConnectionRouteError('server_canceled')
+    } catch (error) {
+      return { ok: false, error: { code: error instanceof ConnectionRouteError ? error.code : 'server_network',
+        message: error instanceof ConnectionRouteError ? error.message : '服务器连接检查失败。' } }
     }
 
     const existing = findLoginProfile(loginHistory, server, username)
@@ -7736,13 +7779,15 @@ function registerIPCHandlers() {
 
     // Only the identity-fenced verified CA may reach the loopback Agent. No
     // credentials are used during CA discovery; Go rechecks IP TLS itself.
-    const result = await runAgentAction(() => requireAgentClient().login({
+    const result = await desktopLoginIntents.run(attempt, () => runAgentAction(() => requireAgentClient().login({
       server,
       username,
       password,
       ...(mountPath ? { mount_path: mountPath } : {}),
       ...(trustedLAN ? { trusted_lan_root_pem: trustedLAN.root } : {}),
-    }))
+      connection_ip: selected?.ip || '',
+    })))
+    if (!attempt.current()) return { ok: false, error: { code: 'server_canceled', message: '登录操作已取消。' } }
     if (result.ok) {
       loginHistory = recordSuccessfulLogin(loginHistory, {
         server,
@@ -7752,17 +7797,20 @@ function registerIPCHandlers() {
         remember_password: rememberPassword,
         auto_login: autoLogin,
         ...(encryptedPassword ? { encrypted_password: encryptedPassword } : {}),
+        ...(hasConnectionRoute(route) ? { connection_route: route } : {}),
       })
       await persistLoginHistoryBestEffort()
     }
     return result
+    } catch {
+      return { ok: false, error: { code: 'server_canceled', message: '登录操作已取消。' } }
     } finally {
       endLANAuthentication()
     }
   })
   ipcMain.handle('agent:logout', () => {
     closeSecureBaiduMapWindow()
-    return runAgentAction(() => requireAgentClient().logout())
+    return desktopLoginIntents.logout(() => runAgentAction(() => requireAgentClient().logout()))
   })
   ipcMain.handle('agent:change-password', async (_event, input: unknown) => {
     const value = input as Partial<{ current_password: string; new_password: string }>
@@ -8094,6 +8142,8 @@ if (!primaryInstance) {
   })
   app.on('before-quit', () => {
     quitting = true
+    desktopLoginIntents.cancel()
+    desktopServerProbe?.abort()
     lifecycleLog?.record('before_quit', { reason: quitReason })
     agentMonitor?.abort()
     transferMonitor?.abort()

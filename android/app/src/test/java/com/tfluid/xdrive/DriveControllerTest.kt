@@ -38,6 +38,55 @@ class DriveControllerTest {
         it.connect("https://drive.example", false)
     }
 
+    @Test fun routeProbeMustFinishBeforeLoginAndPersistsOnlyOriginBoundPreferences() = runTest {
+        val selected = CompletableDeferred<String?>()
+        val api = Service()
+        val saved = mutableMapOf<String, ConnectionRoute>()
+        val route = ConnectionRoute(RouteMode.LAN, lanIp = "192.168.2.4")
+        var usedIp: String? = null
+        val c = DriveController(this, { api }, routeSelector = { _, _ -> selected.await() },
+            routedServiceFactory = { _, ip -> usedIp = ip; api },
+            saveRoute = { origin, value -> saved[origin] = value })
+        c.connect("https://drive.example", false, route); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        c.login("owner", "synthetic-password"); runCurrent()
+        assertEquals("", c.state.value.username)
+        selected.complete("192.168.2.4"); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertEquals("192.168.2.4", usedIp)
+        assertEquals("192.168.2.4", c.state.value.connectionIp)
+        assertEquals(mapOf("https://drive.example/" to route), saved)
+        c.changeServer(); runCurrent()
+        c.connect("https://another.example", false); runCurrent()
+        assertEquals(ConnectionRoute(), c.state.value.route)
+        assertNull(c.state.value.connectionIp)
+        c.close()
+    }
+
+    @Test fun lateProbeCannotInstallSessionAfterChangeServerAndReloginReselects() = runTest {
+        val late = CompletableDeferred<String?>()
+        var probes = 0
+        var built = 0
+        val route = ConnectionRoute(RouteMode.LAN, lanIp = "192.168.2.4")
+        val c = DriveController(this, { Service() },
+            routeSelector = { _, _ -> probes++; withContext(NonCancellable) { late.await() } },
+            routedServiceFactory = { _, _ -> built++; Service() })
+        c.connect("https://drive.example", false, route); runCurrent()
+        c.changeServer(); runCurrent()
+        late.complete("192.168.2.4"); runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertEquals(0, built)
+        c.connect("https://drive.example", false, route); runCurrent()
+        c.login("owner", "synthetic-password"); runCurrent()
+        c.logout(); runCurrent()
+        assertNull(c.state.value.connectionIp)
+        c.login("owner", "synthetic-password"); runCurrent()
+        assertEquals(3, probes)
+        assertEquals(2, built)
+        c.close()
+    }
+
     @Test fun loginNavigatesAndPagesReplaceRows() = runTest {
         val api = Service()
         val c = controller(this, api)

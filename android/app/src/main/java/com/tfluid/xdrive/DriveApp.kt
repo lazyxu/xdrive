@@ -37,7 +37,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .12f))
             when (state.screen) {
-                Screen.CONNECT -> ConnectionForm(state, controller::connect) { if (updates != null) AccountMenu(state, controller, updates::show) }
+                Screen.CONNECT -> ConnectionForm(state, controller::connect, controller::savedRoute) { if (updates != null) AccountMenu(state, controller, updates::show) }
                 Screen.LOGIN -> LoginForm(state, controller::login) { AccountMenu(state, controller, updates?.let { it::show }) }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
                 Screen.FILES -> Files(state, controller)

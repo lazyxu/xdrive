@@ -988,6 +988,7 @@ const agent = Object.freeze({
     remember_password?: boolean
     auto_login?: boolean
     use_saved_password?: boolean
+    connection_route?: { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }
   }) => ipcRenderer.invoke('agent:login', input),
   logout: () => ipcRenderer.invoke('agent:logout'),
   changePassword: (input: { current_password: string; new_password: string }) => ipcRenderer.invoke('agent:change-password', input),
@@ -1040,7 +1041,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
     ipcRenderer.on('desktop:login-history', handler)
     return () => ipcRenderer.removeListener('desktop:login-history', handler)
   },
-  probeServer: (server: string, username?: string) => ipcRenderer.invoke('desktop:probe-server', server, username),
+  probeServer: (server: string, username?: string, route?: { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }) => ipcRenderer.invoke('desktop:probe-server', server, username, route),
+  cancelServerProbe: () => ipcRenderer.invoke('desktop:cancel-server-probe'),
   trustLANServer: (server: string) => ipcRenderer.invoke('desktop:trust-lan-server', server),
   getLANTrust: (server: string) => ipcRenderer.invoke('desktop:get-lan-trust', server),
   revokeLANTrust: (server: string) => ipcRenderer.invoke('desktop:revoke-lan-trust', server),

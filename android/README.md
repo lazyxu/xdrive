@@ -9,9 +9,35 @@ Web/Desktop implementations are unchanged.
 First increment: Server configuration, login, mandatory password change, root and
 nested folder browsing, Server-ordered 100-item pages, refresh/retry, file metadata
 and logout. Tokens are memory-only; a process restart requires login. Only the
-Server address, explicit HTTP preference and selected update source are saved. HTTPS uses platform trust
+Server address, per-origin connection preferences, explicit HTTP preference and selected update source are saved. HTTPS uses platform trust
 and hostname validation. HTTP sends credentials and content without encryption;
 it requires explicit opt-in and should only be used on a trusted network.
+
+The connection screen offers 自动 / 仅内网 / 仅公网. Optional LAN and public
+addresses must be literal IPs; LAN accepts RFC1918 IPv4 or ULA IPv6, while public
+addresses must be globally routable. LAN-only requires an address. Android uses
+the device's own DNS when no public address is supplied; Windows hosts entries
+do not configure an emulator's resolver. Public-only filters private, loopback,
+link-local, reserved and documentation ranges from DNS results.
+
+With explicit route settings, an anonymous bounded HTTPS `/api/v1/version`
+request selects the socket before credentials are sent. Auto tries the configured
+LAN address first, then public addresses only after DNS/connection/timeout
+failure. Certificate or invalid-response errors stop selection. The original URL,
+Host/SNI and platform certificate/hostname checks remain in force. The selected
+IP is pinned in memory for that login session; logout/relogin or reconnect
+selects again. Authenticated calls never switch routes or replay after a network
+failure. Preferences are scoped to the exact origin and contain no credentials.
+The public update checker continues to use its own independent client.
+The Android client resolves through API 29+ asynchronous `DnsResolver` using
+the current device network. The 12-second selection deadline or caller
+cancellation cancels its native `CancellationSignal`; probes have a separate
+3-second timeout. No detached blocking DNS thread is used by the Android client.
+
+Default Auto with both IP fields empty retains the previous connection behavior,
+including direct IP addresses and the explicit HTTP opt-in. Explicit route settings
+require an HTTPS DNS domain. Unknown saved modes block connection until a valid mode is selected. These
+controls do not change the server's listening ports, LAN reachability or CA trust.
 
 This does **not** yet implement file preview/download/editing, upload, Gallery,
 album synchronization or full Web/Desktop parity. Next increments add manual

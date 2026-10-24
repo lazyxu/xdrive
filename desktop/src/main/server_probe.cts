@@ -54,6 +54,7 @@ export async function probeDesktopServer(
   serverValue: string,
   fetcher: ProbeFetch,
   timeoutMs = 5_000,
+  signal?: AbortSignal,
 ): Promise<DesktopServerProbeResult> {
   let target: URL
   try {
@@ -70,6 +71,9 @@ export async function probeDesktopServer(
   }
 
   const controller = new AbortController()
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) controller.abort()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     // No login secrets, browser cookies, cache or cross-host redirects are used.
@@ -106,5 +110,6 @@ export async function probeDesktopServer(
     return networkFailure(error, controller.signal.aborted)
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
   }
 }

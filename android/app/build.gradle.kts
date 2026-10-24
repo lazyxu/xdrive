@@ -15,8 +15,8 @@ android {
         applicationId = "com.tfluid.xdrive"
         minSdk = 29
         targetSdk = 35
-        versionCode = providers.gradleProperty("androidVersionCode").map { it.toInt().also { code -> require(code in 1..2100000000) } }.getOrElse(3)
-        versionName = providers.gradleProperty("androidVersionName").getOrElse("0.1.2")
+        versionCode = providers.gradleProperty("androidVersionCode").map { it.toInt().also { code -> require(code in 1..2100000000) } }.getOrElse(4)
+        versionName = providers.gradleProperty("androidVersionName").getOrElse("0.1.3")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +31,7 @@ type agentSnapshot struct {
 	Username           string
 	Role               string
 	Server             string
+	ConnectionIP       string
 	MountPath          string
 	AuthStatus         string
 	SyncStatus         string
@@ -316,6 +318,7 @@ func (c *agentController) Run() {
 			s.Username = d.cfg.Username
 			s.Role = d.cfg.Role
 			s.Server = d.cfg.Server
+			s.ConnectionIP = d.cfg.ConnectionIP
 			s.MountPath = d.root
 			s.AuthStatus = "需要重新登录"
 			s.SyncStatus = "等待登录"
@@ -393,15 +396,16 @@ func (c *agentController) Run() {
 			if errors.Is(loadErr, userconfig.ErrSessionInvalid) {
 				c.setSnapshot(func(s *agentSnapshot) {
 					*s = agentSnapshot{
-						Configured: false,
-						Username:   d.cfg.Username,
-						Role:       d.cfg.Role,
-						Server:     d.cfg.Server,
-						MountPath:  d.root,
-						AuthStatus: "需要重新登录",
-						SyncStatus: "等待登录",
-						Paused:     d.cfg.Paused,
-						Version:    version.String(),
+						Configured:   false,
+						Username:     d.cfg.Username,
+						Role:         d.cfg.Role,
+						Server:       d.cfg.Server,
+						ConnectionIP: d.cfg.ConnectionIP,
+						MountPath:    d.root,
+						AuthStatus:   "需要重新登录",
+						SyncStatus:   "等待登录",
+						Paused:       d.cfg.Paused,
+						Version:      version.String(),
 					}
 				})
 			} else {
@@ -436,6 +440,7 @@ func (c *agentController) Run() {
 			s.Username = d.cfg.Username
 			s.Role = d.cfg.Role
 			s.Server = d.cfg.Server
+			s.ConnectionIP = d.cfg.ConnectionIP
 			s.MountPath = d.root
 			s.Paused = d.cfg.Paused
 			s.MustChangePassword = d.cfg.MustChangePassword
@@ -701,17 +706,45 @@ func waitMountDone(ch <-chan error) {
 }
 
 func (c *agentController) Authenticate(server, username, password, mountPath string) error {
-	return c.authenticateWithTrustedLANRoot(server, username, password, mountPath, "")
+	return c.authenticateWithConnectionIP(server, username, password, mountPath, "", nil)
 }
 
 // AuthenticateWithTrustedLANRoot accepts CA material only through the existing
 // authenticated loopback Desktop IPC and only after Desktop has independently
 // verified it through a previously authenticated public HTTPS domain.
 func (c *agentController) AuthenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error {
-	return c.authenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM)
+	return c.authenticateWithConnectionIP(server, username, password, mountPath, rootPEM, nil)
 }
 
-func (c *agentController) authenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error {
+// AuthenticateWithConnectionIP uses an explicitly selected Desktop session
+// route. Empty explicitly clears it; legacy login methods retain stored routes.
+func (c *agentController) AuthenticateWithConnectionIP(server, username, password, mountPath, rootPEM, connectionIP string) error {
+	return c.authenticateWithConnectionIP(server, username, password, mountPath, rootPEM, &connectionIP)
+}
+
+func sameAgentLoginOrigin(previous, next string) bool {
+	if strings.EqualFold(strings.TrimRight(previous, "/"), strings.TrimRight(next, "/")) {
+		return true
+	}
+	a, aErr := url.Parse(previous)
+	b, bErr := url.Parse(next)
+	if aErr != nil || bErr != nil || a.Scheme != "https" || b.Scheme != "https" ||
+		a.User != nil || b.User != nil || a.RawQuery != "" || b.RawQuery != "" ||
+		a.ForceQuery || b.ForceQuery || a.Fragment != "" || b.Fragment != "" ||
+		(a.Path != "" && a.Path != "/") || (b.Path != "" && b.Path != "/") {
+		return false
+	}
+	aPort, bPort := a.Port(), b.Port()
+	if aPort == "" {
+		aPort = "443"
+	}
+	if bPort == "" {
+		bPort = "443"
+	}
+	return a.Hostname() != "" && strings.EqualFold(a.Hostname(), b.Hostname()) && aPort == bPort
+}
+
+func (c *agentController) authenticateWithConnectionIP(server, username, password, mountPath, rootPEM string, selectedIP *string) error {
 	server = strings.TrimRight(strings.TrimSpace(server), "/")
 	username = strings.TrimSpace(username)
 	mountPath = strings.TrimSpace(mountPath)
@@ -723,11 +756,20 @@ func (c *agentController) authenticateWithTrustedLANRoot(server, username, passw
 	// legacy IPC and automatic reauthentication paths that omit the optional
 	// Desktop TLS field. Never downgrade a previously paired LAN origin to
 	// the platform CA pool merely because a caller omitted root_pem.
-	if rootPEM == "" {
+	connectionIP := ""
+	if selectedIP != nil {
+		connectionIP = *selectedIP
+	}
+	if rootPEM == "" || selectedIP == nil {
 		previous, loadErr := userconfig.Load()
 		if loadErr == nil {
-			if strings.EqualFold(strings.TrimRight(previous.Server, "/"), server) {
-				rootPEM = previous.TrustedLANRootPEM
+			if sameAgentLoginOrigin(previous.Server, server) {
+				if rootPEM == "" {
+					rootPEM = previous.TrustedLANRootPEM
+				}
+				if selectedIP == nil {
+					connectionIP = previous.ConnectionIP
+				}
 			}
 		} else if previousPath, pathErr := userconfig.Path(); pathErr == nil {
 			if _, statErr := os.Stat(previousPath); statErr == nil {
@@ -746,6 +788,9 @@ func (c *agentController) authenticateWithTrustedLANRoot(server, username, passw
 			return err
 		}
 	}
+	if err := publicClient.ConfigureConnectionIP(connectionIP); err != nil {
+		return err
+	}
 	resp, err := publicClient.Login(ctx, username, password)
 	if err != nil {
 		return err
@@ -761,13 +806,14 @@ func (c *agentController) authenticateWithTrustedLANRoot(server, username, passw
 		}
 		sessionID = old.SessionID
 		cacheLimitBytes = old.CacheLimitBytes
-		if strings.EqualFold(strings.TrimRight(old.Server, "/"), server) && old.Username == resp.Username {
+		if sameAgentLoginOrigin(old.Server, server) && old.Username == resp.Username {
 			syncRules = append([]userconfig.SyncRule(nil), old.SyncRules...)
 		}
 	}
 	cfg := userconfig.Config{
 		Server:            server,
 		TrustedLANRootPEM: rootPEM,
+		ConnectionIP:      connectionIP,
 		MountPath:         mountPath,
 		SessionID:         sessionID,
 		Paused:            false,
@@ -786,6 +832,7 @@ func (c *agentController) authenticateWithTrustedLANRoot(server, username, passw
 		s.Username = resp.Username
 		s.Role = resp.Role
 		s.Server = server
+		s.ConnectionIP = connectionIP
 		s.MustChangePassword = resp.MustChangePassword
 		if resp.MustChangePassword {
 			s.AuthStatus = "需要修改密码"
@@ -1657,6 +1704,6 @@ func loadDesired() (desiredMount, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return d, err
 	}
-	d.key = cfg.Server + "\x00" + cfg.SessionID + "\x00" + root + "\x00" + cfg.StoragePolicyKey()
+	d.key = cfg.Server + "\x00" + cfg.SessionID + "\x00" + root + "\x00" + cfg.ConnectionIP + "\x00" + cfg.StoragePolicyKey()
 	return d, nil
 }

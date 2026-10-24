@@ -39,6 +39,7 @@ type Config struct {
 	// Pinned CA is public certificate material, never a password or private key.
 	// It affects only this xDrive private-IP client, not the operating system.
 	TrustedLANRootPEM  string     `json:"trusted_lan_root_pem,omitempty"`
+	ConnectionIP       string     `json:"connection_ip,omitempty"`
 	SessionID          string     `json:"session_id,omitempty"`
 	Username           string     `json:"username"`
 	Role               string     `json:"role,omitempty"`
@@ -80,6 +81,9 @@ func Load() (Config, error) {
 	}
 	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
 	cfg.Username = strings.TrimSpace(cfg.Username)
+	if err := client.ValidConnectionIP(cfg.Server, cfg.ConnectionIP); err != nil {
+		return Config{}, fmt.Errorf("invalid connection IP: %w", err)
+	}
 	if err := normalizeStoragePolicy(&cfg); err != nil {
 		return Config{}, fmt.Errorf("invalid storage policy: %w", err)
 	}
@@ -123,6 +127,9 @@ func Load() (Config, error) {
 func Save(cfg Config) error {
 	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
 	cfg.Username = strings.TrimSpace(cfg.Username)
+	if err := client.ValidConnectionIP(cfg.Server, cfg.ConnectionIP); err != nil {
+		return fmt.Errorf("invalid connection IP: %w", err)
+	}
 	if err := normalizeStoragePolicy(&cfg); err != nil {
 		return err
 	}
@@ -322,6 +329,9 @@ func NewClient(cfg Config) (*client.Client, error) {
 		if err := managed.ConfigurePrivateLANRoot(cfg.TrustedLANRootPEM); err != nil {
 			return nil, err
 		}
+	}
+	if err := managed.ConfigureConnectionIP(cfg.ConnectionIP); err != nil {
+		return nil, err
 	}
 	return managed, nil
 }

@@ -57,7 +57,7 @@ data class DriveNode(
 data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
 
 /** Messages are client-owned constants; response bodies and transport causes are never retained. */
-enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT }
+enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTION, TIMEOUT, TLS, INVALID_RESPONSE }
 
 class ApiException(val statusCode: Int, message: String, val reason: ApiFailureReason = ApiFailureReason.UNKNOWN) : IOException(message)
 
@@ -70,9 +70,10 @@ interface XDriveService {
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
 }
 
-class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient()) : XDriveService, Closeable {
+class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
     // Separate owned resources also make closing this service safe when a client was injected.
     private val http = client.newBuilder()
+        .pinConnection(address, connectionIp)
         .dispatcher(Dispatcher()).connectionPool(ConnectionPool())
         .cache(null)
         .followRedirects(false).followSslRedirects(false)
@@ -163,7 +164,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    continuation.resumeWithException(ApiException(0, "Unable to connect to server"))
+                    if (continuation.isActive) continuation.resumeWithException(transportFailure(e))
                 }
                 override fun onResponse(call: Call, response: Response) {
                     try {
@@ -186,9 +187,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     } catch (e: ApiException) {
                         continuation.resumeWithException(e)
                     } catch (_: SerializationException) {
-                        continuation.resumeWithException(ApiException(response.code, "Invalid server response"))
-                    } catch (_: IOException) {
-                        continuation.resumeWithException(ApiException(0, "Unable to read server response"))
+                        continuation.resumeWithException(ApiException(response.code, "Invalid server response", ApiFailureReason.INVALID_RESPONSE))
+                    } catch (e: IOException) {
+                        continuation.resumeWithException(transportFailure(e))
                     } catch (_: IllegalArgumentException) {
                         continuation.resumeWithException(ApiException(response.code, "Invalid server response"))
                     }
@@ -239,5 +240,5 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return value.longOrNull ?: invalidPayload()
     }
     private fun validToken(token: String): Boolean = token.isNotEmpty() && token.all { it in '!'..'~' }
-    private fun invalidPayload(): Nothing = throw ApiException(0, "Invalid server response")
+    private fun invalidPayload(): Nothing = throw ApiException(0, "Invalid server response", ApiFailureReason.INVALID_RESPONSE)
 }
