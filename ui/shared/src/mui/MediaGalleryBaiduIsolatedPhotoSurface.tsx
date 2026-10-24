@@ -6,6 +6,8 @@ import type { MediaThumbnailLoader } from './MediaGallery'
 import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
+import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
+import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
@@ -29,6 +31,9 @@ type Bounds = XDriveBaiduIsolatedBounds
 export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   childOrigin,
   mintChildTicket,
+  getInlinePrototypeConfig,
+  getInlineSignedStatus,
+  mode = 'isolated',
   listOwnerCells,
   loadThumbnail,
   edgeToEdge = false,
@@ -44,7 +49,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mapPhotoScope,
 }: {
   childOrigin: string
-  mintChildTicket: (signal: AbortSignal) => Promise<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>
+  mintChildTicket?: (signal: AbortSignal) => Promise<{provider:'baidu-jsapi-4.0';child_origin:string;ticket:string}>
+  getInlinePrototypeConfig?: (signal: AbortSignal) => Promise<XDriveBaiduJSAPIPrototypeConfig>
+  getInlineSignedStatus?: (signal: AbortSignal) => Promise<{
+    provider:'baidu-jsapi-4.0';enabled:boolean;activation_state:string;
+    isolated_child_origin?:string
+  }>
+  mode?: 'inline' | 'isolated'
   listOwnerCells: (bounds: Bounds, signal: AbortSignal,
     filters?: XDriveBaiduMapPhotoScope['filters'], albumKey?: string) => Promise<MediaBaiduNativeCellsPage>
   loadThumbnail?: MediaThumbnailLoader
@@ -155,9 +166,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       onReady(false)
       failureCallback.current?.()
     }
-    const frame = xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>({
-      host:node,parentWindow:win,childOrigin,
-      onActivateCell:selection => {
+    const commonMapOptions = {
+      host:node,parentWindow:win,
+      onActivateCell:(selection:MediaBaiduNativeCellSelection) => {
         const approved=acceptedScope.current
         if(!lifetime.signal.aborted && approved && approved.key===filterRef.current.key &&
           acceptedCells.current.some(cell=>cell.node_id===selection.node_id &&
@@ -168,7 +179,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
       },
       onCancel:cancel,
-      onCamera:camera => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
+      onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
         if (returnCamera) {
@@ -180,10 +191,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         onReady(true)
       },
       onMapFailure:failure,
-      onProjectedCells:positions => {
+      onProjectedCells:(positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>) => {
         if (!lifetime.signal.aborted) setProjected(positions)
       },
-      onViewport: bounds => { void queryCells(bounds, true) },
+      onViewport: (bounds:Bounds) => { void queryCells(bounds, true) },
       onReady:() => {
         const world: Bounds = {coordinate_space:'bd09ll',west:-180,south:-85,east:180,north:85}
         // An initial viewport request must not race away the worldwide
@@ -194,7 +205,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           void acquireTicket()
         })
       },
-    })
+    }
+    // Business/Owner Cells/Wall/Viewer stay in this SAME trusted React Parent.
+    // Only the map SDK host changes: same document or independent HTTPS Child.
+    const frame = mode === 'inline'
+      ? (getInlinePrototypeConfig && getInlineSignedStatus
+        ? xDriveMountBaiduInlineMap<MediaBaiduNativeCellSelection>({
+          ...commonMapOptions,
+          getPrototypeConfig:getInlinePrototypeConfig,
+          getSignedStatus:getInlineSignedStatus,
+        })
+        : null)
+      : xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>({
+        ...commonMapOptions,childOrigin,
+      })
     if (!frame) { failure(); return }
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
@@ -265,6 +289,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const acquireTicket=async() => {
       if(lifetime.signal.aborted || failed) return
       try {
+        if(mode==='inline') {
+          if(!frame || !('beginAuthorizedInlineSession' in frame) ||
+              !await frame.beginAuthorizedInlineSession(lifetime.signal))
+            throw new Error('map_session_denied')
+          return
+        }
+        if(!mintChildTicket || !frame || !('bootstrapMapSession' in frame))
+          throw new Error('map_session_denied')
         const receipt=await mintChildTicket(lifetime.signal)
         if(lifetime.signal.aborted || receipt?.provider!=='baidu-jsapi-4.0' ||
             receipt.child_origin!==childOrigin || !/^[a-f0-9]{64}$/.test(receipt.ticket) ||
@@ -282,7 +314,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       frame.dispose()
       onReady(false)
     }
-  },[childOrigin,mintChildTicket,listOwnerCells,onReady,scope])
+  },[childOrigin,mintChildTicket,getInlinePrototypeConfig,getInlineSignedStatus,mode,listOwnerCells,onReady,scope])
 
   // Select the most informative visible covers and avoid overcrowding.
   // All 64 map numbers remain in the provider map; only 24 thumbnails load.

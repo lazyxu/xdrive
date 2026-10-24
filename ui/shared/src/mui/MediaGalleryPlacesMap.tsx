@@ -9,7 +9,6 @@ import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
-import { XDriveMediaGalleryBaiduPrototypeMap } from './MediaGalleryBaiduPrototypeMap'
 import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL } from '../media-gallery-places-map-mode'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
@@ -23,9 +22,8 @@ import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, listPlacesMapOverview, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
-  getBaiduJSAPIPrototype, onOpenViewportPhotos,
-  mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
+  listBaiduNativeCells, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
+  getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, mapAlbums = [],
@@ -92,13 +90,17 @@ export function XDriveMediaGalleryPlacesMap({
     const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
     if (href) window.location.replace(href)
   }
-  // The list selector and native map pins open the same current Owner place.
-  // Only the legacy mode supports direct singleton Viewer; isolated mode
-  // continues to use its authorized Cell/Viewport navigation.
-  const openSelectedPlace = mapMode === 'prototype' && selectedPlace?.id.startsWith('place:')
-    ? (onOpenPrototypePlace ?? onOpenPlace) : onOpenPlace
-  const hasChildPorts = Boolean(!desktopOnly && getBaiduJSAPI4Status &&
-    mintBaiduIsolatedChildTicket && listBaiduNativeCells && onOpenBaiduNativeCell)
+  // Legacy Places and nearby queries have different membership from a signed
+  // filtered BD09 Cell/Camera. A restricted map must NEVER silently broaden
+  // its Album/favorite/date/type scope using the legacy selector. For the
+  // unrestricted Owner scope, preserve its freshly authorized singleton Viewer.
+  const placeListScoped = !xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)
+  const openSelectedPlace = placeListScoped ? undefined
+    : selectedPlace?.id.startsWith('place:')
+      ? (onOpenPrototypePlace ?? onOpenPlace) : onOpenPlace
+  const hasMapPorts = Boolean(!desktopOnly && getBaiduJSAPI4Status &&
+    listBaiduNativeCells && onOpenBaiduNativeCell &&
+    (mapMode === 'prototype' ? getBaiduJSAPIPrototype : mintBaiduIsolatedChildTicket))
   const cameraRef = useRef<XDriveBaiduNativeCameraSnapshot | null>(
     xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera) ? { ...initialNativeCamera } : null,
   )
@@ -146,8 +148,8 @@ export function XDriveMediaGalleryPlacesMap({
     setChildFailed(false)
     setMapReady(false)
     setStatus('checking')
-    if (desktopOnly || mapMode === 'prototype') return
-    if (!hasChildPorts || !getBaiduJSAPI4Status) {
+    if (desktopOnly) return
+    if (!hasMapPorts || !getBaiduJSAPI4Status) {
       setStatus('unsupported')
       if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'client_transport_missing')
       return
@@ -172,8 +174,8 @@ export function XDriveMediaGalleryPlacesMap({
         diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
     })
     return () => controller.abort()
-  }, [desktopOnly, mapMode, hasChildPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
-  const nativeEnabled = mapMode === 'isolated' && status === 'authorized' && !childFailed && childOrigin !== ''
+  }, [desktopOnly, mapMode, hasMapPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
+  const nativeEnabled = status === 'authorized' && !childFailed && childOrigin !== ''
   // Only the parent owns the selected Album/filters; nothing here is sent to
   // Baidu's Child, and the current SDK iframe does not remount on changes.
   const changeMapScope = (patch: Partial<MediaGalleryQuery>, albumKey = mapPhotoScope.albumKey) => {
@@ -221,14 +223,14 @@ export function XDriveMediaGalleryPlacesMap({
       {mapMode === 'prototype' && !desktopOnly ? (
         <Typography variant="caption" color="text.secondary"
           data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>
-          同页原型直接在图库页面执行百度第三方脚本，不具备独立 Origin 隔离；切换安全版会重新加载页面。
+          同页地图与安全隔离版使用相同的已授权 BD-09 照片范围，但第三方百度脚本直接运行在图库主文档，不具备独立 Origin 隔离；切换安全版会重新加载页面。
         </Typography>
       ) : null}
       <Box component="details" data-xdrive-places-map-options sx={{ px: 1.5, pb: 1 }}>
         <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
           typography: 'caption', minHeight: 28 }}>地点筛选与更多操作</Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ py: 1 }}>
-          <Autocomplete size="small" options={places} getOptionLabel={p => p.name}
+          <Autocomplete size="small" options={places} disabled={placeListScoped} getOptionLabel={p => p.name}
             isOptionEqualToValue={(a, b) => a.id === b.id} value={selectedPlace ?? null}
             onChange={(_event, p) => {
               // A different list selection must cancel an in-flight singleton
@@ -243,7 +245,7 @@ export function XDriveMediaGalleryPlacesMap({
             <Button variant="outlined" size="small" disabled={!selectedPlace}
               onClick={() => { if (selectedPlace) openSelectedPlace(selectedPlace) }}>查看此地点照片</Button>
           ) : null}
-          {onOpenNearby ? (
+          {onOpenNearby && !placeListScoped ? (
             <>
               <TextField select size="small" label="附近半径" value={nearbyRadiusKM}
                 onChange={event => setNearbyRadiusKM(Number(event.target.value))} sx={{ minWidth: 120 }}>
@@ -260,15 +262,18 @@ export function XDriveMediaGalleryPlacesMap({
           ) : null}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          {mapMode === 'prototype'
-            ? '同页原型使用当前账户的 GPS 聚合代表点；照片墙仍经 Server Owner 授权。高倍视窗附近范围不等于精确 BD-09 Range。'
-            : '隔离版仅显示当前账户已授权的 GPS 媒体；照片数量和 Viewer 使用同一 Server Range。'}
+          两种模式只显示当前账户获授权且来源有效的 BD-09 照片；地图 Count、相册筛选、Cell/Camera 照片墙和 Viewer 均使用同一 Server Range。
         </Typography>
+        {placeListScoped ? (
+          <Typography variant="caption" color="text.secondary">
+            当前相册或筛选已生效：请从地图标记或「查看此地图的全部照片」进入已授权照片范围；普通地点和附近操作暂不可用。
+          </Typography>
+        ) : null}
       </Box>
       <Box sx={{px:1.5,pb:1}}><XDriveMediaGalleryMapGPSCoverage
         getCoverage={getBaiduMapCoverage} getReasons={getBaiduMapCoverageReasons}
         ownerScope={diagnosticScope}/></Box>
-      {onMapPhotoScopeChange && mapMode === 'isolated' && !desktopOnly ? (
+      {onMapPhotoScopeChange && !desktopOnly ? (
         <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
           <Stack direction="row" flexWrap="wrap" gap={1} sx={{ alignItems:'center' }}>
             <TextField select size="small" label="照片类型" value={mapPhotoScope.filters.asset_kind ?? 'all'}
@@ -338,38 +343,22 @@ export function XDriveMediaGalleryPlacesMap({
           正在初始化百度动态地图…
         </Typography>
       ) : null}
-      {mapMode === 'prototype' && !desktopOnly ? (
-        getBaiduJSAPIPrototype && listPlacesMapOverview ? (
-          <XDriveMediaGalleryBaiduPrototypeMap
-            key={diagnosticScope ?? 'places-prototype'}
-            getPrototypeConfig={getBaiduJSAPIPrototype}
-            listPlacesMapOverview={listPlacesMapOverview}
-            initialNativeCamera={cameraRef.current ?? undefined}
-            onNativeCameraChange={rememberCamera}
-            onOpenPlace={onOpenPrototypePlace ?? onOpenPlace}
-            onInvalidated={onBaiduNativeCellInvalidated}
-            onOpenViewportPhotos={onOpenViewportPhotos}
-            loadThumbnail={loadPhotoCoverThumbnail}
-            diagnosticScope={diagnosticScope}
-          />
-        ) : (
-          <Box role="alert" data-xdrive-baidu-prototype-unavailable sx={{ px: 1.5, pb: 1.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              当前 Web / Server 缺少同页原型接口；可切换安全隔离版，或更新到匹配版本。
-            </Typography>
-          </Box>
-        )
-      ) : desktopOnly ? (
+      {desktopOnly ? (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
           <Button variant="outlined" onClick={() => onOpenSecureDesktopMap?.(mapPhotoScope)}>在独立 HTTPS 安全窗口打开动态地图</Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             动态地图由 Server 签名发布，不在 Electron file 页面加载第三方脚本。
           </Typography>
         </Box>
-      ) : nativeEnabled && mintBaiduIsolatedChildTicket && listBaiduNativeCells && onOpenBaiduNativeCell ? (
+      ) : nativeEnabled && listBaiduNativeCells && onOpenBaiduNativeCell &&
+          (mapMode === 'prototype' ? getBaiduJSAPIPrototype : mintBaiduIsolatedChildTicket) ? (
         <XDriveMediaGalleryBaiduIsolatedPhotoSurface
-          key={(diagnosticScope ?? '') + ':' + childOrigin + ':' + retry}
-          childOrigin={childOrigin} mintChildTicket={mintBaiduIsolatedChildTicket}
+          key={(diagnosticScope ?? '') + ':' + mapMode + ':' + childOrigin + ':' + retry}
+          mode={mapMode === 'prototype' ? 'inline' : 'isolated'}
+          childOrigin={childOrigin}
+          getInlinePrototypeConfig={getBaiduJSAPIPrototype}
+          getInlineSignedStatus={getBaiduJSAPI4Status}
+          mintChildTicket={mintBaiduIsolatedChildTicket}
           listOwnerCells={listBaiduNativeCells} loadThumbnail={loadPhotoCoverThumbnail}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}
           onOpenViewport={onOpenBaiduNativeViewport}
@@ -400,7 +389,7 @@ export function XDriveMediaGalleryPlacesMap({
             <Typography variant="body2" color="text.secondary">独立动态地图会话加载失败。</Typography>
           ) : null}
           <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
-            {hasChildPorts ? <Button variant="outlined" size="small"
+            {hasMapPorts ? <Button variant="outlined" size="small"
               onClick={() => setRetry(n => n + 1)}>重试动态地图</Button> : null}
             {onOpenDiagnostics ? <Button size="small" variant="text" onClick={onOpenDiagnostics}
               data-xdrive-baidu-map-diagnostics-link>查看原因与修复建议</Button> : null}

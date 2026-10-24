@@ -48,7 +48,7 @@ test('Album, favorite, media type and capture dates retain exact Parent scope', 
     sort: {by:'added', dir:'asc'},
   }))
   assert.equal(a.ok, true)
-  assert.equal(a.requiresIsolated, true)
+  assert.equal(a.requiresIsolated, false)
   assert.equal(a.scope.albumKey, 'manual:Family Photos')
   assert.equal(a.scope.filters.favorite, true)
   assert.equal(a.scope.filters.time_zone, 'Asia/Tokyo')
@@ -56,7 +56,7 @@ test('Album, favorite, media type and capture dates retain exact Parent scope', 
   const favorites = entry.xDriveGalleryMapEntryScope(input('favorites'))
   assert.equal(favorites.ok, true)
   assert.equal(favorites.scope.filters.favorite, true)
-  assert.equal(favorites.requiresIsolated, true)
+  assert.equal(favorites.requiresIsolated, false)
   const video = entry.xDriveGalleryMapEntryScope(input('media-types',
     {asset_kind:'video'}, null, {activeMediaType:'video'}))
   assert.equal(video.ok, true)
@@ -121,7 +121,7 @@ test('Gallery source and map modes do not silently bypass the converter', () => 
   assert.ok(g.includes("accepted.kind !== 'all'"))
   assert.ok(g.includes('xDriveGalleryMapEntryScope('))
   assert.ok(g.includes('changeBaiduMapPhotoScope(entry.scope)'))
-  assert.ok(g.includes('entry.requiresIsolated'))
+  assert.ok(!g.includes('entry.requiresIsolated'))
   // Electron never opens a new HTTPS window with the untrusted/unsent
   // current Album just because the browser mode URL happens to say isolated.
   // Desktop must send exact signed-map membership to the separately

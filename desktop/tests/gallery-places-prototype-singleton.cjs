@@ -61,7 +61,7 @@ test('the legacy direct Viewer remains Owner-place-scoped and camera-cancelable'
   assert.ok(gallery.includes("target: { kind: 'all', query: { ...viewerQuery } }"))
   assert.ok(gallery.includes('owner !== deletePreferenceScopeRef.current'))
   assert.ok(gallery.includes('generation !== requestID.current'))
-  assert.ok(places.includes('onOpenPlace={onOpenPrototypePlace ?? onOpenPlace}'))
+  assert.ok(places.includes('mode={mapMode === \'prototype\' ? \'inline\' : \'isolated\'}'))
   assert.ok(places.includes('onInvalidated={onBaiduNativeCellInvalidated}'))
   assert.ok(prototype.includes('invalidateRef.current?.()'))
   const gestureStart=prototype.indexOf('const stopOnGesture = () => {')
@@ -142,9 +142,15 @@ test('only active versioned media from the Server Owner range can open direct Vi
 
 test('legacy place selector reuses native pin Viewer scope and cancels stale requests', () => {
   const places=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
-  assert.match(places, /const openSelectedPlace = mapMode === 'prototype' && selectedPlace\?\.id\.startsWith\('place:'\)\s*\? \(onOpenPrototypePlace \?\? onOpenPlace\) : onOpenPlace/)
+  assert.match(places, /const placeListScoped = !xDriveBaiduMapScopeSurvivesFullReload\(mapPhotoScope\)/)
+  assert.match(places, /const openSelectedPlace = placeListScoped \? undefined/)
+  assert.match(places, /selectedPlace\?\.id\.startsWith\('place:'\)/)
+  assert.match(places, /\(onOpenPrototypePlace \?\? onOpenPlace\) : onOpenPlace/)
+  assert.match(places, /disabled=\{placeListScoped\}/)
+  assert.match(places, /onOpenNearby && !placeListScoped/)
+  assert.match(places, /普通地点和附近操作暂不可用/)
   // Synthetic map-region entries keep the pre-existing photo-wall navigation.
-  assert.match(places, /onOpenPlace=\{onOpenPrototypePlace \?\? onOpenPlace\}/)
+  assert.match(places, /onOpenCell=\{onOpenBaiduNativeCell\}/)
   assert.match(places, /\{openSelectedPlace \? \(/)
   assert.match(places, /if \(selectedPlace\) openSelectedPlace\(selectedPlace\)/)
   const select=places.slice(places.indexOf('onChange={(_event, p) => {'),

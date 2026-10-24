@@ -112,7 +112,7 @@ test('full camera uses original virtual Gallery wall, not the ten-cover preview'
   assert.ok(map.includes('onOpenViewport={onOpenBaiduNativeViewport}'))
   assert.ok(surface.includes('data-xdrive-places-full-camera-wall'))
   assert.ok(surface.includes('latestAcceptedViewport.current = accepted'))
-  assert.ok(surface.includes('onViewport: bounds => { void queryCells(bounds, true) }'))
+  assert.ok(surface.includes('onViewport: (bounds:Bounds) => { void queryCells(bounds, true) }'))
   assert.ok(web.includes('/api/v1/media/places/baidu-jsapi/viewport-items?'))
   assert.doesNotMatch(child,/viewport-items|loadThumbnail|PhotoAsset|Bearer/)
 })

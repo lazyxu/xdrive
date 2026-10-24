@@ -26,7 +26,6 @@ import {
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
-import { xDrivePlacesMapModeFromHref } from '../media-gallery-places-map-mode'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { XDriveFolderIcon } from './FolderIcon'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
@@ -3760,12 +3759,6 @@ export function XDriveMediaGalleryPage({
     if (onOpenSecureDesktopMap) {
       setError('')
       onOpenSecureDesktopMap(entry.scope)
-      return
-    }
-    if (entry.requiresIsolated &&
-        xDrivePlacesMapModeFromHref(
-          typeof window === 'undefined' ? '' : window.location.href) !== 'isolated') {
-      setError('当前集合必须使用安全隔离版地图才能保留全部筛选；请先在「地点」切换安全隔离版后重试。')
       return
     }
     setError('')

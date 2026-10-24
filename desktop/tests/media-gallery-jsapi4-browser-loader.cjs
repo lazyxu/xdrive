@@ -296,8 +296,9 @@ test('signed Baidu Child loader remains private while Web legacy prototype is a 
   assert.match(current, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
   assert.match(current, /activation_state === 'authorized_signed_release'/)
   assert.doesNotMatch(current, /XDriveMediaGalleryBaiduStaticMap/)
-  assert.match(current, /XDriveMediaGalleryBaiduPrototypeMap/)
-  assert.match(current, /mapMode === 'isolated' && status === 'authorized'/)
+  assert.doesNotMatch(current, /XDriveMediaGalleryBaiduPrototypeMap/)
+  assert.match(current, /getInlinePrototypeConfig=\{getBaiduJSAPIPrototype\}/)
+  assert.match(current, /const nativeEnabled = status === 'authorized'/)
   assert.match(current, /window.location.replace\(href\)/)
   for (const platform of [
     'web/src/mediaGalleryAdapter.ts',
