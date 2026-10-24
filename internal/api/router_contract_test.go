@@ -196,6 +196,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/session", suite: "baidu-jsapi4-session"},
 		// Parent Owner JWT is mandatory to mint a separate-site, one-use ticket.
 		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/child-ticket", suite: "baidu-jsapi4-session"},
+		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/scope-handoff", suite: "baidu-jsapi4-session"},
+		{method: "POST", path: "/api/v1/media/places/baidu-jsapi/scope-handoff/consume", suite: "baidu-jsapi4-session"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/viewport", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cells", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/baidu-jsapi/cell-items", suite: "media-places"},

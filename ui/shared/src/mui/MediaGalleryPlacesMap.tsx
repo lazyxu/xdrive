@@ -9,7 +9,7 @@ import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
-import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL } from '../media-gallery-places-map-mode'
+import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL, xDrivePlacesMapScopeHandoffURL } from '../media-gallery-places-map-mode'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
   xDriveReadBaiduMapDiagnostic, xDriveSubscribeBaiduMapDiagnostics,
@@ -26,7 +26,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
-  mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, mapAlbums = [],
+  mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -57,6 +57,10 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenNearby?: (place: MediaPlaceFacet, radiusKM: number) => void
   mapPhotoScope?: XDriveBaiduMapPhotoScope
   onMapPhotoScopeChange?: (scope: XDriveBaiduMapPhotoScope) => void
+  /** Web/Mobile only; Server-minted one-use authenticated Owner scope bridge. */
+  onMapModeHandoff?: (scope: XDriveBaiduMapPhotoScope,
+    target: 'prototype' | 'isolated', signal: AbortSignal,
+    camera?: XDriveBaiduNativeCameraSnapshot) => Promise<string>
   mapAlbums?: MediaAlbum[]
   compact?: boolean
 }) {
@@ -71,24 +75,54 @@ export function XDriveMediaGalleryPlacesMap({
   const [mapReady, setMapReady] = useState(false)
   const [retry, setRetry] = useState(0)
   const [modeWarning, setModeWarning] = useState('')
+  const [modeSwitching, setModeSwitching] = useState(false)
+  const handoffAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => { handoffAbort.current?.abort() }, [])
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
   const mapMode = desktopOnly ? 'isolated' : xDrivePlacesMapModeFromHref(
     typeof window === 'undefined' ? '' : window.location.href,
   )
   const changeMapMode = (next: 'prototype' | 'isolated') => {
-    if (desktopOnly || mapMode === next || typeof window === 'undefined') return
-    // A full document reload destroys the Owner's in-memory authorized
-    // scope. Both transitions must fail closed until an authenticated,
-    // one-use Server handoff can restore the exact same scope. The legacy
-    // same-document SDK must never read a private scope from URL/storage.
-    if (!xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)) {
-      setModeWarning('当前地图包含相册或筛选范围，整页切换会丢失该范围；请先清除筛选。不会自动切换到全图库。')
+    if (desktopOnly || mapMode === next || modeSwitching || typeof window === 'undefined') return
+    const scope = xDriveNormalizeBaiduMapPhotoScope(mapPhotoScope)
+    if (!scope) {
+      setModeWarning('当前照片范围无效，未切换到全图库。')
       return
     }
+    if (xDriveBaiduMapScopeSurvivesFullReload(scope)) {
+      setModeWarning('')
+      const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
+      if (href) window.location.replace(href)
+      return
+    }
+    // Full-document transition must not lose a private Owner filter. Only a
+    // fresh Server issued, one-use scope handoff can replace this document.
+    // No Album/GPS/Owner identifiers are written to URL, history or storage.
+    if (!onMapModeHandoff) {
+      setModeWarning('当前受限照片范围无法安全交接，保持原地图，不会切换到全图库。')
+      return
+    }
+    handoffAbort.current?.abort()
+    const controller = new AbortController()
+    handoffAbort.current = controller
+    setModeSwitching(true)
     setModeWarning('')
-    const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
-    if (href) window.location.replace(href)
+    void onMapModeHandoff(scope, next, controller.signal,
+      cameraRef.current ?? undefined).then(ticket => {
+      if (controller.signal.aborted || handoffAbort.current !== controller) return
+      const url = xDrivePlacesMapScopeHandoffURL(window.location.href, next, ticket)
+      if (!url) throw new Error('invalid-handoff')
+      window.location.replace(url)
+    }).catch(() => {
+      if (!controller.signal.aborted && handoffAbort.current === controller)
+        setModeWarning('当前照片筛选的安全交接失败，已保留当前地图与筛选；不会打开全图库。')
+    }).finally(() => {
+      if (handoffAbort.current === controller) {
+        handoffAbort.current = null
+        if (!controller.signal.aborted) setModeSwitching(false)
+      }
+    })
   }
   // Legacy Places and nearby queries have different membership from a signed
   // filtered BD09 Cell/Camera. A restricted map must NEVER silently broaden
@@ -206,10 +240,12 @@ export function XDriveMediaGalleryPlacesMap({
         <Stack data-xdrive-places-map-mode direction="row" spacing={1}
           sx={{ px: 1.5, py: 1, flexWrap: 'wrap' }}>
           <Button size="small" data-xdrive-map-mode-prototype
+            disabled={modeSwitching}
             variant={mapMode === 'prototype' ? 'contained' : 'outlined'}
             aria-pressed={mapMode === 'prototype'}
             onClick={() => changeMapMode('prototype')}>同页原型（默认）</Button>
           <Button size="small" data-xdrive-map-mode-isolated
+            disabled={modeSwitching}
             variant={mapMode === 'isolated' ? 'contained' : 'outlined'}
             aria-pressed={mapMode === 'isolated'}
             onClick={() => changeMapMode('isolated')}>安全隔离版</Button>

@@ -318,6 +318,9 @@ func (s *Server) Router() *gin.Engine {
 	// A signed release is required before the authenticated Owner can mint a map Cookie.
 	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
 	authed.POST("/media/places/baidu-jsapi/child-ticket", s.baiduJSAPI4ChildTicketHTTP)
+	// P0-4: authenticated, independent one-use Owner PhotoScope document handoff.
+	authed.POST("/media/places/baidu-jsapi/scope-handoff", s.baiduMapScopeHandoffIssueHTTP)
+	authed.POST("/media/places/baidu-jsapi/scope-handoff/consume", s.baiduMapScopeHandoffConsumeHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)

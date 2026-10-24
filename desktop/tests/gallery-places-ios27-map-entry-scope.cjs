@@ -94,11 +94,16 @@ test('scoped map mode changes retain filter protections but allow cleared timezo
   const map = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
   assert.ok(map.includes('data-xdrive-map-mode-scope-warning'))
-  assert.ok(map.includes('xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)'))
+  assert.ok(map.includes('xDriveBaiduMapScopeSurvivesFullReload(scope)'))
   assert.ok(!map.includes("next === 'prototype' && (!approved"))
-  // Both full-document directions must use the same fail-closed predicate.
-  assert.ok(map.indexOf('xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)') <
+  // Unrestricted scope can reload directly; restricted scope MUST use a
+  // signed, one-use Server handoff before replacement in EITHER direction.
+  assert.ok(map.indexOf('xDriveBaiduMapScopeSurvivesFullReload(scope)') <
     map.indexOf('window.location.replace(href)'))
+  assert.match(map,/onMapModeHandoff\(scope, next, controller.signal,/)
+  assert.match(map,/xDrivePlacesMapScopeHandoffURL\(window.location.href, next, ticket\)/)
+  assert.match(map,/setModeWarning\('当前照片筛选的安全交接失败/)
+  assert.doesNotMatch(map,/localStorage|sessionStorage/)
   assert.ok(!map.includes('xDriveBaiduMapPhotoScopeKey(mapPhotoScope) !=='))
 })
 test('Owner and private identities never appear in the map entry scope', () => {
