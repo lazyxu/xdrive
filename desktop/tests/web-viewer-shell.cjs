@@ -2218,3 +2218,166 @@ test('P1 shared immersive Gallery/Quick Look chrome honors keyboard focus withou
     viewportWidth = 390
   }
 })
+
+test('P1 routed Viewer drops pending A chrome tap through B→A without hiding the replacement', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const nodes = [3011, 3012].map(id => ({
+    id, revision: 4, type: 'file', name: id + '.jpg', size: 100,
+  }))
+  const api = {
+    node: async id => nodes.find(x => x.id === id),
+    mediaItem: async id => ({
+      node: nodes.find(x => x.id === id),
+      metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' },
+    }),
+  }
+  const gallerySource = {}
+  const props = id => ({
+    route: { app: 'media-viewer', params: { node: id } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  const event = {
+    pointerType: 'touch', pointerId: 1, clientX: 150, clientY: 150,
+    target: { closest() { return null } },
+  }
+  const tapTimer = () => [...timers].filter(([, timer]) => timer.delay === 260).at(-1)
+  let renderer
+  const frame = () => renderer.root.find(el => el.type === 'div' &&
+    el.props['data-xdrive-web-viewer'] !== undefined)
+  const header = () => renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(nodes[0].id)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const stalePointerUp = frame().props.onPointerUpCapture
+    await act(async () => {
+      frame().props.onPointerDownCapture(event)
+      frame().props.onPointerUpCapture(event)
+    })
+    const pending = tapTimer()
+    assert.ok(pending, 'A must have a pending 260ms single-tap intent')
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(nodes[1].id)))
+    })
+    assert.equal(timers.has(pending[0]), false, 'B must cancel A pending tap')
+    await act(async () => {
+      pending[1].callback()
+      stalePointerUp(event)
+    })
+    assert.equal(header().props.sx.opacity, 1,
+      'old queued A callback and JSX handlers may not hide B')
+    assert.equal(tapTimer(), undefined, 'stale old event must not schedule a new tap')
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(nodes[0].id)))
+    })
+    await act(async () => pending[1].callback())
+    assert.equal(header().props.sx.opacity, 1,
+      'A→B→A must not revive a queued callback from first A')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1 same Node/revision but new Web Owner cancels old chrome tap session', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 3021, revision: 9, type: 'file', name: 'same.jpg', size: 10 }
+  const api = {
+    node: async () => node,
+    mediaItem: async () => ({
+      node, metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' },
+    }),
+  }
+  const srcA = {}, srcB = {}
+  const props = gallerySource => ({
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api, gallerySource, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  const event = {
+    pointerType: 'touch', pointerId: 3, clientX: 100, clientY: 100,
+    target: { closest() { return null } },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(srcA)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const root = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+    await act(async () => {
+      root.props.onPointerDownCapture(event)
+      root.props.onPointerUpCapture(event)
+    })
+    const old = [...timers].filter(([, t]) => t.delay === 260).at(-1)
+    assert.ok(old)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props(srcB)))
+    })
+    assert.equal(timers.has(old[0]), false, 'same ID and revision cannot keep other Owner tap')
+    await act(async () => old[1].callback())
+    const header = renderer.root.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header')
+    assert.equal(header.props.sx.opacity, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1 shared Dialog cancels touch chrome intent on Filmstrip source replacement', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const event = {
+    pointerType: 'touch', pointerId: 7, clientX: 75, clientY: 75,
+    target: { closest() { return null } },
+  }
+  const props = chromeSessionKey => ({
+    open: true, chromeSessionKey, title: chromeSessionKey,
+    immersive: true, mobileEdgeToEdge: true, onClose() {},
+  })
+  let renderer
+  const content = () => renderer.root.find(el =>
+    el.type === 'div' && typeof el.props.onPointerDownCapture === 'function' &&
+    typeof el.props.onPointerUpCapture === 'function')
+  const header = () => renderer.root.find(el => el.props['data-xdrive-preview-chrome'] === 'header')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveOpenPreviewDialog, props('A'),
+        React.createElement('div', null, 'media')))
+    })
+    const stalePointerUp = content().props.onPointerUpCapture
+    await act(async () => {
+      content().props.onPointerDownCapture(event)
+      content().props.onPointerUpCapture(event)
+    })
+    const pending = [...timers].filter(([, timer]) => timer.delay === 260).at(-1)
+    assert.ok(pending)
+    await act(async () => {
+      renderer.update(React.createElement(XDriveOpenPreviewDialog, props('B'),
+        React.createElement('div', null, 'media')))
+    })
+    assert.equal(timers.has(pending[0]), false, 'new still must cancel old tap timer')
+    await act(async () => {
+      pending[1].callback()
+      stalePointerUp(event)
+    })
+    assert.equal(header().props.sx.opacity, 1)
+    assert.equal([...timers].some(([, timer]) => timer.delay === 260), false)
+    await act(async () => {
+      renderer.update(React.createElement(XDriveOpenPreviewDialog, props('A'),
+        React.createElement('div', null, 'media')))
+    })
+    await act(async () => pending[1].callback())
+    assert.equal(header().props.sx.opacity, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})

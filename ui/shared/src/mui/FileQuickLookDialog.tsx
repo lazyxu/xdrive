@@ -118,6 +118,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   return (
     <XDriveOpenPreviewDialog
       open={open && Boolean(item)}
+      chromeSessionKey={presentation.sourceKey}
       title={item?.name ?? ''}
       positionLabel={positionLabel}
       quickLook
