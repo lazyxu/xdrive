@@ -47,7 +47,7 @@ test('real Mobile Trash only advertises zero after confirmed current GET, keeps 
     "const totalCount = props.virtualCollection?.itemCount ?? props.items.length",
   ]) assert.ok(mobile.includes(token), token)
   assert.ok(mobile.includes("minHeight: 180, display: 'grid', placeItems: 'center'"))
-  assert.ok(mobile.includes("props.searchActive || (props.trashActive && totalCount > 0)"),
+  assert.ok(mobile.includes("Boolean(props.trashActive && totalCount > 0 && props.loading)"),
     'unverified zero Trash may not schedule a display-only timer')
   assert.ok(mobile.includes("aria-busy={props.loading || trashReadState === 'unverified' || undefined}"))
   assert.equal(mobile.includes('正在读取最近删除…'), false,

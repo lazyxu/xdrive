@@ -3056,7 +3056,10 @@ test('P29 pending navigation from settled empty folder keeps its truthful empty 
 test('P29 sustained Search reports real network progress only after 300ms',async()=>{
   await withView(async h=>{
     const status=()=>find(h.view,'data-mobile-files-arrangement-status',true)
-    await h.update({loading:true})
+    // A real current Search Owner must be pending. Composite busy alone is
+    // only an action disable gate, not evidence for network progress.
+    await h.update({loading:true,
+      searchSummary:{query:'photo',resultCount:2,loading:true}})
     assert.equal(status().props.sx.display,'none')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,220))})
     assert.equal(status().props.sx.display,'none',
@@ -3064,7 +3067,8 @@ test('P29 sustained Search reports real network progress only after 300ms',async
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,150))})
     assert.equal(status().props.sx.display,'block',
       'a sustained Search request remains user-visible after 300ms')
-    await h.update({loading:false})
+    await h.update({loading:false,
+      searchSummary:{query:'photo',resultCount:2,loading:false}})
     assert.equal(status().props.sx.display,'none')
   },{props:{searchActive:true,requestedDirectoryID:1,
     searchSummary:{query:'photo',resultCount:2,loading:false},
@@ -5054,11 +5058,15 @@ test('P105 source gates empty/cold Browse states on Owner GET and retains indepe
     'const ownerDirectoryLoading = props.directoryLoading ?? props.loading',
     '!ownerDirectoryLoading && totalCount === 0 && props.virtualCollection',
     'emptyDirectoryKey, ownerDirectoryLoading, props.virtualCollection, totalCount',
-    'const zeroStateOwnerLoading = props.searchActive || props.trashActive',
-    '? props.loading : ownerDirectoryLoading',
+    'const searchOwnerLoading = Boolean(props.searchSummary?.loading)',
+    'const zeroStateOwnerLoading = props.searchActive',
+    '? searchOwnerLoading',
+    ': props.trashActive ? props.loading : ownerDirectoryLoading',
     'const zeroStatePending = (zeroStateOwnerLoading && !keepAcceptedEmptyDirectory &&',
     'const coldDirectoryFirstRead = coldUnconfirmedBrowse && ownerDirectoryLoading',
-    'const showRangeLoading = (props.loading || searchCountPending) &&',
+    'const showRangeLoading = props.searchActive',
+    '? searchOwnerLoading || searchCountPending',
+    ': Boolean(props.trashActive && totalCount > 0 && props.loading)',
     'const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !coldDirectoryReadFailed',
   ]) assert.ok(starting.includes(marker), marker)
   assert.equal(starting.includes('else if (!props.loading && totalCount === 0 && props.virtualCollection)'), false)
@@ -5466,4 +5474,93 @@ test('P118: failed global Search uses stable Mobile feedback overlay instead of 
     assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
   }, { props: { searchValue: '照片', onSearch: () => { searches++ } } })
+})
+
+
+test('P81 mounted Mobile Search: accepted nonzero current Range ignores 365ms unrelated FileOperation busy', async () => {
+  const currentFile = { id: 814, name: 'P81-accepted-result.txt', kind: 'file', revision: 1 }
+  const accepted = {
+    interactionKey: 'p81-accepted-48', itemCount: 48,
+    loadedItems: new Map([[0, currentFile]]),
+    itemAt: index => index === 0 ? currentFile : undefined,
+    onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    const badge = () => find(h.view, 'data-mobile-files-arrangement-status', true)
+    assert.equal(badge().props.sx.display, 'none')
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-zero-state'), 0)
+    await h.update({ loading: true, directoryLoading: false })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 365)) })
+    assert.equal(badge().props.sx.display, 'none',
+      'Copy/Upload/Delete busy cannot repaint completed Search as fetching')
+    assert.equal(count(h.view, 'data-mobile-files-zero-state'), 0,
+      'accepted rows cannot be replaced by a temporary Search blank')
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
+    await h.update({ loading: false })
+    assert.equal(badge().props.sx.display, 'none')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    items: [currentFile], virtualCollection: accepted,
+    searchActive: true, searchValue: 'P81', directoryLoading: false,
+    searchSummary: { query: 'P81', resultCount: 48, loading: false, error: null },
+  } })
+})
+
+test('P81 mounted Mobile Search: accepted zero stays verified-empty through unrelated busy', async () => {
+  const acceptedEmpty = {
+    interactionKey: 'p81-search-counted-zero', itemCount: 0,
+    loadedItems: new Map(), itemAt: () => undefined,
+    onRangeChange() {}, groups: [],
+  }
+  await withView(async h => {
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    const zero = () => find(h.view, 'data-mobile-files-zero-state', true)
+    const acceptedPanel = () => h.view.root.findAll(node =>
+      node.type === 'state-panel' && node.props.message === '未找到匹配的文件或文件夹')
+    const badge = () => find(h.view, 'data-mobile-files-arrangement-status', true)
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], undefined)
+    assert.equal(acceptedPanel().length, 1)
+    assert.equal(acceptedPanel()[0].props.loading, false)
+    await h.update({ loading: true, directoryLoading: false })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 365)) })
+    assert.equal(acceptedPanel().length, 1,
+      'verified zero must not turn into Search pending or blank after 300ms')
+    assert.equal(acceptedPanel()[0].props.loading, false)
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], undefined)
+    assert.equal(badge().props.sx.display, 'none')
+    assert.equal(find(h.view, 'data-xdrive-file-explorer-scroll-host', true), host)
+    await h.update({ loading: false })
+    assert.equal(acceptedPanel().length, 1)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    items: [], virtualCollection: acceptedEmpty,
+    searchActive: true, directoryLoading: false,
+    searchSummary: { query: 'nothing', resultCount: 0, loading: false, error: null },
+  } })
+})
+
+test('P81 mounted Mobile Search: actual pending Search still has 300ms deferred progress', async () => {
+  await withView(async h => {
+    const panel = () => h.view.root.findAll(node =>
+      node.type === 'state-panel' && node.props.message === '正在查询…')
+    const zero = () => find(h.view, 'data-mobile-files-zero-state', true)
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], true)
+    assert.equal(panel().length, 0, 'first pending frame remains silent')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 355)) })
+    assert.equal(zero().props.sx.minHeight, 180)
+    assert.equal(zero().props['aria-busy'], true)
+    assert.equal(panel().length, 1, 'only Search Owner pending may expose progress')
+    assert.equal(panel()[0].props.loading, true)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    items: [],
+    searchActive: true, directoryLoading: false, loading: true,
+    searchSummary: { query: 'still-running', resultCount: null, loading: true, error: null },
+  } })
 })

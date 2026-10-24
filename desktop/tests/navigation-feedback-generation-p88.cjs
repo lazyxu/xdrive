@@ -71,7 +71,9 @@ test('P88 Mobile Files Search and populated Trash fence their real feedback per 
   assert.ok(begin >= 0 && end > begin)
   const feedback = mobile.slice(begin, end)
   for (const needle of [
-    '(props.searchActive || (props.trashActive && totalCount > 0))',
+    'const showRangeLoading = props.searchActive',
+    '? searchOwnerLoading || searchCountPending',
+    ': Boolean(props.trashActive && totalCount > 0 && props.loading)',
     'loadFeedbackCycleRef.current.pending !== showRangeLoading',
     'loadFeedbackCycleRef.current.scope !== loadFeedbackScope',
     'generation: loadFeedbackCycleRef.current.generation + 1',
