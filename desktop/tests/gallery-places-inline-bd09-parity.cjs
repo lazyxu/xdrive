@@ -197,3 +197,27 @@ test('standalone inline status uses signed release while isolated keeps an Origi
   assert.match(parent,/isolated_origin_unavailable/)
   assert.doesNotMatch(inline,/!status\.isolated_child_origin\?\.startsWith/)
 })
+
+test('inline host matches isolated Child fallback when native setViewport is absent', async () => {
+  const f=buildInlineFixture()
+  assert.ok(f.host)
+  f.map.setViewport=undefined
+  const one={latitude:25,longitude:115,count:2,
+    selection:{cell_x:1,cell_y:1,asset_id:11,node_id:21,node_revision:1,photo_count:2}}
+  const two={latitude:35,longitude:125,count:3,
+    selection:{cell_x:2,cell_y:2,asset_id:12,node_id:22,node_revision:1,photo_count:3}}
+  assert.equal(f.host.replaceAuthorizedCells([one,two]),true)
+  assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),true)
+  const [operation,point,zoom]=f.map.moves.at(-1)
+  assert.equal(operation,'center')
+  assert.equal(point.lng,120)
+  assert.equal(point.lat,30)
+  assert.equal(zoom,3)
+  assert.equal(f.map.labels.length,2)
+  f.host.dispose()
+})
+
+test('shared trusted Parent distinguishes inline SDK and isolated Child failures', () => {
+  assert.match(shared,/mode === 'inline'[\s\S]*?'同页地图 SDK 不可用；地点列表与照片墙仍可使用。'/)
+  assert.match(shared,/动态地图隔离会话不可用；地点列表与照片墙仍可使用。/)
+})

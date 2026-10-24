@@ -474,7 +474,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       ):null}
       {phase==='unavailable' ? (
         <Typography role="alert" variant="caption" color="text.secondary">
-          动态地图隔离会话不可用；地点列表与照片墙仍可使用。
+          {mode === 'inline'
+            ? '同页地图 SDK 不可用；地点列表与照片墙仍可使用。'
+            : '动态地图隔离会话不可用；地点列表与照片墙仍可使用。'}
         </Typography>
       ):null}
       {scopeIsCurrent && accessible.length>0 ? (
