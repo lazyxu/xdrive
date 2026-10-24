@@ -108,6 +108,9 @@ export function XDrivePostgresPoolConfigPanel({
     if (!source.loadPostgresPoolConfig || busy || (singlePage && isDraftDirty)) return
     const epoch = ++epochRef.current
     setLoading(true)
+    // The new read supersedes any older revision-history fetch.
+    setHistoryLoading((section === 'history' || section === 'all') &&
+      !!source.loadPostgresPoolRevisions)
     setError('')
     try {
       const next = await source.loadPostgresPoolConfig()
@@ -124,7 +127,10 @@ export function XDrivePostgresPoolConfigPanel({
     } catch (err) {
       if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '刷新 PostgreSQL 连接池状态失败。')
     } finally {
-      if (epoch === epochRef.current) setLoading(false)
+      if (epoch === epochRef.current) {
+        setLoading(false)
+        setHistoryLoading(false)
+      }
     }
   }
 
@@ -137,6 +143,9 @@ export function XDrivePostgresPoolConfigPanel({
     }
     const epoch = ++epochRef.current
     setBusy(true)
+    // A Save/Rollback invalidates the initial history read's epoch. Clear its
+    // loading indicator now; the later authoritative read repopulates history.
+    setHistoryLoading(false)
     setError('')
     setNotice('')
     try {
@@ -173,6 +182,9 @@ export function XDrivePostgresPoolConfigPanel({
     if (!config?.editable || !source.rollbackPostgresPool || !historic || busy) return
     const epoch = ++epochRef.current
     setBusy(true)
+    // A Save/Rollback invalidates the initial history read's epoch. Clear its
+    // loading indicator now; the later authoritative read repopulates history.
+    setHistoryLoading(false)
     setError('')
     setNotice('')
     try {
