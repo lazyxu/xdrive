@@ -61,6 +61,12 @@ function safeCaddyAtomicSaveError(error: unknown): string {
   }
 }
 
+function caddyHistoryTime(item: XDriveCaddyDeployState): string {
+  if (typeof item.recorded_at !== 'string') return '时间未记录'
+  const ms = Date.parse(item.recorded_at)
+  return Number.isFinite(ms) ? new Date(ms).toLocaleString() : '时间未记录'
+}
+
 export function XDriveCaddyDetailV1({
   source, service, checkedAt, activeTab, refreshing, hasUnsavedEdits,
   onRefreshStatus, onHTTPSDirtyChange, onAliDNSDirtyChange,
@@ -86,7 +92,6 @@ export function XDriveCaddyDetailV1({
   const [aliDraft, setAliDraft] = useState<XDriveCaddyAliDNSAtomicDraft | null>(null)
   const [atomicRefreshID, setAtomicRefreshID] = useState(0)
   const [savingAtomic, setSavingAtomic] = useState(false)
-  const [confirmAtomic, setConfirmAtomic] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [atomicError, setAtomicError] = useState('')
   const [atomicNotice, setAtomicNotice] = useState('')
@@ -112,7 +117,6 @@ export function XDriveCaddyDetailV1({
     setHTTPSDraft(null)
     setAliDraft(null)
     setSavingAtomic(false)
-    setConfirmAtomic(false)
     setConfirmDiscard(false)
     setAtomicError('')
     setAtomicNotice('')
@@ -257,7 +261,6 @@ export function XDriveCaddyDetailV1({
     }
     const epoch = ++saveEpoch.current
     setSavingAtomic(true)
-    setConfirmAtomic(false)
     setAtomicError('')
     setAtomicNotice('')
     try {
@@ -278,9 +281,7 @@ export function XDriveCaddyDetailV1({
       setAliDraft(null)
       setAtomicRefreshID((value) => value + 1)
       changed()
-      setAtomicNotice(input.host_env_sha256
-        ? '宿主机 .env 已保存；尚未重新部署 Caddy。'
-        : '两组管理目标已作为一笔事务保存并审计；尚未重新部署 Caddy。')
+      setAtomicNotice('配置已保存，等待应用到 Caddy。')
     } catch (err) {
       if (epoch === saveEpoch.current) {
         setAtomicError(safeCaddyAtomicSaveError(err))
@@ -301,6 +302,12 @@ export function XDriveCaddyDetailV1({
   const hostDomainVerified = hostObserved && config?.host_https_configured === true &&
     config.host_tls_state === 'verified'
   const independentDomainVerified = service.caddy_local_domain_https_state === 'verified'
+  const domainRequested = config?.desired_enabled === true
+  const lanRequested = config?.desired_lan_enabled === true
+  const domainTLSFailure = hostObserved &&
+    (config?.host_tls_state === 'failed' || config?.host_tls_state === 'invalid-config')
+  const lanTLSFailure = hostObserved &&
+    (config?.host_lan_tls_state === 'failed' || config?.host_lan_tls_state === 'invalid-config')
   const lanVerified = hostObserved && config?.host_lan_configured === true &&
     config.host_lan_tls_state === 'verified'
   const healthy = service.installation_state === 'observed' &&
@@ -493,22 +500,37 @@ export function XDriveCaddyDetailV1({
               重新检测
             </Button>
           </Stack>
-          {(hostDomainVerified || independentDomainVerified || lanVerified) && (
+          {(domainRequested || lanRequested || hostDomainVerified || independentDomainVerified || lanVerified) && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}
               data-xdrive-caddy-v1-reconciliation sx={{ mt: 1.5 }}>
-              {(hostDomainVerified || independentDomainVerified) && (
+              {(domainRequested || hostDomainVerified || independentDomainVerified) && (
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography variant="caption" color="text.secondary">域名 HTTPS</Typography>
-                  <Typography variant="body2" data-xdrive-caddy-v1-domain-evidence-source>
-                    {hostDomainVerified ? '本机域名 TLS 已验证' : '内部域名 TLS 已验证'}
+                  <Typography variant="caption" color="text.secondary">
+                    域名 HTTPS{domainRequested && config?.desired_domain ? ' · ' + config.desired_domain : ''}
+                  </Typography>
+                  <Typography variant="body2" data-xdrive-caddy-v1-domain-evidence-source
+                    color={domainTLSFailure ? 'error.main' : hostDomainVerified ? 'success.main' : 'text.secondary'}>
+                    {hostDomainVerified ? '本机域名证书已验证'
+                      : config?.host_tls_state === 'invalid-config' && hostObserved ? '本机 HTTPS 配置不合法'
+                      : domainTLSFailure ? '本机域名 TLS 检查失败'
+                      : independentDomainVerified ? '内部 HTTPS 已验证（已保存域名未确认）'
+                      : config?.host_tls_state === 'disabled' ? '当前域名入口未启用'
+                      : '本机域名 TLS 尚未确认'}
                   </Typography>
                 </Box>
               )}
-              {lanVerified && (
+              {(lanRequested || lanVerified) && (
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography variant="caption" color="text.secondary">局域网 IP HTTPS</Typography>
-                  <Typography variant="body2" data-xdrive-caddy-v1-saved-lan-target>
-                    本机 IP SAN / Local CA 已验证
+                  <Typography variant="caption" color="text.secondary">
+                    局域网 IP HTTPS{lanRequested && config?.desired_lan_ip ? ' · ' + config.desired_lan_ip : ''}
+                  </Typography>
+                  <Typography variant="body2" data-xdrive-caddy-v1-saved-lan-target
+                    color={lanTLSFailure ? 'error.main' : lanVerified ? 'success.main' : 'text.secondary'}>
+                    {lanVerified ? '本机 IP 证书已验证'
+                      : config?.host_lan_tls_state === 'invalid-config' && hostObserved ? '本机 IP HTTPS 配置不合法'
+                      : lanTLSFailure ? '本机 IP TLS 检查失败'
+                      : config?.host_lan_tls_state === 'disabled' ? '当前局域网入口未启用'
+                      : '本机 IP TLS 尚未确认'}
                   </Typography>
                 </Box>
               )}
@@ -516,12 +538,10 @@ export function XDriveCaddyDetailV1({
           )}
         </Paper>
         {readFailed && (
-          <Stack direction="row" alignItems="center" spacing={1}
-            data-xdrive-caddy-v1-config-read-failed sx={{ mt: 1 }}>
-            <Typography variant="caption" color="text.secondary">无法读取管理配置。</Typography>
-            <Button size="small" onClick={refreshAllCaddy}
-              disabled={refreshing || hasUnsavedEdits || dirtyAtomic || editorsLocked}>重试</Button>
-          </Stack>
+          <Typography variant="caption" color="text.secondary"
+            data-xdrive-caddy-v1-config-read-failed sx={{ mt: 1, display: 'block' }}>
+            无法读取管理配置；请使用「重新检测」重试。
+          </Typography>
         )}
       </Box>
 
@@ -535,22 +555,25 @@ export function XDriveCaddyDetailV1({
             onDirtyChange={onAliDNSDirtyChange} onConfigurationChanged={changed} />
           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}
             data-xdrive-caddy-v11-atomic-save aria-busy={editorsLocked || undefined}>
-            <Stack spacing={1} alignItems="flex-start">
-              <Button variant="contained" size="small" disabled={!canSaveAtomic}
-                data-xdrive-caddy-v11-save-only onClick={() => setConfirmAtomic(true)}>
-                保存配置
-              </Button>
+            <Stack spacing={1}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
+                alignItems={{ xs: 'stretch', sm: 'center' }} useFlexGap flexWrap="wrap">
+                <Button variant="contained" size="small" disabled={!canSaveAtomic}
+                  data-xdrive-caddy-v11-save-only onClick={() => { void saveAtomic() }}>
+                  保存配置
+                </Button>
               {config?.source === 'host-env' && (
                 <Button size="small" variant="outlined" disabled={!canDeploy && !canRestart}
                   onClick={() => setConfirmDeploy(true)} data-xdrive-caddy-host-env-deploy
                   data-xdrive-caddy-maintenance-restart={canRestart || undefined}>
-                  {inDeploy ? '正在处理 Caddy…' : canRestart ? '重启 Caddy' : '重新部署 Caddy'}
+                  {inDeploy ? '正在应用 Caddy…' : canRestart ? '重启 Caddy' : '应用配置'}
                 </Button>
               )}
               {dirtyAtomic && (
                 <Button size="small" variant="text" disabled={editorsLocked}
                   onClick={() => setConfirmDiscard(true)}>放弃未保存的修改</Button>
               )}
+              </Stack>
               {(!source.saveCaddyConfiguration || !readyRevisions ||
                 https?.host_pending || ali?.host_pending) && (
                 <Typography variant="caption" color="text.secondary">
@@ -568,26 +591,21 @@ export function XDriveCaddyDetailV1({
                   <Typography variant="caption" color="text.secondary"
                     data-xdrive-caddy-local-runtime-state>
                     {deployReceipt.local_runtime_state === 'matching-local'
-                      ? '最近本机运行代际与此次历史部署匹配（未独立签名，不代表持续生效）。'
+                      ? '最近部署与当前本机运行一致（未独立签名，不代表持续生效）。'
                       : deployReceipt.local_runtime_state === 'changed-local'
-                        ? '当前本机配置或运行代际已变化；不能视为此次部署仍然生效。'
-                        : '仅确认历史部署完成；当前运行代际与应用生效状态未验证。'}
+                        ? '本机配置已变化；不能视为此次部署仍然生效。'
+                        : '最近部署完成；当前运行代际与应用生效状态未验证。'}
                   </Typography>
                 )}
               </Box>
             </Stack>
           </Paper>
-          <XDriveConfirmDialog open={confirmAtomic} loading={savingAtomic}
-            title="保存 Caddy 管理配置"
-            description="Host 模式保存至宿主机 .env；不会立即重新部署 Caddy。"
-            confirmLabel="仅保存配置" onCancel={() => setConfirmAtomic(false)}
-            onConfirm={() => { void saveAtomic() }} />
           <XDriveConfirmDialog open={confirmDeploy}
-            title={canRestart ? '重启 Caddy' : '重新部署 Caddy'}
+            title={canRestart ? '重启 Caddy' : '应用 Caddy 配置'}
             description={canRestart
-              ? '不修改域名、局域网 IP 或 AliDNS；仅重建 Caddy，继续使用已有本机 HTTPS 验证与失败回滚。其他容器不重启。'
-              : '将已保存的宿主机 .env 应用到 Caddy。此操作只重新创建 Caddy；失败时尝试恢复上一份运行配置。'}
-            confirmLabel={canRestart ? '确认重启' : '重新部署'}
+              ? '只重建 Caddy，不改变地址或 AliDNS，也不会重启其他服务；失败时尝试回滚。'
+              : '将已保存的配置应用到 Caddy；失败时尝试恢复上一份运行配置。'}
+            confirmLabel={canRestart ? '确认重启' : '应用配置'}
             onCancel={() => setConfirmDeploy(false)}
             onConfirm={() => { void startDeploy() }} />
           <XDriveConfirmDialog open={confirmDiscard} loading={editorsLocked}
@@ -602,7 +620,11 @@ export function XDriveCaddyDetailV1({
             }} />
           <Typography variant="caption" color="text.secondary"
             data-xdrive-caddy-v1-deploy-gate>
-            保存更新宿主机 .env；生效需另行重新部署 Caddy。
+            {config?.source !== 'host-env'
+              ? '保存只更新管理配置；当前模式需在宿主机另行应用。'
+              : validPendingTarget
+                ? '配置已保存，等待应用到 Caddy。'
+                : '保存只更新配置；有变更时再点击「应用配置」。'}
           </Typography>
         </Stack>
       </Box>
@@ -613,7 +635,7 @@ export function XDriveCaddyDetailV1({
             data-xdrive-caddy-host-terminal-history>
             <Typography variant="subtitle2" fontWeight={600}>最近部署记录</Typography>
             <Typography variant="caption" color="text.secondary">
-              宿主机最多保留 64 条、7 天的不可变部署终态；不是 PostgreSQL 配置版本或签名生效证明。
+              最近 7 天的部署结果；历史成功不代表当前配置仍在运行。
             </Typography>
             {historyState === 'unavailable' && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -627,12 +649,11 @@ export function XDriveCaddyDetailV1({
             )}
             {historyState === 'ready' && historyItems.length > 0 && (
               <Stack spacing={1} sx={{ mt: 1 }}>
-                {historyItems.slice(0, 10).map((item) => (
-                  <Box key={item.request_id} sx={{ minWidth: 0 }}
+                {historyItems.map((item) => (
+                  <Box key={item.request_id} sx={{ minWidth: 0 }} title={item.request_id}
                     data-xdrive-caddy-host-terminal-row>
                     <Typography variant="body2">
-                      {item.state === 'deployed' ? '历史部署完成' : '历史部署未成功'}
-                      {' · '}请求 {item.request_id.slice(0, 8)}
+                      {caddyHistoryTime(item)} · {item.state === 'deployed' ? '部署完成' : '部署失败'}
                     </Typography>
                     {item.state === 'failed' && (
                       <Typography variant="caption" color="text.secondary">

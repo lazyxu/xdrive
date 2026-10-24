@@ -34,7 +34,7 @@ test('Caddy top-level state shows only independently verified facts without fals
   assert.match(page, /host_observed === true/)
   assert.match(page, /host_lan_tls_state === 'verified'/)
   assert.match(page, /caddy_local_domain_https_state === 'verified'/)
-  assert.match(page, /\{\(hostDomainVerified \|\| independentDomainVerified \|\| lanVerified\) && \(/)
+  assert.match(page, /\{\(domainRequested \|\| lanRequested \|\| hostDomainVerified \|\| independentDomainVerified \|\| lanVerified\) && \(/)
   assert.match(page, /data-xdrive-caddy-v1-domain-evidence-source/)
   assert.match(page, /data-xdrive-caddy-v1-saved-lan-target/)
   for (const obsolete of ['公网实际可达：未验证', '当前设备信任 Caddy Local CA',
@@ -59,7 +59,7 @@ test('Always-visible config retains atomic CAS, fail-closed deployment and secre
   assert.match(page, /result\.apply_supported !== false/)
   assert.match(page, /data-xdrive-caddy-v11-save-only/)
   assert.match(page, /data-xdrive-caddy-v1-deploy-gate/)
-  assert.match(page, /保存更新宿主机 \.env；生效需另行重新部署 Caddy/)
+  assert.match(page, /配置已保存，等待应用到 Caddy/)
   assert.doesNotMatch(page, /applyCaddy|restartCaddy|source\.deploy|docker restart/)
   assert.match(https, /data-xdrive-caddy-running-lan-ip/)
   assert.match(https, /host_lan_tls_state === 'verified'/)

@@ -246,8 +246,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
               onClick={() => setEditing((old) => !old)}>
               {editing ? '完成' : '编辑'}
             </Button>}
-            <Button size="small" variant="text" disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}
-              onClick={() => { void reload() }}>重新读取已保存配置</Button>
+            {!inlineEdit && <Button size="small" variant="text" disabled={busy || loading || atomicSaving || changed || !source.loadCaddyHTTPSConfig}
+              onClick={() => { void reload() }}>重新读取已保存配置</Button>}
           </Stack>
         </Stack>
         {changed && <Typography variant="caption" color="warning.main" data-xdrive-caddy-draft-refresh-guard>
@@ -263,7 +263,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
         {config ? (
           <>
             {section === 'config' && (<>
-            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
+            {!inlineEdit && <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
               <Chip variant="outlined" size="small"
                 label={config.host_apply_pending ? 'Host 申请处理中' :
                   config.source === 'host-import' ? '已导入管理配置' :
@@ -271,7 +271,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
               <Typography variant="caption" color="text.secondary">
                 管理修订 #{config.revision}
               </Typography>
-            </Stack>
+            </Stack>}
             {config.host_apply_pending && (
               <Typography variant="caption" color="text.secondary"
                 data-xdrive-caddy-host-pending-fence>
@@ -295,9 +295,9 @@ export function XDriveCaddyHTTPSDesiredPanel({
             )}
             </>)}
             {section === 'config' && editing && (<>
-            <Typography variant="subtitle2" fontWeight={700}>
+            {!inlineEdit && <Typography variant="subtitle2" fontWeight={700}>
               局域网 IP HTTPS
-            </Typography>
+            </Typography>}
             <FormControlLabel
               control={<Switch checked={lanEnabled} disabled={!canEdit || !supportsLAN || (lanEnabled && !enabled)}
                 onChange={(event) => setLANEnabled(event.target.checked)} />}
@@ -306,9 +306,10 @@ export function XDriveCaddyHTTPSDesiredPanel({
             <TextField fullWidth size="small" label="局域网 IPv4 地址"
               value={lanIP} disabled={!canEdit || !supportsLAN}
               onChange={(event) => setLANIP(event.target.value)}
-              error={Boolean(lanIP) && !validPrivateLANIP(lanIP)}
+              error={(lanEnabled || !!lanIP) && !validPrivateLANIP(lanIP)}
               placeholder="192.168.2.4"
-              helperText="仅支持标准私网 IPv4。"
+              helperText={(lanEnabled || !!lanIP) && !validPrivateLANIP(lanIP)
+                ? '请输入有效的私网 IPv4 地址。' : undefined}
             />
             {config.host_observed && config.host_lan_configured === true &&
               config.host_lan_tls_state === 'verified' && config.host_lan_ip && (
@@ -317,9 +318,9 @@ export function XDriveCaddyHTTPSDesiredPanel({
                 本机运行 IP：{config.host_lan_ip}
               </Typography>
             )}
-            <Typography variant="subtitle2" fontWeight={700}>
+            {!inlineEdit && <Typography variant="subtitle2" fontWeight={700}>
               公网域名 HTTPS
-            </Typography>
+            </Typography>}
             <FormControlLabel
               control={<Switch checked={enabled} disabled={!canEdit || (enabled && !lanEnabled)}
                 onChange={(event) => setEnabled(event.target.checked)} />}
@@ -330,7 +331,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
               onChange={(event) => setDomain(event.target.value)}
               error={!validDomain(domain) || (enabled && !domain)}
               placeholder="photos.example.com"
-              helperText="输入 DNS 域名，不包含协议、端口或路径。"
+              helperText={!validDomain(domain) || (enabled && !domain)
+                ? '请输入有效域名，不包含协议、端口或路径。' : undefined}
             />
             {!supportsLAN && <Typography variant="caption" color="warning.main">
               当前 Server/Agent 不支持双入口配置，无法保存。
@@ -383,8 +385,10 @@ export function XDriveCaddyHTTPSDesiredPanel({
               <Typography variant="body2" color="text.secondary">
                 无法读取 HTTPS 配置，暂时不能编辑。
               </Typography>
-              <Button size="small" variant="outlined" disabled={busy || atomicSaving}
-                onClick={() => { void reload() }}>重试读取 HTTPS 配置</Button>
+              {inlineEdit ? <Typography variant="caption" color="text.secondary">
+                点击上方「重新检测」重试。
+              </Typography> : <Button size="small" variant="outlined" disabled={busy || atomicSaving}
+                onClick={() => { void reload() }}>重试读取 HTTPS 配置</Button>}
             </Stack>
           ) : (
             <Typography variant="body2" color="text.secondary">
