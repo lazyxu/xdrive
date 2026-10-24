@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -185,4 +186,41 @@ func TestLocalPushAutoCooldownTracksCheckpointProgress(t *testing.T) {
 	if err != nil || !due || localPushAutoAdmissionCoolingDown(attempt, checkpoint.UpdatedAt, now) {
 		t.Fatalf("valid 1m interval must remain eligible after prior success: due=%t err=%v", due, err)
 	}
+}
+
+// Multiple 1m Sources must not let the lowest ID monopolize all future ticks.
+// Source revision churn must not reset its fairness position, and another
+// Owner's attempts must never affect this owning Agent's order.
+func TestLocalPushAutoFairOrderAcrossSourcesAndRevisions(t *testing.T) {
+	ids := []uint64{4, 9, 11}
+	original := append([]uint64(nil), ids...)
+	now := time.Date(2026, 10, 24, 4, 0, 0, 0, time.UTC)
+	prefix := "https://server.example\x00owner\x00"
+	attempts := map[string]time.Time{
+		prefix + "4\x007": now,
+		prefix + "9\x007": now.Add(-time.Minute),
+		"https://server.example\x00other-owner\x0011\x007": now.Add(-time.Hour),
+	}
+	assertOrder := func(want []uint64) {
+		t.Helper()
+		got := localPushAutoFairOrder(ids, attempts, "https://server.example", "owner")
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("source fairness: got=%v want=%v", got, want)
+		}
+		if !reflect.DeepEqual(ids, original) {
+			t.Fatalf("owner-scoped Source identifiers mutated: %v", ids)
+		}
+	}
+	assertOrder([]uint64{11, 9, 4})
+	// Source 11 gets a turn; 9 is now the oldest attempted source.
+	attempts[prefix+"11\x007"] = now.Add(time.Minute)
+	assertOrder([]uint64{9, 4, 11})
+	// Source 9 changes revision; its last attempt still determines fairness.
+	attempts[prefix+"9\x008"] = now.Add(2 * time.Minute)
+	assertOrder([]uint64{4, 11, 9})
+	// Corrupt or foreign attempts cannot bias current Owner admission.
+	attempts[prefix+"not-a-source\x009"] = now.Add(3 * time.Minute)
+	attempts[prefix+"4\x00invalid"] = now.Add(4 * time.Minute)
+	attempts[prefix+"4\x009\x00junk"] = now.Add(5 * time.Minute)
+	assertOrder([]uint64{4, 11, 9})
 }
