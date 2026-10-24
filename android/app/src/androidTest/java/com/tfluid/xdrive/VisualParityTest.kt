@@ -83,6 +83,15 @@ class VisualParityTest {
         compose.onNodeWithTag("username").performTextInput("demo")
         compose.onNodeWithTag("password").performTextInput("synthetic-password")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        // Compose may be idle before the controller's Main coroutine has
+        // completed login and, for FILES, the first synthetic directory read.
+        // Assert the same real UI, but only after its data has been delivered.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val current = controller.state.value
+            (current.screen == Screen.PASSWORD && !current.loading) ||
+                (current.screen == Screen.FILES && current.loaded && !current.loading)
+        }
+        compose.waitForIdle()
     }
     @Test fun passwordRevealResetsAfterBlurAndEmpty() {
         loginScreen()
