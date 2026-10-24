@@ -5406,6 +5406,16 @@ function registerIPCHandlers() {
     return { ok: true, data: { released: filePreviewProxy?.releaseURL(value) ?? false } }
   })
 
+  // A completed ordinary preview can continue reading through its local
+  // token. Invalidate that token on Viewer abort, retry or source replacement.
+  // Exact proxy origin and 256-bit token are validated by releaseURL().
+  ipcMain.handle('agent:release-cloud-file-preview-url', (_event, value: unknown) => {
+    if (typeof value !== 'string' || value.length > 4096) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Preview URL is invalid.' } }
+    }
+    return { ok: true, data: { released: filePreviewProxy?.releaseURL(value) ?? false } }
+  })
+
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
