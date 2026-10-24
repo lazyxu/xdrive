@@ -20,10 +20,15 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   const [deviceEvidence, setDeviceEvidence] = useState<string | null>(null)
   const [deviceEvidencePending, setDeviceEvidencePending] = useState(false)
   const [deviceEvidenceError, setDeviceEvidenceError] = useState(false)
-  const generation = useRef(0)
+  // A restarted public HEAD inspection must not invalidate an in-flight
+  // device evidence report or browser install prompt. Closing the dialog
+  // still invalidates all pending UI results.
+  const dialogGeneration = useRef(0)
+  const inspectionGeneration = useRef(0)
   const inspectionRef = useRef<AbortController | null>(null)
   useEffect(() => () => {
-    generation.current += 1
+    dialogGeneration.current += 1
+    inspectionGeneration.current += 1
     inspectionRef.current?.abort()
     inspectionRef.current = null
   }, [])
@@ -31,7 +36,8 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
     if (!open) {
       // The dialog may remain mounted after closing. Never keep stale
       // evidence on screen when the next account/session reopens it.
-      generation.current += 1
+      dialogGeneration.current += 1
+      inspectionGeneration.current += 1
       inspectionRef.current?.abort()
       inspectionRef.current = null
       setChecking(false)
@@ -41,38 +47,38 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
     }
   }, [open])
   const inspect = () => {
-    const id = ++generation.current
+    const id = ++inspectionGeneration.current
     inspectionRef.current?.abort()
     const controller = new AbortController()
     inspectionRef.current = controller
     setChecking(true)
     setChecks(null)
     void checkXDrivePwaAssets({ signal: controller.signal }).then(result => {
-      if (id === generation.current && !controller.signal.aborted) setChecks(result)
+      if (id === inspectionGeneration.current && !controller.signal.aborted) setChecks(result)
     }).finally(() => {
       if (inspectionRef.current === controller) inspectionRef.current = null
-      if (id === generation.current) setChecking(false)
+      if (id === inspectionGeneration.current) setChecking(false)
     })
   }
   const install = () => {
     // Browser prompt must run in the originating click, not after an await.
-    const id = generation.current
+    const id = dialogGeneration.current
     void requestXDrivePwaInstall().then(outcome => {
-      if (id === generation.current) setFeedback(outcome)
+      if (id === dialogGeneration.current) setFeedback(outcome)
     })
   }
   const captureDeviceEvidence = () => {
-    const id = generation.current
+    const id = dialogGeneration.current
     setDeviceEvidence(null)
     setDeviceEvidenceError(false)
     setDeviceEvidencePending(true)
     // An explicitly clicked in-memory observation, never a Server report.
     void collectXDrivePwaS5DeviceEvidence(checks).then(report => {
-      if (id === generation.current) setDeviceEvidence(JSON.stringify(report, null, 2))
+      if (id === dialogGeneration.current) setDeviceEvidence(JSON.stringify(report, null, 2))
     }).catch(() => {
-      if (id === generation.current) setDeviceEvidenceError(true)
+      if (id === dialogGeneration.current) setDeviceEvidenceError(true)
     }).finally(() => {
-      if (id === generation.current) setDeviceEvidencePending(false)
+      if (id === dialogGeneration.current) setDeviceEvidencePending(false)
     })
   }
   const standalone = state.displayMode !== 'browser'
