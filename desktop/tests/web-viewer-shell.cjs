@@ -359,7 +359,7 @@ for (const [app, name] of [['text-viewer', 'source.cpp'], ['pdf-viewer', 'paper.
 
 test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fine pointers', async () => {
   try {
-    for (const width of [390, 899, 900]) {
+    for (const width of [375, 390, 899, 900]) {
       for (const coarse of [false, true]) {
         compactTouch = coarse
         viewportWidth = width
@@ -2403,6 +2403,73 @@ test('P2 routed Web Gallery slideshow waits for decoded still then navigates one
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     storage.delete(sessionKey)
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P2 375px photo Viewer keeps eight 44px controls without horizontal rail overflow', async () => {
+  compactTouch = true
+  viewportWidth = 375
+  const contextID = 'p2-gallery-375-actions'
+  const key = 'xdrive.web_app.session.v1:' + contextID
+  const media = [8811, 8812, 8813].map(id => {
+    const node = { id, revision: 1, name: id + '.jpg', type: 'file', size: 42 }
+    return { node, metadata: {
+      mime_type: 'image/jpeg', media_kind: 'image', index_state: 'ready', has_thumbnail: true,
+    } }
+  })
+  storage.set(key, JSON.stringify({ version: 1, context: {
+    kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 1, totalCount: media.length,
+  } }))
+  const api = {
+    node: async id => media.find(item => item.node.id === id)?.node,
+    mediaItem: async id => media.find(item => item.node.id === id),
+  }
+  const gallerySource = {
+    loadThumbnail: async () => null,
+    listItemRange: async (limit, offset) => ({
+      items: media.slice(offset, offset + limit),
+      total_count: media.length, offset, limit,
+    }),
+    setFavorite: async () => {},
+    deleteItems: async () => ({ status: 'queued' }),
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: 8812, context: contextID } },
+        api, gallerySource, shareDialogAdapter: {},
+        onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    for (let n = 0; n < 5; n++) {
+      await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+    }
+    const rail = renderer.root.find(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+    const mediaActions = renderer.root.find(el => el.type === 'div' &&
+      el.props['data-xdrive-gallery-viewer-actions'] !== undefined)
+    assert.equal(rail.props.spacing, 0, 'Gallery rail cannot spend horizontal width on Stack spacing')
+    assert.equal(mediaActions.props.spacing, 0, 'Gallery action group cannot add hidden gaps')
+    assert.equal(rail.props.sx['& .MuiIconButton-root'].width, 44)
+    assert.equal(rail.props.sx['& .MuiIconButton-root'].height, 44)
+    const controls = rail.findAll(el => el.type === 'button')
+    for (const label of [
+      '上一个项目', '下一个项目', '收藏', '删除媒体',
+      '查看属性', '分享媒体', '更多照片操作', '开始幻灯片',
+    ]) {
+      assert.equal(controls.filter(el => el.props['aria-label'] === label).length, 1,
+        label + ' must remain directly reachable at 375px')
+    }
+    assert.equal(controls.length, 8, 'no duplicate or hidden ninth action may overflow the rail')
+    assert.ok(8 * 44 + 2 * 8 <= 375,
+      '375px allows exactly eight 44px controls and minimum 8px side padding')
+    assert.equal(buttons(renderer, '返回').length, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
     compactTouch = false
     viewportWidth = 390
   }
