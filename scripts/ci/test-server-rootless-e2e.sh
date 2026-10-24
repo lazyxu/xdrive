@@ -5,8 +5,52 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVER_ARTIFACT="${1:-$ROOT/dist/server-image}"
 CADDY_ARTIFACT="${2:-$ROOT/dist/caddy-image}"
 TAG="${XDRIVE_ROOTLESS_E2E_TAG:-rootless-e2e}"
-REGISTRY_PORT="${XDRIVE_ROOTLESS_REGISTRY_PORT:-35000}"
-WEB_PORT="${XDRIVE_ROOTLESS_WEB_PORT:-33080}"
+# RootlessKit binds published ports on the CI host, not merely inside the
+# disposable Docker daemon. Fixed numbers can collide with runner processes.
+# Explicit test overrides remain honored for reproducible diagnosis.
+REGISTRY_PORT="${XDRIVE_ROOTLESS_REGISTRY_PORT:-}"
+WEB_PORT="${XDRIVE_ROOTLESS_WEB_PORT:-}"
+RESCUE_PORT="${XDRIVE_ROOTLESS_RESCUE_PORT:-}"
+if [[ -z "$REGISTRY_PORT" || -z "$WEB_PORT" || -z "$RESCUE_PORT" ]]; then
+  command -v python3 >/dev/null 2>&1 || {
+    echo "rootless E2E requires python3 to allocate unused local TCP ports" >&2
+    exit 1
+  }
+  free_ports="$(python3 - "$REGISTRY_PORT" "$WEB_PORT" "$RESCUE_PORT" <<'PY'
+import socket
+import sys
+
+blocked = {int(value) for value in sys.argv[1:] if value}
+listeners = []
+try:
+    while len(listeners) < 3:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        if port in blocked:
+            listener.close()
+            continue
+        blocked.add(port)
+        listeners.append(listener)
+    print(*(listener.getsockname()[1] for listener in listeners))
+finally:
+    for listener in listeners:
+        listener.close()
+PY
+  )" || {
+    echo "rootless E2E could not allocate unused host TCP ports" >&2
+    exit 1
+  }
+  read -r free_registry_port free_web_port free_rescue_port <<< "$free_ports"
+  REGISTRY_PORT="${REGISTRY_PORT:-$free_registry_port}"
+  WEB_PORT="${WEB_PORT:-$free_web_port}"
+  RESCUE_PORT="${RESCUE_PORT:-$free_rescue_port}"
+fi
+if [[ "$REGISTRY_PORT" == "$WEB_PORT" || "$REGISTRY_PORT" == "$RESCUE_PORT" || "$WEB_PORT" == "$RESCUE_PORT" ]]; then
+  echo "rootless E2E registry/Web/Rescue TCP ports must be different" >&2
+  exit 2
+fi
+echo "[rootless-e2e] ephemeral host ports: registry=$REGISTRY_PORT web=$WEB_PORT rescue=$RESCUE_PORT"
 TMP_ROOT="$(mktemp -d "$HOME/.xdrive-rootless-e2e.XXXXXX")"
 SYSTEMD_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
 RUNTIME_OWNED=1
@@ -397,7 +441,7 @@ bash -n "$ROOT/scripts/ci/test-caddy-rescue-rootless-auth.sh"
 bash "$ROOT/scripts/ci/test-caddy-rescue-rootless-auth.sh" \
   "$env_path" "$compose_path" "$WEB_PORT" \
   "$registry/xdrive-caddy:$TAG" \
-  "${XDRIVE_ROOTLESS_RESCUE_PORT:-33081}" "$TMP_ROOT"
+  "$RESCUE_PORT" "$TMP_ROOT"
 
 echo "[rootless-e2e] host ownership files=$(stat -c '%u:%g' "$XDRIVE_HOME/data/files") postgres=$(stat -c '%u:%g' "$XDRIVE_HOME/data/postgres")"
 echo "real Rootless Docker server install/upgrade/source-preservation E2E passed"

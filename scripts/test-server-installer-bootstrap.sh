@@ -8,7 +8,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server installer bootstrap test failed (exit $status)" >&2
-    for file in ok.out ok.err fail.out fail.err upgrade.out upgrade.err state/urls state/docker-calls; do
+    for file in ok.out ok.err signed.out signed.err tampered.out tampered.err bad-incomplete.err bad-malformed.err fail.out fail.err upgrade.out upgrade.err state/urls state/docker-calls; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -64,6 +64,14 @@ emit() {
     printf '%s' "$1"
   fi
 }
+
+if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 &&
+      "$url" == */scripts/server-control.sh ]]; then
+  emit '#!/usr/bin/env bash
+exit 99
+'
+  exit 0
+fi
 
 case "$url" in
   */git/ref/tags/snapshot)
@@ -216,12 +224,75 @@ grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
 test -x "$TMP/config-ok/bin/xdrive-server"
 test -x "$TMP/config-ok/bin/server-migrate-user.sh"
 test -x "$TMP/config-ok/bin/server-backup.sh"
+python3 "$ROOT/scripts/test-signed-deploy-assets-contract.py"
+grep -q 'raw bootstrap template: no embedded deployment asset checksums' "$TMP/ok.err"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config-ok.bashrc"
 grep -Fq "$TMP/config-ok/bin" "$TMP/config-ok.bashrc"
 test -f "$TMP/config-ok/state/layout-version"
 test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
 test ! -e "$TMP/config-ok/.env"
 test ! -e "$TMP/config-ok/docker-compose.yml"
+
+# The release-generated installer binds all 11 raw deployment assets to
+# digests calculated from its authenticated checkout. Recreate that set from
+# the already-fetched happy-path fixture and test the generated trust boundary.
+signed_manifest="$TMP/staged-source.sha256"
+{
+  sha256sum "$TMP/config-ok/config/docker-compose.yml" | awk '{ print $1 "  deploy/docker-compose.yml" }'
+  for source_script in server-backup.sh server-backup-scheduled.sh server-restore.sh \
+    server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh \
+    caddy-env-config.py caddy-admission.py xdrive-server-host.sh; do
+    staged_name="$source_script"
+    [[ "$source_script" == xdrive-server-host.sh ]] && staged_name=xdrive-server
+    sha256sum "$TMP/config-ok/bin/$staged_name" | awk -v path="scripts/$source_script" '{ print $1 "  " path }'
+  done
+} > "$signed_manifest"
+embedded_b64="$(base64 -w0 "$signed_manifest")"
+sed "s|@DEPLOY_ASSET_MANIFEST_B64@|$embedded_b64|g" "$INSTALLER" > "$TMP/signed-installer.sh"
+bash -n "$TMP/signed-installer.sh"
+TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config-signed" XD_SHELL_RC_PATH="$TMP/config-signed.bashrc" \
+XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
+bash "$TMP/signed-installer.sh" >"$TMP/signed.out" 2>"$TMP/signed.err"
+grep -q 'all 11 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
+if grep -q 'raw bootstrap template' "$TMP/signed.err"; then
+  echo "rendered signed installer must never skip embedded asset verification" >&2
+  exit 1
+fi
+test -x "$TMP/config-signed/bin/xdrive-server"
+
+# A single tampered secondary script must abort *before* it can be installed.
+set +e
+TEST_TAMPER_STAGE_SCRIPT=1 TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config-tampered" XD_SHELL_RC_PATH="$TMP/config-tampered.bashrc" \
+XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
+bash "$TMP/signed-installer.sh" >"$TMP/tampered.out" 2>"$TMP/tampered.err"
+tampered_status=$?
+set -e
+[[ "$tampered_status" -ne 0 ]]
+grep -q 'SHA-256 mismatch for scripts/server-control.sh' "$TMP/tampered.err"
+test ! -e "$TMP/config-tampered/bin/xdrive-server"
+
+# Missing manifest entries and an invalid encoding must also fail closed.
+grep -v '  scripts/server-control.sh$' "$signed_manifest" > "$TMP/incomplete-source.sha256"
+for case_name in incomplete malformed; do
+  if [[ "$case_name" == incomplete ]]; then
+    bad_b64="$(base64 -w0 "$TMP/incomplete-source.sha256")"
+  else
+    bad_b64="invalid-base64-encoding"
+  fi
+  sed "s|@DEPLOY_ASSET_MANIFEST_B64@|$bad_b64|g" "$INSTALLER" > "$TMP/bad-$case_name-install.sh"
+  set +e
+  TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$TMP/config-$case_name" XD_SHELL_RC_PATH="$TMP/config-$case_name.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
+  bash "$TMP/bad-$case_name-install.sh" >"$TMP/bad-$case_name.out" 2>"$TMP/bad-$case_name.err"
+  invalid_status=$?
+  set -e
+  [[ "$invalid_status" -ne 0 ]]
+  grep -Eq 'missing signed SHA-256|invalid embedded deployment asset hash manifest' "$TMP/bad-$case_name.err"
+  test ! -e "$TMP/config-$case_name/bin/xdrive-server"
+done
 
 if grep -Eq -- '--(retry|retry-delay|connect-timeout|write-out)=' "$INSTALLER"; then
   echo "installer must use old-curl-compatible space-separated long option values" >&2

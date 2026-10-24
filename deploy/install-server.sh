@@ -23,6 +23,9 @@ IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 BUILT_SOURCE="${XD_BUILT_SOURCE:-@UPDATE_SOURCE@}"
+# Release tooling replaces this with the SHA-256 manifest from its exact source
+# checkout. Only a raw, unrendered bootstrap template lacks this signed binding.
+EMBEDDED_DEPLOY_ASSET_MANIFEST_B64="@DEPLOY_ASSET_MANIFEST_B64@"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
@@ -974,6 +977,82 @@ asset_no=$((asset_no + 1))
 fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/9 xdrive-server"
 chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml"
+
+verify_embedded_deploy_assets() {
+  local manifest_base64="$EMBEDDED_DEPLOY_ASSET_MANIFEST_B64"
+  local decoded sha source extra actual target
+  local -a sources=(
+    deploy/docker-compose.yml
+    scripts/server-backup.sh
+    scripts/server-backup-scheduled.sh
+    scripts/server-restore.sh
+    scripts/server-verify.sh
+    scripts/server-doctor.sh
+    scripts/server-migrate-user.sh
+    scripts/server-control.sh
+    scripts/caddy-env-config.py
+    scripts/caddy-admission.py
+    scripts/xdrive-server-host.sh
+  )
+  local -A expected=()
+  # Raw /deploy/install-server.sh is a legacy bootstrap route, not a signed
+  # Release artifact. Its historical contract is preserved, without pretending
+  # those downloads received a cryptographically authenticated manifest.
+  # Split the literal placeholder in this guard so the Release sed template
+  # renderer replaces the assignment only. Otherwise a rendered manifest can
+  # accidentally compare equal to its own expected bytes and skip verification.
+  if [[ "$manifest_base64" == '@DEPLOY_ASSET_MANIFEST_B''64@' ]]; then
+    echo "[xDrive] raw bootstrap template: no embedded deployment asset checksums (not release-verified)." >&2
+    return 0
+  fi
+  if ! command -v base64 >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; then
+    echo "xDrive server installer: base64 and sha256sum are required to verify signed release deployment assets." >&2
+    return 1
+  fi
+  if ! decoded="$(printf '%s' "$manifest_base64" | base64 --decode 2>/dev/null)" || [[ -z "$decoded" ]]; then
+    echo "xDrive server installer: invalid embedded deployment asset hash manifest; refusing installation." >&2
+    return 1
+  fi
+  while read -r sha source extra; do
+    [[ "$sha" =~ ^[a-f0-9]{64}$ && -n "$source" && -z "${extra:-}" ]] || {
+      echo "xDrive server installer: malformed embedded deployment asset hash record." >&2
+      return 1
+    }
+    [[ -z "${expected[$source]+x}" ]] || {
+      echo "xDrive server installer: duplicate embedded deployment asset hash for $source." >&2
+      return 1
+    }
+    expected["$source"]="$sha"
+  done <<< "$decoded"
+
+  for source in "${sources[@]}"; do
+    [[ -n "${expected[$source]-}" ]] || {
+      echo "xDrive server installer: missing signed SHA-256 for $source; refusing installation." >&2
+      return 1
+    }
+    case "$source" in
+      deploy/docker-compose.yml) target="$STAGING_DIR/docker-compose.yml" ;;
+      scripts/xdrive-server-host.sh) target="$STAGING_DIR/xdrive-server" ;;
+      *) target="$STAGING_DIR/${source##*/}" ;;
+    esac
+    [[ -f "$target" ]] || {
+      echo "xDrive server installer: missing downloaded asset $source; refusing installation." >&2
+      return 1
+    }
+    actual="$(sha256sum "$target" | cut -d' ' -f1)"
+    if [[ "$actual" != "${expected[$source]}" ]]; then
+      echo "xDrive server installer: staged deployment asset SHA-256 mismatch for $source; refusing installation." >&2
+      return 1
+    fi
+  done
+  if [[ "${#expected[@]}" -ne "${#sources[@]}" ]]; then
+    echo "xDrive server installer: unexpected extra embedded deployment asset hash entries; refusing installation." >&2
+    return 1
+  fi
+  echo "[xDrive] all ${#sources[@]} signed release deployment asset SHA-256 checks passed."
+}
+
+verify_embedded_deploy_assets
 
 random_hex() {
   local bytes="${1:-32}"
