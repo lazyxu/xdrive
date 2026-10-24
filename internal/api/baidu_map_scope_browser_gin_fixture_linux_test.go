@@ -82,6 +82,11 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.User{}, &meta.AdminServiceSecret{}, &meta.InternalServiceKeyAnchor{},
 		&meta.BaiduJSAPIMapEpoch{}, &meta.PhotoCollection{},
 		&meta.BaiduMapScopeHandoff{},
+		&meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{},
+		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +121,11 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	// The same signed Owner Cells used by the mounted Browser are now sourced
+	// from real PostgreSQL. Only 3 of 9 photos are favorites; another Owner
+	// has an overlapping BD09 location which must never enter this scope.
+	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "owner", 9, 3)
+	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0)
 	v, ciphertext, err := keyring.Seal(baiduJSAPISecretAADID,
 		baiduJSAPISecretKind, []byte("SYNTHETIC_BROWSER_AK_NEVER_USED_WITH_PROVIDER"))
 	if err != nil {
@@ -199,6 +209,92 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			} else if !os.IsNotExist(err) {
 				t.Fatal("invalid completion path")
 			}
+		}
+	}
+}
+
+// Seed one real protected Source→PhotoAsset→Consent→BD09 Cell chain. These
+// are generated non-production metadata rows, not user photos. No provider
+// coordinate conversion or unreviewed GPS send is performed.
+func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
+	ownerID uint64, prefix string, total, favorites int,
+) {
+	t.Helper()
+	sourceLatitude, sourceLongitude := 30.13, 119.97
+	derivedLatitude, derivedLongitude := 30.135, 119.975
+	stamp := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < total; i++ {
+		name := fmt.Sprintf("p04-%s-%02d.jpg", prefix, i+1)
+		node := meta.Node{
+			OwnerID: ownerID, Name: name, Type: meta.NodeTypeFile, Revision: 1,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		file := meta.File{
+			NodeID: node.ID, Size: 12, StorageKey: name, SHA256: strings.Repeat("a", 64),
+		}
+		if err := db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		indexed := meta.MediaMetadata{
+			NodeID: node.ID, OwnerID: ownerID, NodeRevision: 1,
+			SHA256: file.SHA256, IndexState: meta.MediaIndexStateReady,
+			MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+			Latitude: &sourceLatitude, Longitude: &sourceLongitude,
+			CapturedAt: &stamp,
+		}
+		if err := db.Create(&indexed).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.First(&indexed, "node_id = ?", node.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		asset := meta.PhotoAsset{
+			OwnerID: ownerID, PrimaryNodeID: node.ID,
+			EvidenceKey: "p04-browser:" + name, Kind: meta.MediaKindImage,
+		}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", Latitude: &sourceLatitude,
+			Longitude: &sourceLongitude, CapturedAt: &stamp,
+			Favorite: i < favorites,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoResource{
+			AssetID: asset.ID, NodeID: node.ID,
+			ResourceKind: meta.PhotoResourceKindNode,
+			Role:         meta.PhotoResourceRolePrimary,
+			Name:         name, MediaKind: meta.MediaKindImage, Size: file.Size,
+			MIMEType: "image/jpeg",
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		consent := meta.BaiduPhotoMapConsent{
+			AssetID: asset.ID, OwnerID: ownerID, Revision: 1,
+			AllowIndex: true, AllowBaiduConversion: true,
+			ExpiresAt:    time.Now().UTC().Add(time.Hour),
+			SourceNodeID: node.ID, SourceNodeRevision: 1,
+			SourceMediaUpdatedAt: &indexed.UpdatedAt,
+			SourceLatitude:       &sourceLatitude, SourceLongitude: &sourceLongitude,
+		}
+		if err := db.Create(&consent).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.BaiduPhotoMapPosition{
+			AssetID: asset.ID, OwnerID: ownerID,
+			PrimaryNodeID: node.ID, NodeRevision: 1,
+			MediaUpdatedAt: indexed.UpdatedAt, ConsentRevision: 1,
+			SourceLatitude: sourceLatitude, SourceLongitude: sourceLongitude,
+			Latitude: derivedLatitude, Longitude: derivedLongitude,
+			CoordinateSpace:   meta.BaiduPhotoMapSpaceBD09LL,
+			ProjectionVersion: meta.BaiduPhotoMapProjectionGeoconvV2,
+		}).Error; err != nil {
+			t.Fatal(err)
 		}
 	}
 }
