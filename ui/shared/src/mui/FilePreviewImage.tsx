@@ -11,10 +11,13 @@ type ImageRole = 'original' | 'thumbnail'
 type ImageSource = {
   url: string
   status: 'loading' | 'ready' | 'failed'
+  // Role-specific attempt: generation alone cannot distinguish successive
+  // original-only retries returning an identical signed URL.
+  attempt: number
   image?: HTMLImageElement
 }
 
-const pendingImage = (): ImageSource => ({ url: '', status: 'loading' })
+const pendingImage = (attempt = 0): ImageSource => ({ url: '', status: 'loading', attempt })
 
 /** Two bounded image layers; the very element we decode becomes the visible frame. */
 export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
@@ -63,6 +66,9 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   retryNonceRef.current = retryNonce
   const retryQueuedRef = useRef(false)
   const generationRef = useRef(0)
+  const attemptsRef = useRef<Record<ImageRole, number>>({ original: 0, thumbnail: 0 })
+  const retriedOriginalAttemptRef = useRef(-1)
+  const retryOriginalRef = useRef<(() => void) | null>(null)
   const decodingRef = useRef(new Set<string>())
   const acquireSourcesRef = useRef<(() => void) | null>(null)
   const loadersRef = useRef({ target, loadPreviewURL, loadImagePreview })
@@ -77,7 +83,10 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   useEffect(() => {
     retryQueuedRef.current = false
     const generation = ++generationRef.current
-    const requestController = new AbortController()
+    // Independent controllers prevent an original-only retry from restarting
+    // or aborting an already-decoded thumbnail.
+    const controllers = new Map<ImageRole, AbortController>()
+    const activeURLs = new Map<ImageRole, string>()
     const ownedURLs = new Set<string>()
     const releasedURLs = new Set<string>()
     const startedRoles = new Set<ImageRole>()
@@ -85,8 +94,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     decodingRef.current.clear()
     setProgress({ loadedBytes: 0 })
     setSources({
-      original: { url: '', status: loaders.loadPreviewURL ? 'loading' : 'failed' },
-      thumbnail: { url: '', status: loaders.loadImagePreview ? 'loading' : 'failed' },
+      original: { url: '', status: loaders.loadPreviewURL ? 'loading' : 'failed', attempt: attemptsRef.current.original },
+      thumbnail: { url: '', status: loaders.loadImagePreview ? 'loading' : 'failed', attempt: attemptsRef.current.thumbnail },
     })
 
     const release = (url: string) => {
@@ -94,49 +103,91 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       releasedURLs.add(url)
       URL.revokeObjectURL(url)
     }
-    const load = async (role: ImageRole, loader: () => Promise<string | null | undefined> | undefined) => {
+    const load = async (
+      role: ImageRole,
+      loader: () => Promise<string | null | undefined>,
+      attempt: number,
+      signal: AbortSignal,
+    ) => {
       let url = ''
       try {
         url = (await loader()) || ''
       } catch {
-        // Original failure may still use the independently loaded thumbnail.
+        // An unavailable original must not displace the decoded thumbnail.
       }
-      if (generationRef.current !== generation) {
+      if (generationRef.current !== generation ||
+          attemptsRef.current[role] !== attempt || signal.aborted) {
         if (url) release(url)
         return
       }
-      if (url) ownedURLs.add(url)
+      if (url) {
+        ownedURLs.add(url)
+        activeURLs.set(role, url)
+      }
       setSources((current) => ({
         ...current,
-        [role]: { url, status: url ? 'loading' : 'failed' },
+        [role]: { url, status: url ? 'loading' : 'failed', attempt },
       }))
     }
 
-    const acquireAvailableSources = () => {
-      const currentLoaders = loadersRef.current
-      const start = (role: ImageRole, loader?: () => Promise<string | null | undefined>) => {
-        if (!loader || startedRoles.has(role)) return
-        startedRoles.add(role)
-        setSources((current) => ({ ...current, [role]: pendingImage() }))
-        void load(role, loader)
+    const start = (
+      role: ImageRole,
+      loader?: (signal: AbortSignal, attempt: number) => Promise<string | null | undefined>,
+      force = false,
+    ) => {
+      if (!loader || (startedRoles.has(role) && !force)) return
+      if (force) {
+        controllers.get(role)?.abort()
+        const previousURL = activeURLs.get(role)
+        activeURLs.delete(role)
+        // Do not revoke a URL still owned by the visible thumbnail.
+        if (previousURL && ![...activeURLs.values()].includes(previousURL)) release(previousURL)
+        for (const key of decodingRef.current) {
+          if (key.startsWith(`${role}:`)) decodingRef.current.delete(key)
+        }
       }
-      // A slow ticket/original must not delay the low-resolution first frame.
-      start('original', currentLoaders.loadPreviewURL
-        ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind, requestController.signal,
+      startedRoles.add(role)
+      const attempt = ++attemptsRef.current[role]
+      const controller = new AbortController()
+      controllers.set(role, controller)
+      if (role === 'original') setProgress({ loadedBytes: 0 })
+      setSources((current) => ({ ...current, [role]: pendingImage(attempt) }))
+      void load(role, () => loader(controller.signal, attempt), attempt, controller.signal)
+    }
+
+    const startOriginal = (force = false) => {
+      const current = loadersRef.current
+      start('original', current.loadPreviewURL
+        ? (signal, attempt) => current.loadPreviewURL!(current.target, kind, signal,
           (loadedBytes, totalBytes) => {
-            if (generationRef.current === generation && !requestController.signal.aborted) {
+            if (generationRef.current === generation &&
+                attemptsRef.current.original === attempt && !signal.aborted) {
               setProgress({ loadedBytes, totalBytes })
             }
-          }) : undefined)
-      start('thumbnail', currentLoaders.loadImagePreview
-        ? () => currentLoaders.loadImagePreview!(currentLoaders.target, requestController.signal) : undefined)
+          }) : undefined, force)
+    }
+    const acquireAvailableSources = () => {
+      const current = loadersRef.current
+      // The two acquisition roles are independent; the thumbnail can show
+      // a first frame while the original is downloading or decoding.
+      startOriginal()
+      start('thumbnail', current.loadImagePreview
+        ? (signal) => current.loadImagePreview!(current.target, signal) : undefined)
+    }
+    const requestOwner = retrySource
+    retryOriginalRef.current = () => {
+      // A target/Owner replacement can render before its effect cleanup.
+      // Never let the prior effect fetch a retired source in that interval.
+      if (generationRef.current === generation &&
+          retrySourceRef.current === requestOwner) startOriginal(true)
     }
     acquireSourcesRef.current = acquireAvailableSources
     acquireAvailableSources()
     return () => {
       generationRef.current += 1
-      requestController.abort()
+      for (const controller of controllers.values()) controller.abort()
       if (acquireSourcesRef.current === acquireAvailableSources) acquireSourcesRef.current = null
+      retryOriginalRef.current = null
       for (const url of ownedURLs) release(url)
     }
   }, [kind, target.id, target.revision, retryNonce])
@@ -147,29 +198,30 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     acquireSourcesRef.current?.()
   }, [hasImagePreview, hasPreviewURL])
 
-  const failImage = useCallback((role: ImageRole, url: string, generation: number) => {
-    // A retired img/canvas event must not fail a new attempt, including when
-    // two signed image tickets happen to resolve to the same URL.
-    if (generationRef.current !== generation) return
-    setSources((current) => current[role].url === url ? {
-      ...current, [role]: { url, status: 'failed' },
+  const failImage = useCallback((role: ImageRole, url: string, generation: number, attempt: number) => {
+    // Retired renderer events must not affect a new attempt, even if both
+    // attempts happened to receive the same ticket URL.
+    if (generationRef.current !== generation || attemptsRef.current[role] !== attempt) return
+    setSources((current) => current[role].url === url && current[role].attempt === attempt ? {
+      ...current, [role]: { url, status: 'failed', attempt },
     } : current)
   }, [])
 
-  const decodeImage = (role: ImageRole, url: string, image: HTMLImageElement, generation: number) => {
-    if (generationRef.current !== generation) return
-    const key = `${role}:${url}`
+  const decodeImage = (role: ImageRole, url: string, image: HTMLImageElement, generation: number, attempt: number) => {
+    if (generationRef.current !== generation || attemptsRef.current[role] !== attempt) return
+    const key = `${role}:${attempt}:${url}`
     if (decodingRef.current.has(key)) return
     decodingRef.current.add(key)
     void (async () => {
       if (typeof image.decode === 'function') await image.decode()
       if (image.naturalWidth <= 0 || image.naturalHeight <= 0) throw new Error('Empty preview image')
-      if (generationRef.current !== generation) return
-      setSources((current) => current[role].url === url && current[role].status === 'loading' ? {
-        ...current, [role]: { url, status: 'ready', image },
+      if (generationRef.current !== generation || attemptsRef.current[role] !== attempt) return
+      setSources((current) => current[role].url === url && current[role].attempt === attempt &&
+        current[role].status === 'loading' ? {
+        ...current, [role]: { url, status: 'ready', attempt, image },
       } : current)
     })().catch(() => {
-      if (generationRef.current === generation) failImage(role, url, generation)
+      failImage(role, url, generation, attempt)
     })
   }
 
@@ -179,8 +231,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const readySource = readyRole ? sources[readyRole] : null
   const readyURL = readySource?.url || ''
   const handleTransformError = useCallback(() => {
-    if (readyRole) failImage(readyRole, readyURL, renderGeneration)
-  }, [failImage, readyRole, readyURL, renderGeneration])
+    if (readyRole && readySource) failImage(readyRole, readyURL, renderGeneration, readySource.attempt)
+  }, [failImage, readyRole, readyURL, renderGeneration, readySource])
   const loading = sources.original.status === 'loading' ||
     (!readySource && sources.thumbnail.status === 'loading')
   const failed = !readySource && !loading
@@ -191,6 +243,20 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         retryQueuedRef.current || !failed || !canRetry) return
     retryQueuedRef.current = true
     setRetryNonce((value) => value + 1)
+  }
+  // Claim the failed attempt synchronously. A second click on the same
+  // callback cannot renew a ticket, but a new failed attempt can be retried.
+  const retryOriginal = () => {
+    const attempt = sources.original.attempt
+    if (retrySourceRef.current !== retrySource ||
+        retryNonceRef.current !== retryNonce ||
+        !hasPreviewURL || sources.original.status !== 'failed' ||
+        sources.thumbnail.status !== 'ready' ||
+        attemptsRef.current.original !== attempt ||
+        retriedOriginalAttemptRef.current === attempt ||
+        !retryOriginalRef.current) return
+    retriedOriginalAttemptRef.current = attempt
+    retryOriginalRef.current()
   }
   const presentationState: XDriveFilePreviewPresentationState = readySource ? 'ready' : failed ? 'failed' : 'loading'
   useEffect(() => {
@@ -229,15 +295,15 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         const visible = readyRole === role && !mediaTransform
         return (
           <Box
-            key={`${role}:${source.url}`}
+            key={`${role}:${source.attempt}:${source.url}`}
             component="img"
             src={source.url}
             alt={visible ? target.name || '' : ''}
             aria-hidden={!visible || undefined}
             decoding="async"
             draggable={false}
-            onLoad={(event) => decodeImage(role, source.url, event.currentTarget, renderGeneration)}
-            onError={() => failImage(role, source.url, renderGeneration)}
+            onLoad={(event) => decodeImage(role, source.url, event.currentTarget, renderGeneration, source.attempt)}
+            onError={() => failImage(role, source.url, renderGeneration, source.attempt)}
             style={{ visibility: visible ? 'visible' : 'hidden' }}
             sx={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -267,6 +333,18 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
             stage={sources.original.url ? 'decode' : 'transfer'}
             {...progress}
           />
+        </Box>
+      ) : null}
+      {sources.original.status === 'failed' && sources.thumbnail.status === 'ready' && hasPreviewURL ? (
+        <Box data-xdrive-original-preview-retry
+          sx={{ position: 'absolute', zIndex: 2, top: 12, right: 12 }}>
+          <Button size="small" variant="outlined" aria-label="重试原图"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+            onPointerCancel={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onKeyUp={(event) => event.stopPropagation()}
+            onClick={retryOriginal}>重试原图</Button>
         </Box>
       ) : null}
       {failed ? (
