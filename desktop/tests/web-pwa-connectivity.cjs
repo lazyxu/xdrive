@@ -65,3 +65,55 @@ test('S3B: real update section includes explicit no-credentials Server check',()
   assert.ok(docs.includes('PWA-S3B'))
   assert.doesNotMatch(section,/window.location.reload|skipWaiting|localStorage/)
 })
+test('S3B: a stalled JSON body after valid 200 headers times out instead of reporting malformed JSON', async () => {
+  let bodyAborted = false
+  const result = await probe({ timeoutMs: 1000, request: async (_path, init) => ({
+    status: 200,
+    headers: { get: () => 'application/json' },
+    json: () => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => {
+        bodyAborted = true
+        reject(new Error('interrupted response body'))
+      }, { once: true })
+    }),
+  }) })
+  assert.equal(bodyAborted, true)
+  assert.deepEqual(result, { state: 'timed-out' })
+})
+
+test('S3B: an explicit cancellation during JSON body consumption is not reported as malformed HTTP 200', async () => {
+  const controller = new AbortController()
+  let notifyBodyStarted
+  const bodyStarted = new Promise(resolve => { notifyBodyStarted = resolve })
+  const pending = probe({ signal: controller.signal, request: async (_path, init) => ({
+    status: 200,
+    headers: { get: () => 'application/json' },
+    json: () => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new Error('cancelled body')), { once: true })
+      notifyBodyStarted()
+    }),
+  }) })
+  await bodyStarted
+  controller.abort()
+  assert.deepEqual(await pending, { state: 'cancelled' })
+})
+
+test('S3B: a late ready JSON body after cancellation cannot masquerade as a healthy Server', async () => {
+  const controller = new AbortController()
+  let notifyBodyStarted
+  let resolveBody
+  const bodyStarted = new Promise(resolve => { notifyBodyStarted = resolve })
+  const pending = probe({ signal: controller.signal, request: async () => ({
+    status: 200,
+    headers: { get: () => 'application/json' },
+    // A faulty reader that ignores AbortSignal must still not report success.
+    json: () => new Promise(resolve => {
+      resolveBody = resolve
+      notifyBodyStarted()
+    }),
+  }) })
+  await bodyStarted
+  controller.abort()
+  resolveBody({ ok: true })
+  assert.deepEqual(await pending, { state: 'cancelled' })
+})
