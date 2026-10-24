@@ -127,6 +127,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 
     const cancel = () => {
       generation++
+      // An SDK gesture invalidates the previous camera as well as its Cells.
+      // A filter change during pan/zoom must not resurrect that old viewport.
+      lastViewport.current = null
       activeQuery?.abort()
       activeQuery = null
       acceptedScope.current = null
@@ -196,8 +199,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
-      lastViewport.current={bounds:{...bounds},live:liveCamera}
+      // Cancel the previous query and invalidate its Camera before recording
+      // the newly requested bounds for possible same-camera filter refresh.
       cancel()
+      lastViewport.current={bounds:{...bounds},live:liveCamera}
       frame.replaceAuthorizedCells([])
       const approved=filterRef.current
       if(!approved.snapshot)return false
