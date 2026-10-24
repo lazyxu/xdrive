@@ -37,12 +37,17 @@ async function scenario(run) {
   let timerID = 0
   let nextCalls = 0
   const timers = new Map()
+  const canceledTimers = []
   const oldWindow = global.window
   const oldDocument = global.document
   const oldNow = Date.now
   global.window = {
     setTimeout(callback, delay) { timers.set(++timerID, { callback, at: now + delay }); return timerID },
-    clearTimeout(id) { timers.delete(id) },
+    clearTimeout(id) {
+      const timer = timers.get(id)
+      if (timer) canceledTimers.push(timer.callback)
+      timers.delete(id)
+    },
   }
   global.document = new EventTarget()
   document.visibilityState = 'visible'
@@ -67,6 +72,11 @@ async function scenario(run) {
     await act(async () => start.props.onClick())
     await run({
       renderer, advance, calls: () => nextCalls,
+      fireCanceled: async () => {
+        for (const callback of canceledTimers.splice(0)) {
+          await act(async () => callback())
+        }
+      },
       report: () => renderer.root.findByType('preview-content').props.onPresentationStateChange,
       ready: async (state = 'ready') => act(async () => renderer.root.findByType('preview-content').props.onPresentationStateChange(state)),
       update: async (patch) => {
@@ -184,4 +194,41 @@ test('Quick Look rotates chrome session on A→B→A and same-revision loader re
   assert.notEqual(loaderA, freshA)
   await update({ loadPreviewURL: async () => null })
   assert.notEqual(session(), loaderA, 'new authorized loader resets same Node chrome ownership')
+}))
+
+test('a canceled already-queued A timer cannot advance B or an A→B→A revisit', async () => scenario(async ({ advance, calls, ready, update, fireCanceled }) => {
+  await ready()
+  await advance(1200)
+  await update({ item: { id: 2, revision: 1, name: 'other.jpg', kind: 'file' } })
+  await ready()
+  await fireCanceled()
+  assert.equal(calls(), 0, 'retired A callback must not navigate B')
+  await update({ item: { id: 1, revision: 1, name: 'same.jpg', kind: 'file' } })
+  await ready()
+  await fireCanceled()
+  assert.equal(calls(), 0, 'retired A and B callbacks must not navigate returning A')
+  await advance(4999)
+  assert.equal(calls(), 0)
+  await advance(1)
+  assert.equal(calls(), 1, 'fresh A gets exactly one full dwell')
+}))
+
+test('canceled ready timer cannot advance while buffering or page-hidden', async () => scenario(async ({ advance, calls, ready, visibility, fireCanceled }) => {
+  await ready()
+  await advance(1600)
+  await ready('loading')
+  await fireCanceled()
+  await advance(12000)
+  assert.equal(calls(), 0, 'buffering rejects a queued ready callback')
+  await ready()
+  await advance(600)
+  await visibility('hidden')
+  await fireCanceled()
+  await advance(12000)
+  assert.equal(calls(), 0, 'background tab rejects a queued callback')
+  await visibility('visible')
+  await advance(2799)
+  assert.equal(calls(), 0)
+  await advance(1)
+  assert.equal(calls(), 1, 'only previously visible and ready time counts')
 }))
