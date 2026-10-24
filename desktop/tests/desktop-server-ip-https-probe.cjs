@@ -126,7 +126,7 @@ test('LAN CA trust is scoped: automatic via authenticated domain or user-approve
   assert.match(main, /privateLANRootsName = 'desktop-private-lan-roots\.json'/)
   assert.match(helper, /rejectUnauthorized: true/)
   assert.match(helper, /tls\.checkServerIdentity\(target\.ip, certificate\)/)
-  assert.match(helper, /lookup: \(_hostname, _options, callback\) => callback\(null, target\.ip, 4\)/)
+  assert.match(helper, /lookup: directLANIPv4Lookup\(target\.ip\)/)
   assert.match(helper, /servername: domain\.hostname/)
   assert.match(helper, /response\.status !== 200/)
   assert.match(preload, /desktop:probe-server', server, username/)
