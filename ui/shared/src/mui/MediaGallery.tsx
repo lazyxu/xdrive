@@ -633,10 +633,11 @@ export interface XDriveMediaGalleryPageProps {
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
   initialSection?: MediaGallerySection
+  initialMapPhotoScope?: XDriveBaiduMapPhotoScope
   onSectionRouteChange?: (section: MediaGallerySection) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   onShowInFolder?: (location: NodeLocation) => void
-  onOpenSecureDesktopMap?: () => void
+  onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   onOpenBaiduMapDiagnostics?: () => void
   onError?: (error: unknown) => void
 }
@@ -652,6 +653,7 @@ export function XDriveMediaGalleryPage({
   pageSize = 100,
   shareDialog,
   initialSection,
+  initialMapPhotoScope,
   onSectionRouteChange,
   onOpenViewer,
   onShowInFolder,
@@ -721,7 +723,8 @@ export function XDriveMediaGalleryPage({
   const [baiduPhotoScopeOwner,setBaiduPhotoScopeOwner] = useState<{
     owner:string;value:XDriveBaiduMapPhotoScope
   }>(()=>({owner:preferenceScope,
-    value:xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
+    value:(initialMapPhotoScope ? xDriveCopyBaiduMapPhotoScope(initialMapPhotoScope) : null) ??
+      xDriveReadBaiduCellReturn(preferenceScope)?.photoScope ??
       xDriveEmptyBaiduMapPhotoScope}))
   const mapPhotoScope = baiduPhotoScopeOwner.owner===preferenceScope
     ? baiduPhotoScopeOwner.value
@@ -3752,11 +3755,11 @@ export function XDriveMediaGalleryPage({
       setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
       return
     }
-    // Desktop opens a separate HTTPS Gallery via an unscoped callback. It
-    // cannot inherit a scoped Album/filter without a new trusted handoff.
-    // A silent unfiltered Desktop window would break the Owner collection.
-    if (entry.requiresIsolated && onOpenSecureDesktopMap) {
-      setError('Desktop 安全地图窗口尚不能继承当前相册或筛选；为了避免显示全图库，本次未打开地图。')
+    // Desktop remains on its original Gallery while only an independently
+    // authenticated HTTPS Parent may claim the selected Owner photo scope.
+    if (onOpenSecureDesktopMap) {
+      setError('')
+      onOpenSecureDesktopMap(entry.scope)
       return
     }
     if (entry.requiresIsolated &&
@@ -4399,7 +4402,7 @@ export interface XDriveMediaGalleryProps {
   mapPhotoScope?: XDriveBaiduMapPhotoScope
   onMapPhotoScopeChange?: (scope:XDriveBaiduMapPhotoScope)=>void
   onBaiduNativeCellInvalidated?: () => void
-  onOpenSecureDesktopMap?: () => void
+  onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   onOpenBaiduMapDiagnostics?: () => void
   focusPlaceID?: string
   getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']

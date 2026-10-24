@@ -23,11 +23,11 @@ const {
 test('A3c17 exact root HTTPS Server only, including certificate-capable HTTPS IP', () => {
   assert.deepEqual(target('https://gallery.example/'), {
     origin: 'https://gallery.example',
-    url: 'https://gallery.example/#/app/gallery?section=places',
+    url: 'https://gallery.example/?places_map_mode=isolated#/app/gallery?section=places',
   })
   assert.deepEqual(target('https://10.1.2.3:8443/'), {
     origin: 'https://10.1.2.3:8443',
-    url: 'https://10.1.2.3:8443/#/app/gallery?section=places',
+    url: 'https://10.1.2.3:8443/?places_map_mode=isolated#/app/gallery?section=places',
   })
   for (const bad of [undefined, null, 1, '', ' https://gallery.example/',
     'http://gallery.example/', 'file:///app/index.html',
@@ -40,15 +40,17 @@ test('A3c17 exact root HTTPS Server only, including certificate-capable HTTPS IP
 
 test('A3c17 permits one Origin and no unreviewed external map/CDN egress', () => {
   const o = 'https://gallery.example'
-  for (const url of [o + '/#/app/gallery?section=places',
-    o + '/#/app/media-viewer?node=42',
-    o + '/index.html#/app/gallery?section=places']) {
+  for (const url of [o + '/?places_map_mode=isolated#/app/gallery?section=places',
+    o + '/?places_map_mode=isolated#/app/media-viewer?node=42',
+    o + '/index.html?places_map_mode=isolated#/app/gallery?section=places']) {
     assert.equal(navigate(url, o), true)
   }
   for (const url of ['https://evil.example/',
     'https://gallery.example.evil.test/',
     'http://gallery.example/', 'file:///app/index.html',
     o + '/api/v1/auth/login', o + '/?credential=x',
+    o + '/#/app/gallery?section=places',
+    o + '/?places_map_mode=prototype#/app/gallery?section=places',
     'https://user:pass@gallery.example/']) {
     assert.equal(navigate(url, o), false)
   }
@@ -84,10 +86,10 @@ test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynami
   assert.match(main, /closeSecureBaiduMapWindow\(\)/)
   assert.match(main, /'登录已过期'/)
   assert.match(main, /'账户已禁用'/)
-  assert.match(preload, /openBaiduMapSecure: \(\) => ipcRenderer\.invoke\('desktop:open-baidu-map-secure'\)/)
+  assert.match(preload, /openBaiduMapSecure: \(scope: unknown\) => ipcRenderer\.invoke\('desktop:open-baidu-map-secure',scope\)/)
   assert.match(globals, /openBaiduMapSecure:/)
-  assert.match(desktopApp, /onOpenSecureDesktopMap=\{\(\) => \{/)
-  assert.match(desktopApp, /window\.xdriveDesktop\.openBaiduMapSecure\(\)/)
+  assert.match(desktopApp, /onOpenSecureDesktopMap=\{\(scope\) => \{/)
+  assert.match(desktopApp, /window\.xdriveDesktop\.openBaiduMapSecure\(scope\)/)
   // Electron file pages never load the unisolated SDK. Web may opt into the old
   // same-document prototype, but the Desktop action is always an HTTPS Child.
   assert.match(desktopApp, /<XDriveMediaGalleryPage/)

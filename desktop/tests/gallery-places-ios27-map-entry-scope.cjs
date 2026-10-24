@@ -121,7 +121,12 @@ test('Gallery source and map modes do not silently bypass the converter', () => 
   assert.ok(g.includes('entry.requiresIsolated'))
   // Electron never opens a new HTTPS window with the untrusted/unsent
   // current Album just because the browser mode URL happens to say isolated.
-  assert.ok(g.includes('entry.requiresIsolated && onOpenSecureDesktopMap'))
+  // Desktop must send exact signed-map membership to the separately
+  // authenticated HTTPS Parent, without falling back to all photos.
+  assert.ok(g.includes('if (onOpenSecureDesktopMap) {'))
+  assert.ok(g.includes('onOpenSecureDesktopMap(entry.scope)'))
+  assert.ok(g.indexOf('if (!entry.ok)') < g.indexOf('onOpenSecureDesktopMap(entry.scope)'))
+  assert.ok(!g.includes('onOpenSecureDesktopMap()'))
   assert.ok(g.includes('foldDuplicates || currentFolderView'))
   assert.ok(!g.includes("onShowMap={() => { setMobileCollectionsOverview(false); selectSection('places') }}"))
 })

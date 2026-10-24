@@ -1,4 +1,6 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
+import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveClearBaiduConversionSession } from '../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -113,6 +115,24 @@ import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './p
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
 import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
+
+type XDriveDesktopMapHandoffState =
+  | { state:'none' | 'pending' | 'denied'; revision:number }
+  | { state:'ready'; revision:number; ownerID:number; username:string;
+      scope:XDriveBaiduMapPhotoScope }
+
+// Only the dedicated isolated HTTPS Electron preload exposes this API.
+// No regular Web, PWA or Mobile Web app can make these native IPC calls.
+declare global {
+  interface Window {
+    xdriveSecureMapBridge?: {
+      consume(username:string):Promise<
+        | {ok:true;data:{scope:unknown}}
+        | {ok:false;error:{code:string;message:string}}>
+      onPending(callback:()=>void):()=>void
+    }
+  }
+}
 
 const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
 // P1-B: heavy route presentation only. Controllers/Owner Range/Viewer identity
@@ -590,6 +610,57 @@ function FileManager({
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
+  const [desktopMapHandoff,setDesktopMapHandoff] = useState<XDriveDesktopMapHandoffState>(
+    () => ({state:window.xdriveSecureMapBridge ? 'pending' : 'none',revision:0}))
+  // React StrictMode may replay effects. Cache the one-time IPC Promise;
+  // only a fresh explicit Desktop selection is permitted to claim again.
+  const desktopMapClaimRef = useRef<{
+    username:string;promise:ReturnType<NonNullable<Window['xdriveSecureMapBridge']>['consume']>
+  } | null>(null)
+  useEffect(() => {
+    const bridge=window.xdriveSecureMapBridge
+    if(!bridge)return
+    if(!profile?.id || !profile.username || profile.username !== username ||
+       profile.must_change_password) {
+      setDesktopMapHandoff(old=>({state:'pending',revision:old.revision}))
+      return
+    }
+    let active=true
+    let generation=0
+    const consume=()=>{
+      const request=++generation
+      setDesktopMapHandoff(old=>({state:'pending',revision:old.revision}))
+      if(!desktopMapClaimRef.current || desktopMapClaimRef.current.username!==profile.username)
+        desktopMapClaimRef.current={username:profile.username,promise:bridge.consume(profile.username)}
+      const claim=desktopMapClaimRef.current.promise
+      void claim.then(result=>{
+        if(!active || request!==generation || desktopMapClaimRef.current?.promise!==claim)return
+        const scope=result.ok ? xDriveNormalizeBaiduMapPhotoScope(result.data.scope):null
+        if(!scope) {
+          setDesktopMapHandoff(old=>({state:'denied',revision:old.revision}))
+          return
+        }
+        setDesktopMapHandoff(old=>({state:'ready',revision:old.revision+1,
+          ownerID:profile.id,username:profile.username,scope}))
+      }).catch(()=>{
+        if(active && request===generation)
+          setDesktopMapHandoff(old=>({state:'denied',revision:old.revision}))
+      })
+    }
+    const unsubscribe=bridge.onPending(()=>{
+      desktopMapClaimRef.current=null
+      consume()
+    })
+    consume()
+    return()=>{active=false;unsubscribe()}
+  },[profile?.id,profile?.username,profile?.must_change_password,username])
+  // Compare Owner synchronously in render; there is no frame in which a
+  // previous account's accepted scope can appear under a newly logged-in one.
+  const secureMapOwnerReady=desktopMapHandoff.state==='ready' && !!profile &&
+    profile.id===desktopMapHandoff.ownerID &&
+    profile.username===desktopMapHandoff.username &&
+    profile.username===username
+
   const offlineOwner = useMemo<XDrivePwaOfflineOwner | null>(() => {
     if (!profile || profile.must_change_password || profile.username !== username ||
         !profile.pwa_offline_instance_id) return null
@@ -2057,7 +2128,18 @@ function FileManager({
               void uploadGalleryFiles(selected)
             }}
           />
-          <XDriveMediaGalleryPage
+          {window.xdriveSecureMapBridge && !secureMapOwnerReady ? (
+            <Box role="alert" data-xdrive-desktop-map-scope-unavailable sx={{p:2}}>
+              <Typography variant="body2">
+                {desktopMapHandoff.state==='denied'
+                  ? 'Desktop 地图范围已失效或 HTTPS 登录账号不匹配。请从 Desktop 重新打开地图。'
+                  : '正在验证 Desktop 地图范围及当前 HTTPS 登录账号；不会自动切换至全图库。'}
+              </Typography>
+            </Box>
+          ) : <XDriveMediaGalleryPage
+            key={secureMapOwnerReady ? 'secure-map-'+desktopMapHandoff.revision : 'web-gallery'}
+            initialMapPhotoScope={secureMapOwnerReady && desktopMapHandoff.state==='ready'
+              ? desktopMapHandoff.scope : undefined}
             mobileWebChrome
             source={gallerySource}
             uploadRevision={galleryUploadRevision}
@@ -2104,7 +2186,7 @@ function FileManager({
               }, { viewerReturn: true })
             }}
             onError={handleError}
-          />
+          />}
           </>
         ) : appView === 'device-backup' ? (
           <XDriveDeviceBackupPage

@@ -26,6 +26,8 @@ import {
   xDriveBaiduMapResourceAllowed,
   xDriveBaiduMapNavigationAllowed,
 } from './baidu_map_secure_view.cjs'
+import { xDriveParseDesktopBaiduMapScope, xDriveDesktopBaiduMapClaimAllowed,
+  type XDriveDesktopBaiduMapScope } from './baidu_map_scope_handoff.cjs'
 import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { probeDesktopServer as probeDesktopServerWithChromium } from './server_probe.cjs'
@@ -300,6 +302,12 @@ type DesktopResult<T> =
 
 let mainWindow: BrowserWindow | null = null
 let secureBaiduMapWindow: BrowserWindow | null = null
+// Owner-private, one-use, memory-only. Nothing crosses the Web URL, shared
+// Electron Session, disk storage, third-party Child or Desktop Agent JWT.
+let secureBaiduMapHandoff: {
+  windowID: number; serverOrigin: string; ownerUsername: string
+  scope: XDriveDesktopBaiduMapScope; expiresAt: number
+} | null = null
 let desktopWindowIcon: NativeImage | null = null
 let desktopPreferences = defaultDesktopPreferences()
 // All native preference saves target one userData JSON file; preserve call order.
@@ -1081,12 +1089,13 @@ function restoreWindowsTaskbarIcon() {
  * to this renderer. Only the current Agent-configured HTTPS Server is trusted.
  */
 function closeSecureBaiduMapWindow() {
+  secureBaiduMapHandoff = null
   const win = secureBaiduMapWindow
   secureBaiduMapWindow = null
   if (win && !win.isDestroyed()) win.destroy()
 }
 
-async function openSecureBaiduMapWindow(): Promise<DesktopResult<{
+async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResult<{
   opened: true; separate_login_required: true
 }>> {
   if (!agentState.connected || !agentState.status?.configured ||
@@ -1099,8 +1108,24 @@ async function openSecureBaiduMapWindow(): Promise<DesktopResult<{
     return { ok: false, error: { code: 'map_https_required',
       message: '动态地图需要有效 HTTPS 证书；请先配置域名或有效证书的 HTTPS IP。' } }
   }
+  // Never widen a missing scope into a default global-map selection.
+  const scope = xDriveParseDesktopBaiduMapScope(rawScope)
+  if (!scope) {
+    return {ok:false,error:{code:'invalid_map_scope',
+      message:'地图只接受已审核的相册、日期、收藏和媒体类型筛选。'}}
+  }
+  const nextHandoff = (windowID: number) => ({
+    windowID, serverOrigin: target.origin,
+    ownerUsername: agentState.status!.username!, scope,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  })
   if (secureBaiduMapWindow && !secureBaiduMapWindow.isDestroyed()) {
-    if (secureBaiduMapWindow.webContents.getURL().startsWith(target.origin + '/')) {
+    if (secureBaiduMapWindow.webContents.getURL().startsWith(
+      target.origin + '/?places_map_mode=isolated')) {
+      // Latest explicit Desktop selection wins. Do not send scope in an event:
+      // the separately authenticated trusted Web parent must claim it itself.
+      secureBaiduMapHandoff = nextHandoff(secureBaiduMapWindow.webContents.id)
+      secureBaiduMapWindow.webContents.send('desktop:secure-baidu-map-pending')
       secureBaiduMapWindow.show()
       secureBaiduMapWindow.focus()
       return { ok: true, data: { opened: true, separate_login_required: true } }
@@ -1123,11 +1148,13 @@ async function openSecureBaiduMapWindow(): Promise<DesktopResult<{
     backgroundColor: desktopWindowBackground(),
     webPreferences: {
       partition,
+      preload: path.join(__dirname, '..', 'preload', 'baidu_map_secure.cjs'),
       contextIsolation: true, nodeIntegration: false,
       sandbox: true, webSecurity: true, webviewTag: false,
     },
   })
   secureBaiduMapWindow = win
+  secureBaiduMapHandoff = nextHandoff(win.webContents.id)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
   win.webContents.on('will-navigate', (event, url) => {
@@ -1137,7 +1164,10 @@ async function openSecureBaiduMapWindow(): Promise<DesktopResult<{
     if (!xDriveBaiduMapNavigationAllowed(url, target.origin)) event.preventDefault()
   })
   win.on('closed', () => {
-    if (secureBaiduMapWindow === win) secureBaiduMapWindow = null
+    if (secureBaiduMapWindow === win) {
+      secureBaiduMapWindow = null
+      secureBaiduMapHandoff = null
+    }
     void mapSession.clearStorageData().catch(() => {})
   })
   win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show() })
@@ -2358,12 +2388,40 @@ function registerIPCHandlers() {
       return { ok: false, error: agentError(error) }
     }
   })
-  ipcMain.handle('desktop:open-baidu-map-secure', (event) => {
+  ipcMain.handle('desktop:open-baidu-map-secure', (event, rawScope: unknown) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
       return { ok: false, error: { code: 'map_owner_denied',
         message: '地图窗口仅允许当前 Desktop 主窗口打开。' } }
     }
-    return openSecureBaiduMapWindow()
+    return openSecureBaiduMapWindow(rawScope)
+  })
+  // Dedicated secure-map preload only. No page-provided Owner IDs, URLs,
+  // credentials, GPS or arbitrary map RPC, and never cross an account switch.
+  ipcMain.handle('desktop:consume-baidu-map-scope', (event, authenticatedUsername: unknown) => {
+    const pending = secureBaiduMapHandoff
+    const win = secureBaiduMapWindow
+    const status = agentState.status
+    const currentOrigin = xDriveResolveSecureBaiduMapTarget(status?.server)?.origin ?? ''
+    if (!pending || !win || win.isDestroyed() || !status ||
+        !agentState.connected ||
+        event.sender !== win.webContents ||
+        !xDriveDesktopBaiduMapClaimAllowed({
+          windowID: win.webContents.id, pendingWindowID: pending.windowID,
+          serverOrigin: pending.serverOrigin, currentOrigin,
+          expectedUsername: pending.ownerUsername,
+          agentUsername: status.username ?? '',
+          authenticatedWebUsername: authenticatedUsername,
+          frameURL: event.senderFrame?.url,
+          isMainFrame: event.senderFrame === win.webContents.mainFrame,
+          expiresAt: pending.expiresAt, now: Date.now(),
+        })) {
+      return { ok: false, error: {code:'map_scope_unavailable',
+        message:'地图相册范围已失效或当前 HTTPS 登录账号与 Desktop 不一致。'} }
+    }
+    // Consume atomically before replying; a refreshed/login-switched window
+    // cannot replay the previous Owner scope.
+    secureBaiduMapHandoff = null
+    return {ok:true,data:{scope:pending.scope}}
   })
   ipcMain.handle('desktop:open-external', async (_event, rawURL: unknown) => {
     if (typeof rawURL !== 'string') return { ok: false, error: { code: 'invalid_input', message: 'URL is required.' } }

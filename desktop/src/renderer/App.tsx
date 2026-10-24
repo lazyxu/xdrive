@@ -2926,8 +2926,8 @@ export default function App({
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
             preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
-            onOpenSecureDesktopMap={() => {
-              void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure())
+            onOpenSecureDesktopMap={(scope) => {
+              void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure(scope))
                 .catch((openError) => setError(
                   openError instanceof Error ? openError.message : String(openError),
                 ))
