@@ -322,13 +322,18 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"branches: [\"master\"]",
 		"tags: [\"v*\"]",
 		"workflow_dispatch:",
-		"cancel-in-progress: true",
+		"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
 		"name: xdrive-source-agent-linux",
 		"uses: ./.github/workflows/release.yml",
 		"secrets: inherit",
 	)
+	// Never cancel a running master publish due to a newer push.
+	// PR-only cancellation remains required and checked above.
+	if strings.Contains(githubRaw, "\n  cancel-in-progress: true\n") {
+		t.Fatal("global cancellation could starve the master snapshot publisher")
+	}
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
 		"- local: /infra/ci/gitlab-release.yml",
