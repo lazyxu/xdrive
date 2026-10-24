@@ -2845,6 +2845,7 @@ jobs:
         run: |
           bash -n deploy/install-server.sh
           python3 scripts/test-master-snapshot-concurrency.py
+          python3 scripts/test-snapshot-release-notes.py
           bash -n scripts/server-backup.sh
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/server-restore.sh
