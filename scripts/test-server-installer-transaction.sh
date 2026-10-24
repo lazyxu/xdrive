@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
+    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err incremental-stall.out incremental-stall.err completion-tail.out completion-tail.err incremental-success.out incremental-success.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -229,6 +229,50 @@ case "$1" in
       /usr/bin/sleep 3
       printf '%s\n' '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}'
       exit 0
+    fi
+    # Bytes replayed in later Docker processes must not count twice.
+    if [[ "$mode" == "incremental-stalled" && "$service" == "server" && "$progress_mode" == "json" ]]; then
+      case "$count" in
+        1|2) bytes=1024 ;;
+        3) bytes=2048 ;;
+        4|5) bytes=3072 ;;
+        *) echo "unexpected retry after a zero-increment attempt" >&2; exit 12 ;;
+      esac
+      printf '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","current":%s,"total":4096}\n' "$bytes"
+      if [[ "$count" -eq 5 ]]; then
+        printf '%s\n' '{"id":"layer-cached","parent_id":"Image mock","status":"done","text":"Already exists"}'
+      fi
+      /usr/bin/sleep 3
+      exit 1
+    fi
+    # Completion without current must count only when this attempt has
+    # previously observed the corresponding layer's Downloading event.
+    if [[ "$mode" == "completion-tail" && "$service" == "server" && "$progress_mode" == "json" ]]; then
+      case "$count" in
+        1|2|3) first=1024; second=512 ;;
+        4) first=4096; second=2048 ;;
+        *) echo "unexpected retry after cached layer replay" >&2; exit 12 ;;
+      esac
+      printf '{"id":"layer-a","text":"Downloading","current":%s,"total":4096}\n' "$first"
+      printf '{"id":"layer-b","text":"Downloading","current":%s,"total":2048}\n' "$second"
+      if [[ "$count" -eq 3 ]]; then
+        printf '%s\n' \
+          '{"id":"layer-a","text":"Download complete"}' \
+          '{"id":"layer-b","text":"Pull complete"}'
+      elif [[ "$count" -eq 4 ]]; then
+        printf '%s\n' \
+          '{"id":"layer-a","text":"Pull complete"}' \
+          '{"id":"layer-b","text":"Already exists"}' \
+          '{"id":"cached-layer","text":"Already exists"}'
+      fi
+      /usr/bin/sleep 3
+      exit 1
+    fi
+    if [[ "$mode" == "incremental-success" && "$service" == "server" && "$progress_mode" == "json" && "$count" -le 3 ]]; then
+      bytes=$(( count * 1024 ))
+      printf '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","current":%s,"total":4096}\n' "$bytes"
+      /usr/bin/sleep 3
+      exit 1
     fi
     if [[ "$progress_mode" == "json" ]]; then
       printf '%s\n' \
@@ -455,6 +499,89 @@ grep -q 'pull server stalled' "$TMP/stall.err"
 grep -q 'attempt 1 stalled; retry will reuse completed Docker layers' "$TMP/stall.err"
 grep -q 'pull server attempt 2/3' "$TMP/stall.out"
 grep -q 'pull server complete.' "$TMP/stall.out"
+
+# Continue after the minimum while the same Docker layer advances. Attempt 2
+# and attempt 5 replay cached bytes; after attempt 5 it must stop/roll back.
+cp -a "$TMP/config" "$TMP/incremental-stall-config"
+mkdir -p "$TMP/incremental-stall-state" "$TMP/incremental-stall-host-bin"
+sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$TMP/incremental-stall-config/.env" "$TMP/incremental-stall-config/config/.env"
+set +e
+TEST_STATE="$TMP/incremental-stall-state" \
+TEST_PULL_MODE=incremental-stalled \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/incremental-stall-config" \
+XD_HOST_BIN_DIR="$TMP/incremental-stall-host-bin" \
+XD_SHELL_RC_PATH="$TMP/incremental-stall-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_PULL_STALL_TIMEOUT_SECONDS=2 \
+XD_PULL_STALL_LOG_INTERVAL_SECONDS=1 \
+bash "$INSTALLER" --channel master >"$TMP/incremental-stall.out" 2>"$TMP/incremental-stall.err"
+incremental_stall_status=$?
+set -e
+[[ "$incremental_stall_status" -ne 0 ]]
+[[ "$(cat "$TMP/incremental-stall-state/pull-count-server")" == "5" ]]
+grep -q 'pull server attempt 4 (extended beyond 3 minimum attempts)' "$TMP/incremental-stall.out"
+grep -q 'pull server attempt 5 (extended beyond 3 minimum attempts)' "$TMP/incremental-stall.out"
+grep -q 'attempt 5 made no new download bytes' "$TMP/incremental-stall.err"
+grep -q 'pull server failed after 5 attempts' "$TMP/incremental-stall.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/incremental-stall.err"
+
+# The third attempt has only replayed numeric snapshots, but completes two
+# previously downloading layers without emitting current=total. It must
+# unlock attempt 4; attempt 4 only replays cache and must stop/roll back.
+cp -a "$TMP/config" "$TMP/completion-tail-config"
+mkdir -p "$TMP/completion-tail-state" "$TMP/completion-tail-host-bin"
+sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$TMP/completion-tail-config/.env" "$TMP/completion-tail-config/config/.env"
+set +e
+TEST_STATE="$TMP/completion-tail-state" \
+TEST_PULL_MODE=completion-tail \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/completion-tail-config" \
+XD_HOST_BIN_DIR="$TMP/completion-tail-host-bin" \
+XD_SHELL_RC_PATH="$TMP/completion-tail-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_PULL_STALL_TIMEOUT_SECONDS=2 \
+XD_PULL_STALL_LOG_INTERVAL_SECONDS=1 \
+bash "$INSTALLER" --channel master >"$TMP/completion-tail.out" 2>"$TMP/completion-tail.err"
+completion_tail_status=$?
+set -e
+[[ "$completion_tail_status" -ne 0 ]]
+[[ "$(cat "$TMP/completion-tail-state/pull-count-server")" == "4" ]]
+grep -q 'attempt 3 advanced new download bytes' "$TMP/completion-tail.err"
+grep -q 'attempt 4 made no new download bytes' "$TMP/completion-tail.err"
+grep -q 'pull server failed after 4 attempts' "$TMP/completion-tail.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/completion-tail.err"
+
+# A genuinely productive third attempt permits a successful fourth attempt.
+cp -a "$TMP/config" "$TMP/incremental-success-config"
+mkdir -p "$TMP/incremental-success-state" "$TMP/incremental-success-host-bin"
+sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$TMP/incremental-success-config/.env" "$TMP/incremental-success-config/config/.env"
+set +e
+TEST_STATE="$TMP/incremental-success-state" \
+TEST_PULL_MODE=incremental-success \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/incremental-success-config" \
+XD_HOST_BIN_DIR="$TMP/incremental-success-host-bin" \
+XD_SHELL_RC_PATH="$TMP/incremental-success-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_PULL_STALL_TIMEOUT_SECONDS=2 \
+XD_PULL_STALL_LOG_INTERVAL_SECONDS=1 \
+bash "$INSTALLER" --channel master >"$TMP/incremental-success.out" 2>"$TMP/incremental-success.err"
+incremental_success_status=$?
+set -e
+[[ "$incremental_success_status" -eq 0 ]]
+[[ "$(cat "$TMP/incremental-success-state/pull-count-server")" == "4" ]]
+grep -q 'pull server attempt 4 (extended beyond 3 minimum attempts)' "$TMP/incremental-success.out"
+grep -q 'pull server complete.' "$TMP/incremental-success.out"
 
 # Reproduce the production failure point: all image-pull attempts fail before
 # any new application container or migration is started. Rollback must restore
