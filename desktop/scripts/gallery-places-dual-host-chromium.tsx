@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
 import { XDriveMediaGalleryViewer } from '@fixture/viewer'
+import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
+import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 
 type Bounds = {coordinate_space:'bd09ll';west:number;east:number;south:number;north:number}
 type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favorite?:boolean}}
 const mode = new URLSearchParams(location.search).get('mode') === 'isolated' ? 'isolated' : 'inline'
 const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
+const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
   {cache:'no-store'}).then(async response=>{
@@ -35,6 +38,7 @@ const probe = ((window as any).__mapProbe = {
   invalidations:0, realGin:genuineGin, ownerCellRange:null as any,
   ownerViewportRange:null as any, rangeError:false,
   viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
+  galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -136,6 +140,80 @@ const signedPreviewURL=async(nodeID:number,kind:'image'|'video'|'live_photo',
       receipt.url.startsWith('//'))throw Error('untrusted preview URL')
   return receipt.url
 }
+
+// Use the actual shipped Gallery page and sparse VirtualCollection, not a
+// second Photo Wall. Every media-bearing range goes through the real Gin
+// router and the same owner JWT; only ancillary place-card/albums indexes are
+// empty in this isolated map-only database fixture.
+const galleryQuery=(query:any={})=>{
+  const params=new URLSearchParams()
+  for(const key of ['anchor_node_id','sort_by','sort_dir','time_zone',
+    'favorite','asset_kind','captured_from','captured_to','fold_duplicates',
+    'initial_position','unknown_first']){
+    const value=query?.[key]
+    if(value!==undefined&&value!==null&&value!=='')params.set(key,String(value))
+  }
+  return params
+}
+const ownerGalleryGet=async(path:string,signal?:AbortSignal)=>{
+  const token=await ownerToken()
+  const response=await fetch(path,{signal,cache:'no-store',
+    headers:{Authorization:'Bearer '+token}})
+  if(!response.ok)throw Error('genuine Gin Gallery HTTP '+response.status)
+  return response.json()
+}
+const listOwnerGalleryRange=async(limit:number,offset:number,query:any={},signal?:AbortSignal)=>{
+  const params=galleryQuery(query)
+  params.set('range','true');params.set('limit',String(limit))
+  params.set('offset',String(offset))
+  const page=await ownerGalleryGet('/api/v1/media/items?'+params,signal)
+  probe.galleryPageReads.push({kind:'ordinary',offset,limit,total:page.total_count})
+  return page
+}
+const galleryDataSource={
+  listItems:async(limit:number,offset:number,query:any={})=>
+    (await listOwnerGalleryRange(limit,offset,query)).items,
+  listItemRange:listOwnerGalleryRange,
+  listAlbums:async()=>[],
+  listPlaces:async()=>[],
+  listBaiduNativeCells:listOwnerCells,
+  listBaiduNativeCellItems:async(selection:any,limit:number,offset:number,
+    sort:any,signal:AbortSignal)=>{
+    const params=xDriveBaiduNativeCellRangeParams(selection,limit,offset,sort)
+    if(!params)throw Error('invalid trusted Cell Range parameters')
+    const page=await ownerRequest('cell-items',params,signal)
+    // Store only test-local Owner member IDs to compare a fresh Gin Range
+    // after returning to the map. Do not expose IDs to the untrusted SDK.
+    probe.galleryPageReads.push({kind:'cell',offset,limit,total:page.total_count,
+      nodeIDs:(page.items||[]).map((item:any)=>item.node?.id)})
+    return page
+  },
+  listBaiduNativeViewportItems:async(bounds:Bounds,limit:number,offset:number,
+    query:any,signal:AbortSignal,albumKey?:string)=>{
+    const params=geometry(bounds)
+    params.set('range','true');params.set('offset',String(offset))
+    params.set('limit',String(limit))
+    for(const [key,value] of galleryQuery(query))params.set(key,value)
+    if(albumKey)params.set('album',albumKey)
+    const page=await ownerRequest('viewport-items',params,signal)
+    probe.galleryPageReads.push({kind:'viewport',offset,limit,total:page.total_count})
+    return page
+  },
+  getBaiduJSAPI4Status:getInlineSignedStatus,
+  getBaiduJSAPIPrototype:getInlinePrototypeConfig,
+  mintBaiduIsolatedChildTicket:mintChildTicket,
+  loadThumbnail:async()=>null,
+  loadPreviewURL:signedPreviewURL,
+}
+function FullGalleryPage(){
+  return <XDriveMediaGalleryPage source={galleryDataSource as any}
+    preferenceScope="p04-authenticated-full-gallery"
+    initialSection="places" pageSize={48}
+    initialMapPhotoScope={{albumKey:'',filters:{
+      sort_by:'captured',sort_dir:'desc',favorite:true}}}
+    onError={(error)=>{probe.galleryPageErrors.push(
+      error instanceof Error?error.name:'GalleryError')}}/>
+}
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
   const [viewerItem,setViewerItem]=useState<any|null>(null)
@@ -175,4 +253,4 @@ function TestApp(){
     ) : null}
   </div>
 }
-createRoot(document.getElementById('root')!).render(<TestApp />)
+createRoot(document.getElementById('root')!).render(fullGalleryPage ? <FullGalleryPage /> : <TestApp />)

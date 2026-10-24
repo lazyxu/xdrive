@@ -181,7 +181,7 @@ jobs:
           node --check desktop/scripts/gallery-places-dual-host-chromium.cjs
           export XD_PR_HEAD="$(git rev-parse HEAD)"
           node desktop/scripts/gallery-places-dual-host-chromium.cjs
-          node -e "const s=require('./desktop/places-p04-real-gin-chromium-results/summary.json');if(!s.passed||!s.realGin||s.realBaiduProvider||!s.realReactParent||s.checks.length<36||s.checks.some(c=>!c.passed)||s.errors.length)process.exit(1)"
+          node -e "const s=require('./desktop/places-p04-real-gin-chromium-results/summary.json');if(!s.passed||!s.realGin||s.realBaiduProvider||!s.realReactParent||s.checks.length<36||!Array.isArray(s.fullGalleryPageModes)||s.fullGalleryPageModes.join(',')!=='inline,isolated'||s.checks.some(c=>!c.passed)||s.errors.length)process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
