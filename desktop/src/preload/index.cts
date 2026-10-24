@@ -907,7 +907,7 @@ const agent = Object.freeze({
     parentID,
     files.map((file) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0])),
   ),
-  cloudTextPreview: (id: number) => ipcRenderer.invoke('agent:cloud-text-preview', id),
+  cloudTextPreview: (id: number, requestID?: string) => ipcRenderer.invoke('agent:cloud-text-preview', id, requestID),
   cloudFilePreviewURL: (id: number) => ipcRenderer.invoke('agent:cloud-file-preview-url', id),
   cloudDownload: (id: number, name: string) => ipcRenderer.invoke('agent:cloud-download', id, name),
   cloudDownloadFolder: (id: number, parentID: number) => ipcRenderer.invoke('agent:cloud-download-folder', id, parentID),

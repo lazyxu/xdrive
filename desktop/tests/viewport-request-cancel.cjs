@@ -123,3 +123,47 @@ test('Desktop request IDs belong to their sender and survive pre-admission cance
   await assert.rejects(mgr.run(one, 'before-start', async () => { executed = true }), /before admission/i)
   assert.equal(executed, false)
 })
+
+
+test('Desktop text preview cancels genuine slow Agent HTTP bytes on navigation', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const sender = new WindowSender(161)
+    const pending = mgr.run(sender, 'text-preview-cancel-161', signal =>
+      client.cloudFileTextPreview(71, signal))
+    await until(() => events.started === 1)
+    mgr.cancel(sender, 'text-preview-cancel-161')
+    await assert.rejects(pending, /cancel|abort/i)
+    await until(() => events.aborted === 1, 160)
+    assert.equal(events.bytes, 0, 'cancelled preview must not consume 1 MiB of old text')
+  })
+})
+
+test('Desktop text preview survives cross-window ID collisions and aborts on window destruction', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const first = new WindowSender(162)
+    const second = new WindowSender(163)
+    const a = mgr.run(first, 'shared-text-id', signal => client.cloudFileTextPreview(71, signal))
+    const b = mgr.run(second, 'shared-text-id', signal => client.cloudFileTextPreview(72, signal))
+    await until(() => events.started === 2)
+    mgr.cancel(first, 'shared-text-id')
+    await assert.rejects(a, /cancel|abort/i)
+    await until(() => events.aborted === 1, 160)
+    second.emit('destroyed')
+    await assert.rejects(b, /cancel|abort/i)
+    await until(() => events.aborted === 2, 160)
+    assert.equal(events.bytes, 0)
+  })
+})
+
+test('Desktop text preview cancel-before-admission avoids an Agent HTTP read', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const sender = new WindowSender(164)
+    mgr.cancel(sender, 'future-text-read')
+    await assert.rejects(mgr.run(sender, 'future-text-read', signal =>
+      client.cloudFileTextPreview(71, signal)), /before admission/i)
+    assert.equal(events.started, 0)
+  })
+})

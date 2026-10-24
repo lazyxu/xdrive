@@ -112,7 +112,8 @@ test('shared Inspector delegates preview rendering to FilePreviewSurface', () =>
 test('Web and Desktop load preview through authenticated platform adapters', () => {
   assert.ok(webApi.includes('fileTextPreview(id: number, signal?: AbortSignal)'), 'Web API text preview method must support cancellation')
   assert.ok(webExplorer.includes('api.fileTextPreview(Number(item.id), signal)'), 'Web Explorer preview adapter must forward AbortSignal')
-  assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudTextPreview(Number(item.id))'), 'Desktop Explorer preview adapter is missing')
+  assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudTextPreview(Number(item.id), requestID)'), 'Desktop Explorer preview adapter must forward sender-scoped request id')
+  assert.ok(desktopExplorer.includes('const result = await xDriveDesktopViewportRequest('), 'Desktop text preview must use shared request-scoped cancellation')
   assert.ok(desktopExplorer.includes('textPreviewSupported ? loadTextPreview : undefined'), 'Desktop preview must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-text-preview')"), 'Desktop App capability gate is missing')
   for (const [label, source, tokens] of [
@@ -179,4 +180,20 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   // Decode failure, thumbnail fallback and source ownership are exercised by
   // shared-image-preview-decode.cjs against the mounted React component.
 
+})
+
+
+test('Desktop text preview cancellation uses the existing sender-scoped IPC and Go request context', () => {
+  assert.ok(preload.includes("ipcRenderer.invoke('agent:cloud-text-preview', id, requestID)"),
+    'preload must forward the exact request id without Renderer-controlled Agent URLs')
+  assert.ok(desktopMain.includes("viewportRequests.run(event.sender, requestID, async (signal) =>"),
+    'Main must bind in-flight cancellation to the requesting WebContents')
+  assert.ok(desktopMain.includes('requireAgentClient().cloudFileTextPreview(id, signal)'),
+    'Main must relay the same abort signal to the Agent HTTP transport')
+  assert.ok(agentClient.includes('cloudFileTextPreview(id: number, signal?: AbortSignal)'),
+    'Agent client must expose an optional cancellation signal')
+  assert.ok(agentClient.includes('undefined, 10_000, signal,'),
+    'Agent client must forward the signal to its existing fetch abort controller')
+  assert.ok(agentIPC.includes('h.ctrl.CloudFileTextPreview(r.Context(), id)'),
+    'Go Agent handler must use the HTTP request cancellation context')
 })

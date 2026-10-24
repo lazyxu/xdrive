@@ -1008,7 +1008,7 @@ declare global {
         ) => Promise<DesktopResult<AgentCloudUploadResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
-        cloudTextPreview: (id: number) => Promise<DesktopResult<AgentCloudFileTextPreview>>
+        cloudTextPreview: (id: number, requestID?: string) => Promise<DesktopResult<AgentCloudFileTextPreview>>
         cloudFilePreviewURL: (id: number) => Promise<DesktopResult<string>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
         cloudDownloadFolder: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudFolderDownloadResult>>
