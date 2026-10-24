@@ -15,6 +15,9 @@ const args = Object.fromEntries(process.argv.slice(2).map(value => {
   return [match[1], match[2]]
 }))
 assert(args.ready && args['output-dir'], 'require private ready file and result output directory')
+assert(args['u01-abba-only'] === undefined || args['u01-abba-only'] === '1',
+  'u01-abba-only must be 1 when supplied')
+const u01ABBAOnly = args['u01-abba-only'] === '1'
 const fixture = JSON.parse(fs.readFileSync(args.ready, 'utf8'))
 assert(fixture.postgresql && fixture.real_gin && fixture.intercepted_api === false)
 assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(fixture.url), 'must use the locally bound real Go fixture')
@@ -23,7 +26,8 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
+  phase: u01ABBAOnly ? 'U01-D2-ABBA' : 'F-iOS27-09I-D6',
+  u01ABBAOnly, actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
   initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
   foreignOwner: [], u01Navigations: [], u05StaleRenames: [], u05VisibilityLossRenames: [], u06SearchReturns: [], screenshots: [], errors: [],
@@ -876,14 +880,16 @@ async function tapRealUndoRedoFromBothLayouts() {
 // before holding the response. The only browser-originated cancellation here
 // is the original app's own AbortSignal after a newer route supersedes it.
 // U01-D: bounded failure-only diagnostics. No private responses or Owner data.
-async function captureU01BackFailure(width, generation, itemSelector, traceEntries) {
-  const filename = 'live-go-u01-back-failure-' + width
+async function captureU01BackFailure(width, generation, itemSelector, traceEntries, cycle, phaseObservations, expected = 'return-to-slow') {
+  const filename = 'live-go-u01-back-failure-' + width + '-cycle-' + cycle
   const evidence = {
     schema: 'xdrive-u01-back-failure-v1',
-    width, generation, expected: 'return-to-slow',
+    width, generation, cycle, expected,
     browser: { status: 'unavailable' },
     fixture: { status: 'unavailable' },
     network: traceEntries.slice(-48),
+    // Test-only finite phases, never Owner IDs, URLs, tokens or response bodies.
+    phases: phaseObservations.slice(-8),
   }
   try {
     evidence.browser = await page.evaluate(selector => {
@@ -901,6 +907,13 @@ async function captureU01BackFailure(width, generation, itemSelector, traceEntri
           .slice(0, 16)
           .map(element => numeric(element.getAttribute('data-xdrive-file-explorer-crumb')) || 'unexposed'),
         scrollHosts: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+        // Specific synthetic fixture labels only; never export arbitrary
+        // real Owner file names or DOM text.
+        stillShowingFast: rows.some(element =>
+          element.textContent?.includes('u01-fast-authorized.txt')),
+        slowRowVisible: rows.some(element =>
+          element.textContent?.includes('u01-slow-authorized.txt')),
+        documentVisibility: document.visibilityState,
       }
     }, itemSelector)
   } catch { /* Never replace the originating assertion failure. */ }
@@ -909,9 +922,18 @@ async function captureU01BackFailure(width, generation, itemSelector, traceEntri
       { timeout: 1500 })
     if (response.ok()) {
       const state = await response.json()
+      const int = value => Number.isSafeInteger(value) && value >= 0 ? value : null
       evidence.fixture = {
         enteredExpectedGeneration: state.entered === generation,
         cancelledExpectedGeneration: state.cancelled === generation,
+        // Current synthetic Go barrier/HTTP counters at the moment of RED,
+        // not a later status sampled after closing the test server.
+        generation: int(state.generation), entered: int(state.entered),
+        cancelled: int(state.cancelled), armed: int(state.armed),
+        slowStarted: int(state.slow_started),
+        slowHeld: int(state.slow_held),
+        slowPlainStarted: int(state.slow_plain_started),
+        slowPlainReturned: int(state.slow_plain_returned),
       }
     }
   } catch { /* Optional fixture state; no production data. */ }
@@ -924,12 +946,13 @@ async function captureU01BackFailure(width, generation, itemSelector, traceEntri
   } catch { /* Preserve original test outcome. */ }
 }
 
-async function assertRealU01BrowserNavigation(width) {
+async function assertRealU01BrowserNavigation(width, cycle) {
   const mobile = width < 900
   // Failure-only U01-D diagnostics on the real built Chromium / Go fixture.
   // Only root/slow/fast labels, HTTP status and durations are retained.
   const traceStarted = Date.now()
   const traceEntries = []
+  const phaseObservations = []
   const requestStarted = new WeakMap()
   const targetDirectories = new Map([
     [fixture.root_id, 'root'],
@@ -948,6 +971,61 @@ async function assertRealU01BrowserNavigation(width) {
   const record = entry => {
     if (traceEntries.length >= 48) traceEntries.shift()
     traceEntries.push({ elapsedMs: Date.now() - traceStarted, ...entry })
+  }
+  // The previous async page.waitForFunction predicate sometimes resolved a
+  // non-snapshot JSHandle: its phase contained only {stage}, even though the
+  // real Go generation had NOT been cancelled. Back then re-entered the still
+  // armed slow-folder barrier and appeared to be a production navigation RED.
+  // Read the authoritative synthetic Go barrier from Node instead. Neither
+  // this read nor its typed result can trigger or authorize an Owner Range.
+  const observeU01Barrier = async (stage, field, expected) => {
+    const deadline = Date.now() + 12000
+    let lastSnapshot = null
+    try {
+      while (Date.now() < deadline) {
+        const remaining = deadline - Date.now()
+        const response = await page.request.get(fixture.url + '/__test/files/u01/state', {
+          timeout: Math.max(1, Math.min(remaining, 1500)),
+        })
+        check(response.status() === 200,
+          'U01 genuine Go barrier status must be 200', { stage, status: response.status() })
+        const state = await response.json()
+        for (const key of [
+          'generation', 'entered', 'cancelled', 'armed',
+          'slow_started', 'slow_held', 'slow_plain_started', 'slow_plain_returned',
+        ]) {
+          check(Number.isSafeInteger(state[key]) && state[key] >= 0,
+            'U01 genuine Go barrier must provide nonnegative integers', { stage, field: key })
+        }
+        lastSnapshot = {
+          generation: state.generation, entered: state.entered,
+          cancelled: state.cancelled, armed: state.armed,
+          slowStarted: state.slow_started, slowHeld: state.slow_held,
+          slowPlainStarted: state.slow_plain_started,
+          slowPlainReturned: state.slow_plain_returned,
+        }
+        if (state.generation === expected && state[field] === expected) {
+          phaseObservations.push({ stage, ...lastSnapshot })
+          return
+        }
+        const left = deadline - Date.now()
+        if (left > 0) {
+          await new Promise(resolve => setTimeout(resolve, Math.min(50, left)))
+        }
+      }
+      phaseObservations.push({ stage: stage + '-not-observed', ...lastSnapshot })
+      throw new Error('U01 real Go ' + field + '=' + expected +
+        ' not observed within the original 12000ms limit')
+    } catch (error) {
+      if (!phaseObservations.some(phase => phase.stage === stage)) {
+        phaseObservations.push({ stage: stage + '-failed', ...lastSnapshot })
+      }
+      // The original failure remains the assertion; evidence is best-effort.
+      await captureU01BackFailure(
+        width, expected, itemSelector, traceEntries, cycle, phaseObservations, stage,
+      )
+      throw error
+    }
   }
   const onRequest = request => {
     const directory = directoryOf(request)
@@ -971,9 +1049,17 @@ async function assertRealU01BrowserNavigation(width) {
     record({ directory, event: 'failed',
       durationMs: begun === undefined ? null : Date.now() - begun })
   }
+  const onRequestFinished = request => {
+    const directory = directoryOf(request)
+    if (!directory) return
+    const begun = requestStarted.get(request)
+    record({ directory, event: 'finished',
+      durationMs: begun === undefined ? null : Date.now() - begun })
+  }
   page.on('request', onRequest)
   page.on('response', onResponse)
   page.on('requestfailed', onRequestFailed)
+  page.on('requestfinished', onRequestFinished)
   try {
   await page.setViewportSize({ width, height: mobile ? 844 : 700 })
   const rootURL = fixture.url + '/#/app/files?dir=' + fixture.root_id
@@ -996,13 +1082,11 @@ async function assertRealU01BrowserNavigation(width) {
   check(arm.status() === 200, 'real U01 test barrier must be uniquely armed')
   const { generation } = await arm.json()
   check(Number.isSafeInteger(generation) && generation > 0, 'real U01 barrier generation')
+  phaseObservations.push({ stage: 'arm-issued', generation })
   await page.evaluate(directoryID => {
     window.location.hash = '/app/files?dir=' + directoryID
   }, fixture.u01_slow_id)
-  await page.waitForFunction(async expected => {
-    const state = await (await fetch('/__test/files/u01/state', { cache: 'no-store' })).json()
-    return state.entered === expected
-  }, generation, { timeout: 12000 })
+  await observeU01Barrier('held-entered', 'entered', generation)
 
   check(await oldRootRow.isVisible(),
     'pending real Gin first page must not unmount the previous authorized directory',
@@ -1023,10 +1107,8 @@ async function assertRealU01BrowserNavigation(width) {
   }, fixture.u01_fast_id)
   const fastLeaf = page.locator(itemSelector).filter({ hasText: 'u01-fast-authorized.txt' }).first()
   await fastLeaf.waitFor({ state: 'visible' })
-  await page.waitForFunction(async expected => {
-    const state = await (await fetch('/__test/files/u01/state', { cache: 'no-store' })).json()
-    return state.cancelled === expected
-  }, generation, { timeout: 12000 })
+  phaseObservations.push({ stage: 'fast-visible', generation })
+  await observeU01Barrier('cancel-observed', 'cancelled', generation)
   check(page.url().endsWith('/files?dir=' + fixture.u01_fast_id),
     'latest authorized folder route must win over the cancelled slow range',
     { width, url: page.url() })
@@ -1036,13 +1118,16 @@ async function assertRealU01BrowserNavigation(width) {
 
   // Browser history is distinct from Files' own in-folder parent control.
   // Return through the genuinely authorized B folder, then back to root.
-  await page.goBack()
-  const slowLeaf = page.locator(itemSelector).filter({ hasText: 'u01-slow-authorized.txt' }).first()
   try {
-    // Unmodified original Playwright visibility oracle and 12s budget.
+    phaseObservations.push({ stage: 'browser-back-requested', generation })
+    await page.goBack()
+    phaseObservations.push({ stage: 'browser-back-returned', generation })
+    const slowLeaf = page.locator(itemSelector).filter({ hasText: 'u01-slow-authorized.txt' }).first()
+    // Preserve the original 12s visibility oracle. Also capture a failure
+    // if browser goBack itself rejects before the row can be inspected.
     await slowLeaf.waitFor({ state: 'visible' })
   } catch (error) {
-    await captureU01BackFailure(width, generation, itemSelector, traceEntries)
+    await captureU01BackFailure(width, generation, itemSelector, traceEntries, cycle, phaseObservations)
     throw error
   }
   check(page.url().endsWith('/files?dir=' + fixture.u01_slow_id),
@@ -1055,15 +1140,17 @@ async function assertRealU01BrowserNavigation(width) {
     'browser Back must retain a single virtualized FileExplorer scroll host', { width })
 
   results.u01Navigations.push({
-    width, mobile, generation, initialRootID: fixture.root_id,
+    width, mobile, cycle, generation, initialRootID: fixture.root_id,
     cancelledSlowID: fixture.u01_slow_id, committedFastID: fixture.u01_fast_id,
     returnedViaHistory: true, actualGin200: true, wireContextCancelled: true,
+    phases: phaseObservations,
   })
   await screenshot('live-go-u01-real-navigation-' + width)
   } finally {
     page.off('request', onRequest)
     page.off('response', onResponse)
     page.off('requestfailed', onRequestFailed)
+    page.off('requestfinished', onRequestFinished)
   }
 }
 
@@ -1082,7 +1169,10 @@ async function verifyU06RealSearchHistory(width) {
   const input = page.getByRole('textbox', {
     name: mobile ? '搜索全部文件' : '搜索全部文件和文件夹', exact: true,
   });
-  await input.fill(query);
+  // Subscribe BEFORE fill: the shared Search input can start a debounced
+  // real GET as soon as its value changes, before Enter is dispatched.
+  // Registering after fill occasionally misses the genuine 200 entirely;
+  // retain the original exact Owner query/offset/status oracle and 12s budget.
   const result = page.waitForResponse(r => {
     const url = new URL(r.url());
     return url.pathname === '/api/v1/search' &&
@@ -1090,6 +1180,7 @@ async function verifyU06RealSearchHistory(width) {
       url.searchParams.get('offset') === '0' &&
       r.request().method() === 'GET' && r.status() === 200;
   });
+  await input.fill(query);
   await input.press('Enter');
   const response = await result;
   const body = await response.json();
@@ -1247,12 +1338,32 @@ async function main() {
     await screenshot('live-go-files-' + viewport.width)
   }
 
-  for (const width of [390, 900]) {
-    await assertRealU01BrowserNavigation(width)
+  // U01-D2: dedicated fixture repeats balanced A-B-B-A twice; the original
+  // complete file-operation suite keeps 2 U01 rounds and its 5m process cap.
+  // Every cycle re-arms a genuine Owner Range, cancels it and returns using
+  // browser history. The original 12s visibility oracle remains unchanged.
+  const u01BalancedWidths = u01ABBAOnly
+    ? [390, 900, 900, 390, 390, 900, 900, 390]
+    : [390, 900]
+  for (let cycle = 0; cycle < u01BalancedWidths.length; cycle += 1) {
+    await assertRealU01BrowserNavigation(u01BalancedWidths[cycle], cycle + 1)
   }
-  check(results.u01Navigations.length === 2 &&
-    results.u01Navigations.every(item => item.returnedViaHistory && item.wireContextCancelled),
-    'both Mobile and Wide must cancel superseded authorized Gin first pages and return by browser history')
+  check(results.u01Navigations.length === u01BalancedWidths.length &&
+    results.u01Navigations.every((item, index) =>
+      item.width === u01BalancedWidths[index] &&
+      item.cycle === index + 1 &&
+      item.returnedViaHistory && item.wireContextCancelled) &&
+    new Set(results.u01Navigations.map(item => item.generation)).size === u01BalancedWidths.length,
+    'balanced Mobile/Wide browser Back cycles must each cancel a distinct genuine Gin first page')
+
+  if (u01ABBAOnly) {
+    // Original complete Files/Worker/Undo/Redo remains a separate unchanged
+    // Go fixture. Never extend its total runtime by eight stress cycles.
+    check(results.widths.length === 4, 'balanced U01 requires genuine four-width Owner preflight')
+    check(results.errors.length === 0, 'unexpected browser/Go response during balanced U01', results.errors)
+    results.passed = true
+    return
+  }
 
   for (const width of [390, 900]) await verifyU06RealSearchHistory(width)
   check(results.u06SearchReturns.length === 2,
@@ -1467,7 +1578,7 @@ async function main() {
       mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
       batchDestinations: results.batchDestinations.length,
       tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
-      u01RealNavigations: results.u01Navigations.length,
+      u01ABBAOnly, u01RealNavigations: results.u01Navigations.length,
       u05RealStaleRenames: results.u05StaleRenames.length,
       u05RealVisibilityLossRenames: results.u05VisibilityLossRenames.length,
       u06RealSearchReturns: results.u06SearchReturns.length,
