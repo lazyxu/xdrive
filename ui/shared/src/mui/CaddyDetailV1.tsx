@@ -94,6 +94,7 @@ export function XDriveCaddyDetailV1({
   const [deployError, setDeployError] = useState('')
   const [historyItems, setHistoryItems] = useState<XDriveCaddyDeployState[]>([])
   const [historyState, setHistoryState] = useState<'idle' | 'ready' | 'unavailable'>('idle')
+  const [historyRefreshID, setHistoryRefreshID] = useState(0)
   const [deployPollSeq, setDeployPollSeq] = useState(0)
   const [deployBusy, setDeployBusy] = useState(false)
   const deployEpoch = useRef(0)
@@ -173,12 +174,35 @@ export function XDriveCaddyDetailV1({
         return
       }
       setHistoryItems(clean)
+      // The server may recover a queued/active Host Deploy ID that never
+      // reached this browser. Never infer physical success from "deploying".
+      const current = page.current
+      const valid = (item: XDriveCaddyDeployState | null | undefined) =>
+        !!item && item.protocol === 'xdrive.caddy.host-env.v1' &&
+        /^[0-9a-f]{24}$/.test(item.request_id) &&
+        /^[0-9a-f]{64}$/.test(item.sha256) &&
+        (item.state === 'deploying' || item.state === 'deployed' || item.state === 'failed')
+      const latest = clean[0]
+      const timestamp = latest?.recorded_at ? Date.parse(latest.recorded_at) : NaN
+      const recent = Number.isFinite(timestamp) &&
+        timestamp <= Date.now() && Date.now() - timestamp < 5 * 60 * 1000
+      const recovered = valid(current) ? current : recent && valid(latest) ? latest : null
+      if (recovered) {
+        setDeployReceipt((prior) =>
+          !prior || (recovered.state === 'deploying' && prior.state !== 'deploying')
+            ? recovered : prior)
+        if (recovered.state === 'failed') {
+          setDeployError(caddyHostDeployFailureMessage(recovered))
+        } else if (recovered.state === 'deploying') {
+          setDeployError('')
+        }
+      }
       setHistoryState('ready')
     }).catch(() => {
       if (alive) setHistoryState('unavailable')
     })
     return () => { alive = false }
-  }, [source, deployReceipt?.request_id, deployReceipt?.state])
+  }, [source, deployReceipt?.request_id, deployReceipt?.state, historyRefreshID])
 
   // Never render the prior Server/account's sensitive Host/desired state.
   const readFailed = snapshot?.source === source && snapshot.failed
@@ -297,7 +321,8 @@ export function XDriveCaddyDetailV1({
     config.host_env_pending_redeploy === true &&
     /^[0-9a-f]{64}$/.test(config.host_env_sha256 ?? '')
   const alreadyCompletedThisTarget = deployReceipt?.state === 'deployed' &&
-    deployReceipt.sha256 === config?.host_env_sha256
+    deployReceipt.sha256 === config?.host_env_sha256 &&
+    config?.host_env_pending_redeploy !== true
   const canDeploy = !!source.startCaddyDeploy && !!source.getCaddyDeployStatus &&
     validPendingTarget && !alreadyCompletedThisTarget &&
     !savingAtomic && !dirtyAtomic && !hasUnsavedEdits && !inDeploy && !deployBusy
@@ -370,7 +395,9 @@ export function XDriveCaddyDetailV1({
       }
     } catch {
       if (epoch === deployEpoch.current) {
-        setDeployError('重新部署结果尚未确认；请刷新宿主机状态，避免重复操作。')
+        setDeployError('重新部署结果尚未确认；正在从宿主机记录恢复，勿重复操作。')
+        setHistoryRefreshID((n) => n + 1)
+        changed()
       }
     } finally {
       if (epoch === deployEpoch.current) {
@@ -395,6 +422,7 @@ export function XDriveCaddyDetailV1({
         setDeployReceipt(next)
         if (next.state === 'deployed' || next.state === 'failed') {
           if (next.state === 'deployed') {
+            setDeployError('')
             setAtomicNotice('Caddy 重新部署完成；本机入口验证已通过。')
           } else {
             setDeployError(caddyHostDeployFailureMessage(next))
@@ -404,7 +432,11 @@ export function XDriveCaddyDetailV1({
           setDeployPollSeq((n) => n + 1)
         }
       }).catch(() => {
-        if (active) setDeployError('暂时无法读取部署状态；请检查宿主机，不要重复提交。')
+        if (!active) return
+        setDeployError('暂时无法读取部署状态；正在核对宿主机，勿重复提交。')
+        // The Host may not yet have claimed a recovered queued request.
+        // Retry reads only: NEVER issue another Save or Deploy.
+        if (deployPollSeq < 120) setDeployPollSeq((n) => n + 1)
       })
     }, 1500)
     return () => { active = false; window.clearTimeout(timeout) }
@@ -450,6 +482,7 @@ export function XDriveCaddyDetailV1({
             <Button size="small" variant="outlined" onClick={() => {
               if (hasUnsavedEdits) return
               setConfigRevision((value) => value + 1)
+              setHistoryRefreshID((value) => value + 1)
               onRefreshStatus()
             }} disabled={refreshing || hasUnsavedEdits} aria-busy={refreshing || undefined}>
               重新检测
