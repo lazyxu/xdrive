@@ -35,7 +35,10 @@ type SyncRule struct {
 }
 
 type Config struct {
-	Server             string     `json:"server"`
+	Server string `json:"server"`
+	// Pinned CA is public certificate material, never a password or private key.
+	// It affects only this xDrive private-IP client, not the operating system.
+	TrustedLANRootPEM  string     `json:"trusted_lan_root_pem,omitempty"`
 	SessionID          string     `json:"session_id,omitempty"`
 	Username           string     `json:"username"`
 	Role               string     `json:"role,omitempty"`
@@ -109,6 +112,11 @@ func Load() (Config, error) {
 	if cfg.Server == "" || cfg.SessionID == "" {
 		return Config{}, fmt.Errorf("invalid local config; please log in again")
 	}
+	if cfg.TrustedLANRootPEM != "" {
+		if err := client.ValidPrivateLANRoot(cfg.Server, cfg.TrustedLANRootPEM); err != nil {
+			return Config{}, fmt.Errorf("invalid private LAN trust: %w", err)
+		}
+	}
 	return cfg, nil
 }
 
@@ -120,6 +128,11 @@ func Save(cfg Config) error {
 	}
 	if cfg.Server == "" || cfg.SessionID == "" {
 		return fmt.Errorf("server and session id are required")
+	}
+	if cfg.TrustedLANRootPEM != "" {
+		if err := client.ValidPrivateLANRoot(cfg.Server, cfg.TrustedLANRootPEM); err != nil {
+			return fmt.Errorf("invalid private LAN trust: %w", err)
+		}
 	}
 	if cfg.MountPath != "" {
 		abs, err := filepath.Abs(cfg.MountPath)
@@ -304,7 +317,13 @@ func NewClient(cfg Config) (*client.Client, error) {
 	}
 	key := strings.TrimRight(strings.TrimSpace(cfg.Server), "/") + "\x00" + cfg.SessionID
 	lockValue, _ := sessionRefreshLocks.LoadOrStore(key, &sync.Mutex{})
-	return client.NewManagedSessionWithRefreshLock(cfg.Server, tokens, saveTokens, loadTokens, lockValue.(*sync.Mutex)), nil
+	managed := client.NewManagedSessionWithRefreshLock(cfg.Server, tokens, saveTokens, loadTokens, lockValue.(*sync.Mutex))
+	if cfg.TrustedLANRootPEM != "" {
+		if err := managed.ConfigurePrivateLANRoot(cfg.TrustedLANRootPEM); err != nil {
+			return nil, err
+		}
+	}
+	return managed, nil
 }
 
 func CredentialBackend(cfg Config) string {

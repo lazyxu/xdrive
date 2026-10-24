@@ -2518,7 +2518,7 @@ export class AgentIPCClient {
     )
   }
 
-  login(input: { server: string; username: string; password: string; mount_path?: string }) {
+  login(input: { server: string; username: string; password: string; mount_path?: string; trusted_lan_root_pem?: string }) {
     return this.request<AgentStatus>('POST', '/v1/auth/login', input, 35_000)
   }
 

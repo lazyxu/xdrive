@@ -1288,7 +1288,7 @@ export default function App({
     let active = true
     setServerProbe({ key: 'checking' })
     const timer = window.setTimeout(() => {
-      void window.xdriveDesktop.probeServer(candidate).then((result) => {
+      void window.xdriveDesktop.probeServer(candidate, username.trim()).then((result) => {
         if (!active) return
         if (result.ok) {
           setServerProbe({ key: 'ok', version: result.data.version })
@@ -1303,7 +1303,7 @@ export default function App({
       active = false
       window.clearTimeout(timer)
     }
-  }, [configured, server, serverProbeRetry])
+  }, [configured, server, username, serverProbeRetry])
 
   useEffect(() => {
     if (!agent.connected || !(agent.hello?.capabilities.includes('client-update') ?? false)) {
@@ -2334,17 +2334,35 @@ export default function App({
               />
             </XDriveAuthField>
 
-            {serverProbe.key === 'error' && serverProbe.code === 'server_tls_trust' ? (
+            {serverProbe.key === 'error' && (serverProbe.code === 'server_tls_trust' ||
+              serverProbe.code === 'server_tls_pin_changed') ? (
               <XDriveStatusAlert tone="warning">
                 <Stack spacing={0.75}>
                   <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                    当前设备无法验证服务器 HTTPS 身份。这通常是 Caddy 本地根 CA 未受信任，
-                    并非 IP 登录功能未实现。请在可信的 xDrive Linux 服务端运行
-                    <strong> xdrive-server lan-ca export /absolute/path/root.crt </strong>
-                    ，通过独立可信渠道传输证书并核对 SHA-256 后，
-                    在本机证书管理器中明确批准信任；不要从报错网页下载 CA，也不要忽略 TLS 错误。
+                    {serverProbe.code === 'server_tls_pin_changed'
+                      ? '之前已信任的局域网服务器证书无法验证，可能已发生 CA 更换或服务器身份变化。'
+                      : '当前设备尚未信任此局域网服务器的 HTTPS 证书。'}
+                    如果这是你自己部署的 xDrive，可以点击「信任此局域网服务器」；
+                    Desktop 会先检查证书链、有效期和 IP SAN，再显示证书指纹供你确认。
+                    仅对这个 IP 和端口保存信任，不会修改 Windows 系统根证书库。
+                    首次信任存在局域网服务器被冒充的风险，确认前不会发送账号密码。
                   </Typography>
-                  <MuiBox>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <XDriveActionButton
+                      compact
+                      disabled={!!busy}
+                      onClick={() => {
+                        const selected = server.trim()
+                        void run('trust-lan', () => window.xdriveDesktop.trustLANServer(selected))
+                          .then((result) => {
+                            if (result?.trusted && server.trim() === selected) {
+                              setServerProbeRetry((current) => current + 1)
+                            }
+                          })
+                      }}
+                    >
+                      信任此局域网服务器
+                    </XDriveActionButton>
                     <XDriveActionButton
                       compact
                       disabled={!!busy}
@@ -2352,7 +2370,7 @@ export default function App({
                     >
                       重新检查 HTTPS
                     </XDriveActionButton>
-                  </MuiBox>
+                  </Stack>
                 </Stack>
               </XDriveStatusAlert>
             ) : null}

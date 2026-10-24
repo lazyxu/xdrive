@@ -1,3 +1,26 @@
+## Desktop 局域网首次信任：用户明确决定（TOFU）
+
+对于只部署了局域网私有 IP、没有公网域名的 xDrive，Desktop 在地址如 `https://192.168.2.4:8443` 出现 `server_tls_trust` 时显示 **「信任此局域网服务器」**。
+
+1. 用户点击后，Electron Main 使用仅限此私网 IP、固定 `/_xdrive/desktop/lan-root.crt` 的 HTTPS **公开证书预览请求**；此请求不包含密码、Cookie、Bearer、重定向或任意 URL。预览允许校验证书之前读取候选公开 CA（最大 8 KiB），它**不能证明首次远端身份**，不可用于登录，也不能自动写入信任。
+2. 将候选根 CA 当成临时验证锚，对该 IP 单独进行正常的严格 TLS 握手，必须通过证书链、有效期、IP SAN 和真正的 xDrive `/api/v1/version` 响应验证。仅在成功后，Electron Main 才展示原生确认框：IP:端口、根证书 SHA-256、首次信任可能遭遇的局域网冒充风险。
+3. 仅当用户明确点击 **「我确认信任此服务器」**，再次严格验证 IP HTTPS 且未改变根 CA 身份时，才将该 CA 保存到 xDrive Desktop 的 IP:端口 专属信任记录。Go Agent 也只对该 IP 连接使用其 RootCAs，不修改 Windows 全局根证书存储，不降低其他服务器 TLS。
+4. 后续登录、同步和 Token 刷新复用此 app-local 根 CA。根 CA 更换或验证失败时不静默采纳新证书，必须用户重新明确授权。用户点「取消」则不保存信任、不发送账号密码。
+
+**Desktop 媒体预览一致性**：Electron Chromium 不会自动读取 Go Agent 的应用内 RootCAs，因此 Desktop 文件/PDF/视频与 Live Photo 的签名 Range 预览由 Main 针对**与当前已登录服务器完全相同的私网 HTTPS IP:端口**使用专属 CA 的严格 Node HTTPS 流代理；校验证书链、当前 IP SAN、CA SHA-256，禁用跨源重定向及不必要的认证请求头，支持 GET/HEAD、Range 和取消，数据依旧经过本地 Loopback Preview Proxy。其他 Origin 继续 Chromium 正常 TLS 策略；不会把私有 CA 提升到全局浏览器/Windows 系统信任。
+这属于**用户自主接受风险的首次使用信任（TOFU）**，不是由“局域网”本身提供真实性保证。首次访问时若发生 ARP 欺骗、恶意网关或服务器冒充，错误批准可能让攻击者获得后续密码。旧 Caddy 版本缺少固定公开根 CA 路径时，Desktop 应提示需要更新，不允许通过不安全登录绕过验证。生产现场验收按用户决定跳过（未验收）。
+## Desktop 已有可信域名自动信任（可选）
+
+Desktop 自动化目标：**不执行证书复制、手工 SHA256 核对或 `certutil`，也不修改 Windows 根证书存储**。
+
+当前 xDrive Desktop 会从本机**以前成功登录**的 HTTPS 域名资料中查找相同用户名的可信域名。若直接输入 RFC1918 HTTPS IP（例如 `https://192.168.2.4:8443`）时，Chromium 报 `server_tls_trust`，Main 通过指定局域网 IP 建立 TCP 连接，但以该既有域名作为 TLS SNI 与证书验证名称，且要求公有受信任 CA 验证通过；**不使用私网 IP 当前提供的未经验证证书决定可信域名**。
+
+仅通过上一步验证的域名 TLS 连接，请求 Caddy 固定的 `/_xdrive/desktop/lan-root.crt`，只允许 HTTP 200、最大 8 KiB、单张有效自签 CA 公共证书、无重定向或任意 URL。随后用这张 CA 对当前 IP 的 `/api/v1/version` 进行**独立第二次 TLS 握手**，验证证书链、时间与真实 IP SAN，返回 xDrive 版本 JSON 才持久化 IP+用户+域名对应的 CA。公有域名通过 IP 直连，因此即使 NAT 回环不可用也能验证由同一个 Caddy 提供的域名证书。获取过程无需用户名/密码、Cookie 或 Bearer。
+
+Go Agent 的认证仅通过已鉴别的 Loopback IPC 接收经过 Desktop 验证的 PEM；Go 的 `crypto/x509` 严格校验根证书有效性，新的 `http.Transport` 只为该 IPv4 HTTPS 客户端设置专属 RootCAs（系统 CAs 不会被修改），继续要求证书链/IP SAN/有效期验证并拒绝认证重定向，禁止代理。完成登录后 CA 公共证书作为用户本地 xDrive 配置保存，便于重启、同步与刷新 Token；其他服务器与操作系统 TLS 默认行为不受影响。
+
+**边界**：没有可信公网域名时不应自动信任 IP；可通过上一节用户明确批准的局域网 TOFU 模式建立应用内专属 CA。未批准时继续 `server_tls_trust`，绝不安装 Windows 根 CA 或让登录、同步跳过 TLS。生产环境验收按用户决定跳过（未验收）。
+
 ## 2026-10-24 · 全端认证重定向保护
 
 Web / Mobile Web / PWA 的密码登录、refresh-token 刷新、登出与修改密码均使用 `fetch(..., {redirect: 'error'})`，不允许在 HTTP 30x 后把用户密码或刷新令牌继续发送至跳转目标。Desktop 登录前版本探测将 30x 显示为 `server_auth_redirect`；Go Agent 的密码登录、令牌刷新、登出与修改密码同样拒绝全部 30x（包括没有 Location 的 3xx），特别防止 307/308 将原始 POST 请求体转发到其他 Origin。错误结果不包含目标 Location。正常 TLS 证书链、IP SAN、系统 CA 和 Server 身份认证不降低。

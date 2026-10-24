@@ -17,6 +17,20 @@
 		header X-Content-Type-Options "nosniff"
 		reverse_proxy server:8080
 	}
+	# A public certificate (never a private key) is readable only at this
+	# fixed path. Desktop consumes it exclusively through an independently
+	# validated public-domain TLS connection with direct LAN-IP dialing.
+	# Fetching this over the untrusted IP origin grants NO trust whatsoever.
+	handle /_xdrive/desktop/lan-root.crt {
+		header Cache-Control "private, no-store"
+		header Referrer-Policy "no-referrer"
+		header X-Content-Type-Options "nosniff"
+		header Content-Type "application/x-pem-file"
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		file_server
+	}
+
 	handle /api/* {
 		reverse_proxy server:8080
 	}
