@@ -90,6 +90,21 @@ class DriveAppTest {
         compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
     }
 
+    @Test fun routeControlsValidateLanAndClearStaleOriginSettings() {
+        compose.setContent { XDriveTheme { DriveApp(controller) } }
+        compose.onNodeWithTag("server").performTextInput("https://drive.example")
+        compose.onNodeWithTag("route-lan").performScrollTo().performClick()
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("lan-ip").performScrollTo().performTextInput("192.168.2.4")
+        compose.onNodeWithTag("server").performScrollTo().performTextReplacement("https://other.example")
+        compose.onNodeWithTag("lan-ip").performScrollTo()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+        compose.onNodeWithTag("route-auto").assertIsSelected()
+        compose.onNodeWithTag("route-public").performScrollTo().performClick()
+        compose.onNodeWithTag("public-ip").performScrollTo().assertExists()
+    }
+
     @Test fun pagingFailureRetainsRowsAndRetryLoadsRequestedPage() {
         paging = true
         startAndLogin()

@@ -1,3 +1,5 @@
+import { parseConnectionRoute, type ConnectionRoute } from './connection_route.cjs'
+
 export type StoredLoginProfile = {
   server: string
   username: string
@@ -6,6 +8,7 @@ export type StoredLoginProfile = {
   remember_password: boolean
   auto_login: boolean
   encrypted_password?: string
+  connection_route?: ConnectionRoute
 }
 
 export type LoginHistory = {
@@ -21,6 +24,7 @@ export type PublicLoginProfile = {
   remember_password: boolean
   auto_login: boolean
   password_available: boolean
+  connection_route?: ConnectionRoute
 }
 
 export type PublicLoginHistory = {
@@ -57,6 +61,9 @@ export function normalizeLoginHistory(value: unknown): LoginHistory {
     const username = typeof item.username === 'string' ? item.username.trim() : ''
     const lastUsedAt = validTimestamp(item.last_used_at)
     if (!server || !username || !lastUsedAt) continue
+    let route: ConnectionRoute | undefined
+    try { if (item.connection_route !== undefined) route = parseConnectionRoute(item.connection_route) }
+    catch { continue } // Corrupt routing must not silently enable automatic credentials on another path.
 
     const mountPath = typeof item.mount_path === 'string' && item.mount_path.trim()
       ? item.mount_path.trim()
@@ -73,6 +80,7 @@ export function normalizeLoginHistory(value: unknown): LoginHistory {
       remember_password: rememberPassword,
       auto_login: item.auto_login === true && rememberPassword,
       ...(rememberPassword ? { encrypted_password: encryptedPassword } : {}),
+      ...(route ? { connection_route: route } : {}),
     }
     const key = profileKey(server, username)
     const previous = deduped.get(key)
@@ -117,6 +125,7 @@ export function publicLoginHistory(history: LoginHistory, securePasswordStorage:
         remember_password: passwordAvailable,
         auto_login: passwordAvailable && profile.auto_login,
         password_available: passwordAvailable,
+        ...(profile.connection_route ? { connection_route: profile.connection_route } : {}),
       }
     }),
   }
@@ -132,6 +141,7 @@ export function recordSuccessfulLogin(
     remember_password: boolean
     auto_login: boolean
     encrypted_password?: string
+    connection_route?: ConnectionRoute
   },
 ): LoginHistory {
   const current = normalizeLoginHistory(history)
@@ -151,6 +161,7 @@ export function recordSuccessfulLogin(
     remember_password: rememberPassword,
     auto_login: input.auto_login && rememberPassword,
     ...(rememberPassword ? { encrypted_password: encryptedPassword } : {}),
+    ...(input.connection_route ? { connection_route: input.connection_route } : {}),
   }
   const rest = current.profiles
     .filter((item) => profileKey(item.server, item.username) !== profileKey(server, username))
@@ -207,6 +218,7 @@ export function clearSavedPassword(
         server: profile.server,
         username: profile.username,
         ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+        ...(profile.connection_route ? { connection_route: profile.connection_route } : {}),
         last_used_at: profile.last_used_at,
         remember_password: false,
         auto_login: false,
@@ -237,6 +249,7 @@ export function clearSavedPasswordsForOrigin(history: LoginHistory, origin: stri
         server: profile.server,
         username: profile.username,
         ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+        ...(profile.connection_route ? { connection_route: profile.connection_route } : {}),
         last_used_at: profile.last_used_at,
         remember_password: false,
         auto_login: false,

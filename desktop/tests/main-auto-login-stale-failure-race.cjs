@@ -63,6 +63,8 @@ async function fixture() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const bindings = {
+    ...require('../dist/main/connection_route.cjs'),
+    desktopLoginIntents: new (require('../dist/main/login_intents.cjs').DesktopLoginIntents)(),
     exports: {}, initial: original, normalizeLoginHistory,
     automaticLoginProfile, disableAutomaticLogin, recordSuccessfulLogin, publicLoginHistory,
     app: { getPath: (key) => {

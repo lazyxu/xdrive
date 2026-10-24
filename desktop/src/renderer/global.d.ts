@@ -140,6 +140,7 @@ declare global {
   type DesktopInfo = BuildInfo & { platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean }
+  type DesktopConnectionRoute = { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }
   type DesktopLoginProfile = {
     server: string
     username: string
@@ -148,6 +149,7 @@ declare global {
     remember_password: boolean
     auto_login: boolean
     password_available: boolean
+    connection_route?: DesktopConnectionRoute
   }
   type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean; auto_login_error?: string }
   type DesktopWindowState = { maximized: boolean; minimized: boolean; fullscreen: boolean }
@@ -172,6 +174,7 @@ declare global {
     username?: string
     role?: 'user' | 'admin' | string
     server?: string
+    connection_ip?: string
     mount_path?: string
     auth_status: string
     sync_status: string
@@ -472,7 +475,8 @@ declare global {
       getBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheStats>>
       clearBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheClearResult>>
       onLoginHistory: (callback: (history: DesktopLoginHistory) => void) => () => void
-      probeServer: (server: string, username?: string) => Promise<DesktopResult<{ version?: string }>>
+      probeServer: (server: string, username?: string, route?: DesktopConnectionRoute) => Promise<DesktopResult<{ version?: string }>>
+      cancelServerProbe: () => Promise<void>
       trustLANServer: (server: string) => Promise<DesktopResult<{ trusted: boolean; version?: string; sha256?: string }>>
       getLANTrust: (server: string) => Promise<DesktopResult<{
         status: 'none' | 'trusted' | 'blocked'
@@ -1081,6 +1085,7 @@ declare global {
           remember_password?: boolean
           auto_login?: boolean
           use_saved_password?: boolean
+          connection_route?: DesktopConnectionRoute
         }) => Promise<DesktopResult<AgentStatus>>
         logout: () => Promise<DesktopResult<AgentStatus>>
         changePassword: (input: { current_password: string; new_password: string }) => Promise<DesktopResult<AgentStatus>>

@@ -1,3 +1,10 @@
+## Android/Desktop HTTPS domain connection routes (2026-10-25)
+
+- Owner approved Auto / LAN-only / Public-only in both native clients. Advanced routes require the original HTTPS DNS-domain origin, with explicit private LAN IP and optional public IP. Desktop public DNS must bypass OS hosts; Android uses device DNS. Do not hardcode this installation's addresses or change global hosts/DNS/router settings.
+- Select through a bounded anonymous version/TLS probe before credentials; Auto may fall back only for network unavailability, never bad certificates, hostname mismatch, redirects or invalid API identity. Pin the selected socket IP for the session while preserving URL/Host/SNI and strict chain/hostname validation on actual requests. Reconnect/relogin reselects; no transparent authenticated/mutating replay, roaming upload guarantee or trust-all workaround.
+- Preserve legacy empty-route and direct-private-IP approved CA flows, per-origin trust revocation, origin/account generation fences, HTTP opt-in and the independent anonymous updater. Agent/background and exact-origin signed previews must use the same selected IP. Explicit empty IPC selection clears an old route; omission retains its same-origin persisted route. Preferences contain no credentials.
+- Local TLS/fixture success does not prove deployed login. At diagnosis Windows hosts and MuMu DNS differed; both forced LAN attempts were refused before TLS. Keep live service availability separate from source verification. One scoped source commit, fresh full exact-head CI/Final Gate, GitHub merge first then GitLab fast-forward; preserve all cumulative history.
+
 ## Permanent repository delivery policy · GitHub first, GitLab mirror second (2026-10-25)
 
 - Per owner: ALWAYS submit source changes through a GitHub PR and merge into GitHub `master` first, after the required exact-head validation/Final Gate. Only AFTER that merge, synchronize GitLab `master` to the accepted GitHub `master`. This supersedes older instructions permitting GitLab-first/direct unmerged master edits, including GitLab CI-specific changes.

@@ -100,6 +100,7 @@ export type AgentStatus = {
   username?: string
   role?: 'user' | 'admin' | string
   server?: string
+  connection_ip?: string
   mount_path?: string
   auth_status: string
   sync_status: string
@@ -2571,7 +2572,7 @@ export class AgentIPCClient {
     )
   }
 
-  login(input: { server: string; username: string; password: string; mount_path?: string; trusted_lan_root_pem?: string }) {
+  login(input: { server: string; username: string; password: string; mount_path?: string; trusted_lan_root_pem?: string; connection_ip?: string }) {
     return this.request<AgentStatus>('POST', '/v1/auth/login', input, 35_000)
   }
 

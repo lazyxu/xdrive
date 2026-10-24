@@ -607,7 +607,7 @@ test('desktop login keeps self-hosted server configuration visible while simplif
   assert.ok(rendererApp.includes('<XDriveAuthPanel\n          form\n          onSubmit={login}'), 'login must use the shared MUI form surface directly')
   assert.ok(renderer.includes('id="desktop-login-server"'), 'server address must stay directly editable for self-hosted deployments')
   assert.ok(renderer.includes('支持自建 xDrive 服务器；连接会在登录时再次验证。'), 'self-hosted server purpose should be explicit')
-  assert.ok(renderer.includes('window.xdriveDesktop.probeServer(candidate, username.trim())'), 'server field should expose reachability feedback before login')
+  assert.ok(renderer.includes('window.xdriveDesktop.probeServer(candidate, username.trim(), connectionRoute)'), 'server field should expose route-aware reachability feedback before login')
   assert.ok(main.includes("ipcMain.handle('desktop:probe-server'"), 'main process server probe is missing')
   const probeSource = fs.readFileSync(path.join(root, 'src', 'main', 'server_probe.cts'), 'utf8')
   assert.ok(main.includes("probeDesktopServerWithChromium(serverValue"), 'main process must use the dedicated Chromium probe')

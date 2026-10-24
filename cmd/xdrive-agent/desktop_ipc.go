@@ -155,6 +155,7 @@ type desktopIPCStatus struct {
 	Username           string              `json:"username,omitempty"`
 	Role               string              `json:"role,omitempty"`
 	Server             string              `json:"server,omitempty"`
+	ConnectionIP       string              `json:"connection_ip,omitempty"`
 	MountPath          string              `json:"mount_path,omitempty"`
 	AuthStatus         string              `json:"auth_status"`
 	SyncStatus         string              `json:"sync_status"`
@@ -959,17 +960,27 @@ func (h *desktopIPCHandler) events(w http.ResponseWriter, r *http.Request) {
 
 func (h *desktopIPCHandler) login(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Server            string `json:"server"`
-		Username          string `json:"username"`
-		Password          string `json:"password"`
-		MountPath         string `json:"mount_path,omitempty"`
-		TrustedLANRootPEM string `json:"trusted_lan_root_pem,omitempty"`
+		Server            string  `json:"server"`
+		Username          string  `json:"username"`
+		Password          string  `json:"password"`
+		MountPath         string  `json:"mount_path,omitempty"`
+		TrustedLANRootPEM string  `json:"trusted_lan_root_pem,omitempty"`
+		ConnectionIP      *string `json:"connection_ip,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
 	var err error
-	if input.TrustedLANRootPEM != "" {
+	if input.ConnectionIP != nil {
+		enroller, ok := h.ctrl.(interface {
+			AuthenticateWithConnectionIP(server, username, password, mountPath, rootPEM, connectionIP string) error
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "agent_connection_ip_unsupported", "Update xDrive Agent to support connection routes.")
+			return
+		}
+		err = enroller.AuthenticateWithConnectionIP(input.Server, input.Username, input.Password, input.MountPath, input.TrustedLANRootPEM, *input.ConnectionIP)
+	} else if input.TrustedLANRootPEM != "" {
 		enroller, ok := h.ctrl.(interface {
 			AuthenticateWithTrustedLANRoot(server, username, password, mountPath, rootPEM string) error
 		})
@@ -7527,6 +7538,7 @@ func makeDesktopIPCStatus(snapshot agentSnapshot, revision uint64) desktopIPCSta
 		Username:           snapshot.Username,
 		Role:               snapshot.Role,
 		Server:             snapshot.Server,
+		ConnectionIP:       snapshot.ConnectionIP,
 		MountPath:          snapshot.MountPath,
 		AuthStatus:         snapshot.AuthStatus,
 		SyncStatus:         snapshot.SyncStatus,

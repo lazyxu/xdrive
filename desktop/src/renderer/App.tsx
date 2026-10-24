@@ -238,6 +238,8 @@ export default function App({
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [connectionRoute, setConnectionRoute] = useState<DesktopConnectionRoute>({ mode: 'auto', lan_ip: '', public_ip: '' })
+  const routeOriginRef = useRef('')
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
   const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
@@ -1175,6 +1177,8 @@ export default function App({
       const latest = value.profiles[0]
       if (latest) {
         setServer(latest.server)
+        setConnectionRoute(latest.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
+        routeOriginRef.current = latest.server.trim().replace(/\/$/, '')
         setUsername(latest.username)
         setLoginMount(latest.mount_path || '')
         setRememberPassword(value.secure_password_storage && latest.remember_password)
@@ -1294,6 +1298,14 @@ export default function App({
   }, [loginHistory.secure_password_storage, matchingLoginProfile])
 
   useEffect(() => {
+    const key = server.trim().replace(/\/$/, '')
+    if (routeOriginRef.current === key) return
+    routeOriginRef.current = key
+    const saved = loginHistory.profiles.find(profile => profile.server.trim().replace(/\/$/, '') === key)
+    setConnectionRoute(saved?.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
+  }, [server, loginHistory.profiles])
+
+  useEffect(() => {
     const candidate = server.trim()
     if (configured || !candidate) {
       setLANTrust({ status: 'none' })
@@ -1323,7 +1335,7 @@ export default function App({
     let active = true
     setServerProbe({ key: 'checking' })
     const timer = window.setTimeout(() => {
-      void window.xdriveDesktop.probeServer(candidate, username.trim()).then((result) => {
+      void window.xdriveDesktop.probeServer(candidate, username.trim(), connectionRoute).then((result) => {
         if (!active) return
         if (result.ok) {
           setServerProbe({ key: 'ok', version: result.data.version })
@@ -1338,7 +1350,9 @@ export default function App({
       active = false
       window.clearTimeout(timer)
     }
-  }, [configured, server, username, serverProbeRetry])
+  }, [configured, server, username, serverProbeRetry, connectionRoute])
+
+  useEffect(() => () => { void window.xdriveDesktop.cancelServerProbe?.().catch(() => {}) }, [configured, server, username, connectionRoute])
 
   useEffect(() => {
     if (!agent.connected || !(agent.hello?.capabilities.includes('client-update') ?? false)) {
@@ -1511,6 +1525,7 @@ export default function App({
   const applyLoginProfile = (profile?: DesktopLoginProfile) => {
     if (!profile) return
     setLoginMount(profile.mount_path || '')
+    setConnectionRoute(profile.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
     setRememberPassword(loginHistory.secure_password_storage && profile.remember_password)
     setAutoLogin(loginHistory.secure_password_storage && profile.auto_login)
     setPassword('')
@@ -1570,6 +1585,7 @@ export default function App({
       remember_password: remember,
       auto_login: remember && autoLogin,
       use_saved_password: savedPasswordAvailable,
+      connection_route: connectionRoute,
     }))
     if (result) {
       setPassword('')
@@ -2368,6 +2384,21 @@ export default function App({
                 )}
               />
             </XDriveAuthField>
+
+            <TextField select fullWidth size="small" label="连接模式" value={connectionRoute.mode} disabled={!!busy}
+              onChange={event => setConnectionRoute(current => ({ ...current, mode: event.target.value as DesktopConnectionRoute['mode'] }))}>
+              <MenuItem value="auto">自动</MenuItem><MenuItem value="lan">仅内网</MenuItem><MenuItem value="public">仅公网</MenuItem>
+            </TextField>
+            <TextField fullWidth size="small" label="内网 IP（可选）" placeholder="192.168.2.4"
+              value={connectionRoute.lan_ip} disabled={!!busy || connectionRoute.mode === 'public'}
+              onChange={event => setConnectionRoute(current => ({ ...current, lan_ip: event.target.value }))} />
+            <TextField fullWidth size="small" label="公网 IP（可选，留空使用 DNS）" value={connectionRoute.public_ip}
+              disabled={!!busy || connectionRoute.mode === 'lan'}
+              onChange={event => setConnectionRoute(current => ({ ...current, public_ip: event.target.value }))} />
+            <Typography variant="caption" color="text.secondary">
+              填写内网 IP 后，自动模式优先内网，不可达时尝试公网；公网 DNS 不使用本机 hosts。
+              保留原域名的 HTTPS 校验，证书错误不回退。网络变化后请重新连接，不自动重发登录或上传。
+            </Typography>
 
             {lanTrust.status === 'trusted' ? (
               <XDriveStatusAlert tone="warning">

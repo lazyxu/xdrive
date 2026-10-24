@@ -93,6 +93,8 @@ function mountBootstrap(pendingHistory) {
       historyWrites.push(value.profiles[0]?.server || '')
     },
     setServer: (value) => { profileInputs.push(['server', value]) },
+    setConnectionRoute: noop,
+    routeOriginRef: { current: '' },
     setUsername: (value) => { profileInputs.push(['username', value]) },
     setLoginMount: (value) => { profileInputs.push(['mount', value]) },
     setRememberPassword: (value) => { profileInputs.push(['remember', value]) },

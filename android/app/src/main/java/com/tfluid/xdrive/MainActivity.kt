@@ -14,6 +14,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tfluid.xdrive.core.AndroidUpdateClient
 import com.tfluid.xdrive.core.UpdateSource
+import com.tfluid.xdrive.core.ConnectionRoute
+import com.tfluid.xdrive.core.RouteMode
+import com.tfluid.xdrive.core.ConnectionRouteSelector
 import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +42,8 @@ class MainActivity : ComponentActivity() {
 class DriveViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("connection", Application.MODE_PRIVATE)
     private val updatePreferences = application.getSharedPreferences("updates", Application.MODE_PRIVATE)
+    private val routeDns = deviceRouteDns(application.mainExecutor)
+    private val routeSelector = ConnectionRouteSelector(resolve = routeDns::lookup)
     @Suppress("DEPRECATION")
     private val installedPackage = application.packageManager.getPackageInfo(application.packageName, 0)
     val updates = UpdateController(
@@ -53,7 +58,18 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         initialServer = preferences.getString("server", "").orEmpty(),
         initialAllowHttp = preferences.getBoolean("allowHttp", false),
+        routeSelector = routeSelector::select,
         saveConnection = { server, allow -> preferences.edit { putString("server", server); putBoolean("allowHttp", allow) } },
+        loadRoute = { origin -> ConnectionRoute(
+            mode = RouteMode.fromPreference(preferences.getString("route.mode:$origin", null)),
+            lanIp = preferences.getString("route.lan:$origin", "").orEmpty(),
+            publicIp = preferences.getString("route.public:$origin", "").orEmpty(),
+        ) },
+        saveRoute = { origin, route -> preferences.edit {
+            putString("route.mode:$origin", route.mode.name)
+            putString("route.lan:$origin", route.lanIp)
+            putString("route.public:$origin", route.publicIp)
+        } },
     )
     override fun onCleared() { updates.close(); controller.close() }
 }
