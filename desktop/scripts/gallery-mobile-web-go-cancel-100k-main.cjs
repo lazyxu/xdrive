@@ -12,8 +12,10 @@ const dist = path.join(root, 'web', 'dist')
 // P0-C2b1: opt-in cross-document navigation; this is not an SPA route switch.
 const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
 const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
+const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
+assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', p0c2SPAMode ?
+const out = path.join(__dirname, '..', p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -319,6 +321,97 @@ async function newIndependentRange(f) {
   assert.equal(page.items.length, 100)
   return { status: response.status, count: page.total_count, returned: page.items.length }
 }
+
+// P1 stage A: one genuine decoded JPEG Viewer/Back per 100k logical Owner run.
+// The P0C2 Gin/PG17/CAS cancellation scenario remains untouched without opt-in.
+function p1VisiblePhotoTile() {
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  if(!(grid instanceof HTMLElement)||!(host instanceof HTMLElement))return null
+  const extent=host.scrollHeight-host.clientHeight
+  if(extent<10000)return null
+  if(host.scrollTop<extent*0.7){
+    host.scrollTop=extent
+    host.dispatchEvent(new Event('scroll'))
+    return null
+  }
+  const clip=host.getBoundingClientRect()
+  const tiles=Array.from(grid.querySelectorAll('[data-xdrive-media-tile]'))
+  for(const tile of tiles){
+    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
+    if(!/^photo-\d+\.jpg$/.test(name))continue
+    const rect=tile.getBoundingClientRect()
+    if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
+    const x=Math.round(rect.left+rect.width/2)
+    const y=Math.round(Math.max(clip.top+16,Math.min(rect.top+rect.height/2,clip.bottom-16)))
+    const hit=document.elementFromPoint(x,y)
+    if(hit!==tile&&!tile.contains(hit))continue
+    window.__xdriveP1Entry={document:document.documentElement,host,grid,
+      scrollTop:host.scrollTop,route:location.hash}
+    return {x,y,depth:host.scrollTop/extent,tiles:tiles.length}
+  }
+  return null
+}
+async function p1DecodedOriginal() {
+  const img=Array.from(document.querySelectorAll(
+    '[data-xdrive-web-viewer] [data-xdrive-image-phase="original"] img'
+  )).find(x=>x.complete&&x.naturalWidth>0&&x.naturalHeight>0)
+  if(!img)return false
+  await img.decode()
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+  return img.isConnected&&img.complete&&img.naturalWidth>0
+}
+function p1BackPoint() {
+  const button=document.querySelector('[data-xdrive-web-viewer] button[aria-label="返回"]')
+  if(!(button instanceof HTMLButtonElement))return null
+  const r=button.getBoundingClientRect()
+  const x=Math.round(r.left+r.width/2),y=Math.round(r.top+r.height/2)
+  const hit=document.elementFromPoint(x,y)
+  return hit===button||button.contains(hit)?{x,y}:null
+}
+function p1ReturnedToCaller() {
+  const saved=window.__xdriveP1Entry
+  if(!saved||document.querySelector('[data-xdrive-web-viewer]'))return null
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  if(location.hash!==saved.route||saved.document!==document.documentElement||
+    host!==saved.host||grid!==saved.grid||!saved.host.isConnected||!saved.grid.isConnected||
+    Math.abs((host?.scrollTop??-1)-saved.scrollTop)>2)return null
+  const measuredScrollDelta=Math.abs(host.scrollTop-saved.scrollTop)
+  const tiles=grid.querySelectorAll('[data-xdrive-media-tile]').length
+  if(tiles<1||tiles>=1000)return null
+  delete window.__xdriveP1Entry
+  return {sameCaller:true,sameDocument:true,sameHost:true,sameGrid:true,scrollDelta:measuredScrollDelta,tiles}
+}
+async function p1MeasureRealViewerBack(win) {
+  await switchActualApp(win,'图库','gallery')
+  const entry=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1VisiblePhotoTile.toString()+')()',true),30000,
+    'real Owner 100k deep Gallery photo tile')
+  assert(entry.depth>=0.7&&entry.tiles<1000)
+  const started=performance.now()
+  sendActualPointer(win,entry)
+  await until(async()=>win.webContents.executeJavaScript(
+    "location.hash.startsWith('#/app/media-viewer?') && !!document.querySelector('[data-xdrive-web-viewer]')",true),
+    30000,'real Owner 100k Gallery tile opens Viewer')
+  await until(async()=>win.webContents.executeJavaScript(
+    '('+p1DecodedOriginal.toString()+')()',true),30000,
+    'real Owner JPEG original decode + two rAF')
+  const originalDecodedMs=performance.now()-started
+  win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
+  const back=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1BackPoint.toString()+')()',true),12000,'real visible Viewer Back button')
+  const returnedAt=performance.now()
+  sendActualPointer(win,back)
+  const returned=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1ReturnedToCaller.toString()+')()',true),20000,
+    'exact mounted Gallery caller route and deep scroll restoration')
+  return {passed:true,depth:entry.depth,originalDecodedMs,
+    returnMs:performance.now()-returnedAt,returned,
+    scope:'100k logical PhotoAssets / 115k metadata nodes, only bounded actual JPEG original',
+    notMeasured:'dynamic H264 or Live motion, full 115k physical CAS, installed iOS Safari'}
+}
+
 async function sampleOnce(sample, ready) {
   let fixture = null, win = null, resourceSampler = null
   try {
@@ -472,11 +565,12 @@ async function sampleOnce(sample, ready) {
     console.log('GALLERY_MOBILE_WEB_GO_CANCEL_100K_PRE_RANGE ' +
       JSON.stringify(cancelDiagnostic))
     const healthy = await newIndependentRange(fixture)
+    const p1ViewerBack = p1Mode ? await p1MeasureRealViewerBack(win) : null
     const row = {
       sample, viewport, streamCount, resources, logicalAssets: 100000, physicalNodes: 115000,
       firstImageNodes: fixture.config.first_image_nodes,
       seedMsExcluded: fixture.config.seed_ms,
-      scroll, healthy, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
+      scroll, healthy, p1ViewerBack, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
       go: {
         started: started.started, canceled: after.cancelled - started.cancelled,
         contextDone: after.context_done - started.context_done,
@@ -525,16 +619,22 @@ async function main() {
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
-      status: p0c2SPAMode ?
+      status: p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
         'measured-CURRENT-P0-C2b2-authenticated-Files-Gallery-Files-SPA-Go-cancellation' :
         p0c2PageLeaveMode ?
         'measured-CURRENT-P0-C2b1-390px-Gallery-pageleave-Go-cancellation' :
         'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
       mobileCancelMode: true, cssWindowWidth:390, pageLeaveMode:p0c2PageLeaveMode,
-      spaMode:p0c2SPAMode,
+      spaMode:p0c2SPAMode, p1ViewerBackMode:p1Mode,
+      p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!p1Mode || (row.p1ViewerBack?.passed === true && row.p1ViewerBack.depth >= 0.7 &&
+          row.p1ViewerBack.originalDecodedMs > 0 && row.p1ViewerBack.originalDecodedMs <= 30000 &&
+          row.p1ViewerBack.returnMs > 0 && row.p1ViewerBack.returnMs <= 20000 &&
+          row.p1ViewerBack.returned.sameCaller && row.p1ViewerBack.returned.sameDocument &&
+          row.p1ViewerBack.returned.sameHost && row.p1ViewerBack.returned.sameGrid)) &&
         (!p0c2SPAMode || (row.spaMode === true &&
           row.scroll.kind === 'same-document-app-route' &&
           row.scroll.sameMainBefore === true && row.scroll.sameMainAfter === true &&
@@ -552,7 +652,7 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: p0c2SPAMode ?
+      limits: p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
         'Actual Web App.tsx real Files→Gallery→Files same-document route click in Chromium 390px, true Go/Gin/PG17/CAS, 100k logical Gallery/115k nodes, 4-6 active JPEG requests, exact Context.Done + RSS/CPU; not iPhone/Safari, 100k independent originals or durable transfer.' :
         p0c2PageLeaveMode ?
         'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :
