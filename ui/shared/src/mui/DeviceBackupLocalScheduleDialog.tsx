@@ -12,6 +12,14 @@ type SavedSchedule = {
   schedule_timezone: string
 }
 
+// Common personal-backup choices. Keep the existing custom interval and Cron
+// protocol untouched for advanced users and previously saved schedules.
+const INTERVAL_PRESETS = [
+  { label: '每小时', value: '1h' },
+  { label: '每 6 小时', value: '6h' },
+  { label: '每天', value: '24h' },
+] as const
+
 export interface XDriveLocalBackupScheduleActions {
   load(sourceID: number): Promise<XDriveLocalBoundBackupSchedule>
   save(sourceID: number, revision: number, schedule: SavedSchedule): Promise<XDriveLocalBoundBackupSchedule>
@@ -113,7 +121,7 @@ export function XDriveDeviceBackupLocalScheduleDialog({
 
   return (
     <Dialog open onClose={() => { if (!busy) onClose() }} fullWidth maxWidth="sm">
-      <DialogTitle>本机同步文件夹 · 同步计划</DialogTitle>
+      <DialogTitle>本机同步文件夹 · 自动备份</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="info">
@@ -133,16 +141,31 @@ export function XDriveDeviceBackupLocalScheduleDialog({
             }
           }}>
             <FormControlLabel value="manual" control={<Radio />}
-              disabled={loading || busy || !loaded} label="手动：仅保存手动策略，不创建任何任务" />
+              disabled={loading || busy || !loaded} label="仅手动备份" />
             <FormControlLabel value="interval" control={<Radio />}
-              disabled={loading || busy || !loaded} label="定时间隔：例如每 6 小时" />
+              disabled={loading || busy || !loaded} label="自动增量备份（推荐）" />
             <FormControlLabel value="cron" control={<Radio />}
-              disabled={loading || busy || !loaded} label="Cron：5 字段定时表达式" />
+              disabled={loading || busy || !loaded} label="高级：自定义 Cron 计划" />
           </RadioGroup>
           {kind === 'interval' ? (
-            <TextField fullWidth size="small" label="时间间隔" value={expression}
-              onChange={(event) => setExpression(event.target.value)} disabled={loading || busy}
-              helperText="Go duration，例如 30m、6h、24h；服务端要求 1 分钟至 365 天" />
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary">
+                选择常用备份间隔
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {INTERVAL_PRESETS.map((preset) => (
+                  <Button key={preset.value} size="small"
+                    disabled={loading || busy || !loaded}
+                    variant={expression === preset.value ? 'contained' : 'outlined'}
+                    onClick={() => setExpression(preset.value)}>
+                    {preset.label}
+                  </Button>
+                ))}
+              </Stack>
+              <TextField fullWidth size="small" label="其他间隔（可选）" value={expression}
+                onChange={(event) => setExpression(event.target.value)} disabled={loading || busy}
+                helperText="例如 30m、12h；范围 1 分钟至 365 天，保持兼容原有设置" />
+            </Stack>
           ) : null}
           {kind === 'cron' ? (
             <>
