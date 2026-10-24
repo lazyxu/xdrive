@@ -22,6 +22,7 @@ import {
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnosticCode } from '../media-gallery-baidu-diagnostics'
 import { xDriveCaptureBaiduNativeCamera, xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
+import { xDrivePlacesMapModeNavigationURL } from '../media-gallery-places-map-mode'
 import {
   xDriveConvertBaiduJSAPI4MarkerWindow,
   xDriveBaiduConversionSessionForScope,
@@ -262,10 +263,9 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   const invalidateRef = useRef(onInvalidated)
   const openMapItemRef = useRef<(place: MediaPlaceFacet, map: NativeMap, api: Namespace) => void>(() => {})
   const cameraRef = useRef(onNativeCameraChange)
-  // Session-local opt-in. Do not persist raw GPS permission across Gallery
-  // remounts, Owner changes, route changes or a full browser reload.
-  // The legacy same-document SDK is NOT an isolated security boundary.
-  const [prototypeConsent, setPrototypeConsent] = useState(false)
+  // Entering the default same-document Places mode starts a bounded,
+  // Owner-scoped representative GPS conversion without another opt-in click.
+  // Keep the on-map third-party disclosure and a full-document isolated exit.
   const [places, setPlaces] = useState<readonly MediaPlaceFacet[]>([])
   const [dataError, setDataError] = useState('')
   const [dataLoading, setDataLoading] = useState(true)
@@ -452,12 +452,10 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
     }
   }, [getPrototypeConfig, diagnosticScope, reportFailure])
 
-  // GPS-bearing Owner requests require an explicit user opt-in, separate
-  // from the mere choice to display the direct third-party basemap.
-  // Start with a WORLDWIDE 8x8 spatial summary only AFTER this decision.
+  // Start the bounded Owner overview when the current map SDK is ready.
   // Subsequent gestures query bounded WGS84 envelopes for local grouping.
   useEffect(() => {
-    if (!runtime || !prototypeConsent) return
+    if (!runtime) return
     let disposed = false
     let request: AbortController | null = null
     let delayed: ReturnType<typeof setTimeout> | undefined
@@ -566,7 +564,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       runtime.map.removeEventListener('moveend', refresh)
       runtime.map.removeEventListener('zoomend', refresh)
     }
-  }, [runtime, listPlacesMapOverview, prototypeConsent, overviewRetry])
+  }, [runtime, listPlacesMapOverview, overviewRetry])
 
   // Register the native ClusterLayer change observer before setData:
   // some SDK builds publish the first aggregation synchronously.
@@ -643,9 +641,9 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
   }, [runtime, places, loadThumbnail])
 
   useEffect(() => {
-    // Never call Baidu Convertor with original WGS84 samples by merely
-    // entering Places, even if a stale Owner response was still in memory.
-    if (!runtime || !prototypeConsent) return
+    // The same-document mode starts conversion on the current validated Owner
+    // overview automatically. A new gesture or teardown cancels stale work.
+    if (!runtime) return
     const abort = new AbortController()
     conversionAbort.current = abort
     let phase: 'conversion' | 'layer' = 'conversion'
@@ -740,47 +738,28 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
       abort.abort()
       if (conversionAbort.current === abort) conversionAbort.current = null
     }
-  }, [runtime, places, reportFailure, diagnosticScope, prototypeConsent])
+  }, [runtime, places, reportFailure, diagnosticScope])
 
   return (
     <Box component="section" data-xdrive-gallery-baidu-prototype
       sx={{ px: { xs: 0, sm: 1.5 }, pb: 1.5, minWidth: 0 }}>
-      {!prototypeConsent ? (
-        <Box role="region" aria-label="照片定位转换授权"
-          data-xdrive-baidu-prototype-gps-consent
-          sx={{ mx: { xs: 1, sm: 1.5 }, my: 1, p: 1.5,
-            border: '1px solid', borderColor: 'divider', borderRadius: 1.5 }}>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            同页动态地图会运行百度第三方脚本，但目前不会由 xDrive 主动向百度转换照片定位点。
-            若启用定位照片聚合，xDrive 将使用百度官方 Convertor
-            向百度发送当前视窗最多 64 组原始 WGS84 GPS 代表坐标；
-            后续平移、缩放还可能发送新的代表坐标。已发送的定位无法撤回。
-          </Typography>
-          <Typography variant="caption" color="text.secondary"
-            sx={{ display: 'block', mb: 1 }}>
-            第三方脚本运行在图库主文档，不具备独立 Origin 安全隔离。
-            可在上方切换至安全隔离版；不授权仍可查看其他图库照片。
-          </Typography>
-          <Button data-xdrive-baidu-prototype-gps-opt-in
-            variant="contained" size="small"
-            onClick={() => setPrototypeConsent(true)}>
-            同意本次会话转换定位代表点
-          </Button>
-        </Box>
-      ) : (
-        <Stack direction="row" spacing={1} alignItems="center"
-          sx={{ px: { xs: 1, sm: 1.5 }, py: 0.5, flexWrap: 'wrap' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-            已授权本次地图会话的代表坐标转换；离开地图后不会保留授权。
-          </Typography>
-          <Button data-xdrive-baidu-prototype-gps-stop
-            size="small" variant="text" onClick={() => {
-              // A full document reload, not a React toggle, terminates the
-              // unisolated provider script and in-flight conversion context.
-              if (typeof window !== 'undefined') window.location.reload()
-            }}>结束本次定位授权</Button>
-        </Stack>
-      )}
+      <Stack data-xdrive-baidu-prototype-auto-gps-notice direction={{ xs: 'column', sm: 'row' }}
+        spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}
+        sx={{ px: { xs: 1, sm: 1.5 }, py: 0.75 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+          已自动启用同页定位照片聚合。xDrive 会通过百度官方 Convertor 向百度发送
+          当前视窗最多 64 组原始 WGS84 GPS 代表坐标；平移、缩放可能继续发送，
+          已发送的定位无法撤回。第三方脚本运行在图库主文档，不具备独立 Origin 安全隔离。
+        </Typography>
+        <Button data-xdrive-baidu-prototype-gps-stop
+          size="small" variant="text" onClick={() => {
+            // A reload would immediately restart the default GPS conversion.
+            // Use a new document in the isolated mode to stop the old SDK.
+            if (typeof window === 'undefined') return
+            const target = xDrivePlacesMapModeNavigationURL(window.location.href, 'isolated')
+            if (target) window.location.replace(target)
+          }}>停止共享并切换安全隔离版</Button>
+      </Stack>
       <Box sx={{ position: 'relative' }}>
       <Box ref={container} role="region" aria-label="百度动态照片地图"
         data-xdrive-gallery-baidu-prototype-canvas
@@ -858,7 +837,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
           sx={{ px: { xs: 1, sm: 1.5 }, py: 1, flexWrap: 'wrap' }}>
           <Button size="small" variant="outlined"
             data-xdrive-baidu-prototype-nearby
-            disabled={!prototypeConsent || !canBrowseNearby || !runtime ||
+            disabled={!canBrowseNearby || !runtime ||
               !committedOwnerFrame.current}
             onClick={() => {
               if (!runtime || !manualCamera.current || !committedOwnerFrame.current) return
@@ -905,7 +884,7 @@ export function XDriveMediaGalleryBaiduPrototypeMap({
           <Typography role="alert" variant="caption">{dataError}</Typography>
           <Button size="small" variant="outlined"
             data-xdrive-baidu-prototype-retry
-            disabled={!prototypeConsent || !runtime || dataLoading}
+            disabled={!runtime || dataLoading}
             onClick={() => setOverviewRetry(n => n + 1)}>
             重试当前视窗
           </Button>
