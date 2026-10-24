@@ -31,7 +31,7 @@ test('each Convertor generation records and releases its exact abort controller'
   assert.match(source, /conversionAbort\.current = abort/)
   assert.match(source, /if \(conversionAbort\.current === abort\) conversionAbort\.current = null/)
   assert.match(source, /if \(abort\.signal\.aborted\) return/)
-  assert.match(source, /\[runtime, places, reportFailure, diagnosticScope, prototypeConsent\]/)
+  assert.match(source, /\[runtime, places, reportFailure, diagnosticScope\]/)
 })
 
 test('old native marker clicks remain inert until a fresh Owner layer commits',()=>{

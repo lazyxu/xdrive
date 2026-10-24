@@ -79,12 +79,12 @@ test('ordinary panning continues to request conservative bounded areas',()=>{
   assert.deepEqual(overview(raw,18),camera(raw))
   assert.equal(nearby(frame(-180,-85,180,85),18),null)
 })
-test('old overview errors have an explicit bounded retry without clearing GPS consent',()=>{
+test('old overview errors have a bounded retry while automatic GPS mode remains active',()=>{
   const src=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryBaiduPrototypeMap.tsx'),'utf8')
   assert.match(src,/const \[overviewRetry, setOverviewRetry\] = useState\(0\)/)
   assert.match(src,/data-xdrive-baidu-prototype-retry/)
   assert.match(src,/onClick=\{\(\) => setOverviewRetry\(n => n \+ 1\)\}/)
-  assert.match(src,/\[runtime, listPlacesMapOverview, prototypeConsent, overviewRetry\]/)
-  assert.match(src,/disabled=\{!prototypeConsent \|\| !runtime \|\| dataLoading\}/)
+  assert.match(src,/\[runtime, listPlacesMapOverview, overviewRetry\]/)
+  assert.match(src,/disabled=\{!runtime \|\| dataLoading\}/)
 })
