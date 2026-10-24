@@ -7088,18 +7088,25 @@ function registerIPCHandlers() {
     ),
   )
 
-  ipcMain.handle('agent:cloud-file-preview-url', (_event, id: unknown) => runAgentAction<string>(async () => {
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
-      throw new AgentIPCError('invalid_input', 0, 'File id is required.')
-    }
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    requireAgentCapability(hello, 'file-preview-stream')
-    if (!filePreviewProxy) {
-      throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
-    }
-    return filePreviewProxy.createURL(id)
-  }, false))
+  ipcMain.handle('agent:cloud-file-preview-url', (
+    event, id: unknown, requestID: unknown = undefined,
+  ) => runAgentAction<string>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
+      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'File id is required.')
+      }
+      if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Preview request was cancelled.')
+      const hello = await requireAgentLifecycle().ensureRunning()
+      if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Preview request was cancelled.')
+      requireAgentCapability(hello, 'cloud-files')
+      requireAgentCapability(hello, 'file-preview-stream')
+      const proxy = filePreviewProxy
+      if (!proxy) {
+        throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
+      }
+      return proxy.createURL(id, signal)
+    }), false),
+  )
 
   ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
@@ -8059,7 +8066,7 @@ if (!primaryInstance) {
     agentClient = new AgentIPCClient(path.join(app.getPath('appData'), 'xdrive', 'desktop-ipc.json'))
     agentLifecycle = new AgentLifecycle(agentClient)
     filePreviewProxy = new DesktopFilePreviewProxy(
-      (nodeID) => requireAgentClient().cloudFilePreviewTicket(nodeID),
+      (nodeID, signal) => requireAgentClient().cloudFilePreviewTicket(nodeID, signal),
       (input, init) => fetchDesktopPreview(input, init),
     )
     registerIPCHandlers()

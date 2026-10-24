@@ -4428,13 +4428,14 @@ export class AgentIPCClient {
     )
   }
 
-  cloudFilePreviewTicket(nodeID: number) {
+  cloudFilePreviewTicket(nodeID: number, signal?: AbortSignal) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.request<AgentFilePreviewTicket>(
       'GET',
       `/v1/cloud/file-preview-ticket?${query.toString()}`,
       undefined,
       45_000,
+      signal,
     )
   }
 

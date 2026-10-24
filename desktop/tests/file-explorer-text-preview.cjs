@@ -152,13 +152,13 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
 
   assert.ok(desktopExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Desktop should enable PDF, Video, Audio, and Image through the generic preview URL')
-  assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id))'), 'Desktop Explorer preview URL adapter is missing')
+  assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id), requestID)'), 'Desktop Explorer request-scoped preview URL adapter is missing')
   assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
   assert.ok(preload.includes('cloudFilePreviewURL'), 'Desktop preload preview URL bridge is missing')
   assert.ok(desktopMain.includes('agent:cloud-file-preview-url'), 'Electron main preview URL bridge is missing')
   assert.ok(desktopMain.includes('agent:get-media-analysis-preview'), 'Desktop RAW derivative preview must use request-scoped IPC')
-  assert.ok(agentClient.includes('cloudFilePreviewTicket(nodeID: number)'), 'Desktop Agent client preview ticket method is missing')
+  assert.ok(agentClient.includes('cloudFilePreviewTicket(nodeID: number, signal?: AbortSignal)'), 'Desktop Agent cancellable preview ticket method is missing')
   assert.ok(agentIPC.includes('/v1/cloud/file-preview-ticket'), 'Agent preview ticket bridge is missing')
   assert.ok(agentCloud.includes('CloudFilePreviewTicket'), 'Agent preview ticket controller is missing')
 
