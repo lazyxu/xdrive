@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const {
   automaticLoginProfile,
   clearSavedPassword,
+  clearSavedPasswordsForOrigin,
   disableAutomaticLogin,
   normalizeLoginHistory,
   publicLoginHistory,
@@ -144,4 +145,35 @@ test('saved password can be cleared without deleting the login profile or mount 
   assert.equal(cleared.profiles[0].remember_password, false)
   assert.equal(cleared.profiles[0].auto_login, false)
   assert.equal(Object.prototype.hasOwnProperty.call(cleared.profiles[0], 'encrypted_password'), false)
+})
+
+test('revoking exact LAN HTTPS origin clears all saved credentials without touching adjacent hosts', () => {
+  const now = '2026-10-24T00:00:00Z'
+  const profiles = [
+    { server: 'https://192.168.2.4:8443', username: 'alice', mount_path: '/alice', auto_login: true },
+    { server: 'https://192.168.2.4:8443/', username: 'bob', mount_path: '/bob' },
+    { server: 'https://192.168.2.4:9443', username: 'carol' },
+    { server: 'https://192.168.2.5:8443', username: 'dave' },
+    { server: 'https://drive.example.test', username: 'erin' },
+  ].map((item, i) => ({
+    ...item, last_used_at: new Date(Date.parse(now) + i * 1000).toISOString(),
+    remember_password: true,
+    auto_login: item.auto_login === true,
+    encrypted_password: 'ciphertext-for-' + item.username,
+  }))
+  const initial = normalizeLoginHistory({ profiles })
+  const next = clearSavedPasswordsForOrigin(initial, 'https://192.168.2.4:8443')
+  assert.equal(next.profiles.length, 5)
+  for (const profile of next.profiles) {
+    if (new URL(profile.server).origin === 'https://192.168.2.4:8443') {
+      assert.equal(profile.remember_password, false)
+      assert.equal(profile.auto_login, false)
+      assert.equal(profile.encrypted_password, undefined)
+      assert.ok(profile.mount_path)
+    } else {
+      assert.equal(profile.remember_password, true)
+      assert.match(profile.encrypted_password, /^ciphertext-for-/)
+    }
+  }
+  assert.equal(automaticLoginProfile(next), undefined)
 })
