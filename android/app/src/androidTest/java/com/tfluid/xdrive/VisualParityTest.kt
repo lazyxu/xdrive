@@ -62,7 +62,10 @@ class VisualParityTest {
             }
         }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
-        compose.onNodeWithText("连接服务器").performScrollTo().performClick()
+        compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
+        // Exercise the actual tagged Button rather than a possibly stale
+        // child Text semantics node while the URI keyboard is visible.
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         // connect() runs in the Controller's Main coroutine scope, which is
         // independent of Compose's current idle frame. A runOnIdle-only
         // assertion races the CONNECT -> LOGIN StateFlow transition on CI.
@@ -79,7 +82,7 @@ class VisualParityTest {
     private fun login() {
         compose.onNodeWithTag("username").performTextInput("demo")
         compose.onNodeWithTag("password").performTextInput("synthetic-password")
-        compose.onNodeWithText("登录").performScrollTo().performClick()
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
     }
     @Test fun passwordRevealResetsAfterBlurAndEmpty() {
         loginScreen()
