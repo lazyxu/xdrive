@@ -165,14 +165,35 @@ func (c *agentController) runLocalPushAutoScheduler() {
 	ticker := time.NewTicker(localPushAutoInterval)
 	defer ticker.Stop()
 	attempts := make(map[string]time.Time)
+	watches := newLocalPushAutoWatchRegistry(c.ctx)
+	defer watches.close()
+	lastProbe := time.Time{}
+	poll := func() {
+		// Session rotation/logout drops OS subscriptions immediately at
+		// the next probe. No watched file event is itself upload authority.
+		account, err := userconfig.Load()
+		if err != nil || account.SessionInvalid {
+			watches.close()
+		} else {
+			watches.setOwner(account.Server, account.Username, account.SessionID)
+		}
+		ctx, cancel := context.WithTimeout(c.ctx, localPushAutoTickTimeout)
+		_ = c.localPushAutoTick(ctx, time.Now().UTC(), attempts, watches)
+		cancel()
+		lastProbe = time.Now()
+	}
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(c.ctx, localPushAutoTickTimeout)
-			_ = c.localPushAutoTick(ctx, time.Now().UTC(), attempts)
-			cancel()
+			poll() // full scheduled catch-up even after lost native events
+		case <-watches.wake:
+			// Bursty file events coalesce without rescheduling a running
+			// file or bypassing the user's interval/cron due-time.
+			if lastProbe.IsZero() || time.Since(lastProbe) >= 10*time.Second {
+				poll()
+			}
 		}
 	}
 }
@@ -183,30 +204,53 @@ func (c *agentController) runLocalPushAutoScheduler() {
 // No server-side local filesystem access, mirror delete, or second CAS writer.
 func (c *agentController) localPushAutoTick(
 	ctx context.Context, now time.Time, attempts map[string]time.Time,
+	watchers ...*localPushAutoWatchRegistry,
 ) error {
 	if c == nil || ctx == nil || ctx.Err() != nil || attempts == nil {
 		return errLocalPushAutoUnavailable
 	}
+	var watch *localPushAutoWatchRegistry
+	if len(watchers) != 0 {
+		watch = watchers[0]
+	}
 	api, account, err := c.cloudClient()
 	if err != nil || api == nil {
+		if watch != nil {
+			watch.close()
+		}
 		return errLocalPushAutoUnavailable
 	}
 	if account.SessionInvalid || account.Server == "" ||
 		account.Username == "" || account.SessionID == "" {
+		if watch != nil {
+			watch.close()
+		}
 		return nil
 	}
 	configDir, err := userconfig.Dir()
 	if err != nil {
+		if watch != nil {
+			watch.close()
+		}
 		return err
 	}
 	deviceID, err := localpush.LoadDeviceRegistration(configDir,
 		account.Server, account.Username)
 	if err != nil {
+		if watch != nil {
+			watch.close()
+		}
 		return nil // unregistered device never auto-enrolls
 	}
 	ids, err := localPushAutoOwnedFolderIDs(ctx, api, deviceID)
 	if err != nil {
+		if watch != nil {
+			watch.close()
+		}
 		return err
+	}
+	if watch != nil {
+		watch.retainSources(ids)
 	}
 
 	// At most one scheduling admission per tick and one in-flight Source
@@ -234,27 +278,61 @@ func (c *agentController) localPushAutoTick(
 			source.ID != sourceID || source.Revision == 0 ||
 			source.SyncMode != meta.SourceSyncModeBackup ||
 			source.TargetNodeID == nil || *source.TargetNodeID == 0 {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
 			continue
 		}
 		saved, err := scopedAPI.LocalBoundSchedule(ctx, sourceID, proof)
 		if err != nil || saved.SourceID != sourceID ||
 			saved.Revision != source.Revision {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
+			continue
+		}
+		spec, scheduleErr := sourceschedule.Normalize(saved.ScheduleType,
+			saved.ScheduleExpression, saved.ScheduleTimezone)
+		if scheduleErr != nil || spec.Type == "" ||
+			spec.Type == sourceschedule.TypeManual {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
 			continue
 		}
 		grant, err := localpush.LoadRootGrant(configDir, account.Server,
 			account.Username, proof.RootID)
-		if err != nil || grant.SourceID != sourceID ||
+		if err != nil || !grant.StrongIdentity || grant.SourceID != sourceID ||
 			grant.DeviceID != proof.DeviceID ||
 			grant.Fingerprint != proof.RootFingerprint {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
 			continue
 		}
 		checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
 			ctx, configDir, grant, account.SessionID, source.Revision)
-		if err != nil {
-			continue // no matching prior manual run, rotated session or corrupt journal
+		if err != nil || checkpoint.State != "partial" ||
+			checkpoint.UncertainFiles != 0 {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
+			continue // no owning manual run, stopped, uncertain or corrupt journal
 		}
 		due, err := localPushAutomaticDue(saved, checkpoint, now)
-		if err != nil || !due {
+		if err != nil {
+			if watch != nil {
+				watch.forget(sourceID)
+			}
+			continue
+		}
+		if watch != nil {
+			// An event is only a hint. Observation is allowed for a
+			// verified, eligible but not-yet-due Source; the original
+			// schedule and SQL Operation still govern actual uploads.
+			watch.observe(grant, account.SessionID, source.Revision)
+		}
+		if !due {
 			continue
 		}
 		key := account.Server + "\x00" + account.Username + "\x00" +

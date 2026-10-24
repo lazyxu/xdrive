@@ -96,3 +96,38 @@ Source from starving later IDs; it does not bypass due-time, cooldown,
 credentials, existing Source leases or manual-run priority. After an Agent
 restart the rotation starts afresh, while the separate fsynced per-Source
 admission cooldown still prevents repeated stale-checkpoint work.
+
+
+## Native change notifications and periodic catch-up (watcher P1)
+
+The existing owning-Agent timer remains the correctness fallback: roughly once
+per minute it rechecks the saved explicit schedule, current Root grant, Owner
+session, Source revision and independently persisted original SQL Operation
+checkpoint. The actual worker always creates a fresh complete native inventory
+journal and uses the existing per-file /uploads path.
+
+Linux uses a bounded recursive native inotify subscription (at most 2,048
+watched directories per Source), using 256-entry streaming directory
+reads to bound memory on wide 100k-file Roots; Windows uses one recursive OS
+change notification handle per Source. At most 16 Owner-private Sources per Agent
+are subscribed. Missing permission, inaccessible or oversized trees, native
+event loss, cancellation and overflow disable that watch and leave the
+ordinary scheduled full scan intact. Events never infer remote deletion,
+physical CANCEL, file contents or backup completion.
+
+Notifications are coalesced in a single buffered wake slot and the Agent
+allows at most one extra schedule probe every 10 seconds; the prior manual
+batch retains priority. A wake does not bypass an explicit interval/cron
+due time, paused/cancelled/uncertain checkpoint or OS/Server authorization.
+A paused/offline Agent cannot promise instantaneous event coverage. The next
+normal due tick re-scans the whole Root even when all native events were lost.
+
+The watcher stores no raw Owner session or device credential, and never
+accepts a renderer-supplied directory. It watches only a previously verified,
+Agent-owned, strongly identified Root. Login rotation clears old subscriptions,
+and Source removal from the owner-scoped device list cancels its subscription.
+
+Required regression evidence: Linux nested file changes, invalid Root
+rejection, Owner-session and Source-revision rotation, coalesced wakes,
+cross-platform Go builds and true PostgreSQL API Race. Watching alone is
+not a current-CAS verification or a whole-Source backup success proof.
