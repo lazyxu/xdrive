@@ -70,6 +70,7 @@ export function XDriveMediaGalleryViewer({
   onPrevious,
   onNext,
   onFilmstripSelect,
+  externalInteractionPaused = false,
   onToggleFavorite,
   onInfo,
   onSaveEditRecipe,
@@ -103,6 +104,7 @@ export function XDriveMediaGalleryViewer({
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
+  externalInteractionPaused?: boolean
   onToggleFavorite?: (item: MediaItem) => Promise<void>
   onInfo?: (item: MediaItem) => void
   onSaveEditRecipe?: (
@@ -182,15 +184,6 @@ export function XDriveMediaGalleryViewer({
   const slideshowPresentation = useXDrivePreviewPresentation(item ? {
     id: item.node.id, name: item.node.name, revision: item.node.revision, kind: 'file',
   } : null, actionOwner.session)
-  useXDrivePreviewSlideshow({
-    enabled: slideshowEligible,
-    playing: slideshowPlaying,
-    sourceKey: slideshowPresentation.sourceKey,
-    presentationState: slideshowPresentation.presentationState,
-    canNext,
-    onNext,
-    onStop: () => setSlideshowPlaying(false),
-  })
   // A new gallery account/loader cannot inherit the previous collection's playback.
   useEffect(() => { setSlideshowPlaying(false) }, [loadThumbnail, loadLivePhotoMotion, loadPreviewURL])
   useEffect(() => {
@@ -225,6 +218,16 @@ export function XDriveMediaGalleryViewer({
   const creativeOpen = creativeDialogOwner === actionOwner
   const editOpen = editDialogOwner === actionOwner
   const locationOpen = locationDialogOwner === actionOwner
+  useXDrivePreviewSlideshow({
+    enabled: slideshowEligible,
+    playing: slideshowPlaying,
+    sourceKey: slideshowPresentation.sourceKey,
+    presentationState: slideshowPresentation.presentationState,
+    canNext,
+    interactionPaused: externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen,
+    onNext,
+    onStop: () => setSlideshowPlaying(false),
+  })
   // Old JSX callbacks remain callable after a Filmstrip navigation. Reject
   // them even if A is selected again after A → B → A.
   const setDeleteOpen = (open: boolean) => {
@@ -454,7 +457,7 @@ export function XDriveMediaGalleryViewer({
         onNext={onNext}
         actions={actions}
         footer={footer}
-        keepChromeVisible={moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
+        keepChromeVisible={externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
         chromeSessionKey={actionOwner.session}
         immersive
         mobileEdgeToEdge
