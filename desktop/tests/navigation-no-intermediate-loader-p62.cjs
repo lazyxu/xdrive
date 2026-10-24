@@ -24,8 +24,10 @@ test('P62 first-frame and sustained Directory GETs never paint navigation loadin
     'P62 must run the compiled 390px Chrome Gallery Range fixture')
   assert.ok(chromeRun.includes("XDRIVE_GALLERY_COLD_P39:"),
     'P62 must assert held Range0 is visually silent, not merely static source')
-  assert.ok(mobile.includes('(props.searchActive || (props.trashActive && totalCount > 0))'),
-    'only real Search and an already-populated Trash refresh may schedule feedback')
+  assert.ok(mobile.includes('const searchOwnerLoading = Boolean(props.searchSummary?.loading)') &&
+    mobile.includes('? searchOwnerLoading || searchCountPending') &&
+    mobile.includes(': Boolean(props.trashActive && totalCount > 0 && props.loading)'),
+    'only current Search Owner and an already-populated Trash refresh may schedule feedback')
   assert.equal(mobile.includes('正在读取最近删除…'), false,
     'no slow first-Trash-GET loading caption is ever permitted')
   assert.ok(!mobile.includes('(props.searchActive || props.trashActive || coldUnconfirmedBrowse)'))

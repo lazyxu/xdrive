@@ -634,8 +634,14 @@ export default function MobileFiles(props: Props) {
   if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true
   const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&
     coldReadAttemptRef.current.began && !savedResumePending
-  const showRangeLoading = (props.loading || searchCountPending) &&
-    (props.searchActive || (props.trashActive && totalCount > 0))
+  // The composite action-busy flag remains available to command controls,
+  // but only the current Search Owner can schedule Search feedback. An
+  // unrelated Copy/Upload/Delete must never turn accepted results into a
+  // pending overlay. Populated Trash retains its original read-owned path.
+  const searchOwnerLoading = Boolean(props.searchSummary?.loading)
+  const showRangeLoading = props.searchActive
+    ? searchOwnerLoading || searchCountPending
+    : Boolean(props.trashActive && totalCount > 0 && props.loading)
   const loadFeedbackScope = props.searchActive
     ? `search:${props.lifecycleKey}:${props.searchSummary?.query ?? ''}:${props.virtualCollection?.interactionKey ?? ''}`
     : props.trashActive ? `trash:${props.lifecycleKey}`
@@ -671,8 +677,9 @@ export default function MobileFiles(props: Props) {
   // Search/Trash still own their genuine progress. A normal Browse folder
   // uses only CloudFiles busy: a concurrent durable operation must not blank
   // a verified-zero directory or defer its truthful empty state.
-  const zeroStateOwnerLoading = props.searchActive || props.trashActive
-    ? props.loading : ownerDirectoryLoading
+  const zeroStateOwnerLoading = props.searchActive
+    ? searchOwnerLoading
+    : props.trashActive ? props.loading : ownerDirectoryLoading
   const zeroStatePending = (zeroStateOwnerLoading && !keepAcceptedEmptyDirectory &&
     !verifiedTrashEmpty) || searchCountPending
   const zeroStateLoading = props.searchActive && zeroStatePending && showArrangementLoading

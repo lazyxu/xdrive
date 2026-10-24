@@ -65,7 +65,9 @@ test('P78 Mobile Files: verified first Range owns ONE destination/scroll commit,
     'data-xdrive-file-explorer-scroll-host',
     'data-mobile-files-collection-first-read',
     'data-mobile-files-organization-loading',
-    'const showRangeLoading = (props.loading || searchCountPending) &&\n    (props.searchActive || (props.trashActive && totalCount > 0))',
+    'const searchOwnerLoading = Boolean(props.searchSummary?.loading)',
+    'const showRangeLoading = props.searchActive\n    ? searchOwnerLoading || searchCountPending\n    : Boolean(props.trashActive && totalCount > 0 && props.loading)',
+    'const zeroStateOwnerLoading = props.searchActive\n    ? searchOwnerLoading\n    : props.trashActive ? props.loading : ownerDirectoryLoading',
   ], 'original mobile navigation')
   mustOmit(mobile, [
     'beginBrowse(entry.id)', 'beginBrowse(selectedEntry.id)',
