@@ -48,6 +48,16 @@ export function useXDrivePreviewSlideshow({
   callbacks.current = { onNext, onStop }
   const dwell = useRef<{ sourceKey: string; remaining: number; advanced: boolean } | null>(null)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  // clearTimeout alone cannot revoke callbacks already queued by the browser.
+  // Rotate the identity during render, including an A→B→A that has not yet run effects.
+  const timerIntentRef = useRef({ sourceKey, enabled, playing, generation: {} })
+  if (timerIntentRef.current.sourceKey !== sourceKey ||
+      timerIntentRef.current.enabled !== enabled ||
+      timerIntentRef.current.playing !== playing) {
+    timerIntentRef.current = { sourceKey, enabled, playing, generation: {} }
+  }
+  const timerStateRef = useRef({ sourceKey, enabled, playing, presentationState, navigationLoading, visible, canNext })
+  timerStateRef.current = { sourceKey, enabled, playing, presentationState, navigationLoading, visible, canNext }
   useEffect(() => {
     if (typeof document === 'undefined') return
     const sync = () => setVisible(document.visibilityState !== 'hidden')
@@ -76,7 +86,14 @@ export function useXDrivePreviewSlideshow({
     if (current.advanced) return
     const startedAt = Date.now()
     let fired = false
+    const timerGeneration = timerIntentRef.current.generation
     const timer = window.setTimeout(() => {
+      const latest = timerStateRef.current
+      if (timerIntentRef.current.generation !== timerGeneration ||
+          dwell.current !== current || current.advanced ||
+          latest.sourceKey !== sourceKey || !latest.enabled || !latest.playing ||
+          latest.presentationState !== 'ready' || latest.navigationLoading ||
+          !latest.visible || !latest.canNext) return
       fired = true
       current.remaining = 0
       current.advanced = true
