@@ -32,7 +32,7 @@ function harness({ supported = true, secure = true, waiting = true, online = tru
   }).outputText
   const exports = {}
   new Function('exports', 'window', 'navigator', 'BroadcastChannel', code)(exports, win, navigator, Channel)
-  return { mod: exports, win, navigator, registration, events, regEvents, messages,
+  return { mod: exports, win, navigator, registration, events, workerEvents, regEvents, messages,
     get checked() { return checked } }
 }
 async function flush() { for (let n = 0; n < 5; n++) await Promise.resolve() }
@@ -177,4 +177,149 @@ test('S3D1: UI and actual Chrome guards never skipWaiting or force reload', () =
   assert.ok(docs.includes('PWA-S3D1'))
   assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(|Client\.postMessage\s*\(/)
   assert.doesNotMatch(ui, /skipWaiting|location\.reload|api\/v1/)
+})
+
+test('S3D1: revoked registration clears stale waiting on pageshow and manual check', async () => {
+  const h = harness({ waiting: true })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+  h.navigator.serviceWorker.getRegistration = async () => undefined
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().otherWindowReportedUpdate, false)
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'error')
+  assert.match(h.mod.xDrivePwaUpdateSnapshot().lastError, /尚未检测到/)
+  assert.equal(h.checked, 0, 'unregistered worker must not be updated')
+})
+
+test('S3D1: explicit update uses a replacement registration instead of the retired one', async () => {
+  const h = harness({ waiting: false })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  let updatedNew = 0
+  const replacement = {
+    waiting: {}, installing: null,
+    addEventListener() {},
+    async update() { updatedNew++ },
+  }
+  h.navigator.serviceWorker.getRegistration = async () => replacement
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'waiting')
+  assert.equal(h.checked, 0, 'old registration must not be updated')
+  assert.equal(updatedNew, 1)
+})
+
+test('S3D1: late old registration lookup and retired worker events cannot resurrect waiting', async () => {
+  const h = harness({ waiting: true })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  let finishOldLookup
+  h.navigator.serviceWorker.getRegistration = () =>
+    new Promise(resolve => { finishOldLookup = resolve })
+  h.events.get('pageshow')()
+  await flush()
+  let oldWorkerStateChange
+  h.registration.installing = { state: 'installed', addEventListener(_kind, fn) { oldWorkerStateChange = fn } }
+  h.regEvents.get('updatefound')()
+  h.navigator.serviceWorker.getRegistration = async () => undefined
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  finishOldLookup(h.registration)
+  await flush()
+  oldWorkerStateChange()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+})
+
+test('S3D1: manual check superseded by a newer missing-registration lookup stays fail closed', async () => {
+  const h = harness({ waiting: true })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  let finishOld
+  h.navigator.serviceWorker.getRegistration = () => new Promise(resolve => { finishOld = resolve })
+  const check = h.mod.checkXDrivePwaUpdate()
+  await flush()
+  h.navigator.serviceWorker.getRegistration = async () => undefined
+  h.events.get('pageshow')()
+  await flush()
+  finishOld(h.registration)
+  assert.equal(await check, 'idle')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(h.checked, 0)
+})
+
+test('S3D1: controllerchange revalidates unregistered and replaced workers', async () => {
+  const h = harness({ waiting: true })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+  assert.equal(typeof h.workerEvents.get('controllerchange'), 'function')
+  h.navigator.serviceWorker.getRegistration = async () => undefined
+  h.workerEvents.get('controllerchange')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  let updatedNew = 0
+  const replacement = {
+    waiting: null, installing: null,
+    addEventListener() {},
+    async update() { updatedNew++ },
+  }
+  h.navigator.serviceWorker.getRegistration = async () => replacement
+  h.workerEvents.get('controllerchange')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+  assert.equal(updatedNew, 1)
+  h.registration.waiting = {}
+  h.regEvents.get('updatefound')()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked',
+    'retired worker must never advertise waiting again')
+})
+
+test('S3D1: successful registration recovery clears stale lookup errors and retired checked state', async () => {
+  const h = harness({ waiting: false })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  h.navigator.serviceWorker.getRegistration = async () => { throw Error('browser storage temporarily unavailable') }
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'error')
+  h.navigator.serviceWorker.getRegistration = async () => h.registration
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle',
+    'successful registration discovery must clear obsolete error')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+  const replacement = { waiting: null, installing: null, addEventListener() {}, async update() {} }
+  h.navigator.serviceWorker.getRegistration = async () => replacement
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle',
+    'replacement SW is not already checked merely because the retired one was')
+})
+
+test('S3D1: pageshow superseding an in-flight update clears checking without false success', async () => {
+  const h = harness({ waiting: false })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  let release
+  h.registration.update = () => new Promise(resolve => { release = resolve })
+  const pending = h.mod.checkXDrivePwaUpdate({ timeoutMs: 1000 })
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checking')
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle',
+    'live browser registration superseded a pending check; UI must be retryable')
+  // Do not resolve the old browser update yet: the new user click must really
+  // call update() again instead of reusing an obsolete in-flight Promise.
+  let retried = 0
+  h.registration.update = async () => { retried++ }
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+  assert.equal(retried, 1, 'superseded check must not consume a new click')
+  release()
+  assert.equal(await pending, 'checked')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked',
+    'late old browser update must not overwrite the retry result')
 })
