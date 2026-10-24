@@ -875,8 +875,106 @@ async function tapRealUndoRedoFromBothLayouts() {
 // The disposable Go fixture executes the actual Owner-authorized Gin range
 // before holding the response. The only browser-originated cancellation here
 // is the original app's own AbortSignal after a newer route supersedes it.
+// U01-D: bounded failure-only diagnostics. No private responses or Owner data.
+async function captureU01BackFailure(width, generation, itemSelector, traceEntries) {
+  const filename = 'live-go-u01-back-failure-' + width
+  const evidence = {
+    schema: 'xdrive-u01-back-failure-v1',
+    width, generation, expected: 'return-to-slow',
+    browser: { status: 'unavailable' },
+    fixture: { status: 'unavailable' },
+    network: traceEntries.slice(-48),
+  }
+  try {
+    evidence.browser = await page.evaluate(selector => {
+      const hash = window.location.hash
+      const numeric = value => typeof value === 'string' && /^\d+$/.test(value) ? value : null
+      const rows = [...document.querySelectorAll(selector)].slice(0, 32)
+      return {
+        // Only known numeric directory routes, never the full URL.
+        route: /^#\/app\/files\?dir=\d+$/.test(hash) ? hash : 'redacted',
+        rowIds: rows.map(element =>
+          numeric(element.getAttribute('data-xdrive-file-explorer-item-id')) ||
+          numeric(element.getAttribute('data-mobile-files-folder-id')) ||
+          'unexposed'),
+        crumbIds: [...document.querySelectorAll('[data-xdrive-file-explorer-crumb]')]
+          .slice(0, 16)
+          .map(element => numeric(element.getAttribute('data-xdrive-file-explorer-crumb')) || 'unexposed'),
+        scrollHosts: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      }
+    }, itemSelector)
+  } catch { /* Never replace the originating assertion failure. */ }
+  try {
+    const response = await page.request.get(fixture.url + '/__test/files/u01/state',
+      { timeout: 1500 })
+    if (response.ok()) {
+      const state = await response.json()
+      evidence.fixture = {
+        enteredExpectedGeneration: state.entered === generation,
+        cancelledExpectedGeneration: state.cancelled === generation,
+      }
+    }
+  } catch { /* Optional fixture state; no production data. */ }
+  try {
+    fs.writeFileSync(path.join(output, filename + '.json'),
+      JSON.stringify(evidence, null, 2) + '\n')
+  } catch { /* Preserve original test outcome. */ }
+  try {
+    await screenshot(filename)
+  } catch { /* Preserve original test outcome. */ }
+}
+
 async function assertRealU01BrowserNavigation(width) {
   const mobile = width < 900
+  // Failure-only U01-D diagnostics on the real built Chromium / Go fixture.
+  // Only root/slow/fast labels, HTTP status and durations are retained.
+  const traceStarted = Date.now()
+  const traceEntries = []
+  const requestStarted = new WeakMap()
+  const targetDirectories = new Map([
+    [fixture.root_id, 'root'],
+    [fixture.u01_slow_id, 'slow'],
+    [fixture.u01_fast_id, 'fast'],
+  ])
+  const directoryOf = request => {
+    if (request.method() !== 'GET') return null
+    try {
+      const url = new URL(request.url())
+      if (url.origin !== new URL(fixture.url).origin) return null
+      const match = /^\/api\/v1\/nodes\/(\d+)\/children$/.exec(url.pathname)
+      return match ? targetDirectories.get(Number(match[1])) || null : null
+    } catch { return null }
+  }
+  const record = entry => {
+    if (traceEntries.length >= 48) traceEntries.shift()
+    traceEntries.push({ elapsedMs: Date.now() - traceStarted, ...entry })
+  }
+  const onRequest = request => {
+    const directory = directoryOf(request)
+    if (!directory) return
+    requestStarted.set(request, Date.now())
+    record({ directory, event: 'request' })
+  }
+  const onResponse = response => {
+    const request = response.request()
+    const directory = directoryOf(request)
+    if (!directory) return
+    const begun = requestStarted.get(request)
+    record({ directory, event: 'response', status: response.status(),
+      durationMs: begun === undefined ? null : Date.now() - begun })
+  }
+  const onRequestFailed = request => {
+    const directory = directoryOf(request)
+    if (!directory) return
+    const begun = requestStarted.get(request)
+    // Do not record failure messages that may contain URLs or credentials.
+    record({ directory, event: 'failed',
+      durationMs: begun === undefined ? null : Date.now() - begun })
+  }
+  page.on('request', onRequest)
+  page.on('response', onResponse)
+  page.on('requestfailed', onRequestFailed)
+  try {
   await page.setViewportSize({ width, height: mobile ? 844 : 700 })
   const rootURL = fixture.url + '/#/app/files?dir=' + fixture.root_id
   await page.goto(rootURL, { waitUntil: 'domcontentloaded' })
@@ -940,7 +1038,13 @@ async function assertRealU01BrowserNavigation(width) {
   // Return through the genuinely authorized B folder, then back to root.
   await page.goBack()
   const slowLeaf = page.locator(itemSelector).filter({ hasText: 'u01-slow-authorized.txt' }).first()
-  await slowLeaf.waitFor({ state: 'visible' })
+  try {
+    // Unmodified original Playwright visibility oracle and 12s budget.
+    await slowLeaf.waitFor({ state: 'visible' })
+  } catch (error) {
+    await captureU01BackFailure(width, generation, itemSelector, traceEntries)
+    throw error
+  }
   check(page.url().endsWith('/files?dir=' + fixture.u01_slow_id),
     'browser Back must restore real slow-folder URL and full authorized page', { width })
   await page.goBack()
@@ -956,6 +1060,11 @@ async function assertRealU01BrowserNavigation(width) {
     returnedViaHistory: true, actualGin200: true, wireContextCancelled: true,
   })
   await screenshot('live-go-u01-real-navigation-' + width)
+  } finally {
+    page.off('request', onRequest)
+    page.off('response', onResponse)
+    page.off('requestfailed', onRequestFailed)
+  }
 }
 
 
