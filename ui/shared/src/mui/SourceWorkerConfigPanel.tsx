@@ -126,6 +126,9 @@ export function XDriveSourceWorkerConfigPanel({
     if (!source.loadSourceWorkerConfig || busy || (singlePage && isDraftDirty)) return
     const epoch = ++epochRef.current
     setLoading(true)
+    // The new read supersedes any older revision-history fetch.
+    setHistoryLoading((section === 'history' || section === 'all') &&
+      !!source.loadSourceWorkerRevisions)
     setError('')
     try {
       const next = await source.loadSourceWorkerConfig()
@@ -148,7 +151,10 @@ export function XDriveSourceWorkerConfigPanel({
         setError(err instanceof Error ? err.message : '刷新 Pull Worker 状态失败。')
       }
     } finally {
-      if (epoch === epochRef.current) setLoading(false)
+      if (epoch === epochRef.current) {
+        setLoading(false)
+        setHistoryLoading(false)
+      }
     }
   }
 
@@ -161,6 +167,9 @@ export function XDriveSourceWorkerConfigPanel({
     }
     const epoch = ++epochRef.current
     setBusy(true)
+    // A Save/Rollback invalidates the initial history read's epoch. Clear its
+    // loading indicator now; the later authoritative read repopulates history.
+    setHistoryLoading(false)
     setError('')
     setNotice('')
     try {
@@ -203,6 +212,9 @@ export function XDriveSourceWorkerConfigPanel({
     if (!config?.editable || !source.rollbackSourceWorker || !targetRevision || busy) return
     const epoch = ++epochRef.current
     setBusy(true)
+    // A Save/Rollback invalidates the initial history read's epoch. Clear its
+    // loading indicator now; the later authoritative read repopulates history.
+    setHistoryLoading(false)
     setError('')
     setNotice('')
     try {
