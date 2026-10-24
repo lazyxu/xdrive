@@ -31,7 +31,7 @@ const ui = {
     XDriveMediaGalleryCreativeDialog: () => null,
     xDriveMediaItemSupportsCreative: () => false,
   },
-  './MediaGalleryEditDialog': { XDriveMediaGalleryEditDialog: () => null },
+  './MediaGalleryEditDialog': { XDriveMediaGalleryEditDialog: props => React.createElement('test-edit-dialog', props) },
   './MediaGalleryViewerLocationDialog': { XDriveMediaGalleryViewerLocationDialog: () => null },
   './MediaGalleryFilmstrip': { XDriveMediaGalleryFilmstrip: () => null },
   './MediaViewerContent': { XDriveMediaViewerContent: props => React.createElement('test-media-content', props) },
@@ -78,6 +78,7 @@ test('P1 inline Gallery Viewer matches routed Web compact More and keeps full de
           onPrevious() {}, onNext() {}, onFilmstripSelect() {}, onClose() {},
           onDownload: async value => downloads.push(value.node.id),
           onInfo: value => infos.push(value.node.id),
+          onSaveEditRecipe: async () => ({ revision: 1 }),
           onShare() {}, onDelete: async () => {},
           onOpenDynamicMap: () => maps.push(item.node.id),
         }))
@@ -85,6 +86,8 @@ test('P1 inline Gallery Viewer matches routed Web compact More and keeps full de
       const compact = nextWidth < 900
       assert.equal(findButton(renderer, '更多照片操作').length, compact ? 1 : 0)
       assert.equal(findButton(renderer, '下载媒体').length, compact ? 0 : 1)
+      assert.equal(findButton(renderer, '查看属性').length, 1, 'Info is always directly visible')
+      assert.equal(findButton(renderer, '编辑媒体').length, compact ? 0 : 1, 'Edit moves to compact More')
       assert.equal(findButton(renderer, '分享媒体').length, 1,
         'share stays a primary action on both widths')
       assert.equal(findButton(renderer, '删除媒体').length, 1,
@@ -93,7 +96,7 @@ test('P1 inline Gallery Viewer matches routed Web compact More and keeps full de
         await act(async () => {
           findButton(renderer, '更多照片操作')[0].props.onClick({ currentTarget: {} })
         })
-        for (const label of ['在地图上查看照片', '查看属性', '下载']) {
+        for (const label of ['在地图上查看照片', '编辑媒体', '下载']) {
           assert.equal(findMenuAction(renderer, label).length, 1,
             label + ' must move into compact More rather than overflowing')
         }
@@ -110,9 +113,14 @@ test('P1 inline Gallery Viewer matches routed Web compact More and keeps full de
         })
         assert.equal(renderer.root.findByType('test-shared-viewer').props.keepChromeVisible, true,
           'open More must suspend the preview chrome timeout')
-        await act(async () => { findMenuAction(renderer, '查看属性')[0].props.onClick() })
-        assert.deepEqual(infos, [1991])
+        await act(async () => { findMenuAction(renderer, '编辑媒体')[0].props.onClick() })
+        const editDialog = renderer.root.findByType('test-edit-dialog')
+        assert.equal(editDialog.props.open, true, 'compact Edit opens the shared editor')
+        await act(async () => { editDialog.props.onClose() })
+        assert.equal(renderer.root.findByType('test-edit-dialog').props.open, false)
       }
+      await act(async () => { findButton(renderer, '查看属性')[0].props.onClick() })
+      assert.deepEqual(infos, [1991], 'Info reaches the same shared Inspector on all widths')
     } finally {
       if (renderer) await act(async () => renderer.unmount())
     }
@@ -175,15 +183,7 @@ test('P0 inline Gallery rejects stale Share and Inspector callbacks after filmst
     try {
       await act(async () => { renderer = create(React.createElement(Viewer, props(item))) })
       const oldShare = findButton(renderer, '分享媒体')[0].props.onClick
-      let oldInfo
-      if (nextWidth < 900) {
-        await act(async () => {
-          findButton(renderer, '更多照片操作')[0].props.onClick({ currentTarget: {} })
-        })
-        oldInfo = findMenuAction(renderer, '查看属性')[0].props.onClick
-      } else {
-        oldInfo = findButton(renderer, '查看属性')[0].props.onClick
-      }
+      const oldInfo = findButton(renderer, '查看属性')[0].props.onClick
       await act(async () => {
         renderer.update(React.createElement(Viewer, props(nextItem)))
       })
@@ -192,14 +192,7 @@ test('P0 inline Gallery rejects stale Share and Inspector callbacks after filmst
       await act(async () => {
         findButton(renderer, '分享媒体')[0].props.onClick()
       })
-      if (nextWidth < 900) {
-        await act(async () => {
-          findButton(renderer, '更多照片操作')[0].props.onClick({ currentTarget: {} })
-        })
-        await act(async () => { findMenuAction(renderer, '查看属性')[0].props.onClick() })
-      } else {
-        await act(async () => { findButton(renderer, '查看属性')[0].props.onClick() })
-      }
+      await act(async () => { findButton(renderer, '查看属性')[0].props.onClick() })
       assert.deepEqual(calls, [['share', 1992], ['info', 1992]],
         'current Viewer actions still work after rejecting stale callbacks')
     } finally {

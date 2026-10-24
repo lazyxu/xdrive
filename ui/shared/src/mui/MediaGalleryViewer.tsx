@@ -298,7 +298,7 @@ export function XDriveMediaGalleryViewer({
           </IconButton>
         </Tooltip>
       ) : null}
-      {onSaveEditRecipe && xDriveMediaItemSupportsBasicEditing(item) ? (
+      {!narrowViewer && onSaveEditRecipe && xDriveMediaItemSupportsBasicEditing(item) ? (
         <Tooltip title="编辑">
           <IconButton
             size="small"
@@ -316,7 +316,7 @@ export function XDriveMediaGalleryViewer({
           </IconButton>
         </Tooltip>
       ) : null}
-      {!narrowViewer && onInfo ? (
+      {onInfo ? (
         <Tooltip title="属性">
           <IconButton size="small" aria-label="查看属性" onClick={() => runCurrentItemAction(onInfo)}>
             <InfoOutlinedIcon fontSize="small" />
@@ -452,11 +452,11 @@ export function XDriveMediaGalleryViewer({
         xDriveMediaItemSupportsCreative(item) ? (
           <MenuItem aria-label="创作图片" onClick={() => { closeMore(); setCreativeOpen(true) }}>创作图片</MenuItem>
         ) : null}
+        {item && onSaveEditRecipe && xDriveMediaItemSupportsBasicEditing(item) ? (
+          <MenuItem aria-label="编辑媒体" onClick={() => { closeMore(); setEditOpen(true) }}>编辑媒体</MenuItem>
+        ) : null}
         {item && hasPhotoGPS ? (
           <MenuItem aria-label="在地图上查看照片" onClick={() => { closeMore(); setLocationOpen(true) }}>在地图上查看照片</MenuItem>
-        ) : null}
-        {item && onInfo ? (
-          <MenuItem aria-label="查看属性" onClick={() => { closeMore(); runCurrentItemAction(onInfo) }}>查看属性</MenuItem>
         ) : null}
         {item && onExportLivePhoto && (item.live_photo || item.asset_kind === 'live_photo') ? (
           <MenuItem aria-label="导出完整实况" disabled={Boolean(busyAction)} onClick={() => {

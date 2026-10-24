@@ -378,16 +378,19 @@ test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fi
           assert.equal(rail.length, mobile ? 1 : 0, 'all narrow pointer types share one bottom action rail')
           const inspector = buttons(renderer, '查看属性')
           if (mobile) {
-            assert.equal(inspector.length, 0,
-              'secondary info belongs to iOS27 More, not an overflowing row')
+            assert.equal(inspector.length, 1,
+              'iOS27 Info must remain a direct 44px primary action')
             assert.equal(rail[0].props.sx.position, 'absolute')
             assert.equal(rail[0].props.sx.pb, 'env(safe-area-inset-bottom)')
             assert.equal(rail[0].props.sx['& .MuiIconButton-root'].width, 44)
             assert.equal(rail[0].findAll(element =>
               element.type === 'button' && element.props['aria-label'] === '更多照片操作').length, 1)
             await openGalleryMore(renderer)
-            assert.equal(galleryMoreItems(renderer, '查看属性').length, 1,
-              'the same real inspector is reachable through one compact More menu')
+            assert.equal(galleryMoreItems(renderer, '查看属性').length, 0,
+              'Info is not duplicated in the compact More menu')
+            assert.equal(rail[0].findAll(element =>
+              element.type === 'button' && element.props['aria-label'] === '查看属性').length, 1,
+              'direct Info lives in the reachable mobile action rail')
           } else {
             assert.equal(inspector.length, 1)
             assert.equal(buttons(renderer, '更多照片操作').length, 0)
@@ -618,11 +621,12 @@ test('P1-2e real Web Media Viewer reuses Gallery edit dialog and acknowledged re
     const editor = () => renderer.root.findAll(el => el.type === 'edit-dialog')[0]
     assert.ok(editor(), 'one existing shared Gallery edit dialog is mounted')
     assert.equal(editor().props.open, false)
-    assert.equal(buttons(renderer, '编辑媒体').length, 1, 'same authorized edit operation reaches the mobile rail')
+    assert.equal(buttons(renderer, '编辑媒体').length, 0, 'compact Edit stays in More, not an overflowing rail')
     const rail = renderer.root.find(el =>
       el.type === 'div' && el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
-    assert.equal(rail.findAll(el => el.type === 'button' && el.props['aria-label'] === '编辑媒体').length, 1)
-    await act(async () => { buttons(renderer, '编辑媒体')[0].props.onClick() })
+    assert.equal(rail.findAll(el => el.type === 'button' && el.props['aria-label'] === '查看属性').length, 1)
+    assert.equal(rail.findAll(el => el.type === 'button' && el.props['aria-label'] === '编辑媒体').length, 0)
+    await clickGalleryAction(renderer, '编辑媒体')
     assert.equal(editor().props.open, true)
     assert.equal(editor().props.item.node.id, node.id)
     assert.equal(editor().props.item.node.revision, node.revision)
@@ -636,7 +640,10 @@ test('P1-2e real Web Media Viewer reuses Gallery edit dialog and acknowledged re
     assert.equal(editor().props.item.edit_recipe, undefined, 'reset removes the recipe from active Viewer state')
     await act(async () => { editor().props.onClose() })
     assert.equal(editor().props.open, false)
-    assert.equal(buttons(renderer, '编辑媒体').length, 1)
+    assert.equal(buttons(renderer, '编辑媒体').length, 0)
+    await openGalleryMore(renderer)
+    assert.equal(galleryMoreItems(renderer, '编辑媒体').length, 1,
+      'the authorized editor remains reachable after closing')
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     compactTouch = false
@@ -705,7 +712,7 @@ test('P1-2e editor is scoped to one Node/revision and closes on Viewer route cha
         ...props, route: { app: 'media-viewer', params: { node: 81 } },
       }), { createNodeMock: () => ({ focus() {} }) })
     })
-    await act(async () => { buttons(renderer, '编辑媒体')[0].props.onClick() })
+    await clickGalleryAction(renderer, '编辑媒体')
     assert.equal(renderer.root.find(el => el.type === 'edit-dialog').props.open, true)
     await act(async () => {
       renderer.update(React.createElement(WebFileViewerApps, {
@@ -1232,7 +1239,7 @@ test('P1-2j Mobile Gallery Viewer bounds 44px primary actions and exposes all se
       })
       const compact = width < 900
       assert.equal(buttons(renderer, '更多照片操作').length, compact ? 1 : 0)
-      for (const name of ['收藏', '编辑媒体', '删除媒体']) {
+      for (const name of ['收藏', '查看属性', '删除媒体']) {
         assert.equal(buttons(renderer, name).length, 1, name + ' primary iOS action')
       }
       if (compact) {
@@ -1242,12 +1249,12 @@ test('P1-2j Mobile Gallery Viewer bounds 44px primary actions and exposes all se
         const primaryButtons = rail.findAll(el => el.type === 'button')
         assert.ok(primaryButtons.length <= 7,
           'five Gallery controls + two navigation buttons fit 375px without hidden horizontal scroll')
-        for (const name of ['创作图片', '查看属性', '标签', '下载']) {
+        for (const name of ['创作图片', '编辑媒体', '标签', '下载']) {
           assert.equal(buttons(renderer, name).length, 0,
             name + ' must not be duplicated in the primary compact rail')
         }
         await openGalleryMore(renderer)
-        for (const name of ['创作图片', '查看属性', '标签', '下载']) {
+        for (const name of ['创作图片', '编辑媒体', '标签', '下载']) {
           assert.equal(galleryMoreItems(renderer, name).length, 1,
             'all existing authorized secondary source actions remain reachable')
         }
@@ -1259,6 +1266,10 @@ test('P1-2j Mobile Gallery Viewer bounds 44px primary actions and exposes all se
         assert.equal(dialog.props.open, true)
         assert.equal(dialog.props.item.node.revision, 4)
         await act(async () => { dialog.props.onClose() })
+        await clickGalleryAction(renderer, '编辑媒体')
+        const edit = renderer.root.find(el => el.type === 'edit-dialog')
+        assert.equal(edit.props.open, true, 'compact More must retain the authorized shared editor')
+        await act(async () => { edit.props.onClose() })
         await clickGalleryAction(renderer, '查看属性')
       } else {
         assert.equal(buttons(renderer, '创作图片').length, 1)
@@ -1551,8 +1562,7 @@ test('P1 Share and Inspector immediately detach when Filmstrip changes the route
     const staleMore = buttons(renderer, '更多照片操作')[0].props.onClick
     await act(async () => { staleShare() })
     assert.equal(share().props.node.id, 983)
-    await openGalleryMore(renderer)
-    const staleInfo = galleryMoreItems(renderer, '查看属性')[0].props.onClick
+    const staleInfo = buttons(renderer, '查看属性')[0].props.onClick
     await act(async () => { staleInfo() })
     assert.equal(inspector().props.item.node.id, 983)
     assert.deepEqual(albumReads, [983])
@@ -1611,8 +1621,7 @@ test('P0 same Node/revision source rebind must fence actions and modal ownership
         { createNodeMock: () => ({ focus() {} }) })
     })
     await act(async () => { buttons(renderer, '分享媒体')[0].props.onClick() })
-    await openGalleryMore(renderer)
-    await act(async () => { galleryMoreItems(renderer, '查看属性')[0].props.onClick() })
+    await act(async () => { buttons(renderer, '查看属性')[0].props.onClick() })
     assert.equal(share().props.node.id, 985)
     assert.equal(inspector().props.item.node.id, 985)
     await act(async () => {

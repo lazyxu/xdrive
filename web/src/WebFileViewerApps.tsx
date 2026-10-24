@@ -1117,7 +1117,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           </IconButton>
         </Tooltip>
       ) : null}
-      {canEdit ? (
+      {!narrowMediaViewer && canEdit ? (
         <Tooltip title="编辑">
           <IconButton
             size="small"
@@ -1155,7 +1155,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           </IconButton>
         </Tooltip>
       ) : null}
-      {!narrowMediaViewer && mediaItem ? (
+      {mediaItem ? (
         <Tooltip title="属性">
           <IconButton size="small" aria-label="查看属性" onClick={openInfo}>
             <InfoOutlinedIcon fontSize="small" />
@@ -1284,6 +1284,16 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         onClose={() => setMoreAnchor(null)}
         MenuListProps={{ 'aria-label': '更多照片操作' }}
       >
+        {canEdit && mediaItem ? (
+          <MenuItem aria-label="编辑媒体" onClick={() => {
+            setMoreAnchor(null)
+            setEditTarget({
+              id: mediaItem.node.id,
+              revision: mediaItem.node.revision,
+              owner: modalOwner,
+            })
+          }}>编辑媒体</MenuItem>
+        ) : null}
         {canCreate && mediaItem ? (
           <MenuItem aria-label="创作图片" onClick={() => {
             setMoreAnchor(null)
@@ -1301,10 +1311,6 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             openLocation()
           }}>在地图上查看照片</MenuItem>
         ) : null}
-        <MenuItem aria-label="查看属性" onClick={() => {
-          setMoreAnchor(null)
-          openInfo()
-        }}>查看属性</MenuItem>
         <MenuItem aria-label="标签" onClick={() => {
           setMoreAnchor(null)
           openTags()
