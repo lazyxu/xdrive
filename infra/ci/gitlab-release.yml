@@ -111,6 +111,9 @@ promote-server-images:
 
 publish-release:
   extends: .publish-only
+  # A newer master pipeline cannot kill or interleave an in-flight link promotion.
+  interruptible: false
+  resource_group: xdrive-gitlab-release-publish
   image: $XDRIVE_CI_GLAB_IMAGE
   stage: release
   tags:
