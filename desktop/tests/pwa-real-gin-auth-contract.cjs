@@ -140,3 +140,76 @@ test('S2B7: real Chrome Gin public share, denial, history, isolation and revocat
   assert.ok(workflow.includes('x.publicShareViewerReturn'))
   assert.ok(workflow.includes('x.publicShareRevoked'))
 })
+
+test('S2B8 authentic Gallery tile → original decoded PNG Viewer → same-document Back', () => {
+  for (const token of [
+    "const tileGalleryRoute = '#/app/gallery'",
+    "galleryTab.locator('[data-xdrive-media-tile]').first()",
+    "await tile.click()",
+    "new URLSearchParams(hash.split('?')[1]).get('node') === String(nodeID)",
+    "interactiveViewer.locator('[data-xdrive-image-phase=\"original\"]')",
+    "image.naturalWidth > 0 && image.naturalHeight > 0",
+    "getByRole('button', { name: '返回', exact: true }).first().click()",
+    'sameDocument', 'sameHost', 'sameGrid', 'scrollOffsetRestored',
+    'galleryTileViewer200', 'galleryTileOriginalDecoded', 'galleryTileViewerReturn',
+  ]) assert.ok(chrome.includes(token), 'missing real S2B8 Gallery route and decode: ' + token)
+  assert.ok(workflow.includes("github.head_ref == 'test/pwa-gallery-viewer-return-s2b8-20261024'"))
+  assert.ok(workflow.includes('galleryTileViewerReturn'))
+  assert.ok(!chrome.includes('context.route(') && !chrome.includes('route.fulfill('))
+})
+
+test('S2B8 genuine PostgreSQL fixture migrates current quota and person-cluster tables', () => {
+  for (const model of [
+    '&meta.LocalPushQuotaHold{}',
+    '&meta.PhotoFace{}', '&meta.PhotoPersonCluster{}',
+    '&meta.PhotoPersonClusterFace{}', '&meta.PhotoPersonClusterState{}',
+    '&meta.PhotoPersonSuggestionReview{}',
+  ]) assert.ok(go.includes(model), 'real Go browser fixture missing ' + model)
+  assert.ok(chrome.includes('const [badTicket] = await Promise.all(['))
+  assert.ok(chrome.includes('assert.equal(badTicket.status(), 401)'))
+  assert.ok(chrome.includes('currentMeta.count, 0'))
+})
+
+test('S2B8: wrong-password share test targets the actual form submit and checks HTTP 401', () => {
+  const publicUI = read('web/src/PublicShare.tsx')
+  assert.ok(publicUI.includes('type="submit"'))
+  assert.ok(publicUI.includes('下载文件'))
+  assert.ok(chrome.includes("getByRole('button', { name: '下载文件', exact: true }).click()"))
+  assert.ok(chrome.includes("new URL(response.url()).pathname === '/api/v1/public/share/download-ticket'"))
+  assert.ok(chrome.includes('assert.equal(badTicket.status(), 401)'))
+  assert.ok(chrome.includes('assert.equal(currentMeta.count, 0)'))
+})
+
+test('S2B8 failed real browser case records only fixed checkpoint and numeric HTTP status', () => {
+  assert.ok(chrome.includes("wrongPasswordTicketStatuses: []"))
+  assert.ok(chrome.includes("sample.wrongPasswordTicketStatuses.push(response.status())"))
+  assert.ok(chrome.includes("summary.cases.push({ ...sample, failedAt: checkpoint })"))
+  assert.ok(chrome.includes("sample.galleryTileOriginalDecoded = true"))
+  assert.ok(chrome.includes("sample.galleryTileViewerReturn = true"))
+  assert.ok(chrome.includes("assert.equal(badTicket.status(), 401)"))
+  assert.ok(chrome.includes("assert.equal(currentMeta.count, 0)"))
+})
+
+test('S2B8 real public-share history uses a unique heading locator', () => {
+  // The current shared Explorer intentionally renders both a title and a file row
+  // for a single file; Playwright strict getByText must not treat these as one.
+  const heading = "getByRole('heading', { name: 'pwa-s2b6-private.png', exact: true }).waitFor()"
+  assert.equal(chrome.split(heading).length - 1, 3,
+    'S2B7 history / Viewer return should resolve the exact visible share heading')
+  assert.ok(!chrome.includes("anonymousPage.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()") ||
+    chrome.includes("await anonymousPage.locator('input[type=\"password\"]').waitFor()"),
+    'share history must not rely on ambiguous duplicate filename text')
+  assert.ok(chrome.includes('sample.publicShareHistoryIsolation = true'))
+  assert.ok(chrome.includes('sample.publicShareViewerReturn = true'))
+})
+
+test('S2B8 real Gallery Back respects actual section route, not an assumed root hash', () => {
+  assert.ok(chrome.includes('const callerHash = window.location.hash'))
+  assert.ok(chrome.includes('document: document.documentElement, host, grid, offset: host.scrollTop, callerHash'))
+  assert.ok(chrome.includes('beforeTile.callerHash'))
+  assert.ok(chrome.includes('sameCallerRoute: entry?.callerHash === location.hash'))
+  assert.ok(chrome.includes('returned.sameCallerRoute'))
+  assert.ok(chrome.includes('sample.galleryBackDiagnostic'))
+  assert.ok(chrome.includes('viewerReturn: window.history.state?.viewerReturn === true'))
+  assert.ok(!chrome.includes('await galleryTab.waitForFunction(hash => location.hash === hash, tileGalleryRoute)'))
+})

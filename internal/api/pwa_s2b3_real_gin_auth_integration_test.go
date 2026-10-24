@@ -96,6 +96,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{},
 		&meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
+		&meta.LocalPushQuotaHold{},
 		&meta.DownloadProgress{}, &meta.AuditEvent{},
 		&meta.FileOperation{}, &meta.FileRecentAccess{},
 		&meta.FileFavorite{}, &meta.FileQuickAccess{},
@@ -109,6 +110,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 		&meta.PhotoPlaceLabel{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
+		&meta.PhotoPersonClusterState{}, &meta.PhotoPersonSuggestionReview{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.BackgroundOwnerCancellation{}, &meta.ArchivePrepareRun{},
 	); err != nil {
