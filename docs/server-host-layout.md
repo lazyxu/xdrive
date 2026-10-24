@@ -212,27 +212,39 @@ A deployment originally installed as root can be migrated to a normal user with:
 /root/.xd/bin/xdrive-server migrate-user USER
 ```
 
-By default, migration **does not change Unix group membership**. If the target
-cannot access Docker, the root operator may explicitly approve system Docker
-group membership:
+The root-only `migrate-user USER` command first tries the target user's
+clean Docker context, Rootless socket and rootful socket **without changing
+permissions**. When all probes fail, it automatically checks the local
+rootful Docker daemon, the `docker` group and the socket's numeric group
+owner. If valid, migration adds the target to Docker's group:
 
 ```bash
-/root/.xd/bin/xdrive-server migrate-user USER --grant-docker-group
+usermod -aG docker USER
 ```
 
-This opt-in first tries the target user's Docker context, Rootless socket and
-rootful socket without making changes. Only if all fail does the migrator
-check the local rootful daemon, `docker` group and system socket group; it
-then executes `usermod -aG docker USER` and immediately checks Docker access
-again using a fresh target-user process. If the daemon is down or the socket
-does not belong to the `docker` group, it fails before stopping the source.
+It then verifies the updated supplementary groups using a fresh target-user
+process (conceptually `runuser -u USER -- docker info`). The verification
+clears inherited root Docker context and TLS overrides and pins
+`DOCKER_HOST=unix:///var/run/docker.sock`. It checks the target's Docker
+access **before** stopping the root-owned deployment. Unavailable daemon,
+mismatched socket/group, failed `usermod`, or failed target-user verification
+aborts before service downtime.
 
-**Security:** The `docker` group grants near-root access to the host.
-Membership is permanent **even if the later migration fails**; the migrator
-does not attempt to undo this explicitly authorized system grant. Prefer
-Docker Rootless Mode if such broad host permissions are not acceptable.
-Neither the regular installer nor an ordinary `migrate-user USER` invocation
-automatically changes groups.
+To forbid automatic privilege changes, use:
+
+```bash
+/root/.xd/bin/xdrive-server migrate-user USER --no-grant-docker-group
+```
+
+The former explicit `--grant-docker-group` switch remains available for
+compatibility, but is no longer required.
+
+**Security:** Docker group membership confers near-root privileges on a
+rootful Docker host, and the host command prints a warning at grant time.
+Membership persists **even if the subsequent migration fails**, without
+automatic revocation. Prefer Docker Rootless Mode when host-root-equivalent
+permissions are not appropriate. The regular non-root installer still
+never modifies system groups.
 
 The migration command preflights the target user's Docker access and free disk space, stops the root-owned deployment, copies the complete xDrive home to `/home/USER/.xd`, rewrites xDrive-managed absolute data paths, transfers the managed backup schedule, starts the copied deployment through the target user's Docker context, and requires the server health check to pass before committing the migration. If startup or verification fails, the target deployment is stopped and the original root deployment is restarted.
 
