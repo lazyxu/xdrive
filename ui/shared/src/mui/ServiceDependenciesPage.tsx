@@ -23,6 +23,7 @@ import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-depe
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { xDrivePhotoOCRVerified } from '../service-dependencies'
 import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
@@ -187,6 +188,56 @@ const automaticPolicyLabels = {
   unknown: '无法验证任务策略（旧版服务或配置不可读取）',
   'not-applicable': '不适用：照片创作当前不受自动分析调度开关控制',
 } as const
+
+// Fixed reason codes reported by the authenticated Server, never raw Socket,
+// bearer, filesystem path, or third-party model error text.
+const ocrAutoStateLabels = {
+  enabled: '已启用（当前 Server 自动 OCR 条件已核对）',
+  disabled: '未启用',
+  unavailable: '当前无法运行',
+  unknown: '无法确认已启用',
+} as const
+
+const ocrReasonLabels: Record<NonNullable<XDriveServiceDependency['ocr_reason']> | 'legacy_unverified', string> = {
+  ready: '模型 Info、已启动的 SmartRunner、可信宿主观测和自动任务准入均符合当前实例条件；尚不证明真实照片识别成功。',
+  deployment_profile_disabled: '可信宿主显示 photo-intelligence 部署 Profile 未启用，当前 Server 也没有 OCR 分析器。',
+  analyzer_unconfigured: '当前 Server 没有配置 OCR 分析器；检查 photo-intelligence 部署 Profile、分析器 Socket 配置与版本。',
+  host_stopped: '受管 Photo Intelligence 容器已停止，当前 OCR 不能运行；请检查共享宿主状态。',
+  host_unhealthy: '受管 Photo Intelligence 容器健康检查失败；检查容器状态与模型文件。',
+  host_starting: 'Photo Intelligence 容器仍在启动；目前还不能确认 OCR 可用。',
+  host_unverified: '缺少可信宿主健康和部署启用观测；模型 Info 成功不能证明宿主已生效。',
+  host_profile_mismatch: '模型可以连接，但可信宿主未启用受管 Profile；核对受管与手动部署是否一致。',
+  probe_timeout: 'OCR 模型 Info 检测超时；检查模型加载耗时、运行负载和私有 Socket 响应。',
+  probe_unreachable: '当前 Server 无法通过私有 Socket 连接 OCR 模型；检查宿主、挂载、权限和模型服务进程。',
+  probe_auth_rejected: 'OCR 模型 Info 拒绝认证；核对 Server 与模型进程之间的私有令牌配置。',
+  probe_invalid_response: 'OCR 模型协议或清单无效；检查 Server 和 Photo Intelligence 模型镜像版本。',
+  probe_interrupted: '模型检测请求被取消；当前健康状态未确认。',
+  probe_failed: 'OCR 模型 Info 检测失败；检查共享容器、模型文件和服务日志。',
+  probe_endpoint_missing: 'OCR 模型接口不存在（HTTP 404）；请核对 Server 和模型镜像版本。',
+  probe_server_error: 'OCR 模型进程报告服务错误（HTTP 5xx）；请检查模型加载、文件和容器运行日志。',
+  auto_paused: '自动分析策略已在当前实例暂停；检查全局开关及「视觉识别 / OCR」开关。',
+  auto_pending: '自动分析配置的目标修订尚未在当前实例确认生效；请重新检测。',
+  auto_unmanaged: '当前采用默认自动策略，缺少管理员受审计的确认修订；不能把默认允许当成已验证启用。',
+  auto_unknown: '无法验证当前实例自动任务准入策略；检查数据库、Server 版本及策略读取。',
+  service_unverified: '当前 Server 无法验证 OCR 模型健康状态；请刷新并核对组件版本。',
+  runner_unavailable: '当前 Server 没有可执行的 OCR／视觉任务 Runner 或后台调度器；请核对分析预览地址、模型初始化与 Scheduler 启动状态。',
+  legacy_unverified: '当前 Server 或 Agent 未返回 OCR 启用诊断字段；请更新后重新检测，不能据此声称已启用。',
+}
+
+function ocrAutoStateLabel(service: XDriveServiceDependency) {
+  // A contradictory "enabled" packet must not display as verified.
+  if (service.ocr_auto_state === 'enabled' && !xDrivePhotoOCRVerified(service)) {
+    return ocrAutoStateLabels.unknown
+  }
+  return ocrAutoStateLabels[service.ocr_auto_state ?? 'unknown'] ?? ocrAutoStateLabels.unknown
+}
+
+function ocrAutoReasonLabel(service: XDriveServiceDependency) {
+  if (service.ocr_auto_state === 'enabled' && !xDrivePhotoOCRVerified(service)) {
+    return 'OCR 启用报告与模型健康、自动任务策略或可信宿主观测不一致；请刷新并核对 Server／Agent 版本。'
+  }
+  return ocrReasonLabels[service.ocr_reason ?? 'legacy_unverified'] ?? ocrReasonLabels.legacy_unverified
+}
 
 const photoHostStateLabels = {
   healthy: '固定容器 Docker 健康检查通过',
@@ -528,6 +579,12 @@ function ServiceOverviewCard({ service, onOpen }: {
           WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }}>
         {service.detail}
       </Typography>
+      {service.id === 'photo-smart' ? (
+        <Typography variant="caption" color="text.secondary"
+          data-xdrive-ocr-overview-activation sx={{ width: '100%', overflowWrap: 'anywhere' }}>
+          自动 OCR：{ocrAutoStateLabel(service)} · {ocrAutoReasonLabel(service)}
+        </Typography>
+      ) : null}
       <Stack direction="row" alignItems="center" justifyContent="space-between"
         sx={{ width: '100%', mt: 'auto', pt: 0.5, gap: 1 }}>
         <Typography variant="caption" color="text.secondary" title={assessment.summary}
@@ -1799,6 +1856,46 @@ export function XDriveServiceDependenciesPage({
                       }))}>
                       {showVerify ? '收起检测与生效证据' : '查看检测与生效证据'}
                     </Button>
+                  )}
+                  {selectedPage === 'photo-smart' && currentTab === 'status' && selectedItem && (
+                    <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2 }}
+                      data-xdrive-ocr-dependency-status>
+                      <Stack spacing={1}>
+                        <Typography variant="subtitle2" fontWeight={700}>OCR 文字识别</Typography>
+                        <Typography role="status" variant="body2" fontWeight={700}
+                          data-xdrive-ocr-auto-state
+                          color={xDrivePhotoOCRVerified(selectedItem) ? 'success.main'
+                            : selectedItem.ocr_auto_state === 'unavailable' ? 'error.main'
+                              : 'text.primary'}>
+                          自动 OCR：{ocrAutoStateLabel(selectedItem)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary"
+                          data-xdrive-ocr-diagnostic-reason>
+                          原因：{ocrAutoReasonLabel(selectedItem)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          模型健康：{selectedItem.status === 'ready'
+                            ? 'Smart Info 已验证，真实照片识别另验'
+                            : selectedItem.status === 'disabled'
+                              ? '本实例未配置分析器'
+                              : selectedItem.status === 'unavailable'
+                                ? '探针未通过'
+                                : '未验证'}
+                          {' · '}宿主：{photoHostStateLabels[selectedItem.photo_host_runtime_state ?? 'unknown']}
+                          {' · '}自动准入：{automaticPolicyLabels[selectedItem.automatic_policy_state ?? 'unknown']}
+                          {' · '}执行器：{selectedItem.ocr_reason === 'runner_unavailable'
+                            ? '未就绪' : selectedItem.ocr_auto_state === 'enabled' ? '已核验' : '待确认'}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          OCR 与动物／物体识别共用自动任务开关和 photo.smart_search 队列；
+                          我的任务和全局后台任务展示同一任务，取消和重新分析同时作用于两种分析结果。
+                        </Typography>
+                        <Button size="small" variant="outlined" sx={{ alignSelf: 'flex-start' }}
+                          onClick={() => navigateTo({ service: 'photo-smart', tab: 'verify' })}>
+                          检测 OCR 模型
+                        </Button>
+                      </Stack>
+                    </Paper>
                   )}
                   {['photo-face', 'photo-smart', 'photo-semantic'].includes(selectedPage) && currentTab === 'status' && (
                     <Button size="small" variant="outlined" sx={{ mt: 1.5 }}

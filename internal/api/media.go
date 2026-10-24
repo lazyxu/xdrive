@@ -114,6 +114,7 @@ type mediaItemDTO struct {
 	EditRecipe       *mediaEditRecipeDTO       `json:"edit_recipe,omitempty"`
 	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
 	FoldMemberIDs    []uint64                  `json:"fold_member_ids,omitempty"`
+	OCR              *mediaOCRDTO              `json:"ocr,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
 	TrashRoot        *nodeDTO                  `json:"trash_root,omitempty"`
@@ -301,6 +302,11 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "resolve photo asset failed")
 		return
 	}
+	ocr, err := s.mediaOCRDetails(c.Request.Context(), node.OwnerID, node, metadata)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "read OCR result failed")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
 		Node:             toNodeDTO(node),
@@ -312,6 +318,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		Description:      presentation.Description,
 		EditRecipe:       presentation.EditRecipe,
 		Resources:        presentation.Resources,
+		OCR:              ocr,
 		DerivedResources: resources,
 		LivePhoto:        livePhoto,
 	})

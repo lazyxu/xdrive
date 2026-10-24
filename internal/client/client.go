@@ -329,6 +329,8 @@ type ServiceDependency struct {
 	HealthState                      string `json:"health_state,omitempty"`
 	ActivationState                  string `json:"activation_state,omitempty"`
 	AutomaticPolicyState             string `json:"automatic_policy_state,omitempty"`
+	OCRAutoState                     string `json:"ocr_auto_state,omitempty"`
+	OCRReason                        string `json:"ocr_reason,omitempty"`
 	AutomaticPolicyDesiredRevision   uint64 `json:"automatic_policy_desired_revision,omitempty"`
 	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`

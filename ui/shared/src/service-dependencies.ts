@@ -31,6 +31,18 @@ export type XDriveServiceDependency = {
   health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
   activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
   automatic_policy_state?: 'enabled' | 'paused' | 'partial' | 'pending' | 'unmanaged' | 'unknown' | 'not-applicable'
+  // Only current-Server automatic OCR readiness; not real-image success or
+  // all-replica activation. Missing fields from an old Server mean unknown.
+  ocr_auto_state?: 'enabled' | 'disabled' | 'unavailable' | 'unknown'
+  ocr_reason?:
+    | 'ready' | 'deployment_profile_disabled' | 'analyzer_unconfigured'
+    | 'host_stopped' | 'host_unhealthy' | 'host_starting'
+    | 'host_unverified' | 'host_profile_mismatch'
+    | 'probe_timeout' | 'probe_unreachable' | 'probe_auth_rejected'
+    | 'probe_invalid_response' | 'probe_interrupted' | 'probe_failed'
+    | 'probe_endpoint_missing' | 'probe_server_error'
+    | 'auto_paused' | 'auto_pending' | 'auto_unmanaged' | 'auto_unknown'
+    | 'service_unverified' | 'runner_unavailable'
   automatic_policy_desired_revision?: number
   automatic_policy_effective_revision?: number
   // Only Caddy reports these trusted host observations, never the domain itself.
@@ -58,6 +70,17 @@ export type XDriveServiceDependency = {
 export type XDriveServiceDependenciesSnapshot = {
   checked_at: string
   services: XDriveServiceDependency[]
+}
+
+/** An enabled indicator must agree with all independently observed Server
+ * fields; an old/malformed Agent response cannot promote OCR to green. */
+export function xDrivePhotoOCRVerified(service: XDriveServiceDependency): boolean {
+  return service.id === 'photo-smart' &&
+    service.ocr_auto_state === 'enabled' && service.ocr_reason === 'ready' &&
+    service.status === 'ready' &&
+    service.automatic_policy_state === 'enabled' &&
+    service.photo_host_runtime_state === 'healthy' &&
+    service.photo_host_profile_configured === true
 }
 
 // Administrator-only Caddy HTTPS intent, never evidence of installed host configuration.

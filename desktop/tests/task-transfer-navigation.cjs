@@ -106,7 +106,11 @@ test('external global navigation honors the administrator gate', () => {
 })
 
 function renderTaskPage(props) {
+  const background = load('ui/shared/src/background-tasks.ts', {
+    './format': { formatBytes: String },
+  })
   return load('ui/shared/src/mui/TaskCenterPage.tsx', {
+    '../background-tasks': background,
     '@mui/material': { Box: 'Box', CircularProgress: 'CircularProgress', Divider: 'Divider', Stack: 'Stack', ToggleButton: 'ToggleButton', ToggleButtonGroup: 'ToggleButtonGroup', Typography: 'Typography' },
     './TaskPresentation': { XDriveTaskCenterSection: 'TaskSection' },
     './StatePanel': { XDriveStatePanel: 'StatePanel' },
@@ -133,6 +137,7 @@ test('Tasks keeps archive preparation and other server work without duplicating 
       { id: 'sync-run', domain: 'sync_run', kind: 'source.sync' },
       { id: 'sync-scheduled', domain: 'scheduler', kind: 'source.sync' },
       { id: 'index', domain: 'scheduler', kind: 'media.index' },
+      { id: 'smart-ocr', domain: 'scheduler', kind: 'photo.smart_search' },
       { id: 'archive', domain: 'archive_prepare', kind: 'archive.prepare' },
       { id: 'other', domain: 'other_background_work', kind: 'other' },
     ],
@@ -140,7 +145,8 @@ test('Tasks keeps archive preparation and other server work without duplicating 
   assert.equal(tree.props.title, '任务')
   const lists = elements(tree, 'BackgroundTaskList')
   assert.deepEqual(lists[0].props.tasks.map((item) => item.id), ['sync-run', 'sync-scheduled'])
-  assert.deepEqual(lists[1].props.tasks.map((item) => item.id), ['index', 'archive', 'other'])
+  assert.deepEqual(lists[1].props.tasks.map((item) => item.id), ['smart-ocr'])
+  assert.deepEqual(lists[2].props.tasks.map((item) => item.id), ['index', 'archive', 'other'])
 })
 
 test('Global Tasks renders an independent administrator page and ordinary users fall back to Tasks', () => {

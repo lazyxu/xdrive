@@ -159,7 +159,7 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		},
 		{
 			AssetID: assets[0].ID, Kind: meta.PhotoAnalysisKindOCRText,
-			AnalyzerVersion: "ocr-v1", InputFingerprint: "smart-input-1",
+			AnalyzerVersion: "ocr-v1", InputFingerprint: mediaOCRInputFingerprint(files[0].SHA256, nodes[0].ID, nodes[0].Revision),
 			State: meta.PhotoAnalysisStateReady, CompletedAt: &readyAt,
 		},
 		{
@@ -458,4 +458,26 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"",
 		nodes[0].ID,
 	)
+
+	// Detail reads are Owner-scoped, and search never exposes a stale OCR hit.
+	detailNode := nodes[0]
+	detailNode.File = &files[0]
+	detail, err := server.mediaOCRDetails(context.Background(), owner.ID, detailNode, metadata[0])
+	if err != nil || detail == nil || detail.State != "ready" || detail.Text != "Marina Hotel invoice 2026" {
+		t.Fatalf("owner OCR detail=%+v error=%v", detail, err)
+	}
+	foreign, err := server.mediaOCRDetails(context.Background(), owner.ID+100, detailNode, metadata[0])
+	if err != nil || foreign == nil || foreign.State == "ready" || foreign.Text != "" {
+		t.Fatalf("foreign Owner OCR detail=%+v error=%v", foreign, err)
+	}
+	if err := db.Model(&meta.PhotoAnalysisState{}).
+		Where("asset_id = ? AND kind = ?", assets[0].ID, meta.PhotoAnalysisKindOCRText).
+		Update("input_fingerprint", "obsolete-ocr-fingerprint").Error; err != nil {
+		t.Fatal(err)
+	}
+	stale, err := server.mediaOCRDetails(context.Background(), owner.ID, detailNode, metadata[0])
+	if err != nil || stale == nil || stale.State != "stale" || stale.Text != "" {
+		t.Fatalf("stale OCR detail=%+v error=%v", stale, err)
+	}
+	assertIDs("stale OCR must not match", mediaQueryOptions{Search: "invoice 2026"}, "")
 }

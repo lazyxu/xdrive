@@ -8,6 +8,7 @@ import type {
   XDriveFileOperationConflictResolution,
   XDriveTransferTask,
 } from '..'
+import { xDriveBackgroundTaskIsOCR } from '../background-tasks'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackgroundTaskList, XDriveBackgroundTaskTable } from './BackgroundTaskCenter'
 import { XDriveFileOperationCenter } from './FileOperationCenter'
@@ -167,6 +168,7 @@ export function XDriveTaskCenterPage({
   const contentRef = useRef<HTMLDivElement>(null)
   const focusedRequestRef = useRef(0)
   const [globalTaskView, setGlobalTaskView] = useState<'cards' | 'table'>('cards')
+  const [globalOCRFilter, setGlobalOCRFilter] = useState<'all' | 'ocr'>('all')
 
   useEffect(() => {
     if (
@@ -193,9 +195,16 @@ export function XDriveTaskCenterPage({
   const syncTasks = backgroundTasks.filter(
     (task) => task.domain === 'sync_run' || task.kind === 'source.sync',
   )
+  const ocrTasks = backgroundTasks.filter((task) => xDriveBackgroundTaskIsOCR(task.kind))
   const derivedTasks = backgroundTasks.filter(
-    (task) => task.domain !== 'file_operation' && task.domain !== 'sync_run' && task.kind !== 'source.sync',
+    (task) => task.domain !== 'file_operation' && task.domain !== 'sync_run' &&
+      task.kind !== 'source.sync' && !xDriveBackgroundTaskIsOCR(task.kind),
   )
+  // Global OCR filter is intentionally limited to the authorized paged response.
+  const globalOCRCount = globalBackgroundTasks.filter((task) => xDriveBackgroundTaskIsOCR(task.kind)).length
+  const displayedGlobalTasks = globalOCRFilter === 'ocr'
+    ? globalBackgroundTasks.filter((task) => xDriveBackgroundTaskIsOCR(task.kind))
+    : globalBackgroundTasks
   const actions = scope === 'mine'
     ? pageActions ?? (clearHistory ? (
       <XDriveActionButton
@@ -243,13 +252,24 @@ export function XDriveTaskCenterPage({
         </Stack>
         {scope === 'global' ? (
           <XDriveTaskCenterSection title="服务器后台任务"
-            loadedCount={globalTasksAvailable && globalBackgroundTasksLoaded ? globalBackgroundTasks.length : undefined}
+            loadedCount={globalTasksAvailable && globalBackgroundTasksLoaded ? displayedGlobalTasks.length : undefined}
             description="管理员可查看跨用户与系统任务；控制操作由服务端授权决定。">
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}
               justifyContent="space-between" sx={{ mb: 1.5 }}>
               <Typography variant="body2" color="text.secondary">
                 与个人后台任务使用同一任务卡片；全局任务额外显示用户和系统归属。
               </Typography>
+              {globalTasksAvailable ? (
+                <ToggleButtonGroup size="small" exclusive value={globalOCRFilter}
+                  aria-label="全局 OCR 任务筛选"
+                  onChange={(_event, next: 'all' | 'ocr' | null) => {
+                    if (next) setGlobalOCRFilter(next)
+                  }}
+                  sx={{ '& .MuiToggleButton-root': { minHeight: 44 } }}>
+                  <ToggleButton value="all">全部任务</ToggleButton>
+                  <ToggleButton value="ocr">OCR / 视觉</ToggleButton>
+                </ToggleButtonGroup>
+              ) : null}
               {globalTasksAvailable ? <ToggleButtonGroup
                 size="small"
                 exclusive
@@ -264,17 +284,25 @@ export function XDriveTaskCenterPage({
                 <ToggleButton value="table" aria-label="表格视图">表格</ToggleButton>
               </ToggleButtonGroup> : null}
             </Stack>
+            {globalTasksAvailable && globalBackgroundTasksLoaded ? (
+              <Typography variant="caption" color="text.secondary" data-xdrive-global-ocr-count>
+                当前已加载 {globalOCRCount} 条 OCR / 视觉共用任务；筛选仅作用于已加载页面。
+                继续加载历史可能发现更多；跨用户控制仍由 Server 授权和审计。
+              </Typography>
+            ) : null}
             {!globalTasksAvailable ? (
               <XDriveStatePanel variant="plain"
                 message="当前客户端、xdrive-agent 或服务端尚不支持全局后台任务，请更新相应组件后重试。" />
             ) : globalTaskView === 'cards' ? (
               <XDriveBackgroundTaskList
-                tasks={globalBackgroundTasks}
+                tasks={displayedGlobalTasks}
                 loading={globalBackgroundTasksLoading}
                 loaded={globalBackgroundTasksLoaded}
                 failed={globalBackgroundTasksReadFailed}
                 loadEpoch={globalBackgroundTasksLoadEpoch}
-                emptyMessage="暂无全局后台任务"
+                emptyMessage={globalOCRFilter === 'ocr'
+                  ? '已加载页面暂无 OCR / 视觉任务；继续加载历史可查看更多'
+                  : '暂无全局后台任务'}
                 controlKey={backgroundControlKey}
                 focusedTaskID={backgroundFocusTaskID}
                 showOwners
@@ -282,10 +310,13 @@ export function XDriveTaskCenterPage({
               />
             ) : (
               <XDriveBackgroundTaskTable
-                tasks={globalBackgroundTasks}
+                tasks={displayedGlobalTasks}
                 loading={globalBackgroundTasksLoading}
                 loaded={globalBackgroundTasksLoaded}
                 failed={globalBackgroundTasksReadFailed}
+                emptyMessage={globalOCRFilter === 'ocr'
+                  ? '已加载页面暂无 OCR / 视觉任务；继续加载历史可查看更多'
+                  : '暂无全局后台任务'}
                 loadEpoch={globalBackgroundTasksLoadEpoch}
                 controlKey={backgroundControlKey}
                 focusedTaskID={backgroundFocusTaskID}
@@ -351,6 +382,22 @@ export function XDriveTaskCenterPage({
                     failed={backgroundTasksReadFailed}
                     loadEpoch={backgroundTasksLoadEpoch}
                     emptyMessage="暂无同步文件夹任务"
+                    controlKey={backgroundControlKey}
+                    focusedTaskID={backgroundFocusTaskID}
+                    onControl={onBackgroundTaskControl}
+                  />
+                </XDriveTaskCenterSection>
+                <Divider />
+                <XDriveTaskCenterSection title="照片文字识别（OCR）与视觉分类"
+                  loadedCount={backgroundTasksLoaded ? ocrTasks.length : undefined}
+                  description="同一 SmartRunner 任务处理两种模型结果；取消与重新分析共用后台控制。">
+                  <XDriveBackgroundTaskList
+                    tasks={ocrTasks}
+                    loading={backgroundTasksLoading}
+                    loaded={backgroundTasksLoaded}
+                    failed={backgroundTasksReadFailed}
+                    loadEpoch={backgroundTasksLoadEpoch}
+                    emptyMessage="已加载任务中暂无 OCR / 视觉任务；识别结果可在图库属性中查看"
                     controlKey={backgroundControlKey}
                     focusedTaskID={backgroundFocusTaskID}
                     onControl={onBackgroundTaskControl}

@@ -39,6 +39,7 @@ import {
 } from './MediaGalleryUtils'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveMediaNodeLocationSection } from './MediaNodeLocationSection'
+import { XDriveMediaOCRDetails } from './MediaGalleryOCRDetails'
 
 type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
 type MediaMotionLoader = (
@@ -245,6 +246,7 @@ export interface XDriveMediaDetailsContentProps {
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
   loadThumbnail: MediaThumbnailLoader
+  loadMediaItem?: (nodeID: number, signal?: AbortSignal) => Promise<MediaItem>
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   albums: MediaAlbum[]
@@ -264,6 +266,7 @@ export function XDriveMediaDetailsContent({
   loadNodeLocation,
   onShowInFolder,
   loadThumbnail,
+  loadMediaItem,
   loadLivePhotoMotion,
   loadPreviewURL,
   albums,
@@ -704,6 +707,10 @@ export function XDriveMediaDetailsContent({
           ) : null}
         </Stack>
       </Box>
+      {(loadMediaItem || item.ocr) && item.metadata.media_kind === "image" ? (
+        <XDriveMediaOCRDetails key={String(item.node.id) + ":" + String(item.node.revision)}
+          item={item} loadMediaItem={loadMediaItem} />
+      ) : null}
       <Box component="section" aria-label="文件与资源" data-xdrive-media-details-file-resources>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>文件与资源</Typography>
         <MediaDetailsRows rows={sectionRows.files} />

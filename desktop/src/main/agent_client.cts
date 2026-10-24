@@ -1373,6 +1373,14 @@ export type AgentServiceDependenciesSnapshot = {
     health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
     activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
     automatic_policy_state?: 'enabled' | 'paused' | 'partial' | 'pending' | 'unmanaged' | 'unknown' | 'not-applicable'
+    ocr_auto_state?: 'enabled' | 'disabled' | 'unavailable' | 'unknown'
+    ocr_reason?: 'ready' | 'deployment_profile_disabled' | 'analyzer_unconfigured'
+      | 'host_stopped' | 'host_unhealthy' | 'host_starting' | 'host_unverified'
+      | 'host_profile_mismatch' | 'probe_timeout' | 'probe_unreachable'
+      | 'probe_auth_rejected' | 'probe_invalid_response'
+      | 'probe_interrupted' | 'probe_failed' | 'probe_endpoint_missing' | 'probe_server_error'
+      | 'auto_paused' | 'auto_pending' | 'auto_unmanaged' | 'auto_unknown' | 'service_unverified'
+      | 'runner_unavailable'
     automatic_policy_desired_revision?: number
     automatic_policy_effective_revision?: number
     https_configured?: boolean

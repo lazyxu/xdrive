@@ -365,3 +365,17 @@ func TestPhotoIntelligenceFailurePreservesPendingUserRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPhotoIntelligenceProgressPhaseSmartIncludesOCR(t *testing.T) {
+	if got := photoIntelligenceProgressPhase(photoIntelligenceSmartSearch); got != "photo_ocr_visual" {
+		t.Fatalf("smart phase=%q; expected shared OCR and visual phase", got)
+	}
+	for _, kind := range []photoIntelligenceTaskKind{
+		photoIntelligenceFace, photoIntelligenceSemanticSearch,
+		photoIntelligencePlace, photoIntelligencePersonCluster,
+	} {
+		if got := photoIntelligenceProgressPhase(kind); got != "processing" {
+			t.Fatalf("unexpected OCR phase for %q: %q", kind, got)
+		}
+	}
+}
