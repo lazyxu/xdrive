@@ -13,7 +13,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Superseded PR heads can be cancelled. Master runs must survive newer
+  # pushes long enough to publish their exact snapshot artifacts; otherwise
+  # frequent merges can starve the rolling release indefinitely.
+  # GitHub coalesces pending runs in this group, retaining the running run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 
@@ -2840,6 +2844,7 @@ jobs:
           XD_CADDY_IMAGE: ghcr.io/lazyxu/xdrive-caddy:edge
         run: |
           bash -n deploy/install-server.sh
+          python3 scripts/test-master-snapshot-concurrency.py
           bash -n scripts/server-backup.sh
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/server-restore.sh
