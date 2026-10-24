@@ -1,0 +1,37 @@
+[Unit]
+Description=xDrive Caddy Collector operator-only preflight (NO Applied)
+Documentation=https://github.com/lazyxu/xdrive/issues/2075
+
+[Service]
+Type=oneshot
+User=xdrive-caddy-collector
+Group=xdrive-caddy-collector
+WorkingDirectory=/
+ExecStart=/usr/local/libexec/xdrive-caddy-collector-preflight
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateNetwork=yes
+PrivateDevices=yes
+PrivateTmp=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelLogs=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadOnlyPaths=/etc/xdrive/collector /var/lib/xdrive-caddy-collector
+TimeoutStartSec=10s
+
+# Deliberately no [Install]: this is NOT an automatically enabled service.
