@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"path"
 	"strings"
 
@@ -25,6 +26,25 @@ var errLocalBackupCommonBatchUnavailable = errors.New("本机多文件备份未�
 // Stop scheduling at file boundaries; never infer remote physical cancel.
 var errLocalCommonBatchPaused = errors.New("local batch paused between files")
 var errLocalCommonBatchCancelled = errors.New("local batch scheduling cancelled")
+
+// localCommonBatchRecordSkippedUnsafe makes unsafe entries omitted by the
+// read-only inventory scanner visible in the existing file-level result.
+// They are never put into the durable upload queue or treated as backed up.
+// "Inspected" includes these observed-but-rejected entries, so UI counts
+// cannot suggest every local item was processed successfully.
+func localCommonBatchRecordSkippedUnsafe(
+	out *localBackupCommonBatchSummary, skipped int64,
+) error {
+	if out == nil || skipped < 0 || out.InspectedFiles < 0 ||
+		out.UnsupportedFiles < 0 ||
+		skipped > math.MaxInt64-out.InspectedFiles ||
+		skipped > math.MaxInt64-out.UnsupportedFiles {
+		return errLocalBackupCommonBatchUnavailable
+	}
+	out.InspectedFiles += skipped
+	out.UnsupportedFiles += skipped
+	return nil
+}
 
 func localCommonBatchControlState(err error) (string, bool) {
 	switch {
@@ -299,6 +319,12 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		snapshot.SnapshotSHA256 == "" {
 		return out, errLocalBackupCommonBatchUnavailable
 	}
+	// The journal intentionally excludes symlinks and other unsafe OS entries.
+	// Count them as unsupported instead of silently reporting a clean run.
+	if err := localCommonBatchRecordSkippedUnsafe(&out, scanned.SkippedUnsafeItems); err != nil {
+		return out, err
+	}
+	publish()
 	lastRules := func() error {
 		latest, err := api.LocalBoundRules(workCtx, sourceID, proof)
 		if err != nil || latest.SourceID != sourceID ||
