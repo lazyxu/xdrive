@@ -1973,3 +1973,167 @@ test('P1 standalone Text Viewer cancels and fences A→B→A and cross-owner sam
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+for (const [app, fileName, label] of [
+  ['text-viewer', 'notes.md', '下载完整文件'],
+  ['pdf-viewer', 'handbook.pdf', '下载'],
+  ['audio-player', 'recording.mp3', '下载'],
+]) {
+  test(`P1 standalone ${app} download is single-flight, surfaces errors, then retries`, async () => {
+    const node = { id: 911, revision: 3, type: 'file', name: fileName, size: 700 }
+    const pending = []
+    const api = {
+      node: async () => node,
+      fileTextPreview: async () => ({ text: 'hello', truncated: false, size: 5 }),
+      filePreviewURL: async () => 'https://example.invalid/preview',
+      download(target) {
+        return new Promise((resolve, reject) => pending.push({ target, resolve, reject }))
+      },
+    }
+    let renderer
+    const errors = () => renderer.root.findAll(el =>
+      el.type === 'div' && el.props['data-xdrive-standalone-download-error'] !== undefined)
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app, params: { node: node.id } },
+          api, gallerySource: {}, shareDialogAdapter: {},
+          onClose() {}, onReplaceRoute() {}, onError(reason) { throw reason },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      const action = buttons(renderer, label)[0]
+      assert.ok(action, 'the original download action remains available')
+      await act(async () => {
+        action.props.onClick()
+        action.props.onClick()
+        await Promise.resolve()
+      })
+      assert.equal(pending.length, 1, 'rapid duplicate clicks must trigger one download')
+      assert.equal(buttons(renderer, label)[0].props.disabled, true)
+      await act(async () => {
+        pending[0].reject(new Error('download unavailable'))
+        await Promise.resolve()
+      })
+      assert.equal(errors().length, 1, 'failed transfer must be visible inside its Viewer')
+      assert.ok(errors()[0].findAll(el => el.type === 'p').some(el =>
+        el.children.join('').includes('download unavailable')))
+      assert.equal(buttons(renderer, label)[0].props.disabled, false)
+      await act(async () => {
+        buttons(renderer, label)[0].props.onClick()
+        await Promise.resolve()
+      })
+      assert.equal(errors().length, 0, 'retry clears the stale error')
+      assert.equal(pending.length, 2, 'retry must use a fresh authenticated transfer')
+      await act(async () => {
+        pending[1].resolve()
+        await Promise.resolve()
+      })
+      assert.equal(errors().length, 0)
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  })
+
+  test(`P0 standalone ${app} fences old download callbacks and receipts across Owners`, async () => {
+    const node = { id: 912, revision: 4, type: 'file', name: fileName, size: 700 }
+    const pending = []
+    const mkAPI = owner => ({
+      node: async () => node,
+      fileTextPreview: async () => ({ text: owner, truncated: false, size: 1 }),
+      download(target) {
+        return new Promise((resolve, reject) => pending.push({ owner, target, resolve, reject }))
+      },
+    })
+    const apiA = mkAPI('A'), apiB = mkAPI('B')
+    const props = api => ({
+      route: { app, params: { node: node.id } },
+      api, gallerySource: {}, shareDialogAdapter: {},
+      onClose() {}, onReplaceRoute() {}, onError(reason) { throw reason },
+    })
+    const errors = () => renderer.root.findAll(el =>
+      el.type === 'div' && el.props['data-xdrive-standalone-download-error'] !== undefined)
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, props(apiA)),
+          { createNodeMock: () => ({ focus() {} }) })
+      })
+      const oldAction = buttons(renderer, label)[0].props.onClick
+      await act(async () => { oldAction(); await Promise.resolve() })
+      assert.equal(pending.length, 1)
+      await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(apiB))))
+      assert.equal(errors().length, 0)
+      await act(async () => { oldAction(); await Promise.resolve() })
+      assert.equal(pending.length, 1, 'stale action may not invoke the prior Owner')
+      await act(async () => {
+        buttons(renderer, label)[0].props.onClick()
+        await Promise.resolve()
+      })
+      assert.equal(pending.length, 2)
+      assert.equal(pending[1].owner, 'B')
+      await act(async () => {
+        pending[0].reject(new Error('PRIVATE A DOWNLOAD FAILURE'))
+        await Promise.resolve()
+      })
+      assert.equal(errors().length, 0, 'prior Owner receipt may not poison the current Viewer')
+      await act(async () => {
+        pending[1].reject(new Error('B transfer failed'))
+        await Promise.resolve()
+      })
+      assert.equal(errors().length, 1)
+      assert.ok(errors()[0].findAll(el => el.type === 'p').some(el =>
+        el.children.join('').includes('B transfer failed')))
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  })
+}
+
+test('P0 PDF/Audio standalone Viewer A→B→A never revives old metadata before revalidation', async () => {
+  for (const app of ['pdf-viewer', 'audio-player']) {
+    const aNode = { id: 921, revision: 3, type: 'file',
+      name: app === 'pdf-viewer' ? 'old.pdf' : 'old.mp3', size: 200 }
+    const bNode = { id: 922, revision: 4, type: 'file',
+      name: app === 'pdf-viewer' ? 'other.pdf' : 'other.mp3', size: 300 }
+    const requests = []
+    const api = {
+      node(id, signal) {
+        return new Promise(resolve => requests.push({ id, signal, resolve }))
+      },
+    }
+    const props = id => ({
+      route: { app, params: { node: id } },
+      api, gallerySource: {}, shareDialogAdapter: {},
+      onClose() {}, onReplaceRoute() {}, onError(reason) { throw reason },
+    })
+    let renderer
+    const visible = () => renderer.root.findAll(el => el.type === 'preview-content')
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, props(aNode.id)),
+          { createNodeMock: () => ({ focus() {} }) })
+      })
+      const firstA = requests[0]
+      await act(async () => { firstA.resolve(aNode); await Promise.resolve() })
+      assert.equal(visible()[0].props.target.id, aNode.id)
+      await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(bNode.id))))
+      assert.equal(firstA.signal.aborted, true)
+      assert.equal(visible().length, 0)
+      const B = requests[1]
+      await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(aNode.id))))
+      assert.equal(B.signal.aborted, true)
+      assert.equal(visible().length, 0, 'return to A must await a new metadata read')
+      const currentA = requests[2]
+      await act(async () => { B.resolve(bNode); await Promise.resolve() })
+      assert.equal(visible().length, 0)
+      await act(async () => { currentA.resolve(aNode); await Promise.resolve() })
+      assert.equal(visible().length, 1)
+      await act(async () => renderer.unmount())
+      renderer = null
+      assert.equal(currentA.signal.aborted, true)
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+})

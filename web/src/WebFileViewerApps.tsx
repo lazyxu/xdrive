@@ -1422,6 +1422,59 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
   )
 }
 
+// The standalone Text/PDF/Audio viewers have one authenticated download intent
+// per exact route/Owner/Node revision. A stale callback or receipt cannot act
+// on another account, and repeated taps are single-flight immediately.
+function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Node | null) {
+  const tokenRef = useRef({
+    api, owner, nodeID: node?.id, revision: node?.revision,
+  })
+  if (tokenRef.current.api !== api || tokenRef.current.owner !== owner ||
+      tokenRef.current.nodeID !== node?.id ||
+      tokenRef.current.revision !== node?.revision) {
+    tokenRef.current = { api, owner, nodeID: node?.id, revision: node?.revision }
+  }
+  const token = tokenRef.current
+  const pendingRef = useRef<typeof token | null>(null)
+  const mountedRef = useRef(true)
+  const [receipt, setReceipt] = useState<{
+    token: typeof token
+    busy: boolean
+    error: string
+  } | null>(null)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  const start = () => {
+    if (!node || !mountedRef.current || tokenRef.current !== token ||
+        pendingRef.current === token) return
+    pendingRef.current = token
+    const downloadNode = node
+    setReceipt({ token, busy: true, error: '' })
+    void Promise.resolve().then(() => api.download(downloadNode)).then(() => {
+      if (mountedRef.current && tokenRef.current === token) {
+        setReceipt({ token, busy: false, error: '' })
+      }
+    }, (reason: unknown) => {
+      if (mountedRef.current && tokenRef.current === token) {
+        setReceipt({
+          token, busy: false,
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
+      }
+    }).finally(() => {
+      if (pendingRef.current === token) pendingRef.current = null
+    })
+  }
+  return {
+    start,
+    busy: receipt?.token === token && receipt.busy,
+    error: receipt?.token === token ? receipt.error : '',
+  }
+}
+
 function WebTextViewerApp({
   route,
   api,
@@ -1450,6 +1503,7 @@ function WebTextViewerApp({
   const node = current?.node ?? null
   const preview = current?.preview ?? null
   const error = current?.error ?? ''
+  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
   const [wrap, setWrap] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
@@ -1496,8 +1550,9 @@ function WebTextViewerApp({
               <WrapTextRoundedIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Tooltip title="下载完整文件">
-            <IconButton size="small" aria-label="下载完整文件" onClick={() => { void api.download(node) }}>
+          <Tooltip title={download.busy ? '正在下载' : '下载完整文件'}>
+            <IconButton size="small" aria-label="下载完整文件"
+              disabled={download.busy} onClick={download.start}>
               <DownloadRoundedIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -1505,6 +1560,13 @@ function WebTextViewerApp({
       ) : null}
       onClose={() => onClose(node)}
     >
+      {download.error ? (
+        <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
+          <XDriveStatusAlert tone="bad">
+            {download.error}。下载失败，可再次点击下载按钮重试。
+          </XDriveStatusAlert>
+        </Box>
+      ) : null}
       {error ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
@@ -1559,40 +1621,61 @@ function WebSinglePreviewApp({
   api: XDriveApi
   onClose: (node: Node | null) => void
 }) {
+  // A→B→A and same-ID cross-account navigation each require a fresh
+  // authorized metadata read; route-name changes also create a new Owner.
+  const readerOwnerRef = useRef({ api, nodeID: route.params.node, app: route.app })
+  if (readerOwnerRef.current.api !== api ||
+      readerOwnerRef.current.nodeID !== route.params.node ||
+      readerOwnerRef.current.app !== route.app) {
+    readerOwnerRef.current = { api, nodeID: route.params.node, app: route.app }
+  }
+  const readerOwner = readerOwnerRef.current
   const [read, setRead] = useState<{
-    api: XDriveApi
-    nodeID: number
+    owner: typeof readerOwner
     node: Node | null
     error: string
   } | null>(null)
-  const current = read?.api === api && read.nodeID === route.params.node ? read : null
+  const current = read?.owner === readerOwner ? read : null
   const node = current?.node ?? null
   const error = current?.error ?? ''
+  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
 
   useEffect(() => {
-    let active = true
-    const nodeID = route.params.node
-    void api.node(nodeID).then((value) => {
-      if (active) setRead({ api, nodeID, node: value, error: '' })
+    const controller = new AbortController()
+    const nodeID = readerOwner.nodeID
+    void api.node(nodeID, controller.signal).then((value) => {
+      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
+        setRead({ owner: readerOwner, node: value, error: '' })
+      }
     }).catch((reason) => {
-      if (active) setRead({ api, nodeID, node: null,
-        error: reason instanceof Error ? reason.message : String(reason) })
+      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
+        setRead({ owner: readerOwner, node: null,
+          error: reason instanceof Error ? reason.message : String(reason) })
+      }
     })
-    return () => { active = false }
-  }, [api, route.params.node])
+    return () => controller.abort()
+  }, [api, readerOwner])
 
   return (
     <WebViewerFrame
       title={node?.name ?? (route.app === 'pdf-viewer' ? 'PDF 查看器' : '音频播放器')}
       actions={node && !error ? (
-        <Tooltip title="下载">
-          <IconButton size="small" aria-label="下载" onClick={() => { void api.download(node) }}>
+        <Tooltip title={download.busy ? '正在下载' : '下载'}>
+          <IconButton size="small" aria-label="下载"
+            disabled={download.busy} onClick={download.start}>
             <DownloadRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
       onClose={() => onClose(node)}
     >
+      {download.error ? (
+        <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
+          <XDriveStatusAlert tone="bad">
+            {download.error}。下载失败，可再次点击下载按钮重试。
+          </XDriveStatusAlert>
+        </Box>
+      ) : null}
       {error ? (
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
           <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
