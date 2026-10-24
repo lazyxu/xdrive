@@ -8,6 +8,8 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
+import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
@@ -37,6 +39,8 @@ import { XDriveMediaGalleryViewerLocationDialog } from './MediaGalleryViewerLoca
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
+import { useXDrivePreviewPresentation, useXDrivePreviewSlideshow } from './usePreviewSlideshow'
+import { xDriveClassifyFilePreview } from '../file-preview'
 import { xDriveMediaCaptureTimeLabel } from '../media-viewer'
 import type {
   MediaMotionLoader,
@@ -170,6 +174,28 @@ export function XDriveMediaGalleryViewer({
     }
   }
   const actionOwner = actionOwnerRef.current
+  const [slideshowPlaying, setSlideshowPlaying] = useState(false)
+  const slideshowKind = item ? xDriveClassifyFilePreview({
+    name: item.node.name, kind: 'file', mimeType: item.metadata.mime_type,
+  }) : 'none'
+  const slideshowEligible = Boolean(item && (slideshowKind === 'image' || slideshowKind === 'live_photo'))
+  const slideshowPresentation = useXDrivePreviewPresentation(item ? {
+    id: item.node.id, name: item.node.name, revision: item.node.revision, kind: 'file',
+  } : null, actionOwner.session)
+  useXDrivePreviewSlideshow({
+    enabled: slideshowEligible,
+    playing: slideshowPlaying,
+    sourceKey: slideshowPresentation.sourceKey,
+    presentationState: slideshowPresentation.presentationState,
+    canNext,
+    onNext,
+    onStop: () => setSlideshowPlaying(false),
+  })
+  // A new gallery account/loader cannot inherit the previous collection's playback.
+  useEffect(() => { setSlideshowPlaying(false) }, [loadThumbnail, loadLivePhotoMotion, loadPreviewURL])
+  useEffect(() => {
+    if (!slideshowEligible) setSlideshowPlaying(false)
+  }, [slideshowEligible])
   // The last queued pointer event from a replaced photo must not start a
   // synchronous Share or Inspector action against the old media identity.
   const runCurrentItemAction = (handler?: (value: MediaItem) => void) => {
@@ -256,6 +282,7 @@ export function XDriveMediaGalleryViewer({
     setLocationOpen(false)
     closeMore()
     setFullScreen(false)
+    setSlideshowPlaying(false)
     onClose()
   }
 
@@ -320,6 +347,15 @@ export function XDriveMediaGalleryViewer({
         <Tooltip title="属性">
           <IconButton size="small" aria-label="查看属性" onClick={() => runCurrentItemAction(onInfo)}>
             <InfoOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {!narrowViewer && slideshowEligible && (canNext || slideshowPlaying) ? (
+        <Tooltip title={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}>
+          <IconButton size="small"
+            aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
+            onClick={() => setSlideshowPlaying((value) => !value)}>
+            {slideshowPlaying ? <PauseRoundedIcon fontSize="small" /> : <PlayArrowRoundedIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
       ) : null}
@@ -433,6 +469,7 @@ export function XDriveMediaGalleryViewer({
             loadThumbnail={loadThumbnail}
             loadLivePhotoMotion={loadLivePhotoMotion}
             loadPreviewURL={loadPreviewURL}
+            onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
             interactiveImage
             onSwipePrevious={canPrevious ? onPrevious : undefined}
             onSwipeNext={canNext ? onNext : undefined}
@@ -449,6 +486,12 @@ export function XDriveMediaGalleryViewer({
         onClose={closeMore}
         MenuListProps={{ 'aria-label': '更多照片操作' }}
       >
+        {slideshowEligible && (canNext || slideshowPlaying) ? (
+          <MenuItem aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'} onClick={() => {
+            closeMore()
+            setSlideshowPlaying((value) => !value)
+          }}>{slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}</MenuItem>
+        ) : null}
         {item && onCreateCreativeGeneration && onGetCreativeGeneration && loadPreviewURL &&
         xDriveMediaItemSupportsCreative(item) ? (
           <MenuItem aria-label="创作图片" onClick={() => { closeMore(); setCreativeOpen(true) }}>创作图片</MenuItem>

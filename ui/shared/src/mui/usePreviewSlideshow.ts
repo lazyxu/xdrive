@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
 
 /** Readiness belongs to a source, including when an older renderer finishes late. */
-export function useXDrivePreviewPresentation(target: XDriveFilePreviewTarget | null) {
-  const sourceKey = JSON.stringify([target?.id, target?.revision, target?.kind, target?.name])
+export function useXDrivePreviewPresentation(target: XDriveFilePreviewTarget | null, ownerKey?: string | number) {
+  // The same Node/revision can be reopened under a different authorized Owner.
+  // Include a caller-owned session without changing existing Quick Look identities.
+  const identity = [target?.id, target?.revision, target?.kind, target?.name]
+  const sourceKey = JSON.stringify(ownerKey === undefined ? identity : [...identity, ownerKey])
   const currentKey = useRef(sourceKey)
   currentKey.current = sourceKey
   const [presentation, setPresentation] = useState<{
