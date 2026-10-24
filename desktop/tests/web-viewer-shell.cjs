@@ -2353,3 +2353,57 @@ test('P1 shared Viewer cancels A→B→A and close/reopen delayed touch callback
     viewportWidth = 390
   }
 })
+
+test('P2 routed Web Gallery slideshow waits for decoded still then navigates one authorized neighbor', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const contextID = 'p2-gallery-slideshow-mounted'
+  const sessionKey = 'xdrive.web_app.session.v1:' + contextID
+  const items = [7011, 7012].map(id => {
+    const node = { id, revision: 1, type: 'file', name: id + '.jpg', size: 50 }
+    return { node, metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready', has_thumbnail: true } }
+  })
+  storage.set(sessionKey, JSON.stringify({ version: 1, context: {
+    kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 0, totalCount: items.length,
+  } }))
+  const navigated = []
+  const api = { node: async id => items.find(i => i.node.id === id)?.node,
+    mediaItem: async id => items.find(i => i.node.id === id) }
+  const gallerySource = { loadThumbnail: async () => null,
+    listItemRange: async (limit, offset) => ({
+      items: items.slice(offset, offset + limit), offset, limit, total_count: items.length,
+    }) }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: 7011, context: contextID } },
+        api, gallerySource, shareDialogAdapter: {},
+        onReplaceRoute(next) { navigated.push(next.params.node) },
+        onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    for (let i = 0; i < 3; i++) {
+      await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+    }
+    assert.equal(buttons(renderer, '开始幻灯片').length, 1,
+      '390px Gallery reuses the existing bottom rail slideshow control')
+    await act(async () => buttons(renderer, '开始幻灯片')[0].props.onClick())
+    const fireDwell = async () => {
+      const due = [...timers].find(([, t]) => t.delay === 5000)
+      assert.ok(due, 'real controller schedules only after image readiness')
+      timers.delete(due[0])
+      await act(async () => due[1].callback())
+    }
+    assert.equal([...timers].filter(([, t]) => t.delay === 5000).length, 0)
+    await act(async () =>
+      renderer.root.findByType('media-content').props.onPresentationStateChange('ready'))
+    await fireDwell()
+    assert.deepEqual(navigated, [7012], 'uses existing bounded authorized navigation')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(sessionKey)
+    compactTouch = false
+    viewportWidth = 390
+  }
+})

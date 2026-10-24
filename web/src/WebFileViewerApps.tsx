@@ -99,6 +99,7 @@ function WebViewerFrame({
   actions,
   filmstrip,
   slideshow = false,
+  slideshowOwnerKey = '',
   sourceKey = '',
   presentationState = 'loading',
   navigationLoading = false,
@@ -122,6 +123,7 @@ function WebViewerFrame({
   actions?: ReactNode
   filmstrip?: ReactNode
   slideshow?: boolean
+  slideshowOwnerKey?: string | number
   sourceKey?: string
   presentationState?: XDriveFilePreviewPresentationState
   navigationLoading?: boolean
@@ -158,7 +160,16 @@ function WebViewerFrame({
   const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
     '[data-xdrive-web-viewer-chrome]',
   ))
-  const [slideshowPlaying, setSlideshowPlaying] = useState(false)
+  const [slideshowState, setSlideshowState] = useState({ ownerKey: slideshowOwnerKey, playing: false })
+  const slideshowPlaying = slideshow && slideshowState.ownerKey === slideshowOwnerKey && slideshowState.playing
+  const toggleSlideshow = () => setSlideshowState((current) => ({
+    ownerKey: slideshowOwnerKey,
+    playing: !(current.ownerKey === slideshowOwnerKey && current.playing),
+  }))
+  useEffect(() => {
+    if (!slideshow) setSlideshowState((current) =>
+      current.playing ? { ownerKey: slideshowOwnerKey, playing: false } : current)
+  }, [slideshow, slideshowOwnerKey])
 
   const showChrome = useCallback(() => {
     if (!isCurrentChromeSession()) return
@@ -318,7 +329,9 @@ function WebViewerFrame({
     navigationLoading,
     canNext,
     onNext,
-    onStop: () => setSlideshowPlaying(false),
+    onStop: () => setSlideshowState((current) =>
+      current.ownerKey === slideshowOwnerKey && current.playing
+        ? { ownerKey: slideshowOwnerKey, playing: false } : current),
   })
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -427,7 +440,7 @@ function WebViewerFrame({
             <IconButton
               size="small"
               aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
-              onClick={() => setSlideshowPlaying((value) => !value)}
+              onClick={toggleSlideshow}
               sx={immersive ? { color: 'inherit' } : undefined}
             >
               {slideshowPlaying
@@ -551,7 +564,7 @@ function WebViewerFrame({
           {slideshow && (canPrevious || canNext) ? (
             <IconButton
               aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
-              onClick={() => setSlideshowPlaying((value) => !value)}
+              onClick={toggleSlideshow}
             >
               {slideshowPlaying ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
             </IconButton>
@@ -736,6 +749,19 @@ function WebPreviewApp({
     }
   }
   const dialogOwner = dialogOwnerRef.current
+  // Continue Quick Look playback across authorized neighbors, but a new
+  // authenticated API, Gallery source or collection revokes the old intent.
+  const quickLookSlideshowScopeRef = useRef({
+    api, gallerySource, context: route.params.context, session: 0,
+  })
+  if (quickLookSlideshowScopeRef.current.api !== api ||
+      quickLookSlideshowScopeRef.current.gallerySource !== gallerySource ||
+      quickLookSlideshowScopeRef.current.context !== route.params.context) {
+    quickLookSlideshowScopeRef.current = {
+      api, gallerySource, context: route.params.context,
+      session: quickLookSlideshowScopeRef.current.session + 1,
+    }
+  }
   const [visibleDialog, setVisibleDialog] = useState<{
     owner: typeof dialogOwner
     kind: 'share' | 'tags'
@@ -771,7 +797,7 @@ function WebPreviewApp({
     size: viewer.node.size,
     revision: viewer.node.revision,
   } satisfies XDriveFilePreviewTarget : null
-  const presentation = useXDrivePreviewPresentation(target)
+  const presentation = useXDrivePreviewPresentation(target, dialogOwner.session)
 
   const loadThumbnail = useCallback(async (_target: XDriveFilePreviewTarget, signal?: AbortSignal) => {
     if (!viewer.node) return null
@@ -791,6 +817,7 @@ function WebPreviewApp({
         immersive
         quickLook
         slideshow
+        slideshowOwnerKey={quickLookSlideshowScopeRef.current.session}
         sourceKey={presentation.sourceKey}
         presentationState={viewer.error ? 'failed' : presentation.presentationState}
         navigationLoading={viewer.navigationLoading}
@@ -926,6 +953,19 @@ function WebMediaViewerApp({
     }
   }
   const modalOwner = modalOwnerRef.current
+  // Browsing an adjacent item continues a slideshow, but a new account,
+  // Gallery source or collection scope cannot inherit a prior Owner's play state.
+  const slideshowScopeRef = useRef({
+    api, gallerySource, context: route.params.context, session: 0,
+  })
+  if (slideshowScopeRef.current.api !== api ||
+      slideshowScopeRef.current.gallerySource !== gallerySource ||
+      slideshowScopeRef.current.context !== route.params.context) {
+    slideshowScopeRef.current = {
+      api, gallerySource, context: route.params.context,
+      session: slideshowScopeRef.current.session + 1,
+    }
+  }
   const [visibleModalOwner, setVisibleModalOwner] = useState<typeof modalOwner | null>(null)
   const ownsModal = visibleModalOwner === modalOwner
   const shareVisible = ownsModal && shareOpen
@@ -1054,6 +1094,15 @@ function WebMediaViewerApp({
     kind: viewer.node.type,
   }) : ''
   const supported = ['image', 'video', 'live_photo'].includes(previewKind)
+  const slideshowTarget = mediaItem && viewer.node &&
+    viewer.node.id === mediaItem.node.id && viewer.node.revision === mediaItem.node.revision
+    ? { id: viewer.node.id, name: viewer.node.name, kind: 'file' as const, revision: viewer.node.revision }
+    : null
+  const slideshowPresentation = useXDrivePreviewPresentation(slideshowTarget, modalOwner.session)
+  // Never auto-skip a video after mere metadata/loadeddata readiness. A video
+  // terminates the still-only slideshow, retaining ordinary manual playback.
+  const slideshowEligible = Boolean(slideshowTarget && !viewer.loading && !viewer.error &&
+    (previewKind === 'image' || previewKind === 'live_photo'))
   const editingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
     editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision &&
     editTarget.owner === modalOwner
@@ -1284,6 +1333,11 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
+        slideshow={slideshowEligible}
+        slideshowOwnerKey={slideshowScopeRef.current.session}
+        sourceKey={slideshowPresentation.sourceKey}
+        presentationState={slideshowPresentation.presentationState}
+        navigationLoading={viewer.loading || viewer.navigationLoading}
         keepChromeVisible={shareVisible || tagsVisible || infoVisible || editOpen || creativeOpen || deleteOpen || locationVisible || (ownsModal && Boolean(moreAnchor))}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
@@ -1318,6 +1372,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           loadThumbnail={gallerySource.loadThumbnail}
           loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
           loadPreviewURL={gallerySource.loadPreviewURL}
+          onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import type { MediaItem } from '../models'
 import { xDriveClassifyFilePreview } from '../file-preview'
+import type { XDriveFilePreviewPresentationState } from '../file-preview'
 import { xDriveMediaEditPreviewTransform } from '../media-edit'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
@@ -21,6 +22,7 @@ export function XDriveMediaViewerContent({
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
+  onPresentationStateChange,
   interactiveImage = true,
   onSwipePrevious,
   onSwipeNext,
@@ -31,6 +33,7 @@ export function XDriveMediaViewerContent({
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
+  onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
   interactiveImage?: boolean
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
@@ -52,6 +55,11 @@ export function XDriveMediaViewerContent({
     item.metadata.mime_type,
   ])
   const presentation = useXDrivePreviewPresentation(target)
+  const reportPresentation = useCallback((state: XDriveFilePreviewPresentationState) => {
+    // Shared Live Photo still readiness also controls hold-to-play admission.
+    presentation.onPresentationStateChange(state)
+    onPresentationStateChange?.(state)
+  }, [onPresentationStateChange, presentation.onPresentationStateChange])
 
   const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind, signal, onProgress) => {
     if (
@@ -97,6 +105,7 @@ export function XDriveMediaViewerContent({
         minHeight={minHeight}
         maxHeight={maxHeight}
         mediaTransform={mediaTransform}
+        onPresentationStateChange={reportPresentation}
         interactiveImage={interactiveImage}
         onSwipePrevious={onSwipePrevious}
         onSwipeNext={onSwipeNext}
@@ -124,7 +133,7 @@ export function XDriveMediaViewerContent({
             minHeight={minHeight}
             maxHeight={maxHeight}
             mediaTransform={mediaTransform}
-            onPresentationStateChange={presentation.onPresentationStateChange}
+            onPresentationStateChange={reportPresentation}
           />
         )}
       />
@@ -143,6 +152,7 @@ export function XDriveMediaViewerContent({
       onSwipePrevious={onSwipePrevious}
       onSwipeNext={onSwipeNext}
       mediaTransform={mediaTransform}
+      onPresentationStateChange={reportPresentation}
     />
   )
 }

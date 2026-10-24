@@ -79,7 +79,17 @@ function fixture(ports = {}) {
   }
   const useRef = initial => next(() => ({current: initial}))
   const useCallback = fn => { next(() => ({})); return fn }
-  const hooks = {useState, useRef, useCallback, useEffect: () => {}, useMediaQuery: () => false}
+  // Owner/action-only fixture. The slideshow is exercised by mounted React tests;
+  // keep this harness focused on the original Favorite/Download/Delete races.
+  const hooks = {
+    useState, useRef, useCallback, useEffect: () => {}, useMediaQuery: () => false,
+    xDriveClassifyFilePreview: () => 'image',
+    useXDrivePreviewPresentation: () => ({
+      sourceKey: 'action-only', presentationState: 'loading',
+      onPresentationStateChange() {},
+    }),
+    useXDrivePreviewSlideshow: () => {},
+  }
   const keys = Object.keys(hooks)
   const exports = {}
   const factory = new Function('exports', ...keys, compiled +

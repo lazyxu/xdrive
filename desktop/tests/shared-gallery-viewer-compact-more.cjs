@@ -38,6 +38,25 @@ const ui = {
   '../media-edit': { xDriveMediaItemSupportsBasicEditing: () => true },
   '../media-viewer': { xDriveMediaCaptureTimeLabel: () => '' },
 }
+const slideshowModule = { exports: {} }
+const slideshowPath = path.join(root, 'ui/shared/src/mui/usePreviewSlideshow.ts')
+const slideshowJS = ts.transpileModule(fs.readFileSync(slideshowPath, 'utf8'), {
+  fileName: slideshowPath,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText
+new Function('exports', 'module', 'require', slideshowJS)(
+  slideshowModule.exports, slideshowModule, name => name === 'react' ? React : require(name))
+ui['./usePreviewSlideshow'] = slideshowModule.exports
+// Use the real file-preview classifier rather than hard-coding still behavior.
+const previewModule = { exports: {} }
+const previewPath = path.join(root, 'ui/shared/src/file-preview.ts')
+const previewJS = ts.transpileModule(fs.readFileSync(previewPath, 'utf8'), {
+  fileName: previewPath,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText
+new Function('exports', 'module', 'require', previewJS)(
+  previewModule.exports, previewModule, name => require(name))
+ui['../file-preview'] = previewModule.exports
 const filename = path.join(root, 'ui/shared/src/mui/MediaGalleryViewer.tsx')
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   fileName: filename,
@@ -231,4 +250,71 @@ test('P0 changing media loaders remounts the inner preview without recreating th
   } finally {
     if (renderer) await act(async () => renderer.unmount())
   }
+})
+
+test('Gallery slideshow uses decoded still readiness, 5s dwell and compact More at 390/899/900px', async () => {
+  for (const nextWidth of [390, 899, 900]) {
+    width = nextWidth
+    const oldWindow = global.window, oldDocument = global.document, oldNow = Date.now
+    let now = 1000, timerID = 0, advances = 0, renderer
+    const timers = new Map()
+    global.window = {
+      setTimeout(callback, delay) { timers.set(++timerID, { callback, at: now + delay }); return timerID },
+      clearTimeout(id) { timers.delete(id) },
+    }
+    global.document = new EventTarget()
+    document.visibilityState = 'visible'
+    Date.now = () => now
+    const advance = async (ms) => {
+      const until = now + ms
+      for (;;) {
+        const due = [...timers].filter(([, t]) => t.at <= until)
+          .sort((a, b) => a[1].at - b[1].at)[0]
+        if (!due) break
+        now = due[1].at
+        timers.delete(due[0])
+        await act(async () => due[1].callback())
+      }
+      now = until
+    }
+    const loadThumbnail = async () => null
+    const props = (current, canNext) => ({
+      item: current, activeIndex: 0, canPrevious: false, canNext,
+      filmstripEntries: [], loadThumbnail,
+      onPrevious() {}, onNext() { advances++ },
+      onFilmstripSelect() {}, onClose() {},
+    })
+    try {
+      await act(async () => { renderer = create(React.createElement(Viewer, props(item, true))) })
+      if (nextWidth < 900) {
+        assert.equal(findButton(renderer, '开始幻灯片').length, 0)
+        await act(async () => findButton(renderer, '更多照片操作')[0].props.onClick({ currentTarget: {} }))
+        assert.equal(findMenuAction(renderer, '开始幻灯片').length, 1)
+        await act(async () => findMenuAction(renderer, '开始幻灯片')[0].props.onClick())
+      } else {
+        assert.equal(findButton(renderer, '开始幻灯片').length, 1)
+        await act(async () => findButton(renderer, '开始幻灯片')[0].props.onClick())
+      }
+      await advance(10000)
+      assert.equal(advances, 0, 'metadata alone must not consume image dwell')
+      await act(async () =>
+        renderer.root.findByType('test-media-content').props.onPresentationStateChange('ready'))
+      await advance(4999)
+      assert.equal(advances, 0)
+      await advance(1)
+      assert.equal(advances, 1, 'first actually decoded still advances once')
+      const last = { ...item, node: { ...item.node, id: 1992, name: 'last.jpg' } }
+      await act(async () => renderer.update(React.createElement(Viewer, props(last, false))))
+      await act(async () =>
+        renderer.root.findByType('test-media-content').props.onPresentationStateChange('ready'))
+      await advance(5000)
+      assert.equal(advances, 1, 'end of authorized range stops without another call')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+      global.window = oldWindow
+      global.document = oldDocument
+      Date.now = oldNow
+    }
+  }
+  width = 390
 })
