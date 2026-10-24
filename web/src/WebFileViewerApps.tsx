@@ -532,7 +532,10 @@ function WebViewerFrame({
           direction="row"
           alignItems="center"
           justifyContent="flex-start"
-          spacing={0.5}
+          // Eight 44px controls can fit within 375px only with no horizontal
+          // gaps (352px buttons + 16px safe horizontal padding = 368px).
+          // Keep the original Quick Look spacing; never shrink hit targets.
+          spacing={photosViewer ? 0 : 0.5}
           data-xdrive-web-viewer-mobile-actions
           data-xdrive-web-viewer-chrome="actions"
           sx={{
@@ -1188,7 +1191,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
     Number.isFinite(latitude) && Number.isFinite(longitude) &&
     Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
   const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
-    <Stack direction="row" spacing={0.25} data-xdrive-gallery-viewer-actions>
+    <Stack direction="row" spacing={narrowMediaViewer ? 0 : 0.25} data-xdrive-gallery-viewer-actions>
       {mediaItem && gallerySource.setFavorite ? (
         <Tooltip title={mediaItem.favorite ? '取消收藏' : '收藏'}>
           <IconButton
