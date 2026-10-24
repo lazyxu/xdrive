@@ -23,8 +23,11 @@ verification for official GitHub master/stable releases only. It requires an
 installed compatible GitHub CLI (`gh`) and refuses custom URL overrides or
 GitLab to avoid a downgrade. It verifies both downloaded file digests using the
 downloaded Sigstore bundle, pinning the exact `lazyxu/xdrive` repository,
+its immutable numeric GitHub repository ID `1382670236` for both artifacts,
 `lazyxu/xdrive/.github/workflows/release.yml` signer workflow, and (for master)
-the `refs/heads/master` source ref. An invalid/missing bundle, unavailable
+the `refs/heads/master` source ref. Offline bundles otherwise enforce only
+historical repository names; the numeric ID guards against name reuse after a
+repository rename. `XD_REPOSITORY` cannot redirect strict mode to a fork. An invalid/missing bundle, unavailable
 verifier, or signature mismatch causes a full retry of all assets (maximum
 three attempts) and **never** executes unverified installer bytes.
 
@@ -38,6 +41,7 @@ default**. The host uses GH CLI only if strict mode was explicitly enabled.
 ## Acceptance
 
 CI host fixtures cover both policy paths, source/override downgrade rejection,
-missing/rejected evidence and forbidden installer execution. The publication
+missing/rejected evidence, wrong/missing/malformed/mixed repository IDs,
+and forbidden installer execution. The publication
 workflow performs genuine cryptographic verification, not just shell fixtures.
 Production-only inaccessible acceptance: **按用户决定跳过（未验收）**.

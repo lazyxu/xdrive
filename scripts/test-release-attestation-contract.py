@@ -25,6 +25,9 @@ for label in ("publish-master", "publish-stable"):
     assert "      id-token: write" in section, label
     assert "      attestations: write" in section, label
 assert "XD_GITHUB_ATTESTATION_POLICY" in host
-assert 'gh attestation verify "$installer"' in host
-assert 'gh attestation verify "$manifest"' in host
+assert 'for artifact in "$installer" "$manifest"; do' in host
+assert 'gh attestation verify "$artifact"' in host
+assert "sourceRepositoryIdentifier" in host
+assert 'expected_id="1382670236"' in host
+assert '"$REPOSITORY" != "lazyxu/xdrive"' in host
 print("GitHub release provenance contract passed")

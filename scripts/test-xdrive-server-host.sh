@@ -17,7 +17,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err update-github-attested.err update-github-attestation-missing.err update-github-attestation-bad.err update-github-policy.err update-github-bad-sha.err update-github-no-sha.err update-github-rollover.err update-github-duplicate-sha.err update-github-malformed-sha.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
+      update.out update.err update-github-attested.err update-github-attestation-missing.err update-github-attestation-bad.err update-github-repo-id.err update-github-policy.err update-github-bad-sha.err update-github-no-sha.err update-github-rollover.err update-github-duplicate-sha.err update-github-malformed-sha.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -100,13 +100,15 @@ set -euo pipefail
 [[ "${1:-}" == attestation && "${2:-}" == verify ]]
 artifact="$3"
 shift 3
-repo="" signer="" bundle="" source_ref="" deny_self_hosted=0
+repo="" signer="" bundle="" source_ref="" deny_self_hosted=0 output_format="" jq_filter=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
     --signer-workflow) signer="$2"; shift 2 ;;
     --bundle) bundle="$2"; shift 2 ;;
     --source-ref) source_ref="$2"; shift 2 ;;
+    --format) output_format="$2"; shift 2 ;;
+    --jq) jq_filter="$2"; shift 2 ;;
     --deny-self-hosted-runners) deny_self_hosted=1; shift ;;
     *) echo "unexpected gh verify flag: $1" >&2; exit 9 ;;
   esac
@@ -114,6 +116,8 @@ done
 [[ "$repo" == lazyxu/xdrive ]]
 [[ "$signer" == lazyxu/xdrive/.github/workflows/release.yml ]]
 [[ "$deny_self_hosted" == 1 ]]
+[[ "$output_format" == json ]]
+[[ "$jq_filter" == '.[].verificationResult.signature.certificate.sourceRepositoryIdentifier' ]]
 [[ -s "$bundle" && -s "$artifact" ]]
 case "$artifact" in
   */install-server.sh|*/install-server.sh.SHA256SUMS.txt) ;;
@@ -121,7 +125,20 @@ case "$artifact" in
 esac
 [[ -z "$source_ref" || "$source_ref" == refs/heads/master ]]
 printf '%s|%s|%s\n' "$artifact" "$source_ref" "$signer" >> "$TEST_STATE/gh-verifications"
-[[ "${TEST_GH_REJECT:-0}" != 1 ]]
+[[ "${TEST_GH_REJECT:-0}" != 1 ]] || exit 42
+if [[ "${TEST_GH_BAD_MANIFEST_REPO_ID:-0}" == 1 &&
+      "$artifact" == */install-server.sh.SHA256SUMS.txt ]]; then
+  printf '%s\n' 9999999
+  exit 0
+fi
+case "${TEST_GH_REPO_ID_MODE:-valid}" in
+  valid) printf '%s\n' 1382670236 ;;
+  wrong) printf '%s\n' 9999999 ;;
+  missing) : ;;
+  mixed) printf '%s\n' 1382670236 9999999 ;;
+  malformed) printf '%s\n' invalid-repository-id ;;
+  *) exit 9 ;;
+esac
 SH
 chmod +x "$TMP/bin/gh"
 
@@ -359,6 +376,42 @@ for case_name in missing bad; do
   [[ "$(grep -c '/xdrive-release-attestation.json$' "$TMP/state/curl-urls")" -eq 3 ]]
   grep -q 'no installer was executed' "$TMP/update-github-attestation-$case_name.err"
 done
+
+# The proof must bind the immutable GitHub repository ID independently for
+# installer and manifest. Reject absent, wrong, mixed and malformed IDs.
+for repo_id_case in wrong missing mixed malformed manifest; do
+  rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+  set +e
+  if [[ "$repo_id_case" == manifest ]]; then
+    TEST_GH_BAD_MANIFEST_REPO_ID=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/home" XD_GITHUB_ATTESTATION_POLICY=required \
+    bash "$HOST" update --source github --channel master >"$TMP/update-github-repo-id.out" 2>"$TMP/update-github-repo-id.err"
+  else
+    TEST_GH_REPO_ID_MODE="$repo_id_case" TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/home" XD_GITHUB_ATTESTATION_POLICY=required \
+    bash "$HOST" update --source github --channel master >"$TMP/update-github-repo-id.out" 2>"$TMP/update-github-repo-id.err"
+  fi
+  repo_id_status=$?
+  set -e
+  [[ "$repo_id_status" -ne 0 ]]
+  test ! -e "$TMP/state/installer-args"
+  [[ "$(grep -c '/xdrive-release-attestation.json$' "$TMP/state/curl-urls")" -eq 3 ]]
+  grep -q 'attestation repository ID' "$TMP/update-github-repo-id.err"
+  grep -q 'no installer was executed' "$TMP/update-github-repo-id.err"
+done
+
+# Required provenance cannot silently redirect to a lookalike repository.
+rm -f "$TMP/state/installer-args" "$TMP/state/curl-urls"
+set +e
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+XD_REPOSITORY=lookalike/xdrive XD_GITHUB_ATTESTATION_POLICY=required \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-repo-id.out" 2>"$TMP/update-github-repo-id.err"
+repo_override_status=$?
+set -e
+[[ "$repo_override_status" -ne 0 ]]
+test ! -e "$TMP/state/installer-args"
+test ! -e "$TMP/state/curl-urls"
+grep -q 'only supports official lazyxu/xdrive' "$TMP/update-github-repo-id.err"
 
 # Strict mode must not downgrade to a custom URL, GitLab or a misspelled policy.
 for case_name in override gitlab invalid; do

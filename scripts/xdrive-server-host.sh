@@ -238,13 +238,36 @@ verify_github_release_attestation() {
     rm -f "$bundle"
     return 1
   fi
-  if [[ ! -s "$bundle" ]] ||
-     ! gh attestation verify "$installer" "${args[@]}" >/dev/null 2>&1 ||
-     ! gh attestation verify "$manifest" "${args[@]}" >/dev/null 2>&1; then
-    echo "xdrive-server: GitHub release attestation identity/digest verification failed; refusing installer execution." >&2
+  if [[ ! -s "$bundle" ]]; then
+    echo "xdrive-server: GitHub release attestation is empty; refusing installer execution." >&2
     rm -f "$bundle"
     return 1
   fi
+  # When a Sigstore bundle is distributed alongside its artifact, --repo
+  # checks historical owner/repo names but not the immutable repository ID.
+  # Reject name-reused repositories even if all string identities match.
+  local artifact signed_ids signed_id expected_id="1382670236"
+  for artifact in "$installer" "$manifest"; do
+    if ! signed_ids="$(gh attestation verify "$artifact" "${args[@]}" \
+      --format json \
+      --jq '.[].verificationResult.signature.certificate.sourceRepositoryIdentifier' 2>/dev/null)"; then
+      echo "xdrive-server: GitHub release attestation identity/digest verification failed; refusing installer execution." >&2
+      rm -f "$bundle"
+      return 1
+    fi
+    if [[ -z "$signed_ids" ]]; then
+      echo "xdrive-server: GitHub release attestation repository ID missing; refusing installer execution." >&2
+      rm -f "$bundle"
+      return 1
+    fi
+    while IFS= read -r signed_id; do
+      if [[ "$signed_id" != "$expected_id" ]]; then
+        echo "xdrive-server: GitHub release attestation repository ID mismatch; refusing installer execution." >&2
+        rm -f "$bundle"
+        return 1
+      fi
+    done <<< "$signed_ids"
+  done
   rm -f "$bundle"
   printf '[xDrive] GitHub Actions publisher provenance verified for installer and manifest.\n'
 }
@@ -299,8 +322,8 @@ download_installer() {
     *) echo "xdrive-server: invalid XD_GITHUB_ATTESTATION_POLICY (expected off or required)." >&2; return 2 ;;
   esac
   if [[ "$policy" == "required" ]]; then
-    if [[ "$source" != "github" || -n "$INSTALLER_URL_OVERRIDE" ]]; then
-      echo "xdrive-server: required GitHub publisher verification forbids GitLab or custom installer URLs." >&2
+    if [[ "$source" != "github" || -n "$INSTALLER_URL_OVERRIDE" || "$REPOSITORY" != "lazyxu/xdrive" ]]; then
+      echo "xdrive-server: required publisher verification only supports official lazyxu/xdrive (no GitLab, forks or custom URLs)." >&2
       return 2
     fi
     if ! command -v gh >/dev/null 2>&1; then
