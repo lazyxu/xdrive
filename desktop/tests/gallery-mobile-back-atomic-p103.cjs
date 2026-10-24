@@ -37,6 +37,11 @@ function harness(kind, mobile = true) {
   const record = key => value => updates.push({ key, value })
   let generation = 0
   const env = {
+    // Map-entry return state lives in the original full Gallery instance.
+    // Ordinary Back fixtures have no outstanding map return intention.
+    mapGalleryEntryReturnRef: { current: null },
+    source: {}, preferenceScope: 'p103', currentAlbum: null,
+    onSectionRouteChange: () => {},
     // A3h Cell isolation: this is an ordinary non-Cell Gallery Back fixture.
     collectionTargetRef: { current: null },
     leaveBaiduCellWall: () => { throw new Error('ordinary Gallery Back must not leave a Cell wall') },

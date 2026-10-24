@@ -70,6 +70,7 @@ export function XDriveMediaGalleryPlacesMap({
   const [childFailed, setChildFailed] = useState(false)
   const [mapReady, setMapReady] = useState(false)
   const [retry, setRetry] = useState(0)
+  const [modeWarning, setModeWarning] = useState('')
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
   const mapMode = desktopOnly ? 'isolated' : xDrivePlacesMapModeFromHref(
@@ -77,6 +78,18 @@ export function XDriveMediaGalleryPlacesMap({
   )
   const changeMapMode = (next: 'prototype' | 'isolated') => {
     if (desktopOnly || mapMode === next || typeof window === 'undefined') return
+    // A full reload cannot retain a filtered Owner snapshot. Refuse to
+    // broaden a signed collection into the unfiltered same-document prototype.
+    const approved = xDriveNormalizeBaiduMapPhotoScope(mapPhotoScope)
+    const f = approved?.filters
+    if (next === 'prototype' && (!approved || approved.albumKey ||
+        f?.favorite !== undefined || f?.asset_kind !== undefined ||
+        f?.captured_from || f?.captured_to ||
+        f?.sort_by !== 'captured' || f?.sort_dir !== 'desc')) {
+      setModeWarning('请先清除地图筛选，再切换到同页原型；当前集合不会自动扩大为全图库。')
+      return
+    }
+    setModeWarning('')
     const href = xDrivePlacesMapModeNavigationURL(window.location.href, next)
     if (href) window.location.replace(href)
   }
@@ -201,6 +214,11 @@ export function XDriveMediaGalleryPlacesMap({
             onClick={() => changeMapMode('isolated')}>安全隔离版</Button>
         </Stack>
       ) : null}
+      {modeWarning ? <Typography data-xdrive-map-mode-scope-warning
+        role="alert" variant="caption" color="text.secondary"
+        sx={{display:'block',px:1.5,pb:1}}>
+        {modeWarning}
+      </Typography> : null}
       {mapMode === 'prototype' && !desktopOnly ? (
         <Typography variant="caption" color="text.secondary"
           data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>

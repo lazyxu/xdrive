@@ -70,6 +70,9 @@ function owner(mobile) {
     return new Promise((resolve, reject) => { pending.push({ args, resolve, reject }) })
   } }
   const env = {
+    // The real Gallery provides this Owner-local return ref; ordinary
+    // navigation under test has no pending map-to-album return.
+    mapGalleryEntryReturnRef: { current: null },
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p100') },
