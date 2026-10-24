@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { FocusEvent as ReactFocusEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
@@ -148,19 +148,34 @@ function WebViewerFrame({
   } | null>(null)
   const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
+  const chromeFocusRef = useRef(false)
+  const hasChromeFocus = (target: EventTarget | null) => Boolean((target as Element | null)?.closest?.(
+    '[data-xdrive-web-viewer-chrome]',
+  ))
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
 
   const showChrome = useCallback(() => {
     setChromeVisible(true)
     if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
     hideTimerRef.current = null
-    if (immersive && !keepChromeVisible) {
+    if (immersive && !keepChromeVisible && !chromeFocusRef.current) {
       hideTimerRef.current = window.setTimeout(() => {
         hideTimerRef.current = null
-        setChromeVisible(false)
+        if (!chromeFocusRef.current) setChromeVisible(false)
       }, 2200)
     }
   }, [immersive, keepChromeVisible])
+
+  const handleChromeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
+    if (!hasChromeFocus(event.target)) return
+    chromeFocusRef.current = true
+    showChrome()
+  }
+  const handleChromeBlurCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
+    if (!chromeFocusRef.current) return
+    chromeFocusRef.current = hasChromeFocus(event.relatedTarget)
+    if (!chromeFocusRef.current) showChrome()
+  }
 
   const clearTouchTapTimer = useCallback(() => {
     if (touchTapTimerRef.current !== null) {
@@ -220,7 +235,7 @@ function WebViewerFrame({
     }
 
     lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
-    const hideChrome = chromeVisible && !keepChromeVisible
+    const hideChrome = chromeVisible && !keepChromeVisible && !chromeFocusRef.current
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
       touchTapTimerRef.current = null
@@ -247,6 +262,7 @@ function WebViewerFrame({
       clearTouchTapTimer()
       touchPointersRef.current.clear()
       touchTapRef.current = null
+      chromeFocusRef.current = false
     }
   }, [clearTouchTapTimer])
 
@@ -301,6 +317,8 @@ function WebViewerFrame({
       ref={rootRef}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
+      onFocusCapture={handleChromeFocusCapture}
+      onBlurCapture={handleChromeBlurCapture}
       onMouseMove={coarseMobilePointer ? undefined : showChrome}
       onPointerDownCapture={handleTouchPointerDown}
       onPointerMoveCapture={handleTouchPointerMove}
@@ -326,6 +344,7 @@ function WebViewerFrame({
         direction="row"
         alignItems="center"
         spacing={1}
+        data-xdrive-web-viewer-chrome="header"
         sx={{
           position: compactImmersive ? 'absolute' : 'relative',
           top: 0,
@@ -389,6 +408,7 @@ function WebViewerFrame({
           <>
           <IconButton
             aria-label="上一个项目"
+            data-xdrive-web-viewer-chrome="navigation"
             disabled={!canPrevious}
             onClick={onPrevious}
             sx={{
@@ -408,6 +428,7 @@ function WebViewerFrame({
           </IconButton>
           <IconButton
             aria-label="下一个项目"
+            data-xdrive-web-viewer-chrome="navigation"
             disabled={!canNext}
             onClick={onNext}
             sx={{
@@ -433,6 +454,7 @@ function WebViewerFrame({
       {filmstrip && photosViewer ? (
         <Box
           data-xdrive-web-viewer-filmstrip
+          data-xdrive-web-viewer-chrome="filmstrip"
           sx={{
             position: immersive ? 'absolute' : 'relative',
             left: 0,
@@ -463,6 +485,7 @@ function WebViewerFrame({
           justifyContent="flex-start"
           spacing={0.5}
           data-xdrive-web-viewer-mobile-actions
+          data-xdrive-web-viewer-chrome="actions"
           sx={{
             position: immersive ? 'absolute' : 'relative',
             left: 0,
