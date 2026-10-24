@@ -144,6 +144,10 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	// another real folder. No production Gin route or response is replaced.
 	var u01Mu sync.Mutex
 	var u01Generation, u01Entered, u01Cancelled int
+	// Test-only, bounded numeric counters for the synthetic slow-folder range.
+	// They cannot authorize a response, change request timing or modify
+	// production Gin/Owner API behavior.
+	var u01SlowStarted, u01SlowHeld, u01SlowPlainStarted, u01SlowPlainReturned int
 	var u01Armed bool
 	u01SlowPath := fmt.Sprintf("/api/v1/nodes/%d/children", u01Slow.ID)
 	// Test-only barrier: the browser queues real requests before D3/D4
@@ -183,6 +187,14 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			snapshot := map[string]int{
 				"generation": u01Generation, "entered": u01Entered, "cancelled": u01Cancelled,
 			}
+			snapshot["slow_started"] = u01SlowStarted
+			snapshot["slow_held"] = u01SlowHeld
+			snapshot["slow_plain_started"] = u01SlowPlainStarted
+			snapshot["slow_plain_returned"] = u01SlowPlainReturned
+			snapshot["armed"] = 0
+			if u01Armed {
+				snapshot["armed"] = 1
+			}
 			u01Mu.Unlock()
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "application/json")
@@ -192,10 +204,14 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		if r.Method == http.MethodGet && r.URL.Path == u01SlowPath &&
 			r.URL.Query().Get("offset") == "0" {
 			u01Mu.Lock()
+			u01SlowStarted++
 			hold := u01Armed
 			generation := u01Generation
 			if hold {
+				u01SlowHeld++
 				u01Armed = false
+			} else {
+				u01SlowPlainStarted++
 			}
 			u01Mu.Unlock()
 			if hold {
@@ -286,6 +302,12 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			router.ServeHTTP(w, r)
+			if r.Method == http.MethodGet && r.URL.Path == u01SlowPath &&
+				r.URL.Query().Get("offset") == "0" {
+				u01Mu.Lock()
+				u01SlowPlainReturned++
+				u01Mu.Unlock()
+			}
 			return
 		}
 		fileServer.ServeHTTP(w, r)
@@ -355,6 +377,36 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	}
 	t.Logf("IOS27_FILES_LIVE_GO_READY url=%s root=%d node=%d revision=%d",
 		peer.URL, root.ID, file.ID, file.Revision)
+
+	// U01-D2 is a second private, genuine Gin/PostgreSQL fixture.
+	// The original full Worker/Undo/Redo E2E below retains its own limits.
+	if os.Getenv("XD_FILES_IOS27_U01_ABBA_ONLY") == "1" {
+		select {
+		case <-executeStarted:
+			t.Fatal("balanced navigation-only test unexpectedly started file mutations")
+		case <-stopped:
+			u01Mu.Lock()
+			generation, entered, cancelled := u01Generation, u01Entered, u01Cancelled
+			armed := u01Armed
+			u01Mu.Unlock()
+			if generation != 8 || entered != 8 || cancelled != 8 || armed {
+				t.Fatalf("U01-D2 must cancel eight distinct genuine Owner Ranges: generation=%d entered=%d cancelled=%d armed=%v",
+					generation, entered, cancelled, armed)
+			}
+			var operations int64
+			if err := db.Model(&meta.FileOperation{}).Count(&operations).Error; err != nil {
+				t.Fatal(err)
+			}
+			if operations != 0 {
+				t.Fatalf("navigation-only test persisted %d file operations", operations)
+			}
+			t.Logf("IOS27_FILES_U01_ABBA_VERIFIED generation=%d entered=%d cancelled=%d",
+				generation, entered, cancelled)
+			return
+		case <-time.After(4 * time.Minute):
+			t.Fatal("balanced U01 browser did not finish genuine Gin/PostgreSQL fixture")
+		}
+	}
 
 	select {
 	case <-executeStarted:
