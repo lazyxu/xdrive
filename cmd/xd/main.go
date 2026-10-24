@@ -45,6 +45,8 @@ func main() {
 		err = updateCmd(os.Args[2:])
 	case "doctor":
 		err = doctorCmd(os.Args[2:])
+	case "backup":
+		err = backupCmd(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -68,6 +70,7 @@ Usage:
   xd update [--source github|gitlab] [--channel stable|master] [--install]
   xd update --status
   xd doctor [--strict]
+  xd backup once|auto|schedule|status|history|pause|cancel|agent [options]
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.
