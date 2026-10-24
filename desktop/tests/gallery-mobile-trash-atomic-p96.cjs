@@ -69,6 +69,9 @@ function owner(compact) {
   let generation = 0
   let publishSection = () => {}
   const env = {
+    // The real Gallery provides this Owner-local return ref; ordinary
+    // navigation under test has no pending map-to-album return.
+    mapGalleryEntryReturnRef: { current: null },
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
     preferenceScope: 'p96',

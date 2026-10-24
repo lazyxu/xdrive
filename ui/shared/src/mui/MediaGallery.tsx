@@ -25,6 +25,8 @@ import {
   xDriveEmptyBaiduMapPhotoScope,
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
+import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
+import { xDrivePlacesMapModeFromHref } from '../media-gallery-places-map-mode'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { XDriveFolderIcon } from './FolderIcon'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
@@ -675,6 +677,31 @@ export function XDriveMediaGalleryPage({
   const placesReturnRef = useRef<XDrivePlacesReturnSnapshot | undefined>(
     xDriveReadPlacesReturn(preferenceScope),
   )
+  // P0-11: map entry is a one-shot Owner-local navigation intention, never
+  // authenticated membership or durable storage. Back re-fetches the exact
+  // original Gallery Range before restoring album/filters/visible anchor.
+  const mapGalleryEntryReturnRef = useRef<{
+    owner: string
+    dataSource: MediaGalleryDataSource
+    section: MediaGallerySection
+    album: MediaAlbum | null
+    query: MediaGalleryQuery
+    activeMediaType: string
+    anchorNodeID: number
+    createdAt: number
+  } | null>(null)
+  const mapGalleryVisibleAnchorRef = useRef<{
+    owner: string
+    section: MediaGallerySection
+    kind: 'all' | 'album'
+    id: string
+    querySignature: string
+    nodeID: number
+  } | null>(null)
+  useEffect(() => {
+    mapGalleryEntryReturnRef.current = null
+    mapGalleryVisibleAnchorRef.current = null
+  }, [preferenceScope, source])
   const persistPlacesReturn = useCallback((next: XDrivePlacesReturnSnapshot) => {
     if (!xDriveValidPlacesReturnSnapshot(next)) return
     placesReturnRef.current = next
@@ -1024,6 +1051,15 @@ export function XDriveMediaGalleryPage({
     if (current?.kind === 'baidu-viewport') {
       xDriveRememberBaiduViewportAnchor(preferenceScope, nodeID, visibleIndex)
       return
+    }
+    if (current && (current.kind === 'all' || current.kind === 'album')) {
+      mapGalleryVisibleAnchorRef.current = {
+        owner: preferenceScope, section, kind: current.kind, id: current.id ?? '',
+        querySignature: mediaGalleryQuerySignature({
+          ...current.query, anchor_node_id: undefined, initial_position: undefined,
+        }),
+        nodeID,
+      }
     }
     if (!mobileGalleryViewport || !current ||
         (current.kind !== 'all' && current.kind !== 'album')) return
@@ -1792,6 +1828,7 @@ export function XDriveMediaGalleryPage({
   }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    if (nextSection !== 'places') mapGalleryEntryReturnRef.current = null
     // Changing the owning tab must immediately cancel any pending cell Range.
     nativeCellOpenAbort.current?.abort()
     // An explicit tab switch cancels a pending Viewer Cell return; it does not
@@ -2866,6 +2903,36 @@ export function XDriveMediaGalleryPage({
       leaveBaiduCellWall()
       return
     }
+    const mapReturn = mapGalleryEntryReturnRef.current
+    // Do not replay an ancient Album/scroll hint as a fresh navigation intent.
+    if (mapReturn && (!Number.isFinite(mapReturn.createdAt) ||
+        Date.now() < mapReturn.createdAt ||
+        Date.now() - mapReturn.createdAt >= 10 * 60 * 1000)) {
+      mapGalleryEntryReturnRef.current = null
+    }
+    if (section === 'places' && mapGalleryEntryReturnRef.current === mapReturn &&
+        mapReturn && mapReturn.owner === preferenceScope &&
+        mapReturn.dataSource === source && !currentAlbum && !currentFolderView &&
+        !query.place && !query.place_hierarchy && !query.nearby && !query.bbox) {
+      // Preserve the map until the original Owner-scoped counted Range arrives;
+      // failed/revoked requests cannot show stale album items or all-library.
+      pendingSortAnchorRef.current = mapReturn.anchorNodeID
+      void loadFirstPage(mapReturn.album, {...mapReturn.query}, null, null,
+        'default', null, null, null, () => {
+          if (mapGalleryEntryReturnRef.current !== mapReturn) return
+          setSection(mapReturn.section)
+          setActiveMediaType(mapReturn.activeMediaType)
+          setQuery({...mapReturn.query})
+          setDraftFilters(mediaGalleryDraftFromQuery(
+            mapReturn.album?.kind === 'smart'
+              ? mapReturn.album.query ?? mapReturn.query : mapReturn.query))
+          setMobileCollectionsOverview(false)
+          routeSectionAppliedRef.current = mapReturn.section
+          mapGalleryEntryReturnRef.current = null
+          onSectionRouteChange?.(mapReturn.section)
+        })
+      return
+    }
     if (currentFolderView) {
       const breadcrumbs = currentFolderView.breadcrumbs
       if (breadcrumbs.length > 1) {
@@ -2948,6 +3015,12 @@ export function XDriveMediaGalleryPage({
     query.place_hierarchy,
     section,
     selectSection,
+    source,
+    preferenceScope,
+    currentAlbum,
+    onSectionRouteChange,
+    query.nearby,
+    query.bbox,
   ])
 
   const reviewSuggestedPerson = useCallback(async (
@@ -3649,6 +3722,70 @@ export function XDriveMediaGalleryPage({
     refreshGallery()
   }, [uploadRevision])
 
+  // P0-10: carry only precisely representable Owner Gallery membership
+  // into the signed map. Never broaden a smart/album/search/folder subset.
+  const showMapFromCurrentGallery = () => {
+    // A draft or failing Gallery Range is not current authorized membership.
+    // Never base the map's Count on a filter still awaiting Server acceptance.
+    const accepted = collectionTargetRef.current
+    if (loading || collectionError || !accepted ||
+        (currentAlbum
+          ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
+          : accepted.kind !== 'all')) {
+      setError('当前照片集合尚未完成授权加载或集合身份已变化；未打开全图库地图。')
+      return
+    }
+    const entry = xDriveGalleryMapEntryScope({
+      section,
+      album: currentAlbum,
+      query: currentAlbum?.kind === 'smart' ? (currentAlbum.query ?? query) : query,
+      sort: gallerySortRef.current,
+      timeZone: mediaTimeZoneRef.current,
+      activeMediaType,
+      hasUnsupportedContext: Boolean(
+        foldDuplicates || currentFolderView || currentSuggestedPerson ||
+        currentPerson || currentPet || currentMemory || currentCleanupReview),
+    })
+    if (!entry.ok) {
+      setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
+      return
+    }
+    // Desktop opens a separate HTTPS Gallery via an unscoped callback. It
+    // cannot inherit a scoped Album/filter without a new trusted handoff.
+    // A silent unfiltered Desktop window would break the Owner collection.
+    if (entry.requiresIsolated && onOpenSecureDesktopMap) {
+      setError('Desktop 安全地图窗口尚不能继承当前相册或筛选；为了避免显示全图库，本次未打开地图。')
+      return
+    }
+    if (entry.requiresIsolated &&
+        xDrivePlacesMapModeFromHref(
+          typeof window === 'undefined' ? '' : window.location.href) !== 'isolated') {
+      setError('当前集合必须使用安全隔离版地图才能保留全部筛选；请先在「地点」切换安全隔离版后重试。')
+      return
+    }
+    setError('')
+    {
+      const seen = mapGalleryVisibleAnchorRef.current
+      const identity = accepted.id ?? ''
+      const signature = mediaGalleryQuerySignature({
+        ...accepted.query, anchor_node_id: undefined, initial_position: undefined,
+      })
+      const anchorNodeID = seen?.owner === preferenceScope &&
+        seen.section === section && seen.kind === accepted.kind &&
+        seen.id === identity && seen.querySignature === signature
+          ? seen.nodeID : 0
+      mapGalleryEntryReturnRef.current = {
+        owner: preferenceScope, dataSource: source, section,
+        album: currentAlbum ? {...currentAlbum} : null,
+        query: {...query}, activeMediaType, anchorNodeID,
+        createdAt: Date.now(),
+      }
+    }
+    changeBaiduMapPhotoScope(entry.scope)
+    setMobileCollectionsOverview(false)
+    selectSection('places')
+  }
+
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
       ' · ' + currentFolderView.current.path +
@@ -3669,7 +3806,11 @@ export function XDriveMediaGalleryPage({
         mobileCollectionsOverview={mobileCollectionsOverview}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
-        onShowMap={() => { setMobileCollectionsOverview(false); selectSection('places') }}
+        onShowMap={showMapFromCurrentGallery}
+        canReturnToMapEntry={Boolean(section === 'places' &&
+          mapGalleryEntryReturnRef.current &&
+          mapGalleryEntryReturnRef.current.owner === preferenceScope &&
+          mapGalleryEntryReturnRef.current.dataSource === source)}
         onMobilePrimaryTabChange={(tab) => {
           if (tab === 'collections') {
             warmMobileCollectionsPreview()
@@ -4364,6 +4505,7 @@ export interface XDriveMediaGalleryProps {
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onSectionChange?: (section: MediaGallerySection) => void
   onShowMap?: () => void
+  canReturnToMapEntry?: boolean
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
   onOpenSyncFolder?: (folder: MediaSyncFolder) => void
@@ -6072,6 +6214,7 @@ export function XDriveMediaGallery({
   onRemoveFromAlbum,
   onSectionChange,
   onShowMap,
+  canReturnToMapEntry = false,
   onOpenMediaType,
   onOpenAlbum,
   onOpenSyncFolder,
@@ -7007,6 +7150,13 @@ export function XDriveMediaGallery({
           void onSetAlbumCover(currentAlbum, item).catch(() => undefined)
         }
       : undefined
+  const showGalleryMapEntry = Boolean(onShowMap && (
+    (section === 'library' && isRootSection) ||
+    (section === 'favorites' && isRootSection) ||
+    (section === 'albums' && Boolean(currentAlbum) && !currentFolderView) ||
+    (section === 'media-types' &&
+      (activeMediaType === 'image' || activeMediaType === 'video'))
+  ))
   const showAlbumIndex = isRootSection && section === 'albums'
   const nativeCellWall = isBaiduCellWall || isBaiduViewportWall
   const showPlacesIndex = isRootSection && section === 'places' && !nativeCellWall
@@ -7248,6 +7398,7 @@ export function XDriveMediaGallery({
                         ? '照片与视频'
                         : `${logicalItemCount.toLocaleString('zh-CN')} 个项目 · 所有 xDrive 图片和视频，包括普通上传和同步文件夹文件`
   const canBack = Boolean(
+    canReturnToMapEntry ||
     nativeCellWall ||
     currentFolderView ||
     currentCleanupReview ||
@@ -7309,7 +7460,7 @@ export function XDriveMediaGallery({
           sx={{ flex: '1 1 auto', minWidth: 0 }}
         >
           {galleryUploadAction}
-          {section === 'library' && isRootSection && onShowMap && !compactGallery ? (
+          {showGalleryMapEntry && !compactGallery ? (
             <Button size="small" variant="outlined" data-xdrive-gallery-show-map
               sx={{ minHeight: { xs: 44, sm: 36 } }} onClick={onShowMap}>
               显示地图
@@ -7564,7 +7715,7 @@ export function XDriveMediaGallery({
           canReturnToPosition={timelineReturnAnchor !== null}
           onReturnToPosition={returnToTimelineAnchor}
           onRefresh={onRefresh}
-          onShowMap={onShowMap && (mobileCollectionsOverview || (section === 'library' && isRootSection))
+          onShowMap={onShowMap && (mobileCollectionsOverview || showGalleryMapEntry)
             ? onShowMap : undefined}
           // Collections overview must not hide the Wide Web upload action.
           // The same callback opens the existing Web multi-file picker.
