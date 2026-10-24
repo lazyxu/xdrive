@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -282,7 +283,8 @@ func seedP04BrowserOwnerPhotoCells(t *testing.T, db *gorm.DB,
 		indexed := meta.MediaMetadata{
 			NodeID: node.ID, OwnerID: ownerID, NodeRevision: 1,
 			SHA256: file.SHA256, IndexState: meta.MediaIndexStateReady,
-			MediaKind: meta.MediaKindImage, MIMEType: "image/png",
+			RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
+			MediaKind:               meta.MediaKindImage, MIMEType: "image/png",
 			Latitude: &sourceLatitude, Longitude: &sourceLongitude,
 			CapturedAt: &stamp,
 		}

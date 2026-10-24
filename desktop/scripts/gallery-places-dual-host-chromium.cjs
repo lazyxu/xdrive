@@ -18,6 +18,11 @@ const esbuild=requireRepo('esbuild')
 const {chromium}=require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 const source=path.join(__dirname,'gallery-places-dual-host-chromium.tsx')
 const childDir=path.join(root,'deploy/baidu-isolated-child')
+// The true production Parent drives this choice. An old SDK-only success
+// cannot masquerade as the shipped photo-first Drawer feature passing.
+const shippedPhotoDrawer=fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  .includes('<XDriveMediaGalleryPlacesPhotoDrawer')
 const galleryHost='gallery.example.net'
 const childHost='map-isolated.example.org'
 const out=path.resolve(process.env.XDRIVE_PLACES_DUAL_HOST_RESULT_DIR ||
@@ -27,7 +32,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-places-dual-'))
 const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
-  checks:[],passed:false,errors:[]}
+  fullGalleryPageModes:[],checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const sdkStub='('+function sdkFactory(){
   class Point {constructor(lng,lat){this.lng=lng;this.lat=lat}}
@@ -375,13 +380,152 @@ async function testMode(browser,mode,port){
       coordinateSpace:scoped.wall.bounds.coordinate_space,cameraSpace:scoped.camera.coordinate_space}
   }finally{await context.close()}
 }
+
+// Use the shipped UI. Older Gallery code opens the virtual Cell Wall
+// immediately; photo-first Gallery opens a trusted Owner photo drawer first.
+// Never mock this transition or make the SDK Child responsible for media.
+async function openActualOwnerCellFromMap(page,mode){
+  await page.locator('[data-xdrive-places-cluster-list] summary').click()
+  await page.locator('[data-xdrive-places-cluster-list] button').first().click()
+  await page.waitForFunction(()=>
+    Boolean(document.querySelector('[data-xdrive-media-tile]') ||
+      document.querySelector('[data-xdrive-places-photo-drawer]')),
+    null,{timeout:30000})
+  const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+  if(!await drawer.count())return false
+  const photos=drawer.locator('[data-xdrive-places-photo-drawer-item]')
+  await photos.first().waitFor({state:'visible',timeout:30000})
+  record(mode+': trusted Owner photo drawer presents exactly three authorized images',
+    await photos.count()===3)
+  record(mode+': map SDK Child does not access private drawer photo API',
+    requests.every(item=>item.host!=='child'||!item.path.startsWith('/api/v1/')))
+  await drawer.locator('[data-xdrive-places-photo-drawer-open-all]').click()
+  await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+  return true
+}
+async function testFullGalleryPage(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const url='https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&full_gallery=1'+(mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto(url,{waitUntil:'domcontentloaded'})
+    // This is the real shipped Page/Photo Wall, not the minimal React Host
+    // fixture and not a second business SDK/Range implementation.
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(mode+': actual Gallery Page opens authorized Favorite BD09 map',
+      await page.locator('[data-xdrive-gallery-places-map]').count()===1)
+    // Grid labels ("区域 N") are viewport-relative; the verified Cell Range
+    // and its Owner Node IDs, not the displayed label, define the collection.
+    const drawerUsed=await openActualOwnerCellFromMap(page,mode)
+    record(mode+': shipped shared photo drawer entry actually ran',
+      drawerUsed===shippedPhotoDrawer)
+    const tile=page.locator('[data-xdrive-media-tile]').first()
+    await tile.waitFor({state:'visible'})
+    const originalTileRect=await tile.boundingBox()
+    const wall=await page.evaluate(()=>{
+      const tiles=document.querySelectorAll('[data-xdrive-media-tile]')
+      const selected=tiles[0]
+      const p=window.__mapProbe
+      return {count:tiles.length,first:selected?.getAttribute('data-xdrive-media-index'),
+        realCell:p.galleryPageReads.some(q=>q.kind==='cell'&&q.total===3),
+        errors:[...p.galleryPageErrors]}
+    })
+    record(mode+': real Gallery virtual Cell Wall receives current Gin 3-photo Range',
+      wall.realCell&&wall.count>=1&&wall.errors.length===0)
+    const initialCell=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(read=>read.kind==='cell').at(-1))
+    record(mode+': original Cell signed Owner member identity is complete',
+      initialCell?.total===3&&initialCell.nodeIDs?.length===3&&
+      initialCell.nodeIDs.every(id=>Number.isSafeInteger(id)&&id>0)&&
+      new Set(initialCell.nodeIDs).size===3)
+    const binary=page.waitForResponse(response=>new URL(response.url()).pathname
+      .startsWith('/api/v1/file-preview/')&&response.status()===200)
+    await tile.click()
+    const original=page.locator('[data-xdrive-image-phase="original"]').first()
+    await original.waitFor({state:'visible'})
+    const img=original.locator('img:not([aria-hidden="true"])').first()
+    await img.waitFor({state:'visible'})
+    const preview=await (await binary).body()
+    record(mode+': real Gallery Wall Viewer decodes authenticated physical PNG',
+      preview.length>50&&preview.subarray(0,8).equals(
+        Buffer.from([137,80,78,71,13,10,26,10]))&&
+      await img.evaluate(x=>x instanceof HTMLImageElement&&x.complete&&
+        x.naturalWidth===2&&x.naturalHeight===2))
+    if(mode==='isolated'){
+      // Opening the real Cell Wall unmounts Places entirely, so its untrusted
+      // SDK Child must be DISPOSED before the Gallery Viewer loads an original.
+      // The standalone trusted Parent fixture still tests hostile Child
+      // cross-Origin DOM isolation while the Child is actually mounted.
+      record('isolated: actual Gallery Viewer has no running map SDK Child',
+        !page.frames().some(frame=>frame.url().includes(childHost))&&
+        await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
+    }
+    await page.getByRole('button',{name:'关闭预览'}).click()
+    const returnedTile=page.locator('[data-xdrive-media-tile]').first()
+    await returnedTile.waitFor({state:'visible'})
+    const returnedTileRect=await returnedTile.boundingBox()
+    record(mode+': Viewer Back retains virtual Wall index and pixel scroll anchor',
+      await returnedTile.getAttribute('data-xdrive-media-index')===wall.first &&
+      originalTileRect!==null&&returnedTileRect!==null&&
+      Math.abs(returnedTileRect.y-originalTileRect.y)<2)
+    await page.getByRole('button',{name:'返回上一级'}).click()
+    await page.locator('[data-xdrive-places-cluster-overview]').waitFor()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(mode+': Cell Wall Back restores trusted Gallery map and Owner Scope',
+      await page.locator('[data-xdrive-gallery-places-map]').count()===1 &&
+      await page.locator('[data-xdrive-places-cluster-list] button').count()===1)
+    // The native <details> is collapsed after a real Page remount. Reopen it
+    // via an actual user action, then re-enter the *currently authorized*
+    // Cell instead of comparing stale viewport-relative "区域 N" labels.
+    const previousCellReads=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(read=>read.kind==='cell').length)
+    const returnDrawerUsed=await openActualOwnerCellFromMap(page,mode)
+    record(mode+': same trusted Cell entry flow is restored after Viewer Back',
+      returnDrawerUsed===drawerUsed)
+    await page.waitForFunction(before=>
+      window.__mapProbe.galleryPageReads.filter(read=>read.kind==='cell').length>before,
+      previousCellReads)
+    const freshCell=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(read=>read.kind==='cell').at(-1))
+    const canonicalIDs=ids=>JSON.stringify([...ids].sort((a,b)=>a-b))
+    record(mode+': returned map Cell reauthorizes identical Owner photo members',
+      freshCell?.total===initialCell.total&&freshCell.nodeIDs?.length===3&&
+      canonicalIDs(freshCell.nodeIDs)===canonicalIDs(initialCell.nodeIDs))
+    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    await page.getByRole('button',{name:'返回上一级'}).click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(mode+': repeated trusted Cell navigation returns to Owner map',
+      await page.locator('[data-xdrive-places-cluster-overview]').count()===1)
+    record(mode+': real Gallery Child never fetches private Owner media',
+      requests.every(item=>item.host!=='child'||
+        !item.path.startsWith('/api/v1/')))
+    record(mode+': mounted production Gallery has no runtime error',
+      errors.length===0)
+    // Mark a mode only after the complete shipped Page → Cell → Viewer →
+    // Wall → Map flow has passed all real Gin/PG and browser assertions.
+    summary.fullGalleryPageModes.push(mode)
+    return {mode,drawerUsed}
+  } finally {await context.close()}
+}
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
     outfile:path.join(temp,'bundle.js'),
     nodePaths:[path.join(root,'desktop/node_modules')],
     alias:{'@fixture/surface':path.join(root,'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),
-      '@fixture/viewer':path.join(root,'ui/shared/src/mui/MediaGalleryViewer.tsx')},
+      '@fixture/viewer':path.join(root,'ui/shared/src/mui/MediaGalleryViewer.tsx'),
+      '@fixture/gallery-page':path.join(root,'ui/shared/src/mui/MediaGallery.tsx')},
     define:{'process.env.NODE_ENV':'"production"'}
   })
   let galleryOrigin=''
@@ -401,6 +545,8 @@ async function main(){
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
         pathname.startsWith('/api/v1/media/places/baidu-jsapi/') ||
+        pathname==='/api/v1/media/items' ||
+        pathname.startsWith('/api/v1/media/items/') ||
         pathname.startsWith('/api/v1/files/') ||
         pathname.startsWith('/api/v1/file-preview/')))
       return proxyRealGin(req,res)
@@ -459,6 +605,14 @@ async function main(){
       childSDKLoads===1&&childSessionRedeems===1)
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
+    if(ginURL){
+      const inlinePage=await testFullGalleryPage(browser,'inline',port)
+      const isolatedPage=await testFullGalleryPage(browser,'isolated',port)
+      record('both SDK Hosts completed the real Gallery Page Viewer return',
+        summary.fullGalleryPageModes.join(',')==='inline,isolated')
+      record('inline and isolated Hosts use identical trusted Cell entry flow',
+        inlinePage.drawerUsed===isolatedPage.drawerUsed)
+    }
     summary.passed=true
   }finally{await browser.close()}
 }
