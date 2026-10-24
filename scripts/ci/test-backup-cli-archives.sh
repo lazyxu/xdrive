@@ -111,9 +111,12 @@ elapsed="$(( $(date +%s) - started ))"
 # "xd backup agent" is also a supported foreground service entrypoint.
 # Stopping this wrapper must propagate cancellation to the owning Agent;
 # CommandContext must not use its default immediate SIGKILL.
+# GNU timeout otherwise sends TERM to the entire process group, including
+# the Agent child, racing against the wrapper forwarding its own interrupt.
+# --foreground targets only the wrapper, exercising the intended shutdown.
 mkdir -p "$dir/foreground-home" "$dir/foreground-config" "$dir/foreground-cache"
 started="$(date +%s)"
-timeout --preserve-status --signal=TERM --kill-after=8s 3s \
+timeout --foreground --preserve-status --signal=TERM --kill-after=8s 3s \
   env HOME="$dir/foreground-home" XDG_CONFIG_HOME="$dir/foreground-config" \
   XDG_CACHE_HOME="$dir/foreground-cache" \
   "$dir/xdrive-backup/xd" backup agent
