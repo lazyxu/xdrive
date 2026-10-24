@@ -20,13 +20,16 @@ output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o|--output) output="$2"; shift 2 ;;
-    --retry|--retry-delay|--connect-timeout|-w|--write-out) shift 2 ;;
+    --retry|--retry-delay|--connect-timeout|--max-time|-w|--write-out) shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
 [[ -n "$url" ]]
 printf '%s\n' "$url" >> "$XDRIVE_TEST_STATE/urls"
+if [[ "${TEST_GITLAB_MISSING_HOST_ASSET:-0}" == 1 && "$url" == http://gitlab.t-fluid.com:1080/*/scripts/caddy-env-config.py ]]; then
+  exit 22
+fi
 
 emit() {
   if [[ -n "$output" ]]; then
@@ -204,6 +207,26 @@ run_case gitlab-master --source gitlab --channel master
 [[ "$(env_value "$TMP/gitlab-master" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
 [[ "$(env_value "$TMP/gitlab-master" XD_RELEASE_COMMIT)" == "$FULL_SHA" ]]
 grep -q "Resolved latest fully published GitLab master snapshot: $SHORT_SHA" "$TMP/gitlab-master.out"
+
+
+# The master installer can be newer than the advertised GitLab Snapshot.
+# Reject that snapshot before downloading even the first deployment file.
+: > "$TMP/state/urls"
+set +e
+TEST_GITLAB_MISSING_HOST_ASSET=1 XDRIVE_TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/gitlab-stale" \
+XD_SHELL_RC_PATH="$TMP/gitlab-stale.bashrc" XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 bash "$INSTALLER" --source gitlab --channel master \
+  >"$TMP/gitlab-stale.out" 2>"$TMP/gitlab-stale.err"
+stale_status=$?
+set -e
+[[ "$stale_status" -ne 0 ]] || { echo "Stale GitLab Release must fail" >&2; exit 1; }
+grep -q 'missing required scripts/caddy-env-config.py' "$TMP/gitlab-stale.err"
+if grep -q '/deploy/docker-compose.yml$' "$TMP/state/urls"; then
+  echo "Stale GitLab Release fetched deployment assets before preflight" >&2
+  exit 1
+fi
+test ! -e "$TMP/gitlab-stale/config/.env"
 
 run_case gitlab-stable --source gitlab --channel stable
 [[ "$(env_value "$TMP/gitlab-stable" XD_UPDATE_SOURCE)" == "gitlab" ]]

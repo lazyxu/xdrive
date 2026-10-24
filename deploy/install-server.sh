@@ -966,6 +966,20 @@ if [[ "$requested_source" == "gitlab" ]]; then
 else
   raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fi
+
+# An old GitLab rolling Release may be advertised after the branch installer has
+# advanced. Fail before fetching the full bundle if that exact Release commit
+# lacks host-control assets required by this installer. Do not substitute a
+# newer branch or GitHub file: every installed file must use the pinned ref.
+if [[ "$requested_source" == "gitlab" ]]; then
+  for required_gitlab_asset in caddy-env-config.py caddy-admission.py; do
+    if ! fetch_stdout "$raw_base/scripts/$required_gitlab_asset" >/dev/null 2>&1; then
+      echo "xDrive server installer: GitLab release $SOURCE_REF is missing required scripts/$required_gitlab_asset (or it cannot be read)." >&2
+      echo "GitLab snapshot is stale or incomplete; publish a fresh complete GitLab release before retrying. Existing services were not changed." >&2
+      exit 1
+    fi
+  done
+fi
 fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
 asset_no=1
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py; do
