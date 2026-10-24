@@ -231,7 +231,11 @@ test('optional Caddy rescue is authenticated and independent in throwaway rootle
   const runtime = read('scripts/ci/test-caddy-rescue-rootless-auth.sh')
   const preflight = read('internal/api/admin_caddy_preflight.go')
   assert.match(rootless, /test-caddy-rescue-rootless-auth\.sh/)
-  assert.match(rootless, /XDRIVE_ROOTLESS_RESCUE_PORT:-33081/)
+  // Each Rootless E2E run reserves its own host-local ports; keep the rescue
+  // port override and its use in the real authenticated rescue test explicit.
+  assert.match(rootless, /RESCUE_PORT="\$\{XDRIVE_ROOTLESS_RESCUE_PORT:-\}"/)
+  assert.match(rootless, /"\$RESCUE_PORT" "\$TMP_ROOT"/)
+  assert.match(rootless, /socket\.socket\(socket\.AF_INET/)
   assert.match(runtime, /--profile caddy-rescue up -d --no-deps caddy-rescue/)
   assert.match(runtime, /api\/v1\/auth\/login/)
   assert.match(runtime, /api\/v1\/admin\/services/)
