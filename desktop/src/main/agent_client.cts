@@ -3525,13 +3525,14 @@ export class AgentIPCClient {
     )
   }
 
-  mediaLivePhotoStillTicket(nodeID: number) {
+  mediaLivePhotoStillTicket(nodeID: number, signal?: AbortSignal) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.request<AgentFilePreviewTicket>(
       'GET',
       `/v1/media/live-photo-still-ticket?${query.toString()}`,
       undefined,
       45_000,
+      signal,
     )
   }
 

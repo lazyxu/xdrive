@@ -760,7 +760,7 @@ declare global {
         getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
-        getMediaLivePhotoStill: (nodeID: number) => Promise<DesktopResult<string>>
+        getMediaLivePhotoStill: (nodeID: number, requestID?: string) => Promise<DesktopResult<string>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>
         getMediaLivePhotoMotion: (
           nodeID: number,

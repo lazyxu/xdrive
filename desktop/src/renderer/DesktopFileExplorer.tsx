@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
-import { xDriveLeaseDesktopPreviewURL } from './desktopPreviewURLLease'
+import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -1022,8 +1022,18 @@ export default function DesktopFileExplorer({
       }
     }
     const agent = window.xdriveDesktop.agent
+    const discardLate = (late: { ok: boolean; data?: string }) => {
+      if (late.ok && typeof late.data === 'string') {
+        xDriveReleaseDiscardedDesktopPreviewURL(late.data,
+          (url) => agent.releaseCloudFilePreviewURL(url))
+      }
+    }
     if (kind === 'live_photo') {
-      const result = await agent.getMediaLivePhotoStill(Number(item.id))
+      const result = await xDriveDesktopViewportRequest(
+        signal,
+        (requestID) => agent.getMediaLivePhotoStill(Number(item.id), requestID),
+        discardLate,
+      )
       return result.ok
         ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
         : null
@@ -1032,6 +1042,7 @@ export default function DesktopFileExplorer({
     const result = await xDriveDesktopViewportRequest(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      discardLate,
     )
     return result.ok
       ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
@@ -1062,6 +1073,10 @@ export default function DesktopFileExplorer({
     const preview = await xDriveDesktopViewportRequest(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (late) => {
+        if (late.ok) xDriveReleaseDiscardedDesktopPreviewURL(late.data,
+          (url) => agent.releaseCloudFilePreviewURL(url))
+      },
     )
     if (!preview.ok) return null
     try {

@@ -1,5 +1,5 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
-import { xDriveLeaseDesktopPreviewURL } from './desktopPreviewURLLease'
+import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
 import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
@@ -191,10 +191,20 @@ export function createDesktopMediaGalleryDataSource(
         }
       }
       signal?.throwIfAborted()
+      const discardLate = (late: { ok: boolean; data?: string }) => {
+        if (late.ok && typeof late.data === 'string') {
+          xDriveReleaseDiscardedDesktopPreviewURL(late.data,
+            (url) => agent.releaseCloudFilePreviewURL(url))
+        }
+      }
       const result = kind === 'live_photo'
-        ? await agent.getMediaLivePhotoStill(nodeID)
+        ? await xDriveDesktopViewportRequest(
+          signal, (requestID) => agent.getMediaLivePhotoStill(nodeID, requestID),
+          discardLate,
+        )
         : await xDriveDesktopViewportRequest(
           signal, (requestID) => agent.cloudFilePreviewURL(nodeID, requestID),
+          discardLate,
         )
       if (!result.ok) {
         signal?.throwIfAborted()

@@ -8,6 +8,7 @@ let viewportRequestSequence = 0
 export async function xDriveDesktopViewportRequest<T>(
   signal: AbortSignal | undefined,
   invoke: (requestID?: string) => Promise<T>,
+  onAbortedResult?: (value: T) => void,
 ): Promise<T> {
   if (!signal) return invoke()
   signal.throwIfAborted()
@@ -20,6 +21,12 @@ export async function xDriveDesktopViewportRequest<T>(
   signal.addEventListener('abort', onAbort, { once: true })
   try {
     const result = await invoke(requestID)
+    // Main may mint a local proxy URL just before a Renderer cancellation.
+    // If IPC resolves after abort, the caller never receives the result, so
+    // notify its capability-limited disposer before throwing AbortError.
+    if (signal.aborted) {
+      try { onAbortedResult?.(result) } catch { /* Cancellation still wins. */ }
+    }
     signal.throwIfAborted()
     return result
   } finally {
