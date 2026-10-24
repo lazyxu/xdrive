@@ -120,10 +120,14 @@ test('Viewer mobile design keeps touch gestures separate from video and Live Pho
   const semanticLiveStart = mediaViewerContent.indexOf('if (livePhoto && loadLivePhotoMotion)')
   const ordinaryMediaStart = mediaViewerContent.indexOf('\n  return (', semanticLiveStart)
   assert.ok(semanticLiveStart >= 0 && ordinaryMediaStart > semanticLiveStart)
-  assert.equal(
-    mediaViewerContent.slice(semanticLiveStart, ordinaryMediaStart).includes('onSwipePrevious'),
-    false,
-    'Live Photo hold/release path must not be replaced by image swipe gestures',
+  assert.ok(
+    mediaViewerContent.slice(semanticLiveStart, ordinaryMediaStart).includes('onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}'),
+    'Paired Live Photo must use the authorized Viewer range without eager motion',
+  )
+  assert.ok(
+    preview.includes('onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}') &&
+    preview.includes('onSwipeNext={interactiveImage ? onSwipeNext : undefined}'),
+    'LIVP container must use the same shared gesture discriminator',
   )
   assert.ok(runtimeDocs.includes('移动 Viewer'), 'Web App Runtime must document mobile Viewer behavior')
   assert.ok(previewDocs.includes('pinch'), 'Preview Engine must document touch image gestures')

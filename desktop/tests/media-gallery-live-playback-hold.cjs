@@ -16,12 +16,12 @@ const original = read('ui/shared/src/mui/LivePhotoSurface.tsx')
 const start = original.indexOf('function livePhotoMotionURL(')
 assert.ok(start > 0, 'the production Live Photo helpers and component must exist')
 const source = [
-  "import { useCallback, useEffect, useRef, useState } from 'react'",
+  "import { useCallback, useEffect, useMemo, useRef, useState } from 'react'",
   "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
   'type XDriveLivePhotoMotionLoader = (progress?: XDriveByteProgressHandler, signal?: AbortSignal) => Promise<XDriveLivePhotoMotionSource | null>',
-  'type XDriveLivePhotoSurfaceProps = { still: any; stillReady?: boolean; loadMotion?: XDriveLivePhotoMotionLoader; sourceKey?: string | number; label?: string }',
+  'type XDriveLivePhotoSurfaceProps = { still: any; stillReady?: boolean; loadMotion?: XDriveLivePhotoMotionLoader; sourceKey?: string | number; label?: string; onSwipePrevious?: () => void; onSwipeNext?: () => void; deferTouchHold?: boolean }',
   'type PointerEvent<T> = any; type KeyboardEvent<T> = any',
   original.slice(start),
 ].join('\n')
@@ -70,12 +70,13 @@ const makePlayer = play => ({
   readyState: 3,
   pause() { this.pauseCalls++ },
 })
-const mount = (player, loadMotion, sourceKey = 'node:1') =>
+const mount = (player, loadMotion, sourceKey = 'node:1', extra = {}) =>
   renderer.create(React.createElement(Live, {
     still: React.createElement('mounted-live-still', { 'data-still': true }),
     stillReady: true,
     sourceKey,
     loadMotion,
+    ...extra,
   }), {
     createNodeMock: element =>
       element.type === 'mounted-live-box' && element.props.component === 'video'
@@ -584,4 +585,183 @@ test('P1 Web Live Photo adapters pass one AbortSignal to authenticated motion ti
     ['Semantic Gallery Viewer', semantic, 'loadLivePhotoMotion(item.node.id, onProgress, signal)'],
     ['Routed Owner isolation', routed, 'key={modalOwner.session}'],
   ]) assert.ok(code.includes(needle), label + ' must retain signal / ownership')
+})
+
+
+test('P1 Live Photo browsing separates tap, swipe and stationary hold without eager motion bytes', async () => {
+  const originalSet = global.setTimeout
+  const originalClear = global.clearTimeout
+  const scheduled = new Map()
+  let nextTimer = 1000000
+  global.setTimeout = (callback, delay, ...args) => {
+    if (delay === 260) {
+      const id = nextTimer++
+      scheduled.set(id, () => callback(...args))
+      return id
+    }
+    return originalSet(callback, delay, ...args)
+  }
+  global.clearTimeout = (id) => {
+    if (!scheduled.delete(id)) originalClear(id)
+  }
+  let loads = 0, next = 0, previous = 0
+  const load = async () => { loads++; return 'https://example.invalid/one-live.mov' }
+  const player = makePlayer(() => Promise.resolve())
+  const opts = { onSwipeNext: () => next++, onSwipePrevious: () => previous++, deferTouchHold: true }
+  const pt = (x, y, pointerId = 1, isPrimary = true) => ({
+    ...pointer, pointerId, isPrimary, clientX: x, clientY: y,
+  })
+  let tree
+  const start = async (x, y) => act(async () => { surface(tree).props.onPointerDown(pt(x, y)); await flush() })
+  const move = async (x, y) => act(async () => { surface(tree).props.onPointerMove(pt(x, y)); await flush() })
+  const finish = async (x, y) => act(async () => { surface(tree).props.onPointerUp(pt(x, y)); await flush() })
+  try {
+    await act(async () => { tree = mount(player, load, 'gesture:1', opts); await flush() })
+    await start(300, 150)
+    assert.equal(loads, 0, 'touch down may not mint motion before a stationary hold')
+    assert.equal(scheduled.size, 1)
+    const stale = [...scheduled.values()][0]
+    await move(200, 150)
+    assert.equal(scheduled.size, 0, 'moving cancels the in-flight hold timer')
+    await finish(200, 150)
+    assert.equal(next, 1, 'left swipe advances one authorized photo')
+    assert.equal(previous, 0)
+    assert.equal(loads, 0, 'horizontal navigation must never mint a Live ticket')
+    await act(async () => { stale(); await flush() })
+    assert.equal(loads, 0, 'a queued stale timer cannot request motion after navigation')
+
+    await start(200, 150)
+    await finish(200, 150)
+    assert.equal(loads, 0, 'short tap only toggles outer Viewer chrome')
+    await start(300, 150)
+    await move(300, 235)
+    await finish(300, 235)
+    assert.equal(next, 1, 'vertical move must not navigate')
+    assert.equal(loads, 0, 'vertical move must not request motion')
+    await start(300, 150)
+    await move(296, 180)
+    await move(140, 150)
+    await finish(140, 150)
+    assert.equal(next, 1, 'vertical-first movement must not change into horizontal navigation')
+    assert.equal(loads, 0)
+
+    await start(200, 150)
+    const hold = [...scheduled.values()][0]
+    assert.ok(hold)
+    await act(async () => { hold(); await flush() })
+    assert.equal(loads, 1, 'stationary long hold requests one authenticated motion source')
+    await finish(200, 150)
+    assert.equal(next, 1)
+    assert.equal(video(tree).props.sx.opacity, 0, 'release returns the still immediately')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    global.setTimeout = originalSet
+    global.clearTimeout = originalClear
+  }
+})
+
+test('P1 Live Photo two-finger and replaced-source gestures cancel before navigation or motion fetch', async () => {
+  const originalSet = global.setTimeout
+  const originalClear = global.clearTimeout
+  const scheduled = new Map()
+  let seq = 2000000
+  global.setTimeout = (cb, delay, ...args) => {
+    if (delay === 260) { const id = seq++; scheduled.set(id, () => cb(...args)); return id }
+    return originalSet(cb, delay, ...args)
+  }
+  global.clearTimeout = id => { if (!scheduled.delete(id)) originalClear(id) }
+  const player = makePlayer(() => Promise.resolve())
+  const load = async () => { loads++; return 'https://example.invalid/live.mov' }
+  let loads = 0, navigation = 0, tree
+  const opts = { onSwipeNext: () => navigation++, deferTouchHold: true }
+  const pt = (x, pointerId = 1, isPrimary = true) => ({
+    ...pointer, pointerId, isPrimary, clientX: x, clientY: 120,
+  })
+  try {
+    await act(async () => { tree = mount(player, load, 'A', opts); await flush() })
+    await act(async () => {
+      surface(tree).props.onPointerDown(pt(300))
+      surface(tree).props.onPointerDown(pt(320, 2, false))
+    })
+    assert.equal(scheduled.size, 0, 'pinch/second finger cancels an uncommitted Live hold')
+    await act(async () => {
+      surface(tree).props.onPointerMove(pt(200))
+      surface(tree).props.onPointerUp(pt(200))
+      await flush()
+    })
+    assert.equal(navigation, 0)
+    assert.equal(loads, 0)
+    await act(async () => surface(tree).props.onPointerDown(pt(250)))
+    const late = [...scheduled.values()][0]
+    assert.ok(late)
+    await act(async () => {
+      tree.update(React.createElement(Live, {
+        still: React.createElement('mounted-live-still', null),
+        stillReady: true, sourceKey: 'B', loadMotion: load, ...opts,
+      }))
+      await flush()
+    })
+    assert.equal(scheduled.size, 0, 'source revision invalidates pending hold timer')
+    await act(async () => { late(); await flush() })
+    assert.equal(loads, 0, 'A timer cannot fetch motion for B')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    global.setTimeout = originalSet
+    global.clearTimeout = originalClear
+  }
+})
+
+
+test('P1 single-photo Viewer defers touch even with no neighboring media, and still loss revokes hold', async () => {
+  const set = global.setTimeout, clear = global.clearTimeout, pending = new Map()
+  let nextID = 3100000
+  global.setTimeout = (callback, delay, ...args) => {
+    if (delay === 260) {
+      const id = nextID++
+      pending.set(id, () => callback(...args))
+      return id
+    }
+    return set(callback, delay, ...args)
+  }
+  global.clearTimeout = id => { if (!pending.delete(id)) clear(id) }
+  let loads = 0, tree
+  const loader = async () => { loads++; return 'https://example.invalid/one.mov' }
+  const player = makePlayer(() => Promise.resolve())
+  const gesture = (x, y) => ({ ...pointer, clientX: x, clientY: y })
+  const options = { deferTouchHold: true }
+  const render = stillReady => React.createElement(Live, {
+    still: React.createElement('mounted-live-still', null),
+    stillReady, sourceKey: 'single:2', loadMotion: loader, ...options,
+  })
+  try {
+    await act(async () => {
+      tree = mount(player, loader, 'single:2', options)
+      await flush()
+    })
+    await act(async () => {
+      surface(tree).props.onPointerDown(gesture(300, 150))
+      surface(tree).props.onPointerMove(gesture(180, 150))
+      surface(tree).props.onPointerUp(gesture(180, 150))
+      await flush()
+    })
+    assert.equal(loads, 0, 'last item still must not fetch motion on a swipe')
+    assert.equal(pending.size, 0)
+    await act(async () => {
+      surface(tree).props.onPointerDown(gesture(200, 150))
+      surface(tree).props.onPointerUp(gesture(200, 150))
+      await flush()
+    })
+    assert.equal(loads, 0, 'short tap with no neighbors is not a Live press')
+    await act(async () => surface(tree).props.onPointerDown(gesture(180, 150)))
+    const delayed = [...pending.values()][0]
+    assert.ok(delayed)
+    await act(async () => { tree.update(render(false)); await flush() })
+    assert.equal(pending.size, 0)
+    await act(async () => { delayed(); await flush() })
+    assert.equal(loads, 0, 'lost still must revoke even an already queued hold callback')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    global.setTimeout = set
+    global.clearTimeout = clear
+  }
 })

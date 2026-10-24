@@ -97,6 +97,9 @@ export function XDriveMediaViewerContent({
         minHeight={minHeight}
         maxHeight={maxHeight}
         mediaTransform={mediaTransform}
+        interactiveImage={interactiveImage}
+        onSwipePrevious={onSwipePrevious}
+        onSwipeNext={onSwipeNext}
       />
     )
   }
@@ -109,6 +112,9 @@ export function XDriveMediaViewerContent({
         stillReady={presentation.presentationState === 'ready'}
         loadMotion={loadOpenLivePhotoMotion}
         sourceKey={`${item.node.id}:${item.node.revision}`}
+        onSwipePrevious={interactiveImage ? onSwipePrevious : undefined}
+        onSwipeNext={interactiveImage ? onSwipeNext : undefined}
+        deferTouchHold={interactiveImage}
         still={(
           <XDriveFilePreviewSurface
             target={target}

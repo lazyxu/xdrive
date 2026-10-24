@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
 import { Box, Chip, CircularProgress } from '@mui/material'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
@@ -44,6 +44,9 @@ export type XDriveLivePhotoSurfaceProps = {
   loadMotion?: XDriveLivePhotoMotionLoader
   sourceKey?: string | number
   label?: string
+  onSwipePrevious?: () => void
+  onSwipeNext?: () => void
+  deferTouchHold?: boolean
 }
 
 function livePhotoMotionURL(value: XDriveLivePhotoMotionSource) {
@@ -70,6 +73,9 @@ export function XDriveLivePhotoSurface({
   loadMotion,
   sourceKey,
   label = '实况照片',
+  onSwipePrevious,
+  onSwipeNext,
+  deferTouchHold = false,
 }: XDriveLivePhotoSurfaceProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const motionURLRef = useRef('')
@@ -106,6 +112,31 @@ export function XDriveLivePhotoSurface({
   const loadMotionRef = useRef(loadMotion)
   loadMotionRef.current = loadMotion
   const holdActiveRef = useRef(false)
+  // Browsing viewports defer touch holds even at the first/last photo;
+  // having no neighbor must not trigger motion for a short tap or swipe.
+  const stillReadyRef = useRef(stillReady)
+  stillReadyRef.current = stillReady
+  const gestureSession = useMemo(() => ({}), [sourceKey])
+  const gestureSessionRef = useRef(gestureSession)
+  gestureSessionRef.current = gestureSession
+  const touchGestureRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    x: number
+    y: number
+    mode: 'pending' | 'holding' | 'swiping' | 'cancelled'
+    held: boolean
+    multi: boolean
+    session: object
+  } | null>(null)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearHoldTimer = useCallback(() => {
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = null
+    }
+  }, [])
   const [motionURL, setMotionURL] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<number | null>(null)
@@ -304,6 +335,8 @@ export function XDriveLivePhotoSurface({
   // underneath the newly unavailable still or automatically resume later.
   useEffect(() => {
     if (!stillReady) {
+      clearHoldTimer()
+      touchGestureRef.current = null
       holdActiveRef.current = false
       stopPlayback()
       cancelPendingMotion()
@@ -312,7 +345,16 @@ export function XDriveLivePhotoSurface({
       retryableMotionLoadRef.current = false
       setLoading(false)
     }
-  }, [cancelPendingMotion, stillReady, stopPlayback])
+  }, [cancelPendingMotion, clearHoldTimer, stillReady, stopPlayback])
+
+  useEffect(() => {
+    clearHoldTimer()
+    touchGestureRef.current = null
+    return () => {
+      clearHoldTimer()
+      touchGestureRef.current = null
+    }
+  }, [clearHoldTimer, gestureSession])
 
   useEffect(() => {
     cancelPendingMotion()
@@ -344,18 +386,86 @@ export function XDriveLivePhotoSurface({
     }
   }, [cancelPendingMotion, sourceKey, stopPlayback])
 
+  const cancelTouchGesture = useCallback(() => {
+    clearHoldTimer()
+    touchGestureRef.current = null
+    endHold()
+  }, [clearHoldTimer, endHold])
+
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (!event.isPrimary) return
+    if (!event.isPrimary) {
+      // A second finger must cancel a pending hold, not download motion.
+      const gesture = touchGestureRef.current
+      if (gesture) {
+        gesture.multi = true
+        gesture.mode = 'cancelled'
+        clearHoldTimer()
+        endHold()
+      }
+      return
+    }
     if (event.pointerType === 'mouse' && event.button !== 0) return
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
-      // Pointer capture is best-effort; release handlers still stop playback.
+      // Pointer capture is best-effort; cancel/release still ends the hold.
     }
-    beginHold()
-  }, [beginHold])
+    if (event.pointerType !== 'touch' || !deferTouchHold) {
+      beginHold()
+      return
+    }
+    clearHoldTimer()
+    const gesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      mode: 'pending' as const,
+      held: false,
+      multi: false,
+      session: gestureSession,
+    }
+    touchGestureRef.current = gesture
+    // A touch becomes a manual Live hold only after remaining stationary.
+    // Short tap/swipe/pinch never requests a motion ticket.
+    holdTimerRef.current = setTimeout(() => {
+      holdTimerRef.current = null
+      if (touchGestureRef.current !== gesture ||
+          gestureSessionRef.current !== gesture.session ||
+          gesture.mode !== 'pending' || gesture.multi || !stillReadyRef.current) return
+      gesture.held = true
+      touchGestureRef.current = { ...gesture, mode: 'holding' }
+      beginHold()
+    }, 260)
+  }, [beginHold, clearHoldTimer, deferTouchHold, endHold, gestureSession])
+
+  const handlePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId ||
+        gesture.session !== gestureSessionRef.current) return
+    gesture.x = event.clientX
+    gesture.y = event.clientY
+    const dx = gesture.x - gesture.startX
+    const dy = gesture.y - gesture.startY
+    if (Math.hypot(dx, dy) > 12) {
+      clearHoldTimer()
+      if (gesture.held) {
+        gesture.mode = 'cancelled'
+        endHold()
+      } else if (gesture.mode === 'pending') {
+        // A gesture starting vertically cannot later become a photo swipe.
+        gesture.mode = Math.abs(dx) > Math.abs(dy) * 1.25 ? 'swiping' : 'cancelled'
+      }
+    }
+  }, [clearHoldTimer, endHold])
 
   const handlePointerRelease = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current
+    const current = Boolean(gesture && gesture.pointerId === event.pointerId &&
+      gesture.session === gestureSessionRef.current)
+    clearHoldTimer()
+    if (current) touchGestureRef.current = null
     try {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
@@ -364,7 +474,13 @@ export function XDriveLivePhotoSurface({
       // Ignore runtimes that have already released the pointer.
     }
     endHold()
-  }, [endHold])
+    if (!current || !gesture || gesture.held || gesture.multi || gesture.mode === 'cancelled') return
+    const dx = event.clientX - gesture.startX
+    const dy = event.clientY - gesture.startY
+    if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
+    if (dx > 0) onSwipePrevious?.()
+    else onSwipeNext?.()
+  }, [clearHoldTimer, endHold, onSwipeNext, onSwipePrevious])
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
@@ -393,13 +509,14 @@ export function XDriveLivePhotoSurface({
       aria-busy={loading}
       aria-disabled={!stillReady || undefined}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerRelease}
-      onPointerCancel={handlePointerRelease}
-      onPointerLeave={endHold}
-      onLostPointerCapture={endHold}
+      onPointerCancel={cancelTouchGesture}
+      onPointerLeave={cancelTouchGesture}
+      onLostPointerCapture={cancelTouchGesture}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
-      onBlur={endHold}
+      onBlur={cancelTouchGesture}
       onContextMenu={(event) => event.preventDefault()}
       sx={{
         position: 'relative',
