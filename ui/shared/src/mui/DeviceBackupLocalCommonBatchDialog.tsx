@@ -3,13 +3,16 @@ import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack
 import { formatBytes } from '../format'
 import type {
   XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryItem,
-  XDriveLocalBackupCommonBatchHistoryPage,
+  XDriveLocalBackupCommonBatchHistoryPage, XDriveLocalBackupRecoveryReview,
 } from '../device-backups'
 
 export interface XDriveLocalBackupCommonBatchActions {
   run(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
   inspect(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number): Promise<XDriveLocalBackupCommonBatchHistoryPage>
+  // Optional owning-Agent-only, read-only historical SQL receipt review.
+  review?(sourceID: number, afterFile: number, pageEpoch: string, requestID: string): Promise<XDriveLocalBackupRecoveryReview>
+  cancelReview?(requestID: string): Promise<void>
   control(sourceID: number, action: 'pause' | 'cancel'): Promise<XDriveLocalBackupCommonBatch>
 }
 
@@ -29,6 +32,31 @@ function safeBatchStatus(value: XDriveLocalBackupCommonBatch, sourceID: number):
     value.confirmed_files + value.skipped_files <= value.inspected_files
 }
 
+// Renderer defense in depth: a page is an unauthoritative historical
+// observation, never a current CAS proof or permission to resume upload.
+export function safeRecoveryReviewPage(
+  value: XDriveLocalBackupRecoveryReview, sourceID: number,
+  after: number, expectedEpoch: string,
+): boolean {
+  if (!value || value.source_id !== sourceID ||
+    !Number.isSafeInteger(value.revision) || value.revision <= 0 ||
+    !['partial', 'uncertain', 'paused', 'cancelled'].includes(value.run_state) ||
+    value.authoritative !== false || typeof value.has_more !== 'boolean' ||
+    typeof value.page_epoch !== 'string' || !/^[0-9a-f]{64}$/.test(value.page_epoch) ||
+    (after > 0 && value.page_epoch !== expectedEpoch)) return false
+  const counts = [value.reviewed_files, value.ignored_files, value.unsupported_files,
+    value.unrecorded_files, value.historical_committed_files, value.pending_original_files,
+    value.next_after_file]
+  if (!counts.every((n) => Number.isSafeInteger(n) && n >= 0) ||
+    value.reviewed_files > 16 ||
+    value.reviewed_files !== value.ignored_files + value.unsupported_files +
+      value.unrecorded_files + value.historical_committed_files + value.pending_original_files) return false
+  return value.has_more
+    ? value.reviewed_files === 16 && value.next_after_file === after + value.reviewed_files &&
+        value.next_after_file <= 1_000_000
+    : value.next_after_file === 0
+}
+
 // Only owning Desktop passes this adapter. Closing is an observer detach,
 // NOT a claim that the Agent/Server stopped an in-flight CAS/SQL operation.
 export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, onClose }: {
@@ -39,6 +67,8 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
   const epoch = useRef(0)
   const inspectGeneration = useRef(0)
   const historyGeneration = useRef(0)
+  const reviewGeneration = useRef(0)
+  const activeReviewID = useRef('')
   const [pending, setPending] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [controlPending, setControlPending] = useState(false)
@@ -47,6 +77,9 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
   const [hasAttempted, setHasAttempted] = useState(false)
   const [history, setHistory] = useState<XDriveLocalBackupCommonBatchHistoryItem[]>([])
   const [historyError, setHistoryError] = useState(false)
+  const [reviewPage, setReviewPage] = useState<XDriveLocalBackupRecoveryReview | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewError, setReviewError] = useState('')
 
   const refresh = useCallback(async () => {
     const ticket = epoch.current
@@ -57,6 +90,10 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
       if (epoch.current !== ticket || inspectGeneration.current !== generation) return
       if (!safeBatchStatus(next, sourceID)) throw new Error('untrusted backup status')
       setStatus(next)
+      if (next.running) {
+        setReviewPage(null)
+        setReviewError('')
+      }
       if (!next.running) setHasAttempted(false)
       setMessage('')
     } catch {
@@ -103,6 +140,10 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     epoch.current += 1
     inspectGeneration.current += 1
     historyGeneration.current += 1
+    reviewGeneration.current += 1
+    setReviewPage(null)
+    setReviewError('')
+    setReviewLoading(false)
     setStatus(null)
     setHistory([])
     setHistoryError(false)
@@ -114,8 +155,12 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
       epoch.current += 1
       inspectGeneration.current += 1
       historyGeneration.current += 1
+      reviewGeneration.current += 1
+      const id = activeReviewID.current
+      activeReviewID.current = ''
+      if (id) void actions.cancelReview?.(id).catch(() => {})
     }
-  }, [refresh, refreshHistory])
+  }, [refresh, refreshHistory, actions])
 
   // Start returns HTTP 202 while the owning Agent continues independently.
   // Poll only while running; closing the dialog merely detaches this observer.
@@ -130,8 +175,11 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
   }, [status?.running, status?.state, refreshHistory])
 
   const start = async () => {
-    if (pending || inspecting || hasAttempted || status?.running) return
+    if (pending || inspecting || reviewLoading || hasAttempted || status?.running) return
     const ticket = epoch.current
+    reviewGeneration.current += 1
+    setReviewPage(null)
+    setReviewError('')
     setPending(true)
     setHasAttempted(true)
     setMessage('')
@@ -173,6 +221,40 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
       }
     } finally {
       if (epoch.current === ticket) setControlPending(false)
+    }
+  }
+
+  const loadReview = async (continuePage: boolean) => {
+    if (!actions.review || !actions.cancelReview || reviewLoading || pending ||
+      status?.running || (continuePage && !reviewPage?.has_more)) return
+    const earlier = reviewPage
+    const after = continuePage && earlier ? earlier.next_after_file : 0
+    const pageEpoch = after > 0 && earlier ? earlier.page_epoch : ''
+    const ticket = epoch.current
+    const generation = ++reviewGeneration.current
+    const requestID = crypto.randomUUID()
+    activeReviewID.current = requestID
+    setReviewLoading(true)
+    setReviewError('')
+    if (!continuePage) setReviewPage(null)
+    try {
+      const next = await actions.review(sourceID, after, pageEpoch, requestID)
+      if (epoch.current !== ticket || reviewGeneration.current !== generation) return
+      if (!safeRecoveryReviewPage(next, sourceID, after, pageEpoch) ||
+        (continuePage && earlier &&
+          (next.revision !== earlier.revision || next.run_state !== earlier.run_state))) {
+        throw new Error('untrusted recovery page')
+      }
+      // Only one page is displayed: mixing historical SQL reads from
+      // different moments cannot establish a complete SourceRun.
+      setReviewPage(next)
+    } catch {
+      if (epoch.current !== ticket || reviewGeneration.current !== generation) return
+      setReviewPage(null)
+      setReviewError('原始回执只读核查失败或清单代际已变化。请重新从第一页核对，不要重试不确定的上传。')
+    } finally {
+      if (activeReviewID.current === requestID) activeReviewID.current = ''
+      if (epoch.current === ticket && reviewGeneration.current === generation) setReviewLoading(false)
     }
   }
 
@@ -226,6 +308,48 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
             onClick={() => void refresh()}>
             {inspecting ? '查询中' : '刷新本机任务状态（只读）'}
           </Button>
+          {actions.review && actions.cancelReview ? (
+            <Stack spacing={0.75}>
+              <Typography variant="subtitle2">原始任务恢复核查（只读）</Typography>
+              <Typography variant="caption" color="text.secondary">
+                仅核对当前 Owner 的持久原始 SQL 回执，每页最多 16 个文件。
+                已提交仅代表历史回执，不证明当前云端文件或 CAS 数据仍然完整。
+                本功能不会自动恢复、重传或删除任何文件。
+              </Typography>
+              <Button size="small" variant="outlined"
+                disabled={reviewLoading || pending || Boolean(status?.running)}
+                onClick={() => void loadReview(false)}>
+                {reviewLoading ? '核查中…' : reviewPage ? '重新从第一页核查' : '开始只读恢复核查'}
+              </Button>
+              {reviewPage ? (
+                <Stack spacing={0.5}>
+                  <Typography variant="body2">
+                    当前页 {reviewPage.reviewed_files} 个文件 · Source 版本 {reviewPage.revision}
+                  </Typography>
+                  <Typography variant="body2">
+                    历史已提交 {reviewPage.historical_committed_files} ·
+                    待确认 {reviewPage.pending_original_files} ·
+                    未记录 {reviewPage.unrecorded_files}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    已忽略 {reviewPage.ignored_files} · 暂不支持 {reviewPage.unsupported_files}
+                  </Typography>
+                  <Alert severity="warning">
+                    历史提交记录不能当作当前 CAS 物理完整性证明；跨页结果也不是同一时点的数据库快照。
+                    待确认的 Operation 不允许自动重发。
+                  </Alert>
+                  {reviewPage.has_more ? (
+                    <Button size="small" variant="text"
+                      disabled={reviewLoading || Boolean(status?.running)}
+                      onClick={() => void loadReview(true)}>
+                      核查下一页（仅只读）
+                    </Button>
+                  ) : <Typography variant="caption" color="text.secondary">当前清单已无更多可核查文件</Typography>}
+                </Stack>
+              ) : null}
+              {reviewError ? <Alert severity="warning">{reviewError}</Alert> : null}
+            </Stack>
+          ) : null}
           <Stack spacing={0.75}>
             <Typography variant="subtitle2">最近本机备份记录</Typography>
             <Typography variant="caption" color="text.secondary">
@@ -266,7 +390,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
           </>
         ) : null}
         <Button variant="contained"
-          disabled={pending || inspecting || hasAttempted || Boolean(blocked)}
+          disabled={pending || inspecting || reviewLoading || hasAttempted || Boolean(blocked)}
           onClick={() => void start()}>
           {pending ? '正在启动' : hasAttempted ? '本次已提交' : status?.state === 'uncertain' || (status?.uncertain_files ?? 0) > 0 ? '核对并恢复原始任务' : status?.state === 'paused' ? '继续增量备份'
             : status?.state === 'cancelled' ? '重新扫描并备份' : '立即扫描并增量备份'}

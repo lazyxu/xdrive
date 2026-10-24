@@ -259,6 +259,7 @@ import {
   type AgentLocalBackupFirstFileJobStatus,
   type AgentLocalBackupCommonBatch,
   type AgentLocalBackupCommonBatchHistoryPage,
+  type AgentLocalBackupRecoveryReview,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
@@ -3089,6 +3090,49 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'device-backup-local-common-batch')
       return requireAgentClient().localBoundBackupCommonBatchControl(sourceID, action)
+    }, false))
+  // Only the owning Desktop may request redacted historical per-file
+  // classifications. A request is cancelable; Go rechecks Root/Owner/session
+  // and its original SQL receipts. Renderer never chooses an OS file path.
+  const localRecoveryReviewRequests = new Map<string, AbortController>()
+  ipcMain.handle('agent:get-device-backup-local-recovery-review', (
+    event, sourceID: unknown, afterFile: unknown, pageEpoch: unknown, requestID: unknown,
+  ) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof afterFile !== 'number' || !Number.isSafeInteger(afterFile) ||
+      afterFile < 0 || afterFile > 1000000 ||
+      typeof pageEpoch !== 'string' ||
+      (afterFile === 0 ? pageEpoch !== '' : !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
+      !validLocalPreviewID(requestID) || localRecoveryReviewRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupRecoveryReview>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid private recovery review request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    localRecoveryReviewRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupRecoveryReview>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-common-recovery-review')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local recovery review was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupRecoveryReview(
+        sourceID, afterFile, pageEpoch, controller.signal)
+    }, false).finally(() => {
+      if (localRecoveryReviewRequests.get(key) === controller) localRecoveryReviewRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-recovery-review', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local recovery review ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localRecoveryReviewRequests.has(key)
+      localRecoveryReviewRequests.get(key)?.abort()
+      return { cancelled: found }
     }, false))
   // An advisory read-only local delta uses its own request registry.
   // Closing its dialog or changing account aborts Electron HTTP and Go.

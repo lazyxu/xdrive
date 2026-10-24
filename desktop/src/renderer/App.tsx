@@ -619,6 +619,19 @@ export default function App({
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
+      // Do not expose owner-private Agent recovery to Web/Mobile or foreign
+      // Desktop. The request remains a read-only, generation-pinned view.
+      ...(agent.hello?.capabilities.includes('device-backup-local-common-recovery-review') ? {
+        review: async (sourceID: number, afterFile: number, pageEpoch: string, requestID: string) => {
+          const result = await window.xdriveDesktop.agent.getDeviceBackupLocalRecoveryReview(
+            sourceID, afterFile, pageEpoch, requestID)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        },
+        cancelReview: async (requestID: string) => {
+          await window.xdriveDesktop.agent.cancelDeviceBackupLocalRecoveryReview(requestID)
+        },
+      } : {}),
       control: async (sourceID: number, action: 'pause' | 'cancel') => {
         const result = await window.xdriveDesktop.agent.controlDeviceBackupLocalCommonBatch(sourceID, action)
         if (!result.ok) throw new Error(result.error.message)

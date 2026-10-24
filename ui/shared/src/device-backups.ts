@@ -190,6 +190,24 @@ export interface XDriveLocalBackupCommonBatchHistoryPage {
   items: XDriveLocalBackupCommonBatchHistoryItem[]
 }
 
+// Owning Desktop only. This is historical receipt observation, NOT a
+// current Node/CAS check or authorization to resume uncertain writes.
+export interface XDriveLocalBackupRecoveryReview {
+  source_id: number
+  revision: number
+  run_state: 'partial' | 'uncertain' | 'paused' | 'cancelled'
+  reviewed_files: number
+  ignored_files: number
+  unsupported_files: number
+  unrecorded_files: number
+  historical_committed_files: number
+  pending_original_files: number
+  next_after_file: number
+  page_epoch: string
+  has_more: boolean
+  authoritative: false
+}
+
 export interface XDriveLocalBackupSnapshot {
   source_id: number
   revision: number
