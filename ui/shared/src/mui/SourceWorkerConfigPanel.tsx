@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import type {
   XDriveSourceWorkerConfig,
   XDriveSourceWorkerValues,
@@ -148,7 +149,7 @@ export function XDriveSourceWorkerConfigPanel({
       }
     } catch (err) {
       if (epoch === epochRef.current) {
-        setError(err instanceof Error ? err.message : '刷新 Pull Worker 状态失败。')
+        setError(xDriveCoreDependencyErrorMessage(err, 'worker', 'refresh'))
       }
     } finally {
       if (epoch === epochRef.current) {
@@ -191,7 +192,7 @@ export function XDriveSourceWorkerConfigPanel({
       }
     } catch (err) {
       if (epoch !== epochRef.current) return
-      setError(err instanceof Error ? err.message : 'Pull Worker 配置保存失败。')
+      setError(xDriveCoreDependencyErrorMessage(err, 'worker', 'save'))
       const actual = source.loadSourceWorkerConfig
         ? await source.loadSourceWorkerConfig().catch(() => null)
         : null
@@ -237,7 +238,7 @@ export function XDriveSourceWorkerConfigPanel({
       }
     } catch (err) {
       if (epoch !== epochRef.current) return
-      setError(err instanceof Error ? err.message : '历史配置回滚失败。')
+      setError(xDriveCoreDependencyErrorMessage(err, 'worker', 'rollback'))
       const actual = source.loadSourceWorkerConfig
         ? await source.loadSourceWorkerConfig().catch(() => null)
         : null
