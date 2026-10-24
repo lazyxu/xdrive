@@ -28,5 +28,7 @@ grep -Fqx "commit: $XDRIVE_BUILD_COMMIT" <<<"$server_version_output"
 grep -Fqx "commit time: $XDRIVE_BUILD_COMMIT_TIME" <<<"$server_version_output"
 grep -Fqx "build time: $XDRIVE_BUILD_TIME" <<<"$server_version_output"
 
-bash scripts/test-server-chunk-storage.sh
+if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
+  bash scripts/test-server-chunk-storage.sh
+fi
 bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image
