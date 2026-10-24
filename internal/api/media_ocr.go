@@ -8,6 +8,7 @@ import (
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +18,7 @@ type mediaOCRDTO struct {
 	State    string `json:"state"`
 	Text     string `json:"text,omitempty"`
 	Language string `json:"language,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 func mediaOCRInputFingerprint(sha string, nodeID, revision uint64) string {
@@ -53,7 +55,7 @@ func (s *Server) mediaOCRDetails(ctx context.Context, ownerID uint64, node meta.
 		return nil, err
 	}
 	var state meta.PhotoAnalysisState
-	if err := s.DB.WithContext(ctx).Select("state", "input_fingerprint").
+	if err := s.DB.WithContext(ctx).Select("state", "input_fingerprint", "last_error").
 		Where("asset_id = ? AND kind = ?", asset.ID, meta.PhotoAnalysisKindOCRText).
 		Take(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -79,8 +81,16 @@ func (s *Server) mediaOCRDetails(ctx context.Context, ownerID uint64, node meta.
 			return nil, err
 		}
 		return &mediaOCRDTO{State: "ready", Text: ocr.Text, Language: ocr.Language}, nil
+	case meta.PhotoAnalysisStateFailed:
+		// Legacy rows may still contain raw upstream errors; classify only
+		// after the current Owner/revision/fingerprint checks and never expose
+		// their original private strings to a client.
+		return &mediaOCRDTO{
+			State:  state.State,
+			Reason: photointelligence.SmartFailureCodeFromStored(state.LastError),
+		}, nil
 	case meta.PhotoAnalysisStateRunning, meta.PhotoAnalysisStatePending,
-		meta.PhotoAnalysisStateFailed, meta.PhotoAnalysisStateStale:
+		meta.PhotoAnalysisStateStale:
 		return &mediaOCRDTO{State: state.State}, nil
 	default:
 		return &mediaOCRDTO{State: "unavailable"}, nil

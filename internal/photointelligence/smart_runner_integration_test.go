@@ -17,6 +17,7 @@ import (
 type fakeSmartAnalyzer struct {
 	info   SmartAnalyzerInfo
 	result SmartAnalysisResult
+	err    error
 }
 
 func (a fakeSmartAnalyzer) Info(context.Context) (SmartAnalyzerInfo, error) {
@@ -27,6 +28,9 @@ func (a fakeSmartAnalyzer) Analyze(
 	context.Context,
 	SmartAnalysisTask,
 ) (SmartAnalysisResult, error) {
+	if a.err != nil {
+		return SmartAnalysisResult{}, a.err
+	}
 	return a.result, nil
 }
 
@@ -194,5 +198,38 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 	}
 	if processed != 0 {
 		t.Fatalf("stable ready state reprocessed %d assets", processed)
+	}
+
+	// A failed automatic OCR attempt must never persist a raw model error or
+	// propagate its private token through the returned Scheduler error.
+	if err := db.Model(&meta.PhotoAnalysisState{}).
+		Where("asset_id = ? AND kind IN ?", asset.ID, []string{
+			meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisKindVisualLabel,
+		}).
+		Update("state", meta.PhotoAnalysisStateStale).Error; err != nil {
+		t.Fatal(err)
+	}
+	const secret = "PRIVATE_MODEL_TOKEN_DO_NOT_STORE"
+	runner.Analyzer = fakeSmartAnalyzer{
+		info: info,
+		err:  fmt.Errorf("smart analyzer returned HTTP 503: Authorization=%s", secret),
+	}
+	processed, err = runner.RunOwnerBatch(context.Background(), user.ID, 10)
+	if processed != 1 || err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("unsafe failure result: processed=%d err=%v", processed, err)
+	}
+	for _, kind := range []string{
+		meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisKindOCRText,
+	} {
+		var failed meta.PhotoAnalysisState
+		if err := db.Where("asset_id = ? AND kind = ?", asset.ID, kind).
+			First(&failed).Error; err != nil {
+			t.Fatal(err)
+		}
+		if failed.State != meta.PhotoAnalysisStateFailed ||
+			failed.LastError != "model_server_error" ||
+			strings.Contains(failed.LastError, secret) {
+			t.Fatalf("unsafe %s failure state: %+v", kind, failed)
+		}
 	}
 }

@@ -665,7 +665,14 @@ export interface MediaItem {
   node: Node
   metadata: MediaMetadata
   /** Detail-only OCR evidence, excluded from paginated Gallery ranges. */
-  ocr?: { state: 'pending' | 'running' | 'ready' | 'failed' | 'stale' | 'unavailable'; text?: string; language?: string }
+  ocr?: {
+    state: 'pending' | 'running' | 'ready' | 'failed' | 'stale' | 'unavailable'
+    text?: string
+    language?: string
+    reason?: 'analysis_failed' | 'model_timeout' | 'model_unreachable'
+      | 'model_auth_rejected' | 'model_endpoint_missing' | 'model_server_error'
+      | 'model_busy' | 'invalid_model_response' | 'preview_unavailable' | 'interrupted'
+  }
   asset_kind?: PhotoAssetKind
   favorite?: boolean
   tags?: string[]

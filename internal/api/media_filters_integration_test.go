@@ -480,4 +480,24 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatalf("stale OCR detail=%+v error=%v", stale, err)
 	}
 	assertIDs("stale OCR must not match", mediaQueryOptions{Search: "invoice 2026"}, "")
+
+	// Legacy persisted model failures can contain private response bodies.
+	// The detail endpoint may only expose the fixed classification code.
+	const privateValue = "PRIVATE_OCR_BEARER_NEVER_RETURN"
+	if err := db.Model(&meta.PhotoAnalysisState{}).
+		Where("asset_id = ? AND kind = ?", assets[0].ID, meta.PhotoAnalysisKindOCRText).
+		Updates(map[string]any{
+			"state":             meta.PhotoAnalysisStateFailed,
+			"input_fingerprint": mediaOCRInputFingerprint(files[0].SHA256, nodes[0].ID, nodes[0].Revision),
+			"last_error":        "smart analyzer returned HTTP 403: " + privateValue,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	failedDetail, err := server.mediaOCRDetails(context.Background(), owner.ID, detailNode, metadata[0])
+	if err != nil || failedDetail == nil || failedDetail.State != "failed" ||
+		failedDetail.Reason != "model_auth_rejected" || failedDetail.Text != "" ||
+		strings.Contains(failedDetail.Reason, privateValue) {
+		t.Fatalf("unsafe OCR failure detail: %+v error=%v", failedDetail, err)
+	}
+	assertIDs("failed OCR must not match", mediaQueryOptions{Search: "invoice 2026"}, "")
 }
