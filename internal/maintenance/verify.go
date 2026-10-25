@@ -238,7 +238,11 @@ func VerifyWithContext(
 				if relErr != nil {
 					return relErr
 				}
-				if filepath.ToSlash(rel) == ".xdrive-uploads" {
+				// Only these root-level internal directories may be excluded.
+				// The derived media cache must not be opened or traversed:
+				// stale permissions inside it must not block pre-upgrade backup.
+				switch filepath.ToSlash(rel) {
+				case ".xdrive-uploads", ".xdrive-media":
 					return filepath.SkipDir
 				}
 			}
@@ -282,14 +286,6 @@ func VerifyWithContext(
 			// Do not unlink them: another Server process may hold a lease.
 			// Ignore only exact, empty 00..ff.lock direct children.
 			report.IgnoredCASLocks++
-			return nil
-		}
-		if isDerivedStorageKey(key) {
-			// .xdrive-media contains generated previews such as thumbnails.
-			// They are disposable caches, not canonical file/version blobs, so
-			// stale or unreferenced cache files must never make storage
-			// verification or a pre-upgrade backup fail.
-			report.IgnoredDerived++
 			return nil
 		}
 		report.BlobFiles++
