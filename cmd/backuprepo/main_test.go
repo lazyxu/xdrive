@@ -152,8 +152,8 @@ func TestIncrementalPrunesOnlyRootMediaCache(t *testing.T) {
 		t.Fatalf("cache must be regenerated rather than restored: %v", err)
 	}
 	for name, want := range map[string]string{
-		"1/original.bin": "original",
-		".xdrive-media-copy/user-data.bin": "must-retain",
+		"1/original.bin":                                         "original",
+		".xdrive-media-copy/user-data.bin":                       "must-retain",
 		filepath.ToSlash(filepath.Join(casRoot, hash[:2], hash)): "canonical immutable CAS",
 	} {
 		contents, err := os.ReadFile(filepath.Join(restored, filepath.FromSlash(name)))
