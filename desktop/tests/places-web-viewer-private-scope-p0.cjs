@@ -277,6 +277,8 @@ test('invalid private map marker blocks filmstrip prefetch and every unscoped Ow
     assert.equal(value.filmstripEntries.length,0)
     assert.equal(value.navigationLoading,false)
     assert.match(value.error,/地图照片范围已失效/)
+    assert.equal(value.canRetryRead,false,'invalid Map scope cannot offer retry')
+    await act(async()=>value.retryRead())
     assert.deepEqual(calls,{gallery:0,node:0,media:0},
       'invalid map scope cannot prefetch via filmstrip or point fallback')
   }finally{if(renderer)await act(async()=>renderer.unmount())}

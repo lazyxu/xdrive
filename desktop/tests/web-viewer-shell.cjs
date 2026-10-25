@@ -31,7 +31,7 @@ const mui = {
   Dialog: host('dialog'), DialogContent: host('div'),
   Menu: ({ open, children, ...props }) => open ? React.createElement('menu', props, children) : null,
   MenuItem: host('menuitem'),
-  IconButton: host('button'), Tooltip: ({ children }) => children,
+  IconButton: host('button'), Button: host('button'), Tooltip: ({ children }) => children,
   useMediaQuery: (query) => {
     if (query === '(max-width:899.95px)') return viewportWidth < 900
     if (query === '(max-width:367.95px)') return viewportWidth < 368
@@ -2022,12 +2022,16 @@ for (const [app, fileName, label] of [
       assert.equal(pending.length, 1, 'rapid duplicate clicks must trigger one download')
       assert.equal(buttons(renderer, label)[0].props.disabled, true)
       await act(async () => {
-        pending[0].reject(new Error('download unavailable'))
+        pending[0].reject(new Error(
+          'download unavailable https://private.invalid/?ticket=SECRET Bearer TOKEN /var/private',
+        ))
         await Promise.resolve()
       })
       assert.equal(errors().length, 1, 'failed transfer must be visible inside its Viewer')
-      assert.ok(errors()[0].findAll(el => el.type === 'p').some(el =>
-        el.children.join('').includes('download unavailable')))
+      const visible = errors()[0].findAll(el => el.type === 'p').map(el => el.children.join('')).join(' ')
+      assert.equal(visible, '下载失败，可再次点击下载按钮重试。')
+      assert.ok(!visible.includes('ticket=') && !visible.includes('Bearer') &&
+        !visible.includes('/var/private') && !visible.includes('SECRET'))
       assert.equal(buttons(renderer, label)[0].props.disabled, false)
       await act(async () => {
         buttons(renderer, label)[0].props.onClick()
@@ -2092,8 +2096,12 @@ for (const [app, fileName, label] of [
         await Promise.resolve()
       })
       assert.equal(errors().length, 1)
-      assert.ok(errors()[0].findAll(el => el.type === 'p').some(el =>
-        el.children.join('').includes('B transfer failed')))
+      const visible = errors()[0].findAll(el => el.type === 'p')
+        .map(el => el.children.join('')).join(' ')
+      assert.equal(visible, '下载失败，可再次点击下载按钮重试。',
+        'current Owner has one actionable failure, not untrusted transport details')
+      assert.ok(!visible.includes('B transfer failed') && !visible.includes('PRIVATE A'),
+        'neither the current raw transport exception nor the previous Owner may leak')
     } finally {
       if (renderer) await act(async () => renderer.unmount())
     }
@@ -2554,4 +2562,241 @@ test('P1-320 routed media Viewer fits six 44px actions and preserves explicit Mo
   }
   compactTouch = false
   viewportWidth = 390
+})
+
+function pendingRead() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+for (const app of ['preview', 'media-viewer', 'text-viewer', 'audio-player']) {
+  test(`P0 ${app} metadata failure has an explicit, same-Owner retry with no stale pixels`, async () => {
+    compactTouch = true
+    const calls = []
+    const node = { id: 9121, revision: 4, name: app === 'text-viewer' ? 'notes.txt' : 'photo.png',
+      type: 'file', size: 19 }
+    const mediaItem = { node, metadata: { media_kind: 'image', mime_type: 'image/png',
+      index_state: 'ready', has_thumbnail: true }, asset_kind: 'image' }
+    const api = {
+      node: (id, signal) => {
+        const pending = pendingRead()
+        calls.push({ type: 'node', id, signal, ...pending })
+        return pending.promise
+      },
+      mediaItem: (id, signal) => {
+        const pending = pendingRead()
+        calls.push({ type: 'media', id, signal, ...pending })
+        return pending.promise
+      },
+      fileTextPreview: (id, signal) => {
+        const pending = pendingRead()
+        calls.push({ type: 'text', id, signal, ...pending })
+        return pending.promise
+      },
+    }
+    const props = {
+      route: { app, params: { node: node.id } },
+      api, gallerySource: { loadThumbnail: async () => null }, shareDialogAdapter: {},
+      onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+    }
+    let renderer
+    const visibleFrame = () => renderer.root.findAll(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer'] !== undefined)[0]
+    const quiet = () => renderer.root.findAll(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, props),
+          { createNodeMock: () => ({ focus() {} }) })
+      })
+      // The original reader loads only the active Node plus the text payload,
+      // not unrelated Gallery/Server ranges.
+      const first = calls.slice()
+      assert.equal(first.length, app === 'text-viewer' ? 2 : 1)
+      const frame = visibleFrame()
+      await act(async () => { first[0].reject(new Error('network interrupted')) })
+      assert.equal(buttons(renderer, '重试加载').length, 1)
+      assert.equal(visibleFrame(), frame, 'failure remains in the same full-screen Viewer')
+      const retryClick = buttons(renderer, '重试加载')[0].props.onClick
+      await act(async () => { retryClick(); retryClick() })
+      assert.equal(buttons(renderer, '重试加载').length, 0,
+        'click clears the terminal error rather than leaving an actionable stale button')
+      assert.equal(quiet().length, 1, 'retry returns to the existing silent first-read canvas')
+      assert.equal(calls.length, first.length * 2, 'double click dispatches exactly one fresh read')
+      assert.equal(first[0].signal.aborted, true)
+      for (const q of calls.slice(first.length)) {
+        await act(async () => q.resolve(q.type === 'media' ? mediaItem :
+          q.type === 'text' ? { text: 'recovered text', size: 14, truncated: false } : node))
+      }
+      assert.equal(quiet().length, 0)
+      assert.equal(buttons(renderer, '重试加载').length, 0)
+      assert.equal(visibleFrame(), frame, 'recovery does not remount the App Frame')
+      if (app === 'text-viewer') {
+        assert.equal(renderer.root.findByType('textarea').props.value, 'recovered text')
+      } else {
+        assert.ok(renderer.root.findAll(el => el.type === (
+          app === 'media-viewer' ? 'media-content' : 'preview-content')).length > 0)
+      }
+      if (app === 'text-viewer') {
+        // First attempt's other pending request resolves after new content.
+        await act(async () => first[1].resolve({ text: 'stale owner bytes', size: 17, truncated: false }))
+        assert.equal(renderer.root.findByType('textarea').props.value, 'recovered text')
+      }
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+      compactTouch = false
+    }
+  })
+}
+
+test('P0 text Viewer null preview is terminal with explicit retry, never endless loading', async () => {
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'text-viewer', params: { node: 870 } },
+        api: {
+          node: async () => ({ id: 870, revision: 1, name: 'null.txt', type: 'file', size: 0 }),
+          fileTextPreview: async () => null,
+        },
+        gallerySource: {}, shareDialogAdapter: {},
+        onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    assert.equal(buttons(renderer, '重试加载').length, 1)
+    assert.equal(renderer.root.findAll(el => el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined).length, 0)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 old metadata-retry callback cannot re-read another route, including A→B→A', async () => {
+  const callers = []
+  const api = {
+    node(id, signal) {
+      const q = pendingRead()
+      callers.push({ id, signal, ...q })
+      return q.promise
+    },
+  }
+  const props = (node) => ({
+    route: { app: 'audio-player', params: { node } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props(31)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => callers[0].reject(new Error('A temporary error')))
+    const staleRetry = buttons(renderer, '重试加载')[0].props.onClick
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(32))))
+    assert.equal(callers.length, 2)
+    await act(async () => staleRetry())
+    assert.equal(callers.length, 2, 'old A button cannot initiate B network activity')
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props(31))))
+    assert.equal(callers.length, 3)
+    await act(async () => staleRetry())
+    assert.equal(callers.length, 3, 'A→B→A is a new request owner, not the old A')
+    assert.equal(callers[1].signal.aborted, true, 'B read is canceled immediately')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors', async () => {
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'pdf-viewer', params: { node: 499 } },
+        api: { node: async () => { throw new Error('PDF read failed') } },
+        gallerySource: {}, shareDialogAdapter: {},
+        onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    assert.equal(buttons(renderer, '重试加载').length, 0)
+    const errors = renderer.root.findAll(el => el.type === 'p' && el.props.role === 'alert')
+    assert.equal(errors.length, 1)
+    assert.equal(errors[0].children.join(''), '读取失败，请重试。')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+for (const app of ['media-viewer', 'text-viewer', 'audio-player']) {
+  test(`P0 ${app} empty successful metadata becomes retryable error instead of infinite quiet loading`, async () => {
+    const actualNode = { id: 987, revision: 1, name: 'unexpected-empty.png', type: 'file', size: 13 }
+    const api = {
+      node: async () => app === 'media-viewer' ? actualNode : null,
+      mediaItem: async () => null,
+      fileTextPreview: async () => ({ text: 'valid text with missing Node', size: 6, truncated: false }),
+    }
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app, params: { node: actualNode.id } },
+          api, gallerySource: {}, shareDialogAdapter: {},
+          onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      assert.equal(buttons(renderer, '重试加载').length, 1)
+      assert.equal(renderer.root.findAll(el =>
+        el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined).length, 0)
+      assert.equal(buttons(renderer, '返回').length, 1,
+        'empty metadata does not strand the user outside the full-screen Viewer')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  })
+}
+
+test('P0 routed Viewer never renders signed URL, token or filesystem path from metadata failures', async () => {
+  const unsafe = 'GET https://private.example.test/media?ticket=' +
+    'a'.repeat(64) + ' Bearer PRIVATE-SESSION /var/private/owner'
+  for (const app of ['preview','media-viewer','text-viewer','audio-player','pdf-viewer']) {
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route:{ app,params:{node:81} },
+          api:{
+            node:async()=>{throw new Error(unsafe)},
+            mediaItem:async()=>{throw new Error(unsafe)},
+            fileTextPreview:async()=>{throw new Error(unsafe)},
+          },
+          gallerySource:{},shareDialogAdapter:{},
+          onReplaceRoute(){},onClose(){},onError(error){throw error},
+        }),{createNodeMock:()=>({focus(){}})})
+      })
+      const errors=renderer.root.findAll(el=>el.type==='p' && el.props.role==='alert')
+      assert.equal(errors.length,1,app+' requires a terminal error')
+      const visible=errors[0].children.join('')
+      assert.equal(visible,'读取失败，请重试。')
+      assert.ok(!visible.includes('ticket=') && !visible.includes('Bearer') &&
+        !visible.includes('/var/private') && !visible.includes('a'.repeat(64)))
+      assert.equal(buttons(renderer,'重试加载').length, app === 'pdf-viewer' ? 0 : 1)
+    } finally {if(renderer)await act(async()=>renderer.unmount())}
+  }
+})
+
+test('P0 trusted Viewer metadata messages remain actionable without exposing arbitrary errors', async()=>{
+  let renderer
+  try{
+    await act(async()=>{
+      renderer=create(React.createElement(WebFileViewerApps,{
+        route:{app:'preview',params:{node:93}},
+        api:{node:async()=>{throw new Error('文件版本已更改，请重新打开。')}},
+        gallerySource:{},shareDialogAdapter:{},onClose(){},
+        onReplaceRoute(){},onError(error){throw error},
+      }),{createNodeMock:()=>({focus(){}})})
+    })
+    const message=renderer.root.find(el=>el.type==='p'&&el.props.role==='alert')
+    assert.equal(message.children.join(''),'文件版本已更改，请重新打开。')
+    assert.equal(buttons(renderer,'重试加载').length,1)
+  }finally{if(renderer)await act(async()=>renderer.unmount())}
 })
