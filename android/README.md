@@ -141,6 +141,22 @@ cannot write there, use `D:\code\xdrive\tmp\android-native-20261023`.
 Do not reuse or clean another task's emulator/user directory. Stop only the
 emulator you started. Android Studio may open this `android` directory directly.
 
+### Download an Android APK directly from master
+
+Every push to `master` runs the independent
+[Android Master APK workflow](https://github.com/lazyxu/xdrive/actions/workflows/android-master-apk.yml?query=branch%3Amaster).
+Select the latest **successful master run** and download its
+`xdrive-android-master-<full commit SHA>` Artifact from the run's Artifacts
+section (GitHub sign-in required). Extract the ZIP. It contains
+`xdrive-android-master-<12-character SHA>-debug.apk`, `SHA256SUMS.txt`
+and `BUILD_INFO.txt`. Verify the APK's checksum before installing.
+
+This workflow compiles the exact `master` commit using `:app:assembleDebug`,
+checks the APK's signing/container and package ID, and uploads the immutable
+commit-named Artifact without waiting for the emulator or the full CI. You can
+also run it manually with `workflow_dispatch` on `master`. Retention: 30 days.
+This is **an Actions Artifact, not a Snapshot Release or Android update feed**.
+
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. It is debug-signed for
 testing, **not** a production-signed release or an automatic update channel.
 Isolated local builds and CI can use different debug certificates. Android will
