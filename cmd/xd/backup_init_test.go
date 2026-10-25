@@ -63,6 +63,66 @@ func (f *fakeBootstrapAgent) SaveSchedule(_ context.Context, id, revision uint64
 	return spec, nil
 }
 
+type fakeInitOnceAgent struct {
+	*fakeBootstrapAgent
+	starts int
+	result localbackupipc.Summary
+}
+
+func (f *fakeInitOnceAgent) Start(_ context.Context, id uint64) (localbackupipc.Summary, error) {
+	f.starts++
+	if id != f.result.SourceID {
+		return localbackupipc.Summary{}, errors.New("unexpected Source")
+	}
+	return f.result, nil
+}
+
+func (f *fakeInitOnceAgent) Status(context.Context, uint64) (localbackupipc.Summary, error) {
+	return localbackupipc.Summary{}, errors.New("unexpected status poll")
+}
+
+func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "photos")
+	spec := sourceschedule.Spec{Type: "interval", Expression: "6h"}
+	makeAgent := func() *fakeInitOnceAgent {
+		return &fakeInitOnceAgent{
+			fakeBootstrapAgent: &fakeBootstrapAgent{},
+			result: localbackupipc.Summary{SourceID: 42, Revision: 2, State: "partial",
+				InspectedFiles: 1, ConfirmedFiles: 1},
+		}
+	}
+	t.Run("explicit_start", func(t *testing.T) {
+		agent := makeAgent()
+		var out bytes.Buffer
+		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
+			"Photos", root, 12, spec, true, &out)
+		if err != nil || id != 42 || agent.starts != 1 || agent.saved != 1 ||
+			agent.bound != 1 || !strings.Contains(out.String(), "uploaded=1") {
+			t.Fatalf("run-now did not reuse verified owning Agent: id=%d err=%v agent=%+v output=%q",
+				id, err, agent, out.String())
+		}
+	})
+	t.Run("default_no_implicit_upload", func(t *testing.T) {
+		agent := makeAgent()
+		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
+			"Photos", root, 12, spec, false, &bytes.Buffer{})
+		if err != nil || id != 42 || agent.starts != 0 || agent.saved != 1 {
+			t.Fatalf("default init unexpectedly started an upload: id=%d err=%v agent=%+v",
+				id, err, agent)
+		}
+	})
+	t.Run("schedule_failure_never_starts", func(t *testing.T) {
+		agent := makeAgent()
+		agent.scheduleErr = errors.New("unconfirmed schedule revision")
+		id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
+			"Photos", root, 12, spec, true, &bytes.Buffer{})
+		if err == nil || id != 42 || agent.starts != 0 {
+			t.Fatalf("schedule failure started unsafe upload: id=%d err=%v agent=%+v",
+				id, err, agent)
+		}
+	})
+}
+
 func TestHeadlessInitReusesOwningAgentAndArmsOnlyAfterOnce(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "files")
 	agent := &fakeBootstrapAgent{}

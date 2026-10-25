@@ -26,6 +26,13 @@ type backupBootstrapAgent interface {
 	SaveSchedule(context.Context, uint64, uint64, localbackupipc.Schedule) (localbackupipc.Schedule, error)
 }
 
+// The CLI and Desktop reuse one owning Agent; run-now adds no upload or
+// scheduler implementation. Bootstrap permissions are checked before Start.
+type backupBootstrapOnceAgent interface {
+	backupBootstrapAgent
+	backupOnceRunner
+}
+
 func normalizedExplicitBackupPath(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		return "", errors.New("--path must be an explicit absolute directory on the owning device")
@@ -92,6 +99,21 @@ func runBackupInit(ctx context.Context, agent backupBootstrapAgent, name, path s
 	return id, nil
 }
 
+// A successful setup alone never claims a backed-up file. With explicit
+// --run-now the existing Agent Start/Status produces the ordinary per-file
+// result; on failure the authorized Source remains available for inspection.
+func runBackupInitAndMaybeOnce(ctx context.Context, agent backupBootstrapOnceAgent,
+	name, path string, targetID uint64, spec sourceschedule.Spec,
+	runNow bool, out io.Writer,
+) (uint64, error) {
+	id, err := runBackupInit(ctx, agent, name, path, targetID, spec, out)
+	if err != nil || !runNow {
+		return id, err
+	}
+	fmt.Fprintf(out, "Starting explicit owning-Agent incremental run for Source %d\n", id)
+	return id, runBackupOnce(ctx, agent, id, backupPollDefault, out)
+}
+
 func backupBootstrapCmd(args []string) error {
 	if len(args) == 0 {
 		return errors.New("missing bootstrap action")
@@ -108,6 +130,7 @@ func backupBootstrapCmd(args []string) error {
 	every := fs.String("every", "", "init: optional interval such as 6h")
 	cron := fs.String("cron", "", "init: optional five-field cron schedule")
 	zone := fs.String("timezone", "", "init: optional IANA timezone for --cron")
+	runNow := fs.Bool("run-now", false, "init: explicitly run first incremental backup after native Root binding")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -121,12 +144,12 @@ func backupBootstrapCmd(args []string) error {
 		}
 	case "bind":
 		if !localbackupipc.ValidSourceID(*source) || *target != 0 ||
-			*name != "" || *every != "" || *cron != "" || *zone != "" {
+			*name != "" || *every != "" || *cron != "" || *zone != "" || *runNow {
 			return errors.New("bind requires --source and --path only")
 		}
 	case "drafts":
 		if *source != 0 || *target != 0 || *name != "" || *localPath != "" ||
-			*every != "" || *cron != "" || *zone != "" {
+			*every != "" || *cron != "" || *zone != "" || *runNow {
 			return errors.New("drafts accepts no Source, path or schedule options")
 		}
 	}
@@ -155,7 +178,7 @@ func backupBootstrapCmd(args []string) error {
 	}
 	switch action {
 	case "init":
-		_, err = runBackupInit(ctx, agent, *name, path, *target, spec, os.Stdout)
+		_, err = runBackupInitAndMaybeOnce(ctx, agent, *name, path, *target, spec, *runNow, os.Stdout)
 		return err
 	case "bind":
 		scoped, done := context.WithTimeout(ctx, 2*time.Minute)

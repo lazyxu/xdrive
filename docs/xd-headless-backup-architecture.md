@@ -21,7 +21,7 @@ instructions and talks to its **same-user, authenticated loopback IPC**.
 Desktop is a **separate optional UI** over the same Agent capabilities.
 Web/other Desktop clients stay read-only for foreign device backups.
 
-## Standalone first-run contract (target, not existing released support)
+## Standalone first-run contract (merged source and released CLI-only archives)
 
 1. Install CLI-only `xd` and matching `xdrive-agent` under the same
    user. No desktop runtime or system-wide privileged service is required.
@@ -34,7 +34,9 @@ Web/other Desktop clients stay read-only for foreign device backups.
    error must not silently adopt a foreign or legacy Source.
 4. `xd backup once --source ID` uses the existing exact worker. Saving
    a new `interval` / `cron` schedule changes Source revision; one verified
-   manual run on that revision is needed to arm scheduled admissions.
+   run on that revision is needed to arm scheduled admissions. The optional
+   explicit `--run-now` on `init` / `auto` starts that same first run after
+   the Agent confirms configuration, without introducing a second Runner.
 5. The optional `xd backup agent` service process runs in **backup-only
    mode**: no automatic FUSE/CfAPI mount, Explorer shell hook, Desktop, or
    implicit access to a remote native path. The same persistent operations
@@ -73,10 +75,10 @@ arbitrary remote writes or to block the first safe implementation.
 ## Scope and verification
 
 The Desktop Backup-only Runner and existing `xd backup once/auto/status`
-commands are already merged. **Draft PR #2585 now implements standalone
-bootstrap, no-mount runtime and CLI-only Linux/Windows archives**; these
-changes remain unreleased until the PR is merged and the source-exact
-required CI checks complete.
+commands are already merged. **Merged PR #2585 delivers standalone
+bootstrap, no-mount runtime and CLI-only Linux/Windows archives**; the
+CLI-only Snapshot assets have also been published. Production installation
+acceptance remains separately marked as skipped (unverified).
 
 Ship a small vertical slice and measure source-exact CI: fresh user/device
 → create/bind Root → file upload → unchanged incremental scan → scheduled

@@ -28,22 +28,24 @@ const (
 
 func backupUsage(w io.Writer) {
 	fmt.Fprintln(w, "Backup-only (same owning xdrive-agent; Desktop is optional):")
-	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR --target-id CLOUD_DIR_ID [--every 6h]")
+	fmt.Fprintln(w, "  xd backup init --name NAME --path ABS_DIR --target-id CLOUD_DIR_ID [--every 6h] [--run-now]")
 	fmt.Fprintln(w, "  xd backup bind --source ID --path ABS_DIR")
 	fmt.Fprintln(w, "  xd backup drafts")
 	fmt.Fprintln(w, "  xd backup targets [--parent CLOUD_DIR_ID]")
 	fmt.Fprintln(w, "  xd backup once --source ID [--poll 2s]")
-	fmt.Fprintln(w, "  xd backup auto --source ID [--every 6h]")
-	fmt.Fprintln(w, "  xd backup auto --source ID --cron '0 2 * * *' --timezone Asia/Tokyo")
-	fmt.Fprintln(w, "  xd backup schedule --source ID --manual")
+	fmt.Fprintln(w, "  xd backup auto --source ID [--every 6h] [--run-now]")
+	fmt.Fprintln(w, "  xd backup auto --source ID --cron '0 2 * * *' --timezone Asia/Tokyo [--run-now]")
+	fmt.Fprintln(w, "  xd backup schedule --source ID --manual [--run-now]")
 	fmt.Fprintln(w, "  xd backup list")
 	fmt.Fprintln(w, "  xd backup status --source ID")
 	fmt.Fprintln(w, "  xd backup history --source ID")
 	fmt.Fprintln(w, "  xd backup pause --source ID")
 	fmt.Fprintln(w, "  xd backup cancel --source ID")
 	fmt.Fprintln(w, "  xd backup agent  (run the owning Agent in foreground for a service manager)")
-	fmt.Fprintln(w, "First-time initialization is available through init; existing Sources use once")
+	fmt.Fprintln(w, "First-time initialization is available through init; existing Sources use once or auto --run-now")
 	fmt.Fprintln(w, "AFTER setting auto; scheduling changes the Source revision and requires\na verified partial checkpoint from a fresh explicit run.")
+	fmt.Fprintln(w, "--run-now explicitly starts the existing Agent backup after verified setup/schedule save.")
+	fmt.Fprintln(w, "Without --run-now, a later explicit once arms a new automatic schedule revision.")
 	fmt.Fprintln(w, "The Agent must stay running for unattended schedules (and start on login/boot).")
 	fmt.Fprintln(w, "Stopping xd during an upload only stops observing, not the Agent worker.")
 }
@@ -94,6 +96,7 @@ func backupCmd(args []string) error {
 	cron := fs.String("cron", "", "auto: five-field cron expression")
 	zone := fs.String("timezone", "", "cron IANA timezone, e.g. Asia/Tokyo")
 	manual := fs.Bool("manual", false, "disable automatic scheduling (not Backup-only itself)")
+	runNow := fs.Bool("run-now", false, "explicitly start one existing Agent backup after saving schedule")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -107,7 +110,7 @@ func backupCmd(args []string) error {
 		return errors.New("backup list takes no --source; other actions require a positive --source ID, and no positional paths/targets are accepted")
 	}
 	if action != "auto" && action != "schedule" &&
-		(*every != "" || *cron != "" || *zone != "" || *manual) {
+		(*every != "" || *cron != "" || *zone != "" || *manual || *runNow) {
 		return errors.New("schedule options are valid only for backup auto/schedule")
 	}
 	if action != "once" && *poll != backupPollDefault {
@@ -146,9 +149,15 @@ func backupCmd(args []string) error {
 		fmt.Printf("Source %d: %s %s %s (revision %d)\n",
 			*id, saved.ScheduleType, saved.ScheduleExpression, saved.ScheduleTimezone, saved.Revision)
 		if saved.ScheduleType != "manual" {
-			fmt.Println("After saving a schedule, run: xd backup once --source " + strconv.FormatUint(*id, 10))
-			fmt.Println("The schedule changes Source revision; automatic admission requires a fresh verified partial checkpoint.")
+			if !*runNow {
+				fmt.Println("After saving a schedule, run: xd backup once --source " + strconv.FormatUint(*id, 10))
+				fmt.Println("The schedule changes Source revision; automatic admission requires a fresh verified partial checkpoint.")
+			}
 			fmt.Println("Keep xdrive-agent running; use 'xd backup agent' under your service manager to survive reboots.")
+		}
+		if *runNow {
+			fmt.Printf("Starting explicit owning-Agent incremental run for Source %d\n", *id)
+			return runBackupOnce(ctx, client, *id, backupPollDefault, os.Stdout)
 		}
 		return nil
 	case "list":
