@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -30,6 +31,18 @@ func TestRepairOneUserDirectoryTreeScopesChangesToDirectories(t *testing.T) {
 	link := filepath.Join(root, "1", "external-link")
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)
+	}
+	// Non-target directories (including t.TempDir, whose permissions are
+	// host/runner dependent) must keep their ORIGINAL metadata, not a
+	// hard-coded 0700 mode unrelated to the repair operation.
+	untouched := []string{other, cas, outside}
+	beforeUntouched := make(map[string]os.FileInfo, len(untouched))
+	for _, dir := range untouched {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeUntouched[dir] = info
 	}
 	locked := []string{filepath.Join(root, "1"), filepath.Join(root, "1", "docs"), target}
 	for _, d := range locked {
@@ -73,10 +86,17 @@ func TestRepairOneUserDirectoryTreeScopesChangesToDirectories(t *testing.T) {
 	if got, err := os.ReadFile(content); err != nil || string(got) != "original content" {
 		t.Fatalf("original bytes changed: %q %v", got, err)
 	}
-	for _, untouched := range []string{other, cas, outside} {
-		info, err := os.Stat(untouched)
-		if err != nil || info.Mode().Perm() != 0o700 {
-			t.Fatalf("non-target directory changed: %s, %v, %v", untouched, info, err)
+	for _, dir := range untouched {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			t.Fatalf("non-target directory inaccessible: %s: %v", dir, err)
+		}
+		prior := beforeUntouched[dir]
+		oldStat, oldOK := prior.Sys().(*syscall.Stat_t)
+		newStat, newOK := info.Sys().(*syscall.Stat_t)
+		if !os.SameFile(prior, info) || prior.Mode() != info.Mode() ||
+			!oldOK || !newOK || oldStat.Uid != newStat.Uid || oldStat.Gid != newStat.Gid {
+			t.Fatalf("non-target directory metadata changed: %s before=%v after=%v", dir, prior, info)
 		}
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
