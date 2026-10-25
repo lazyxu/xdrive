@@ -61,6 +61,20 @@ data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
 data class FileSearchPage(val items: List<DriveCollectionItem>, val nextCursor: String)
 
+/** Match the Server's Windows-compatible filename subset before sending a
+ * mutating request. Server validation remains authoritative. */
+fun validDriveNodeName(name: String): Boolean {
+    if (name.isEmpty() || name == "." || name == ".." ||
+        name.toByteArray(Charsets.UTF_8).size > 255 ||
+        name.endsWith(" ") || name.endsWith(".") ||
+        name.any { it.code < 32 || it in "<>:\"/\\|?*" }) return false
+    val base = name.substringBefore('.').uppercase(java.util.Locale.ROOT)
+    if (base in setOf("CON", "PRN", "AUX", "NUL")) return false
+    if (base.length == 4 && (base.startsWith("COM") || base.startsWith("LPT")) &&
+        base[3] in '1'..'9') return false
+    return true
+}
+
 /** Messages are client-owned constants; response bodies and transport causes are never retained. */
 enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTION, TIMEOUT, TLS, INVALID_RESPONSE }
 
@@ -86,6 +100,13 @@ interface XDriveService {
     }
     suspend fun searchFiles(accessToken: String, query: String, cursor: String = ""): FileSearchPage =
         throw ApiException(501, "Search API unavailable")
+    suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode =
+        throw ApiException(501, "Create directory API unavailable")
+    suspend fun renameNode(accessToken: String, original: DriveNode, name: String): DriveNode =
+        throw ApiException(501, "Rename API unavailable")
+    suspend fun trashNode(accessToken: String, original: DriveNode) {
+        throw ApiException(501, "Trash API unavailable")
+    }
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -134,6 +155,33 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (items.size.toLong() != minOf(100L, maxOf(0L, count - offset.toLong())) ||
             items.map { it.id }.toSet().size != items.size || items.any { it.parentId != parentId }) invalidPayload()
         return NodeRange(items, count, offset)
+    }
+
+    /** Use the already-configured Owner-authenticated OkHttp request pipeline. */
+    override suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode {
+        require(parentId > 0 && validDriveNodeName(name)) { "Invalid directory name" }
+        val created = node(request("nodes/$parentId/directories", accessToken, values = mapOf("name" to name)))
+        if (created.parentId != parentId || created.name != name || !created.isDirectory) invalidPayload()
+        return created
+    }
+
+    override suspend fun renameNode(accessToken: String, original: DriveNode, name: String): DriveNode {
+        require(original.id > 0 && original.parentId != null && original.revision > 0 &&
+            validDriveNodeName(name)) { "Invalid rename request" }
+        val renamed = node(request("nodes/${original.id}", accessToken,
+            values = mapOf("name" to name), method = "PATCH", ifMatch = original.revision))
+        if (renamed.id != original.id || renamed.parentId != original.parentId ||
+            renamed.name != name || renamed.type != original.type ||
+            renamed.revision <= original.revision) invalidPayload()
+        return renamed
+    }
+
+    override suspend fun trashNode(accessToken: String, original: DriveNode) {
+        require(original.id > 0 && original.parentId != null && original.revision > 0) {
+            "Invalid trash request"
+        }
+        request("nodes/${original.id}", accessToken, method = "DELETE",
+            ifMatch = original.revision, emptyResponse = true)
     }
 
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
@@ -240,7 +288,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         query: Map<String, String> = emptyMap(),
         emptyResponse: Boolean = false,
         method: String? = null,
-    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method)
+        ifMatch: Long? = null,
+    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method, ifMatch)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -257,6 +306,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         query: Map<String, String> = emptyMap(),
         emptyResponse: Boolean = false,
         method: String? = null,
+        ifMatch: Long? = null,
     ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             query.forEach { (name, value) -> addQueryParameter(name, value) }
@@ -266,8 +316,19 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             require(validToken(accessToken)) { "Invalid access token" }
             builder.header("Authorization", "Bearer $accessToken")
         }
-        if (values != null) builder.post(JsonObject(values.mapValues { JsonPrimitive(it.value) }).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-        else when (method) {
+        if (ifMatch != null) {
+            require(ifMatch > 0) { "Invalid node revision" }
+            builder.header("If-Match", "\"$ifMatch\"")
+        }
+        if (values != null) {
+            val payload = JsonObject(values.mapValues { JsonPrimitive(it.value) })
+                .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            when (method) {
+                null -> builder.post(payload)
+                "PATCH" -> builder.patch(payload)
+                else -> throw IllegalArgumentException("Invalid HTTP method")
+            }
+        } else when (method) {
             "PUT" -> builder.put("".toRequestBody())
             "DELETE" -> builder.delete()
             null -> Unit

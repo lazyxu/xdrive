@@ -23,6 +23,10 @@ class DriveAppTest {
     private var failOnSecondPage = false
     private var manyFiles = false
     private var favoriteDeletes = 0
+    private var createCalls = 0
+    private var renameCalls = 0
+    private var trashCalls = 0
+    private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
@@ -42,6 +46,23 @@ class DriveAppTest {
         override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
             if (nodeId == 7L) favoriteDeletes++
         }
+        override suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode {
+            createCalls++
+            val created = DriveNode(800 + createCalls.toLong(), parentId, name, "dir", revision = 1)
+            mutableRootRows += created
+            return created
+        }
+        override suspend fun renameNode(accessToken: String, original: DriveNode, name: String): DriveNode {
+            renameCalls++
+            val updated = original.copy(name = name, revision = original.revision + 1)
+            val index = mutableRootRows.indexOfFirst { it.id == original.id }
+            if (index >= 0) mutableRootRows[index] = updated
+            return updated
+        }
+        override suspend fun trashNode(accessToken: String, original: DriveNode) {
+            trashCalls++
+            mutableRootRows.removeAll { it.id == original.id }
+        }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
@@ -51,7 +72,7 @@ class DriveAppTest {
                     (1..99).map { index -> if (index == 49)
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
-                else if (parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir"))
+                else if (parentId == 1L) mutableRootRows.toList()
                 else listOf(DriveNode(3, 2, "测试.txt", "file", 12, updatedAt = "2026-10-23T00:00:00Z"))
             return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
         }
@@ -75,6 +96,52 @@ class DriveAppTest {
             controller.state.value.screen == Screen.FILES && controller.state.value.loaded
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun createFolderFromMoreUsesActualServerAndValidatesName() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-create-folder-action").performClick()
+        compose.onNodeWithTag("files-edit-name").performTextInput("CON")
+        compose.onNodeWithTag("files-edit-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("files-edit-name").performTextReplacement("新相册")
+        compose.onNodeWithTag("files-edit-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            createCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.items.any { it.name == "新相册" }
+        }
+        compose.onNodeWithText("新相册").assertIsDisplayed()
+    }
+
+    @Test fun longPressRenameUsesRevisionedServerPatchAndShowsNewName() {
+        startAndLogin()
+        compose.onNodeWithTag("files-item-2").performTouchInput { longClick() }
+        compose.onNodeWithText("重命名").performClick()
+        compose.onNodeWithTag("files-edit-name").performTextReplacement("照片备份")
+        compose.onNodeWithTag("files-edit-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            renameCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.items.any { it.name == "照片备份" }
+        }
+        compose.onNodeWithText("照片备份").assertIsDisplayed()
+    }
+
+    @Test fun deleteToTrashRequiresConfirmationAndCancelCannotWrite() {
+        startAndLogin()
+        compose.onNodeWithTag("files-item-2").performTouchInput { longClick() }
+        compose.onNodeWithText("移到回收站").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(0, trashCalls) }
+        compose.onNodeWithText("取消").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(0, trashCalls) }
+        compose.onNodeWithTag("files-item-2").performTouchInput { longClick() }
+        compose.onNodeWithText("移到回收站").performClick()
+        compose.onNodeWithTag("files-edit-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            trashCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.items.none { it.id == 2L }
+        }
+        compose.onNodeWithTag("files-item-2").assertDoesNotExist()
+        compose.onNodeWithText("此文件夹为空").assertIsDisplayed()
     }
 
     @Test fun loginBrowseDetailsBackAndLogout() {
