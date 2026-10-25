@@ -200,3 +200,115 @@ func TestHistoryRejectsFabricatedCompletion(t *testing.T) {
 		t.Fatal("forged whole-source completion accepted")
 	}
 }
+
+func TestMountUsesExistingAuthenticatedFullAgentIPC(t *testing.T) {
+	current := filepath.Join(t.TempDir(), "initial")
+	requested := filepath.Join(t.TempDir(), "new-mount")
+	var calls []string
+	wrongAcknowledgement := false
+	dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v1/hello":
+			_ = json.NewEncoder(w).Encode(hello{
+				DiscoveryVersion: 1, ProtocolMin: 2, ProtocolMax: 2,
+				PID: os.Getpid(), Platform: runtime.GOOS, RuntimeMode: "full",
+				Capabilities: []string{"settings", "sync-control",
+					"device-backup-local-common-batch", "device-backup-local-schedule"},
+			})
+		case "GET /v1/settings":
+			_ = json.NewEncoder(w).Encode(MountSettings{MountPath: current})
+		case "PATCH /v1/settings":
+			var request struct {
+				MountPath string `json:"mount_path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil ||
+				request.MountPath != requested {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			current = requested
+			if wrongAcknowledgement {
+				_ = json.NewEncoder(w).Encode(MountSettings{MountPath: requested + "-wrong"})
+			} else {
+				_ = json.NewEncoder(w).Encode(MountSettings{MountPath: current})
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	client, err := Connect(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RequireFullMode(); err != nil {
+		t.Fatalf("full Agent with verified capabilities was rejected: %v", err)
+	}
+	settings, err := client.MountSettings(context.Background())
+	if err != nil || settings.MountPath != current {
+		t.Fatalf("Agent mount settings failed: %+v %v", settings, err)
+	}
+	settings, err = client.UpdateMountPath(context.Background(), requested)
+	if err != nil || settings.MountPath != requested {
+		t.Fatalf("Agent mount-path update failed: %+v %v", settings, err)
+	}
+	if want := "PATCH /v1/settings"; !strings.Contains(strings.Join(calls, "\n"), want) {
+		t.Fatalf("xd mount bypassed authenticated Agent settings: %v", calls)
+	}
+	wrongAcknowledgement = true
+	if _, err := client.UpdateMountPath(context.Background(), requested); err == nil {
+		t.Fatal("incorrect Agent mount-path acknowledgement must fail closed")
+	}
+	if _, err := client.UpdateMountPath(context.Background(), "relative/path"); err == nil {
+		t.Fatal("relative mount root passed CLI validation")
+	}
+}
+
+func TestMountRejectsBackupOnlyLegacyAndMissingCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		mode         string
+		capabilities []string
+	}{
+		{"backup_only", "backup_only", []string{
+			"device-backup-local-common-batch", "device-backup-local-schedule"}},
+		{"legacy", "", []string{
+			"device-backup-local-common-batch", "device-backup-local-schedule"}},
+		{"inconsistent_full", "full", []string{
+			"device-backup-local-common-batch", "device-backup-local-schedule"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settingsCalls := 0
+			dir, _ := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/hello" {
+					_ = json.NewEncoder(w).Encode(hello{
+						DiscoveryVersion: 1, ProtocolMin: 2, ProtocolMax: 2,
+						PID: os.Getpid(), Platform: runtime.GOOS,
+						RuntimeMode: tc.mode, Capabilities: tc.capabilities,
+					})
+					return
+				}
+				settingsCalls++
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			client, err := Connect(context.Background(), dir)
+			if err != nil {
+				t.Fatalf("existing xd backup must remain compatible with this Agent: %v", err)
+			}
+			if err := client.RequireFullMode(); err == nil {
+				t.Fatal("xd mount accepted non-full or incapable Agent")
+			}
+			if _, err := client.UpdateMountPath(context.Background(),
+				filepath.Join(t.TempDir(), "mount")); err == nil {
+				t.Fatal("xd mount modified settings on an unverified Agent")
+			}
+			if settingsCalls != 0 {
+				t.Fatalf("xd mount touched forbidden Agent settings %d times", settingsCalls)
+			}
+		})
+	}
+}

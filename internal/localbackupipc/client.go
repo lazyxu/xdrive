@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -37,16 +38,19 @@ type hello struct {
 	ProtocolMax      int      `json:"protocol_max"`
 	PID              int      `json:"pid"`
 	Platform         string   `json:"platform"`
+	RuntimeMode      string   `json:"runtime_mode"`
 	Capabilities     []string `json:"capabilities"`
 }
 
 // Client is a same-user, authenticated, loopback-only observer/controller for
 // the existing owning Agent. No credential/Root/Operation/path enters its API.
 type Client struct {
-	baseURL string
-	token   string
-	pid     int
-	http    *http.Client
+	baseURL      string
+	token        string
+	pid          int
+	runtimeMode  string
+	capabilities []string
+	http         *http.Client
 }
 
 func readDiscovery(dir string) (discovery, error) {
@@ -134,6 +138,8 @@ func Connect(ctx context.Context, configDir string) (*Client, error) {
 		!hasCapability(h.Capabilities, "device-backup-local-schedule") {
 		return nil, errors.New("Agent identity, protocol or Backup-only capability mismatch")
 	}
+	c.runtimeMode = h.RuntimeMode
+	c.capabilities = append([]string(nil), h.Capabilities...)
 	return c, nil
 }
 
@@ -316,4 +322,74 @@ func (c *Client) Sources(ctx context.Context) ([]BackupSource, error) {
 		return nil, errors.New("excessive Backup-only Source index")
 	}
 	return out, nil
+}
+
+// RequireFullMode is a separate CLI mount precondition. Ordinary xd backup
+// continues to attach to either full or Backup-only Agent without new scope.
+func (c *Client) RequireFullMode() error {
+	if c == nil {
+		return errors.New("owning xdrive-agent is unavailable")
+	}
+	switch c.runtimeMode {
+	case "backup_only":
+		return errors.New("xdrive-agent is running Backup-only; do not interrupt an active backup. Stop the owning user service safely before launching full Agent mode")
+	case "full":
+		if !hasCapability(c.capabilities, "settings") ||
+			!hasCapability(c.capabilities, "sync-control") {
+			return errors.New("full Agent is missing mount/settings capabilities; update the matching xd and xdrive-agent binaries")
+		}
+		return nil
+	default:
+		return errors.New("Agent runtime mode is unknown; update the matching xd and xdrive-agent binaries before mounting (existing backup work was not interrupted)")
+	}
+}
+
+// MountSettings is an Agent-provided configuration acknowledgement, not a
+// claim that FUSE or CfAPI mounting has already finished.
+type MountSettings struct {
+	MountPath string `json:"mount_path"`
+}
+
+func validMountPath(path string) bool {
+	return strings.TrimSpace(path) != "" && filepath.IsAbs(path) &&
+		filepath.Clean(path) == path
+}
+
+func (c *Client) MountSettings(ctx context.Context) (MountSettings, error) {
+	if err := c.RequireFullMode(); err != nil {
+		return MountSettings{}, err
+	}
+	var result MountSettings
+	if err := c.request(ctx, http.MethodGet, "/v1/settings", nil, &result); err != nil {
+		return MountSettings{}, err
+	}
+	if !validMountPath(result.MountPath) {
+		return MountSettings{}, errors.New("Agent returned invalid mount settings")
+	}
+	return result, nil
+}
+
+func (c *Client) UpdateMountPath(ctx context.Context, path string) (MountSettings, error) {
+	if err := c.RequireFullMode(); err != nil {
+		return MountSettings{}, err
+	}
+	if !validMountPath(path) {
+		return MountSettings{}, errors.New("mount path must be an absolute normalized local directory")
+	}
+	var result MountSettings
+	if err := c.request(ctx, http.MethodPatch, "/v1/settings",
+		struct {
+			MountPath string `json:"mount_path"`
+		}{MountPath: path}, &result); err != nil {
+		return MountSettings{}, err
+	}
+	if !validMountPath(result.MountPath) {
+		return MountSettings{}, errors.New("Agent returned invalid updated mount settings")
+	}
+	confirmed := result.MountPath == path ||
+		(runtime.GOOS == "windows" && strings.EqualFold(result.MountPath, path))
+	if !confirmed {
+		return MountSettings{}, errors.New("Agent mount-path acknowledgement did not match requested directory; inspect Agent settings before retrying")
+	}
+	return result, nil
 }
