@@ -166,3 +166,144 @@ func TestPrepareStorageRootRefusesSymlinkedCASParent(t *testing.T) {
 		t.Fatalf("external destination was changed: %v", err)
 	}
 }
+
+func TestPrepareStorageRootRepairsCASLifecycleLockInodesWithCurrentMarker(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("exercises inaccessible CAS locks as a non-root Server UID")
+	}
+	root := t.TempDir()
+	staging := filepath.Join(root, ".xdrive-uploads")
+	lockDir := filepath.Join(root, ".xdrive-cas-lifecycle-locks")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	uid, gid := os.Geteuid(), os.Getegid()
+	if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+		[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lockFile := filepath.Join(lockDir, "ab.lock")
+	if err := os.WriteFile(lockFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Lstat(lockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This malformed-but-zero-byte sibling is not an actual shard lock and
+	// must not be modified or silently accepted as an internal lock inode.
+	unmanaged := filepath.Join(lockDir, "gg.lock")
+	if err := os.WriteFile(unmanaged, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unmanaged, 0o100); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lockFile, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lockDir, 0o100); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(lockDir, 0o700)
+		_ = os.Chmod(lockFile, 0o600)
+		_ = os.Chmod(unmanaged, 0o600)
+	})
+	if _, err := os.ReadDir(lockDir); err == nil {
+		t.Fatal("fixture CAS lock directory unexpectedly readable")
+	}
+	if _, err := prepareStorageRoot(root, uid, gid, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.ReadDir(lockDir); err != nil {
+		t.Fatalf("offline backup still cannot enumerate CAS locks: %v", err)
+	}
+	after, err := os.Lstat(lockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("CAS lock inode was replaced; cross-process flock coordination may be lost")
+	}
+	if after.Mode().Perm() != 0o600 || after.Size() != 0 {
+		t.Fatalf("CAS shard lock owner access/content changed unexpectedly: %s size=%d", after.Mode(), after.Size())
+	}
+	lockDirInfo, err := os.Stat(lockDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lockDirInfo.Mode().Perm()&0o700 != 0o700 {
+		t.Fatalf("CAS lock directory still lacks owner rwx: %s", lockDirInfo.Mode())
+	}
+	unmanagedInfo, err := os.Lstat(unmanaged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unmanagedInfo.Mode().Perm() != 0o100 {
+		t.Fatalf("noncanonical lookalike lock was changed: %s", unmanagedInfo.Mode())
+	}
+	if _, err := os.Stat(filepath.Join(lockDir, "ff.lock")); !os.IsNotExist(err) {
+		t.Fatalf("missing shard lock was created by repair: %v", err)
+	}
+}
+
+func TestPrepareStorageRootRejectsUnsafeCASLifecycleLocks(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("exercises symlink and malformed CAS locks as a non-root user")
+	}
+	for _, tc := range []struct{ name, kind string }{
+		{"directory symlink", "directory-symlink"},
+		{"shard symlink", "shard-symlink"},
+		{"nonempty shard lock", "nonempty"},
+		{"nonfile shard lock", "directory"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			external := t.TempDir()
+			staging := filepath.Join(root, ".xdrive-uploads")
+			locks := filepath.Join(root, ".xdrive-cas-lifecycle-locks")
+			if err := os.MkdirAll(staging, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			uid, gid := os.Geteuid(), os.Getegid()
+			if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+				[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.kind == "directory-symlink" {
+				if err := os.Symlink(external, locks); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.MkdirAll(locks, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				shard := filepath.Join(locks, "00.lock")
+				switch tc.kind {
+				case "shard-symlink":
+					if err := os.Symlink(external, shard); err != nil {
+						t.Fatal(err)
+					}
+				case "nonempty":
+					if err := os.WriteFile(shard, []byte("not a lock"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				case "directory":
+					if err := os.MkdirAll(shard, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if _, err := prepareStorageRoot(root, uid, gid, false); err == nil {
+				t.Fatalf("unsafe CAS lifecycle lock %s was accepted", tc.kind)
+			}
+			if info, err := os.Stat(external); err != nil || !info.IsDir() {
+				t.Fatalf("symlink target was changed: %v", err)
+			}
+		})
+	}
+}

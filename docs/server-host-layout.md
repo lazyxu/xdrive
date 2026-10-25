@@ -288,16 +288,19 @@ root deployment. It does not chown the complete host data tree to the login
 user or modify PostgreSQL volume ownership. A later `docker compose up
 --no-deps --force-recreate server` intentionally skips the one-shot dependency;
 for an owner-mismatch incident, rerun `storage-init` first with the canonical
-Compose config. Even when the marker is current, the one-shot preparer
-now also repairs directory access for `.xdrive-blobs`, `sha256` and the
-existing 00–ff shard parents (up to 258 directories). This fixes the case
-where the Server health probe succeeds but the stage-5 offline consistency
-verifier reports `walk storage: open /data/.xdrive-blobs: permission denied`.
-It never recursively changes immutable CAS file ownership in this bounded
-path; any still-unreadable blobs remain a hard verification failure.
+Compose config. Even with a current staging ownership marker, the one-shot
+preparer repairs `.xdrive-blobs/sha256/00..ff` parents and the independent
+`.xdrive-cas-lifecycle-locks` directory. It also re-owns/chmods only the
+existing fixed zero-byte `00.lock` through `ff.lock` entries (at most 256),
+**without unlinking, truncating, renaming or recreating any lock inode**.
+This fixes the case where the Server passes readiness but the stage-5 offline
+consistency verifier fails to traverse either the CAS blob directory or
+lifecycle lock directory. It does not recursively change immutable CAS
+blob ownership on the fast path; unreadable blobs still fail verification.
 
-For older currently deployed images, the non-root upgrade installer performs
-the same **bounded parent-directory-only** repair before stage 5. It first
+For older currently deployed images, the non-root upgrade installer repairs
+the same **bounded CAS parent directories and fixed persistent lock inodes**
+before stage 5. It first
 requires a valid `state/migrated-from-root` record, the canonical in-home
 file data directory, an exact matching active Server bind mount, and a locally
 pinned helper image; it rejects unexpected symlinks/ownership environments
@@ -305,6 +308,12 @@ rather than mounting arbitrary external data. No verification bypass or
 database restore is introduced. Note: an absent/stale
 `.xdrive-uploads/.ownership-v1` marker can cause the built-in preparer
 to traverse the full file storage tree during an explicit preparation.
+A warning that Host Control cannot use the Server GID because the host
+`setfacl` utility is missing is **separate** from CAS backup verification:
+it affects Caddy/Server observation, not the PostgreSQL or CAS files. On
+Debian/Ubuntu the optional `acl` package supplies `setfacl`; the installer
+does not demand host-root privileges just to install it. Do not change the
+whole `~/.xd` tree ownership or loosen storage modes to hide this warning.
 Old root-to-user migrations wrote a `state/migrated-from-root` marker but
 sometimes left `XD_CADDY_ASSET_DIR`, `XD_GEONAMES_HOST_DIR`,
 `XD_MEDIA_WORKER_RUNTIME_DIR` and `XD_PHOTO_FACE_RUNTIME_DIR` pointing

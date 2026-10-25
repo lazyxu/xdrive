@@ -2080,14 +2080,14 @@ else
   set_env XD_LEGACY_HTTP_ONLY "0"
 fi
 
-# Root-to-user migration may leave .xdrive-blobs mode 0700 owned by the
-# old host user. The old storage-init only repairs /data and .xdrive-uploads
-# when the marker is current; the stopped-Server backup verifier then fails
-# with "walk storage: open /data/.xdrive-blobs: permission denied".
+# Root-to-user migration may leave .xdrive-blobs or its separate
+# .xdrive-cas-lifecycle-locks directory owned by the old host user. The old
+# storage-init trusts a staging-only marker; the offline backup verifier
+# fails traversing these directories even while the Server is healthy.
 #
-# This pre-backup repair is intentionally limited to fixed CAS parent dirs
-# (root, sha256, and <=256 shard dirs), never blob contents, database mounts
-# or generic user trees. Use only the active canonical bind mount with a
+# This pre-backup repair is limited to fixed CAS parents plus the 256
+# persistent, zero-byte shard lock files (without replacing their inodes);
+# it never touches immutable blob data, DB mounts or generic user trees. Use only the active canonical bind mount with a
 # matching root-to-user migration marker and a local pinned PostgreSQL image.
 repair_migrated_cas_parents_before_backup() {
   [[ "$UPGRADE_EXISTING" == "1" && "$DOCKER_MODE" == rootful ]] || return 0
@@ -2096,7 +2096,11 @@ repair_migrated_cas_parents_before_backup() {
   [[ -n "$source_home" ]] || return 0
   data_dir="$(env_value XD_FILES_DATA_DIR)"
   [[ "$data_dir" == "$DATA_DIR/files" && -d "$data_dir" && ! -L "$data_dir" ]] || return 0
-  [[ -e "$data_dir/.xdrive-blobs" || -L "$data_dir/.xdrive-blobs" ]] || return 0
+  # The CAS tree can already be healthy while its independent lifecycle lock
+  # directory still belongs to root after a root-to-user migration.
+  [[ -e "$data_dir/.xdrive-blobs" || -L "$data_dir/.xdrive-blobs" ||
+     -e "$data_dir/.xdrive-cas-lifecycle-locks" ||
+     -L "$data_dir/.xdrive-cas-lifecycle-locks" ]] || return 0
 
   # Never attach a root helper to an arbitrary path inferred from .env.
   # The actual running Server must already mount the same canonical data.
@@ -2120,12 +2124,13 @@ repair_migrated_cas_parents_before_backup() {
   docker run --rm --pull never --network none --user 0:0 \
     --mount "type=bind,src=$data_dir,dst=/data" \
     --entrypoint sh "$helper_image" -ec '
-      uid="$1"; gid="$2"; checked=0; changed=0
+      uid="$1"; gid="$2"; checked=0; changed=0; lock_count=0
       for dir in /data/.xdrive-blobs /data/.xdrive-blobs/sha256 \
-                 /data/.xdrive-blobs/sha256/[0-9a-f][0-9a-f]; do
+                 /data/.xdrive-blobs/sha256/[0-9a-f][0-9a-f] \
+                 /data/.xdrive-cas-lifecycle-locks; do
         if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then continue; fi
         if [ -L "$dir" ] || [ ! -d "$dir" ]; then
-          echo "xDrive: non-directory or symlinked canonical CAS parent; refusing repair." >&2
+          echo "xDrive: symlink/non-directory CAS or lock parent; refusing repair." >&2
           exit 1
         fi
         checked=$((checked + 1))
@@ -2136,7 +2141,29 @@ repair_migrated_cas_parents_before_backup() {
         fi
         chmod u+rwx "$dir" || exit 1
       done
-      printf "[xDrive] checked %s canonical CAS parents; owner corrections %s.\n" "$checked" "$changed"
+
+      # Preserve the SAME bounded flock inodes. Never remove, truncate,
+      # recreate, or rename a CAS lifecycle lock during owner repair.
+      for lock in /data/.xdrive-cas-lifecycle-locks/[0-9a-f][0-9a-f].lock; do
+        if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then continue; fi
+        if [ -L "$lock" ] || [ ! -f "$lock" ]; then
+          echo "xDrive: unexpected CAS lifecycle lock inode; refusing repair." >&2
+          exit 1
+        fi
+        size="$(stat -c "%s" "$lock")" || exit 1
+        if [ "$size" != 0 ]; then
+          echo "xDrive: nonempty CAS lifecycle lock; refusing repair." >&2
+          exit 1
+        fi
+        lock_count=$((lock_count + 1))
+        current="$(stat -c "%u:%g" "$lock")" || exit 1
+        if [ "$current" != "$uid:$gid" ]; then
+          chown "$uid:$gid" "$lock" || exit 1
+          changed=$((changed + 1))
+        fi
+        chmod 0600 "$lock" || exit 1
+      done
+      printf "[xDrive] checked %s CAS parent directories and %s lifecycle lock files; owner corrections %s.\n" "$checked" "$lock_count" "$changed"
     ' xdrive-cas-parent-repair "$SERVER_UID" "$SERVER_GID" </dev/null
 }
 
