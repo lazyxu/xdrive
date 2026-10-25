@@ -1,0 +1,199 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const ts = require('typescript')
+
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+const storageSource = read('web/src/browserSafeStorage.ts')
+const appSource = read('web/src/App.tsx')
+const mainSource = read('web/src/main.tsx')
+const options = { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React }
+const transpile = source => ts.transpileModule(source, { compilerOptions: options }).outputText
+const appAST = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const mainAST = ts.createSourceFile('main.tsx', mainSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+
+function functionDeclaration(ast, name) {
+  const node = ast.statements.find(item =>
+    ts.isFunctionDeclaration(item) && item.name?.text === name)
+  assert.ok(node, 'missing source function: ' + name)
+  return node.getText(ast)
+}
+function initializer(ast, name) {
+  let result = null
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) &&
+        node.name.text === name) result = node.initializer?.getText(ast) ?? null
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.ok(result, 'missing source initializer: ' + name)
+  return result
+}
+const sessionCode = transpile([
+  functionDeclaration(appAST, 'initialSession'),
+  'exports.initialSession = initialSession;',
+  'exports.persistSession = ' + initializer(appAST, 'persistSession') + ';',
+  'exports.clearSession = ' + initializer(appAST, 'clearSession') + ';',
+].join('\n'))
+const rootCode = transpile(functionDeclaration(mainAST, 'Root') + '\nexports.Root = Root;')
+
+function createHarness(storage, denyGetter = false) {
+  const win = {}
+  if (denyGetter) {
+    Object.defineProperty(win, 'localStorage', { get() { throw new Error('SecurityError') } })
+  } else {
+    win.localStorage = storage
+  }
+  const safe = {}
+  new Function('exports', 'window', transpile(storageSource))(safe, win)
+
+  let liveSession = null, username = null, notice = null, disposeCalls = 0
+  const keys = {
+    ACCESS_KEY: 'xdrive.access_token',
+    LEGACY_TOKEN_KEY: 'xdrive.token',
+    REFRESH_KEY: 'xdrive.refresh_token',
+    EXPIRES_KEY: 'xdrive.access_expires_at',
+    USER_KEY: 'xdrive.username',
+  }
+  const vars = {
+    ...keys, AUTH_STORAGE_KEYS: Object.values(keys),
+    ...safe, useCallback: fn => fn,
+    setSession(next) { liveSession = next },
+    setUsername(next) { username = next },
+    setAuthNotice(next) { notice = next },
+    transferApiRef: { current: { disposeTransfers() { disposeCalls++ } } },
+    xDriveClearBaiduConversionSession() {},
+    async xDrivePwaClearOfflineMetadata() {},
+  }
+  const app = {}
+  new Function('exports', ...Object.keys(vars), sessionCode)(app, ...Object.values(vars))
+  return { safe, app, win, keys,
+    get session() { return liveSession }, get username() { return username },
+    get notice() { return notice }, get disposeCalls() { return disposeCalls } }
+}
+
+test('PWA stored login/refresh and logout keep existing browser semantics', () => {
+  const values = new Map([
+    ['xdrive.access_token', 'old-access'], ['xdrive.refresh_token', 'old-refresh'],
+    ['xdrive.access_expires_at', '123'], ['xdrive.username', 'owner'],
+  ])
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  }
+  const h = createHarness(storage)
+  assert.deepEqual(h.app.initialSession(), {
+    accessToken: 'old-access', refreshToken: 'old-refresh', accessExpiresAt: 123,
+  })
+  const fresh = { accessToken: 'fresh', refreshToken: 'renewed', accessExpiresAt: 789 }
+  h.app.persistSession(fresh)
+  assert.strictEqual(h.session, fresh)
+  assert.equal(values.get(h.keys.ACCESS_KEY), 'fresh')
+  assert.equal(values.get(h.keys.LEGACY_TOKEN_KEY), 'fresh')
+  assert.equal(values.get(h.keys.REFRESH_KEY), 'renewed')
+  assert.equal(values.get(h.keys.EXPIRES_KEY), '789')
+  h.app.clearSession('会话已失效。')
+  assert.deepEqual(h.session, { accessToken: '', refreshToken: '', accessExpiresAt: 0 })
+  assert.equal(h.username, '')
+  assert.equal(h.notice, '会话已失效。')
+  assert.equal(h.disposeCalls, 1)
+  for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+})
+
+test('PWA denied localStorage getter cannot crash first paint, login or logout', () => {
+  const h = createHarness(null, true)
+  assert.equal(h.safe.xDriveBrowserStorageRead('xdrive.appearance'), null)
+  assert.equal(h.safe.xDriveBrowserStorageWrite('xdrive.appearance', 'dark'), false)
+  assert.equal(h.safe.xDriveBrowserStorageRemove(Object.values(h.keys)), false)
+  assert.deepEqual(h.app.initialSession(), {
+    accessToken: '', refreshToken: '', accessExpiresAt: 0,
+  })
+  const session = { accessToken: 'live', refreshToken: 'live-refresh', accessExpiresAt: 1234 }
+  h.app.persistSession(session)
+  assert.strictEqual(h.session, session, 'Server login remains in memory')
+  h.app.clearSession()
+  assert.deepEqual(h.session, { accessToken: '', refreshToken: '', accessExpiresAt: 0 })
+  assert.equal(h.username, '')
+  assert.match(h.notice, /无法确认浏览器已清除本地登录记录/)
+  assert.equal(h.disposeCalls, 1)
+})
+
+test('PWA partial storage writes attempt all cleanup keys and never revive partial tokens', () => {
+  const values = new Map()
+  const removed = []
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem(key, value) {
+      if (key === 'xdrive.refresh_token') throw new Error('QuotaExceededError')
+      values.set(key, value)
+    },
+    removeItem(key) { removed.push(key); values.delete(key) },
+  }
+  const h = createHarness(storage)
+  const next = { accessToken: 'new-token', refreshToken: 'new-refresh', accessExpiresAt: 43 }
+  h.app.persistSession(next)
+  assert.strictEqual(h.session, next)
+  assert.deepEqual(removed, Object.values(h.keys))
+  for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+})
+
+test('PWA logout still clears memory and tries remaining keys after removeItem throws', () => {
+  const removed = []
+  const storage = {
+    getItem: () => null, setItem() {},
+    removeItem(key) {
+      removed.push(key)
+      if (key === 'xdrive.refresh_token') throw new Error('SecurityError')
+    },
+  }
+  const h = createHarness(storage)
+  h.app.clearSession('请重新登录。')
+  assert.deepEqual(removed, Object.values(h.keys))
+  assert.equal(h.session.accessToken, '')
+  assert.equal(h.username, '')
+  assert.match(h.notice, /请重新登录/)
+  assert.match(h.notice, /浏览器设置中清理本站点数据/)
+})
+
+test('PWA real Root renders and can change theme with denied site storage', () => {
+  const h = createHarness(null, true)
+  let renderedAppearance = null
+  const react = {
+    useState(init) { return [typeof init === 'function' ? init() : init,
+      next => { renderedAppearance = next }] },
+    useCallback: fn => fn,
+    createElement: (component, props, ...children) => ({ component, props, children }),
+  }
+  const env = {
+    React: react,
+    normalizeXDriveAppearance: saved => saved ?? 'system',
+    xDriveBrowserStorageRead: h.safe.xDriveBrowserStorageRead,
+    xDriveBrowserStorageWrite: h.safe.xDriveBrowserStorageWrite,
+    APPEARANCE_KEY: 'xdrive.appearance',
+    XDriveAppearanceThemeProvider: 'theme',
+    App: 'app',
+  }
+  const module = {}
+  new Function('exports', ...Object.keys(env), rootCode)(module, ...Object.values(env))
+  const tree = module.Root()
+  assert.equal(tree.props.appearance, 'system')
+  assert.equal(tree.children[0].props.appearance, 'system')
+  tree.children[0].props.onAppearanceChange('dark')
+  assert.equal(renderedAppearance, 'dark')
+})
+
+test('PWA boot/auth entry points use guarded storage; Owner and Service Worker are untouched', () => {
+  assert.match(mainSource, /xDriveBrowserStorageRead\(APPEARANCE_KEY\)/)
+  assert.match(mainSource, /xDriveBrowserStorageWrite\(APPEARANCE_KEY, next\)/)
+  assert.match(appSource, /useState\(\(\) => xDriveBrowserStorageRead\(USER_KEY\) \?\? ''\)/)
+  assert.match(appSource, /persistSession\(sessionFromAuth\(result\)\)/)
+  assert.match(appSource, /xDriveBrowserStorageWrite\(USER_KEY, result\.username\)/)
+  assert.match(appSource, /xDriveBrowserStorageRemove\(AUTH_STORAGE_KEYS\)/)
+  for (const source of [mainSource, appSource]) {
+    assert.doesNotMatch(source, /\blocalStorage\.(?:getItem|setItem|removeItem)\(/)
+  }
+  assert.doesNotMatch(storageSource, /serviceWorker|CacheStorage|fetch\(|skipWaiting|location\.reload/)
+})

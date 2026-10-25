@@ -8,6 +8,7 @@ import type {
 } from '@xdrive/ui/mui/perf'
 import App from './App'
 import { registerXDrivePwa } from './pwaRuntime'
+import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite } from './browserSafeStorage'
 import { startXDrivePwaInstallObservation } from './pwaInstall'
 import { startXDrivePwaUpdateObservation } from './pwaUpdates'
 import { startXDrivePwaPeerActivityObservation } from './pwaPeerActivity'
@@ -17,11 +18,11 @@ const APPEARANCE_KEY = 'xdrive.appearance'
 
 function Root() {
   const [appearance, setAppearance] = React.useState<XDriveAppearance>(
-    () => normalizeXDriveAppearance(localStorage.getItem(APPEARANCE_KEY)),
+    () => normalizeXDriveAppearance(xDriveBrowserStorageRead(APPEARANCE_KEY)),
   )
 
   const changeAppearance = React.useCallback((next: XDriveAppearance) => {
-    localStorage.setItem(APPEARANCE_KEY, next)
+    xDriveBrowserStorageWrite(APPEARANCE_KEY, next)
     setAppearance(next)
   }, [])
 
