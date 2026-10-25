@@ -110,6 +110,43 @@ test('Web download sink preserves Blob fallback when File System Access is unava
   }
 })
 
+test('Web/PWA download falls back to native browser when optional picker getter throws', async () => {
+  const { xDriveOpenWebDownloadSink } = loadDownloadSink()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'showSaveFilePicker')
+  let accesses = 0
+  try {
+    Object.defineProperty(globalThis, 'showSaveFilePicker', {
+      configurable: true,
+      get() {
+        accesses++
+        throw Object.assign(new Error('restricted getter'), { name: 'SecurityError' })
+      },
+    })
+    assert.deepEqual(await xDriveOpenWebDownloadSink('private-video.mp4'), { kind: 'blob' })
+    assert.equal(accesses, 1, 'denied capability must be read at most once')
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'showSaveFilePicker', previous)
+    else delete globalThis.showSaveFilePicker
+  }
+})
+
+test('Web/PWA download preserves explicit picker errors instead of silently handing off bytes', async () => {
+  const { xDriveOpenWebDownloadSink } = loadDownloadSink()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'showSaveFilePicker')
+  try {
+    Object.defineProperty(globalThis, 'showSaveFilePicker', {
+      configurable: true,
+      value: async () => {
+        throw Object.assign(new Error('picker invocation denied'), { name: 'NotAllowedError' })
+      },
+    })
+    await assert.rejects(xDriveOpenWebDownloadSink('private-video.mp4'), { name: 'NotAllowedError' })
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'showSaveFilePicker', previous)
+    else delete globalThis.showSaveFilePicker
+  }
+})
+
 test('Web direct-to-disk sink aborts the destination when a chunk write fails', async () => {
   const { xDriveWriteWebDownloadToSink } = loadDownloadSink()
   let writes = 0
