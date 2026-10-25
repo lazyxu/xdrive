@@ -8,6 +8,9 @@ export type AgentHello = {
   pid: number
   platform: string
   arch: string
+  // Older agents did not expose their runtime mode; they are not safe
+  // to treat as full when an already-running CLI-only Agent may own Push.
+  runtime_mode?: 'full' | 'backup_only'
   capabilities: string[]
 }
 

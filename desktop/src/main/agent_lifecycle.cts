@@ -27,7 +27,7 @@ export class AgentLifecycle {
 
   async ensureRunning(): Promise<AgentHello> {
     try {
-      return await this.client.hello()
+      return requireFullAgent(await this.client.hello())
     } catch (error) {
       if (!isRecoverableUnavailable(error)) throw error
     }
@@ -38,6 +38,9 @@ export class AgentLifecycle {
 
   async restart(): Promise<AgentHello> {
     try {
+      // A Desktop restart must not stop a CLI-only Agent that may be
+      // committing an original durable file Operation.
+      requireFullAgent(await this.client.hello())
       await this.client.shutdown()
       await this.waitUntilStopped()
     } catch (error) {
@@ -55,7 +58,7 @@ export class AgentLifecycle {
     while (Date.now() < deadline) {
       this.client.invalidate()
       try {
-        return await this.client.hello()
+        return requireFullAgent(await this.client.hello())
       } catch (error) {
         if (!isRecoverableUnavailable(error)) throw error
         lastError = error
@@ -126,6 +129,26 @@ export function defaultAgentCandidates() {
     result.push('xdrive-agent')
   }
   return [...new Set(result)]
+}
+
+// Fail closed for an explicitly headless Agent and for older agents that
+// cannot prove their runtime. A running backup is never stopped or replaced.
+function requireFullAgent(hello: AgentHello): AgentHello {
+  if (hello.runtime_mode === 'backup_only') {
+    throw new AgentIPCError(
+      'agent_backup_only',
+      0,
+      'xdrive-agent is running in Backup-only mode. Backups remain active. Stop its user-level backup service only after reviewing active tasks, then start the full Desktop Agent.',
+    )
+  }
+  if (hello.runtime_mode !== 'full') {
+    throw new AgentIPCError(
+      'incompatible_agent',
+      0,
+      'xdrive-agent did not report a verified runtime mode. Update the matched xDrive Agent and Desktop packages before controlling synchronization.',
+    )
+  }
+  return hello
 }
 
 function isRecoverableUnavailable(error: unknown) {
