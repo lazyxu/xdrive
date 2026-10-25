@@ -38,32 +38,44 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.screen, state.filesSection, state.path.map { it.id },
     ) { mutableStateOf(false) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
+    BackHandler(state.screen == Screen.GALLERY ||
+        shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
         else controller.back()
     }
-    Scaffold(modifier = Modifier.imePadding(), containerColor = if (state.screen == Screen.FILES) mobilePage else MaterialTheme.colorScheme.background,
+    Scaffold(modifier = Modifier.imePadding(),
+        containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
+            mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
-        if (state.screen == Screen.FILES) Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
+        if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
+            Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
-                    IconButton(onClick = controller::back) { Icon(painterResource(R.drawable.xd_arrow_back), "返回上级") }
+                if (state.screen == Screen.GALLERY)
+                    IconButton(onClick = controller::openFilesApp) {
+                        Icon(painterResource(R.drawable.xd_arrow_back), "返回文件")
+                    }
+                else if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
+                    IconButton(onClick = controller::back) {
+                        Icon(painterResource(R.drawable.xd_arrow_back), "返回上级")
+                    }
                 else Spacer(Modifier.size(48.dp))
                 Box(Modifier.weight(1f), contentAlignment = androidx.compose.ui.Alignment.Center) {
                     var pathMenuOpen by remember(state.filesSection, state.path.map { it.id }) {
                         mutableStateOf(false)
                     }
-                    val title = when (state.filesSection) {
-                        FilesSection.RECENT -> "最近"
-                        FilesSection.FAVORITES -> "收藏"
-                        FilesSection.BROWSE -> state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览"
-                        FilesSection.SEARCH -> "搜索结果"
-                    }
-                    if (state.filesSection == FilesSection.BROWSE && state.path.size > 1) {
+                    val title = if (state.screen == Screen.GALLERY) "照片"
+                        else when (state.filesSection) {
+                            FilesSection.RECENT -> "最近"
+                            FilesSection.FAVORITES -> "收藏"
+                            FilesSection.BROWSE -> state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览"
+                            FilesSection.SEARCH -> "搜索结果"
+                        }
+                    if (state.screen == Screen.FILES &&
+                        state.filesSection == FilesSection.BROWSE && state.path.size > 1) {
                         TextButton(onClick = { pathMenuOpen = true }, modifier = Modifier.fillMaxWidth().testTag("files-path-menu")) {
                             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
@@ -86,7 +98,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         textAlign = TextAlign.Center)
                 }
                 AccountMenu(state, controller, updates?.let { it::show },
-                    fileView = if (state.filesSection == FilesSection.BROWSE) filesView else null,
+                    fileView = if (state.screen == Screen.FILES &&
+                        state.filesSection == FilesSection.BROWSE) filesView else null,
                     onFileViewChange = { filesView = it; saveFilesView(it) },
                     onCreateFolder = { filesEdit = FilesEditIntent(FilesEditKind.CREATE_FOLDER) },
                     onUpload = onUpload)
@@ -106,6 +119,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
                     onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
                     onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
+                Screen.GALLERY -> Gallery(state, controller)
             }
         }
     }
@@ -144,6 +158,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             }
         }
     }
+    state.gallerySelected?.takeIf { state.screen == Screen.GALLERY }?.let { photo ->
+        AlertDialog(onDismissRequest = controller::dismissGalleryInfo,
+            title = { Text(photo.node.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (photo.mediaKind == "video") "视频" else if (photo.livePhoto) "实况照片" else "照片")
+                    if (photo.capturedAt.isNotBlank()) Text("拍摄时间：${photo.capturedAt}")
+                    Text("大小：${formatSize(photo.node.size)}")
+                }
+            },
+            confirmButton = { TextButton(onClick = controller::dismissGalleryInfo,
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
+    }
     state.selected?.let { node ->
         AlertDialog(onDismissRequest = controller::dismissDetails, containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface, textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -173,13 +200,26 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 if (state.username.isNotEmpty()) Text(state.username, style = MaterialTheme.typography.titleSmall)
                 Text(state.server, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (state.screen == Screen.FILES) {
+            if (state.screen == Screen.FILES || state.screen == Screen.GALLERY) {
                 DropdownMenuItem(text = { Text("刷新") },
                     leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) },
                     enabled = !state.loading,
-                    onClick = { expanded = false; controller.refresh() })
+                    onClick = {
+                        expanded = false
+                        if (state.screen == Screen.GALLERY) controller.refreshGallery()
+                        else controller.refresh()
+                    })
                 HorizontalDivider()
             }
+            if (state.screen == Screen.FILES) DropdownMenuItem(
+                text = { Text("照片") },
+                modifier = Modifier.testTag("switch-to-gallery"),
+                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                onClick = { expanded = false; controller.openGallery() })
+            if (state.screen == Screen.GALLERY) DropdownMenuItem(
+                text = { Text("文件") },
+                modifier = Modifier.testTag("switch-to-files"),
+                onClick = { expanded = false; controller.openFilesApp() })
             if (fileView != null) {
                 if (onUpload != null) DropdownMenuItem(
                     text = { Text("上传文件") },
@@ -203,7 +243,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             }
             if (checkUpdates != null) DropdownMenuItem(text = { Text("检查更新") },
                 leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) }, onClick = { expanded = false; checkUpdates() })
-            if (state.screen == Screen.FILES || state.screen == Screen.PASSWORD) DropdownMenuItem(text = { Text("退出登录") },
+            if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+                state.screen == Screen.PASSWORD) DropdownMenuItem(text = { Text("退出登录") },
                 leadingIcon = { Icon(painterResource(R.drawable.xd_logout), null) }, onClick = { expanded = false; controller.logout() })
             if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
                 onClick = { expanded = false; controller.changeServer() })

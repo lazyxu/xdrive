@@ -118,4 +118,13 @@ node scripts/shared-ui.mjs --check
 
 - 对齐 #2651 的可访问性修复：被动 Checkbox 通过 `Semantics.selected` 与实际 Owner 选中 ID 和已选择数量验证。Go CAS Finalize 可能超过普通 JSON 30s 总时限或默认 10s read-idle，因此仅该请求继承同一加密/路由 Client 后使用 10min read-idle、无总时限，并保持调用者取消；不得放宽其他 HTTP 请求。
 
-- 同步 Android Auth 的 `ImeAction.Done` 及正确单次提交 fixture：收起系统键盘并等待 Compose 布局稳定后只点击一次连接/登录，不重复执行写请求。
+
+## P0-07 · Android Gallery 原生照片墙首轮
+
+- 入口：Files 的原生账号更多菜单打开「照片」App，照片顶部返回上一 App 后仍使用此前已验证 Files Owner 目录；不新增 WebView、独立媒体 DB 或第二索引。
+- 查询：直接复用 Go `GET /api/v1/media/items?range=true`、`sort_by=captured&sort_dir=asc&unknown_first=true&fold_duplicates=true&initial_position=latest`。首次从已验证总数的最后稀疏页开始，页长 60；如尾页很短，预拉上一页。继续向前加载时校验绝对 offset、总数及重复 ID，绝不把变更范围悄悄合并。
+- 资源：Owner Bearer + session pinned 原域名/TLS/SNI 的二进制缩略图 GET；带节点 revision，4 MiB 上限、最多四并发、只保留会话内 48 个缩略图，虚拟项取消即结束网络请求，不保存 token/URI/私人图片磁盘缓存。
+- UI：原生 390dp 下默认为约三列正方形、缩略图加载中显示文件/视频主图标；较短尾页照片位于页面底部；Live/视频只显示真实标记，点击仅展示已有属性，不伪装已支持的 Viewer。
+- 本轮 **不等同于完整 iOS PWA 1:1**：精选集、年月日分组控件、Gallery Viewer/Live 播放、地图、搜索、选择、上传/下载与彻底像素校准仍未完成。CI 必须在本独立准确 HEAD 验证。
+
+- Gallery API35 端到端登录夹具继承基础 Android `IME Done` 收起键盘与单次点击合同；其余照片查询继续共享 Owner 安全会话。

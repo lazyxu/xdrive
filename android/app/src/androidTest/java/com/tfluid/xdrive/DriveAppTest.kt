@@ -31,12 +31,19 @@ class DriveAppTest {
     private var moveCalls = 0
     private var extraRootFile = false
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
+    private val galleryFixture = GalleryAsset(
+        DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
+        capturedAt = "2026-10-24T00:00:00Z", hasThumbnail = true)
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun galleryPage(accessToken: String, offset: Int,
+            initialLatest: Boolean) = GalleryPage(listOf(galleryFixture), 1, 0)
+        override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
+            revision: Long) = byteArrayOf(1,2,3)
         override suspend fun fileRecent(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
                 listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
@@ -111,7 +118,7 @@ class DriveAppTest {
         } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
-        // Dismiss the native keyboard through real IME Done, never resubmit.
+        // Real IME Done closes the soft keyboard; no credential replay.
         compose.onNodeWithTag("server").performImeAction()
         // Do not dispatch the CONNECT click while Compose is still applying
         // keyboard-focus and scroll changes. A single interaction must be
@@ -180,6 +187,24 @@ class DriveAppTest {
             org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
         }
         compose.onNodeWithTag("files-grid").assertExists()
+    }
+
+    @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {

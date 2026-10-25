@@ -23,6 +23,25 @@ class DriveControllerTest {
         var refreshed = 0
         var refreshFailure: Exception? = null
         var loggedOut = false
+        val latestGallery = GalleryAsset(
+            DriveNode(990L, 1, "today.jpg", "file", size = 32, revision = 1),
+            "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
+        val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
+        var galleryGate: CompletableDeferred<Unit>? = null
+        override suspend fun galleryPage(
+            accessToken: String, offset: Int, initialLatest: Boolean,
+        ): GalleryPage {
+            galleryRequests += offset to initialLatest
+            galleryGate?.await()
+            if (initialLatest) return GalleryPage(listOf(latestGallery), 121, 120)
+            val items = (offset until offset + 60).map { id ->
+                GalleryAsset(DriveNode(2000L + id, 1, "image-$id.jpg", "file", size = 10, revision = 1),
+                    "image", hasThumbnail = true)
+            }
+            return GalleryPage(items, 121, offset)
+        }
+        override suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long) =
+            byteArrayOf(1, 2, 3)
         val recentFolder = DriveCollectionItem(folder, "照片",
             listOf(DriveCrumb(1, ""), DriveCrumb(2, "照片")))
         val favoriteFile = DriveCollectionItem(file, "readme.txt",
@@ -320,6 +339,38 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun GalleryLoadsRealChronologicalTailAndPagesOlderWithoutLosingFilesOwner() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(120, c.state.value.galleryOffset)
+        assertEquals(121L, c.state.value.galleryTotal)
+        assertEquals(990L, c.state.value.galleryItems.last().node.id)
+        c.galleryLoadOlder(); runCurrent()
+        assertEquals(listOf(0 to true, 60 to false), api.galleryRequests)
+        assertEquals(61, c.state.value.galleryItems.size)
+        assertEquals(60, c.state.value.galleryOffset)
+        assertEquals(990L, c.state.value.galleryItems.last().node.id)
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(root.id, c.state.value.path.last().id)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+    }
+
+    @Test fun GalleryOldOwnerRangeCannotReturnAfterLeavingApp() = runTest {
+        val api = Service().apply { galleryGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertTrue(c.state.value.loading)
+        c.openFilesApp(); runCurrent()
+        api.galleryGate?.complete(Unit); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertFalse(c.state.value.galleryLoaded)
     }
 
     @Test fun manualFileUploadUsesCurrentOwnerFolderAndNoStalePicker() = runTest {
