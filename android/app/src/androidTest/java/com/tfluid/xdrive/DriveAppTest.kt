@@ -12,6 +12,7 @@ import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Real Compose controls with a fixture service, not live Server or physical-device proof. */
 class DriveAppTest {
@@ -41,7 +42,8 @@ class DriveAppTest {
             return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
         }
     }
-    private val controller = DriveController(scope, { service })
+    private val connectFactoryCalls = AtomicInteger()
+    private val controller = DriveController(scope, { connectFactoryCalls.incrementAndGet(); service })
     @After fun cleanup() { controller.close(); scope.cancel() }
 
     private fun startAndLogin() {
@@ -51,7 +53,7 @@ class DriveAppTest {
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         // Controller.connect() advances the Main coroutine separately from the
         // current Compose frame. Waiting only for idleness races on CI.
-        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.screen == Screen.LOGIN }
+        compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
@@ -96,7 +98,7 @@ class DriveAppTest {
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("allow-http").performScrollTo().performClick()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.screen == Screen.LOGIN }
+        compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
         compose.runOnIdle { org.junit.Assert.assertEquals(Screen.LOGIN, controller.state.value.screen) }
         compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
     }
