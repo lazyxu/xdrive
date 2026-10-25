@@ -60,9 +60,15 @@ cache restores a visited folder within the currently loaded range when returning
 and grid/list switches seed the new viewport before its first frame. Persisted
 directory return after process restart and unloaded-page anchors are not yet supported.
 No second file
-transport or optimistic cross-folder merge was added. Global search, recent and
-favorites, thumbnails, Gallery, Viewer, transfers and upload/download are not yet
-implemented; this increment is **not** full iOS PWA UI/functionality parity.
+transport or optimistic cross-folder merge was added. Owner-checked recent file and favorites sections now use the existing Go
+`/api/v1/file-recent` (bounded to 50) and `/api/v1/file-favorites` (bounded
+to 256) endpoints. File/folder location breadcrumbs are checked through the
+existing authenticated root/children pipeline before navigation. Long-press
+supports real add/remove favorite actions with no optimistic success after a
+failed request. The browsing list is preserved when changing the three Files
+sections, and switching accounts discards the private collection rows.
+Global search, thumbnails, Gallery, Viewer, transfers and upload/download are
+still unimplemented; this increment is **not** full iOS PWA UI/functionality parity.
 
 Phone folders use the actual blue iOS-style PWA `MobileFolderIcon` from
 `web/src/MobileFiles.tsx`, including both gradients and the highlight, with that

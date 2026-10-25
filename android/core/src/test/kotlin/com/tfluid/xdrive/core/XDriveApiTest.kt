@@ -59,6 +59,68 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `real Owner recent and favorites use existing JSON routes and verified crumbs`() = runBlocking {
+        val row = """{"node":{"id":2,"parent_id":1,"name":"doc.txt","type":"file","size":32,"revision":7},"path":"doc.txt","crumbs":[{"id":1,"name":""},{"id":2,"name":"doc.txt"}],"accessed_at":"2026-10-25T00:00:00Z"}"""
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("[$row]"))
+            val recent = api.fileRecent("access-secret")
+            assertEquals(1, recent.size)
+            assertEquals(2L, recent.single().node.id)
+            assertEquals(listOf(1L, 2L), recent.single().crumbs.map { it.id })
+            val r = server.takeRequest()
+            assertEquals("/api/v1/file-recent?limit=50", r.path)
+            assertEquals("GET", r.method)
+            assertEquals("Bearer access-secret", r.getHeader("Authorization"))
+
+            server.enqueue(MockResponse().setBody("[$row]"))
+            val favorite = api.fileFavorites("access-secret")
+            assertEquals(2L, favorite.single().node.id)
+            val f = server.takeRequest()
+            assertEquals("/api/v1/file-favorites", f.path)
+            assertEquals("Bearer access-secret", f.getHeader("Authorization"))
+
+            server.enqueue(MockResponse().setResponseCode(201).setBody(row))
+            assertEquals(2L, api.favoriteFile("access-secret", 2).node.id)
+            val put = server.takeRequest()
+            assertEquals("PUT", put.method)
+            assertEquals("/api/v1/file-favorites/2", put.path)
+            assertEquals("Bearer access-secret", put.getHeader("Authorization"))
+
+            server.enqueue(MockResponse().setResponseCode(204))
+            api.unfavoriteFile("access-secret", 2)
+            val delete = server.takeRequest()
+            assertEquals("DELETE", delete.method)
+            assertEquals("/api/v1/file-favorites/2", delete.path)
+            assertEquals("Bearer access-secret", delete.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun `recent and favorites reject wrong JSON shape identity or unsafe owner range`() = runBlocking {
+        val node = """{"id":3,"parent_id":1,"name":"doc.txt","type":"file"}"""
+        val cases = listOf(
+            "{}",
+            """[{"node":$node,"path":"doc.txt","crumbs":[]}]""",
+            """[{"node":$node,"path":"doc.txt","crumbs":[{"id":1,"name":""},{"id":2,"name":"doc.txt"}]}]""",
+            """[{"node":$node,"path":"doc.txt","crumbs":[{"id":3,"name":"doc.txt"}]}]""",
+            """[{"node":$node,"path":"doc.txt","crumbs":[{"id":1,"name":""},{"id":1,"name":""},{"id":3,"name":"doc.txt"}]}]""",
+            "password-secret",
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            cases.forEach { invalid ->
+                server.enqueue(MockResponse().setBody(invalid))
+                val err = failure { api.fileRecent("access-secret") }
+                assertEquals(ApiFailureReason.INVALID_RESPONSE, err.reason)
+                assertFalse(err.toString().contains("secret"))
+            }
+            server.enqueue(MockResponse().setBody("""[{"node":$node,"path":"doc.txt","crumbs":[{"id":1,"name":""},{"id":3,"name":"doc.txt"}]}]"""))
+            val valid = api.fileFavorites("access-secret")
+            assertEquals(3L, valid.single().node.id)
+            server.enqueue(MockResponse().setBody("{}"))
+            val err = failure { api.fileFavorites("access-secret") }
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, err.reason)
+        } }
+    }
+
     @Test fun `short nonfinal range is rejected instead of skipping missing rows`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody(page("""[{"id":2,"parent_id":1,"name":"a","type":"file"}]""", 101)))

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class Screen { CONNECT, LOGIN, PASSWORD, FILES }
+enum class FilesSection { RECENT, BROWSE, FAVORITES }
 
 data class DriveState(
     val screen: Screen = Screen.CONNECT,
@@ -23,6 +24,9 @@ data class DriveState(
     val totalCount: Long = 0,
     val loaded: Boolean = false,
     val selected: DriveNode? = null,
+    val filesSection: FilesSection = FilesSection.BROWSE,
+    val collectionItems: List<DriveCollectionItem> = emptyList(),
+    val collectionLoaded: Boolean = false,
 ) {
     val hasNext get() = loaded && offset.toLong() + 100 < totalCount && offset <= Int.MAX_VALUE - 100
 }
@@ -129,14 +133,19 @@ class DriveController(
     }
 
     fun open(node: DriveNode) {
-        if (state.value.screen != Screen.FILES || state.value.items.none { it == node }) return
+        if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
+            state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else showDetails(node)
     }
 
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
-        if (state.value.screen != Screen.FILES || state.value.items.none { it == node }) return
+        val current = state.value
+        if (current.screen != Screen.FILES) return
+        val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
+            else current.collectionItems.any { it.node == node }
+        if (!visible) return
         // The details surface belongs to the current UI generation, not a late append.
         if (state.value.loading) { invalidate(); mutableState.value = state.value.copy(loading = false) }
         mutableState.value = state.value.copy(selected = node)
@@ -144,33 +153,132 @@ class DriveController(
 
     fun dismissDetails() { mutableState.value = state.value.copy(selected = null) }
 
+    fun changeFilesSection(next: FilesSection) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection == next) return
+        invalidate() // Unmount/cancel old Owner range/collection before switching.
+        mutableState.value = current.copy(filesSection = next, selected = null,
+            loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false)
+        if (next == FilesSection.BROWSE) {
+            if (!state.value.loaded) load(state.value.path, 0)
+        } else loadCollection(next)
+    }
+
+    private fun loadCollection(section: FilesSection = state.value.filesSection) {
+        val service = api ?: return
+        if (session == null || state.value.screen != Screen.FILES ||
+            section == FilesSection.BROWSE || state.value.filesSection != section) return
+        request { ticket ->
+            val entries = authenticated(service, ticket) { token ->
+                if (section == FilesSection.RECENT) service.fileRecent(token)
+                else service.fileFavorites(token)
+            }
+            checkCurrent(ticket)
+            if (state.value.filesSection != section) return@request
+            mutableState.value = state.value.copy(collectionItems = entries, collectionLoaded = true)
+        }
+    }
+
+    fun openCollectionItem(item: DriveCollectionItem) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+            current.collectionItems.none { it == item }) return
+        if (item.node.isDirectory) locateCollectionItem(item) else showDetails(item.node)
+    }
+
+    /** Navigate using an authenticated Owner-scoped breadcrumb, recheck root
+     * and last directory with the same Server API. Never trust a display path. */
+    fun locateCollectionItem(item: DriveCollectionItem) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+            current.collectionItems.none { it == item }) return
+        val crumbs = if (item.node.isDirectory) item.crumbs else item.crumbs.dropLast(1)
+        if (crumbs.isEmpty() || crumbs.size > 512) return
+        val service = api ?: return
+        if (session == null) return
+        val candidate = crumbs.mapIndexed { index, crumb ->
+            DriveNode(id = crumb.id, parentId = crumbs.getOrNull(index - 1)?.id, name = crumb.name, type = "dir")
+        }
+        invalidate()
+        mutableState.value = current.copy(filesSection = FilesSection.BROWSE,
+            collectionItems = emptyList(), collectionLoaded = false, error = null, loading = false, selected = null)
+        request { ticket ->
+            val root = authenticated(service, ticket) { service.root(it) }
+            checkCurrent(ticket)
+            if (root.id != candidate.first().id)
+                throw ApiException(0, "Stale breadcrumb root", ApiFailureReason.INVALID_RESPONSE)
+            loadWithin(service, listOf(root) + candidate.drop(1), 0, ticket)
+        }
+    }
+
+    fun favoriteFile(node: DriveNode) {
+        val current = state.value
+        val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
+            else current.collectionItems.any { it.node == node }
+        val service = api ?: return
+        if (current.screen != Screen.FILES || node.isDirectory || !visible || session == null) return
+        request { ticket ->
+            authenticated(service, ticket) { service.favoriteFile(it, node.id) }
+            checkCurrent(ticket)
+            // Existing Server is authoritative. The UI does not pretend that
+            // a failed/uncertain PUT has changed collection membership.
+            mutableState.value = state.value.copy(error = null)
+        }
+    }
+
+    fun unfavoriteFile(node: DriveNode) {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.FAVORITES ||
+            current.collectionItems.none { it.node == node } || session == null) return
+        request { ticket ->
+            authenticated(service, ticket) { service.unfavoriteFile(it, node.id) }
+            checkCurrent(ticket)
+            mutableState.value = state.value.copy(
+                collectionItems = state.value.collectionItems.filterNot { it.node.id == node.id })
+        }
+    }
+
     /** Jump to an already-visited ancestor without trusting an unverified path. */
     fun navigateToAncestor(index: Int) {
         val current = state.value
-        if (current.screen != Screen.FILES || index < 0 || index >= current.path.lastIndex) return
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            index < 0 || index >= current.path.lastIndex) return
         load(current.path.take(index + 1), 0)
     }
 
     fun back() {
-        if (state.value.selected != null) dismissDetails()
-        else if (state.value.path.size > 1) load(state.value.path.dropLast(1), 0)
+        val current = state.value
+        if (current.selected != null) dismissDetails()
+        else if (current.filesSection != FilesSection.BROWSE) changeFilesSection(FilesSection.BROWSE)
+        else if (current.path.size > 1) load(current.path.dropLast(1), 0)
     }
-    // Refresh from the first Server-authoritative page, not just the last appended page.
-    fun refresh() { if (state.value.screen == Screen.FILES) load(state.value.path, 0) }
-    fun retry() { if (state.value.screen == Screen.FILES) load(retryPath ?: state.value.path, retryOffset, retryAppend) }
+    // Refresh from first Server-authoritative browse page, or reload the
+    // selected Recent/Favorites collection; never mix a stale browse offset.
+    fun refresh() {
+        if (state.value.screen != Screen.FILES) return
+        if (state.value.filesSection == FilesSection.BROWSE) load(state.value.path, 0)
+        else loadCollection()
+    }
+    fun retry() {
+        if (state.value.screen != Screen.FILES) return
+        if (state.value.filesSection == FilesSection.BROWSE)
+            load(retryPath ?: state.value.path, retryOffset, retryAppend)
+        else loadCollection()
+    }
     fun loadMore() {
         val current = state.value
-        if (current.screen != Screen.FILES || current.loading || current.error != null ||
-            !current.hasNext || current.path.isEmpty()) return
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.loading || current.error != null || !current.hasNext || current.path.isEmpty()) return
         load(current.path, current.offset + 100, append = true)
     }
     // Compatibility entry points; native Files UI uses loadMore instead.
-    fun nextPage() { if (state.value.hasNext && !state.value.loading) load(state.value.path, state.value.offset + 100) }
-    fun previousPage() { if (state.value.offset > 0 && !state.value.loading) load(state.value.path, (state.value.offset - 100).coerceAtLeast(0)) }
+    fun nextPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.hasNext && !state.value.loading) load(state.value.path, state.value.offset + 100) }
+    fun previousPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.offset > 0 && !state.value.loading) load(state.value.path, (state.value.offset - 100).coerceAtLeast(0)) }
 
     private fun load(path: List<DriveNode>, offset: Int, append: Boolean = false) {
         val service = api ?: return
-        if (session == null) return
+        if (session == null || state.value.filesSection != FilesSection.BROWSE) return
         retryPath = path.toList()
         retryOffset = offset
         retryAppend = append
@@ -224,7 +332,8 @@ class DriveController(
         checkCurrent(ticket)
         session = refreshed
         if (refreshed.mustChangePassword && !allowPasswordChange) {
-            mutableState.value = state.value.copy(screen = Screen.PASSWORD, path = emptyList(), items = emptyList(), loaded = false)
+            mutableState.value = state.value.copy(screen = Screen.PASSWORD, path = emptyList(),
+                items = emptyList(), loaded = false, collectionItems = emptyList(), collectionLoaded = false)
             throw CancellationException()
         }
         return block(refreshed.accessToken)

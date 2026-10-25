@@ -21,12 +21,22 @@ class DriveAppTest {
     private var paging = false
     private var failOnSecondPage = false
     private var manyFiles = false
+    private var favoriteDeletes = 0
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun fileRecent(accessToken: String) = listOf(
+            DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
+                listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
+        override suspend fun fileFavorites(accessToken: String) = listOf(
+            DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
+                listOf(DriveCrumb(1, ""), DriveCrumb(7, "favorite.txt"))))
+        override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
+            if (nodeId == 7L) favoriteDeletes++
+        }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
@@ -180,6 +190,50 @@ class DriveAppTest {
         compose.onNodeWithTag("files-path-1").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.path.size == 1 && controller.state.value.loaded }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun recentBrowseFavoritesAreRealOwnerLoadedSections() {
+        startAndLogin()
+        compose.onNodeWithTag("files-section-recent").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.RECENT &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-collection-item-2").assertExists()
+        compose.onNodeWithTag("files-section-favorites").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.FAVORITES &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-collection-item-7").assertExists()
+        compose.onNodeWithTag("files-section-browse").performClick()
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun favoriteLongPressRemovalChangesRealCollectionOnlyAfterAck() {
+        startAndLogin()
+        compose.onNodeWithTag("files-section-favorites").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.collectionLoaded }
+        compose.onNodeWithTag("files-collection-item-7").performTouchInput { longClick() }
+        compose.onNodeWithText("取消收藏").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            favoriteDeletes == 1 && controller.state.value.collectionItems.isEmpty() &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithText("暂无收藏的文件").assertIsDisplayed()
+    }
+
+    @Test fun recentFolderOpensServerVerifiedBrowseLocation() {
+        startAndLogin()
+        compose.onNodeWithTag("files-section-recent").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.collectionLoaded }
+        compose.onNodeWithTag("files-collection-item-2").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.BROWSE &&
+                controller.state.value.path.size == 2 && !controller.state.value.loading
+        }
+        compose.onNodeWithText("测试.txt").assertExists()
     }
 
     @Test fun switchListAndGridKeepsTheSameFolderNavigation() {
