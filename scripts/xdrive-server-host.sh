@@ -54,7 +54,8 @@ Usage:
   xdrive-server media status [--json]
   xdrive-server media verify [--json]
   xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails] [--gc-intelligence]
-  xdrive-server migrate-user USER [--grant-docker-group|--no-grant-docker-group]
+  xdrive-server migrate-user USER [--grant-docker-group|--no-grant-docker-group] [--defer-backups]
+  xdrive-server migrate-user USER --backups-only
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
   xdrive-server admin list
