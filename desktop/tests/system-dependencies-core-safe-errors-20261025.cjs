@@ -77,3 +77,27 @@ test('shared UI uses only fixed error messages while preserving version-guarded 
     assert.match(body, /setHistoryLoading\(false\)/)
   }
 })
+
+
+test('system dependency inventory errors are actionable and never show raw transport details', () => {
+  const safe = mapper()
+  const sensitive = 'token=SECRET_DO_NOT_ECHO /etc/xdrive/db-url postgresql://pw:secret@db'
+  for (const [status, expected] of [
+    [401, '重新登录'], [403, '管理员'], [404, '管理接口'],
+    [429, '超时或限流'], [503, '可信确认'],
+  ]) {
+    const text = safe({status, message: sensitive}, 'system', 'refresh')
+    assert.match(text, new RegExp(expected))
+    assert.ok(text.startsWith('系统依赖'))
+    assert.doesNotMatch(text, /SECRET_DO_NOT_ECHO|\/etc\/xdrive|postgresql:\/\//)
+  }
+  const unknown = safe(new Error(sensitive), 'system', 'refresh')
+  assert.match(unknown, /读取失败/)
+  assert.doesNotMatch(unknown, /SECRET_DO_NOT_ECHO|\/etc\/xdrive/)
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.match(page, /xDriveCoreDependencyErrorMessage\(err, 'system', 'refresh'\)/)
+  assert.doesNotMatch(page, /setError\(err instanceof Error \? err\.message : '读取依赖状态失败'\)/)
+  assert.match(page, /cachedSnapshotRef\.current = next/)
+  assert.match(page, /setRefreshing\(true\)/)
+  assert.match(page, /snapshot && visibleError/)
+})

@@ -53,6 +53,7 @@ import type {
 } from '../service-dependencies'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveBaiduServerAPIDetail } from './BaiduServerAPIDetail'
 import { XDriveBaiduJSAPIDesiredPanel } from './BaiduJSAPIDesiredPanel'
@@ -967,7 +968,7 @@ export function XDriveServiceDependenciesPage({
       cachedSnapshotRef.current = next
       setSnapshot(next)
     }).catch((err: unknown) => {
-      if (active) setError(err instanceof Error ? err.message : '读取依赖状态失败')
+      if (active) setError(xDriveCoreDependencyErrorMessage(err, 'system', 'refresh'))
     }).finally(() => {
       if (!active) return
       setLoading(false)

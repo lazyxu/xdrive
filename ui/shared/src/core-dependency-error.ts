@@ -1,7 +1,7 @@
-// Shared Web/Mobile Web/Desktop administrator errors for the two mutable
-// core-service settings panels. Never echo arbitrary transport, Agent or
-// backend diagnostics: they can contain DSNs, host paths or credentials.
-export type XDriveCoreService = 'postgres' | 'worker'
+// Shared Web/Mobile Web/Desktop administrator errors for the core-service
+// settings panels and the global service inventory. Never echo arbitrary
+// transport, Agent or backend diagnostics containing DSNs, paths or credentials.
+export type XDriveCoreService = 'postgres' | 'worker' | 'system'
 export type XDriveCoreOperation = 'refresh' | 'save' | 'rollback'
 
 function recognizedHTTPStatus(error: unknown): number | null {
@@ -21,7 +21,8 @@ function recognizedHTTPStatus(error: unknown): number | null {
 export function xDriveCoreDependencyErrorMessage(
   error: unknown, service: XDriveCoreService, operation: XDriveCoreOperation,
 ): string {
-  const label = service === 'postgres' ? 'PostgreSQL 连接池' : '后台 Worker'
+  const label = service === 'postgres' ? 'PostgreSQL 连接池'
+    : service === 'worker' ? '后台 Worker' : '系统依赖'
   const action = operation === 'save' ? '保存' : operation === 'rollback' ? '回滚' : '刷新'
   const status = recognizedHTTPStatus(error)
   switch (status) {
