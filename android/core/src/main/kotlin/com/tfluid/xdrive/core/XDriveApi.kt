@@ -152,6 +152,9 @@ interface XDriveService {
         throw ApiException(501, "Gallery Owner range unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
+    /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
+    fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
+        throw ApiException(501, "Native Owner video unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -548,6 +551,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60)
+    }
+
+    /** Existing versioned Owner content endpoint supports HTTP Range. */
+    override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+        require(node.type == "file" && node.id > 0 && node.revision > 0 && node.size > 0)
+        require(validToken(accessToken)) { "Invalid access token" }
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/files/" + node.id + "/content").build()
+        return ownerVideoPlayback(http, url, accessToken, node)
     }
 
     /** No public media URLs, no credentials in query strings or disk cache.

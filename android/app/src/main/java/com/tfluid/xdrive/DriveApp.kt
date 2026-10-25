@@ -127,8 +127,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (photo != null) GalleryPhotoViewer(photo, controller)
-                    else gallerySaveable.SaveableStateProvider(
+                    if (photo != null) {
+                        if (photo.mediaKind == "video") GalleryVideoPlayer(photo, controller)
+                        else GalleryPhotoViewer(photo, controller)
+                    } else gallerySaveable.SaveableStateProvider(
                         "gallery:${state.server}:${state.username}") {
                         Gallery(state, controller)
                     }

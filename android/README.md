@@ -366,3 +366,25 @@ inflight original streams by Viewer epoch, and Compose cancels the old scoped
 request; zoomed-in gestures remain for image pan. TalkBack has real previous/next
 custom actions without floating buttons. JVM and API35 Compose fixtures cover
 bounds, cancellation, swipe and return to the original Gallery scroll anchor.
+
+## Android Gallery Media3 native Video MVP
+
+Video tiles now open a real ExoPlayer/PlayerView with play/pause, buffering and
+seek. The per-Viewer OkHttp client inherits the current Owner authenticated
+XDriveApi DNS/TLS/SNI/Auto-LAN-Public route. Its scoped interceptor forwards
+Bearer only to the *exact* versioned Go file content URL, sends If-Match, and
+validates ETag plus exact Range offset/total size for every seek. No credential
+in a URL, WebView, localhost proxy, disk cache, redirect or silent route retry.
+Back, logout and server change cancel the private video Dispatcher immediately.
+
+The native player reports unsupported codecs and revoked access as playback
+failure, not success. Live Photo video pairing and iOS 27 pixel visual parity
+remain later work. CI includes MockWebServer Range, stale ETag, 200 downgrade and
+foreign-origin rejection, Controller Owner lifecycle, and API35 Compose opening/
+closing a real native PlayerView.
+
+Media3 is pinned to **1.7.1** while Android uses `compileSdk = 35`. The
+previous 1.11.1 choice requires compileSdk 36 and failed the actual Android
+Native `checkDebugAarMetadata` check (9 AAR metadata errors). Version 1.7.1
+contains the same stable library code as 1.6.1; do not raise `targetSdk`
+or globally upgrade the Android toolchain solely for this playback increment.

@@ -160,7 +160,8 @@ private fun GalleryTile(
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
         .clickable(onClick = {
-            if (item.mediaKind == "image") controller.openGalleryViewer(item)
+            if (item.mediaKind == "image" || item.mediaKind == "video")
+                controller.openGalleryViewer(item)
             else controller.showGalleryInfo(item)
         })
         .testTag("gallery-item-${item.node.id}")) {

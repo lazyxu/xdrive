@@ -27,6 +27,15 @@ class DriveControllerTest {
             DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
+        var videoSessionsOpened = 0
+        var videoSessionsClosed = 0
+        override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+            videoSessionsOpened++
+            return OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/files/" + node.id + "/content",
+                okhttp3.OkHttpClient(), node.size,
+            ) { videoSessionsClosed++ }
+        }
         var galleryGate: CompletableDeferred<Unit>? = null
         var galleryFailOlderOnce = false
         override suspend fun galleryPage(
@@ -462,6 +471,34 @@ class DriveControllerTest {
         c.shiftGalleryViewer(1)
         assertEquals(301L, c.state.value.galleryViewer?.node?.id)
         assertNull(c.galleryViewerNeighbor(-1))
+    }
+
+    @Test fun galleryVideoUsesOwnerOnlyAndClosesStreamOnBackAndLogout() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(accessToken: String, offset: Int,
+                initialLatest: Boolean): GalleryPage = GalleryPage(listOf(
+                GalleryAsset(DriveNode(301, 1, "clip.mp4", "file", 7, revision = 2),
+                    "video", durationMs = 12_000L)
+            ), 1, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val video = c.state.value.galleryItems.single()
+        c.openGalleryViewer(video)
+        assertEquals(video, c.state.value.galleryViewer)
+        val source = c.openGalleryVideoPlayback(video)
+        assertNotNull(source)
+        assertEquals(1, api.videoSessionsOpened)
+        c.back()
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(1, api.videoSessionsClosed)
+        c.openGalleryViewer(video)
+        assertNotNull(c.openGalleryVideoPlayback(video))
+        c.logout(); runCurrent()
+        assertEquals(2, api.videoSessionsClosed)
+        assertNull(c.openGalleryVideoPlayback(video))
+        assertTrue(c.state.value.galleryItems.isEmpty())
     }
 
     @Test fun galleryViewerOldBytesAreDiscardedAfterCloseAndReopen() = runTest {

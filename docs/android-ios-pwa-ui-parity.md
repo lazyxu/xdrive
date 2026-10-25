@@ -145,6 +145,16 @@ node scripts/shared-ui.mjs --check
 - 不叠加常驻切换按钮。通过 TalkBack 的「上一张照片」「下一张照片」可访问性操作触发同一 Controller，避免屏幕浮层污染 iOS 27 视觉。
 - 增加 Controller JVM（边界、视频阻挡、旧原图取消）和 API35 Compose（真实水平手势、打开照片后返回位置）回归。真实播放视频、Live 与跨未加载 Range 衔接继续待做；以本增量准确 SHA CI 为准。
 
+## P0-08 · Android 视频播放（Media3 MVP）
+
+- Gallery 视频 Tile 实际进入 Media3 ExoPlayer/PlayerView（播放、暂停、缓冲、Seek、返回），不再用 Info 冒充播放。
+- DataSource 继承现有 XDriveApi 固定 Owner IP/DNS、TLS Host/SNI；每次 GET 和 seek 的 HTTP Range 都校验原始 revision ETag、206 Content-Range 总长度/偏移及可用 body 长度。仅确切 Owner Node URI 注入 Bearer；拒绝跨域、重定向、200 Range 降级与静默重试，不添加 Token URL、第二套 Server/代理/本地缓存。
+- 单独 Dispatcher 会在 Viewer 返回、退出登录、换 Server 时取消/释放，Files 和 Gallery 普通请求不被取消。
+- 核心 MockWebServer、Controller JVM、API35 Compose 均已提交测试源码；准确 SHA CI 未通过之前不得声明验收。真实生产安全专项按用户决定跳过（未验收），代码权限和 CI 不跳过。
+- 未完成：Live Photo 可靠 pair/.livp 的长按播放、跨 Range Viewer、codec 实物样本覆盖、iOS 27 视频控件逐像素对齐、后台恢复。
+
+- Media3 依赖修正：真实 Android Native CI 证实 `1.11.1` 要求 `compileSdk>=36`，现保持应用 API 35 基线并选用官方稳定 `1.7.1`（官方说明与 1.6.1 相同代码）；需要准确新 SHA CI 重新验证。
+
 ## P0-07 · Gallery 无限向前分页（独立增量）
 
 - Android 原生 Gallery 保持 iOS 照片墙最新在底部，不再显示与 iOS 不符的永久“加载更早的照片”列表项；触达照片墙顶部自动按 Go Owner Range offset 向前加载 60 项。

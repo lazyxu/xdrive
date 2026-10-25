@@ -33,6 +33,8 @@ class DriveAppTest {
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
+    private var galleryVideoFixture = false
+    private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
@@ -45,6 +47,9 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
+            if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
+                DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
+                "video", durationMs = 10_000L)), 1, 0)
             if (galleryManyPhotos) {
             val originals = (0 until 60).map { index ->
                 GalleryAsset(DriveNode(1000L + index, 1L,
@@ -64,6 +69,13 @@ class DriveAppTest {
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long) = byteArrayOf(1,2,3)
+        override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
+            OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/files/" + node.id + "/content",
+                okhttp3.OkHttpClient.Builder().addInterceptor {
+                    throw java.io.IOException("Fixture intentionally has no MP4")
+                }.build(), node.size,
+            ) { videoTransportClosed++ }
         override suspend fun fileRecent(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
                 listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
@@ -315,6 +327,26 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true)
             .assertIsDisplayed()
+    }
+
+    @Test fun nativeVideoOpensMedia3AndClosesOwnerStream() {
+        galleryVideoFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("gallery-item-45", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-video-viewer").assertExists()
+        compose.onNodeWithTag("gallery-video-player").assertExists()
+        compose.onNodeWithTag("gallery-video-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryViewer)
+            org.junit.Assert.assertEquals(1, videoTransportClosed)
+        }
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {

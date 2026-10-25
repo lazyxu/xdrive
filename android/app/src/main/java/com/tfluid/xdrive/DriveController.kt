@@ -100,6 +100,7 @@ class DriveController(
     private var generation = 0L
     private var active: Job? = null
     private val galleryThumbnailLimit = Semaphore(4)
+    private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
@@ -919,16 +920,44 @@ class DriveController(
     fun openGalleryViewer(item: GalleryAsset) {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.loading ||
-            !current.galleryLoaded || item.mediaKind != "image" ||
+            !current.galleryLoaded || item.mediaKind !in setOf("image", "video") ||
             item.node.type != "file" || item.node.revision <= 0 ||
             current.galleryItems.none { it == item }) return
+        closeActiveVideoPlayback()
         galleryViewerEpoch++
         mutableState.value = current.copy(galleryViewer = item, gallerySelected = null)
     }
 
-    /** The only valid adjacent Viewer targets are immediate neighbors in the
-     * current Owner-verified chronological Range. Never skip a video or invent
-     * a yet-unloaded item. A future real video Viewer can extend this rule. */
+    /** A private Owner media session, tied to this one currently opened video.
+     * It never survives exit, logout, account switch or Server switch. */
+    fun openGalleryVideoPlayback(video: GalleryAsset): OwnerVideoPlayback? {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryViewer != video ||
+            video.mediaKind != "video" || !current.galleryLoaded ||
+            current.galleryItems.none { it == video } || video.node.revision <= 0) return null
+        val token = session?.accessToken ?: return null
+        val service = api ?: return null
+        return try {
+            val resource = service.galleryVideoPlayback(token, video.node)
+            closeActiveVideoPlayback()
+            activeVideoPlayback = resource
+            resource
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun closeGalleryVideoPlayback(resource: OwnerVideoPlayback) {
+        if (activeVideoPlayback === resource) activeVideoPlayback = null
+        resource.close()
+    }
+
+    private fun closeActiveVideoPlayback() {
+        activeVideoPlayback?.close()
+        activeVideoPlayback = null
+    }
+
+    /** Immediate verified image neighbors, never invent a missing Range. */
     fun galleryViewerNeighbor(direction: Int): GalleryAsset? {
         val current = state.value
         val selected = current.galleryViewer ?: return null
@@ -953,6 +982,7 @@ class DriveController(
 
     fun dismissGalleryViewer() {
         if (state.value.galleryViewer == null) return
+        closeActiveVideoPlayback()
         galleryViewerEpoch++ // Reject stale non-cooperative results, including A -> B -> A.
         mutableState.value = state.value.copy(galleryViewer = null, gallerySelected = null)
     }
@@ -1229,7 +1259,12 @@ class DriveController(
         }
     }
 
-    private fun invalidate() { generation++; active?.cancel(); active = null }
+    private fun invalidate() {
+        generation++
+        active?.cancel()
+        active = null
+        closeActiveVideoPlayback()
+    }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
     override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }
 
