@@ -102,10 +102,14 @@ class DriveAppTest {
     private val controller = DriveController(scope, { connectFactoryCalls.incrementAndGet(); service })
     @After fun cleanup() { controller.close(); scope.cancel() }
 
-    private fun startAndLogin() {
-        compose.setContent { XDriveTheme { DriveApp(controller) } }
+    private fun startAndLogin(onDownload: ((DriveNode) -> Unit)? = null) {
+        compose.setContent { XDriveTheme { DriveApp(controller, onDownload = onDownload) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
+        // Dismiss the native keyboard through the real IME Done action, without
+        // triggering a connect or login request.  The keyboard previously
+        // covered CONNECT on API35 when the form re-laid out after focus.
+        compose.onNodeWithTag("server").performImeAction()
         // Do not dispatch the CONNECT click while Compose is still applying
         // keyboard-focus and scroll changes. A single interaction must be
         // visibly enabled and placed before sending it; never retry blindly.
@@ -118,7 +122,11 @@ class DriveAppTest {
         compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
-        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        compose.onNodeWithTag("password").performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithTag("auth-submit").performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.FILES && controller.state.value.loaded
         }
@@ -130,9 +138,7 @@ class DriveAppTest {
         compose.onNodeWithTag("xdrive-mobile-app-header").assertIsDisplayed()
         compose.onNodeWithTag("files-select-mode").performClick()
         compose.onNodeWithTag("files-item-2").performClick()
-        // combinedClickable merges its child semantics in the default tree.
-        // Verify the actual selected Owner id AND the rendered checkbox in the
-        // unmerged tree; neither assertion is a fake success from a mock delete.
+        // The clickable row merges Checkbox semantics in the default tree.
         compose.runOnIdle {
             org.junit.Assert.assertEquals(setOf(2L), controller.state.value.browseSelectedIds)
         }
@@ -171,6 +177,18 @@ class DriveAppTest {
             org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
         }
         compose.onNodeWithTag("files-grid").assertExists()
+    }
+
+    @Test fun nativeDownloadMenuUsesOnlyRealCurrentFile() {
+        extraRootFile = true
+        val downloads = mutableListOf<Long>()
+        startAndLogin(onDownload = { downloads += it.id })
+        compose.onNodeWithTag("files-item-70").performTouchInput { longClick() }
+        compose.onNodeWithTag("files-download-action").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(70L), downloads)
+            org.junit.Assert.assertTrue(controller.state.value.fileExportPending == null)
+        }
     }
 
     @Test fun nativeCopyPickerSelectsVerifiedChildFolder() {

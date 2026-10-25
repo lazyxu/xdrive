@@ -2,6 +2,9 @@ package com.tfluid.xdrive.core
 
 import java.io.Closeable
 import java.io.IOException
+import java.io.OutputStream
+import java.security.MessageDigest
+import java.util.Locale
 import java.net.URI
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -114,6 +117,10 @@ interface XDriveService {
     suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
         throw ApiException(501, "Batch Trash API unavailable")
     }
+    /** Stream a single Owner file into a caller-owned Android document. Never buffer in memory. */
+    suspend fun downloadFile(accessToken: String, node: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
+        throw ApiException(501, "Native file download unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -235,6 +242,95 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (deleted.size != originals.size ||
             deleted.map { (it as? JsonPrimitive)?.longOrNull ?: invalidPayload() }.toSet() !=
                 originals.map { it.id }.toSet()) invalidPayload()
+    }
+
+
+    /**
+     * Single Owner-authenticated byte stream. Reuses the pinned TLS/Host client.
+     * Refuses stale revision, length/checksum mismatch, redirects and partial EOF.
+     * The caller owns cleanup of uncommitted SAF documents on failure/cancel.
+     */
+    override suspend fun downloadFile(
+        accessToken: String, node: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+    ): Long {
+        require(node.type == "file" && node.id > 0 && node.revision > 0 && node.size >= 0)
+        require(validToken(accessToken)) { "Invalid access token" }
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/files/" + node.id + "/content").build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept-Encoding", "identity")
+            .header("Cache-Control", "no-store")
+            .build()
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(request)
+            // Existing 30s JSON call timeout is inappropriate for large files;
+            // OkHttp's read-idle timeout and coroutine cancellation still apply.
+            call.timeout().timeout(0, TimeUnit.MILLISECONDS)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(transportFailure(e))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val copied = response.use { reply ->
+                            if (reply.code != 200)
+                                throw ApiException(reply.code, "File download rejected")
+                            val expectedETag = 34.toChar().toString() + node.revision + 34.toChar()
+                            if (reply.header("ETag") != expectedETag) invalidPayload()
+                            val body = reply.body ?: invalidPayload()
+                            val length = body.contentLength()
+                            if (length >= 0 && length != node.size) invalidPayload()
+                            val sha = reply.header("X-Content-SHA256")
+                            if (sha != null && !sha.matches(Regex("[0-9a-fA-F]{64}")))
+                                invalidPayload()
+                            val hash = MessageDigest.getInstance("SHA-256")
+                            var written = 0L
+                            var lastProgress = 0L
+                            var lastNoticeNanos = System.nanoTime()
+                            val bytes = ByteArray(64 * 1024)
+                            openDestination().use { output ->
+                                body.byteStream().use { input ->
+                                    while (true) {
+                                        if (!continuation.isActive) throw IOException("Cancelled")
+                                        val size = input.read(bytes)
+                                        if (size < 0) break
+                                        if (size == 0) continue
+                                        if (size.toLong() > node.size - written) invalidPayload()
+                                        output.write(bytes, 0, size)
+                                        hash.update(bytes, 0, size)
+                                        written += size
+                                        val now = System.nanoTime()
+                                        if (written - lastProgress >= 8L * 1024 * 1024 ||
+                                            now - lastNoticeNanos >= 100_000_000L) {
+                                            lastProgress = written
+                                            lastNoticeNanos = now
+                                            if (continuation.isActive) onProgress(written)
+                                        }
+                                    }
+                                }
+                            }
+                            if (written != node.size) invalidPayload()
+                            if (sha != null && hash.digest().joinToString("") {
+                                "%02x".format(Locale.ROOT, it.toInt() and 0xff)
+                            } != sha.lowercase(Locale.ROOT)) invalidPayload()
+                            if (continuation.isActive) onProgress(written)
+                            written
+                        }
+                        if (continuation.isActive) continuation.resume(copied)
+                    } catch (e: ApiException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    } catch (e: IOException) {
+                        if (continuation.isActive) continuation.resumeWithException(transportFailure(e))
+                    } catch (_: RuntimeException) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            ApiException(0, "File download failed", ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
     }
 
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {

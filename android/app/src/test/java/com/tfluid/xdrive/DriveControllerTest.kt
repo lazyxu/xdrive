@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.*
+import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -35,6 +37,22 @@ class DriveControllerTest {
         var searchListing: suspend (String, String) -> FileSearchPage = { _, cursor ->
             if (cursor.isEmpty()) FileSearchPage(listOf(searchFile), "cursor-1")
             else FileSearchPage(listOf(recentFolder), "")
+        }
+        var downloadReads = 0
+        var downloadFailure: Exception? = null
+        var downloadGate: CompletableDeferred<Unit>? = null
+        override suspend fun downloadFile(accessToken: String, node: DriveNode,
+            openDestination: () -> OutputStream, onProgress: (Long) -> Unit): Long {
+            downloadReads++
+            downloadFailure?.let { throw it }
+            openDestination().use { output ->
+                output.write("hel".toByteArray())
+                onProgress(3)
+                downloadGate?.await()
+                output.write("lo".toByteArray())
+            }
+            onProgress(5)
+            return 5
         }
         var mutationRows = listOf(folder, file)
         var mutationListing = false
@@ -284,6 +302,77 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun fileExportRejectsOldOwnerPickerAndExportsCurrentFileOnce() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val invalid = ByteArrayOutputStream()
+        assertFalse(c.prepareFileExport(folder)) // Directory cannot be downloaded.
+        assertTrue(c.prepareFileExport(file))
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        var discarded = 0
+        c.saveFileExport({ invalid }, { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(0, api.downloadReads)
+        c.changeFilesSection(FilesSection.BROWSE); runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        val output = ByteArrayOutputStream()
+        c.saveFileExport({ output }, { discarded++ }); runCurrent()
+        assertEquals(1, api.downloadReads)
+        assertEquals("hello", output.toString("UTF-8"))
+        assertEquals(5L, c.state.value.fileDownloadBytes)
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertEquals(1, discarded)
+    }
+
+    @Test fun changingFolderCancelsInFlightExportAndClearsDownloadChrome() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        var discarded = 0
+        val output = ByteArrayOutputStream()
+        c.saveFileExport({ output }, { discarded++ }); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        c.open(folder); runCurrent() // New Owner navigation cancels the pending file transfer.
+        assertEquals(1, api.downloadReads)
+        assertEquals(1, discarded)
+        assertEquals(2L, c.state.value.path.last().id)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertEquals(0L, c.state.value.fileDownloadBytes)
+        assertEquals(null, c.state.value.fileExportPending)
+        assertTrue(output.size() < 5)
+    }
+
+    @Test fun refreshingInvalidatesUnreturnedSafPickerWithoutDownloading() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        c.refresh(); runCurrent()
+        assertEquals(null, c.state.value.fileExportPending)
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(0, api.downloadReads)
+    }
+
+    @Test fun fileExportFailureDiscardsPartialDestinationAndDoesNotReplay() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        api.downloadFailure = ApiException(503, "unavailable")
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(1, api.downloadReads)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(null, c.state.value.fileExportPending)
     }
 
     @Test fun rootBackFirstExitsFilesSelectionWithoutLeavingOwnerSession() = runTest {

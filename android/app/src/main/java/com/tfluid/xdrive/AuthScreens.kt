@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -82,6 +84,7 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(value.isEmpty()) { if (value.isEmpty()) visible = false }
     val colors = MaterialTheme.colorScheme
+    val focusManager = LocalFocusManager.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
         OutlinedTextField(value, onValueChange, enabled = enabled, singleLine = true,
@@ -92,7 +95,10 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
             shape = RoundedCornerShape(12.5.dp),
             placeholder = placeholder?.let { { Text(it) } },
             visualTransformation = if (secret && (!visible || value.isEmpty())) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboardType),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (secret) KeyboardType.Password else keyboardType,
+                imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             trailingIcon = if (secret) { { IconButton(onClick = { visible = !visible }, enabled = enabled, modifier = Modifier.testTag("$tag-reveal")) {
                 Icon(painterResource(if (visible) R.drawable.xd_visibility_off else R.drawable.xd_visibility), if (visible) "隐藏密码" else "显示密码", tint = colors.onSurfaceVariant)
             } } } else null,

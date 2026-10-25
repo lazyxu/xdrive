@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.*
 import java.io.Closeable
+import java.io.OutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,12 @@ data class DriveState(
     val browseSelectionMode: Boolean = false,
     val browseSelectedIds: Set<Long> = emptySet(),
     val browseBatchWriteAttempted: Boolean = false,
+    // Export URI and tokens are never put into state or preferences.
+    val fileExportPending: DriveNode? = null,
+    val fileDownloadActive: Boolean = false,
+    val fileDownloadSaved: Boolean = false,
+    val fileDownloadBytes: Long = 0,
+    val fileDownloadTotal: Long = 0,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -191,6 +198,80 @@ class DriveController(
         if (node != null && (node.parentId != current.path.last().id ||
             node.revision <= 0 || current.items.none { it == node })) return null
         return current
+    }
+
+    /** SAF launches only after verifying the current authenticated Owner row.
+     * A delayed picker return never authorizes an old node after navigation. */
+    fun prepareFileExport(node: DriveNode): Boolean {
+        val current = editableBrowseState(node) ?: return false
+        if (node.isDirectory || current.fileExportPending != null ||
+            current.fileDownloadActive || node.size < 0) return false
+        mutableState.value = current.copy(
+            fileExportPending = node, fileDownloadBytes = 0,
+            fileDownloadTotal = node.size, fileDownloadSaved = false, error = null)
+        return true
+    }
+
+    fun cancelFileExport() {
+        if (state.value.fileDownloadActive) return
+        mutableState.value = state.value.copy(fileExportPending = null)
+    }
+
+    /** Caller owns the SAF URI; failure/cancellation must remove the partial document.
+     * Download is read-only and never retries a request with an uncertain response. */
+    fun saveFileExport(openOutput: () -> OutputStream, discardOutput: () -> Unit) {
+        val current = state.value
+        val node = current.fileExportPending
+        val valid = node != null && current.screen == Screen.FILES &&
+            current.filesSection == FilesSection.BROWSE && current.loaded &&
+            !current.loading && !current.fileDownloadActive &&
+            current.destinationKind == null && current.path.isNotEmpty() &&
+            current.items.any { it == node } && node.parentId == current.path.last().id &&
+            !node.isDirectory && node.revision > 0 && session != null
+        if (!valid) {
+            discardOutput()
+            if (!current.fileDownloadActive) mutableState.value = current.copy(fileExportPending = null)
+            return
+        }
+        val service = api ?: run {
+            discardOutput()
+            mutableState.value = current.copy(fileExportPending = null)
+            return
+        }
+        val owned = node!!
+        mutableState.value = current.copy(
+            fileExportPending = null, fileDownloadActive = true,
+            fileDownloadSaved = false, fileDownloadBytes = 0, fileDownloadTotal = owned.size)
+        request(isFileDownload = true) { ticket ->
+            var complete = false
+            try {
+                val written = authenticatedMutation(ticket) { token ->
+                    service.downloadFile(token, owned, openOutput) { bytes ->
+                        if (ticket == generation) {
+                            mutableState.value = state.value.copy(fileDownloadBytes = bytes)
+                        }
+                    }
+                }
+                checkCurrent(ticket)
+                complete = true
+                mutableState.value = state.value.copy(
+                    fileDownloadBytes = written, fileDownloadActive = false,
+                    fileDownloadSaved = true, error = null)
+            } finally {
+                if (!complete) discardOutput()
+                if (ticket == generation)
+                    mutableState.value = state.value.copy(fileDownloadActive = false)
+            }
+        }
+    }
+
+    fun cancelFileDownload() {
+        if (!state.value.fileDownloadActive) return
+        invalidate() // Cancels the same OkHttp call; its finally removes partial SAF output.
+        mutableState.value = state.value.copy(
+            loading = false, fileDownloadActive = false, fileExportPending = null,
+            fileDownloadSaved = false, fileDownloadBytes = 0, fileDownloadTotal = 0,
+            error = "下载已取消。")
     }
 
     /** Real Owner-checked target folder picker. All folders come from
@@ -492,7 +573,8 @@ class DriveController(
         mutableState.value = current.copy(filesSection = next, selected = null,
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = "", searchNextCursor = "",
-            browseSelectionMode = false, browseSelectedIds = emptySet())
+            browseSelectionMode = false, browseSelectedIds = emptySet(),
+            fileExportPending = null, fileDownloadSaved = false)
         if (next == FilesSection.BROWSE) {
             if (!state.value.loaded) load(state.value.path, 0)
         } else loadCollection(next)
@@ -513,6 +595,7 @@ class DriveController(
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = query, searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
+            fileExportPending = null, fileDownloadSaved = false,
             searchReturnSection = if (current.filesSection == FilesSection.SEARCH)
                 current.searchReturnSection else current.filesSection)
         loadCollection(FilesSection.SEARCH)
@@ -667,7 +750,8 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
             current.destinationKind != null || current.loading || current.error != null ||
-            !current.hasNext || current.path.isEmpty()) return
+            !current.hasNext || current.path.isEmpty() ||
+            current.fileExportPending != null) return
         load(current.path, current.offset + 100, append = true)
     }
     // Compatibility entry points; native Files UI uses loadMore instead.
@@ -707,6 +791,8 @@ class DriveController(
             browseSelectionMode = if (append) previous.browseSelectionMode else false,
             browseSelectedIds = if (append) previous.browseSelectedIds else emptySet(),
             browseBatchWriteAttempted = if (append) previous.browseBatchWriteAttempted else false,
+            fileExportPending = if (append) previous.fileExportPending else null,
+            fileDownloadSaved = if (append) previous.fileDownloadSaved else false,
         )
     }
 
@@ -739,16 +825,28 @@ class DriveController(
             mutableState.value = state.value.withoutDestination().copy(
                 screen = Screen.PASSWORD, path = emptyList(),
                 items = emptyList(), loaded = false, collectionItems = emptyList(),
-                collectionLoaded = false, selected = null)
+                collectionLoaded = false, selected = null, fileExportPending = null,
+                fileDownloadSaved = false)
             throw CancellationException()
         }
         return block(refreshed.accessToken)
     }
 
-    private fun request(block: suspend (Long) -> Unit) {
+    /** Any new Owner request cancels the prior transport, including SAF export.
+     * Only the originating download request is allowed to keep download chrome;
+     * a folder change, refresh, search or other request clears it immediately. */
+    private fun request(isFileDownload: Boolean = false, block: suspend (Long) -> Unit) {
         invalidate()
         val ticket = generation
-        mutableState.value = state.value.copy(loading = true, error = null, selected = null)
+        val prior = state.value
+        mutableState.value = prior.copy(
+            loading = true, error = null, selected = null,
+            fileExportPending = null,
+            fileDownloadActive = isFileDownload && prior.fileDownloadActive,
+            fileDownloadSaved = false,
+            fileDownloadBytes = if (isFileDownload) prior.fileDownloadBytes else 0,
+            fileDownloadTotal = if (isFileDownload) prior.fileDownloadTotal else 0,
+        )
         active = scope.launch {
             try {
                 block(ticket)

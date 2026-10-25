@@ -263,3 +263,14 @@ ranges, and undo remain out of scope for this increment.
 Root Files selection intercepts Android system Back to clear selected nodes before
 leaving the Activity; the unselected root retains normal system Back. The native
 App header uses the PWA 52dp content-height baseline plus status-bar insets.
+
+Android Files now has a native "下载到设备" action for an Owner-verified loaded
+file. A Storage Access Framework CreateDocument picker selects the target;
+the existing authenticated /api/v1/files/:id/content endpoint streams bytes
+through the same TLS/SNI/route-pinned OkHttp transport. No broad storage permission,
+new Server endpoint or separate transfer runner is introduced. The in-flight
+download reports bounded byte progress and can be cancelled; incomplete documents
+are deleted on a best-effort basis, and revision, length and available SHA-256
+metadata must match before completion. The SAF target URI is never retained in
+UI state, logs or preferences. This is one-item export, not an upload flow,
+resumable download or complete Transfer Center.

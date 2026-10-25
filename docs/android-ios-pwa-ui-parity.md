@@ -98,4 +98,16 @@ node scripts/shared-ui.mjs --check
 
 - Android 根目录多选必须先拦截系统 Back 并清理选中项，保留 Owner 浏览状态；根目录未选择交还 Android 系统。顶栏以 iOS PWA 52dp 内容高度为基准，叠加 Android 状态栏安全区域，仍须后续真机截图校准。
 
-- API35 真实 Compose 回归暴露被动复选框在 `onCheckedChange=null` 时不保证提供 ToggleableState；列表与网格已为选择标记显式声明 `Semantics.selected`，保持父行唯一点击入口，并以选中 Owner ID + 未合并语义树 `Selected` + 选中计数共同验收。
+## P0-02 · Android 原生单文件下载 / 保存（SAF）
+- 文件浏览列表/网格的 Owner 已加载 file 条目才显示「下载到设备」，真实 Android SAF CreateDocument 选择保存路径；不新增 WebView、第二条上传/下载服务端 API、通用存储权限或假动作。
+- 下载复用会话级钉选 IP、TLS Host/SNI/OkHttp 与已有 GET /api/v1/files/:id/content。禁重定向、禁自动重试、Bearer 只放请求头，不放 URL；下载需要精确当前 revision ETag、Content-Length（已知时）及可用 SHA-256 校验。
+- 按 64KiB 流式写入 SAF OutputStream，带可取消进度；退出登录、换服务器/目录或显式取消均撤销任务并尽力删除不完整目标 URI。旧文件选择器的迟到结果在请求前重新验证 Owner/目录/节点。
+- 本轮只支持单文件下载，不声称批量上传/下载、续传、历史记录、通知、完整传输中心或真实机器产线验收已完成。
+
+- 导航到其他目录、栏目或密码变更页时清理等待中的 SAF Owner 文件身份；保存成功才显示「已保存到设备」，失败和取消不得误显示完成。
+
+- 新 Owner 请求（切目录、搜索、刷新、分页等）必须取消同一代下载 HTTP，并同步清空下载进度与 SAF 待保存节点；旧流的 finally 负责删除未完成文档，不能保留“下载中”或成功状态。
+
+- 继承 #2651 的 Android 选择辅助功能修复：使用 `Semantics.selected` 验证实际复选框状态与可见已选数，不能再依赖非交互 Checkbox 的 ToggleableState。
+
+- Auth CONNECT/LOGIN 的输入框 IME Done 只收起键盘、清除焦点，不提交凭据。API35 公共 UI fixture 在真实 Done + Idle 后分别只点击一次连接及登录，避免键盘遮挡 Button 或旧 UI 调度吞掉单次登录；不允许靠盲目重试写请求伪造通过。
