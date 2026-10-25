@@ -46,8 +46,8 @@ Usage:
   xdrive-server status [--summary-only]
   xdrive-server backup [create] [server-backup.sh options...]
   xdrive-server backup --incremental [--repository-dir /absolute/local/path]
-  xdrive-server backup list
-  xdrive-server backup verify [BACKUP_DIR]
+  xdrive-server backup list   # includes an active custom scheduled v2 repository
+  xdrive-server backup verify [BACKUP_DIR]  # latest also searches configured v2 repository
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -771,9 +771,42 @@ backup_manifest_bool() {
   esac
 }
 
+# Read-only snapshot discovery. Reuse the explicitly configured scheduled v2
+# repository instead of silently hiding its generations from list/verify.
+# Never create, modify, prune or follow a top-level symlinked repository.
+backup_snapshot_roots() {
+  BACKUP_SNAPSHOT_ROOTS=("$BACKUP_DIR/snapshots" "$BACKUP_DIR/incremental/snapshots")
+  local schedule_format custom_repo default_repo
+  schedule_format="$(env_value XD_BACKUP_SCHEDULE_FORMAT)"
+  [[ "$schedule_format" == "v2" ]] || return 0
+  custom_repo="$(env_value XD_BACKUP_SCHEDULE_REPOSITORY_DIR)"
+  [[ -n "$custom_repo" ]] || return 0
+  while [[ "$custom_repo" == */ && "$custom_repo" != "/" ]]; do
+    custom_repo="${custom_repo%/}"
+  done
+  [[ "$custom_repo" == /* && ! -L "$custom_repo" ]] || {
+    echo "xdrive-server: scheduled v2 repository must be an absolute non-symlink path" >&2
+    return 2
+  }
+  # A configured repository might not exist until the first scheduled run.
+  [[ -e "$custom_repo" ]] || return 0
+  [[ -d "$custom_repo" ]] || {
+    echo "xdrive-server: scheduled v2 repository is not a directory: $custom_repo" >&2
+    return 2
+  }
+  custom_repo="$(cd "$custom_repo" && pwd -P)" || return 1
+  default_repo="$BACKUP_DIR/incremental"
+  if [[ -d "$default_repo" ]]; then
+    default_repo="$(cd "$default_repo" && pwd -P)" || return 1
+  fi
+  [[ "$custom_repo" == "$default_repo" ]] ||
+    BACKUP_SNAPSHOT_ROOTS+=("$custom_repo/snapshots")
+}
+
 latest_snapshot_backup() {
   local root
-  for root in "$BACKUP_DIR/snapshots" "$BACKUP_DIR/incremental/snapshots"; do
+  backup_snapshot_roots || return
+  for root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
     [[ -d "$root" ]] || continue
     find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' ! -name '*.partial' -print
   done | awk -F/ '{print $NF "\t" $0}' | sort -r | head -n1 | cut -f2-
@@ -782,14 +815,15 @@ latest_snapshot_backup() {
 backup_list_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: xdrive-server backup list" >&2; return 2; }
   local root dir name size created channel commit consistent file_data status found=0 required version
-  printf '%-30s %-20s %-9s %-10s %-14s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS"
-  for root in "$BACKUP_DIR/snapshots" "$BACKUP_DIR/incremental/snapshots"; do
+  backup_snapshot_roots || return
+  printf '%-30s %-20s %-9s %-10s %-14s %-16s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS" "PATH"
+  for root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
     [[ -d "$root" ]] || continue
     while IFS= read -r dir; do
       [[ -n "$dir" ]] || continue
       found=1
       name="$(basename "$dir")"
-      [[ "$root" != "$BACKUP_DIR/incremental/snapshots" ]] || name="cas:$name"
+      [[ "$root" == "$BACKUP_DIR/snapshots" ]] || name="cas:$name"
       size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
       created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
       channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
@@ -816,7 +850,7 @@ backup_list_cmd() {
       [[ -n "$channel" ]] || channel="-"
       [[ -n "$commit" ]] || commit="-"
       [[ "$commit" == "-" ]] || commit="${commit:0:12}"
-      printf '%-30s %-20s %-9s %-10s %-14s %s\n' "$name" "$created" "$size" "$channel" "$commit" "$status"
+      printf '%-30s %-20s %-9s %-10s %-14s %-16s %s\n' "$name" "$created" "$size" "$channel" "$commit" "$status" "$dir"
     done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r)
   done
   [[ "$found" == "1" ]] || echo "No snapshot backups found"
