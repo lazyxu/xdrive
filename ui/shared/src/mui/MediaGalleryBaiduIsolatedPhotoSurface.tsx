@@ -484,6 +484,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const openVerifiedCell=(selection:MediaBaiduNativeCellSelection)=>{
     selectCellRef.current(selection)
   }
+  // Reuse the same signed Owner camera wall as the existing map action.
+  // Never derive an unsigned radius or fall back to a generic Gallery query.
+  const openVerifiedCameraNearby = () => {
+    const accepted=latestAcceptedViewport.current
+    const approved=acceptedScope.current
+    if (!accepted || !acceptedViewport || phase!=='ready' ||
+        !scopeIsCurrent || !approved ||
+        approved.key!==filterRef.current.key || !openViewport.current ||
+        accepted.west!==acceptedViewport.west ||
+        accepted.east!==acceptedViewport.east ||
+        accepted.south!==acceptedViewport.south ||
+        accepted.north!==acceptedViewport.north) return
+    openViewport.current({...accepted},approved.scope)
+  }
   return (
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
@@ -612,17 +626,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               data-xdrive-places-full-camera-wall
               sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
                 bgcolor:'background.paper',boxShadow:2}}
-              onClick={() => {
-                const accepted = latestAcceptedViewport.current
-                if (accepted && accepted.west===acceptedViewport.west &&
-                    accepted.east===acceptedViewport.east &&
-                    accepted.south===acceptedViewport.south &&
-                    accepted.north===acceptedViewport.north) {
-                  const approved=acceptedScope.current
-                  if(approved && approved.key===filterRef.current.key)
-                    openViewport.current?.({...accepted},approved.scope)
-                }
-              }}>
+              onClick={openVerifiedCameraNearby}>
               查看此地图的全部照片
             </Button>
           ) : null}
@@ -639,6 +643,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               ? {...current,expanded} : current)}
             onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
+            onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
+              openViewport.current && trustedSummary && trustedSummary.total_count>0
+              ? openVerifiedCameraNearby : undefined}
           />
         ) : null}
       </Box>
