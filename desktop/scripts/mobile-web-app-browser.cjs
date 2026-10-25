@@ -7237,7 +7237,9 @@ async function galleryIos27ViewerAcceptance(pointer) {
       // Playwright's real click may scroll a focused tile before route change.
       beforeClickScroll: main.scrollTop,
       clickedNodeIndex: Number(el.getAttribute('data-xdrive-media-index')),
-      clickedNodeName: el.querySelector('img')?.alt ?? '',
+      clickedNodeID: Number(el.getAttribute('data-xdrive-media-node-id')),
+      // Canonical metadata is stable even when lazy thumbnail pixels are not.
+      clickedNodeName: el.querySelector('.media-name')?.textContent?.trim() ?? '',
       gallery: document.querySelector('#xdrive-mobile-gallery-main'),
       background: document.querySelector('[data-xdrive-workspace-background]'),
       url: location.href,
@@ -7259,16 +7261,22 @@ async function galleryIos27ViewerAcceptance(pointer) {
     return { beforeClickScroll: saved.beforeClickScroll,
       viewerEntryScroll: saved.viewerEntryScroll,
       logicalIndex: saved.clickedNodeIndex,
+      nodeID: saved.clickedNodeID,
       clickedNodeName: saved.clickedNodeName };
   });
   result.samples[name + '-actual-click-scroll'] = opened;
   check(name + ': chosen photo has authoritative virtual index and filename',
     Number.isSafeInteger(opened.logicalIndex) && opened.logicalIndex >= 0
+    && Number.isSafeInteger(opened.nodeID) && opened.nodeID > 0
     && opened.clickedNodeName.startsWith('photo-'), opened);
   check(name + ': actual Gallery opens canonical media-viewer browse session',
-    !!initialID && page.url().includes('context='));
+    initialID === String(opened.nodeID) && page.url().includes('context='));
 
+  // Real CSS layout on both sides of the exact 368px breakpoint.
+  // Restore 390px for the subsequent Gallery action/Back tests.
   for (const viewport of [
+    { width: 320, height: 700 }, { width: 367, height: 780 },
+    { width: 368, height: 780 }, { width: 375, height: 812 },
     { width: 390, height: 844 }, { width: 899, height: 700 },
     { width: 900, height: 700 }, { width: 390, height: 844 },
   ]) {
@@ -7300,6 +7308,7 @@ async function galleryIos27ViewerAcceptance(pointer) {
         actionSize: box(rail?.querySelector('button[aria-label="更多照片操作"]')),
         railClientWidth: rail?.clientWidth || 0,
         railScrollWidth: rail?.scrollWidth || 0,
+        railOverflowX: rail ? getComputedStyle(rail).overflowX : '',
         railButtons: rail ? [...rail.querySelectorAll('button')].map(button => ({
           name: button.getAttribute('aria-label'),
           size: box(button),
@@ -7332,22 +7341,77 @@ async function galleryIos27ViewerAcceptance(pointer) {
       check(activeStage + ': mobile chrome matches iOS27 layout regardless of pointer',
         data.headerPosition === 'absolute' && data.railPosition === 'absolute'
         && data.rail && data.rail.bottom <= viewport.height + 1
-        && !data.infoInRail && !data.infoInHeader
+        // Info is a REQUIRED direct 44px control, not a hidden More item.
+        && data.infoInRail && !data.infoInHeader
         && data.moreInRail && !data.moreInHeader && data.shareInRail
         && data.actionSize?.width >= 44 && data.actionSize?.height >= 44, data);
       check(activeStage + ': compact Photos rail fits without hidden horizontal actions',
         data.railScrollWidth <= data.railClientWidth + 1 &&
-        data.railButtons.length <= 7 &&
+        data.railButtons.length <= (viewport.width < 368 ? 6 : 8) &&
         data.railButtons.every(button =>
-          button.size?.width >= 44 && button.size?.height >= 44), data);
+          button.size?.width >= 44 && button.size?.height >= 44 &&
+          button.size.x >= data.rail.x - 1 &&
+          button.size.right <= data.rail.right + 1), data);
+      if (viewport.width < 368) {
+        check(activeStage + ': ultra-narrow Gallery has no scroll-revealed navigation arrows',
+          data.railOverflowX === 'hidden' &&
+          !data.railButtons.some(button => button.name === '上一个项目' || button.name === '下一个项目') &&
+          data.railButtons.some(button => button.name === '更多照片操作'), data);
+        // Chrome can auto-hide between screenshot and interaction. Wake it
+        // only if hidden; an unconditional touch would otherwise hide it.
+        const railVisible = await frame.locator('[data-xdrive-web-viewer-mobile-actions]')
+          .evaluate(el => getComputedStyle(el).opacity === '1');
+        if (!railVisible) {
+          if (pointer === 'fine') await page.mouse.move(160, 340);
+          else await page.touchscreen.tap(160, 340);
+          await page.waitForFunction(() => {
+            const rail = document.querySelector('[data-xdrive-web-viewer-mobile-actions]');
+            return rail && getComputedStyle(rail).opacity === '1';
+          });
+        }
+        // This is the real MUI Menu, not just a mocked React handler.
+        await frame.locator('button[aria-label="更多照片操作"]').click();
+        const more = page.getByRole('menu', { name: '更多照片操作' });
+        await more.waitFor();
+        check(activeStage + ': both authorized neighbor actions remain accessible through More',
+          await more.getByRole('menuitem', { name: '上一张' }).isVisible() &&
+          await more.getByRole('menuitem', { name: '下一张' }).isVisible());
+        await page.keyboard.press('Escape');
+        await more.waitFor({ state: 'hidden' });
+      } else {
+        check(activeStage + ': original neighbor arrows remain directly accessible',
+          data.railButtons.some(button => button.name === '上一个项目') &&
+          data.railButtons.some(button => button.name === '下一个项目'), data);
+      }
     } else {
       check(activeStage + ': wide Web has desktop-only header actions',
         data.headerPosition === 'relative' && !data.rail && data.infoInHeader, data);
     }
   }
-  // P1-2j: these authorized secondary callbacks must remain discoverable
-  // without scrolling the bottom rail horizontally. Do not silently drop
-  // downloads, Creative, metadata or tags to make geometry appear correct.
+  // Real Chromium must honor system Reduced Motion, not only the source sx.
+  activeStage = name + '-reduced-motion';
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reduced = await frame.evaluate(el => {
+    const strip = el.querySelector('[data-xdrive-web-viewer-filmstrip]');
+    const rail = el.querySelector('[data-xdrive-web-viewer-mobile-actions]');
+    const filmButton = strip?.querySelector('[data-xdrive-gallery-filmstrip] button');
+    const duration = node => node ? getComputedStyle(node).transitionDuration : null;
+    return {
+      active: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      header: duration(el.firstElementChild),
+      rail: duration(rail),
+      filmstrip: duration(strip),
+      filmButton: duration(filmButton),
+    };
+  });
+  check(activeStage + ': real Gallery chrome and Filmstrip have no transition animation',
+    reduced.active && ['header', 'rail', 'filmstrip', 'filmButton'].every(key =>
+      reduced[key] === '0s'), reduced);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // P1-2j: keep Info directly reachable on the 44px mobile rail.
+  // The More menu contains secondary capabilities, not another Info button.
+  // Do not silently drop downloads, Creative or tags to fit 320px.
   activeStage = name + '-mobile-more';
   if (pointer === 'fine') await page.mouse.move(180, 380);
   else await page.touchscreen.tap(180, 380);
@@ -7356,14 +7420,25 @@ async function galleryIos27ViewerAcceptance(pointer) {
   await mobileMore.waitFor();
   check(name + ': one accessible iOS27 More menu exposes all authorized secondary actions',
     await mobileMore.getByRole('menuitem', { name: '创作图片' }).isVisible() &&
-    await mobileMore.getByRole('menuitem', { name: '查看属性' }).isVisible() &&
     await mobileMore.getByRole('menuitem', { name: '标签' }).isVisible() &&
     await mobileMore.getByRole('menuitem', { name: '下载' }).isVisible() &&
+    await frame.locator('[data-xdrive-web-viewer-mobile-actions] button[aria-label="查看属性"]').count() === 1 &&
+    await mobileMore.getByRole('menuitem', { name: '查看属性' }).count() === 0 &&
     new URL(page.url()).hash.includes('media-viewer'));
   await page.keyboard.press('Escape');
   await mobileMore.waitFor({ state: 'hidden' });
 
+  // Closing MUI Menu restores focus to More; hiding that focused chrome
+  // would be an accessibility regression. Verify focus guard first.
+  activeStage = name + '-chrome-focus';
+  await frame.locator('button[aria-label="查看属性"]').focus();
+  await page.waitForTimeout(2350);
+  check(name + ': keyboard-focused Viewer chrome stays visible after auto-hide dwell',
+    await frame.evaluate(el => getComputedStyle(el.firstElementChild).opacity === '1'));
+  // Shift keyboard focus back to the Viewer canvas and start a fresh dwell.
+  // Do not wait for an impossible auto-hide while a toolbar button has focus.
   activeStage = name + '-chrome';
+  await frame.focus();
   await page.waitForFunction(() => {
     const h = document.querySelector('[data-xdrive-web-viewer]')?.firstElementChild;
     return h && getComputedStyle(h).opacity === '0';
@@ -7410,7 +7485,12 @@ async function galleryIos27ViewerAcceptance(pointer) {
   activeStage = name + '-edit-save-reset';
   if (pointer === 'fine') await page.mouse.move(195, 390);
   else await page.touchscreen.tap(195, 390);
-  await frame.locator('button[aria-label="编辑媒体"]').click();
+  // At mobile widths the existing authorized Edit action is inside More.
+  // Do not expand the 44px direct-action rail to make a test pass.
+  await frame.locator('button[aria-label="更多照片操作"]').click();
+  const editMore = page.getByRole('menu', { name: '更多照片操作' });
+  await editMore.waitFor();
+  await editMore.getByRole('menuitem', { name: '编辑媒体' }).click();
   await page.getByRole('button', { name: '保存编辑', exact: true }).waitFor();
   await page.getByRole('button', { name: '右转', exact: true }).click();
   const editNodeID = Number(new URL(page.url()).hash.match(/node=(\d+)/)?.[1]);
@@ -7541,7 +7621,8 @@ async function galleryIos27ViewerAcceptance(pointer) {
     const s = window.__p12c;
     const tile = document.querySelector(
       '[data-xdrive-media-tile][data-xdrive-media-index="' + s.clickedNodeIndex + '"]');
-    return tile?.querySelector('img')?.alt === s.clickedNodeName;
+    return tile?.getAttribute('data-xdrive-media-node-id') === String(s.clickedNodeID)
+      && tile?.querySelector('.media-name')?.textContent?.trim() === s.clickedNodeName;
   });
   await settle();
   const returned = await page.evaluate(() => {
@@ -7557,9 +7638,11 @@ async function galleryIos27ViewerAcceptance(pointer) {
       scrollDeltaFromPreClick: Math.abs(main.scrollTop - s.beforeClickScroll),
       entryScroll: s.viewerEntryScroll, preClickScroll: s.beforeClickScroll,
       returnedScroll: main.scrollTop,
-      originalNodeID: s.clickedNodeIndex,
+      originalNodeID: s.clickedNodeID,
+      originalLogicalIndex: s.clickedNodeIndex,
       originalNodeName: s.clickedNodeName,
-      logicalNodeRestored: !!tile && tile.querySelector('img')?.alt === s.clickedNodeName,
+      logicalNodeRestored: tile?.getAttribute('data-xdrive-media-node-id') === String(s.clickedNodeID) &&
+        tile?.querySelector('.media-name')?.textContent?.trim() === s.clickedNodeName,
       tileVisibleInGallery: !!tileBox &&
         tileBox.bottom > mainBox.top && tileBox.top < mainBox.bottom,
       backgroundRestored: !s.background.inert && !s.background.hasAttribute('aria-hidden'),
@@ -7577,6 +7660,7 @@ async function galleryIos27ViewerAcceptance(pointer) {
   // file-operation endpoint. A 403 must preserve the dialog; queued != deleted.
   activeStage = name + '-delete-403-then-queued';
   await page.locator('[data-xdrive-media-tile][data-xdrive-media-index="' +
+    returned.originalLogicalIndex + '"][data-xdrive-media-node-id="' +
     returned.originalNodeID + '"]').click();
   await page.waitForURL(/\/media-viewer\?node=/);
   const deletionID = Number(new URL(page.url()).hash.match(/node=(\d+)/)?.[1]);

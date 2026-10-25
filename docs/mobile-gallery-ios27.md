@@ -809,3 +809,17 @@ renderer is introduced. Source-backed mounted React regression must prove
 Filmstrip and unchanged PDF/Quick Look. Exact HEAD CI, Final Gate and native
 iOS 27 visual acceptance remain distinct; production-only inaccessible
 security acceptance stays **按用户决定跳过（未验收）**.
+
+### Real Chromium 320px / breakpoint / Reduced Motion Viewer acceptance (2026-10-25)
+
+The existing built-Web `gallery-ios27-viewer` Playwright scenario now
+visits 320, 367, 368 and 375 CSS px for **both** coarse and fine pointers,
+in addition to 390/899/900px. It measures the actual CSS button rectangles
+and scroll widths, asserting all 44px controls lie inside the visible Gallery
+rail without scroll-only actions. Below 368px it verifies previous/next remain
+in the accessible MUI More; above the breakpoint the direct neighbor arrows
+remain. OS `prefers-reduced-motion: reduce` is emulated in Chromium to check
+the *computed* transition duration of the immersive header, action rail,
+Filmstrip and its button before resetting the preference for other Gallery
+tests. This is actual browser rendering, not native iOS 27 visual or VoiceOver
+acceptance.
