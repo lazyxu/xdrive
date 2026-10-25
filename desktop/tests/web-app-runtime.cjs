@@ -151,7 +151,7 @@ test('Web App Runtime design document records the navigation and platform bounda
   }
 })
 
-test('temporary BD09 Viewer context is memory-only, not stored in browser session', () => {
+test('temporary BD09 stays private and ordinary Viewer survives denied Safari session storage', () => {
   const ts = require('typescript')
   const built = ts.transpileModule(runtime, {
     fileName:'web/src/webAppRuntime.ts',reportDiagnostics:true,
@@ -198,5 +198,30 @@ test('temporary BD09 Viewer context is memory-only, not stored in browser sessio
     stored.set(legacy,JSON.stringify({version:1,context:viewport}))
     assert.equal(read('legacy'),null)
     assert.equal(stored.has(legacy),false)
+    // A successful write must also be readable if browser policy later
+    // denies even the sessionStorage getter.
+    write('ordinary-again',ordinary)
+    const workingStorage=global.window.sessionStorage
+    Object.defineProperty(global.window,'sessionStorage',{
+      configurable:true,get() { throw new Error('SecurityError') },
+    })
+    assert.equal(read('ordinary-again').target.kind,'all')
+    assert.doesNotThrow(()=>write('blocked',ordinary),
+      'a denied Safari sessionStorage write cannot prevent Files/Gallery Viewer launch')
+    assert.equal(read('blocked').activeIndex,3)
+    write('blocked-map',viewport)
+    assert.equal(read('blocked-map').target.baiduViewport.west,116)
+    for(let index=0;index<40;index++) write('volatile-'+index,ordinary)
+    assert.equal(read('volatile-0'),null,'only 32 fallback contexts may be retained')
+    assert.equal(read('volatile-39').target.kind,'all')
+    mod.exports.xDriveClearPrivateMapBrowseSessions()
+    assert.equal(read('volatile-39'),null,'logout/account switch revokes volatile context')
+    assert.equal(read('blocked-map'),null,'private map scope is also revoked')
+    delete global.window.sessionStorage
+    global.window.sessionStorage=workingStorage
+    assert.equal(read('ordinary-again').target.kind,'all',
+      'existing durable ordinary session lifetime must remain unchanged')
+    assert.ok(app.includes('xDriveClearPrivateMapBrowseSessions()'),
+      'real Web app logout/account boundary must clear fallback in-memory scopes')
   } finally { global.window=original }
 })

@@ -25,13 +25,29 @@ const MAX_PRIVATE_MAP_SESSIONS = 16
 const privateMapSessions = new Map<string, {
   context: XDriveWebAppBrowseContext; seen: number
 }>()
+// Ordinary Files/Gallery sessions remain usable in this tab when Safari denies
+// sessionStorage. This is bounded volatile navigation state, NOT an offline cache.
+const MAX_VOLATILE_BROWSE_SESSIONS = 32
+const volatileBrowseSessions = new Map<string, string>()
+function rememberVolatileBrowseSession(id: string, serialized: string) {
+  volatileBrowseSessions.delete(id)
+  volatileBrowseSessions.set(id, serialized)
+  while (volatileBrowseSessions.size > MAX_VOLATILE_BROWSE_SESSIONS) {
+    const oldest = volatileBrowseSessions.keys().next().value
+    if (oldest === undefined) break
+    volatileBrowseSessions.delete(oldest)
+  }
+}
 function isPrivateMapContext(value: XDriveWebAppBrowseContext): boolean {
   return value?.kind === 'gallery' &&
     (value.target?.kind === 'baidu-cell' || value.target?.kind === 'baidu-viewport')
 }
-/** Immediately drop sensitive coordinates on logout, account switch or unmount. */
+/** Immediately drop sensitive coordinates and volatile browse contexts on logout,
+ * account switch or unmount. Durable ordinary sessionStorage remains governed
+ * by its existing session lifetime and is always reauthorized by the Server. */
 export function xDriveClearPrivateMapBrowseSessions(): void {
   privateMapSessions.clear()
+  volatileBrowseSessions.clear()
 }
 
 function sweepPrivateMapSessions(now = Date.now()) {
@@ -87,6 +103,7 @@ export function xDriveCreateWebAppBrowseSession(context: XDriveWebAppBrowseConte
 
 export function xDriveWriteWebAppBrowseSession(id: string, context: XDriveWebAppBrowseContext) {
   if (isPrivateMapContext(context)) {
+    volatileBrowseSessions.delete(id)
     const now = Date.now()
     sweepPrivateMapSessions(now)
     privateMapSessions.delete(id)
@@ -104,8 +121,16 @@ export function xDriveWriteWebAppBrowseSession(id: string, context: XDriveWebApp
     return
   }
   privateMapSessions.delete(id)
-  window.sessionStorage.setItem(sessionKey(id),
-    JSON.stringify({ version: 1, context }))
+  const serialized = JSON.stringify({ version: 1, context })
+  if (!xDriveIsPrivateMapBrowseSessionID(id)) {
+    rememberVolatileBrowseSession(id, serialized)
+  }
+  try {
+    window.sessionStorage.setItem(sessionKey(id), serialized)
+  } catch {
+    // Safari can reject the getter or write. Same-tab Viewer navigation uses
+    // the bounded copy above; a hard reload cannot restore denied storage.
+  }
 }
 
 export function xDriveReadWebAppBrowseSession(id?: string) {
@@ -122,6 +147,18 @@ export function xDriveReadWebAppBrowseSession(id?: string) {
   if (xDriveIsPrivateMapBrowseSessionID(id)) {
     try { window.sessionStorage.removeItem(sessionKey(id)) } catch {}
     return null
+  }
+  const volatile = volatileBrowseSessions.get(id)
+  if (volatile) {
+    try {
+      const value = JSON.parse(volatile) as { version?: number; context?: XDriveWebAppBrowseContext }
+      if (value.version === 1 && value.context && !isPrivateMapContext(value.context)) {
+        volatileBrowseSessions.delete(id)
+        volatileBrowseSessions.set(id, volatile) // current-tab LRU
+        return value.context
+      }
+    } catch {}
+    volatileBrowseSessions.delete(id)
   }
   try {
     const raw = window.sessionStorage.getItem(sessionKey(id))
