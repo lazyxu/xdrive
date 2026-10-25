@@ -105,6 +105,7 @@ export function xDriveDashboardAssessment(service: XDriveServiceDependency | nul
       service.health_state === 'ready') {
     const ocrReady = service.ocr_auto_state === 'enabled' &&
       service.ocr_reason === 'ready' &&
+      service.configuration_state === 'configured' &&
       service.automatic_policy_state === 'enabled' &&
       service.photo_host_runtime_state === 'healthy' &&
       service.photo_host_profile_configured === true

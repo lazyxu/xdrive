@@ -1379,7 +1379,7 @@ export type AgentServiceDependenciesSnapshot = {
       | 'host_stopped' | 'host_unhealthy' | 'host_starting' | 'host_unverified'
       | 'host_profile_mismatch' | 'probe_timeout' | 'probe_unreachable'
       | 'probe_auth_rejected' | 'probe_invalid_response'
-      | 'probe_interrupted' | 'probe_failed' | 'probe_endpoint_missing' | 'probe_server_error'
+      | 'probe_interrupted' | 'probe_failed' | 'probe_endpoint_missing' | 'probe_server_error' | 'probe_busy'
       | 'auto_paused' | 'auto_pending' | 'auto_unmanaged' | 'auto_unknown' | 'service_unverified'
       | 'runner_unavailable'
     automatic_policy_desired_revision?: number

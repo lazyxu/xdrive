@@ -79,6 +79,8 @@ func TestPhotoOCRProbeFailureReasonsDoNotLeakSecrets(t *testing.T) {
 		{"bad protocol", errors.New("unsupported smart analyzer protocol version 0"), "probe_invalid_response"},
 		{"bad JSON", errors.New("decode smart analyzer response: " + secret), "probe_invalid_response"},
 		{"missing endpoint", errors.New("smart analyzer returned HTTP 404: /private/" + secret), "probe_endpoint_missing"},
+		{"model timeout HTTP 408", errors.New("smart analyzer returned HTTP 408: " + secret), "probe_timeout"},
+		{"model busy HTTP 429", errors.New("smart analyzer returned HTTP 429: " + secret), "probe_busy"},
 		{"model boot failed", errors.New("smart analyzer returned HTTP 503: /private/" + secret), "probe_server_error"},
 		{"model HTTP 501", errors.New("smart analyzer returned HTTP 501: " + secret), "probe_server_error"},
 		{"model HTTP 507", errors.New("smart analyzer returned HTTP 507: " + secret), "probe_server_error"},
@@ -141,6 +143,26 @@ func TestAdminServiceDependenciesOCRFailureReasonsAndMalformedInfo(t *testing.T)
 		payload, err := json.Marshal(blocked)
 		if err != nil || strings.Contains(string(payload), secret) {
 			t.Fatalf("HTTP %d leaked raw model error: %v", status, err)
+		}
+	}
+
+	// The authenticated dependency inventory should report actionable,
+	// redacted non-5xx failures just like per-photo OCR details.
+	for _, tc := range []struct {
+		status int
+		reason string
+	}{{408, "probe_timeout"}, {429, "probe_busy"}} {
+		blocked := photoHostInventoryFromAdmin(t, &Server{PhotoSmartAnalyzer: diagnosticOCRAnalyzer{
+			err: fmt.Errorf("smart analyzer returned HTTP %d: %s", tc.status, secret),
+		}})["photo-smart"]
+		if blocked.Status != "unavailable" || blocked.OCRAutoState != "unavailable" ||
+			blocked.OCRReason != tc.reason {
+			t.Fatalf("HTTP %d model error misclassified: %+v", tc.status, blocked)
+		}
+		payload, err := json.Marshal(blocked)
+		if err != nil || strings.Contains(string(payload), secret) ||
+			strings.Contains(string(payload), "smart analyzer returned HTTP") {
+			t.Fatalf("HTTP %d leaked raw model error: %v", tc.status, err)
 		}
 	}
 

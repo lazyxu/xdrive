@@ -40,7 +40,7 @@ export type XDriveServiceDependency = {
     | 'host_unverified' | 'host_profile_mismatch'
     | 'probe_timeout' | 'probe_unreachable' | 'probe_auth_rejected'
     | 'probe_invalid_response' | 'probe_interrupted' | 'probe_failed'
-    | 'probe_endpoint_missing' | 'probe_server_error'
+    | 'probe_endpoint_missing' | 'probe_server_error' | 'probe_busy'
     | 'auto_paused' | 'auto_pending' | 'auto_unmanaged' | 'auto_unknown'
     | 'service_unverified' | 'runner_unavailable'
   automatic_policy_desired_revision?: number
@@ -78,6 +78,8 @@ export function xDrivePhotoOCRVerified(service: XDriveServiceDependency): boolea
   return service.id === 'photo-smart' &&
     service.ocr_auto_state === 'enabled' && service.ocr_reason === 'ready' &&
     service.status === 'ready' &&
+    service.health_state === 'ready' &&
+    service.configuration_state === 'configured' &&
     service.automatic_policy_state === 'enabled' &&
     service.photo_host_runtime_state === 'healthy' &&
     service.photo_host_profile_configured === true
