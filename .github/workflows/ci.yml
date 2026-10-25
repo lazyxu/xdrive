@@ -3739,6 +3739,7 @@ jobs:
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-') ||
+           startsWith(github.head_ref, 'test/viewer-320px-real-chromium-reduced-motion-') ||
            startsWith(github.head_ref, 'test/files-search-return-chromium-u06-') ||
            startsWith(github.head_ref, 'test/files-u12-short-viewport-'))
         shell: bash
@@ -4224,8 +4225,8 @@ jobs:
           path: ${{ runner.temp }}/xdrive-gallery-selection-web/
           if-no-files-found: warn
           retention-days: 7
-      - name: Native Chrome iOS27 Gallery Viewer 390/899/900px pointer parity
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-')
+      - name: Native Chrome iOS27 Gallery Viewer responsive geometry and Reduced Motion
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-') || startsWith(github.head_ref, 'test/viewer-320px-real-chromium-reduced-motion-'))
         shell: bash
         env:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -4249,7 +4250,7 @@ jobs:
           cat "$RUNNER_TEMP/xdrive-gallery-ios27-viewer/results.json"
           exit "$code"
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-')
+        if: always() && github.event_name == 'pull_request' && (startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-') || startsWith(github.head_ref, 'test/viewer-320px-real-chromium-reduced-motion-'))
         with:
           name: gallery-ios27-routed-viewer-parity
           path: ${{ runner.temp }}/xdrive-gallery-ios27-viewer/
