@@ -934,3 +934,53 @@ scroll host causes a quiet no-op.
 Source-coupled unit and CI/browser tests remain separate from device-level
 VoiceOver/iOS 27 acceptance. Inaccessible production-only security acceptance:
 **按用户决定跳过（未验收）**. Code-level Owner/route fencing is mandatory.
+
+### Gallery Viewer keyboard-focus return (2026-10-25)
+
+Routed Web/Mobile Gallery Viewer now restores keyboard focus after Back only
+when the original launch came from a focused, authorized Gallery photo tile.
+It reuses the existing same-Owner/same-URL/same-viewport mounted-scroll return
+snapshot; no new Viewer routing, media request, server index or focus polling.
+Each virtually rendered tile exposes its existing logical index alongside a
+current Node-ID DOM marker. If the old tile was recycled in a 100k collection,
+the return may focus a replacement only when **both** Node ID and logical
+index match. Restoring focus uses `focus({ preventScroll: true })` so the
+previously accepted <=2px return-scroll contract is not changed; a different
+focused control, unavailable tile, account/route/viewport change or detached
+scroll host causes a quiet no-op.
+
+Source-coupled unit and CI/browser tests remain separate from device-level
+VoiceOver/iOS 27 acceptance. Inaccessible production-only security acceptance:
+**按用户决定跳过（未验收）**. Code-level Owner/route fencing is mandatory.
+
+### Routed Viewer explicit metadata retry (2026-10-25)
+
+The routed Web/Mobile Quick Look and media Viewer expose **重试加载** only after an
+actual terminal Owner metadata read failure; the button starts a fresh bounded
+`useViewerNode` reader and never reuses pages, candidates or aborted Range
+requests from the prior attempt. A stale retry handler is fenced by the exact
+Owner, Node/index and session, including A→B→A. Pending reads keep the same
+quiet full-height first-read canvas and the existing Back action.
+
+Standalone Text and Audio share one abortable, generation-scoped metadata
+reader with explicit retry. Text fetches Node and its <=1 MiB preview together;
+a successful null/unsupported preview must display a retryable terminal error,
+not an indefinite spinner. Click aborts the old attempt immediately, clears
+visible stale data and starts only one new request despite duplicate taps.
+Late responses and errors from earlier generations never replace newer bytes
+or alter another account's Viewer. No automatic retry, new endpoint, preview
+transport or cross-account fallback is introduced. The standalone PDF Viewer
+keeps its original error UI without a metadata retry button.
+
+Source-level and mounted React tests are required alongside Web/Desktop builds,
+and source-exact CI/Final Gate before merge. A mounted test is not production
+iOS Safari/installed-PWA acceptance; inaccessible production-only security
+acceptance remains **按用户决定跳过（未验收）**.
+
+### 2026-10-25 · 失效私人地图范围不允许重试扩权
+
+重试仅允许当前 Owner/Node/Context/Reader Session 的可恢复错误。失效的私人地图会话隐藏“重试加载”按钮，过期回调也不会新建普通图库或独立 Node/MediaItem 读取。必须先回地图获得新的签名 Cell/Viewport 授权。既有 Quick Look、媒体、文本、音频正常手动重试保持共享路径。
+
+### 元数据读取失败仅显示经过审查的 Viewer 提示（2026-10-25）
+
+Web/Mobile Web 共用 Quick Look、图片/视频 Viewer、文本和音频错误状态。在原 Reader/Abort/Owner 校验不变的前提下，视图仅保留应用内明确列出的安全错误文案；上游响应或异常中可能包含签名 URL、ticket、Bearer、服务器路径，因此统一隐藏为“读取失败，请重试。”，不直接渲染。回归对上述四种真实共享路由逐一注入包含伪 ticket、Bearer 和文件路径的错误，并确认屏幕提示不包含任何秘密，原手动重试仍可用。PDF 仍保持独立的 Viewer 与原有无元数据重试行为，但终态读取异常也只显示安全错误文案；文本/PDF/音频下载失败回执不再把可能携带 ticket、Bearer、私有路径的上游异常保存到 React 状态，统一展示可再次点击下载的提示。实际 iOS Safari 仍未验收。

@@ -20,6 +20,7 @@ import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import WrapTextRoundedIcon from '@mui/icons-material/WrapTextRounded'
 import {
   Box,
+  Button,
   IconButton,
   Menu,
   MenuItem,
@@ -60,7 +61,6 @@ import type {
   NodeLocation,
   XDriveFilePreviewTarget,
   XDriveFilePreviewPresentationState,
-  XDriveFileTextPreview,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
@@ -80,6 +80,40 @@ function WebViewerQuietFirstRead() {
     <Box data-xdrive-web-viewer-quiet-first-read role="region"
       aria-label="查看器内容尚未确认" aria-busy={true}
       sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center' }} />
+  )
+}
+
+const SAFE_WEB_VIEWER_READ_MESSAGES = new Set([
+  '地图照片范围已变化，请返回地图重新选择。',
+  '地图照片范围已失效，请返回地图重新选择。',
+  '浏览范围已失效，请返回重新打开。',
+  '文件版本已更改，请重新打开。',
+  '媒体信息与当前文件版本不一致，请重试。',
+  '当前媒体信息不可用，请重试。',
+  '当前文件信息不可用，请重试。',
+  '当前文件无法生成文本预览，请重试。',
+])
+
+// One full-height terminal error state for Quick Look, media, text and audio.
+// A real click invokes the original authorized reader, never a shadow API.
+function WebViewerReadError({ message, onRetry }: {
+  message: string
+  onRetry?: () => void
+}) {
+  return (
+    <Box data-xdrive-web-viewer-read-error
+      sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
+      <Stack spacing={1.5} alignItems="center" sx={{ width: '100%', maxWidth: 460, minWidth: 0 }}>
+        <XDriveStatusAlert tone="bad">{SAFE_WEB_VIEWER_READ_MESSAGES.has(message)
+          ? message : '读取失败，请重试。'}</XDriveStatusAlert>
+        {onRetry ? (
+          <Button variant="outlined" aria-label="重试加载"
+            onClick={onRetry} sx={{ minHeight: 44, minWidth: 120 }}>
+            重试加载
+          </Button>
+        ) : null}
+      </Stack>
+    </Box>
   )
 }
 
@@ -858,9 +892,10 @@ function WebPreviewApp({
         {viewer.loading ? (
           <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
-          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
-            <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
-          </Box>
+          <WebViewerReadError
+            message={viewer.error || '文件不存在或已无法访问。'}
+            onRetry={viewer.error && viewer.canRetryRead ? viewer.retryRead : undefined}
+          />
         ) : <XDriveFilePreviewSurface
           key={dialogOwner.session}
           target={target}
@@ -1375,9 +1410,10 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         {viewer.loading ? (
           <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
-          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
-            <XDriveStatusAlert tone="bad">{viewer.error || '媒体不存在或已无法访问。'}</XDriveStatusAlert>
-          </Box>
+          <WebViewerReadError
+            message={viewer.error || '媒体不存在或已无法访问。'}
+            onRetry={viewer.error && viewer.canRetryRead ? viewer.retryRead : undefined}
+          />
         ) : !supported ? (
           <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
             <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
@@ -1613,11 +1649,12 @@ function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Nod
       if (mountedRef.current && tokenRef.current === token) {
         setReceipt({ token, busy: false, error: '' })
       }
-    }, (reason: unknown) => {
+    }, () => {
       if (mountedRef.current && tokenRef.current === token) {
+        // Keep untrusted ticket/Authorization/path details out of React state.
         setReceipt({
           token, busy: false,
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: '下载失败，可再次点击下载按钮重试。',
         })
       }
     }).finally(() => {
@@ -1629,6 +1666,69 @@ function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Nod
     busy: receipt?.token === token && receipt.busy,
     error: receipt?.token === token ? receipt.error : '',
   }
+}
+
+// Standalone text/audio metadata uses one explicit-retry Owner reader.
+// Changing route, account, or attempt aborts the old in-flight request;
+ // old callbacks cannot paint into the new file, even across A→B→A.
+function useWebViewerRemoteRead<T>(
+  owner: object,
+  load: (signal: AbortSignal) => Promise<T>,
+) {
+  const liveOwnerRef = useRef(owner)
+  liveOwnerRef.current = owner
+  const [attemptState, setAttemptState] = useState({ owner, generation: 0 })
+  const generation = attemptState.owner === owner ? attemptState.generation : 0
+  const [readState, setReadState] = useState<{
+    owner: object
+    generation: number
+    value: T | null
+    error: string
+  } | null>(null)
+  const requestRef = useRef<{
+    owner: object
+    generation: number
+    controller: AbortController
+  } | null>(null)
+  const retryGateRef = useRef<{ owner: object; generation: number } | null>(null)
+  const current = readState?.owner === owner && readState.generation === generation ? readState : null
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const request = { owner, generation, controller }
+    requestRef.current = request
+    void Promise.resolve().then(() => load(controller.signal)).then((value) => {
+      if (!controller.signal.aborted && liveOwnerRef.current === owner &&
+          requestRef.current === request) {
+        setReadState({ owner, generation, value, error: '' })
+      }
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted && liveOwnerRef.current === owner &&
+          requestRef.current === request) {
+        setReadState({
+          owner, generation, value: null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
+      }
+    })
+    return () => {
+      controller.abort()
+      if (requestRef.current === request) requestRef.current = null
+    }
+  }, [owner, generation, load])
+
+  const retryRead = () => {
+    if (liveOwnerRef.current !== owner || !current?.error ||
+        (retryGateRef.current?.owner === owner &&
+          retryGateRef.current.generation === generation)) return
+    retryGateRef.current = { owner, generation }
+    // Abort immediately on the click, not after the next useEffect cleanup.
+    if (requestRef.current?.owner === owner) requestRef.current.controller.abort()
+    setAttemptState((previous) => ({
+      owner, generation: previous.owner === owner ? previous.generation + 1 : 1,
+    }))
+  }
+  return { value: current?.value ?? null, error: current?.error ?? '', retryRead }
 }
 
 function WebTextViewerApp({
@@ -1649,40 +1749,24 @@ function WebTextViewerApp({
     readerOwnerRef.current = { api, nodeID: route.params.node }
   }
   const readerOwner = readerOwnerRef.current
-  const [read, setRead] = useState<{
-    owner: typeof readerOwner
-    node: Node | null
-    preview: XDriveFileTextPreview | null
-    error: string
-  } | null>(null)
-  const current = read?.owner === readerOwner ? read : null
-  const node = current?.node ?? null
-  const preview = current?.preview ?? null
-  const error = current?.error ?? ''
+  const loadText = useCallback(async (signal: AbortSignal) => {
+    const [node, preview] = await Promise.all([
+      api.node(readerOwner.nodeID, signal),
+      api.fileTextPreview(readerOwner.nodeID, signal),
+    ])
+    // A successful HTTP response without a usable text body is terminal,
+    // not an infinite quiet spinner. The user may explicitly retry.
+    if (!node) throw new Error('当前文件信息不可用，请重试。')
+    if (!preview) throw new Error('当前文件无法生成文本预览，请重试。')
+    return { node, preview }
+  }, [api, readerOwner])
+  const read = useWebViewerRemoteRead(readerOwner, loadText)
+  const node = read.value?.node ?? null
+  const preview = read.value?.preview ?? null
+  const error = read.error
   const download = useWebStandaloneViewerDownload(api, readerOwner, node)
   const [wrap, setWrap] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    const nodeID = readerOwner.nodeID
-    // Abort both metadata and text bytes when closing, navigating or
-    // changing accounts. An A→B→A return has a fresh identity.
-    void Promise.all([
-      api.node(nodeID, controller.signal),
-      api.fileTextPreview(nodeID, controller.signal),
-    ]).then(([nextNode, nextPreview]) => {
-      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
-        setRead({ owner: readerOwner, node: nextNode, preview: nextPreview, error: '' })
-      }
-    }).catch((reason) => {
-      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
-        setRead({ owner: readerOwner, node: null, preview: null,
-          error: reason instanceof Error ? reason.message : String(reason) })
-      }
-    })
-    return () => controller.abort()
-  }, [api, readerOwner])
 
   useEffect(() => {
     if (!preview || !route.params.line || !textRef.current) return
@@ -1718,15 +1802,11 @@ function WebTextViewerApp({
     >
       {download.error ? (
         <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
-          <XDriveStatusAlert tone="bad">
-            {download.error}。下载失败，可再次点击下载按钮重试。
-          </XDriveStatusAlert>
+          <XDriveStatusAlert tone="bad">{download.error}</XDriveStatusAlert>
         </Box>
       ) : null}
       {error ? (
-        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
-          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
-        </Box>
+        <WebViewerReadError message={error} onRetry={read.retryRead} />
       ) : !node || !preview ? (
         <WebViewerQuietFirstRead />
       ) : <Stack spacing={1} sx={{ flex: 1, minWidth: 0, minHeight: 0, p: compactTouch ? 0 : 1.5 }}>
@@ -1786,31 +1866,19 @@ function WebSinglePreviewApp({
     readerOwnerRef.current = { api, nodeID: route.params.node, app: route.app }
   }
   const readerOwner = readerOwnerRef.current
-  const [read, setRead] = useState<{
-    owner: typeof readerOwner
-    node: Node | null
-    error: string
-  } | null>(null)
-  const current = read?.owner === readerOwner ? read : null
-  const node = current?.node ?? null
-  const error = current?.error ?? ''
-  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    const nodeID = readerOwner.nodeID
-    void api.node(nodeID, controller.signal).then((value) => {
-      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
-        setRead({ owner: readerOwner, node: value, error: '' })
-      }
-    }).catch((reason) => {
-      if (!controller.signal.aborted && readerOwnerRef.current === readerOwner) {
-        setRead({ owner: readerOwner, node: null,
-          error: reason instanceof Error ? reason.message : String(reason) })
-      }
-    })
-    return () => controller.abort()
+  const loadNode = useCallback(async (signal: AbortSignal) => {
+    const value = await api.node(readerOwner.nodeID, signal)
+    // Leave PDF's existing behavior unchanged; Audio must not silently stay
+    // pending after an empty but successful metadata response.
+    if (readerOwner.app === 'audio-player' && !value) {
+      throw new Error('当前音频文件信息不可用，请重试。')
+    }
+    return value
   }, [api, readerOwner])
+  const read = useWebViewerRemoteRead(readerOwner, loadNode)
+  const node = read.value
+  const error = read.error
+  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
 
   return (
     <WebViewerFrame
@@ -1827,15 +1895,14 @@ function WebSinglePreviewApp({
     >
       {download.error ? (
         <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
-          <XDriveStatusAlert tone="bad">
-            {download.error}。下载失败，可再次点击下载按钮重试。
-          </XDriveStatusAlert>
+          <XDriveStatusAlert tone="bad">{download.error}</XDriveStatusAlert>
         </Box>
       ) : null}
       {error ? (
-        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
-          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
-        </Box>
+        <WebViewerReadError
+          message={error}
+          onRetry={route.app === 'audio-player' ? read.retryRead : undefined}
+        />
       ) : !node ? (
         <WebViewerQuietFirstRead />
       ) : <XDriveFilePreviewSurface

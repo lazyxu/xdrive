@@ -51,6 +51,8 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   }, [session])
   const activeReaderRef = useRef({ owner, session })
   activeReaderRef.current = { owner, session }
+  // Reject rapid/stale retry clicks before the replacement render.
+  const retrySessionRef = useRef<typeof session | null>(null)
   const [content, setContent] = useState<{
     owner: typeof owner
     nodeID: number
@@ -90,6 +92,11 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     }
     void session.current(nodeID, activeIndex, wantsMedia).then((candidate) => {
       if (active) {
+        if (wantsMedia && !candidate.mediaItem) {
+          setContent({owner,nodeID,node:null,mediaItem:null,totalCount:0,
+            loading:false,error:'当前媒体信息不可用，请重试。'})
+          return
+        }
         currentCandidateRef.current = { owner, candidate }
         setContent({ owner, nodeID, node: candidate.node, mediaItem: candidate.mediaItem ?? null, totalCount: candidate.totalCount, loading: false, error: '' })
       }
@@ -186,6 +193,19 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     })
   }
 
+  function retryRead() {
+    // A revoked Map context requires re-entry via an authorized Cell/Viewport.
+    if (unavailableBrowseScope || activeReaderRef.current.owner !== owner ||
+        activeReaderRef.current.session !== session ||
+        retrySessionRef.current === session ||
+        !currentContent?.error || currentContent.loading) return
+    retrySessionRef.current = session
+    currentCandidateRef.current = null
+    setContent({owner,nodeID,node:null,mediaItem:null,totalCount:0,
+      loading:true,error:''})
+    setRefresh((value)=>value+1)
+  }
+
   function invalidate(id?: number) {
     if (activeReaderRef.current.owner !== owner) return
     activeReaderRef.current.session.invalidate(id)
@@ -208,6 +228,7 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       if (index === activeIndex) return
       navigate(visibleFilmstrip.find((entry) => entry.index === index)?.candidate ?? null)
     },
-    updateMediaItem, invalidate,
+    updateMediaItem, invalidate, retryRead,
+    canRetryRead: !unavailableBrowseScope,
   }
 }
