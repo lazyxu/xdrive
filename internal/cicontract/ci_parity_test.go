@@ -844,8 +844,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	if strings.Contains(chunkStorageTest, "/test-output") {
 		t.Errorf("chunk storage test must stream data across Docker exec instead of bind-mounting job-container paths into the host daemon")
 	}
+	// Full backups stream selected source entries from the Docker daemon to
+	// the host-side archive. The same exact entry selection must be used for
+	// preflight estimates, and must exclude ONLY the root derived media cache.
+	// An older literal "tar -cf - ." check incorrectly rejects safe pruning.
 	requireRaw(t, "server backup Docker-daemon boundary", serverBackupScript,
-		"tar -cf - .",
+		"full_backup_source_script=",
+		`if [ "$entry" = "./.xdrive-media" ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then`,
+		`du -sk "$@"`,
+		`tar -cf - "$@"`,
+		`-c "$full_backup_source_script" xdrive-full-backup estimate`,
+		`-c "$full_backup_source_script" xdrive-full-backup archive`,
 		`run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes"`,
 		`"$@" > "$output"`,
 	)
