@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import type { MediaItem } from '../models'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
+import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
+import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import {
   XDriveMediaAsyncThumbnail,
   xDriveMediaFallback,
@@ -11,6 +13,91 @@ import {
 export type XDriveMediaGalleryFilmstripEntry = {
   index: number
   item: MediaItem
+}
+
+
+/**
+ * Keep the SF Live glyph attached to a decoded thumbnail, not merely remote
+ * Live metadata. A new thumbnail loader, Node or revision mints a distinct
+ * owner token; late onLoad from A cannot light up B (or a subsequent A).
+ * Both Gallery Viewer shells use this one bounded Filmstrip.
+ */
+function XDriveMediaGalleryFilmstripMedia({
+  item,
+  videoDuration,
+  loadFilmstripThumbnail,
+  thumbnailScheduler,
+}: {
+  item: MediaItem
+  videoDuration: string
+  loadFilmstripThumbnail: MediaThumbnailLoader
+  thumbnailScheduler: XDriveMediaThumbnailScheduler
+}) {
+  const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+  // Media relation enrichment can flip Live on/off without a Node revision.
+  // Its stale decoded callback must never light the new Live indicator.
+  const owner = useMemo(() => ({}), [item.node.id, item.node.revision, loadFilmstripThumbnail, livePhoto])
+  const activeOwnerRef = useRef(owner)
+  activeOwnerRef.current = owner
+  const [readyOwner, setReadyOwner] = useState<object | null>(null)
+  const onImageReadyChange = useCallback((ready: boolean) => {
+    if (activeOwnerRef.current !== owner) return
+    setReadyOwner(ready ? owner : null)
+  }, [owner])
+
+  return (
+    <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+      <XDriveMediaAsyncThumbnail
+        nodeID={item.metadata.has_thumbnail || item.metadata.media_kind === 'video' ? item.node.id : undefined}
+        revision={item.node.revision}
+        alt={item.node.name}
+        loadThumbnail={loadFilmstripThumbnail}
+        revokeOnDispose={false}
+        onImageReadyChange={livePhoto ? onImageReadyChange : undefined}
+        onImageDecodeError={(failedURL) => {
+          thumbnailScheduler.invalidateDecodedURL(item.node.id, item.node.revision, failedURL)
+        }}
+        fallback={xDriveMediaFallback(item.metadata.media_kind)}
+      />
+      {livePhoto && readyOwner === owner ? (
+        <Box component="span" data-xdrive-gallery-filmstrip-live-indicator aria-hidden="true"
+          sx={{
+            position: 'absolute',
+            top: 2,
+            right: 2,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            bgcolor: 'rgba(0,0,0,.5)',
+            color: '#fff',
+            pointerEvents: 'none',
+          }}>
+          <XDriveLivePhotoGlyph size={13} />
+        </Box>
+      ) : null}
+      {!livePhoto && item.metadata.media_kind === 'video' ? (
+        <Typography
+          variant="caption"
+          sx={{
+            position: 'absolute',
+            right: 3,
+            bottom: 2,
+            px: 0.35,
+            borderRadius: 0.75,
+            bgcolor: 'rgba(0,0,0,.62)',
+            color: '#fff',
+            fontSize: 9,
+            lineHeight: 1.4,
+          }}
+        >
+          {videoDuration || '视频'}
+        </Typography>
+      ) : null}
+    </Box>
+  )
 }
 
 export function XDriveMediaGalleryFilmstrip({
@@ -113,10 +200,16 @@ export function XDriveMediaGalleryFilmstrip({
     >
       {entries.map(({ index, item }) => {
         const active = index === activeIndex
+        const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+        const isVideo = !livePhoto && item.metadata.media_kind === 'video'
+        const videoDuration = isVideo && Number.isFinite(item.metadata.duration_ms) &&
+          (item.metadata.duration_ms ?? 0) > 0
+            ? xDriveMediaFormatDuration(item.metadata.duration_ms)
+            : ''
         return (
           <ButtonBase
             key={item.node.id}
-            aria-label={`预览 ${item.node.name}`}
+            aria-label={`预览 ${item.node.name}${livePhoto ? '，实况照片' : isVideo ? `，视频${videoDuration ? `，时长 ${videoDuration}` : ''}` : ''}`}
             aria-current={active ? 'true' : undefined}
             tabIndex={active || (!activeEntryVisible && index === entries[0].index) ? 0 : -1}
             onClick={() => onSelect(index)}
@@ -166,37 +259,12 @@ export function XDriveMediaGalleryFilmstrip({
               },
             }}
           >
-            <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-              <XDriveMediaAsyncThumbnail
-                nodeID={item.metadata.has_thumbnail || item.metadata.media_kind === 'video' ? item.node.id : undefined}
-                revision={item.node.revision}
-                alt={item.node.name}
-                loadThumbnail={loadFilmstripThumbnail}
-                revokeOnDispose={false}
-                onImageDecodeError={(failedURL) => {
-                  thumbnailScheduler.invalidateDecodedURL(item.node.id, item.node.revision, failedURL)
-                }}
-                fallback={xDriveMediaFallback(item.metadata.media_kind)}
-              />
-              {item.metadata.media_kind === 'video' ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    position: 'absolute',
-                    right: 3,
-                    bottom: 2,
-                    px: 0.35,
-                    borderRadius: 0.75,
-                    bgcolor: 'rgba(0,0,0,.62)',
-                    color: '#fff',
-                    fontSize: 9,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  视频
-                </Typography>
-              ) : null}
-            </Box>
+            <XDriveMediaGalleryFilmstripMedia
+              item={item}
+              videoDuration={videoDuration}
+              loadFilmstripThumbnail={loadFilmstripThumbnail}
+              thumbnailScheduler={thumbnailScheduler}
+            />
           </ButtonBase>
         )
       })}
