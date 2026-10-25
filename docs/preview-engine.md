@@ -916,3 +916,21 @@ Merged P0-L14 [#1576](https://github.com/lazyxu/xdrive/pull/1576) and P0-L15 [#1
 One account-scoped Gallery provider now reuses the *same existing thumbnail Scheduler implementation*, dedicated to the cover cards (3 concurrent, 128-entry LRU) and independent of Grid/Timeline and Viewer Filmstrip. The one shared MUI cover renderer uses IntersectionObserver with 180px overscan; only near-mounted covers load, while leaving the viewport ref-count releases their Node interest and cancels unconsumed request work. Duplicate cards sharing a Node cannot cancel each other; one microtask batches sibling retention updates. The real native `img.onError` records only an exact Node/revision/Blob URL invalidation: no immediate GET, one bounded `cache:no-store` recovery on the next visible load, and no repeated request after a second decode failure. Cover DTOs expose only a Node ID and not a trusted source revision, so the existing unknown-revision (0) policy is explicit; do not synthesize a revision or trust filenames/provider hints. On account/loader changes the old pool is discarded before it can serve its stale Blob; effect-owned pools survive React StrictMode setup/cleanup replay without reusing a disposed pool.
 
 The full-screen App Frame and its 52px title bar, one Web/Mobile Web `XDriveMediaGalleryPage`/REST DataSource/VirtualCollection/Grid/Timeline/Viewer, Desktop Agent adapter, and lazy press-to-load Live motion remain unchanged. No original CAS/full-video fetch, second Mobile controller, background request, external pairing, Service Worker private binary cache, 100k dense list or Source mutation. Source checks and actual Scheduler+cover-pool cancellation/recovery tests are required together with **fresh exact-head full GitHub PR CI and Final Gate before merge**. iOS 27 Safari/PWA/VoiceOver, Apple Photos screenshot/gesture 1:1 and the three real user HEIC/LIVP/CAS files remain NOT physically verified.
+
+### Gallery Viewer keyboard-focus return (2026-10-25)
+
+Routed Web/Mobile Gallery Viewer now restores keyboard focus after Back only
+when the original launch came from a focused, authorized Gallery photo tile.
+It reuses the existing same-Owner/same-URL/same-viewport mounted-scroll return
+snapshot; no new Viewer routing, media request, server index or focus polling.
+Each virtually rendered tile exposes its existing logical index alongside a
+current Node-ID DOM marker. If the old tile was recycled in a 100k collection,
+the return may focus a replacement only when **both** Node ID and logical
+index match. Restoring focus uses `focus({ preventScroll: true })` so the
+previously accepted <=2px return-scroll contract is not changed; a different
+focused control, unavailable tile, account/route/viewport change or detached
+scroll host causes a quiet no-op.
+
+Source-coupled unit and CI/browser tests remain separate from device-level
+VoiceOver/iOS 27 acceptance. Inaccessible production-only security acceptance:
+**按用户决定跳过（未验收）**. Code-level Owner/route fencing is mandatory.

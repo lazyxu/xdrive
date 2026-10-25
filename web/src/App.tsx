@@ -83,6 +83,7 @@ import type {
   XDriveLocalStorageDataSource,
   MediaGallerySection,
 } from '@xdrive/ui/mui'
+import { xDriveCaptureGalleryViewerFocus, xDriveRestoreGalleryViewerFocus } from './galleryViewerReturnFocus'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
@@ -867,6 +868,8 @@ function FileManager({
     offset: number
     callerHash: string
     viewportWidth: number
+    ownerApi: XDriveApi
+    focus: ReturnType<typeof xDriveCaptureGalleryViewerFocus>
   } | null>(null)
   const previousViewerActiveRef = useRef(viewerActive)
   useLayoutEffect(() => {
@@ -917,19 +920,28 @@ function FileManager({
     if (!wasViewerActive) return
     const saved = galleryViewerScrollRef.current
     galleryViewerScrollRef.current = null
-    if (!saved || appView !== 'gallery' ||
+    if (!saved || appView !== 'gallery' || saved.ownerApi !== api ||
         window.location.hash !== saved.callerHash ||
         Math.abs(window.innerWidth - saved.viewportWidth) > 1) return
     const stillReturningToSameGallery = () => {
       const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
       return host === saved.host && saved.host.isConnected &&
+        saved.ownerApi === api &&
         window.location.hash === saved.callerHash &&
         Math.abs(window.innerWidth - saved.viewportWidth) <= 1
     }
+    let focusRestored = false
     const restore = () => {
       if (!stillReturningToSameGallery()) return
       if (Math.abs(saved.host.scrollTop - saved.offset) > 1) {
         saved.host.scrollTop = saved.offset
+      }
+      // Restore only a previously focused caller tile, without scrolling.
+      // The same bounded layout/rAF sequence already handles virtual windows.
+      if (guardActive && !focusRestored) {
+        focusRestored = xDriveRestoreGalleryViewerFocus(
+          saved.host, saved.focus, document.activeElement,
+        )
       }
     }
     // Gallery's virtual-window child layout can commit *after* the initial
@@ -2289,6 +2301,10 @@ function FileManager({
                 offset: host.scrollTop,
                 callerHash: window.location.hash,
                 viewportWidth: window.innerWidth,
+                ownerApi: api,
+                focus: xDriveCaptureGalleryViewerFocus(
+                  host, item.node.id, context.activeIndex, document.activeElement,
+                ),
               } : null
               const contextID = xDriveCreateWebAppBrowseSession({
                 kind: 'gallery',

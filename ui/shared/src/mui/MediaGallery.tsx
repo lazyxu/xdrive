@@ -4993,6 +4993,7 @@ function MediaTile({
       variant="outlined"
       data-xdrive-media-tile
       data-xdrive-media-index={logicalIndex}
+      data-xdrive-media-node-id={item.node.id}
       role="button"
       aria-label={livePhoto ? item.node.name + '，实况照片' : undefined}
       tabIndex={0}
