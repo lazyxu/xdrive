@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
+import com.tfluid.xdrive.core.DriveNode
 
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
@@ -25,7 +26,8 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
 
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
-    initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {}) {
+    initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
+    onDownload: ((DriveNode) -> Unit)? = null) {
     val state by controller.state.collectAsStateWithLifecycle()
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
     var filesEdit by remember(state.screen, state.filesSection, state.path.map { it.id }) {
@@ -101,7 +103,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
                     onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
                     onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
-                    onBatchTrash = { batchTrashConfirm = true })
+                    onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
             }
         }
     }

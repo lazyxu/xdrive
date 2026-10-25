@@ -5,6 +5,8 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import java.io.IOException
+import androidx.activity.result.contract.ActivityResultContracts
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,6 +23,22 @@ import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
     private val model by viewModels<DriveViewModel>()
+    // SAF owns the destination; no broad storage permission or persistent URI grants.
+    private val fileDestination = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri == null) model.controller.cancelFileExport()
+        else model.controller.saveFileExport(
+            openOutput = {
+                contentResolver.openOutputStream(uri, "wt")
+                    ?: throw IOException("Unable to open chosen document")
+            },
+            discardOutput = {
+                try { contentResolver.delete(uri, null, null) }
+                catch (_: Exception) { /* Best effort; never hide the source error. */ }
+            },
+        )
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -33,7 +51,13 @@ class MainActivity : ComponentActivity() {
                         true
                     } catch (_: ActivityNotFoundException) { false }
                     catch (_: SecurityException) { false }
-                }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView)
+                }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
+                    onDownload = { node ->
+                        if (model.controller.prepareFileExport(node)) {
+                            try { fileDestination.launch(node.name) }
+                            catch (_: Exception) { model.controller.cancelFileExport() }
+                        }
+                    })
             }
         }
     }

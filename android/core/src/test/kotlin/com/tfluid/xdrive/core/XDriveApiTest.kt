@@ -8,6 +8,10 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
+import java.util.Locale
+import okio.Buffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -21,6 +25,74 @@ class XDriveApiTest {
     private suspend fun failure(block: suspend () -> Unit): ApiException {
         try { block() } catch (e: ApiException) { return e }
         throw AssertionError("Expected safe API failure")
+    }
+
+
+    @Test fun `native Owner download streams authenticated file with verified size and hash`() = runBlocking {
+        val raw = ByteArray(160_000) { (it % 251).toByte() }
+        val sha = MessageDigest.getInstance("SHA-256").digest(raw).joinToString("") {
+            "%02x".format(Locale.ROOT, it.toInt() and 0xff)
+        }
+        val file = DriveNode(42, 1, "vacation.jpg", "file", raw.size.toLong(), revision = 5)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(200)
+                .setHeader("ETag", 34.toChar().toString() + "5" + 34.toChar())
+                .setHeader("X-Content-SHA256", sha).setBody(Buffer().write(raw)))
+            val output = ByteArrayOutputStream()
+            val progress = mutableListOf<Long>()
+            val count = api.downloadFile("access-secret", file, { output }, progress::add)
+            assertEquals(raw.size.toLong(), count)
+            assertArrayEquals(raw, output.toByteArray())
+            assertEquals(raw.size.toLong(), progress.last())
+            val sent = server.takeRequest()
+            assertEquals("GET", sent.method)
+            assertEquals("/api/v1/files/42/content", sent.path)
+            assertEquals("Bearer access-secret", sent.getHeader("Authorization"))
+            assertEquals("identity", sent.getHeader("Accept-Encoding"))
+            assertNull(sent.getHeader("Range"))
+        } }
+    }
+
+    @Test fun `native Owner download rejects stale revision before opening SAF sink`() = runBlocking {
+        val file = DriveNode(42, 1, "sample.bin", "file", 5, revision = 3)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(200)
+                .setHeader("ETag", 34.toChar().toString() + "4" + 34.toChar())
+                .setBody("hello"))
+            var opened = false
+            val error = failure {
+                api.downloadFile("access-secret", file, { opened = true; ByteArrayOutputStream() })
+            }
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, error.reason)
+            assertFalse(opened)
+            assertEquals(1, server.requestCount)
+        } }
+    }
+
+    @Test fun `native Owner download refuses short body checksum mismatch and redirect`() = runBlocking {
+        val node = DriveNode(42, 1, "sample.bin", "file", 5, revision = 3)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val etag = 34.toChar().toString() + "3" + 34.toChar()
+            server.enqueue(MockResponse().setResponseCode(200)
+                .setHeader("ETag", etag).setBody("abc"))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.downloadFile("token", node, { ByteArrayOutputStream() })
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(200).setHeader("ETag", etag)
+                .setHeader("X-Content-SHA256", "0".repeat(64)).setBody("hello"))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.downloadFile("token", node, { ByteArrayOutputStream() })
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://evil.example/"))
+            var opened = false
+            assertEquals(302, failure {
+                api.downloadFile("token", node, { opened = true; ByteArrayOutputStream() })
+            }.statusCode)
+            assertFalse(opened)
+            assertEquals(3, server.requestCount)
+        } }
     }
 
     @Test fun `atomic batch Trash sends numeric revisioned Owner refs once`() = runBlocking {

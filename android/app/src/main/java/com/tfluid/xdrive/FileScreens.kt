@@ -70,7 +70,7 @@ internal class FilesViewportAnchors(private val capacity: Int = 64) {
 internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode,
     onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {},
     onCopy: (DriveNode) -> Unit = {}, onMove: (DriveNode) -> Unit = {},
-    onBatchTrash: () -> Unit = {}) {
+    onBatchTrash: () -> Unit = {}, onDownload: ((DriveNode) -> Unit)? = null) {
     val dark = LocalXDriveDarkTheme.current
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
@@ -151,6 +151,23 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             ) { Text("搜索") }
         }
         ErrorNotice(state.error)
+        if (state.fileDownloadSaved && !state.fileDownloadActive) {
+            Text("已保存到设备", style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("files-download-success"))
+        }
+        if (state.fileDownloadActive) {
+            Text("正在保存到设备：${formatSize(state.fileDownloadBytes)} / ${formatSize(state.fileDownloadTotal)}",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("files-download-progress"))
+            LinearProgressIndicator(
+                progress = { if (state.fileDownloadTotal == 0L) 1f else
+                    (state.fileDownloadBytes.toDouble() / state.fileDownloadTotal).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = controller::cancelFileDownload,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("files-download-cancel")) {
+                Text("取消下载")
+            }
+        }
         if (state.error != null) {
             if (state.loaded) Text("保留上次成功读取的目录。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = controller::retry, enabled = !state.loading,
@@ -202,7 +219,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                 FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                                     onRename = onRename, onTrash = onTrash,
                                     onCopy = onCopy, onMove = onMove,
-                                    canMutate = !state.loading)
+                                    onDownload = onDownload, canMutate = !state.loading)
                         }
                         if (node.id != state.items.lastOrNull()?.id)
                             HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outline)
@@ -248,7 +265,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                             FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                                 onRename = onRename, onTrash = onTrash,
                                 onCopy = onCopy, onMove = onMove,
-                                canMutate = !state.loading)
+                                onDownload = onDownload, canMutate = !state.loading)
                     }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
@@ -417,7 +434,7 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
     section: FilesSection = FilesSection.BROWSE,
     onRename: ((DriveNode) -> Unit)? = null, onTrash: ((DriveNode) -> Unit)? = null,
     onCopy: ((DriveNode) -> Unit)? = null, onMove: ((DriveNode) -> Unit)? = null,
-    canMutate: Boolean = true) {
+    onDownload: ((DriveNode) -> Unit)? = null, canMutate: Boolean = true) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface) {
         if (node.isDirectory) DropdownMenuItem(text = { Text("打开文件夹") },
@@ -438,6 +455,11 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
                 onClick = { dismiss(); onTrash(node) })
         }
         if (!node.isDirectory) {
+            if (onDownload != null && node.revision > 0 && canMutate &&
+                collection == null) DropdownMenuItem(
+                    text = { Text("下载到设备") },
+                    modifier = Modifier.testTag("files-download-action"),
+                    onClick = { dismiss(); onDownload(node) })
             if (section == FilesSection.FAVORITES) DropdownMenuItem(text = { Text("取消收藏") },
                 onClick = { dismiss(); controller.unfavoriteFile(node) })
             else DropdownMenuItem(text = { Text("加入收藏") },
