@@ -71,7 +71,8 @@ function publish(now = Date.now()) {
 function send(message: PeerMessage) {
   try { channel?.postMessage(message) } catch {
     // No recovery path may mistake a failed channel for safe idle windows.
-    channel?.close()
+    // Even a denied close() must not escape into the pre-React PWA startup.
+    try { channel?.close() } catch { /* best-effort channel disposal */ }
     channel = null
     publish()
   }
@@ -122,12 +123,15 @@ export function startXDrivePwaPeerActivityObservation(): void {
   try {
     sender = crypto.randomUUID()
     channel = new BroadcastChannel(channelName)
+    channel.addEventListener('message', (event: MessageEvent) => { acceptMessage(event.data) })
   } catch {
+    // Even supported BroadcastChannel may refuse event registration.
+    // Peer presence is advisory and cannot prevent rendering the Web app.
+    try { channel?.close() } catch { /* best-effort partially opened channel */ }
     channel = null
     sender = null
     return
   }
-  channel.addEventListener('message', (event: MessageEvent) => { acceptMessage(event.data) })
   subscribeXDrivePwaWindowActivity(broadcastStatus)
   window.addEventListener('pageshow', broadcastStatus)
   window.addEventListener('pagehide', () => {

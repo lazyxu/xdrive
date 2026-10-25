@@ -6,9 +6,10 @@ const ts = require('typescript')
 
 const root = path.resolve(__dirname, '../..')
 const source = fs.readFileSync(path.join(root, 'web/src/pwaUpdates.ts'), 'utf8')
-function harness({ supported = true, secure = true, waiting = true, online = true, updateGate = null, lookupGate = null } = {}) {
+function harness({ supported = true, secure = true, waiting = true, online = true, updateGate = null, lookupGate = null,
+  channelFailure = null } = {}) {
   const events = new Map(), workerEvents = new Map(), regEvents = new Map(), messages = []
-  let checked = 0
+  let checked = 0, channelClosed = 0
   const registration = {
     waiting: waiting ? {} : null, installing: null,
     addEventListener(kind, fn) { regEvents.set(kind, fn) },
@@ -23,9 +24,19 @@ function harness({ supported = true, secure = true, waiting = true, online = tru
   const win = { isSecureContext: secure, addEventListener(kind, fn) { events.set(kind, fn) } }
   const navigator = { onLine: online, ...(supported ? { serviceWorker: worker } : {}) }
   class Channel {
-    constructor(name) { this.name = name }
-    addEventListener(kind, fn) { this.receive = fn }
-    postMessage(data) { messages.push(data) }
+    constructor(name) {
+      if (channelFailure === 'constructor') throw new Error('BroadcastChannel denied')
+      this.name = name
+    }
+    addEventListener(kind, fn) {
+      if (channelFailure === 'listener') throw new Error('BroadcastChannel listener denied')
+      this.receive = fn
+    }
+    postMessage(data) {
+      if (channelFailure === 'send') throw new Error('BroadcastChannel send denied')
+      messages.push(data)
+    }
+    close() { channelClosed++ }
   }
   const code = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -33,7 +44,7 @@ function harness({ supported = true, secure = true, waiting = true, online = tru
   const exports = {}
   new Function('exports', 'window', 'navigator', 'BroadcastChannel', code)(exports, win, navigator, Channel)
   return { mod: exports, win, navigator, registration, events, workerEvents, regEvents, messages,
-    get checked() { return checked } }
+    get checked() { return checked }, get channelClosed() { return channelClosed } }
 }
 async function flush() { for (let n = 0; n < 5; n++) await Promise.resolve() }
 
@@ -322,4 +333,26 @@ test('S3D1: pageshow superseding an in-flight update clears checking without fal
   assert.equal(await pending, 'checked')
   assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked',
     'late old browser update must not overwrite the retry result')
+})
+
+test('S3A Safari: denied optional BroadcastChannel cannot block Web boot or SW checks', async () => {
+  for (const channelFailure of ['constructor', 'listener', 'send']) {
+    const h = harness({ waiting: true, channelFailure })
+    assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation(),
+      `optional channel ${channelFailure} must not throw into main.tsx before React render`)
+    await flush()
+    assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting',
+      'a real local waiting worker must remain visible even without cross-window hints')
+    assert.equal(h.mod.xDrivePwaUpdateSnapshot().otherWindowReportedUpdate, false)
+    assert.equal(h.channelClosed, channelFailure === 'constructor' ? 0 : 1)
+    assert.equal(await h.mod.checkXDrivePwaUpdate(), 'waiting',
+      'manual user update checks must still operate without a channel')
+    assert.equal(h.checked, 1)
+  }
+  const h = harness({ waiting: false, channelFailure: 'constructor' })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked')
 })
