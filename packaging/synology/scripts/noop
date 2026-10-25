@@ -1,0 +1,4 @@
+#!/bin/sh
+# Persistent configuration belongs to SYNOPKG_PKGHOME/PKGVAR, never target.
+# DSM handles the FHS directory lifecycle; upgrades never delete user data.
+exit 0
