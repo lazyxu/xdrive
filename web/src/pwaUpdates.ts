@@ -21,6 +21,19 @@ const maxUpdateCheckMs = 8000
 const listeners = new Set<() => void>()
 const observedRegistrations = new WeakSet<ServiceWorkerRegistration>()
 
+/** Restricted Safari/browser contexts can expose the SW property but deny reads. */
+function accessibleWorker(): ServiceWorkerContainer | null {
+  try {
+    return typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+      ? navigator.serviceWorker : null
+  } catch {
+    return null
+  }
+}
+function accessibleController(): boolean {
+  try { return Boolean(accessibleWorker()?.controller) } catch { return false }
+}
+
 function connectionHint(): XDrivePwaConnectionHint {
   if (typeof navigator === 'undefined' || typeof navigator.onLine !== 'boolean') return 'unknown'
   return navigator.onLine ? 'online' : 'offline'
@@ -29,7 +42,7 @@ function makeSnapshot(phase: XDrivePwaUpdatePhase, error: string | null = null):
   return {
     phase,
     connectionHint: connectionHint(),
-    hasController: typeof navigator !== 'undefined' && Boolean(navigator.serviceWorker?.controller),
+    hasController: accessibleController(),
     otherWindowReportedUpdate: remoteUpdateHint,
     lastError: error,
   }
@@ -42,7 +55,7 @@ function publish(next: XDrivePwaUpdateSnapshot) {
 }
 function refresh() {
   const previous = snapshot?.phase ?? 'idle'
-  const ready = Boolean(registration?.waiting && navigator.serviceWorker?.controller)
+  const ready = Boolean(registration?.waiting && accessibleController())
   publish(makeSnapshot(ready ? 'waiting' : previous === 'waiting' ? 'idle' : previous,
     snapshot?.lastError ?? null))
 }
@@ -72,13 +85,13 @@ function observeRegistration(found: ServiceWorkerRegistration) {
       if (!candidate) return
       candidate.addEventListener('statechange', () => {
         if (registration === found && candidate.state === 'installed' &&
-          found.waiting && navigator.serviceWorker?.controller) {
+          found.waiting && accessibleController()) {
           markWaiting()
         }
       })
     })
   }
-  if (found.waiting && navigator.serviceWorker?.controller) markWaiting()
+  if (found.waiting && accessibleController()) markWaiting()
   else if (snapshot?.phase !== 'checking' && (replaced || snapshot?.phase === 'error')) {
     // Successful discovery of a registered worker clears previous lookup
     // failures and obsolete 'checked' status from a retired registration.
@@ -122,7 +135,8 @@ export function subscribeXDrivePwaUpdates(listener: () => void): () => void {
 export function startXDrivePwaUpdateObservation(): void {
   if (started || typeof window === 'undefined') return
   started = true
-  if (!window.isSecureContext || !('serviceWorker' in navigator)) {
+  const worker = accessibleWorker()
+  if (!window.isSecureContext || !worker) {
     publish(makeSnapshot('unsupported'))
     return
   }
@@ -153,13 +167,22 @@ export function startXDrivePwaUpdateObservation(): void {
   // A controller replacement can invalidate the cached registration without
   // navigation. Refresh the controller synchronously, then verify the currently
   // installed registration (including browser-side unregister) asynchronously.
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    refresh()
-    void locateRegistration()
-  })
+  try {
+    worker.addEventListener('controllerchange', () => {
+      refresh()
+      void locateRegistration()
+    })
+  } catch {
+    // Controllerchange is advisory; pageshow and manual checks still revalidate.
+  }
   void locateRegistration()
-  // First-time S1 registration happens AFTER window.load; ready resolves when it becomes active.
-  void navigator.serviceWorker.ready.then(() => { void locateRegistration() }).catch(() => {})
+  // First-time S1 registration happens AFTER window.load; an unavailable
+  // or synchronously denied ready getter must never block the ordinary Web boot.
+  try {
+    void worker.ready.then(() => { void locateRegistration() }).catch(() => {})
+  } catch {
+    // Initial getRegistration/pageshow and explicit checks remain available.
+  }
 }
 /** An internal ServiceWorkerRegistration.update has no AbortSignal. Bound the
  * caller's wait without pretending to cancel the browser's own operation. */
@@ -197,7 +220,7 @@ async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promis
     await Promise.race([found.update(), deadline])
     if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     remoteUpdateHint = false
-    const phase: XDrivePwaUpdatePhase = found.waiting && navigator.serviceWorker.controller
+    const phase: XDrivePwaUpdatePhase = found.waiting && accessibleController()
       ? 'waiting' : 'checked'
     publish(makeSnapshot(phase))
     return phase
@@ -205,7 +228,7 @@ async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promis
     if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     // A freshly discovered worker's waiting status is stronger evidence than
     // this check's timeout; a retired registration is never such evidence.
-    if (fresh?.waiting && navigator.serviceWorker?.controller) {
+    if (fresh?.waiting && accessibleController()) {
       markWaiting()
       return 'waiting'
     }
@@ -224,7 +247,7 @@ export function checkXDrivePwaUpdate(
 ): Promise<XDrivePwaUpdatePhase> {
   if (updateCheckInFlight) return updateCheckInFlight
   if (typeof window === 'undefined' || !window.isSecureContext ||
-    !('serviceWorker' in navigator)) return Promise.resolve('unsupported')
+    !accessibleWorker()) return Promise.resolve('unsupported')
   const pending = checkXDrivePwaUpdateOnce(options)
   updateCheckInFlight = pending
   const release = () => {
