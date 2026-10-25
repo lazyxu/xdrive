@@ -14,7 +14,6 @@ import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import { alpha } from '@mui/material/styles'
 import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencyForDisplay, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
@@ -22,7 +21,7 @@ import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOvervie
 import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
-import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import { xDrivePhotoOCRVerified } from '../service-dependencies'
 import type {
   XDriveBaiduMapAdminConfig,
@@ -132,17 +131,6 @@ function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
     case 'baidu-map': return ['status', 'config', 'verify']
     case 'photo-auto': return ['status', 'config', 'history']
     default: return ['status', 'config', 'verify', 'history']
-  }
-}
-
-function expandDependencySection(
-  previous: Record<string, boolean>, service: string, tab?: XDriveSystemDependencyTab,
-): Record<string, boolean> {
-  if (!tab) return previous
-  return {
-    ...previous,
-    [`${service}:${tab === 'verify' ? 'status' : tab}`]: true,
-    ...(tab === 'verify' ? { [`${service}:verify`]: true } : {}),
   }
 }
 
@@ -617,19 +605,16 @@ export function XDriveServiceDependenciesPage({
 }) {
   const [showCapabilityMatrix, setShowCapabilityMatrix] = useState(false)
   const [overviewFilter, setOverviewFilter] = useState<XDriveDashboardFilter>('all')
-  // One shared detail page per service. Sections, not separate routes, own their expansion.
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
+  // Each fixed service has permanently visible sections; legacy tabs are scroll anchors.
   const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
     () => xDriveNormalizeSystemDependenciesLocation(location),
   )
   const selectedPage = visibleLocation.policy === 'photo-auto' ? 'photo-auto' : visibleLocation.service ?? 'overview'
   const selectedTabs = dependencyTabsFor(selectedPage)
-  const showVerify = selectedTabs.includes('verify') &&
-    (expandedSections[`${selectedPage}:verify`] ?? (selectedPage === 'caddy' || visibleLocation.tab === 'verify'))
+  const showVerify = selectedTabs.includes('verify')
   const currentTab = selectedTabs.includes(visibleLocation.tab ?? 'status')
     ? visibleLocation.tab ?? 'status' : 'status'
-  const historyKey = `${selectedPage}:history`
-  const historyExpanded = selectedTabs.includes('history') && (expandedSections[historyKey] ?? (currentTab === 'history'))
+  const historyExpanded = selectedTabs.includes('history')
   const [pendingNavigation, setPendingNavigation] = useState<{
     next: XDriveSystemDependenciesLocation
     external: boolean
@@ -640,6 +625,7 @@ export function XDriveServiceDependenciesPage({
   const [baiduJSAPIDirty, setBaiduJSAPIDirty] = useState(false)
   const unsavedRef = useRef(false)
   const resetKeyRef = useRef(navigationResetKey)
+  const lastAutoScrollRef = useRef<{ source: XDriveServiceDependenciesPort; key: string } | null>(null)
   const externalLocationKey = xDriveSystemDependenciesLocationKey(location ?? {})
   const [snapshotState, setSnapshot] = useState<XDriveServiceDependenciesSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
@@ -654,11 +640,14 @@ export function XDriveServiceDependenciesPage({
   const [error, setError] = useState('')
   const visibleError = snapshotSourceRef.current === source ? error : ''
   const [refreshID, setRefreshID] = useState(0)
+  const [runtimeBusy, setRuntimeBusy] = useState(false)
   // Local HTTPS/AliDNS edits invalidate sibling preflight and read-auth proof
   // without resetting the editing panel's saved acknowledgement or draft.
   const [caddyEvidenceRevision, setCaddyEvidenceRevision] = useState(0)
   const invalidateCaddyEvidence = useCallback(() => setCaddyEvidenceRevision((value) => value + 1), [])
-  const [baiduConfig, setBaiduConfig] = useState<XDriveBaiduMapAdminConfig | null>(null)
+  const [baiduConfigState, setBaiduConfig] = useState<XDriveBaiduMapAdminConfig | null>(null)
+  const [baiduConfigOwner, setBaiduConfigOwner] = useState<{ source: XDriveServiceDependenciesPort; page: string } | null>(null)
+  const baiduConfig = baiduConfigOwner?.source === source && baiduConfigOwner.page === selectedPage ? baiduConfigState : null
   const [baiduEnabled, setBaiduEnabled] = useState(false)
   const [baiduAK, setBaiduAK] = useState('')
   const [baiduError, setBaiduError] = useState('')
@@ -671,12 +660,16 @@ export function XDriveServiceDependenciesPage({
   const [revealingAK, setRevealingAK] = useState(false)
   const revealEpochRef = useRef(0)
   const geoNamesEpochRef = useRef(0)
-  const [geoNamesConfig, setGeoNamesConfig] = useState<XDriveGeoNamesConfig | null>(null)
+  const [geoNamesConfigState, setGeoNamesConfig] = useState<XDriveGeoNamesConfig | null>(null)
+  const [geoNamesConfigOwner, setGeoNamesConfigOwner] = useState<{ source: XDriveServiceDependenciesPort; page: string } | null>(null)
+  const geoNamesConfig = geoNamesConfigOwner?.source === source && geoNamesConfigOwner.page === selectedPage ? geoNamesConfigState : null
   const [geoNamesDraftDistance, setGeoNamesDraftDistance] = useState('')
   const [geoNamesBusy, setGeoNamesBusy] = useState(false)
   const [geoNamesError, setGeoNamesError] = useState('')
   const [geoNamesNotice, setGeoNamesNotice] = useState('')
-  const [geoNamesRevisions, setGeoNamesRevisions] = useState<XDriveGeoNamesRevision[]>([])
+  const [geoNamesRevisionsState, setGeoNamesRevisions] = useState<XDriveGeoNamesRevision[]>([])
+  const geoNamesRevisions = geoNamesConfigOwner?.source === source && geoNamesConfigOwner.page === selectedPage
+    ? geoNamesRevisionsState : []
   const [geoNamesHistoryError, setGeoNamesHistoryError] = useState('')
   const [geoNamesRollbackTarget, setGeoNamesRollbackTarget] = useState('')
   const [geoNamesRollbackConfirmOpen, setGeoNamesRollbackConfirmOpen] = useState(false)
@@ -686,16 +679,24 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesRestoreConfirmOpen, setGeoNamesRestoreConfirmOpen] = useState(false)
   const photoPolicyEpochRef = useRef(0)
   const photoHistoryEpochRef = useRef(0)
-  const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
+  const [photoPolicyState, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
+  const [photoPolicyOwner, setPhotoPolicyOwner] = useState<{ source: XDriveServiceDependenciesPort; page: string } | null>(null)
+  const photoPolicy = photoPolicyOwner?.source === source && photoPolicyOwner.page === selectedPage ? photoPolicyState : null
   const [photoAutoDraft, setPhotoAutoDraft] = useState(true)
   const [photoKindsDraft, setPhotoKindsDraft] = useState<XDrivePhotoAutoKinds>(defaultPhotoAutoKinds)
   const [photoPolicyBusy, setPhotoPolicyBusy] = useState(false)
   const [photoPolicyError, setPhotoPolicyError] = useState('')
   const [photoPolicyNotice, setPhotoPolicyNotice] = useState('')
-  const [photoRevisions, setPhotoRevisions] = useState<XDrivePhotoAutoRevision[]>([])
+  const [photoRevisionsState, setPhotoRevisions] = useState<XDrivePhotoAutoRevision[]>([])
+  const photoRevisions = photoPolicyOwner?.source === source && photoPolicyOwner.page === selectedPage
+    ? photoRevisionsState : []
   const [photoHistoryError, setPhotoHistoryError] = useState('')
   const [photoRollbackTarget, setPhotoRollbackTarget] = useState('')
   const [photoRollbackConfirmOpen, setPhotoRollbackConfirmOpen] = useState(false)
+
+  const editorIdentityRef = useRef<{ source: XDriveServiceDependenciesPort; page: string }>({ source, page: selectedPage })
+  const currentEditor = editorIdentityRef.current.source === source &&
+    editorIdentityRef.current.page === selectedPage
 
   const dirtyBaidu = selectedPage === 'baidu-map' && !!baiduConfig &&
     (baiduEnabled !== baiduConfig.enabled || baiduAK.length > 0)
@@ -723,8 +724,13 @@ export function XDriveServiceDependenciesPage({
     if (xDriveSystemDependenciesLocationKey(next) ===
         xDriveSystemDependenciesLocationKey(visibleLocation)) {
       if (next.tab) {
-        setExpandedSections((prior) => expandDependencySection(prior, selectedPage, next.tab))
-        document.getElementById(`dependency-${selectedPage}-${next.tab}-header`)?.scrollIntoView({ block: 'start' })
+        // Flat runtime editors live above the generic verification description.
+        // Prefer the actual model/host evidence, not the following scope note.
+        const runtimeAnchor = next.tab === 'verify' &&
+          ['media-worker', 'photo-face'].includes(selectedPage)
+          ? document.getElementById(`dependency-${selectedPage}-runtime-verify-header`) : null
+        const target = runtimeAnchor ?? document.getElementById(`dependency-${selectedPage}-${next.tab}-header`)
+        target?.scrollIntoView({ block: 'start' })
       }
       return
     }
@@ -732,7 +738,6 @@ export function XDriveServiceDependenciesPage({
     // so moving within the same dependency must not discard or warn about drafts.
     if ((next.service && next.service === visibleLocation.service) ||
         (next.policy && next.policy === visibleLocation.policy)) {
-      if (next.tab) setExpandedSections((prior) => expandDependencySection(prior, selectedPage, next.tab))
       setVisibleLocation(next)
       onLocationChange?.(next)
       return
@@ -754,8 +759,6 @@ export function XDriveServiceDependenciesPage({
         xDriveSystemDependenciesLocationKey(visibleLocation)) return
     if (((incoming.service && incoming.service === visibleLocation.service) ||
          (incoming.policy && incoming.policy === visibleLocation.policy))) {
-      if (incoming.tab) setExpandedSections((prior) =>
-        expandDependencySection(prior, selectedPage, incoming.tab))
       setVisibleLocation(incoming)
     } else if (unsavedRef.current) setPendingNavigation({ next: incoming, external: true })
     else {
@@ -791,13 +794,26 @@ export function XDriveServiceDependenciesPage({
   }, [])
 
   useEffect(() => {
-    // Existing deep links remain section anchors instead of navigation to
-    // separate pages. Only navigation/loading changes scroll the viewport.
-    if (loading || cachedSnapshotRef.current === null || selectedPage === 'overview' ||
-        currentTab === 'status' || (currentTab === 'verify' && !showVerify)) return
-    document.getElementById(`dependency-${selectedPage}-${currentTab}-header`)
-      ?.scrollIntoView({ block: 'start' })
-  }, [selectedPage, currentTab, loading, showVerify])
+    // Legacy deep links are in-page anchors. Caddy/Core own their own scroll
+    // and should not receive a second scroll from the generic page.
+    if (selectedPage === 'overview' || currentTab === 'status' ||
+        (currentTab === 'verify' && !showVerify) ||
+        ['caddy', 'database', 'storage', 'background-worker'].includes(selectedPage)) {
+      lastAutoScrollRef.current = null
+      return
+    }
+    if (loading || cachedSnapshotRef.current === null || !snapshot || runtimeBusy) return
+    const anchorKey = `${selectedPage}:${currentTab}`
+    if (lastAutoScrollRef.current?.source === source &&
+        lastAutoScrollRef.current.key === anchorKey) return
+    const runtimeAnchor = currentTab === 'verify' &&
+      ['media-worker', 'photo-face'].includes(selectedPage)
+      ? document.getElementById(`dependency-${selectedPage}-runtime-verify-header`) : null
+    const target = runtimeAnchor ?? document.getElementById(`dependency-${selectedPage}-${currentTab}-header`)
+    if (!target) return
+    lastAutoScrollRef.current = { source, key: anchorKey }
+    target.scrollIntoView({ block: 'start' })
+  }, [selectedPage, currentTab, loading, showVerify, runtimeBusy, snapshot, source])
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -829,10 +845,12 @@ export function XDriveServiceDependenciesPage({
 
   useEffect(() => {
     let active = true
+    editorIdentityRef.current = { source, page: selectedPage }
     ++revealEpochRef.current
     ++geoNamesEpochRef.current
     ++photoPolicyEpochRef.current
     ++photoHistoryEpochRef.current
+    setPhotoPolicyOwner(null)
     setPhotoPolicy(null)
     setPhotoAutoDraft(true)
     setPhotoKindsDraft(defaultPhotoAutoKinds)
@@ -851,6 +869,7 @@ export function XDriveServiceDependenciesPage({
     setBaiduBusy(false)
     setClearConfirmOpen(false)
     setGeoNamesBusy(false)
+    setGeoNamesConfigOwner(null)
     setGeoNamesConfig(null)
     setGeoNamesDraftDistance('')
     setGeoNamesError('')
@@ -864,6 +883,7 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesDatasetConfirmOpen(false)
     setGeoNamesRestoreConfirmOpen(false)
     // Editor data is scoped to the active service. Overview has no private config reads.
+    setBaiduConfigOwner(null)
     setBaiduConfig(null)
     setBaiduEnabled(false)
     setBaiduAK('')
@@ -872,6 +892,7 @@ export function XDriveServiceDependenciesPage({
     if (selectedPage === 'photo-auto' && source.loadPhotoAutoConfig) {
       void source.loadPhotoAutoConfig().then((policy) => {
         if (!active) return
+        setPhotoPolicyOwner({ source, page: selectedPage })
         setPhotoPolicy(policy)
         setPhotoAutoDraft(policy.auto_enabled)
         setPhotoKindsDraft(policy.kinds ?? defaultPhotoAutoKinds)
@@ -884,6 +905,7 @@ export function XDriveServiceDependenciesPage({
       setBaiduReadBusy(true)
       void source.loadBaiduMapConfig().then((config) => {
         if (!active || epoch !== baiduConfigEpochRef.current) return
+        setBaiduConfigOwner({ source, page: selectedPage })
         setBaiduConfig(config)
         setBaiduEnabled(config.enabled)
       }).catch(() => {
@@ -897,7 +919,8 @@ export function XDriveServiceDependenciesPage({
       const initialGeoNamesEpoch = geoNamesEpochRef.current
       void source.loadGeoNamesConfig().then((config) => {
         if (active && initialGeoNamesEpoch === geoNamesEpochRef.current) {
-          setGeoNamesConfig(config)
+          setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(config)
           setGeoNamesDraftDistance(String(config.max_distance_km))
         }
       }).catch(() => {
@@ -916,8 +939,7 @@ export function XDriveServiceDependenciesPage({
     }
   }, [source, selectedPage])
 
-  // Revision history is intentionally fetched only when its accordion opens.
-  // This separate effect must never reset any already-edited configuration.
+  // Permanently visible history uses a separate read-only effect; never reset an edited configuration.
   useEffect(() => {
     if (!historyExpanded) return
     let active = true
@@ -1002,7 +1024,7 @@ export function XDriveServiceDependenciesPage({
 
   // A readonly refresh is independent of JSAPI 4.0 and cannot replace an edit.
   const refreshBaiduServerAPI = () => {
-    if (baiduReadBusy || baiduBusy || refreshing || hasUnsavedEdits || revealingAK) return
+    if (baiduReadBusy || baiduBusy || refreshing || hasUnsavedEdits || revealingAK || runtimeBusy) return
     hideBaiduAK()
     setRefreshID((value) => value + 1)
     if (!source.loadBaiduMapConfig) return
@@ -1011,7 +1033,8 @@ export function XDriveServiceDependenciesPage({
     setBaiduError('')
     void source.loadBaiduMapConfig().then((next) => {
       if (epoch !== baiduConfigEpochRef.current) return
-      setBaiduConfig(next)
+      setBaiduConfigOwner({ source, page: selectedPage })
+        setBaiduConfig(next)
       setBaiduEnabled(next.enabled)
     }).catch(() => {
       if (epoch === baiduConfigEpochRef.current)
@@ -1050,7 +1073,8 @@ export function XDriveServiceDependenciesPage({
         ...(clearAK ? { clear_ak: true } : ak ? { ak } : {}),
       })
       if (epoch !== baiduConfigEpochRef.current) return
-      setBaiduConfig(next)
+      setBaiduConfigOwner({ source, page: selectedPage })
+        setBaiduConfig(next)
       setBaiduEnabled(next.enabled)
       setBaiduAK('')
       saved = true
@@ -1101,24 +1125,31 @@ export function XDriveServiceDependenciesPage({
         max_distance_km: distance,
       })
       if (epoch !== geoNamesEpochRef.current) return
-      setGeoNamesConfig(updated)
+      setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(updated)
       setGeoNamesDraftDistance(String(updated.max_distance_km))
       setGeoNamesNotice(updated.apply_state === 'applied'
         ? '已持久化配置并写入审计，当前 Server 新索引立即生效；其他实例每 30 秒尝试自动校验并应用，失败时仍显示待生效。'
         : '配置已保存，但当前 Server 尚未确认生效，请校验并热加载。')
       if (source.loadGeoNamesRevisions) {
         const history = await source.loadGeoNamesRevisions().catch(() => null)
-        if (epoch === geoNamesEpochRef.current && history) {
-          setGeoNamesRevisions(history.items)
-          setGeoNamesRollbackTarget('')
-          setGeoNamesHistoryError('')
+        if (epoch === geoNamesEpochRef.current) {
+          if (history) {
+            setGeoNamesRevisions(history.items)
+            setGeoNamesRollbackTarget('')
+            setGeoNamesHistoryError('')
+          } else setGeoNamesHistoryError('配置已保存，但历史修订读取失败；请重新检测核对。')
         }
       }
-      const next = await source.load()
-      if (epoch === geoNamesEpochRef.current) setSnapshot(next)
+      // A failed follow-up GET must never convert an acknowledged Save into failure.
+      const next = await source.load().catch(() => null)
+      if (epoch === geoNamesEpochRef.current) {
+        if (next) setSnapshot(next)
+        else setGeoNamesNotice((previous) => previous + ' 服务状态刷新失败；请重新检测核对生效。')
+      }
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 配置未保存，原索引继续生效。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'save'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
@@ -1147,17 +1178,21 @@ export function XDriveServiceDependenciesPage({
           next.apply_state !== 'applied') {
         throw new Error('GeoNames 数据集未能确认当前 Server 实际热加载状态。')
       }
-      setGeoNamesConfig(next)
+      setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(next)
       setGeoNamesDraftDistance(String(next.max_distance_km))
       setGeoNamesDatasetTarget('')
       setGeoNamesNotice(geoNamesDatasetTarget === 'deployment'
         ? '已持久保存部署数据源为目标，当前实例校验后热生效；其他实例仍需分别确认。'
         : '已持久保存归档指纹并热应用到当前实例；重启会重新验证快照完整性，缺失时保持待生效，其他实例仍需单独校验。')
-      const latest = await source.load()
-      if (epoch === geoNamesEpochRef.current) setSnapshot(latest)
+      const latest = await source.load().catch(() => null)
+      if (epoch === geoNamesEpochRef.current) {
+        if (latest) setSnapshot(latest)
+        else setGeoNamesNotice((previous) => previous + ' 服务状态刷新失败；请重新检测核对生效。')
+      }
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 数据集校验或热应用失败，原索引继续生效。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'apply'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) {
@@ -1187,13 +1222,17 @@ export function XDriveServiceDependenciesPage({
           next.active_dataset_persistent !== true || next.restore_missing_enabled !== false) {
         throw new Error('恢复接口尚未确认当前 Server 的持久目标归档已正确重建及实际生效。')
       }
-      setGeoNamesConfig(next)
+      setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(next)
       setGeoNamesNotice('受信任部署挂载与原归档审计指纹完全一致；缺失目录已恢复，当前 Server 热生效。未覆盖已有目录、未改变期望修订；其他实例未被自动修复。')
-      const latest = await source.load()
-      if (epoch === geoNamesEpochRef.current) setSnapshot(latest)
+      const latest = await source.load().catch(() => null)
+      if (epoch === geoNamesEpochRef.current) {
+        if (latest) setSnapshot(latest)
+        else setGeoNamesNotice((previous) => previous + ' 服务状态刷新失败；请重新检测核对生效。')
+      }
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : '缺失归档未恢复；当前生效索引与历史记录保持不变。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'apply'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) {
@@ -1218,19 +1257,44 @@ export function XDriveServiceDependenciesPage({
       if (!result.staged || result.applied || !result.snapshot.fingerprint) {
         throw new Error('GeoNames 版本快照未完成验证，当前运行索引不变。')
       }
-      const next = await source.loadGeoNamesConfig?.()
+      const next = source.loadGeoNamesConfig
+        ? await source.loadGeoNamesConfig().catch(() => null) : null
       if (epoch !== geoNamesEpochRef.current) return
-      if (next) setGeoNamesConfig(next)
-      setGeoNamesNotice('数据集已完成有界复制、完整索引校验和审计，并保存为不可变快照；尚未应用，不影响现有地名解析。')
+      if (next) setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(next)
+      setGeoNamesNotice('数据集已完成有界复制、完整索引校验和审计，并保存为不可变快照；尚未应用，不影响现有地名解析。' +
+        (source.loadGeoNamesConfig && !next ? ' 最新配置读取失败；请重新检测核对。' : ''))
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 版本快照创建失败；当前索引不变。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'apply'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) {
         setGeoNamesBusy(false)
         setGeoNamesSnapshotConfirmOpen(false)
       }
+    }
+  }
+
+  // The main single refresh checks the saved analysis policy as well as the
+  // service inventory; an in-flight write or dirty draft always blocks it.
+  const refreshPhotoPolicyReadOnly = async () => {
+    if (!source.loadPhotoAutoConfig || photoPolicyBusy || unsavedRef.current) return
+    const epoch = ++photoPolicyEpochRef.current
+    setPhotoPolicyBusy(true)
+    setPhotoPolicyError('')
+    try {
+      const next = await source.loadPhotoAutoConfig()
+      if (epoch !== photoPolicyEpochRef.current) return
+      setPhotoPolicyOwner({ source, page: selectedPage })
+        setPhotoPolicy(next)
+      setPhotoAutoDraft(next.auto_enabled)
+      setPhotoKindsDraft(next.kinds ?? defaultPhotoAutoKinds)
+    } catch {
+      if (epoch === photoPolicyEpochRef.current)
+        setPhotoPolicyError('无法读取当前分析策略；原配置未改变，请检查 Server/Agent 版本。')
+    } finally {
+      if (epoch === photoPolicyEpochRef.current) setPhotoPolicyBusy(false)
     }
   }
 
@@ -1245,14 +1309,15 @@ export function XDriveServiceDependenciesPage({
     try {
       const next = await source.loadGeoNamesConfig()
       if (epoch !== geoNamesEpochRef.current) return
-      setGeoNamesConfig(next)
+      setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(next)
       // Verification is read-only: keep the local editor's clean baseline in
       // sync with the newly observed desired revision, never invent a dirty edit.
       setGeoNamesDraftDistance(String(next.max_distance_km))
       setGeoNamesNotice('已只读刷新当前 Server 与已观测在线实例的索引修订；未校验数据文件或执行热加载。')
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 实际修订只读检测失败；当前索引未改变。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'system', 'refresh'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
@@ -1272,19 +1337,24 @@ export function XDriveServiceDependenciesPage({
       const effective = source.loadGeoNamesConfig ? await source.loadGeoNamesConfig() : null
       if (epoch !== geoNamesEpochRef.current) return
       if (effective) {
+        setGeoNamesConfigOwner({ source, page: selectedPage })
         setGeoNamesConfig(effective)
         setGeoNamesDraftDistance(String(effective.max_distance_km))
       } else {
+        setGeoNamesConfigOwner({ source, page: selectedPage })
         setGeoNamesConfig((old) => old ? { ...old, current_version: result.current_version } : old)
       }
       setGeoNamesNotice(result.changed
         ? '已验证并热加载新索引。后续地名任务使用新版本，运行中的任务保持旧快照。'
         : '数据集验证通过，版本未变化，无需替换当前索引。')
-      const next = await source.load()
-      if (epoch === geoNamesEpochRef.current) setSnapshot(next)
+      const next = await source.load().catch(() => null)
+      if (epoch === geoNamesEpochRef.current) {
+        if (next) setSnapshot(next)
+        else setGeoNamesNotice((previous) => previous + ' 服务状态刷新失败；请重新检测核对生效。')
+      }
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 数据校验失败，当前已生效索引未改变。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'apply'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
@@ -1304,7 +1374,8 @@ export function XDriveServiceDependenciesPage({
         ...(photoPolicy.kinds ? { kinds: photoKindsDraft } : {}),
       })
       if (epoch !== photoPolicyEpochRef.current) return
-      setPhotoPolicy(next)
+      setPhotoPolicyOwner({ source, page: selectedPage })
+        setPhotoPolicy(next)
       setPhotoAutoDraft(next.auto_enabled)
       setPhotoKindsDraft(next.kinds ?? defaultPhotoAutoKinds)
       setPhotoRollbackTarget('')
@@ -1328,7 +1399,7 @@ export function XDriveServiceDependenciesPage({
       }
     } catch (err) {
       if (epoch === photoPolicyEpochRef.current) {
-        setPhotoPolicyError(err instanceof Error ? err.message : '保存失败，当前运行策略未确认更新。')
+        setPhotoPolicyError(xDriveCoreDependencyErrorMessage(err, 'photo-auto', 'save'))
       }
     } finally {
       if (epoch === photoPolicyEpochRef.current) setPhotoPolicyBusy(false)
@@ -1356,7 +1427,8 @@ export function XDriveServiceDependenciesPage({
         target_revision: target.revision,
       })
       if (epoch !== photoPolicyEpochRef.current) return
-      setPhotoPolicy(effective)
+      setPhotoPolicyOwner({ source, page: selectedPage })
+        setPhotoPolicy(effective)
       setPhotoAutoDraft(effective.auto_enabled)
       setPhotoKindsDraft(effective.kinds ?? defaultPhotoAutoKinds)
       setPhotoRollbackTarget('')
@@ -1381,13 +1453,14 @@ export function XDriveServiceDependenciesPage({
       if (status && epoch === photoPolicyEpochRef.current) setSnapshot(status)
     } catch (err) {
       if (epoch === photoPolicyEpochRef.current) {
-        setPhotoPolicyError(err instanceof Error ? err.message : '历史策略回滚失败，请刷新后重试。')
+        setPhotoPolicyError(xDriveCoreDependencyErrorMessage(err, 'photo-auto', 'rollback'))
         // A 409 or an interrupted response makes the displayed revision stale.
         // Read the authoritative desired/effective policy again, never assume rollback succeeded.
         if (source.loadPhotoAutoConfig) {
           const actual = await source.loadPhotoAutoConfig().catch(() => null)
           if (actual && epoch === photoPolicyEpochRef.current) {
-            setPhotoPolicy(actual)
+            setPhotoPolicyOwner({ source, page: selectedPage })
+        setPhotoPolicy(actual)
             setPhotoAutoDraft(actual.auto_enabled)
             setPhotoKindsDraft(actual.kinds ?? defaultPhotoAutoKinds)
           }
@@ -1421,7 +1494,8 @@ export function XDriveServiceDependenciesPage({
         target_revision: target.revision,
       })
       if (epoch !== geoNamesEpochRef.current) return
-      setGeoNamesConfig(effective)
+      setGeoNamesConfigOwner({ source, page: selectedPage })
+        setGeoNamesConfig(effective)
       setGeoNamesDraftDistance(String(effective.max_distance_km))
       setGeoNamesRollbackTarget('')
       setGeoNamesNotice(effective.apply_state === 'applied'
@@ -1435,7 +1509,7 @@ export function XDriveServiceDependenciesPage({
       if (status && epoch === geoNamesEpochRef.current) setSnapshot(status)
     } catch (err) {
       if (epoch === geoNamesEpochRef.current) {
-        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 回滚失败，已生效配置保持不变。')
+        setGeoNamesError(xDriveCoreDependencyErrorMessage(err, 'geo-names', 'rollback'))
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) {
@@ -1496,7 +1570,7 @@ export function XDriveServiceDependenciesPage({
       presentation="page"
       title="系统依赖"
       subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
-      pageActions={['caddy', 'database', 'storage', 'background-worker', 'baidu-map'].includes(selectedPage) ? null : (
+      pageActions={selectedPage !== 'overview' ? null : (
         <Button
           size="small"
           variant="outlined"
@@ -1869,11 +1943,11 @@ export function XDriveServiceDependenciesPage({
                       <XDriveBaiduServerAPIDetail
                         service={selectedItem} checkedAt={checkedAt}
                         config={baiduConfig} enabled={baiduEnabled} draftAK={baiduAK}
-                        revealedAK={baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
-                        loading={baiduReadBusy} refreshing={refreshing} busy={baiduBusy}
+                        revealedAK={currentEditor && baiduConfig && baiduReveal?.field === 'ak' ? baiduReveal.value : ''}
+                        loading={baiduReadBusy} refreshing={refreshing} busy={baiduBusy} otherBusy={runtimeBusy}
                         revealingAK={revealingAK} hasUnsavedEdits={hasUnsavedEdits}
-                        dirty={dirtyBaidu} error={baiduError} notice={baiduNotice}
-                        clearOpen={clearConfirmOpen}
+                        dirty={dirtyBaidu} error={currentEditor ? baiduError : ''} notice={currentEditor ? baiduNotice : ''}
+                        clearOpen={clearConfirmOpen && currentEditor}
                         canReadConfig={Boolean(source.loadBaiduMapConfig)}
                         canSaveConfig={Boolean(source.saveBaiduMapConfig)}
                         canRevealAK={Boolean(source.revealBaiduMapAK)}
@@ -1885,68 +1959,57 @@ export function XDriveServiceDependenciesPage({
                         onClearCancel={() => setClearConfirmOpen(false)}
                         onClearConfirm={() => { void applyBaiduMap(true) }}
                       />
-                      <Box id="dependency-baidu-map-verify-header"
-                        data-xdrive-baidu-jsapi-separate sx={{ mt: 2, scrollMarginTop: 72 }}>
-                        <Stack direction="row" alignItems="center" justifyContent="space-between"
-                          gap={1} flexWrap="wrap">
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            动态地图 JSAPI 4.0（独立 Browser AK）
-                          </Typography>
-                          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                            <Button size="small" variant={currentTab !== 'verify' ? 'contained' : 'outlined'}
-                              onClick={() => navigateTo({ service: 'baidu-map', tab: 'config' })}>
-                              JSAPI 配置
-                            </Button>
-                            <Button size="small" variant={currentTab === 'verify' ? 'contained' : 'outlined'}
-                              onClick={() => navigateTo({ service: 'baidu-map', tab: 'verify' })}>
-                              JSAPI 检测
-                            </Button>
-                          </Stack>
-                        </Stack>
+                      <Box data-xdrive-baidu-jsapi-separate sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                          动态地图 JSAPI 4.0（独立 Browser AK）
+                        </Typography>
                         <XDriveBaiduJSAPIDesiredPanel source={source}
-                          mode={currentTab === 'verify' ? 'verify' : 'config'}
+                          mode="all" refreshID={refreshID}
                           diagnosticScope={diagnosticScope}
+                          onBusyChange={setRuntimeBusy}
                           onDirtyChange={setBaiduJSAPIDirty} />
                       </Box>
                     </>
                   ) : (<>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
-                    展开只查看；配置保存和在线检测均需明确操作。
+                    状态、配置和历史直接展示；只读检测不修改服务，保存、应用与回滚仍需明确操作。
                   </Typography>
-                  {selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}
+                    flexWrap="wrap" sx={{ mb: 1.5 }} data-xdrive-flat-dependency-toolbar>
+                    <Typography variant="caption" color="text.secondary">
+                      {checkedAt ? `最近检测：${checkedAt}` : '尚无检测时间'}
+                    </Typography>
+                    <Button size="small" variant="outlined" startIcon={<RefreshRoundedIcon fontSize="small" />}
+                      disabled={loading || refreshing || unsavedRef.current || geoNamesBusy || photoPolicyBusy || runtimeBusy}
+                      onClick={() => {
+                        setRefreshID((value) => value + 1)
+                        if (selectedPage === 'geonames') void refreshGeoNamesReadOnly()
+                        if (selectedPage === 'photo-auto') void refreshPhotoPolicyReadOnly()
+                      }} data-xdrive-flat-dependency-refresh={selectedPage}>
+                      重新检测
+                    </Button>
+                  </Stack>
+                  {selectedTabs.filter((tab) => tab !== 'verify' &&
+                    (!['media-worker', 'photo-face'].includes(selectedPage) || tab === 'status'))
+                    .map((sectionTab) => {
                     const sectionKey = `${selectedPage}:${sectionTab}`
-                    const expanded = expandedSections[sectionKey] ??
-                      (sectionTab === (currentTab === 'verify' ? 'status' : currentTab))
                     return (
-                      <Accordion key={sectionKey} expanded={expanded}
-                        onChange={(_event, next) => {
-                          // A live form with unsaved changes must not be unmounted.
-                          if (!next && unsavedRef.current) return
-                          if (!next && selectedPage === 'baidu-map' && sectionTab === 'config')
-                            hideBaiduAK()
-                          setExpandedSections((prior) => ({ ...prior, [sectionKey]: next }))
-                        }}
-                        data-xdrive-unified-detail-section={sectionTab}
-                        disableGutters elevation={0}
-                        sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important',
-                          mb: 1.25, '&:before': { display: 'none' }, overflow: 'hidden' }}>
-                        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}
-                          aria-controls={`dependency-${selectedPage}-${sectionTab}-content`}
-                          id={`dependency-${selectedPage}-${sectionTab}-header`}
-                          sx={{ px: { xs: 1.5, sm: 2 }, minHeight: 48 }}>
+                      <Paper key={sectionKey} component="section" variant="outlined"
+                        data-xdrive-flat-dependency-section={sectionTab}
+                        sx={{ borderRadius: 2, mb: 1.25, overflow: 'hidden' }}>
+                        <Box id={`dependency-${selectedPage}-${sectionTab}-header`}
+                          sx={{ px: { xs: 1.5, sm: 2 }, pt: 1.5, scrollMarginTop: 72 }}>
                           <Typography fontWeight={700} variant="subtitle2">
                             {sectionTab === 'status' && selectedTabs.includes('verify')
                               ? '状态与检测' : dependencyTabLabels[sectionTab]}
                           </Typography>
-                        </AccordionSummary>
-                        <AccordionDetails id={`dependency-${selectedPage}-${sectionTab}-content`}
+                        </Box>
+                        <Box id={`dependency-${selectedPage}-${sectionTab}-content`}
                           sx={{ pt: 0.5, px: { xs: 1.5, sm: 2 }, pb: 2 }}>
-                          {expanded && ([sectionTab,
+                          {([sectionTab,
                             ...(sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab] : []),
                           ]).map((currentTab) => {
-                            const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
-                              : currentTab === 'history' ? 'history' : 'config'
                             return (
                               <Box key={currentTab} data-xdrive-unified-detail-content={currentTab}
                                 id={currentTab === 'verify' ? `dependency-${selectedPage}-verify-content` : undefined}>
@@ -1967,16 +2030,6 @@ export function XDriveServiceDependenciesPage({
                     <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                     </Paper>
-                  )}
-                  {currentTab === 'status' && selectedTabs.includes('verify') && (
-                    <Button variant="text" size="small" sx={{ mt: 1 }}
-                      data-xdrive-unified-verify-toggle aria-expanded={showVerify}
-                      aria-controls={`dependency-${selectedPage}-verify-content`}
-                      onClick={() => setExpandedSections((prior) => ({
-                        ...prior, [`${selectedPage}:verify`]: !showVerify,
-                      }))}>
-                      {showVerify ? '收起检测与生效证据' : '查看检测与生效证据'}
-                    </Button>
                   )}
                   {selectedPage === 'photo-smart' && currentTab === 'status' && selectedItem && (
                     <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2 }}
@@ -2088,21 +2141,20 @@ export function XDriveServiceDependenciesPage({
                           不包含单独的模型启停操作，也不代表真实图库任务或其他 Server 实例生效。
                         </Typography>
                       )}
-                      <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
-                        onClick={() => setRefreshID((value) => value + 1)}
-                        disabled={loading}>重新检测此服务状态</Button>
                     </Stack>
                   )}
                   
-              {((selectedPage === 'photo-face' && currentTab !== 'status') ||
+              {((selectedPage === 'photo-face' && currentTab === 'status') ||
                 (['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) &&
                   currentTab === 'verify')) &&
                 <XDrivePhotoHostDesiredPanel source={source}
-                  section={currentTab === 'history' ? 'history' : currentTab === 'verify' ? 'verify' : 'config'}
-                  onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
-              {selectedPage === 'media-worker' && currentTab !== 'status' &&
-                <XDriveMediaWorkerConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
+                  section={selectedPage === 'photo-face' ? 'all' : 'verify'}
+                  refreshID={selectedPage === 'photo-face' ? refreshID : 0}
+                  onBusyChange={selectedPage === 'photo-face' ? setRuntimeBusy : undefined}
+                  onDirtyChange={selectedPage === 'photo-face' ? setChildDirty : undefined} />}
+              {selectedPage === 'media-worker' && currentTab === 'status' &&
+                <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID}
+                  section="all" onDirtyChange={setChildDirty} onBusyChange={setRuntimeBusy} />}
               {selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history') &&
                 <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
                   section={currentTab} onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}
@@ -2115,6 +2167,7 @@ export function XDriveServiceDependenciesPage({
               {selectedPage === 'photo-auto' && (currentTab === 'config' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
+                    {currentTab === 'config' && <>
                     <Typography variant="subtitle2" fontWeight={700}>全局自动分析调度</Typography>
                     <Typography variant="body2" color="text.secondary">
                       仅控制新的人脸检测、人物聚类、动物/物体与 OCR、语义分析自动任务。
@@ -2134,6 +2187,7 @@ export function XDriveServiceDependenciesPage({
                         当前 Server/Agent 暂不支持管理全局自动分析策略；请检查版本。
                       </Typography>
                     )}
+                    </>}
                     {currentTab === 'config' && <Stack spacing={1.5}>
                     <FormControlLabel
                       label="自动安排照片智能分析"
@@ -2208,11 +2262,11 @@ export function XDriveServiceDependenciesPage({
                           onClick={() => setPhotoRollbackConfirmOpen(true)}>
                           确认回滚自动分析策略
                         </Button>
-                        {photoHistoryError && (
+                        {currentEditor && photoHistoryError && (
                           <Typography variant="caption" color="warning.main">{photoHistoryError}</Typography>
                         )}
                         <XDriveConfirmDialog
-                          open={photoRollbackConfirmOpen}
+                          open={photoRollbackConfirmOpen && currentEditor}
                           title="确认回滚照片智能分析调度策略"
                           description={selectedPhotoRevision
                             ? `将回滚到修订 #${selectedPhotoRevision.revision}：
@@ -2227,8 +2281,8 @@ export function XDriveServiceDependenciesPage({
                         />
                       </Stack>
                     )}
-                    {photoPolicyError && <XDriveStatusAlert tone="bad">{photoPolicyError}</XDriveStatusAlert>}
-                    {photoPolicyNotice && <XDriveStatusAlert tone="good">{photoPolicyNotice}</XDriveStatusAlert>}
+                    {currentEditor && photoPolicyError && <XDriveStatusAlert tone="bad">{photoPolicyError}</XDriveStatusAlert>}
+                    {currentEditor && photoPolicyNotice && <XDriveStatusAlert tone="good">{photoPolicyNotice}</XDriveStatusAlert>}
                   </Stack>
                 </Paper>
               )}
@@ -2238,17 +2292,15 @@ export function XDriveServiceDependenciesPage({
                     本次只读状态检测重新读取当前 Server 已加载的 GeoNames 解析器及其版本，
                     不扫描文件、不重新计算 SHA-256、不中断地名解析，也不会切换数据集。
                     「可用」仅代表此 Server 当前已加载索引，不等于持久目标修订、所有副本或地名标签结果已验证。
-                    下方「只读刷新目标与副本修订」读取当前受限管理状态；
+                    上方「重新检测」同时只读刷新目标与副本修订；
                     「校验并热加载」才会修改正在使用的索引，两类操作必须明确区分。
                   </Typography>
-                  <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
-                    onClick={() => setRefreshID((value) => value + 1)}
-                    disabled={loading || refreshing}>只读刷新当前实例索引状态</Button>
                 </Stack>
               )}
               {selectedPage === 'geonames' && (currentTab === 'config' || currentTab === 'verify' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
+                    {currentTab === 'verify' && <>
                     <Typography variant="subtitle2" fontWeight={700}>GeoNames 地名索引</Typography>
                     <Typography variant="body2" color="text.secondary">
                       GeoNames 只负责地名标签，地图仍只使用百度地图。数据文件位置保持受信任的只读部署挂载；
@@ -2311,6 +2363,7 @@ export function XDriveServiceDependenciesPage({
                         当前 Server/Agent 尚未提供 GeoNames 配置状态，请检查版本或连接。
                       </Typography>
                     )}
+                    </>}
                     {currentTab === 'config' && <Stack spacing={1.5}>
                     <TextField
                       label="地名匹配最大距离（km）"
@@ -2337,29 +2390,20 @@ export function XDriveServiceDependenciesPage({
                     </Stack>
                     </Stack>}
                     {currentTab === 'verify' && <Stack spacing={1.5}>
-                    <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
-                      disabled={geoNamesBusy || !source.loadGeoNamesConfig || unsavedRef.current}
-                      onClick={() => { void refreshGeoNamesReadOnly() }}
+                    <Typography variant="caption" color="text.secondary"
                       data-xdrive-geonames-readonly-revision>
-                      {geoNamesBusy ? '正在读取修订…' : '只读刷新目标与副本修订'}
-                    </Button>
-                    <Typography variant="caption" color="text.secondary">
-                      仅重新读取期望／实际修订及最近心跳副本；不会校验、复制、应用或切换 GeoNames 数据集。
-                      下一个「校验并热加载」是独立修改操作，不属于只读检测。
+                      统一「重新检测」读取目标及在线副本修订，仍不执行热加载。
                     </Typography>
-                    <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
-                      disabled={geoNamesBusy || !geoNamesConfig?.reload_supported || !source.reloadGeoNames}
-                      onClick={() => { void reloadGeoNames() }}>
-                      {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
-                    </Button>
+                    </Stack>}
+                    {currentTab === 'config' && <Stack spacing={1.5}
+                      data-xdrive-geonames-config-maintenance>
                     <Stack spacing={1} data-xdrive-geonames-dataset-snapshots>
                       <Typography variant="subtitle2" fontWeight={700}>
-                        GeoNames 数据集版本快照
+                        数据集维护与历史快照
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        只对已挂载的受信任 GeoNames 三文件进行限额复制和完整索引校验，
-                        保存为本 Server 可读取的历史快照。创建快照不会切换当前索引；
-                        在线上传及跨实例文件分发仍待后续安全控制；历史快照可经验证后选为持久化目标。
+                        可校验并归档受信任的只读 GeoNames 数据集。建立快照不会切换当前索引；
+                        选择历史版本需单独确认应用。仅作用于本 Server，不执行跨实例分发。
                       </Typography>
                       {geoNamesConfig?.active_dataset_source && (
                         <Typography variant="body2" color="text.secondary">
@@ -2397,7 +2441,7 @@ export function XDriveServiceDependenciesPage({
                                 {geoNamesBusy ? '正在验证恢复…' : '从受信任挂载恢复缺失的目标归档'}
                               </Button>
                               <XDriveConfirmDialog
-                                open={geoNamesRestoreConfirmOpen}
+                                open={geoNamesRestoreConfirmOpen && currentEditor}
                                 title="确认恢复当前 Server 的缺失 GeoNames 归档"
                                 description="只复制部署已挂载的三个固定文件，并严格校验与期望 SHA-256 及审计字节数一致后，恢复缺失目录、写入审计并热应用当前实例。目录存在但损坏时不会覆盖；不会分发到其他 Server。"
                                 confirmLabel="校验并恢复缺失归档"
@@ -2472,7 +2516,7 @@ export function XDriveServiceDependenciesPage({
                             校验并应用到当前 Server
                           </Button>
                           <XDriveConfirmDialog
-                            open={geoNamesDatasetConfirmOpen}
+                            open={geoNamesDatasetConfirmOpen && currentEditor}
                             title="确认持久保存并热应用 GeoNames 数据集"
                             description="校验目标归档真实内容，在一个事务内保存目标指纹与审计，再热切换当前实例。重启会重新校验；缺失时保持待生效，不代表其他实例已应用。"
                             confirmLabel="确认保存并热应用"
@@ -2483,7 +2527,7 @@ export function XDriveServiceDependenciesPage({
                         </Stack>
                       )}
                       <XDriveConfirmDialog
-                        open={geoNamesSnapshotConfirmOpen}
+                        open={geoNamesSnapshotConfirmOpen && currentEditor}
                         title="建立 GeoNames 数据集历史快照"
                         description="从已有只读挂载复制三个 GeoNames 文件到独立持久目录，并完成实际索引校验后记录审计。不会修改当前索引或影响同步；不会分发、应用或回滚至该快照。"
                         confirmLabel="确认校验并暂存"
@@ -2515,11 +2559,11 @@ export function XDriveServiceDependenciesPage({
                           onClick={() => setGeoNamesRollbackConfirmOpen(true)}>
                           确认回滚历史配置
                         </Button>
-                        {geoNamesHistoryError ? (
+                        {currentEditor && geoNamesHistoryError ? (
                           <Typography variant="caption" color="warning.main">{geoNamesHistoryError}</Typography>
                         ) : null}
                         <XDriveConfirmDialog
-                          open={geoNamesRollbackConfirmOpen}
+                          open={geoNamesRollbackConfirmOpen && currentEditor}
                           title="确认回滚 GeoNames 匹配距离"
                           description={`将回滚到修订 #${geoNamesRollbackTarget} 的匹配距离，重新验证当前只读数据集，
 并在通过审计后立即应用到当前 Server。已有地名任务保持原快照；其他实例可能需要单独重载。`}
@@ -2535,8 +2579,8 @@ export function XDriveServiceDependenciesPage({
                         需先部署只读 GeoNames 数据集并加载初始索引。本页不提供任意宿主路径修改，也不宣称所有 Server 实例已同时生效。
                       </Typography>
                     )}
-                    {geoNamesError && <XDriveStatusAlert tone="bad">{geoNamesError}</XDriveStatusAlert>}
-                    {geoNamesNotice && <XDriveStatusAlert tone="good">{geoNamesNotice}</XDriveStatusAlert>}
+                    {currentEditor && geoNamesError && <XDriveStatusAlert tone="bad">{geoNamesError}</XDriveStatusAlert>}
+                    {currentEditor && geoNamesNotice && <XDriveStatusAlert tone="good">{geoNamesNotice}</XDriveStatusAlert>}
                   </Stack>
                 </Paper>
               )}
@@ -2544,8 +2588,8 @@ export function XDriveServiceDependenciesPage({
                               </Box>
                             )
                           })}
-                        </AccordionDetails>
-                      </Accordion>
+                        </Box>
+                      </Paper>
                     )
                   })}
                   </>))}

@@ -7,7 +7,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../..')
 const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 
-test('SD-UX-V1 shared page preserves typed React source, one default detail section and on-demand evidence', () => {
+test('SD-UX-V1 shared page preserves typed React source, stable flat sections and on-demand technical evidence', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const baiduDetail = read('ui/shared/src/mui/BaiduServerAPIDetail.tsx')
   const compiled = ts.transpileModule(page, {
@@ -17,7 +17,7 @@ test('SD-UX-V1 shared page preserves typed React source, one default detail sect
   })
   const errors = (compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error)
   assert.deepEqual(errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
-  assert.match(page, /sectionTab === \(currentTab === 'verify' \? 'status' : currentTab\)/)
+  assert.match(page, /data-xdrive-flat-dependency-section=\{sectionTab\}/)
   assert.doesNotMatch(page, /sectionTab === 'status' \|\| sectionTab === 'config' \|\|/)
   assert.match(page, /data-xdrive-service-lifecycle/)
   assert.match(page, /data-xdrive-service-evidence-toggle aria-expanded=\{showLifecycleEvidence\}/)
@@ -28,7 +28,7 @@ test('SD-UX-V1 shared page preserves typed React source, one default detail sect
   assert.match(page, /unsavedRef\.current/)
   assert.doesNotMatch(page, /onClick=\{\(\) => \{ void verifyBaiduMap\(\) \}\}/)
   assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
-  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
+  assert.match(page, /mode="all"/)
 })
 
 test('Baidu six authoritative Server fields are technical disclosure only in Verify, not a duplicate in Config', () => {
@@ -42,8 +42,8 @@ test('Baidu six authoritative Server fields are technical disclosure only in Ver
     assert.deepEqual((result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error)
       .map(d=>ts.flattenDiagnosticMessageText(d.messageText,'\n')),[])
   }
-  assert.match(panel, /config && mode === 'verify' && \(/)
-  assert.match(panel, /config && mode === 'config' \? \(/)
+  assert.match(panel, /config && mode !== 'config' && \(/)
+  assert.match(panel, /config && mode !== 'verify' \? \(/)
   assert.match(panel, /XDriveBaiduJSAPIConfigSnapshot config=\{config\}/)
   assert.equal((panel.match(/XDriveBaiduJSAPIConfigSnapshot config=/g)||[]).length, 1)
   assert.match(state, /data-xdrive-baidu-jsapi4-technical-toggle aria-expanded=\{detailsOpen\}/)

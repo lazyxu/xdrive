@@ -9,7 +9,7 @@ import { XDriveStatusAlert } from './StatusAlert'
  * This does NOT own Browser AK, JSAPI4 licensing, Loader probes or an SDK Host. */
 export function XDriveBaiduServerAPIDetail({
   service, checkedAt, config, enabled, draftAK, revealedAK, loading,
-  refreshing, busy, revealingAK, hasUnsavedEdits, dirty, error, notice,
+  refreshing, busy, otherBusy = false, revealingAK, hasUnsavedEdits, dirty, error, notice,
   clearOpen, canReadConfig, canSaveConfig, canRevealAK,
   onRefreshStatus, onEnabledChange, onAKChange, onRevealAK, onHideAK,
   onSave, onDiscard, onClearRequest, onClearCancel, onClearConfirm,
@@ -23,6 +23,7 @@ export function XDriveBaiduServerAPIDetail({
   loading: boolean
   refreshing: boolean
   busy: boolean
+  otherBusy?: boolean
   revealingAK: boolean
   hasUnsavedEdits: boolean
   dirty: boolean
@@ -45,7 +46,7 @@ export function XDriveBaiduServerAPIDetail({
 }) {
   const assessment = xDriveDashboardAssessment(service)
   const axes = xDriveSystemDependencyOverviewSignals(service)
-  const checking = loading || refreshing || busy || revealingAK
+  const checking = loading || refreshing || busy || otherBusy || revealingAK
   const editable = config?.editable === true && canSaveConfig
   const canSave = editable && dirty && !checking && !clearOpen
   const health = service.health_state === 'ready' ? '检查通过'
@@ -62,7 +63,7 @@ export function XDriveBaiduServerAPIDetail({
             <Button size="small" variant="outlined" data-xdrive-baidu-server-refresh
               onClick={onRefreshStatus} disabled={checking || hasUnsavedEdits || clearOpen}
               aria-busy={refreshing || undefined}>
-              重新检测 Server API
+              重新检测
             </Button>
           </Stack>
           <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>

@@ -101,3 +101,88 @@ test('system dependency inventory errors are actionable and never show raw trans
   assert.match(page, /setRefreshing\(true\)/)
   assert.match(page, /snapshot && visibleError/)
 })
+
+test('Media Worker admin read/save/apply/rollback errors are redacted and keep write uncertainty', () => {
+  const safe = mapper()
+  const sensitive = 'password=VERY_PRIVATE_MEDIA host=/private/xdrive docker.sock HTTP 503'
+  for (const operation of ['refresh', 'save', 'apply', 'rollback']) {
+    const text = safe({status: 503, message: sensitive}, 'media-worker', operation)
+    assert.match(text, /^Media Worker/)
+    assert.match(text, /可信确认/)
+    assert.doesNotMatch(text, /VERY_PRIVATE_MEDIA|\/private\/xdrive|docker\.sock/)
+  }
+  for (const operation of ['save', 'apply', 'rollback']) {
+    assert.match(safe(new Error(sensitive), 'media-worker', operation), /可信确认/)
+    const unknown = safe(new Error('bearer=LEAK_THIS /root/.xd/path'), 'media-worker', operation)
+    assert.match(unknown, /可能已经提交/)
+    assert.doesNotMatch(unknown, /LEAK_THIS|\/root\/\.xd/)
+  }
+  const panel = read('ui/shared/src/mui/MediaWorkerConfigPanel.tsx')
+  for (const operation of ['refresh', 'save', 'apply', 'rollback'])
+    assert.ok(panel.includes(`xDriveCoreDependencyErrorMessage(err, 'media-worker', '${operation}')`))
+  assert.doesNotMatch(panel, /setError\(err instanceof Error \? err\.message/)
+  assert.match(panel, /targetRevision >= config\.revision/)
+  assert.match(panel, /onBusyChange\?\.\(loading \|\| busy/)
+})
+
+test('Photo Host and Media Worker report uncertain writes without raw transport errors', () => {
+  const safe = mapper()
+  const leaked = 'password=DO_NOT_LEAK postgresql://a:b@localhost /host-control/private'
+  for (const service of ['photo-host', 'media-worker']) {
+    for (const operation of ['save', 'apply', 'rollback']) {
+      const unknown = safe(new Error(leaked), service, operation)
+      assert.match(unknown, /可能已经提交/)
+      assert.doesNotMatch(unknown, /DO_NOT_LEAK|postgresql:\/\/|\/host-control/)
+      const disconnected = safe(new Error('Failed to fetch ' + leaked), service, operation)
+      assert.match(disconnected, /无法连接/)
+      assert.match(disconnected, /可能已经提交/)
+      assert.doesNotMatch(disconnected, /DO_NOT_LEAK|postgresql:\/\/|\/host-control/)
+      assert.match(safe({ status: 403, message: leaked }, service, operation), /管理员/)
+      assert.match(safe({ status: 409, message: leaked }, service, operation), /版本冲突/)
+    }
+  }
+  const photo = read('ui/shared/src/mui/PhotoHostDesiredPanel.tsx')
+  for (const operation of ['refresh', 'save', 'apply', 'rollback']) {
+    assert.ok(photo.includes(`xDriveCoreDependencyErrorMessage(err, 'photo-host', '${operation}')`))
+  }
+  assert.ok(photo.includes("if ((section === 'history' || section === 'all') && source.loadPhotoHostRevisions)"),
+    'saving a shared-host revision must refresh always-visible history')
+  assert.match(photo, /const updated = await source\.loadPhotoHostRevisions\(\)\.catch\(\(\) => null\)/)
+  assert.match(photo, /setHistoryError\('配置已保存，历史读取暂不可用/)
+})
+
+test('GeoNames and global analysis strategy redact write failures without denying uncertain commits', () => {
+  const safe = mapper()
+  const secret = 'token=DO_NOT_ECHO /root/.xd/private postgresql://owner:pass@host'
+  for (const [service, label] of [
+    ['geo-names', 'GeoNames 地名索引'],
+    ['photo-auto', '全局自动分析策略'],
+  ]) {
+    for (const operation of ['refresh', 'save', 'apply', 'rollback']) {
+      const unknown = safe(new Error(secret), service, operation)
+      assert.ok(unknown.startsWith(label))
+      assert.doesNotMatch(unknown, /DO_NOT_ECHO|\/root\/\.xd|postgresql:\/\//)
+      if (operation !== 'refresh') assert.match(unknown, /可能已经提交/)
+      for (const [status, expected] of [[401, '重新登录'], [403, '管理员'],
+        [409, '版本冲突'], [429, '超时或限流'], [503, '可信确认']]) {
+        const message = safe({ status, message: secret }, service, operation)
+        assert.match(message, new RegExp(expected))
+        assert.doesNotMatch(message, /DO_NOT_ECHO|\/root\/\.xd|postgresql:\/\//)
+      }
+    }
+  }
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.doesNotMatch(page, /set(?:GeoNames|PhotoPolicy)Error\(err instanceof Error \? err\.message/)
+  for (const [service, operations] of [
+    ['geo-names', ['save', 'apply', 'rollback']],
+    ['photo-auto', ['save', 'rollback']],
+  ]) {
+    for (const operation of operations)
+      assert.ok(page.includes(`xDriveCoreDependencyErrorMessage(err, '${service}', '${operation}')`))
+  }
+  // Follow-up reads are explicitly best effort; accepted mutation receipts keep
+  // their success notices when a later inventory/config GET fails.
+  assert.match(page, /const latest = await source\.load\(\)\.catch\(\(\) => null\)/)
+  assert.match(page, /const next = await source\.load\(\)\.catch\(\(\) => null\)/)
+  assert.match(page, /setGeoNamesNotice\(\(previous\) => previous \+/)
+})

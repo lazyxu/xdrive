@@ -6,12 +6,13 @@ import type { XDriveBaiduJSAPIConfig } from '../service-dependencies'
 // has a compact release status; six raw read-only fields are a disclosure,
 // never six editable switches nor a second copy in the Config section.
 export function XDriveBaiduJSAPIConfigSnapshot({
-  config, lastReadAt, refreshing, canRefresh, dirty, onRefresh,
+  config, lastReadAt, refreshing, canRefresh, dirty, onRefresh, showRefresh = true,
 }: {
   config: XDriveBaiduJSAPIConfig
   lastReadAt: string | null
   refreshing: boolean
   canRefresh: boolean
+  showRefresh?: boolean
   dirty: boolean
   onRefresh: () => void
 }) {
@@ -39,10 +40,12 @@ export function XDriveBaiduJSAPIConfigSnapshot({
             {' · '}{lastReadAt ? '读取于 ' + new Date(lastReadAt).toLocaleString('zh-CN') : '尚无有效读取时间'}
           </Typography>
         </Box>
-        <Button size="small" variant="outlined" disabled={!canRefresh || refreshing}
-          data-xdrive-jsapi-refresh-state onClick={onRefresh}>
-          {refreshing ? '正在读取…' : '刷新 Server 状态'}
-        </Button>
+        {showRefresh && (
+          <Button size="small" variant="outlined" disabled={!canRefresh || refreshing}
+            data-xdrive-jsapi-refresh-state onClick={onRefresh}>
+            {refreshing ? '正在读取…' : '刷新 Server 状态'}
+          </Button>
+        )}
       </Stack>
       {dirty && (
         <Typography variant="caption" color="warning.main">

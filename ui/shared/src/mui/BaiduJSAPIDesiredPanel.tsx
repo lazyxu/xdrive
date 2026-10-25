@@ -10,6 +10,7 @@ import {
 } from '../service-dependencies'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import { XDriveBaiduJSAPIConfigSnapshot } from './BaiduJSAPIConfigSnapshot'
 import {
   xDriveBaiduMapDiagnosticDetails, xDriveReadBaiduMapDiagnostic,
@@ -67,14 +68,21 @@ function validConfig(value: unknown): value is XDriveBaiduJSAPIConfig {
  * An existing Browser AK is retrieved ONLY on an explicit audited reveal action;
  * the nonsecret configuration does not authorize a map runtime. No map script is loaded from this panel. */
 export function XDriveBaiduJSAPIDesiredPanel({
-  source, mode, onDirtyChange, diagnosticScope,
+  source, mode, refreshID = 0, onDirtyChange, onBusyChange, diagnosticScope,
 }: {
   source: XDriveBaiduJSAPIDesiredPort
-  mode: 'config' | 'verify'
+  mode: 'config' | 'verify' | 'all'
+  refreshID?: number
+  onBusyChange?: (busy: boolean) => void
   onDirtyChange?: (dirty: boolean) => void
   diagnosticScope?: string
 }) {
-  const [config, setConfig] = useState<XDriveBaiduJSAPIConfig | null>(null)
+  const activeSourceRef = useRef(source)
+  const loadedSourceRef = useRef<XDriveBaiduJSAPIDesiredPort | null>(null)
+  const [configState, setConfig] = useState<XDriveBaiduJSAPIConfig | null>(null)
+  const [configOwner, setConfigOwner] = useState<XDriveBaiduJSAPIDesiredPort | null>(null)
+  // A Server/Owner switch must never paint the previous account's saved AK metadata.
+  const config = configOwner === source ? configState : null
   const [enabled, setEnabled] = useState(false)
   const [newAK, setNewAK] = useState('')
   const [busy, setBusy] = useState(false)
@@ -183,43 +191,66 @@ export function XDriveBaiduJSAPIDesiredPanel({
   }, [dirty, onDirtyChange])
 
   useEffect(() => {
+    onBusyChange?.(reading || refreshing || busy || probeBusy || revealingAK)
+    return () => onBusyChange?.(false)
+  }, [onBusyChange, reading, refreshing, busy, probeBusy, revealingAK])
+
+  useEffect(() => {
+    const sourceChanged = loadedSourceRef.current !== source
+    loadedSourceRef.current = source
+    activeSourceRef.current = source
     const revision = ++generation.current
-    setConfig(null)
-    setEnabled(false)
-    setNewAK('')
+    if (sourceChanged) {
+      // A status-only refresh keeps the accepted config and never erases a draft.
+      setConfig(null)
+      setConfigOwner(null)
+      setEnabled(false)
+      setNewAK('')
+      setBusy(false)
+      setConfirmClear(false)
+      setProbeBusy(false)
+      setProbeResult(null)
+      setProbeError('')
+      setLastReadAt(null)
+      setReading(true)
+    } else {
+      setRefreshing(true)
+    }
     hideAK()
     setError('')
     setNotice('')
-    setBusy(false)
-    setConfirmClear(false)
-    setProbeBusy(false)
-    setProbeResult(null)
-    setProbeError('')
-    setReading(true)
-    setLastReadAt(null)
     if (!source.loadBaiduJSAPIConfig) {
       setReading(false)
+      setRefreshing(false)
       setError('当前 Server/Agent 不支持 Browser AK 管理，请升级到支持 JSAPI 4.0 的版本。')
       return () => { ++generation.current }
     }
     void source.loadBaiduJSAPIConfig().then(value => {
       if (revision !== generation.current) return
       if (!validConfig(value)) throw new Error('invalid_config')
+      setConfigOwner(source)
       setConfig(value)
       setEnabled(value.desired_enabled)
       setLastReadAt(new Date().toISOString())
+      setProbeResult(null)
+      setProbeError('')
     }).catch(() => {
-      if (revision === generation.current) setError('读取 Browser AK 配置失败，请检查 Server/Agent 权限与版本。')
+      if (revision === generation.current) setError(sourceChanged
+        ? '读取 Browser AK 配置失败，请检查 Server/Agent 权限与版本。'
+        : '重新检测 Browser AK 状态失败；保留上次成功读取的配置，请核对当前 Server。')
     }).finally(() => {
-      if (revision === generation.current) setReading(false)
+      if (revision === generation.current) {
+        setReading(false)
+        setRefreshing(false)
+      }
     })
     return () => { ++generation.current }
-  }, [source, hideAK])
+  }, [source, refreshID, hideAK])
 
   // Read the Server's current saved state; never fabricate or edit release authority.
   // Preserve unsaved Browser AK and toggle drafts rather than silently discarding them.
   const refreshConfig = async () => {
-    if (busy || refreshing || dirty || !source.loadBaiduJSAPIConfig) return
+    if (busy || refreshing || dirty || probeBusy || revealingAK || !source.loadBaiduJSAPIConfig) return
     const revision = generation.current
     setRefreshing(true)
     setError('')
@@ -228,9 +259,12 @@ export function XDriveBaiduJSAPIDesiredPanel({
       const value = await source.loadBaiduJSAPIConfig()
       if (revision !== generation.current) return
       if (!validConfig(value)) throw new Error('invalid_config')
+      setConfigOwner(source)
       setConfig(value)
       setEnabled(value.desired_enabled)
       setLastReadAt(new Date().toISOString())
+      setProbeResult(null)
+      setProbeError('')
     } catch {
       if (revision === generation.current) setError('刷新生效状态失败；当前显示上次成功读取的 Server 状态。')
     } finally {
@@ -239,7 +273,9 @@ export function XDriveBaiduJSAPIDesiredPanel({
   }
 
   const apply = async (clearAK = false) => {
-    if (busy || refreshing || !config?.editable || !source.saveBaiduJSAPIConfig) return
+    if (busy || refreshing || probeBusy || revealingAK ||
+        !config?.editable || !source.saveBaiduJSAPIConfig ||
+        (clearAK ? !config.configured : !dirty)) return
     const key = newAK.trim()
     if (!clearAK && enabled && !config.configured && key === '') {
       setError('启用 Browser AK 的期望配置前，必须输入独立的 Browser 类型 AK。')
@@ -262,6 +298,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
       })
       if (revision !== generation.current) return
       if (!validConfig(result) || result.revision <= config.revision) throw new Error('invalid_revision')
+      setConfigOwner(source)
       setConfig(result)
       setEnabled(result.desired_enabled)
       setLastReadAt(new Date().toISOString())
@@ -271,10 +308,11 @@ export function XDriveBaiduJSAPIDesiredPanel({
       setNotice(result.runtime_enabled
         ? '当前 Server 已完成签名授权并启用动态地图。请打开图库的「地点 → 地图」验证平移、缩放、聚合及 Viewer；真实三端和资源安全仍需验收。'
         : result.desired_enabled
-          ? '启用设置已保存，但当前 Server 尚未授权运行。请切换「检测与生效证据」查看准确的阻断原因。'
+          ? '启用设置已保存，但当前 Server 尚未授权运行。请查看下方签名发布与检测状态中的阻断原因。'
           : 'JSAPI 4.0 已停用；地点列表和照片墙仍可使用。')
-    } catch {
-      if (revision === generation.current) setError('保存失败；如其他管理员已修改修订，请重新打开此页面再试。')
+    } catch (err) {
+      if (revision === generation.current)
+        setError(xDriveCoreDependencyErrorMessage(err, 'baidu-jsapi', 'save'))
     } finally {
       if (revision === generation.current) {
         setBusy(false)
@@ -285,7 +323,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
 
   const verifyLoader = async () => {
     if (!source.verifyBaiduJSAPI4Loader || !config?.configured || !config.desired_enabled ||
-        config.revision <= 0 || probeBusy || busy) return
+        config.revision <= 0 || probeBusy || busy || refreshing || revealingAK || dirty) return
     const revision = generation.current
     const expected = config.revision
     setProbeBusy(true)
@@ -311,9 +349,10 @@ export function XDriveBaiduJSAPIDesiredPanel({
       sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={1.5}>
         <Typography variant="subtitle2" fontWeight={700}>
-          {mode === 'config' ? '百度 JSAPI 4.0 · Browser AK' : '动态地图 · Server 发布授权'}
+          {mode === 'all' ? 'Browser AK 配置与动态地图检测'
+            : mode === 'config' ? '百度 JSAPI 4.0 · Browser AK' : '动态地图 · Server 发布授权'}
         </Typography>
-        {mode === 'config' ? (
+        {mode !== 'verify' ? (
           <Typography variant="body2" color="text.secondary">
             动态地图专用 AK。修改期望开关或密钥后由 Server 独立核验发布授权。
           </Typography>
@@ -323,14 +362,51 @@ export function XDriveBaiduJSAPIDesiredPanel({
           </Typography>
         )}
         {reading ? <Box sx={{ minHeight: 32 }} aria-busy="true" /> : null}
-        {config && mode === 'verify' && (
+        {config && mode !== 'verify' ? (
+          <Typography variant="caption" color="text.secondary"
+            data-xdrive-baidu-jsapi4-status>
+            {config.configured ? 'Browser AK 已安全保存' : 'Browser AK 尚未配置'}
+            {' · '}修订 #{config.revision} · {config.requires_restart ? '需重启生效' : '保存即时生效'}
+          </Typography>
+        ) : null}
+        {mode !== 'verify' && config?.editable && (
+          <>
+            <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
+              control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
+                disabled={busy || refreshing} />} />
+            <XDriveSensitiveField label="Browser AK" value={newAK}
+              configured={config.configured}
+              revealedValue={shownAK?.field === 'browser_ak' ? shownAK.value : ''}
+              onReveal={() => { void revealAK() }} onHide={hideAK}
+              revealLoading={revealingAK}
+              revealDisabled={!source.revealBaiduJSAPIAK}
+              disabled={busy || refreshing || revealingAK} maxLength={256}
+              onChange={setNewAK} />
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              <Button size="small" variant="contained" disabled={busy || refreshing || probeBusy || revealingAK || !dirty}
+                onClick={() => { void apply(false) }}>保存并应用</Button>
+              <Button size="small" color="error" variant="outlined"
+                disabled={busy || refreshing || probeBusy || revealingAK || dirty || !config.configured}
+                onClick={() => setConfirmClear(true)}>清除 Browser AK</Button>
+            </Stack>
+          </>
+        )}
+        {mode !== 'config' && (
+          <Box id="dependency-baidu-map-verify-header"
+            data-xdrive-baidu-jsapi4-flat-verify sx={{ scrollMarginTop: 72, mt: 1.5 }}>
+            <Typography variant="subtitle2" fontWeight={700}>
+              Server 签名发布、运行状态与手动 Loader 检测
+            </Typography>
+          </Box>
+        )}
+        {config && mode !== 'config' && (
           <Typography variant="body2" role="status"
             color={verified ? 'success.main' : 'warning.main'}
             data-xdrive-baidu-jsapi4-release-state>
             {verified ? 'Server 已签名授权动态地图' : '动态地图尚未获得 Server 签名放行'}
           </Typography>
         )}
-        {mode === 'verify' && (
+        {mode !== 'config' && (
           <Box component="section" data-xdrive-baidu-map-diagnostic
             sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5,
               p: { xs: 1.25, sm: 1.5 }, minWidth: 0 }}>
@@ -368,46 +444,17 @@ export function XDriveBaiduJSAPIDesiredPanel({
             )}
           </Box>
         )}
-        {config && mode === 'verify' && (
+        {config && mode !== 'config' && (
           <XDriveBaiduJSAPIConfigSnapshot config={config} lastReadAt={lastReadAt}
-            refreshing={refreshing} canRefresh={Boolean(source.loadBaiduJSAPIConfig) && !busy && !dirty}
+            showRefresh={mode !== 'all'} refreshing={refreshing} canRefresh={Boolean(source.loadBaiduJSAPIConfig) && !busy && !dirty && !probeBusy && !revealingAK}
             dirty={dirty} onRefresh={() => { void refreshConfig() }} />
         )}
-        {config && mode === 'config' ? (
-          <Typography variant="caption" color="text.secondary"
-            data-xdrive-baidu-jsapi4-status>
-            {config.configured ? 'Browser AK 已安全保存' : 'Browser AK 尚未配置'}
-            {' · '}修订 #{config.revision} · {config.requires_restart ? '需重启生效' : '保存即时生效'}
-          </Typography>
-        ) : null}
-        {mode === 'config' && config?.editable && (
-          <>
-            <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
-              control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
-                disabled={busy || refreshing} />} />
-            <XDriveSensitiveField label="Browser AK" value={newAK}
-              configured={config.configured}
-              revealedValue={shownAK?.field === 'browser_ak' ? shownAK.value : ''}
-              onReveal={() => { void revealAK() }} onHide={hideAK}
-              revealLoading={revealingAK}
-              revealDisabled={!source.revealBaiduJSAPIAK}
-              disabled={busy || refreshing || revealingAK} maxLength={256}
-              onChange={setNewAK} />
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Button size="small" variant="contained" disabled={busy || refreshing}
-                onClick={() => { void apply(false) }}>保存并应用</Button>
-              <Button size="small" color="error" variant="outlined"
-                disabled={busy || refreshing || !config.configured}
-                onClick={() => setConfirmClear(true)}>清除 Browser AK</Button>
-            </Stack>
-          </>
-        )}
-        {mode === 'verify' && (
+        {mode !== 'config' && (
           <>
             {config && (
               <Stack spacing={1} data-xdrive-baidu-jsapi4-live-probe>
-                <Button size="small" variant="outlined" disabled={probeBusy || busy ||
-                  !source.verifyBaiduJSAPI4Loader || !config.configured ||
+                <Button size="small" variant="outlined" disabled={probeBusy || busy || refreshing ||
+                  revealingAK || dirty || !source.verifyBaiduJSAPI4Loader || !config.configured ||
                   !config.desired_enabled || config.revision <= 0}
                   onClick={() => { void verifyLoader() }}>
                   {probeBusy ? '正在检测真实 Loader…' : '检测真实百度 JSAPI 4.0 Loader'}
@@ -415,7 +462,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 <Typography variant="caption" color="text.secondary">
                   手动验证固定 Loader（可能消耗配额）；不会运行地图脚本，也不代表瓦片或三端交互通过。
                   {config.configured && !config.desired_enabled ?
-                    ' 当前期望开关未开启，请先在配置页启用并保存。' : ''}
+                    ' 当前期望开关未开启，请先在上方开启并保存。' : ''}
                 </Typography>
                 {probeResult && (
                   <XDriveStatusAlert tone={probeResult.loader_accepted ? 'good' : 'bad'}>
@@ -465,15 +512,15 @@ export function XDriveBaiduJSAPIDesiredPanel({
         {!config && !reading && !error && (
           <Typography variant="body2" color="text.secondary">暂无法读取当前管理员配置。</Typography>
         )}
-        {config && !config.editable && mode === 'config' && (
+        {config && !config.editable && mode !== 'verify' && (
           <Typography variant="body2" color="text.secondary">
             服务器未配置凭据加密密钥环，Browser AK 只能在完成 Server 密钥环部署后管理。
           </Typography>
         )}
-        {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
-        {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
+        {activeSourceRef.current === source && error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
+        {configOwner === source && notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
       </Stack>
-      <XDriveConfirmDialog open={confirmClear} title="清除 Browser AK"
+      <XDriveConfirmDialog open={confirmClear && config !== null} title="清除 Browser AK"
         description="该操作保存新的服务端修订并关闭 JSAPI 4.0 的期望开关；Server API 坐标转换 AK 不会受到影响。"
         confirmIntent="danger" confirmLabel="确认清除 Browser AK" loading={busy}
         onCancel={() => setConfirmClear(false)} onConfirm={() => { void apply(true) }} />
