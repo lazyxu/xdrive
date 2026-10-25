@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import type { MediaItem, Node, XDriveWebAppBrowseContext } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
-import { xDriveReadWebAppBrowseSession, xDriveWriteWebAppBrowseSession } from './webAppRuntime'
+import {
+  xDriveIsPrivateMapBrowseSessionID,
+  xDriveReadWebAppBrowseSession,
+  xDriveWriteWebAppBrowseSession,
+} from './webAppRuntime'
 import { createXDriveWebViewerSession } from './webViewerContext'
 import type { XDriveWebViewerCandidate, XDriveWebViewerMediaPatch, XDriveWebViewerPredicate } from './webViewerContext'
 
@@ -16,7 +20,19 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   onNavigate: (nodeID: number) => void
 }) {
   const context = useMemo(() => xDriveReadWebAppBrowseSession(contextID), [contextID])
-  const owner = useMemo(() => ({ api, gallerySource, context }), [api, gallerySource, context])
+  const privateMapRoute = xDriveIsPrivateMapBrowseSessionID(contextID)
+  // An older Viewer URL may lack the newer 'map-' marker. If it explicitly
+  // references a context that cannot be recovered, it still must not silently
+  // use unrestricted point reads. Only a true no-context direct link can.
+  const missingBrowseScope = Boolean(contextID) && !context
+  const mismatchedPrivateRoute = privateMapRoute &&
+    (context?.kind !== 'gallery' ||
+      (context.target.kind !== 'baidu-cell' && context.target.kind !== 'baidu-viewport'))
+  const unavailableBrowseScope = missingBrowseScope || mismatchedPrivateRoute
+  // The opaque context ID is part of Viewer ownership even after its memory
+  // payload expires; replacing a route cannot retain a previous photo.
+  const owner = useMemo(() => ({ api, gallerySource, context, contextID }),
+    [api, gallerySource, context, contextID])
   const [position, setPosition] = useState({ context, index: context?.activeIndex ?? 0 })
   const activeIndex = position.context === context ? position.index : context?.activeIndex ?? 0
   const [refresh, setRefresh] = useState(0)
@@ -65,6 +81,13 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     if (selected?.owner !== owner || selected.candidate.node.id !== nodeID || selected.candidate.index !== activeIndex) {
       setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0, loading: true, error: '' })
     }
+    if (unavailableBrowseScope) {
+      setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0,
+        loading: false, error: privateMapRoute
+          ? '地图照片范围已失效，请返回地图重新选择。'
+          : '浏览范围已失效，请返回重新打开。' })
+      return
+    }
     void session.current(nodeID, activeIndex, wantsMedia).then((candidate) => {
       if (active) {
         currentCandidateRef.current = { owner, candidate }
@@ -74,11 +97,12 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       if (active) setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0, loading: false, error: reason instanceof Error ? reason.message : String(reason) })
     })
     return () => { active = false }
-  }, [owner, session, nodeID, activeIndex, wantsMedia, refresh])
+  }, [owner, session, nodeID, activeIndex, wantsMedia, refresh, unavailableBrowseScope, privateMapRoute])
 
   useEffect(() => {
     let active = true
     setNeighbors(null)
+    if (unavailableBrowseScope) return
     void Promise.all([
       session.neighbor(activeIndex, -1, predicate),
       session.neighbor(activeIndex, 1, predicate),
@@ -88,20 +112,27 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       if (active) setNeighbors({ session, index: activeIndex, nodeID, previous: null, next: null, totalCount: 0 })
     })
     return () => { active = false }
-  }, [session, activeIndex, nodeID, predicate, refresh])
+  }, [session, activeIndex, nodeID, predicate, refresh, unavailableBrowseScope])
 
   const currentContent = content.owner === owner && content.nodeID === nodeID ? content : null
   const currentNeighbors = neighbors?.session === session && neighbors.index === activeIndex && neighbors.nodeID === nodeID ? neighbors : null
   const previous = currentNeighbors?.previous ?? null
   const next = currentNeighbors?.next ?? null
-  const totalCount = currentContent?.totalCount || currentNeighbors?.totalCount || (context?.kind === 'selection' ? context.nodeIDs.length : context?.kind === 'gallery' ? context.totalCount : 0)
+  // Never publish an unverified private Map count to filmstrip/neighbor UI.
+  const totalCount = unavailableBrowseScope ? 0 :
+    currentContent?.totalCount || currentNeighbors?.totalCount ||
+    (context?.kind === 'selection' ? context.nodeIDs.length :
+      context?.kind === 'gallery' ? context.totalCount : 0)
 
   // At most eleven neighbors. Reuse the same authorized Server Range
   // session that owns Gallery browsing; never materialize the whole collection.
   useEffect(() => {
     let active = true
     setFilmstrip(null)
-    if (!wantsMedia || context?.kind !== 'gallery' || !Number.isSafeInteger(activeIndex) ||
+    // An invalid/missing private map context must stop even bounded filmstrip
+    // prefetch before it can fall back to an ordinary Gallery collection.
+    if (unavailableBrowseScope || !wantsMedia || context?.kind !== 'gallery' ||
+      !Number.isSafeInteger(activeIndex) ||
       activeIndex < 0 || activeIndex >= totalCount) return
     const start = Math.max(0, activeIndex - 5)
     const end = Math.min(totalCount - 1, activeIndex + 5)
@@ -116,14 +147,15 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       if (active) setFilmstrip({ session, index: activeIndex, nodeID, entries: [] })
     })
     return () => { active = false }
-  }, [activeIndex, context?.kind, nodeID, predicate, session, totalCount, wantsMedia])
+  }, [activeIndex, context?.kind, nodeID, predicate, session, totalCount,
+    wantsMedia, unavailableBrowseScope])
 
   // A previous route / index must not leave its controls on the next asset.
   const visibleFilmstrip = filmstrip?.session === session && filmstrip.index === activeIndex &&
     filmstrip.nodeID === nodeID ? filmstrip.entries : []
 
   function navigate(candidate: XDriveWebViewerCandidate | null) {
-    if (!candidate) return
+    if (unavailableBrowseScope || !candidate) return
     currentCandidateRef.current = { owner, candidate }
     setContent({ owner, nodeID: candidate.node.id, node: candidate.node, mediaItem: candidate.mediaItem ?? null,
       totalCount: candidate.totalCount, loading: false, error: '' })
@@ -133,7 +165,7 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   }
 
   function updateMediaItem(item: MediaItem, patch?: XDriveWebViewerMediaPatch) {
-    if (activeReaderRef.current.owner !== owner) return
+    if (unavailableBrowseScope || activeReaderRef.current.owner !== owner) return
     const updated = activeReaderRef.current.session.updateMediaItem(item, patch)
     if (!updated) return
     const selected = currentCandidateRef.current
@@ -168,7 +200,7 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     loading: currentContent?.loading ?? true,
     error: currentContent?.error ?? '',
     activeIndex, totalCount, previous, next,
-    navigationLoading: Boolean(context && !currentNeighbors),
+    navigationLoading: !unavailableBrowseScope && Boolean(context && !currentNeighbors),
     goPrevious: () => navigate(previous),
     goNext: () => navigate(next),
     filmstripEntries: visibleFilmstrip.map(({ index, item }) => ({ index, item })),

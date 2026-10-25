@@ -165,3 +165,17 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 - The same shared Source Manager serves Web/Desktop remote Pull source rows. Its first paint previously initialized loading=false with zero unverified rows, briefly claiming “尚未添加拉取来源” before `sourceOverview()` began; a request then replaced that claim with an instant spinner. This false-empty→loading→rows sequence is prohibited just as it is on Local/Cloud Storage.
 - Initialize the first source overview as **pending**, maintain an explicit first-response confirmation flag, and share the existing 300ms request-generation-scoped loading hook. Until authorized first read succeeds, a stable 180px content slot stays quiet and only a genuinely sustained request shows progress. On success with authoritative zero rows, show the real empty state. On failure, show the existing retryable action and a truthful error, not an empty result. Previously authorized source cards remain mounted on refresh and refresh failures, with no in-flow badge or layout collapse; the refresh button is disabled while pending and keeps a stable “刷新” label.
 - Preserve all original source authorization, ownership, cookies/DSM credentials, scan/sync/cancel/task progress, dangerous mutations and Server/Agent transport. Thumbnail/cover requests and remote collection loading remain independent and visible. New source-contract regression checks this rendering boundary on the real shared MUI source list. Physical Safari/Android/PWA visual geometry and live WAN remain separate unmeasured gates.
+
+
+## 地图 Viewer 私有范围：刷新与撤权后 fail-closed（2026-10-25）
+
+- Web/Mobile Web 从百度地点 Cell 或视窗进入 Viewer 时，浏览上下文仅保存在 Owner 当前文档内存中；`map-` 开头的 URL context ID 只是无权限、不含 GPS/相册/Owner 的不透明路由标记，不是授权票据。强制刷新、新标签或进程重启后，这个内存上下文不能从 sessionStorage 恢复，Viewer 显示范围失效提示，不能退化成未筛选的图片直达请求。对旧客户端生成的不带 `map-` 前缀链接，只要 URL 显式指定的浏览上下文已丢失，也必须拒绝降级；普通直接打开文件（没有 context ID）的行为不变。
+- 一旦签名的 Owner `/cell-items` 或 `/viewport-items` 失败、成员 Node/revision 与当前项目不符，或 Cell 照片总数变更，Viewer 当前图片只能显示范围失效错误；不允许回退到独立 `mediaItem`、`node` 或普通全图库 Range。分页与缩略图仍通过原受限 Range；原有 AbortSignal、Owner/Consent 校验保留。
+- 这防止客户端范围扩权，不替代 Server 对所有图片字节、预览签发、撤权和来源修订的动态授权。跨标签远端实时撤权通知及真实 SPA History/强制刷新 Chromium 联合验证仍需单独覆盖；不可触达的生产安全验收按决定跳过（未验收），代码级检查不可跳过。
+
+
+### 私人地图 Viewer 失效上下文：预取与阅读器统一拒绝（2026-10-25）
+
+- 仅拒绝当前媒体读数和前后邻居不够：当 `map-` URL 标记对应的内存上下文意外失配为普通图库查询时，Filmstrip 的原有有界预取也不得运行，更不能借普通图库 Source `listItemRange` 扩大已撤销的范围。
+- 将 `unavailableBrowseScope` 同时应用于当前媒体、Neighbor、Filmstrip、导航与更新操作；无效范围的总数为 0、无后台导航加载假象；新的会话必须重新从获授权的签名 Cell/Viewport Range 打开。真正没有上下文的普通直接文件预览保持不变。
+- React Hook 来源级回归明确构造失效 `map-` 上下文与不匹配的 `library` Target，断言 0 普通图库 Range、0 独立 Node/MediaItem 请求、0 Filmstrip 数据和拒绝状态；不模拟生产 SDK/授权成功，仍需同准确 HEAD 真浏览器/完整 CI。
