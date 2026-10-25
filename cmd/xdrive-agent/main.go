@@ -54,7 +54,7 @@ func main() {
 	log.Printf("starting version %s", version.String())
 
 	ctrl := newAgentController(ctx, cancel)
-	ipc, ipcErr := startDesktopIPC(ctx, ctrl, cancel)
+	ipc, ipcErr := startDesktopIPC(ctx, ctrl, cancel, backupOnly)
 	if ipcErr != nil {
 		log.Printf("desktop IPC unavailable: %v", ipcErr)
 	} else {

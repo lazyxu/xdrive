@@ -54,6 +54,7 @@ type desktopIPCDiscovery struct {
 }
 
 type desktopIPCHello struct {
+	RuntimeMode      string   `json:"runtime_mode"`
 	DiscoveryVersion int      `json:"discovery_version"`
 	ProtocolMin      int      `json:"protocol_min"`
 	ProtocolMax      int      `json:"protocol_max"`
@@ -405,7 +406,7 @@ type desktopIPCServer struct {
 	cleanupOnce   sync.Once
 }
 
-func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown func()) (*desktopIPCServer, error) {
+func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown func(), backupOnly ...bool) (*desktopIPCServer, error) {
 	var tokenBytes [32]byte
 	if _, err := rand.Read(tokenBytes[:]); err != nil {
 		return nil, err
@@ -435,7 +436,7 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 
 	s := &desktopIPCServer{
 		server: &http.Server{
-			Handler:           newDesktopIPCHandler(ctrl, token, shutdown),
+			Handler:           newDesktopIPCHandler(ctrl, token, shutdown, backupOnly...),
 			ReadHeaderTimeout: 5 * time.Second,
 			IdleTimeout:       35 * time.Second,
 		},
@@ -543,8 +544,10 @@ func newDesktopIPCHandler(
 	ctrl desktopIPCController,
 	token string,
 	shutdown func(),
+	backupOnly ...bool,
 ) http.Handler {
-	h := &desktopIPCHandler{ctrl: ctrl, shutdown: shutdown}
+	mode := len(backupOnly) > 0 && backupOnly[0]
+	h := &desktopIPCHandler{ctrl: ctrl, shutdown: shutdown, backupOnly: mode}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/hello", h.hello)
 	mux.HandleFunc("GET /v1/status", h.status)
@@ -861,12 +864,13 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/open-path", h.openPath)
 	mux.HandleFunc("POST /v1/open-with", h.openWith)
 	mux.HandleFunc("POST /v1/lifecycle/shutdown", h.shutdownAgent)
-	return desktopIPCAuth(token, mux)
+	return desktopIPCAuth(token, restrictBackupOnlyEndpoints(h.backupOnly, mux))
 }
 
 type desktopIPCHandler struct {
-	ctrl     desktopIPCController
-	shutdown func()
+	ctrl       desktopIPCController
+	shutdown   func()
+	backupOnly bool
 }
 
 func desktopIPCAuth(token string, next http.Handler) http.Handler {
@@ -894,6 +898,7 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 
 func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCHello{
+		RuntimeMode:      desktopIPCRuntimeMode(h.backupOnly),
 		DiscoveryVersion: desktopIPCAPIVersion,
 		ProtocolMin:      desktopIPCProtocolMin,
 		ProtocolMax:      desktopIPCProtocolMax,
@@ -901,7 +906,7 @@ func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 		PID:              os.Getpid(),
 		Platform:         runtime.GOOS,
 		Arch:             runtime.GOARCH,
-		Capabilities:     desktopIPCHelloCapabilities(),
+		Capabilities:     desktopIPCCapabilitiesForRuntime(h.backupOnly),
 	})
 }
 

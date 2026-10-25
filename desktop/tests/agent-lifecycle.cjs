@@ -13,6 +13,7 @@ function hello(version = 'test') {
     pid: 42,
     platform: 'linux',
     arch: 'amd64',
+    runtime_mode: 'full',
     capabilities: [],
   }
 }
@@ -83,4 +84,41 @@ test('lifecycle restart waits for shutdown before starting a new agent', async (
   const result = await lifecycle.restart()
   assert.equal(result.agent_version, 'restarted')
   assert.equal(spawns, 1)
+})
+
+test('Desktop does not spawn or shut down a running Backup-only Agent', async () => {
+  let spawnCount = 0
+  let shutdownCount = 0
+  const agent = { ...hello('cli-only'), runtime_mode: 'backup_only' }
+  const lifecycle = new AgentLifecycle({
+    async hello() { return agent },
+    async shutdown() { shutdownCount++; return { ok: true } },
+    invalidate() {},
+  }, ['/fake/xdrive-agent'], async () => { spawnCount++ }, async () => {})
+
+  await assert.rejects(lifecycle.ensureRunning(), (error) =>
+    error instanceof AgentIPCError && error.code === 'agent_backup_only')
+  await assert.rejects(lifecycle.restart(), (error) =>
+    error instanceof AgentIPCError && error.code === 'agent_backup_only')
+  assert.equal(spawnCount, 0)
+  assert.equal(shutdownCount, 0)
+})
+
+test('Desktop fails closed for a legacy Agent missing verified runtime mode', async () => {
+  let spawnCount = 0
+  let shutdownCount = 0
+  const legacy = hello()
+  delete legacy.runtime_mode
+  const lifecycle = new AgentLifecycle({
+    async hello() { return legacy },
+    async shutdown() { shutdownCount++; return { ok: true } },
+    invalidate() {},
+  }, ['/fake/xdrive-agent'], async () => { spawnCount++ }, async () => {})
+
+  await assert.rejects(lifecycle.ensureRunning(), (error) =>
+    error instanceof AgentIPCError && error.code === 'incompatible_agent')
+  await assert.rejects(lifecycle.restart(), (error) =>
+    error instanceof AgentIPCError && error.code === 'incompatible_agent')
+  assert.equal(spawnCount, 0)
+  assert.equal(shutdownCount, 0)
 })
