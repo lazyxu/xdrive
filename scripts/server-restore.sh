@@ -53,19 +53,40 @@ ENV_PATH="$CONFIG_DIR/.env"
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 
-required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
-[[ "$DATABASE_ONLY" == "1" ]] || required_files+=(blobs.tar)
-for required in "${required_files[@]}"; do
-  [[ -f "$BACKUP_DIR/$required" ]] || { echo "backup is missing $required" >&2; exit 1; }
-done
-grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$BACKUP_DIR/manifest.json" || {
+BACKUP_VERSION=1
+if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$BACKUP_DIR/manifest.json"; then
+  BACKUP_VERSION=2
+elif ! grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$BACKUP_DIR/manifest.json"; then
   echo "unsupported backup format" >&2
   exit 1
-}
-(
-  cd "$BACKUP_DIR"
-  sha256sum -c SHA256SUMS.txt
-)
+fi
+required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
+if [[ "$BACKUP_VERSION" == "2" ]]; then
+  required_files+=(objects.index legacy.tar)
+elif [[ "$DATABASE_ONLY" != "1" ]]; then
+  required_files+=(blobs.tar)
+fi
+for required in "${required_files[@]}"; do
+  [[ -f "$BACKUP_DIR/$required" ]] || { echo "backup is missing $required" >&2; exit 1; }
+  if [[ "$BACKUP_VERSION" == "2" && -L "$BACKUP_DIR/$required" ]]; then
+    echo "restore: v2 snapshot contains symlink $required" >&2
+    exit 1
+  fi
+done
+if [[ "$BACKUP_VERSION" == "2" ]]; then
+  # sha256sum -c accepts an incomplete checksum list. Require exactly the
+  # five canonical v2 files in creation order; reject omitted, duplicate,
+  # extra, renamed, or incorrect checksums BEFORE the safety backup.
+  (
+    cd "$BACKUP_DIR"
+    cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
+  ) || { echo "restore: v2 checksum manifest mismatch (missing/extra entry or corrupt file)" >&2; exit 1; }
+else
+  (
+    cd "$BACKUP_DIR"
+    sha256sum -c SHA256SUMS.txt
+  )
+fi
 
 if [[ "$ASSUME_YES" != "1" ]]; then
   if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
@@ -79,12 +100,6 @@ if [[ "$ASSUME_YES" != "1" ]]; then
   fi
   read -r answer </dev/tty
   [[ "$answer" =~ ^[Yy]$ ]] || { echo "restore cancelled"; exit 0; }
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "$SAFETY_BACKUP" == "1" ]]; then
-  echo "Creating pre-restore safety backup..."
-  "$SCRIPT_DIR/server-backup.sh"     --config-dir "$XDRIVE_HOME"     --output-dir "$XDRIVE_HOME/backups/pre-restore"     --allow-inconsistent
 fi
 
 compose() {
@@ -118,6 +133,44 @@ wait_server() {
   echo "xDrive API did not become ready after restore" >&2
   return 1
 }
+
+CAS_REPOSITORY=""
+CAS_SNAPSHOT=""
+CAS_SERVER_IMAGE=""
+if [[ "$BACKUP_VERSION" == "2" && "$DATABASE_ONLY" != "1" ]]; then
+  # The v2 snapshot must reside inside the local CAS repository. Verify every
+  # immutable object BEFORE terminating any API/worker or replacing the DB.
+  CAS_REPOSITORY="$(cd "$BACKUP_DIR/../.." && pwd)"
+  [[ "$(basename "$(dirname "$BACKUP_DIR")")" == "snapshots" &&
+     -d "$CAS_REPOSITORY/objects/sha256" ]] || {
+    echo "restore: invalid CAS repository layout." >&2
+    exit 1
+  }
+  CAS_SNAPSHOT="$(basename "$BACKUP_DIR")"
+  restore_server_id="$(compose ps -aq server | head -n1 || true)"
+  CAS_SERVER_IMAGE=""
+  if [[ -n "$restore_server_id" ]]; then
+    CAS_SERVER_IMAGE="$(docker inspect "$restore_server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  if [[ -z "$CAS_SERVER_IMAGE" ]]; then
+    CAS_SERVER_IMAGE="$(grep '^XD_SERVER_IMAGE=' "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  fi
+  [[ -n "$CAS_SERVER_IMAGE" ]] || { echo "restore: xDrive server image is missing." >&2; exit 1; }
+  docker run --rm --user 0:0 \
+    --mount "type=bind,src=$CAS_REPOSITORY,dst=/repo,readonly" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$CAS_SERVER_IMAGE" verify --repo /repo --snapshot "$CAS_SNAPSHOT" </dev/null
+fi
+
+# Integrity of the requested v2 snapshot must be verified BEFORE creating a
+# pre-restore safety backup. Otherwise a corrupt/missing CAS object would
+# unnecessarily stop/restart the healthy live service even though restore is
+# rejected before touching PostgreSQL.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$SAFETY_BACKUP" == "1" ]]; then
+  echo "Creating pre-restore safety backup..."
+  "$SCRIPT_DIR/server-backup.sh"     --config-dir "$XDRIVE_HOME"     --output-dir "$XDRIVE_HOME/backups/pre-restore"     --allow-inconsistent
+fi
 
 server_was_running=0
 worker_was_running=0
@@ -165,6 +218,19 @@ fi
   echo "cannot resolve xDrive /data mount without creating/recreating the server service" >&2
   exit 1
 }
+if [[ "$BACKUP_VERSION" == "2" && "$DATABASE_ONLY" != "1" && "$data_source" == /* ]]; then
+  storage_real="$(readlink -f -- "$data_source" 2>/dev/null || true)"
+  repository_real="$(readlink -f -- "$CAS_REPOSITORY" 2>/dev/null || true)"
+  if [[ -n "$storage_real" && -n "$repository_real" ]]; then
+    case "$repository_real/" in
+      "$storage_real/"*) echo "restore: repository is nested inside data being replaced." >&2; exit 1 ;;
+    esac
+    case "$storage_real/" in
+      "$repository_real/"*) echo "restore: live data is nested inside the repository." >&2; exit 1 ;;
+    esac
+  fi
+fi
+
 postgres_id="$(compose ps -q postgres | head -n1)"
 postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
@@ -173,7 +239,13 @@ compose exec -T postgres dropdb -U xdrive --if-exists xdrive
 compose exec -T postgres createdb -U xdrive -O xdrive xdrive
 compose_with_stdin exec -T postgres pg_restore -U xdrive -d xdrive --no-owner --no-privileges < "$BACKUP_DIR/database.dump"
 
-if [[ "$DATABASE_ONLY" != "1" ]]; then
+if [[ "$DATABASE_ONLY" != "1" && "$BACKUP_VERSION" == "2" ]]; then
+  docker run --rm --user 0:0 \
+    --mount "type=bind,src=$CAS_REPOSITORY,dst=/repo,readonly" \
+    -v "$data_source:/data" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$CAS_SERVER_IMAGE" restore --repo /repo --snapshot "$CAS_SNAPSHOT" --target /data </dev/null
+elif [[ "$DATABASE_ONLY" != "1" ]]; then
   docker run --rm -i --entrypoint sh \
     -v "$data_source:/data" \
     "$postgres_image" \

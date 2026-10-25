@@ -16,6 +16,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -tags=nodynamic -trimpath \
     -ldflags="-s -w -X github.com/lazyxu/xdrive/internal/version.Version=$VERSION -X github.com/lazyxu/xdrive/internal/version.Channel=$BUILD_CHANNEL -X github.com/lazyxu/xdrive/internal/version.Commit=$BUILD_COMMIT -X github.com/lazyxu/xdrive/internal/version.CommitMessageBase64=$BUILD_COMMIT_MESSAGE_B64 -X github.com/lazyxu/xdrive/internal/version.CommitTime=$BUILD_COMMIT_TIME -X github.com/lazyxu/xdrive/internal/version.BuildTime=$BUILD_TIME" \
     -o /out/xdrive-server ./cmd/server \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/xdrive-backup-repo ./cmd/backuprepo \
     && mkdir -p /out/data/.xdrive-uploads
 
 FROM ${RUNTIME_IMAGE}
@@ -29,6 +30,7 @@ LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
       org.opencontainers.image.created="$BUILD_TIME"
 WORKDIR /app
 COPY --from=build /out/xdrive-server /usr/local/bin/xdrive-server
+COPY --from=build /out/xdrive-backup-repo /usr/local/bin/xdrive-backup-repo
 COPY --from=build --chown=65532:65532 /out/data/ /data/
 VOLUME ["/data"]
 EXPOSE 8080

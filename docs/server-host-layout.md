@@ -96,6 +96,15 @@ Backup classes are separated so retention and recovery logic cannot accidentally
 
 Scheduled retention applies only to `backups/snapshots`.
 
+An **explicit opt-in local CAS + Manifest backup** uses
+`backups/incremental/` (or `--repository-dir`) with a shared immutable
+`objects/sha256/` directory and independent `snapshots/` metadata/DB
+recovery points. Unlike version-1 `blobs.tar`, it copies only new canonical
+SHA-256 objects after the initial snapshot. The implementation preserves the
+current service maintenance window and the default tar fallback. Automatic
+v2 retention/object pruning and consumer-cloud adapters are **not enabled**.
+See [CAS incremental backup MVP](server-cas-incremental-backup.md).
+
 Before restoring an upgrade backup, operators can inspect the external-source rows in its PostgreSQL dump without modifying the live database:
 
 ```bash
