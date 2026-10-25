@@ -101,16 +101,47 @@ function runChrome(url) {
   let socket=null
   const work=async()=>{
     const port=await new Promise((resolve,reject)=>{
-      let log='',resolved=false
-      const timeout=setTimeout(()=>{if(!resolved){resolved=true;reject(Error('CDP timeout'))}},15000)
-      chrome.stderr.on('data',chunk=>{
-        if(resolved)return
-        log+=chunk.toString()
-        const match=/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(log)
-        if(match){resolved=true;clearTimeout(timeout);resolve(Number(match[1]))}
-      })
-      chrome.once('error',error=>{if(!resolved){resolved=true;clearTimeout(timeout);reject(error)}})
-      chrome.once('exit',code=>{if(!resolved){resolved=true;clearTimeout(timeout);reject(Error('Chrome exit '+code))}})
+      const portFile=path.join(dir,'DevToolsActivePort')
+      let log='',settled=false,timeout=null,probe=null
+      const settle=(error,foundPort)=>{
+        if(settled)return
+        settled=true
+        if(timeout!==null)clearTimeout(timeout)
+        if(probe!==null)clearInterval(probe)
+        chrome.stderr.off('data',onStderr)
+        chrome.off('error',onError)
+        chrome.off('exit',onExit)
+        if(error)reject(error)
+        else resolve(foundPort)
+      }
+      const onStderr=chunk=>{
+        // Chrome's log format can change; the file-based route below is
+        // authoritative when DevTools starts without an exact stderr line.
+        log=(log+chunk.toString()).slice(-2048)
+        const match=/DevTools listening on ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\//.exec(log)
+        if(match)settle(null,Number(match[1]))
+      }
+      const onError=error=>settle(error)
+      const onExit=code=>settle(Error('Chrome exited before CDP: '+code))
+      const probePort=()=>{
+        try{
+          const first=fs.readFileSync(portFile,'utf8').split(/\r?\n/,1)[0].trim()
+          const port=Number(first)
+          if(/^\d{1,5}$/.test(first)&&port>0&&port<=65535)settle(null,port)
+        }catch(error){
+          if(error.code!=='ENOENT')settle(error)
+        }
+      }
+      chrome.stderr.on('data',onStderr)
+      chrome.once('error',onError)
+      chrome.once('exit',onExit)
+      // Busy GitHub runners can exceed 15s before Chrome emits stderr.
+      // This is ONLY a bounded startup probe, never a relaxation of CSP,
+      // Origin, Cookie, frame-sandbox or malicious SDK checks.
+      timeout=setTimeout(()=>settle(Error('CDP startup timeout (port file '+
+        (fs.existsSync(portFile)?'present':'absent')+')')),30000)
+      probe=setInterval(probePort,100)
+      probePort()
     })
     const response=await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'})
     assert(response.ok,'CDP target creation failed')

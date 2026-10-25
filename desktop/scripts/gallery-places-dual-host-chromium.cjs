@@ -32,7 +32,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-places-dual-'))
 const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
-  fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],
+  fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const sdkStub='('+function sdkFactory(){
@@ -725,6 +725,200 @@ async function testFullGalleryDirectPhoto(browser,mode,port){
     summary.fullGalleryDirectPhotoModes.push(mode)
   }finally{await context.close()}
 }
+
+async function swipeMobileDrawerGrip(page,direction){
+  const rect=await page.locator('[data-xdrive-places-photo-drawer-grip]').boundingBox()
+  assert(rect && rect.width>100 && rect.height>=24,'actual visible photo grip required')
+  const x=Math.round(rect.x+rect.width/2)
+  const y=Math.round(rect.y+rect.height/2)
+  const sign=direction==='up'?-1:1
+  const cdpsession=await page.context().newCDPSession(page)
+  try{
+    await cdpsession.send('Input.dispatchTouchEvent',
+      {type:'touchStart',touchPoints:[{x,y}]})
+    await cdpsession.send('Input.dispatchTouchEvent',
+      {type:'touchMove',touchPoints:[{x,y:y+sign*26}]})
+    await cdpsession.send('Input.dispatchTouchEvent',
+      {type:'touchMove',touchPoints:[{x,y:y+sign*76}]})
+    await cdpsession.send('Input.dispatchTouchEvent',
+      {type:'touchEnd',touchPoints:[]})
+  }finally{await cdpsession.detach()}
+}
+async function testMobilePhotoDrawer(browser,mode,port){
+  // 390px real-touch Chromium with shipped Gallery and real Gin Owner Ranges.
+  // CDP touch dispatch exercises native pointer capture, not synthetic DOM swipes.
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,
+    locale:'zh-CN',ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const url='https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&full_gallery=1&full_gallery_direct=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto(url,{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().tap()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const geometry=await page.evaluate(()=>{
+      const rect=document.querySelector('[data-xdrive-places-photo-drawer]').getBoundingClientRect()
+      const map=document.querySelector('[data-xdrive-places-cluster-overview]').getBoundingClientRect()
+      return {viewport:window.innerWidth,left:rect.left,right:rect.right,
+        width:rect.width,mapWidth:map.width,mapHeight:map.height}
+    })
+    record(mode+': iOS 390px sheet and map remain within screen bounds',
+      geometry.viewport===390&&geometry.left>=0&&
+      geometry.right<=geometry.viewport+1&&geometry.mapWidth<=geometry.viewport+1&&
+      geometry.mapHeight>=520)
+    await swipeMobileDrawerGrip(page,'up')
+    await drawer.locator('[aria-label="收起照片抽屉"]').waitFor({state:'visible'})
+    record(mode+': real upward touch expands trusted photo drawer',
+      await drawer.locator('[aria-label="收起照片抽屉"]').count()===1)
+    await swipeMobileDrawerGrip(page,'down')
+    await drawer.locator('[aria-label="展开照片抽屉"]').waitFor({state:'visible'})
+    record(mode+': real downward touch collapses without dismissing Owner photos',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
+    const before=await page.evaluate(()=>window.__mapProbe.galleryPageReads.filter(
+      r=>r.kind==='cell').length)
+    const touchPhoto=drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+    const hit=await touchPhoto.evaluate(node=>{
+      const rect=node.getBoundingClientRect()
+      const x=rect.x+rect.width/2,y=rect.y+rect.height/2
+      const at=document.elementFromPoint(x,y)
+      return {inside:!!at&&node.contains(at),width:rect.width,height:rect.height,
+        pointerEvents:getComputedStyle(node).pointerEvents}
+    })
+    record(mode+': mobile photo thumbnail is genuinely hit-testable after grip',
+      hit.inside&&hit.width>=44&&hit.height>=44&&hit.pointerEvents!=='none')
+    // Observe a real DOM click without manually dispatching it. The owner
+    // contract must then complete another authorized /cell-items Range.
+    await touchPhoto.evaluate(node=>{
+      node.addEventListener('click',()=>{
+        window.__mapProbe.mobilePhotoDOMClicks=
+          (window.__mapProbe.mobilePhotoDOMClicks||0)+1
+      },{once:true})
+      // Diagnose native event delivery without dispatching a fake click or
+      // reading Owner photo identities/URLs. A touch swipe must not be
+      // mistaken for an authorized thumbnail tap.
+      const trace=(window.__mapProbe.mobileTouchTrace=[])
+      for(const type of ['pointerdown','pointerup','pointercancel',
+        'touchstart','touchend','touchcancel','click']){
+        document.addEventListener(type,event=>{
+          if(trace.length>=24)return
+          const target=event.target
+          const tile=target instanceof Element&&
+            target.closest('[data-xdrive-places-photo-drawer-item]')
+          trace.push({type,onTile:Boolean(tile),
+            pointerType:event.pointerType||null,
+            defaultPrevented:Boolean(event.defaultPrevented)})
+        },{capture:true})
+      }
+      // Bubble-phase evidence distinguishes browser gesture suppression from
+      // a consumer calling preventDefault; never dispatch a synthetic click.
+      for(const type of ['pointerdown','pointerup','touchstart','touchend']){
+        document.addEventListener(type,event=>{
+          if(trace.length>=24)return
+          const target=event.target
+          const tile=target instanceof Element&&
+            target.closest('[data-xdrive-places-photo-drawer-item]')
+          trace.push({type:type+'-bubble',onTile:Boolean(tile),
+            defaultPrevented:Boolean(event.defaultPrevented)})
+        },{capture:false})
+      }
+    })
+    const previewStatuses=[]
+    const onPreviewResponse=response=>{
+      const pathname=new URL(response.url()).pathname
+      if(pathname.startsWith('/api/v1/file-preview/'))
+        previewStatuses.push(response.status())
+    }
+    page.on('response',onPreviewResponse)
+    await touchPhoto.tap()
+    const didOpen=await page.waitForFunction(()=>
+      window.__mapProbe.galleryPageDirectOpens.length>0 ||
+      window.__mapProbe.galleryPageErrors.length>0,
+      null,{timeout:10000}).then(()=>true).catch(()=>false)
+    const snapshot=async()=>page.evaluate(()=>({
+      clicks:window.__mapProbe.mobilePhotoDOMClicks||0,
+      touchTrace:window.__mapProbe.mobileTouchTrace||[],
+      ownerRanges:window.__mapProbe.galleryPageReads.filter(r=>r.kind==='cell').length,
+      viewerOpens:window.__mapProbe.galleryPageDirectOpens.length,
+      errorCount:window.__mapProbe.galleryPageErrors.length,
+      mapVisible:!!document.querySelector('[data-xdrive-places-cluster-overview]'),
+      drawerVisible:!!document.querySelector('[data-xdrive-places-photo-drawer]'),
+      viewerVisible:!!document.querySelector('[data-xdrive-open-preview-dialog]'),
+      imagePhase:document.querySelector('[data-xdrive-image-phase]')?.getAttribute('data-xdrive-image-phase')||'none',
+    }))
+    const clickState=await snapshot()
+    const nativeTouch=clickState.touchTrace
+      .some(event=>event.type==='pointerdown'&&event.onTile&&
+        event.pointerType==='touch'&&!event.defaultPrevented) &&
+      clickState.touchTrace
+        .some(event=>event.type==='pointerup'&&event.onTile&&
+          event.pointerType==='touch'&&!event.defaultPrevented) &&
+      clickState.touchTrace
+        .some(event=>event.type==='touchend'&&event.onTile&&
+          !event.defaultPrevented) &&
+      !clickState.touchTrace.some(event=>
+        event.type==='pointercancel'&&event.onTile)
+    record(mode+': real mobile touch uses genuine uncancelled tile pointer '+
+      JSON.stringify(clickState.touchTrace),nativeTouch)
+    // Chrome/Safari can suppress the follow-on compatibility click after a
+    // native scroll gesture. Product pointerup activates this *actual* short
+    // touch once; a real click, when present, must not duplicate authorization.
+    // No DOM-dispatched click, synthetic click, or bypass of signed Owner Range.
+    record(mode+': real mobile photo touch activates one Viewer Owner Range '+
+      JSON.stringify(clickState),
+      didOpen&&nativeTouch&&clickState.viewerOpens===1&&
+      clickState.ownerRanges>before&&clickState.errorCount===0)
+    const original=page.locator('[data-xdrive-image-phase="original"]').first()
+    const decoded=await original.waitFor({state:'visible',timeout:12000})
+      .then(()=>true).catch(()=>false)
+    const decodeState=await snapshot()
+    page.off('response',onPreviewResponse)
+    record(mode+': mobile photo Viewer decodes real signed CAS PNG '+
+      JSON.stringify({...decodeState,previewHTTP:previewStatuses}),
+      decoded&&decodeState.imagePhase==='original'&&
+      previewStatuses.includes(200))
+    const opened=clickState.ownerRanges
+    // Narrow immersive Viewer uses its accessible iOS back control,
+    // not the desktop-only "关闭预览" button.
+    const mobileBack=page.getByRole('button',{name:'返回图库'})
+    await mobileBack.waitFor({state:'visible'})
+    const chromeHeader=page.locator('[data-xdrive-preview-chrome="header"]')
+    if(await chromeHeader.evaluate(node=>
+      getComputedStyle(node).pointerEvents==='none')){
+      // Wake genuine auto-hidden mobile chrome with an actual touch; do not
+      // directly invoke a React handler or bypass the Owner Viewer.
+      await page.locator('[data-xdrive-image-phase="original"]').first().tap()
+      await page.waitForFunction(() => {
+        const chrome=document.querySelector('[data-xdrive-preview-chrome="header"]')
+        return chrome && getComputedStyle(chrome).pointerEvents!=='none'
+      })
+    }
+    await mobileBack.tap()
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible',timeout:11000})
+    const returned=await page.evaluate(()=>({
+      ranges:window.__mapProbe.galleryPageReads.filter(r=>r.kind==='cell').length,
+      errors:window.__mapProbe.galleryPageErrors,
+    }))
+    record(mode+': mobile Viewer Back restores Owner-authorized photo drawer',
+      returned.ranges>opened&&returned.errors.length===0&&errors.length===0)
+    record(mode+': mobile isolated SDK never accesses private media',
+      requests.every(item=>item.host!=='child'||!item.path.startsWith('/api/v1/')))
+    summary.mobileDrawerModes.push(mode)
+  }finally{await context.close()}
+}
+
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -823,6 +1017,10 @@ async function main(){
       await testFullGalleryDirectPhoto(browser,'isolated',port)
       record('both Hosts passed real Page thumbnail→Viewer→drawer Back',
         summary.fullGalleryDirectPhotoModes.join(',')==='inline,isolated')
+      await testMobilePhotoDrawer(browser,'inline',port)
+      await testMobilePhotoDrawer(browser,'isolated',port)
+      record('both SDK Hosts completed 390px touch grip and real Owner Viewer return',
+        summary.mobileDrawerModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}
