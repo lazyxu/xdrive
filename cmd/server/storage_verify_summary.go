@@ -36,10 +36,10 @@ type storageVerifyCounts struct {
 
 func summarizeStorageVerify(r maintenance.VerifyReport) storageVerifySummary {
 	s := storageVerifySummary{
-		OK: r.OK(),
-		Mode: r.Mode,
-		HashedFiles: r.HashedFiles,
-		HashedBytes: r.HashedBytes,
+		OK:            r.OK(),
+		Mode:          r.Mode,
+		HashedFiles:   r.HashedFiles,
+		HashedBytes:   r.HashedBytes,
 		ElapsedMillis: r.ElapsedMillis,
 		Counts: storageVerifyCounts{
 			Missing:                    len(r.Missing),

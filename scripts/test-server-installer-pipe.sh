@@ -99,6 +99,11 @@ if [[ "$1" == "info" ]]; then
 fi
 if [[ "$1" == "compose" && "$2" == "version" ]]; then exit 0; fi
 if [[ "$1" == "inspect" ]]; then exit 1; fi
+if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then exit 1; fi
+if [[ "$1" == "pull" ]]; then
+  [[ "${2:-}" == "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]] || exit 90
+  exit 0
+fi
 if [[ "$1" == "ps" ]]; then exit 0; fi
 if [[ "$1" == "stop" ]]; then exit 0; fi
 if [[ "$1" != "compose" ]]; then

@@ -148,6 +148,16 @@ if [[ "$1" == "inspect" ]]; then
   exit 0
 fi
 
+# Stage-5 first upgrade uses the pinned target image before legacy volume
+# migration, without allowing image retrieval to touch the source volumes.
+if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then
+  exit 1
+fi
+if [[ "$1" == "pull" ]]; then
+  [[ "${2:-}" == "ghcr.io/lazyxu/xdrive-server:sha-"* ]] || exit 90
+  exit 0
+fi
+
 if [[ "$1" == "exec" ]]; then
   if [[ "$args" == *"pg_isready"* ]]; then exit 0; fi
   if [[ "$args" == *"PGPASSWORD=legacy-postgres-password"* ]]; then exit 0; fi

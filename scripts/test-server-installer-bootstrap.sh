@@ -353,6 +353,16 @@ if [[ "$1" == "info" ]]; then
   exit 0
 fi
 
+# First upgrade prefetches the exact target verifier image before stage-5.
+# The host Docker mock must allow the real image API without a network pull.
+if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then
+  exit 1
+fi
+if [[ "$1" == "pull" ]]; then
+  [[ "${2:-}" == "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]] || exit 90
+  exit 0
+fi
+
 # Conventional Compose container names must be detected even when label lookup
 # is unavailable.
 if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" != *"--format"* ]]; then
