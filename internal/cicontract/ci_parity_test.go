@@ -324,6 +324,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"branches: [\"master\"]",
 		"tags: [\"v*\"]",
 		"workflow_dispatch:",
+		"group: ci-${{ github.event.pull_request.number || github.run_id }}",
 		"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
@@ -890,6 +891,14 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-promote-images.sh")),
 		gitlabPublishRelease,
 	}, "\n")
+
+	requireRaw(t, "GitHub snapshot promotion safety", githubRelease,
+		"group: xdrive-release-promote-${{ github.ref }}",
+		"queue: max",
+		"cancel-in-progress: false",
+		"Reject stale master snapshot before channel promotion",
+		"Refusing stale Snapshot promotion before channel update",
+	)
 
 	releaseAssets := []string{
 		"xdrive-linux-amd64.deb",

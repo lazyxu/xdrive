@@ -17,14 +17,20 @@ concurrency = re.search(
 )
 assert concurrency is not None, "workflow-level concurrency required"
 section = concurrency.group(1)
+# Duplicate YAML keys could silently override the intended group. Guard the
+# single evaluated key as well as its exact PR-number/run-ID fallback.
+assert re.findall(r"(?m)^  group: (.+)$", section) == [
+    "ci-${{ github.event.pull_request.number || github.run_id }}"
+], "workflow must have one unique-per-run master concurrency group"
 assert re.search(
-    r"(?m)^  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}$",
+    r"(?m)^  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}$",
     section,
-), "PRs must be isolated by number; master pushes must serialize on master ref"
+), "PRs must share a cancellation group, but each master push must get a unique pending slot"
 assert re.search(
     r"(?m)^  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$",
     section,
 ), "Only superseded PR runs may be cancelled; master publication must survive"
+assert "github.ref" not in section, "reference-based master groups cancel older pending snapshots"
 
 publish_master = re.search(
     r"(?ms)^  publish-master:\s*\n(.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
@@ -54,5 +60,23 @@ publish_stable = re.search(
 )
 assert publish_stable is not None
 assert "needs: [final-gate]" in publish_stable.group(1), "stable tags require complete Final Gate"
+
+# Builds from different master commits can now complete out of order. The
+# floating release/edge promotion must be a FIFO queue with an ancestry
+# barrier before any channel tag is updated.
+release = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
+idx = release.find("  bundle:")
+assert idx >= 0, "missing exact release bundle job"
+bundle = release[idx:]
+assert """    concurrency:
+      group: xdrive-release-promote-${{ github.ref }}
+      queue: max
+      cancel-in-progress: false
+""" in bundle, "release bundle must queue without discarding pending publishers"
+assert "Reject stale master snapshot before channel promotion" in bundle
+assert "Refusing stale Snapshot promotion before channel update" in bundle
+assert bundle.index("- name: Reject stale master snapshot before channel promotion") < (
+    bundle.index("- name: Promote successful server images")
+), "a stale completed build must not overwrite GHCR edge before being rejected"
 
 print("master snapshot concurrency / early publication contract passed")
