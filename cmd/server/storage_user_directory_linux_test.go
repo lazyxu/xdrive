@@ -42,6 +42,17 @@ func TestRepairOneUserDirectoryTreeScopesChangesToDirectories(t *testing.T) {
 			_ = os.Chmod(d, 0o700)
 		}
 	})
+	// Preserve each unrelated directory's actual starting mode. Go's t.TempDir()
+	// is not guaranteed to use 0700 on every test runner, and an absolute
+	// mode assertion can report a change even when the repair never touched it.
+	untouchedModes := make(map[string]os.FileMode, 3)
+	for _, dir := range []string{other, cas, outside} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		untouchedModes[dir] = info.Mode().Perm()
+	}
 	uid, gid := os.Geteuid(), os.Getegid()
 	preview, err := repairOneUserDirectoryTree(root, 1, uid, gid, false)
 	if err != nil {
@@ -75,7 +86,7 @@ func TestRepairOneUserDirectoryTreeScopesChangesToDirectories(t *testing.T) {
 	}
 	for _, untouched := range []string{other, cas, outside} {
 		info, err := os.Stat(untouched)
-		if err != nil || info.Mode().Perm() != 0o700 {
+		if err != nil || info.Mode().Perm() != untouchedModes[untouched] {
 			t.Fatalf("non-target directory changed: %s, %v, %v", untouched, info, err)
 		}
 	}
