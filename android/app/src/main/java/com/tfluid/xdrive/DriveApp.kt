@@ -41,6 +41,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         FilesSection.RECENT -> "最近"
                         FilesSection.FAVORITES -> "收藏"
                         FilesSection.BROWSE -> state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览"
+                        FilesSection.SEARCH -> "搜索结果"
                     }
                     if (state.filesSection == FilesSection.BROWSE && state.path.size > 1) {
                         TextButton(onClick = { pathMenuOpen = true }, modifier = Modifier.fillMaxWidth().testTag("files-path-menu")) {

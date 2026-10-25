@@ -59,6 +59,64 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `Owner global search uses existing bounded cursor HTTP API`() = runBlocking {
+        // The Go /search contract emits directory-only breadcrumbs for
+        // files, unlike Recent/Favorites which include the file itself.
+        val row = """{"node":{"id":7,"parent_id":1,"name":"trip.jpg","type":"file","revision":8,"size":100},"path":"trip.jpg","breadcrumbs":[{"id":1,"name":""}]}"""
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{"items":[$row],"next_cursor":"opaque_cursor_1"}"""))
+            val first = api.searchFiles("access-secret", " trip ")
+            assertEquals(7L, first.items.single().node.id)
+            assertEquals(listOf(1L), first.items.single().crumbs.map { it.id })
+            assertEquals("opaque_cursor_1", first.nextCursor)
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertEquals("/api/v1/search", request.requestUrl!!.encodedPath)
+            assertEquals("trip", request.requestUrl!!.queryParameter("q"))
+            assertEquals("100", request.requestUrl!!.queryParameter("limit"))
+            assertEquals("name", request.requestUrl!!.queryParameter("sort"))
+            assertEquals("asc", request.requestUrl!!.queryParameter("order"))
+            assertNull(request.requestUrl!!.queryParameter("cursor"))
+            assertEquals("Bearer access-secret", request.getHeader("Authorization"))
+
+            server.enqueue(MockResponse().setBody("""{"items":[$row]}"""))
+            val last = api.searchFiles("access-secret", "trip", "opaque_cursor_1")
+            assertEquals("", last.nextCursor)
+            assertEquals(7L, last.items.single().node.id)
+            val second = server.takeRequest()
+            assertEquals("opaque_cursor_1", second.requestUrl!!.queryParameter("cursor"))
+            assertEquals("Bearer access-secret", second.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun `search rejects malformed cursors responses and invalid query before request`() = runBlocking {
+        val malformed = listOf(
+            """{"items":{}}""",
+            """{"items":[],"next_cursor":"nonprogress"}""",
+            """{"items":[{"node":{"id":2,"parent_id":1,"name":"foo","type":"file"},"path":"foo","crumbs":[{"id":1,"name":""},{"id":2,"name":"foo"}]}]}""",
+            """{"items":[{"node":{"id":2,"parent_id":1,"name":"foo","type":"file"},"path":"foo","breadcrumbs":[{"id":1,"name":""},{"id":3,"name":"foo"}]}]}""",
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.searchFiles("access-secret", "x") }
+            }
+            // UTF-16 surrogate pairs are one Unicode scalar; the Server requires
+            // at least two runes and must not receive a one-emoji query.
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.searchFiles("access-secret", "😀") }
+            }
+            assertEquals(0, server.requestCount)
+            malformed.forEachIndexed { index, body ->
+                server.enqueue(MockResponse().setBody(body))
+                val err = failure {
+                    api.searchFiles("access-secret", "foobar", if (index == 1) "old" else "")
+                }
+                assertEquals(ApiFailureReason.INVALID_RESPONSE, err.reason)
+                assertFalse(err.toString().contains("secret"))
+            }
+        } }
+    }
+
     @Test fun `real Owner recent and favorites use existing JSON routes and verified crumbs`() = runBlocking {
         val row = """{"node":{"id":2,"parent_id":1,"name":"doc.txt","type":"file","size":32,"revision":7},"path":"doc.txt","crumbs":[{"id":1,"name":""},{"id":2,"name":"doc.txt"}],"accessed_at":"2026-10-25T00:00:00Z"}"""
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->

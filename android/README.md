@@ -67,8 +67,13 @@ existing authenticated root/children pipeline before navigation. Long-press
 supports real add/remove favorite actions with no optimistic success after a
 failed request. The browsing list is preserved when changing the three Files
 sections, and switching accounts discards the private collection rows.
-Global search, thumbnails, Gallery, Viewer, transfers and upload/download are
-still unimplemented; this increment is **not** full iOS PWA UI/functionality parity.
+Native Files also offers real Owner-scoped global search through the existing
+`GET /api/v1/search` Server cursor contract, with 100 items per authenticated
+page, cancellation on new queries, explicit failed-page retry and correct
+Breadcrumb-based folder location. This is never a filter of only the visible
+directory. Structured filtering, saved searches, thumbnails, Gallery, Viewer,
+transfers and upload/download are still unimplemented; this increment is
+**not** full iOS PWA UI/functionality parity.
 
 Phone folders use the actual blue iOS-style PWA `MobileFolderIcon` from
 `web/src/MobileFiles.tsx`, including both gradients and the highlight, with that

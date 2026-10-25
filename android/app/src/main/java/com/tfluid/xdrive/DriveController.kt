@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class Screen { CONNECT, LOGIN, PASSWORD, FILES }
-enum class FilesSection { RECENT, BROWSE, FAVORITES }
+enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 
 data class DriveState(
     val screen: Screen = Screen.CONNECT,
@@ -27,6 +27,9 @@ data class DriveState(
     val filesSection: FilesSection = FilesSection.BROWSE,
     val collectionItems: List<DriveCollectionItem> = emptyList(),
     val collectionLoaded: Boolean = false,
+    val searchQuery: String = "",
+    val searchNextCursor: String = "",
+    val searchReturnSection: FilesSection = FilesSection.BROWSE,
 ) {
     val hasNext get() = loaded && offset.toLong() + 100 < totalCount && offset <= Int.MAX_VALUE - 100
 }
@@ -155,27 +158,78 @@ class DriveController(
 
     fun changeFilesSection(next: FilesSection) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection == next) return
+        if (current.screen != Screen.FILES || current.filesSection == next ||
+            next == FilesSection.SEARCH) return
         invalidate() // Unmount/cancel old Owner range/collection before switching.
         mutableState.value = current.copy(filesSection = next, selected = null,
-            loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false)
+            loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
+            searchQuery = "", searchNextCursor = "")
         if (next == FilesSection.BROWSE) {
             if (!state.value.loaded) load(state.value.path, 0)
         } else loadCollection(next)
+    }
+
+    /** PWA global search targets the Server's entire Owner tree, never this
+     * directory's loaded 100 rows. The query/cursor are scoped to one ticket. */
+    fun submitGlobalSearch(input: String) {
+        val current = state.value
+        if (current.screen != Screen.FILES) return
+        val query = input.trim()
+        if (query.codePointCount(0, query.length) < 2 || query.toByteArray(Charsets.UTF_8).size > 256) {
+            mutableState.value = current.copy(error = "搜索需要至少两个字符，且不能超过 256 字节。")
+            return
+        }
+        invalidate()
+        mutableState.value = current.copy(filesSection = FilesSection.SEARCH, selected = null,
+            loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
+            searchQuery = query, searchNextCursor = "",
+            searchReturnSection = if (current.filesSection == FilesSection.SEARCH)
+                current.searchReturnSection else current.filesSection)
+        loadCollection(FilesSection.SEARCH)
     }
 
     private fun loadCollection(section: FilesSection = state.value.filesSection) {
         val service = api ?: return
         if (session == null || state.value.screen != Screen.FILES ||
             section == FilesSection.BROWSE || state.value.filesSection != section) return
+        val query = state.value.searchQuery
         request { ticket ->
-            val entries = authenticated(service, ticket) { token ->
-                if (section == FilesSection.RECENT) service.fileRecent(token)
-                else service.fileFavorites(token)
+            val page = authenticated(service, ticket) { token ->
+                when (section) {
+                    FilesSection.RECENT -> FileSearchPage(service.fileRecent(token), "")
+                    FilesSection.FAVORITES -> FileSearchPage(service.fileFavorites(token), "")
+                    FilesSection.SEARCH -> service.searchFiles(token, query)
+                    FilesSection.BROWSE -> throw CancellationException()
+                }
             }
             checkCurrent(ticket)
-            if (state.value.filesSection != section) return@request
-            mutableState.value = state.value.copy(collectionItems = entries, collectionLoaded = true)
+            if (state.value.filesSection != section || state.value.searchQuery != query) return@request
+            mutableState.value = state.value.copy(collectionItems = page.items,
+                searchNextCursor = page.nextCursor, collectionLoaded = true)
+        }
+    }
+
+    fun loadMoreSearch(retryFailed: Boolean = false) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.SEARCH ||
+            current.loading || (!retryFailed && current.error != null) ||
+            !current.collectionLoaded || current.searchNextCursor.isBlank()) return
+        val service = api ?: return
+        if (session == null) return
+        val query = current.searchQuery
+        val cursor = current.searchNextCursor
+        request { ticket ->
+            val page = authenticated(service, ticket) { token -> service.searchFiles(token, query, cursor) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.filesSection != FilesSection.SEARCH || latest.searchQuery != query ||
+                latest.searchNextCursor != cursor) return@request
+            val merged = (latest.collectionItems + page.items).distinctBy { it.node.id }
+            if (page.nextCursor == cursor || (page.items.isEmpty() && page.nextCursor.isNotEmpty()) ||
+                (merged.size == latest.collectionItems.size && page.nextCursor.isNotEmpty()))
+                throw ApiException(0, "Search pagination cannot progress", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(collectionItems = merged,
+                searchNextCursor = page.nextCursor, collectionLoaded = true)
         }
     }
 
@@ -192,7 +246,10 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
             current.collectionItems.none { it == item }) return
-        val crumbs = if (item.node.isDirectory) item.crumbs else item.crumbs.dropLast(1)
+        // Search files already carry directory-only breadcrumbs; recent and
+        // favorites include the file leaf. Reuse the actual parent in both.
+        val crumbs = if (item.node.isDirectory || item.crumbs.lastOrNull()?.id != item.node.id)
+            item.crumbs else item.crumbs.dropLast(1)
         if (crumbs.isEmpty() || crumbs.size > 512) return
         val service = api ?: return
         if (session == null) return
@@ -201,7 +258,8 @@ class DriveController(
         }
         invalidate()
         mutableState.value = current.copy(filesSection = FilesSection.BROWSE,
-            collectionItems = emptyList(), collectionLoaded = false, error = null, loading = false, selected = null)
+            collectionItems = emptyList(), collectionLoaded = false, error = null, loading = false,
+            selected = null, searchQuery = "", searchNextCursor = "")
         request { ticket ->
             val root = authenticated(service, ticket) { service.root(it) }
             checkCurrent(ticket)
@@ -250,11 +308,12 @@ class DriveController(
     fun back() {
         val current = state.value
         if (current.selected != null) dismissDetails()
+        else if (current.filesSection == FilesSection.SEARCH) changeFilesSection(current.searchReturnSection)
         else if (current.filesSection != FilesSection.BROWSE) changeFilesSection(FilesSection.BROWSE)
         else if (current.path.size > 1) load(current.path.dropLast(1), 0)
     }
-    // Refresh from first Server-authoritative browse page, or reload the
-    // selected Recent/Favorites collection; never mix a stale browse offset.
+    // Refresh from first Server-authoritative browse page, or restart the
+    // bounded current Recent/Favorites/Search query; never mix stale cursors.
     fun refresh() {
         if (state.value.screen != Screen.FILES) return
         if (state.value.filesSection == FilesSection.BROWSE) load(state.value.path, 0)
@@ -264,6 +323,9 @@ class DriveController(
         if (state.value.screen != Screen.FILES) return
         if (state.value.filesSection == FilesSection.BROWSE)
             load(retryPath ?: state.value.path, retryOffset, retryAppend)
+        else if (state.value.filesSection == FilesSection.SEARCH &&
+            state.value.collectionLoaded && state.value.searchNextCursor.isNotBlank())
+            loadMoreSearch(retryFailed = true)
         else loadCollection()
     }
     fun loadMore() {
