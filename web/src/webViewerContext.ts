@@ -199,6 +199,10 @@ export function createXDriveWebViewerSession(
   // The signed Owner-only BD09 /cell-items API limits each page to <=100.
   // The Viewer cache must use the same offset grid, including boundaries:
   // page index 100 is on offset 100, not a rejected offset 0/128 request.
+  // A signed BD09 Owner Range is also the scope of the current Viewer photo.
+  // Failure or changed membership must never fall back to point Node reads.
+  const privateMapRange = context?.kind === 'gallery' &&
+    (context.target.kind === 'baidu-cell' || context.target.kind === 'baidu-viewport')
   const pageSize = context?.kind === 'gallery' &&
     (context.target.kind === 'baidu-cell' || context.target.kind === 'baidu-viewport')
     ? 100 : 128
@@ -252,9 +256,19 @@ export function createXDriveWebViewerSession(
     // Freeze the signal before Promise.resolve().then(loader): a StrictMode
     // remount must never let an old queued load borrow a new Owner request.
     const signal = rangeController.signal
-    return read(pages, offset, 3, () => loadRange(
-      api, gallerySource, context, offset, pageSize, signal,
-    ))
+    return read(pages, offset, 3, async () => {
+      const page = await loadRange(api, gallerySource, context, offset, pageSize, signal)
+      signal.throwIfAborted()
+      // Validate the signed opening population BEFORE caching or exposing any
+      // candidate to filmstrip/neighbor controls, not just current() Viewer.
+      if (privateMapRange && context.kind === 'gallery' &&
+          (page.totalCount !== context.totalCount ||
+            (context.target.kind === 'baidu-cell' &&
+              page.totalCount !== context.target.baiduCell?.photo_count))) {
+        throw new Error('地图照片范围已变化，请返回地图重新选择。')
+      }
+      return page
+    })
   }
   const nodeAt = (id: number, signal = rangeController.signal) =>
     read(nodes, id, nodeLimit, () => api.node(id, signal))
@@ -332,11 +346,22 @@ export function createXDriveWebViewerSession(
     const candidate = await candidateAt(index).catch((error) => {
       // A page failure may fall back to its Node, but a cancelled Owner session
       // must never issue new authorized point reads after leaving Viewer.
-      if (signal.aborted) throw error
+      if (signal.aborted || privateMapRange) throw error
       return null
     })
     signal.throwIfAborted()
     const usable = candidate?.node.id === nodeID && (!expectedNode || sameSource(candidate.node, expectedNode))
+    // A private map Viewer must still describe the SAME bounded Owner Range
+    // that opened it. A changed count is a stale selection even when the
+    // current Node ID and revision happen to match.
+    const staleSignedMapCount = privateMapRange && context?.kind === 'gallery' &&
+      (candidate?.totalCount !== context.totalCount ||
+        (context.target.kind === 'baidu-cell' &&
+          candidate?.totalCount !== context.target.baiduCell?.photo_count))
+    if (privateMapRange && (!usable || staleSignedMapCount || (wantsMedia && !candidate?.mediaItem))) {
+      invalidate(nodeID)
+      throw new Error('地图照片范围已变化，请返回地图重新选择。')
+    }
     if (!usable && expectedNode) {
       const cached = nodes.get(nodeID)?.value ?? media.get(nodeID)?.value?.node
       if (cached && !sameSource(cached, expectedNode)) {

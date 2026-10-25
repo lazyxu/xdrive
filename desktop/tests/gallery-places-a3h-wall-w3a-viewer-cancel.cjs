@@ -46,7 +46,7 @@ test('W3a aborted Viewer cancels real Owner-cell transport and not generic Galle
         signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
         if (signals.length === 2) resolve({
           items: [{ node: { id: 19, type: 'file', name: 'photo.heic', revision: 3 } }],
-          total_count: 1,
+          total_count: 2,
         })
       })
     },
@@ -77,7 +77,7 @@ test('W3a new Viewer reader does not reuse cancelled context', async () => {
       seen.push(signal)
       return Promise.resolve({ items: [{
         node: { id: 20, type: 'file', revision: 1, name: 'clip.mp4' },
-      }], total_count: 1 })
+      }], total_count: 2 })
     },
   }
   const context = mockContext()

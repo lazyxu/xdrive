@@ -155,7 +155,11 @@ test('Web Viewer hook consumes context Node/MediaItem before point-fetch fallbac
   const mod = { exports: {} }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, (request) => {
     if (request === './webViewerContext') return loadViewerContext()
-    if (request === './webAppRuntime') return { xDriveReadWebAppBrowseSession: (id) => id ? context : null, xDriveWriteWebAppBrowseSession() {} }
+    if (request === './webAppRuntime') return {
+      xDriveIsPrivateMapBrowseSessionID: (id) => typeof id === 'string' && id.startsWith('map-'),
+      xDriveReadWebAppBrowseSession: (id) => id ? context : null,
+      xDriveWriteWebAppBrowseSession() {},
+    }
     return require(request)
   })
   let rangeCalls = 0, nodeCalls = 0, mediaCalls = 0

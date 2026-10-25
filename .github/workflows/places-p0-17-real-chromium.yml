@@ -15,6 +15,11 @@ on:
       - 'ui/shared/src/mui/MediaGallery.tsx'
       - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/scripts/places-web-viewer-history-browser.*'
+      - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
+      - 'web/src/webAppRuntime.ts'
+      - 'web/src/useWebViewerNode.ts'
+      - 'web/src/webViewerContext.ts'
       - 'desktop/tests/gallery-places-ios27-map-first-ui.cjs'
       - 'ui/shared/src/media-gallery-baidu-inline-map-host.ts'
       - 'desktop/src/main/baidu_map_*.cts'
@@ -35,6 +40,11 @@ on:
       - 'ui/shared/src/mui/MediaGallery.tsx'
       - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/scripts/places-web-viewer-history-browser.*'
+      - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
+      - 'web/src/webAppRuntime.ts'
+      - 'web/src/useWebViewerNode.ts'
+      - 'web/src/webViewerContext.ts'
       - 'desktop/tests/gallery-places-ios27-map-first-ui.cjs'
       - 'ui/shared/src/media-gallery-baidu-inline-map-host.ts'
       - 'desktop/src/main/baidu_map_*.cts'
@@ -208,5 +218,50 @@ jobs:
           # The private Go readiness file, JWTs, browser profile, and DB
           # credentials must NEVER be archived.
           path: desktop/places-p04-real-gin-chromium-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  web-viewer-private-history-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install real Web hooks and controlled Chromium test tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          npm --prefix desktop install --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-places-web-history"
+          npm install --prefix "$RUNNER_TEMP/xdrive-places-web-history" \
+            --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-places-web-history/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          fi
+      - name: Actual SPA History Back Forward revocation reload and request abort
+        shell: bash
+        env:
+          XDRIVE_PLACES_WEB_HISTORY_RESULTS: ${{ github.workspace }}/desktop/places-web-viewer-history-results
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/places-web-viewer-history-browser.cjs
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          node desktop/scripts/places-web-viewer-history-browser.cjs
+          node -e "const s=require('./desktop/places-web-viewer-history-results/summary.json'); if(!s.passed || s.head!==process.env.XD_PR_HEAD || !s.realChromium || !s.realWebHistoryHook || !s.realWebViewerHook || s.realGin || s.realBaiduProvider || s.checks.length!==11 || s.checks.some(x=>!x.passed) || s.errors.length)process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: places-web-viewer-private-history-sanitized
+          path: desktop/places-web-viewer-history-results/summary.json
           if-no-files-found: warn
           retention-days: 14

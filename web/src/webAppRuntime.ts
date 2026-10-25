@@ -10,6 +10,13 @@ import {
 } from '../../ui/shared/src'
 
 const WEB_APP_SESSION_PREFIX = 'xdrive.web_app.session.v1:'
+const PRIVATE_MAP_BROWSE_ID_PREFIX = 'map-'
+
+/** The marker carries no Owner, coordinates or authority. After reload the
+ * private context is lost and the Viewer must not borrow a public source. */
+export function xDriveIsPrivateMapBrowseSessionID(id?: string): boolean {
+  return typeof id === 'string' && id.startsWith(PRIVATE_MAP_BROWSE_ID_PREFIX)
+}
 
 /** Provider-derived map coordinates are temporary Owner context, not durable
  * browser state. A reload invalidates this privileged Viewer selection. */
@@ -73,7 +80,7 @@ function sessionKey(id: string) {
 }
 
 export function xDriveCreateWebAppBrowseSession(context: XDriveWebAppBrowseContext) {
-  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  const id = `${isPrivateMapContext(context) ? PRIVATE_MAP_BROWSE_ID_PREFIX : ''}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   xDriveWriteWebAppBrowseSession(id, context)
   return id
 }
@@ -109,6 +116,12 @@ export function xDriveReadWebAppBrowseSession(id?: string) {
     privateMapSessions.delete(id)
     privateMapSessions.set(id, cached) // LRU, but not a TTL extension
     return cached.context
+  }
+  // Map-marked contexts exist only in memory. Never load a persisted
+  // ordinary Gallery context under a stale private-map route after reload.
+  if (xDriveIsPrivateMapBrowseSessionID(id)) {
+    try { window.sessionStorage.removeItem(sessionKey(id)) } catch {}
+    return null
   }
   try {
     const raw = window.sessionStorage.getItem(sessionKey(id))
