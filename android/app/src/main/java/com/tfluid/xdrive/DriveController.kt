@@ -7,8 +7,10 @@ import java.io.OutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
-enum class Screen { CONNECT, LOGIN, PASSWORD, FILES }
+enum class Screen { CONNECT, LOGIN, PASSWORD, FILES, GALLERY }
 enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 enum class FilesTransferKind { COPY, MOVE }
 
@@ -47,6 +49,11 @@ data class DriveState(
     val fileUploadCommitted: Boolean = false,
     val fileUploadBytes: Long = 0,
     val fileUploadTotal: Long = 0,
+    val galleryItems: List<GalleryAsset> = emptyList(),
+    val galleryOffset: Int = 0,
+    val galleryTotal: Long = 0,
+    val galleryLoaded: Boolean = false,
+    val gallerySelected: GalleryAsset? = null,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -90,6 +97,7 @@ class DriveController(
     private var session: AuthSession? = null // Never part of UI state or saved state.
     private var generation = 0L
     private var active: Job? = null
+    private val galleryThumbnailLimit = Semaphore(4)
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
     private var retryAppend = false
@@ -788,6 +796,117 @@ class DriveController(
         }
     }
 
+
+    /** Native Gallery is a second app surface, not another Files section.
+     * Files' verified Owner path remains in memory for a return to browsing. */
+    fun openGallery() {
+        val current = state.value
+        if (current.screen != Screen.FILES || session == null || api == null ||
+            current.fileUploadActive || current.fileDownloadActive ||
+            current.destinationKind != null || current.browseBatchWriteAttempted) return
+        invalidate()
+        mutableState.value = current.copy(
+            screen = Screen.GALLERY, loading = false, selected = null, error = null,
+            fileExportPending = null, fileUploadPickerParent = null,
+            browseSelectionMode = false, browseSelectedIds = emptySet(),
+            galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+            galleryLoaded = false, gallerySelected = null)
+        loadGallery(initialLatest = true)
+    }
+
+    fun openFilesApp() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY) return
+        invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
+        mutableState.value = current.copy(
+            screen = Screen.FILES, loading = false, error = null,
+            galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+            galleryLoaded = false, gallerySelected = null)
+        if (!state.value.loaded) refresh()
+    }
+
+    fun refreshGallery() {
+        if (state.value.screen != Screen.GALLERY) return
+        invalidate() // Stop prior Owner range before replacing its query intent.
+        mutableState.value = state.value.copy(loading = false, error = null,
+            galleryItems = emptyList(), galleryOffset = 0,
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null)
+        loadGallery(initialLatest = true)
+    }
+
+    fun galleryLoadOlder() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            current.loading || current.error != null || current.galleryOffset <= 0) return
+        loadGallery(initialLatest = false)
+    }
+
+    private fun loadGallery(initialLatest: Boolean) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.loading || session == null) return
+        val service = api ?: return
+        val requestedOffset = if (initialLatest) 0 else (current.galleryOffset - 60).coerceAtLeast(0)
+        request { ticket ->
+            val page = authenticated(service, ticket) {
+                service.galleryPage(it, requestedOffset, initialLatest)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY) throw CancellationException()
+            if (initialLatest) {
+                mutableState.value = latest.copy(
+                    galleryItems = page.items, galleryOffset = page.offset,
+                    galleryTotal = page.totalCount, galleryLoaded = true, error = null)
+            } else {
+                if (!latest.galleryLoaded || page.totalCount != latest.galleryTotal ||
+                    page.offset != requestedOffset ||
+                    page.offset + page.items.size != latest.galleryOffset ||
+                    page.items.any { item ->
+                        latest.galleryItems.any { it.node.id == item.node.id }
+                    }) throw ApiException(0, "Gallery range changed", ApiFailureReason.INVALID_RESPONSE)
+                mutableState.value = latest.copy(
+                    galleryItems = page.items + latest.galleryItems,
+                    galleryOffset = page.offset, galleryLoaded = true, error = null)
+            }
+        }
+    }
+
+    /** Thumbnails reuse the live Owner session and the pinned API client.
+     * They are individually cancellable (when tiles unmount) and at most four
+     * concurrent requests. Never cache Bearer tokens or private bytes on disk. */
+    suspend fun galleryThumbnail(item: GalleryAsset): ByteArray? {
+        val ticket = generation
+        val current = state.value
+        val service = api ?: return null
+        val token = session?.accessToken ?: return null
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            current.galleryItems.none { it == item } ||
+            item.node.revision <= 0) return null
+        return try {
+            galleryThumbnailLimit.withPermit {
+                checkCurrent(ticket)
+                val raw = service.galleryThumbnail(token, item.node.id, item.node.revision)
+                checkCurrent(ticket)
+                if (state.value.screen != Screen.GALLERY ||
+                    state.value.galleryItems.none { it == item }) null else raw
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null // Optional derived image absent; never expose raw Owner response.
+        }
+    }
+
+    fun showGalleryInfo(item: GalleryAsset) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryItems.none { it == item }) return
+        mutableState.value = current.copy(gallerySelected = item)
+    }
+
+    fun dismissGalleryInfo() {
+        mutableState.value = state.value.copy(gallerySelected = null)
+    }
+
     /** Jump to an already-visited ancestor without trusting an unverified path. */
     fun navigateToAncestor(index: Int) {
         val current = state.value
@@ -798,6 +917,10 @@ class DriveController(
 
     fun back() {
         val current = state.value
+        if (current.screen == Screen.GALLERY) {
+            if (current.gallerySelected != null) dismissGalleryInfo() else openFilesApp()
+            return
+        }
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
@@ -908,7 +1031,9 @@ class DriveController(
                 items = emptyList(), loaded = false, collectionItems = emptyList(),
                 collectionLoaded = false, selected = null, fileExportPending = null,
                 fileDownloadSaved = false, fileUploadPickerParent = null,
-                fileUploadActive = false, fileUploadCommitted = false)
+                fileUploadActive = false, fileUploadCommitted = false,
+                galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+                galleryLoaded = false, gallerySelected = null)
             throw CancellationException()
         }
         return block(refreshed.accessToken)

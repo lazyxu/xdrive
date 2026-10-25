@@ -69,6 +69,23 @@ data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
 data class FileSearchPage(val items: List<DriveCollectionItem>, val nextCursor: String)
 
+/** Go /media/items?range=true: canonical Owner photo wall, not a Files filter.
+ * Keep the Server's sparse absolute offset; mobile first-open starts at tail. */
+data class GalleryAsset(
+    val node: DriveNode,
+    val mediaKind: String,
+    val capturedAt: String = "",
+    val durationMs: Long = 0,
+    val livePhoto: Boolean = false,
+    val hasThumbnail: Boolean = false,
+)
+data class GalleryPage(
+    val items: List<GalleryAsset>,
+    val totalCount: Long,
+    val offset: Int,
+    val limit: Int = 60,
+)
+
 /** Match the Server's Windows-compatible filename subset before sending a
  * mutating request. Server validation remains authoritative. */
 fun validDriveNodeName(name: String): Boolean {
@@ -130,6 +147,11 @@ interface XDriveService {
     suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
         throw ApiException(501, "Native upload unavailable")
+    suspend fun galleryPage(accessToken: String, offset: Int = 0,
+        initialLatest: Boolean = false): GalleryPage =
+        throw ApiException(501, "Gallery Owner range unavailable")
+    suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
+        throw ApiException(501, "Gallery thumbnail unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -475,6 +497,108 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 }
             }
         })
+    }
+
+
+    /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
+     * Server's exact iOS Gallery chronological tail and sparse Range contract. */
+    override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage {
+        require(offset >= 0 && (!initialLatest || offset == 0))
+        val query = mutableMapOf(
+            "range" to "true", "limit" to "60", "offset" to offset.toString(),
+            "sort_by" to "captured", "sort_dir" to "asc",
+            "unknown_first" to "true", "fold_duplicates" to "true",
+        )
+        if (initialLatest) query["initial_position"] = "latest"
+        val result = request("media/items", accessToken, query = query)
+        val raw = result["items"] as? JsonArray ?: invalidPayload()
+        if (raw.size > 60) invalidPayload()
+        val total = result.long("total_count")
+        val returnedOffset = result.long("offset")
+        val limit = result.long("limit")
+        if (total < 0 || returnedOffset < 0 || returnedOffset > Int.MAX_VALUE ||
+            limit != 60L || returnedOffset + raw.size > total ||
+            (!initialLatest && returnedOffset.toInt() != offset)) invalidPayload()
+        val items = raw.map {
+            val entry = it as? JsonObject ?: invalidPayload()
+            val itemNode = node(entry["node"] as? JsonObject ?: invalidPayload())
+            val metadata = entry["metadata"] as? JsonObject ?: invalidPayload()
+            val kind = metadata.string("media_kind")
+            if (itemNode.type != "file" || itemNode.id <= 0 || itemNode.revision <= 0 ||
+                kind !in listOf("image", "video")) invalidPayload()
+            val captured = metadata.optionalString("captured_at") ?: ""
+            if (captured.length > 64) invalidPayload()
+            val duration = when (metadata["duration_ms"]) {
+                null, JsonNull -> 0L
+                else -> metadata.long("duration_ms")
+            }
+            if (duration < 0) invalidPayload()
+            val hasThumb = when (metadata["has_thumbnail"]) {
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> invalidPayload()
+            }
+            val live = when (entry["live_photo"]) {
+                null, JsonNull, JsonPrimitive(false) -> false
+                JsonPrimitive(true) -> true
+                else -> invalidPayload()
+            }
+            GalleryAsset(itemNode, kind, captured, duration, live, hasThumb)
+        }
+        if (items.map { it.node.id }.toSet().size != items.size ||
+            (total > returnedOffset && items.isEmpty())) invalidPayload()
+        return GalleryPage(items, total, returnedOffset.toInt(), 60)
+    }
+
+    /** No public media URLs, no credentials in query strings or disk cache.
+     * Same pinned OkHttp route, bounded binary response and actual cancellation. */
+    override suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray {
+        require(nodeId > 0 && revision > 0 && validToken(accessToken))
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/media/items/$nodeId/thumbnail")
+            .addQueryParameter("revision", revision.toString()).build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "image/jpeg")
+            .build()
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(transportFailure(error))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val bytes = response.use { reply ->
+                            if (reply.code != 200)
+                                throw ApiException(reply.code, "Gallery thumbnail unavailable")
+                            val mime = reply.header("Content-Type").orEmpty().substringBefore(';').trim()
+                            if (mime != "image/jpeg") invalidPayload()
+                            val body = reply.body ?: invalidPayload()
+                            val max = 4L * 1024 * 1024
+                            if (body.contentLength() > max) invalidPayload()
+                            val buffer = Buffer()
+                            val source = body.source()
+                            while (buffer.size <= max) {
+                                val count = source.read(buffer, minOf(8192L, max + 1 - buffer.size))
+                                if (count < 0) break
+                            }
+                            if (buffer.size == 0L || buffer.size > max) invalidPayload()
+                            buffer.readByteArray()
+                        }
+                        if (continuation.isActive) continuation.resume(bytes)
+                    } catch (error: ApiException) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    } catch (error: IOException) {
+                        if (continuation.isActive) continuation.resumeWithException(transportFailure(error))
+                    } catch (_: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            ApiException(0, "Invalid thumbnail", ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
     }
 
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {

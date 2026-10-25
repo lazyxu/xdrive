@@ -30,6 +30,65 @@ class XDriveApiTest {
 
 
 
+
+    @Test fun `Gallery Owner Range starts at real chronological tail and preserves absolute offset`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":87,"parent_id":1,"name":"latest.jpg","type":"file",
+                    "size":128,"revision":6},"metadata":{"media_kind":"image",
+                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true},"live_photo":true}],
+                "total_count":121,"offset":120,"limit":60
+            }"""))
+            val page = api.galleryPage("owner-secret", initialLatest = true)
+            assertEquals(121L, page.totalCount)
+            assertEquals(120, page.offset)
+            assertEquals(87L, page.items.single().node.id)
+            assertTrue(page.items.single().livePhoto)
+            assertTrue(page.items.single().hasThumbnail)
+            val sent = server.takeRequest()
+            assertEquals("GET", sent.method)
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("range"))
+            assertEquals("latest", sent.requestUrl!!.queryParameter("initial_position"))
+            assertEquals("captured", sent.requestUrl!!.queryParameter("sort_by"))
+            assertEquals("asc", sent.requestUrl!!.queryParameter("sort_dir"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("unknown_first"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("fold_duplicates"))
+        } }
+    }
+
+    @Test fun `Gallery rejects malformed or cross-range pages rather than publishing private items`() = runBlocking {
+        val cases = listOf(
+            """{"items":[],"total_count":4,"offset":0,"limit":60}""",
+            """{"items":[{"node":{"id":7,"name":"bad","type":"dir","revision":1},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}],"total_count":1,"offset":0,"limit":60}""",
+            """{"items":[{"node":{"id":7,"name":"bad","type":"file","revision":1},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                "total_count":1,"offset":2,"limit":60}""",
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (payload in cases) {
+                server.enqueue(MockResponse().setBody(payload))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.galleryPage("owner-secret") }.reason)
+            }
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
+    @Test fun `Gallery thumbnail uses revision fence pinned Bearer and bounded bytes`() = runBlocking {
+        val bytes = byteArrayOf(0xff.toByte(),0xd8.toByte(),1,2,0xff.toByte(),0xd9.toByte())
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setHeader("Content-Type","image/jpeg")
+                .setBody(Buffer().write(bytes)))
+            assertArrayEquals(bytes, api.galleryThumbnail("owner-secret", 7, 3))
+            val sent = server.takeRequest()
+            assertEquals("/api/v1/media/items/7/thumbnail?revision=3", sent.path)
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+            assertEquals("image/jpeg", sent.getHeader("Accept"))
+        } }
+    }
+
     @Test fun `native manual upload uses exact Go session chunks and final result`() = runBlocking {
         val file = "hello xdrive".toByteArray()
         val digest = MessageDigest.getInstance("SHA-256").digest(file).joinToString("") {

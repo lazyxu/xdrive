@@ -283,3 +283,30 @@ No new Server writer, WebView, persistent document URI grants or broad storage
 permissions. The UI supports an explicit cancel action. Unknown file size or
 invalid names fail before network. Full durable resume/foreground Service and
 batch uploads are deferred; a lost final ACK is never automatically retried.
+
+
+## Native Gallery — first usable photo wall increment
+
+The Files account menu switches to the real native Gallery app; Gallery Back
+returns to the previous Files Owner path. It uses the existing Go
+`GET /api/v1/media/items?range=true&sort_by=captured&sort_dir=asc&unknown_first=true&fold_duplicates=true&initial_position=latest`
+contract rather than a local directory filter or second media index. A sparse
+last page opens at the newest photo; earlier items are prepended in 60-item
+Owner-verified ranges. If the range's total changes during pagination, the
+client refuses to merge unverified rows until a fresh request.
+
+Image thumbnails and video posters are read from the authenticated
+`/api/v1/media/items/:id/thumbnail?revision=...` endpoint through the same
+route-pinned OkHttp client. The client bounds raw bytes to 4 MiB, decodes
+reasonably sized images, keeps at most 48 in-memory thumbnails and limits
+network concurrency to four. Unmounting a tile cancels its request; leaving
+Gallery or switching Owner removes the gallery and its ephemeral cache.
+There are no reusable public thumbnail URLs, disk token caches, WebViews or
+second proxy servers.
+
+Initial Gallery tiles provide real metadata and Live/video markers; this
+increment intentionally does not mislabel metadata details as a full Viewer.
+Albums, year/month/day time-scale chrome, full-resolution Viewer and playback,
+map, editing, selection, upload/download from Gallery and final iOS 27 screenshot
+parity remain separate P0/P1 work. The new code is not production-complete
+until its exact Android Native JVM/lint/APK/API35 Compose CI passes.
