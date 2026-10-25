@@ -186,7 +186,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       setDrawer(current => current && current.key===key &&
         xDriveBaiduCellReturnMatchesFreshSelection(current.selection,cell)
         ? { ...current,phase:valid?'ready':'error',
-            items:valid?[...range.items]:[],total:cell.photo_count }
+            items:valid?[...range.items]:[],
+            total:valid?range.total_count:cell.photo_count }
         : current)
     }).catch(() => {
       if (!controller.signal.aborted && drawerFetch.current===controller &&

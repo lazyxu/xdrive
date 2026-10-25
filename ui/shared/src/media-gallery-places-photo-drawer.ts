@@ -52,6 +52,18 @@ function validSelection(selection: MediaBaiduNativeCellSelection): boolean {
       .every(value => Number.isSafeInteger(value) && value > 0))
 }
 
+/** A Cell /cells photo_count counts authorised PhotoAssets. The existing
+ * Gallery /cell-items Range can fold Live motion into a smaller logical set.
+ * Match the existing Server cap, NEVER permit a wider Range or a zero result.
+ * Identity/consent are still rechecked by the original signed Owner API. */
+export function xDrivePlacesCellAcceptsLogicalRangeCount(
+  selection: MediaBaiduNativeCellSelection, logicalCount: unknown,
+): boolean {
+  return validSelection(selection) && typeof logicalCount === 'number' &&
+    Number.isSafeInteger(logicalCount) && logicalCount > 0 &&
+    logicalCount <= selection.photo_count
+}
+
 /** The range must still represent the same signed Owner Cell count and real Nodes.
  * No fallback to a stale pin, a different album, or the user's full library. */
 export function xDrivePlacesDrawerValidRange(
@@ -59,10 +71,9 @@ export function xDrivePlacesDrawerValidRange(
   range: MediaItemRange,
   limit = XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,
 ): boolean {
-  if (!validSelection(selection) ||
+  if (!xDrivePlacesCellAcceptsLogicalRangeCount(selection, range?.total_count) ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
       !xDriveValidBaiduNativeCellRangePage(range, limit, 0) ||
-      range.total_count !== selection.photo_count ||
       range.items.length < 1 ||
       range.items.length !== Math.min(limit, range.total_count)) return false
   const seen = new Set<number>()
