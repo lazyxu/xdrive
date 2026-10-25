@@ -2,6 +2,7 @@ import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import {
   xDriveRememberPlacesDrawerViewerReturn, xDriveClearPlacesDrawerViewerReturn,
+  xDrivePlacesCellAcceptsLogicalRangeCount,
 } from '../media-gallery-places-photo-drawer'
 import { xDriveReadPlacesReturn, xDriveRememberPlacesReturn, xDriveValidPlacesReturnSnapshot } from '../media-gallery-places-return-session'
 import type { XDrivePlacesReturnSnapshot } from '../media-gallery-places-return-session'
@@ -2442,7 +2443,7 @@ export function XDriveMediaGalleryPage({
         const index=range.items.findIndex(item =>
           item.node.id===directPhoto.nodeID &&
           item.node.revision===directPhoto.revision)
-        if (index < 0 || range.total_count!==cell.photo_count) {
+        if (index < 0 || !xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)) {
           setError('该地点照片已变化，请重新选择')
           return
         }

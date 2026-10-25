@@ -36,6 +36,15 @@ const range=(count=2,items=[item(45),item(46)],limit=12)=>({
 test('Drawer preview accepts only complete authenticated current Cell ranges',()=>{
   assert.equal(helper.XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,12)
   assert.equal(helper.xDrivePlacesDrawerValidRange(selection(),range()),true)
+  // Map /cells counts assets; Gallery /cell-items may fold Live motion.
+  assert.equal(helper.xDrivePlacesCellAcceptsLogicalRangeCount(selection(3),2),true)
+  assert.equal(helper.xDrivePlacesDrawerValidRange(selection(3),range()),true)
+  assert.equal(helper.xDrivePlacesCellAcceptsLogicalRangeCount(selection(2),3),false)
+  assert.equal(helper.xDrivePlacesDrawerValidRange(selection(1),range()),false)
+  for (const invalid of [0,-1,1.5,Infinity,NaN,'2',undefined]) {
+    assert.equal(helper.xDrivePlacesCellAcceptsLogicalRangeCount(selection(2),invalid),false)
+  }
+  assert.equal(helper.xDrivePlacesDrawerValidRange(selection(2),range(0,[])),false)
   assert.equal(helper.xDrivePlacesDrawerValidRange(selection(1),range(1,[item(45)])),true)
   assert.equal(helper.xDrivePlacesDrawerValidRange(selection(),range(3)),false)
   assert.equal(helper.xDrivePlacesDrawerValidRange(selection(),{...range(),offset:1}),false)
@@ -55,6 +64,7 @@ test('Viewer Back reauthorizes exact worldwide or camera Cell before drawer retu
   assert.match(surface,/if \(current\) \{\s*restoreHint\.current=null\s*selectCellRef\.current\(current\.selection, hint\.presentation\)/)
   assert.match(surface,/else if \(liveCamera\) \{\s*restoreHint\.current=null/)
   assert.match(surface,/xDrivePlacesDrawerValidRange\(cell,range\)/)
+  assert.ok(surface.includes('total:valid?range.total_count:cell.photo_count'))
 })
 
 test('Viewer Back hint is ephemeral, Owner-bound and never accepted across cameras',()=>{
@@ -141,7 +151,7 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.match(gallery,/directPhoto.presentation/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-expand/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-close/)
-  assert.match(gallery,/index < 0 \|\| range.total_count!==cell.photo_count/)
+  assert.ok(gallery.includes('if (index < 0 || !xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)) {'))
   assert.match(gallery,/xDriveRememberPlacesDrawerViewerReturn\(preferenceScope,cell,approved\)/)
 })
 
