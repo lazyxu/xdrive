@@ -24,6 +24,9 @@ const ui = {
   './ConfirmDialog': {
     XDriveConfirmDialog: props => React.createElement('test-confirm', props),
   },
+  './FeedbackSnackbar': {
+    XDriveFeedbackSnackbar: props => React.createElement('test-feedback', props),
+  },
   './FileOpenPreviewDialog': {
     XDriveOpenPreviewDialog: ({ actions, children, ...props }) =>
       React.createElement('test-shared-viewer', props, actions, children),
@@ -318,6 +321,53 @@ test('Gallery slideshow uses decoded still readiness, 5s dwell and compact More 
     }
   }
   width = 390
+})
+
+test('Gallery Viewer shows safe failure feedback and prevents cross-item dismissal', async () => {
+  width = 900
+  let renderer
+  const loadThumbnail = async () => null
+  const current = { ...item, node: { ...item.node, id: 501, revision: 7 } }
+  const next = { ...item, node: { ...item.node, id: 502, revision: 8 } }
+  const props = selected => ({
+    item: selected, activeIndex: 0, canPrevious: false, canNext: false,
+    filmstripEntries: [], loadThumbnail,
+    onPrevious() {}, onNext() {}, onFilmstripSelect() {}, onClose() {},
+    onDownload: async () => { throw new Error('signed-url-secret-must-not-appear') },
+  })
+  try {
+    await act(async () => { renderer = create(React.createElement(Viewer, props(current))) })
+    assert.equal(renderer.root.findByType('test-feedback').props.open, false)
+    await act(async () => {
+      findButton(renderer, '下载媒体')[0].props.onClick()
+      await Promise.resolve()
+    })
+    const previousFeedback = renderer.root.findByType('test-feedback').props
+    assert.equal(previousFeedback.open, true)
+    assert.match(previousFeedback.message, /下载或导出失败/)
+    assert.doesNotMatch(previousFeedback.message, /signed-url-secret/)
+    await act(async () => { renderer.update(React.createElement(Viewer, props(next))) })
+    assert.equal(renderer.root.findByType('test-feedback').props.open, false,
+      'failure from A must not show for B')
+    await act(async () => {
+      findButton(renderer, '下载媒体')[0].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(renderer.root.findByType('test-feedback').props.open, true)
+    await act(async () => previousFeedback.onClose())
+    assert.equal(renderer.root.findByType('test-feedback').props.open, true,
+      'queued dismissal from A must not hide the newer B failure')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    width = 390
+  }
+})
+
+test('Gallery Page forwards its existing host error reporter without duplicate Viewer toasts', () => {
+  const page = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  assert.match(page, /parentReportsViewerActionErrors=\{Boolean\(onError\)\}/)
+  assert.match(page, /parentReportsViewerActionErrors=\{parentReportsViewerActionErrors\}/)
+  assert.match(page, /onToggleFavorite=\{onSetFavorite \? toggleFavorite : undefined\}/)
 })
 
 test('P1-320 shared Gallery Viewer moves only authorized neighbors to More below 368px', async () => {

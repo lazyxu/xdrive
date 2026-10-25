@@ -18,7 +18,7 @@ const entire = component.getText(file)
 const index = entire.search(/\n\s*const actions = item \? \(/)
 assert.ok(index > 0, 'missing Viewer action presentation boundary')
 const extracted = entire.slice(0, index) +
-  '\n return {run, close, busyAction, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
+  '\n return {run, close, busyAction, actionError: visibleActionError, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
 const compiled = ts.transpileModule(extracted, {
   fileName: filename,
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS},
@@ -118,6 +118,7 @@ function fixture(ports = {}) {
         loadThumbnail: loaders.thumbnail,
         loadPreviewURL: loaders.preview,
         loadLivePhotoMotion: loaders.motion,
+        parentReportsViewerActionErrors: Boolean(loaders.parentReportsErrors),
         onClose: () => closes.push('closed'),
       })
       return current
@@ -362,4 +363,66 @@ test('P0 identical Node/revision from another loader scope starts a new action s
   assert.deepEqual(calls, [81], 'stale action must not launch another old-source transfer')
   pending.resolve()
   await flush()
+})
+
+test('Viewer: current Download failure is visible, but old A errors cannot reach B or A→B→A', async () => {
+  const a = deferred(), b = deferred()
+  const h = fixture({onDownload: item => item.node.id === 31 ? a.promise : b.promise})
+  h.render(31); h.click('download')
+  h.render(32); h.click('download')
+  a.reject(new Error('signed-private-ticket'))
+  await flush()
+  assert.equal(h.render(32).actionError, null, 'old action failure is hidden on B')
+  b.reject(new Error('current transport failure'))
+  await flush()
+  const failed = h.render(32)
+  assert.equal(failed.actionError?.action, 'download', 'current failure is visible')
+  assert.equal(failed.busyAction, '', 'failed action releases Busy')
+  assert.equal(h.render(31).actionError, null, 'return to A is a new action session')
+})
+
+test('Viewer: failed Delete preserves confirmation, shows feedback, and allows retry', async () => {
+  let attempts = 0
+  const h = fixture({onDelete: async () => {
+    if (++attempts === 1) throw new Error('transient delete error')
+  }})
+  h.render(42)
+  h.view.setDeleteOpen(true)
+  h.render(42)
+  h.click('delete')
+  await flush()
+  const failed = h.render(42)
+  assert.equal(failed.deleteOpen, true)
+  assert.equal(failed.actionError?.action, 'delete')
+  assert.equal(failed.busyAction, '')
+  assert.deepEqual(h.closes, [])
+  h.click('delete')
+  await flush()
+  assert.equal(attempts, 2)
+  assert.deepEqual(h.closes, ['closed'], 'successful retry preserves the original close flow')
+  assert.equal(h.render(42).actionError, null)
+})
+
+test('Viewer: host-reported Download and Delete errors do not duplicate local feedback', async () => {
+  const error = new Error('upstream has already reported this')
+  const loaders = { parentReportsErrors: true }
+  const h = fixture({
+    onDownload: async () => { throw error },
+    onDelete: async () => { throw error },
+    onToggleFavorite: async () => { throw error },
+  })
+  h.render(55, loaders); h.click('download')
+  await flush()
+  assert.equal(h.render(55, loaders).actionError, null,
+    'host Snackbar already reported the transfer failure')
+  h.view.setDeleteOpen(true)
+  h.render(55, loaders); h.click('delete')
+  await flush()
+  assert.equal(h.render(55, loaders).actionError, null,
+    'host Snackbar already reported the deletion failure')
+  assert.equal(h.view.deleteOpen, true, 'failed deletion remains retryable')
+  h.click('favorite')
+  await flush()
+  assert.equal(h.render(55, loaders).actionError, null,
+    'host Snackbar already reported the Favorite failure as well')
 })

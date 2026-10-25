@@ -29,6 +29,7 @@ import {
   xDriveMediaItemSupportsBasicEditing,
 } from '../media-edit'
 import { XDriveConfirmDialog } from './ConfirmDialog'
+import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
 import {
   XDriveMediaGalleryCreativeDialog,
@@ -83,6 +84,7 @@ export function XDriveMediaGalleryViewer({
   onExportLivePhoto,
   onShare,
   onDelete,
+  parentReportsViewerActionErrors = false,
   onClose,
 }: {
   item: MediaItem | null
@@ -130,6 +132,9 @@ export function XDriveMediaGalleryViewer({
   onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShare?: (item: MediaItem) => void
   onDelete?: (item: MediaItem) => Promise<void>
+  // Gallery Page's upstream Favorite/Download/Live Export/Delete adapters report
+  // failures via the host Snackbar. Avoid a second competing notification.
+  parentReportsViewerActionErrors?: boolean
   onClose: () => void
 }) {
   const [fullScreen, setFullScreen] = useState(false)
@@ -249,6 +254,19 @@ export function XDriveMediaGalleryViewer({
   } | null>(null)
   const busyAction: ViewerAction =
     busyState?.owner === actionOwner ? busyState.action : ''
+  // Full-screen feedback is tied to the exact Node/revision/source session.
+  // Reject late failures and late Snackbar dismissals across A → B → A.
+  const [actionError, setActionError] = useState<{
+    owner: typeof actionOwner
+    action: ViewerAction
+  } | null>(null)
+  const visibleActionError = actionError?.owner === actionOwner ? actionError : null
+  // Transport errors can contain signed URLs. Render only fixed safe messages.
+  const actionErrorMessage = visibleActionError?.action === 'favorite'
+    ? '收藏失败，请重试'
+    : visibleActionError?.action === 'delete'
+      ? '删除失败，请重试'
+      : '下载或导出失败，请重试'
 
   const run = useCallback(async (
     action: ViewerAction,
@@ -261,14 +279,21 @@ export function XDriveMediaGalleryViewer({
     }
     actionOwner.inFlight = true
     setBusyState({ owner: actionOwner, action })
+    setActionError(null)
     try {
       await task()
       return actionOwnerRef.current === actionOwner
+    } catch (error) {
+      if (actionOwnerRef.current === actionOwner &&
+          !parentReportsViewerActionErrors) {
+        setActionError({ owner: actionOwner, action })
+      }
+      throw error
     } finally {
       actionOwner.inFlight = false
       if (actionOwnerRef.current === actionOwner) setBusyState(null)
     }
-  }, [actionOwner, item])
+  }, [actionOwner, item, parentReportsViewerActionErrors])
 
   const close = () => {
     // A close/reopen of the same Node still starts a fresh action session.
@@ -280,6 +305,7 @@ export function XDriveMediaGalleryViewer({
       inFlight: false,
     }
     setBusyState(null)
+    setActionError(null)
     setDeleteOpen(false)
     setCreativeOpen(false)
     setEditOpen(false)
@@ -588,6 +614,19 @@ export function XDriveMediaGalleryViewer({
               close()
             })
             .catch(() => undefined)
+        }}
+      />
+      <XDriveFeedbackSnackbar
+        open={Boolean(visibleActionError)}
+        tone="bad"
+        message={actionErrorMessage}
+        dismissible
+        onClose={() => setActionError((current) =>
+          current?.owner === actionOwner ? null : current)}
+        alertSx={{
+          // Float above the filmstrip and mobile action rail, not over buttons.
+          mb: narrowViewer ? 'calc(124px + env(safe-area-inset-bottom))' : '84px',
+          maxWidth: 'min(420px, calc(100vw - 24px))',
         }}
       />
     </>

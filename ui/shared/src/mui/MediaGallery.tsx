@@ -3855,6 +3855,7 @@ export function XDriveMediaGalleryPage({
       >
         <XDriveMediaGallery
         key={preferenceScope || 'gallery-default'}
+        parentReportsViewerActionErrors={Boolean(onError)}
         preferenceScope={preferenceScope}
         mobileWebChrome={mobileWebChrome}
         onUploadRequested={onUploadRequested}
@@ -4548,6 +4549,9 @@ export interface XDriveMediaGalleryProps {
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  // Outer Gallery Page may already report mutation/transfer failures to its
+  // host Snackbar. Direct Gallery consumers default to Viewer-local feedback.
+  parentReportsViewerActionErrors?: boolean
   onUploadRequested?: () => void
   onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShareItem?: (item: MediaItem) => void
@@ -6276,6 +6280,7 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  parentReportsViewerActionErrors = false,
   onUploadRequested,
   onExportLivePhoto,
   onShareItem,
@@ -9355,6 +9360,9 @@ export function XDriveMediaGallery({
         onNext={() => requestPreviewIndex(previewIndex + 1)}
         onFilmstripSelect={requestPreviewIndex}
         onToggleFavorite={onSetFavorite ? toggleFavorite : undefined}
+        // The outer Gallery Page forwards mutation and transfer errors through
+        // its host Snackbar. Do not duplicate them with a Viewer-local toast.
+        parentReportsViewerActionErrors={parentReportsViewerActionErrors}
         onInfo={openPreviewInfo}
         externalInteractionPaused={Boolean(selected) || shareDialogOpen}
         onSaveEditRecipe={onSaveEditRecipe ? saveLocalEditRecipe : undefined}
