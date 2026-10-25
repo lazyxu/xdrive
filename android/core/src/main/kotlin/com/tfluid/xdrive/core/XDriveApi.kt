@@ -59,6 +59,7 @@ data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offse
 /** Owner-checked location emitted by the existing Go recent/favorite API. */
 data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
+data class FileSearchPage(val items: List<DriveCollectionItem>, val nextCursor: String)
 
 /** Messages are client-owned constants; response bodies and transport causes are never retained. */
 enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTION, TIMEOUT, TLS, INVALID_RESPONSE }
@@ -83,6 +84,8 @@ interface XDriveService {
     suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
         throw ApiException(501, "Favorite API unavailable")
     }
+    suspend fun searchFiles(accessToken: String, query: String, cursor: String = ""): FileSearchPage =
+        throw ApiException(501, "Search API unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -133,6 +136,24 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return NodeRange(items, count, offset)
     }
 
+    override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
+        val trimmed = query.trim()
+        require(trimmed.codePointCount(0, trimmed.length) >= 2 && trimmed.toByteArray(Charsets.UTF_8).size <= 256) { "Invalid search query" }
+        require(cursor.length <= 4096) { "Invalid search cursor" }
+        val parameters = mutableMapOf("q" to trimmed, "limit" to "100", "sort" to "name", "order" to "asc")
+        if (cursor.isNotEmpty()) parameters["cursor"] = cursor
+        val result = request("search", accessToken, query = parameters)
+        val items = result["items"] as? JsonArray ?: invalidPayload()
+        if (items.size > 100) invalidPayload()
+        val records = items.map { collectionItem(it as? JsonObject ?: invalidPayload(),
+            crumbsKey = "breadcrumbs", searchDirectoryCrumbs = true) }
+        if (records.map { it.node.id }.toSet().size != records.size) invalidPayload()
+        val next = result.optionalString("next_cursor") ?: ""
+        if (next.length > 4096 || (next.isNotEmpty() && records.isEmpty()) ||
+            (cursor.isNotEmpty() && next == cursor)) invalidPayload()
+        return FileSearchPage(records, next)
+    }
+
     override suspend fun fileRecent(accessToken: String): List<DriveCollectionItem> =
         collectionList(requestArray("file-recent", accessToken, query = mapOf("limit" to "50")), 50)
 
@@ -159,12 +180,13 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return result
     }
 
-    private fun collectionItem(data: JsonObject, expectedID: Long? = null): DriveCollectionItem {
+    private fun collectionItem(data: JsonObject, expectedID: Long? = null,
+        crumbsKey: String = "crumbs", searchDirectoryCrumbs: Boolean = false): DriveCollectionItem {
         val entry = node(data["node"] as? JsonObject ?: invalidPayload())
         if (expectedID != null && entry.id != expectedID) invalidPayload()
         val path = data.string("path")
         if (path.length > 4096) invalidPayload()
-        val rawCrumbs = data["crumbs"] as? JsonArray ?: invalidPayload()
+        val rawCrumbs = data[crumbsKey] as? JsonArray ?: invalidPayload()
         if (rawCrumbs.isEmpty() || rawCrumbs.size > 512) invalidPayload()
         val crumbs = rawCrumbs.map { raw ->
             val c = raw as? JsonObject ?: invalidPayload()
@@ -173,8 +195,14 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             if (id <= 0 || name.length > 255) invalidPayload()
             DriveCrumb(id, name)
         }
-        if (crumbs.map { it.id }.toSet().size != crumbs.size ||
-            crumbs.last().id != entry.id || crumbs.last().name != entry.name ||
+        if (crumbs.map { it.id }.toSet().size != crumbs.size) invalidPayload()
+        // file-recent and file-favorites return *node-inclusive* crumbs.
+        // Go /search instead returns *directory-only* crumbs for a file,
+        // because its SQL breadcrumb tree intentionally excludes the leaf.
+        // Do not require identical shapes or drop the real parent directory.
+        if (searchDirectoryCrumbs && !entry.isDirectory) {
+            if (entry.parentId == null || crumbs.last().id != entry.parentId) invalidPayload()
+        } else if (crumbs.last().id != entry.id || crumbs.last().name != entry.name ||
             (entry.parentId != null && (crumbs.size < 2 ||
                 crumbs[crumbs.lastIndex - 1].id != entry.parentId))) invalidPayload()
         return DriveCollectionItem(entry, path, crumbs)

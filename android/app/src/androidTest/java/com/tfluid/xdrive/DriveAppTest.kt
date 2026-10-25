@@ -35,6 +35,10 @@ class DriveAppTest {
         override suspend fun fileFavorites(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                 listOf(DriveCrumb(1, ""), DriveCrumb(7, "favorite.txt"))))
+        override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage =
+            FileSearchPage(listOf(
+                DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
+                    listOf(DriveCrumb(1, "")))), "")
         override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
             if (nodeId == 7L) favoriteDeletes++
         }
@@ -192,6 +196,44 @@ class DriveAppTest {
         compose.onNodeWithTag("files-path-1").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.path.size == 1 && controller.state.value.loaded }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun searchAllFilesUsesServerResultRatherThanCurrentDirectoryRows() {
+        startAndLogin()
+        compose.onNodeWithTag("files-global-search-input").performTextInput("favorite")
+        compose.onNodeWithTag("files-global-search-submit").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.SEARCH &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-collection").assertExists()
+        compose.onNodeWithTag("files-collection-item-7").assertExists()
+        compose.onNodeWithContentDescription("返回上级").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.BROWSE
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun searchLaunchedFromFavoritesReturnsToFavoritesViaBack() {
+        startAndLogin()
+        compose.onNodeWithTag("files-section-favorites").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.FAVORITES &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-search-results-input").performTextInput("holiday")
+        compose.onNodeWithTag("files-search-results-submit").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.SEARCH &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithContentDescription("返回上级").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.FAVORITES &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-collection-item-7").assertExists()
     }
 
     @Test fun recentBrowseFavoritesAreRealOwnerLoadedSections() {

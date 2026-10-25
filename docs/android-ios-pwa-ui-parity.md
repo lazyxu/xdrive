@@ -15,7 +15,7 @@
 | P0-01 | 原生 App Shell | iOS PWA 52/56px 顶栏、返回、当前标题、更多操作、全屏安全区域、状态与导航栏；Android Back/IME 适配 |
 | P0-02 | Files 连续分页 | **本 PR 首轮实现** 100 项增量追加、同页重试、已载入行不被下一页替换、列表/网格开关；待补目录返回及视图切换时的锚点保持 |
 | P0-03 | 最近 / 浏览 / 收藏三入口 | **本 PR 接入** Go Owner 最近（最多50项）与文件收藏（最多256项）、真实三入口、文件位置跳转、收藏 PUT/DELETE；未实现全量视觉图标细节与搜索 |
-| P0-04 | Files 全局搜索 | 现无；必须复用 Server 全库搜索、过滤和取消语义，不能把本页筛选冒充全局搜索 |
+| P0-04 | Files 全局搜索 | 新增原生全库关键词搜索与真实 Server cursor（100 项页）、取消旧查询、错误重试、定位结果；复杂结构化过滤与排序 UI 仍未完成 |
 | P0-05 | 文件操作 | 新建文件夹、上传文件/文件夹、下载、删除到回收站、移动/复制、重命名、批量选择、冲突对话框与可靠撤销 |
 | P0-06 | 文件排列与交互 | 列表/图标状态及菜单、排序/分组、长按上下文菜单、文件夹拖放、路径面包屑、快速访问及虚拟列表 |
 | P0-07 | Gallery 照片墙 | 未实现；最新在底部、按年/月/日/全部切换、缩略图/视频 poster、列数算法、收藏/分类/搜索/选择/更多 |
@@ -64,3 +64,11 @@ node scripts/shared-ui.mjs --check
 - `DriveController` 使用同一 generation、Owner/session 刷新机制管理 Recent/Favorites/Browse，切换页面取消旧请求，退出/更换服务器清除列表；浏览目录数据在切换回来时保留。
 - Recent 文件夹短按通过已验证目录根 + Server children 进入浏览；文件短按显示现有属性（Viewer 尚未实现）；长按真实加入/取消收藏操作在服务端确认后更新，失败不能谎称成功。
 - 当前未实现“在 Android 真正打开媒体后记录 Recent”（待 Viewer）、全库搜索、批量操作以及 iOS PWA 最终图标与细节校准；不得把这些标为已验收。
+
+## P0-04 · Android 全库搜索实现边界（接续最近/收藏）
+
+- 搜索走已经存在的 Go `GET /api/v1/search?q=...&limit=100&sort=name&order=asc&cursor=...`；搜索范围是 Owner 全库，非当前目录/已加载行。不会新增 Server API 或本地索引。
+- `XDriveApi.searchFiles` 沿用当前 Bearer/signed-Origin/HTTP/TLS、不重试和 2 MiB JSON 上限，复用现有 Node 解码和响应上限，按真实协议区分面包屑：Search 文件只返回父目录链，Recent/Favorites 文件返回含文件末级的完整链，目录项以自身结尾；Server cursor 原样传输，不解析/伪造分页 Token。
+- Compose 的「浏览 / 最近 / 收藏」均提供可见的「搜索全部文件」，查询结果仍能修改关键词，返回恢复搜索之前的栏目；显示真实路径和无结果/失败区分。结果点击文件先沿用现有属性展示，文件夹通过 Owner 根和 Server children 重新验证定位，后续 Viewer 另行实现。
+- Controller 搜索属于同一 generation：输入新 query、切栏目、退出、密码失效均取消旧请求及旧结果；仅游标存在才预加载下一页；失败保留本页，手动重试原 cursor；A→B→A 不跨 Owner 回写。
+- PWA 的完整结构化筛选、搜索条件保存、排序分组、Viewer，以及 100k 分页性能与像素级测量需要后续真实源码/CI 对照，不能因上述功能而标记完成。

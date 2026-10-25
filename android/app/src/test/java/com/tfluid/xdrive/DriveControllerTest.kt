@@ -23,12 +23,19 @@ class DriveControllerTest {
             listOf(DriveCrumb(1, ""), DriveCrumb(2, "照片")))
         val favoriteFile = DriveCollectionItem(file, "readme.txt",
             listOf(DriveCrumb(1, ""), DriveCrumb(3, "readme.txt")))
+        val searchFile = DriveCollectionItem(file, "readme.txt",
+            listOf(DriveCrumb(1, ""))) // Go /search emits directory-only crumbs for files.
         var recentRows = listOf(recentFolder)
         var favoriteRows = listOf(favoriteFile)
         var recentListing: suspend () -> List<DriveCollectionItem> = { recentRows }
         var favoriteListing: suspend () -> List<DriveCollectionItem> = { favoriteRows }
         var favoritePuts = 0
         var favoriteDeletes = 0
+        val searchCalls = mutableListOf<Pair<String, String>>()
+        var searchListing: suspend (String, String) -> FileSearchPage = { _, cursor ->
+            if (cursor.isEmpty()) FileSearchPage(listOf(searchFile), "cursor-1")
+            else FileSearchPage(listOf(recentFolder), "")
+        }
         var listing: suspend (Long, Int) -> NodeRange = { _, offset ->
             NodeRange(if (offset == 0) listOf(folder, file) else listOf(file), 101, offset)
         }
@@ -44,6 +51,10 @@ class DriveControllerTest {
         }
         override suspend fun fileRecent(accessToken: String) = recentListing()
         override suspend fun fileFavorites(accessToken: String) = favoriteListing()
+        override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
+            searchCalls += query to cursor
+            return searchListing(query, cursor)
+        }
         override suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem {
             assertEquals(file.id, nodeId)
             favoritePuts++
@@ -207,6 +218,93 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun globalSearchUsesServerCursorAndRestoresBrowseState() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val browse = c.state.value.items
+        val path = c.state.value.path
+        c.submitGlobalSearch(" trip "); runCurrent()
+        assertEquals(FilesSection.SEARCH, c.state.value.filesSection)
+        assertEquals("trip", c.state.value.searchQuery)
+        assertEquals(listOf(api.searchFile), c.state.value.collectionItems)
+        assertEquals("cursor-1", c.state.value.searchNextCursor)
+        c.loadMoreSearch(); runCurrent()
+        assertEquals(listOf(api.searchFile, api.recentFolder), c.state.value.collectionItems)
+        assertEquals("", c.state.value.searchNextCursor)
+        assertEquals(listOf("trip" to "", "trip" to "cursor-1"), api.searchCalls)
+        c.loadMoreSearch(); runCurrent()
+        assertEquals(2, api.searchCalls.size)
+        c.changeFilesSection(FilesSection.BROWSE); runCurrent()
+        assertEquals(path, c.state.value.path)
+        assertEquals(browse, c.state.value.items)
+        assertEquals("", c.state.value.searchQuery)
+    }
+
+    @Test fun searchFileDirectoryOnlyBreadcrumbLocatesActualParent() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("readme"); runCurrent()
+        c.locateCollectionItem(api.searchFile); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(listOf(root), c.state.value.path)
+        assertEquals(1L to 0, api.calls.last())
+    }
+
+    @Test fun staleGlobalSearchCannotOverwriteFreshQueryOrLogout() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val old = CompletableDeferred<FileSearchPage>()
+        api.searchListing = { q, _ -> if (q == "old") withContext(NonCancellable) { old.await() }
+            else FileSearchPage(listOf(api.searchFile), "") }
+        c.submitGlobalSearch("old"); runCurrent()
+        c.submitGlobalSearch("new"); runCurrent()
+        old.complete(FileSearchPage(listOf(api.recentFolder), "obsolete")); runCurrent()
+        assertEquals(FilesSection.SEARCH, c.state.value.filesSection)
+        assertEquals("new", c.state.value.searchQuery)
+        assertEquals(listOf(api.searchFile), c.state.value.collectionItems)
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.collectionItems.isEmpty())
+        assertEquals("", c.state.value.searchQuery)
+    }
+
+    @Test fun searchOpenedFromFavoritesReturnsToFavoritesNotBrowse() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        c.submitGlobalSearch("hello"); runCurrent()
+        assertEquals(FilesSection.SEARCH, c.state.value.filesSection)
+        assertEquals(FilesSection.FAVORITES, c.state.value.searchReturnSection)
+        c.submitGlobalSearch("world"); runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.searchReturnSection)
+        c.back(); runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+    }
+
+    @Test fun searchFailedCursorIsRetriedWithoutLosingPreviousRows() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        var failed = false
+        api.searchListing = { _, cursor ->
+            if (cursor.isNotEmpty() && !failed) {
+                failed = true
+                throw ApiException(503, "failed")
+            }
+            if (cursor.isEmpty()) FileSearchPage(listOf(api.searchFile), "cursor-1")
+            else FileSearchPage(listOf(api.recentFolder), "")
+        }
+        c.submitGlobalSearch("sample"); runCurrent()
+        c.loadMoreSearch(); runCurrent()
+        assertNotNull(c.state.value.error)
+        assertEquals(listOf(api.searchFile), c.state.value.collectionItems)
+        c.loadMoreSearch(); runCurrent()
+        assertEquals(2, api.searchCalls.size)
+        c.retry(); runCurrent()
+        assertEquals(listOf(api.searchFile, api.recentFolder), c.state.value.collectionItems)
+        assertEquals(3, api.searchCalls.size)
+        assertNull(c.state.value.error)
     }
 
     @Test fun recentAndFavoriteSectionsLoadOwnerCollectionsAndPreserveBrowsePath() = runTest {

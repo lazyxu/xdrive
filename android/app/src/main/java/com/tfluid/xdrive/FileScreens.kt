@@ -68,9 +68,14 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
     val folderKey = state.path.map { it.id }
     val anchors = remember { FilesViewportAnchors() }
+    var globalSearchText by remember { mutableStateOf("") }
 
     if (state.filesSection != FilesSection.BROWSE) {
-        FilesCollection(state, controller, pageColor, rowColor)
+        // A new Owner-scoped section or search query must not inherit the
+        // old collection's virtual-list viewport or long-press menu state.
+        key(state.filesSection, state.searchQuery) {
+            FilesCollection(state, controller, pageColor, rowColor)
+        }
         FilesSectionsBar(state.filesSection, controller::changeFilesSection)
         return
     }
@@ -110,6 +115,20 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(state.totalCount.toString() + " 项", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = globalSearchText,
+                onValueChange = { globalSearchText = it.take(256) },
+                modifier = Modifier.weight(1f).testTag("files-global-search-input"),
+                singleLine = true, label = { Text("搜索全部文件") },
+            )
+            TextButton(
+                onClick = { controller.submitGlobalSearch(globalSearchText) },
+                enabled = !state.loading &&
+                    globalSearchText.trim().codePointCount(0, globalSearchText.trim().length) >= 2,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("files-global-search-submit"),
+            ) { Text("搜索") }
+        }
         ErrorNotice(state.error)
         if (state.error != null) {
             if (state.loaded) Text("保留上次成功读取的目录。", style = MaterialTheme.typography.bodySmall)
@@ -192,11 +211,46 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
 @Composable
 private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveController,
     pageColor: Color, rowColor: Color) {
-    val title = if (state.filesSection == FilesSection.RECENT) "最近" else "收藏"
+    val title = when (state.filesSection) {
+        FilesSection.RECENT -> "最近"
+        FilesSection.FAVORITES -> "收藏"
+        FilesSection.SEARCH -> "搜索结果"
+        FilesSection.BROWSE -> "浏览"
+    }
+    var searchDraft by remember(state.searchQuery) { mutableStateOf(state.searchQuery) }
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.filesSection, state.searchQuery, state.searchNextCursor,
+        state.collectionItems.size, state.loading, state.error) {
+        if (state.filesSection == FilesSection.SEARCH &&
+            state.searchNextCursor.isNotBlank() && !state.loading && state.error == null) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                .collect { index ->
+                    if (index >= (state.collectionItems.size - 3).coerceAtLeast(0))
+                        controller.loadMoreSearch()
+                }
+        }
+    }
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        if (state.collectionLoaded) Text("${state.collectionItems.size} 项",
+        // Same global Owner search is reachable from Browse, Recent and
+        // Favorites; never filter the currently loaded collection in memory.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = searchDraft, onValueChange = { searchDraft = it.take(256) },
+                    modifier = Modifier.weight(1f).testTag("files-search-results-input"),
+                    singleLine = true, label = { Text("搜索全部文件") },
+                )
+                TextButton(onClick = { controller.submitGlobalSearch(searchDraft) },
+                    enabled = !state.loading &&
+                        searchDraft.trim().codePointCount(0, searchDraft.trim().length) >= 2,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("files-search-results-submit")) {
+                    Text("搜索")
+                }
+            }
+        if (state.collectionLoaded) Text(
+            (if (state.filesSection == FilesSection.SEARCH) "已加载 " else "") +
+                "${state.collectionItems.size} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         ErrorNotice(state.error)
@@ -204,11 +258,16 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
             modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
     }
     Surface(Modifier.weight(1f).fillMaxWidth(), color = pageColor) {
-        LazyColumn(Modifier.fillMaxSize().testTag("files-collection")) {
+        LazyColumn(Modifier.fillMaxSize().testTag("files-collection"), state = listState) {
             if (state.collectionLoaded && state.collectionItems.isEmpty() &&
                 state.error == null && !state.loading) item {
-                Text(if (state.filesSection == FilesSection.RECENT) "暂无最近项目" else "暂无收藏的文件",
-                    Modifier.padding(24.dp))
+                val empty = when (state.filesSection) {
+                    FilesSection.RECENT -> "暂无最近项目"
+                    FilesSection.FAVORITES -> "暂无收藏的文件"
+                    FilesSection.SEARCH -> "没有匹配的文件"
+                    FilesSection.BROWSE -> "此文件夹为空"
+                }
+                Text(empty, Modifier.padding(24.dp))
             }
             items(state.collectionItems, key = { it.node.id }) { item ->
                 var contextOpen by remember(item.node.id) { mutableStateOf(false) }
@@ -240,6 +299,10 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                             color = MaterialTheme.colorScheme.outline)
                 }
             }
+            if (state.filesSection == FilesSection.SEARCH &&
+                ((state.searchNextCursor.isNotBlank() && state.error == null) ||
+                    (state.loading && state.collectionItems.isNotEmpty())))
+                item(key = "search-paging") { PageTail(state) }
         }
     }
 }
