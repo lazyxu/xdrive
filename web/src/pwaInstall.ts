@@ -40,7 +40,12 @@ function platformHint(): XDrivePwaPlatformHint {
 function displayMode(): XDrivePwaDisplayMode {
   if (typeof window === 'undefined') return 'browser'
   for (const mode of ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay'] as const) {
-    if (window.matchMedia?.('(display-mode: ' + mode + ')').matches) return mode
+    try {
+      if (window.matchMedia?.('(display-mode: ' + mode + ')')?.matches) return mode
+    } catch {
+      // A restricted WebKit media-query API is only an unknown display mode;
+      // optional install detection must never prevent the regular app boot.
+    }
   }
   if ((navigator as Navigator & { standalone?: boolean }).standalone === true) return 'standalone'
   return 'browser'
@@ -89,7 +94,12 @@ export function startXDrivePwaInstallObservation(): void {
   window.addEventListener('appinstalled', onInstalled)
   window.addEventListener('pageshow', broadcast)
   for (const mode of ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']) {
-    window.matchMedia?.('(display-mode: ' + mode + ')').addEventListener?.('change', broadcast)
+    try {
+      window.matchMedia?.('(display-mode: ' + mode + ')')?.addEventListener?.('change', broadcast)
+    } catch {
+      // Denied matchMedia listeners cannot make PWA install observation fatal.
+      // Existing pageshow and install events still update the UI when possible.
+    }
   }
   broadcast()
 }
