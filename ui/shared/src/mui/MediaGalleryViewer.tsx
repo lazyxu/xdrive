@@ -460,7 +460,8 @@ export function XDriveMediaGalleryViewer({
     </Stack>
   ) : null
 
-  const footer = item ? (
+  // Match the routed Web Viewer: no blank lower overlay for a singleton.
+  const footer = item && filmstripEntries.length > 0 ? (
     <Box sx={{ width: '100%', minWidth: 0 }}>
       <XDriveMediaGalleryFilmstrip
         entries={filmstripEntries}
@@ -500,6 +501,7 @@ export function XDriveMediaGalleryViewer({
             loadLivePhotoMotion={loadLivePhotoMotion}
             loadPreviewURL={loadPreviewURL}
             onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
+            videoControlsSafeArea={narrowViewer ? (filmstripEntries.length > 0 ? 'actions-filmstrip' : 'actions') : undefined}
             interactiveImage
             onSwipePrevious={canPrevious ? onPrevious : undefined}
             onSwipeNext={canNext ? onNext : undefined}

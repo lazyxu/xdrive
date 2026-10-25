@@ -137,3 +137,49 @@ test('image source failures report failed and callback replacement observes the 
     assert.deepEqual(first, ['loading']); assert.deepEqual(second, ['failed'])
   } finally { if (r) await act(async () => r.unmount()) }
 })
+
+test('native video controls clear mobile Gallery chrome while wide Viewer stays unchanged', async () => {
+  const cases = [
+    [undefined, undefined],
+    ['actions', 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'],
+    ['actions-filmstrip', 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'],
+  ]
+  for (const [videoControlsSafeArea, expectedPadding] of cases) {
+    let r
+    try {
+      await act(async () => {
+        r = create(React.createElement(XDriveFilePreviewSurface, {
+          target: { ...target, name: 'clip.mp4' },
+          loadPreviewURL: async () => 'video-url',
+          videoControlsSafeArea,
+        }))
+      })
+      const videoSurface = r.root.findAllByType('div').find(x =>
+        x.props['data-xdrive-preview-media-state'] === 'video')
+      assert.ok(videoSurface)
+      assert.equal(videoSurface.props.sx.boxSizing, 'border-box')
+      assert.equal(videoSurface.props.sx.pb, expectedPadding)
+      assert.equal(r.root.findByType('video').props.controls, true,
+        'preserve the existing native player rather than inventing another player')
+    } finally { if (r) await act(async () => r.unmount()) }
+  }
+
+  let r
+  try {
+    const item = {
+      node: { id: 23, revision: 1, name: 'gallery-video.mp4', size: 128, type: 'file' },
+      metadata: { mime_type: 'video/mp4', media_kind: 'video', has_thumbnail: false },
+    }
+    await act(async () => {
+      r = create(React.createElement(XDriveMediaViewerContent, {
+        item, videoControlsSafeArea: 'actions-filmstrip',
+        loadThumbnail: async () => null,
+        loadPreviewURL: async () => 'gallery-video-url',
+      }))
+    })
+    const videoSurface = r.root.findAllByType('div').find(x =>
+      x.props['data-xdrive-preview-media-state'] === 'video')
+    assert.equal(videoSurface?.props.sx.pb, 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))',
+      'Gallery forwards the clearance to the canonical player')
+  } finally { if (r) await act(async () => r.unmount()) }
+})

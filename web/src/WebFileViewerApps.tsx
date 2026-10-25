@@ -69,6 +69,7 @@ import {
   xDriveWebViewerMediaFile,
 } from './webViewerContext'
 import { useViewerNode } from './useWebViewerNode'
+import { xDriveContainViewerTabFocus } from './viewerFocusScope'
 import { xDriveWebTextSelection } from './webTextViewer'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
 
@@ -374,6 +375,12 @@ function WebViewerFrame({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!isCurrentChromeSession()) return
     showChrome()
+    // Inline Desktop uses MUI Dialog; this routed fullscreen overlay must
+    // also contain Tab while the underlying Gallery remains mounted.
+    if (event.key === 'Tab' && xDriveContainViewerTabFocus(rootRef.current, document.activeElement, event.shiftKey)) {
+      event.preventDefault()
+      return
+    }
     const target = event.target instanceof HTMLElement ? event.target : null
     const interactive = Boolean(target?.closest(
       'button, input, textarea, select, video, audio, iframe, [role="button"], [role="slider"], [contenteditable="true"]',
@@ -411,8 +418,17 @@ function WebViewerFrame({
       onPointerUpCapture={handleTouchPointerRelease}
       onPointerCancelCapture={handleTouchPointerCancel}
       data-xdrive-web-viewer
+      role="dialog"
+      aria-modal="true"
+      aria-label={photosViewer ? '照片查看器' : quickLook ? '文件快速预览' : '文件查看器'}
       sx={{
         position: 'fixed',
+        // Use the same video-safe-area contract as the inline/Desktop Viewer.
+        // No permanent black band when the immersive controls fade away.
+        '--xdrive-viewer-video-actions-clearance': compactImmersive && chromeVisible
+          ? 'calc(56px + env(safe-area-inset-bottom))' : '0px',
+        '--xdrive-viewer-video-actions-filmstrip-clearance': compactImmersive && chromeVisible
+          ? 'calc(128px + env(safe-area-inset-bottom))' : '0px',
         inset: 0,
         zIndex: 1250,
         display: 'flex',
@@ -449,7 +465,9 @@ function WebViewerFrame({
           bgcolor: immersive ? 'rgba(0,0,0,.72)' : 'background.paper',
           opacity: immersive && !chromeVisible ? 0 : 1,
           pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-          transition: 'opacity 160ms ease',
+          // Keyboard Tab must not enter faded-out Viewer controls.
+          visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+          transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
         }}
       >
@@ -507,7 +525,9 @@ function WebViewerFrame({
               boxShadow: 2,
               opacity: immersive && !chromeVisible ? 0 : 1,
               pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-              transition: 'opacity 160ms ease',
+              // Keyboard Tab must not enter faded-out Viewer controls.
+              visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+              transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '&:hover': { bgcolor: 'background.paper' },
             }}
@@ -528,7 +548,9 @@ function WebViewerFrame({
               boxShadow: 2,
               opacity: immersive && !chromeVisible ? 0 : 1,
               pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-              transition: 'opacity 160ms ease',
+              // Keyboard Tab must not enter faded-out Viewer controls.
+              visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+              transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '&:hover': { bgcolor: 'background.paper' },
             }}
@@ -560,7 +582,9 @@ function WebViewerFrame({
             color: immersive ? 'common.white' : 'text.primary',
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-            transition: 'opacity 160ms ease',
+            // Keyboard Tab must not enter faded-out Viewer controls.
+            visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+            transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
@@ -596,7 +620,9 @@ function WebViewerFrame({
             color: immersive ? 'common.white' : 'text.primary',
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-            transition: 'opacity 160ms ease',
+            // Keyboard Tab must not enter faded-out Viewer controls.
+            visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+            transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
             '& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0, color: 'inherit' },
             '& .MuiIconButton-colorError': { color: 'error.main' },
@@ -1427,6 +1453,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
           loadPreviewURL={gallerySource.loadPreviewURL}
           onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
+          videoControlsSafeArea={narrowMediaViewer ? (viewer.filmstripEntries.length > 0 ? 'actions-filmstrip' : 'actions') : undefined}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}

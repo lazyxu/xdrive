@@ -333,7 +333,9 @@ export function XDriveOpenPreviewDialog({
           backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
           opacity: immersive && !chromeVisible ? 0 : 1,
           pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-          transition: 'opacity 160ms ease',
+          // Keyboard Tab must not enter faded-out Viewer controls.
+          visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+          transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
         }}
       >
@@ -385,6 +387,12 @@ export function XDriveOpenPreviewDialog({
         onPointerCancelCapture={handleTouchPointerCancel}
         sx={{
           position: 'relative',
+          // The native video controls must clear only VISIBLE bottom chrome.
+          // The media viewport becomes edge-to-edge again after auto-hide.
+          '--xdrive-viewer-video-actions-clearance': mobileOverlay && chromeVisible
+            ? 'calc(56px + env(safe-area-inset-bottom))' : '0px',
+          '--xdrive-viewer-video-actions-filmstrip-clearance': mobileOverlay && chromeVisible
+            ? 'calc(128px + env(safe-area-inset-bottom))' : '0px',
           // The overlay header and bottom rail are out of document flow.
           // Give Gallery media every available pixel in the full-screen paper.
           flex: mobileOverlay ? '1 1 0' : undefined,
@@ -416,7 +424,9 @@ export function XDriveOpenPreviewDialog({
                   boxShadow: 2,
                   opacity: immersive && !chromeVisible ? 0 : 1,
                   pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-                  transition: 'opacity 160ms ease',
+                  // Keyboard Tab must not enter faded-out Viewer controls.
+                  visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+                  transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
                   '&:hover': { bgcolor: 'background.paper' },
                 }}
@@ -442,7 +452,9 @@ export function XDriveOpenPreviewDialog({
                   boxShadow: 2,
                   opacity: immersive && !chromeVisible ? 0 : 1,
                   pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-                  transition: 'opacity 160ms ease',
+                  // Keyboard Tab must not enter faded-out Viewer controls.
+                  visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+                  transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
                   '&:hover': { bgcolor: 'background.paper' },
                 }}
@@ -474,7 +486,8 @@ export function XDriveOpenPreviewDialog({
                 backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
                 opacity: chromeVisible ? 1 : 0,
                 pointerEvents: chromeVisible ? 'auto' : 'none',
-                transition: 'opacity 160ms ease',
+                visibility: chromeVisible ? 'visible' : 'hidden',
+                transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               }}
             >
@@ -506,7 +519,8 @@ export function XDriveOpenPreviewDialog({
               backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
               opacity: chromeVisible ? 1 : 0,
               pointerEvents: chromeVisible ? 'auto' : 'none',
-              transition: 'opacity 160ms ease',
+              visibility: chromeVisible ? 'visible' : 'hidden',
+              transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               '& .MuiIconButton-root': {
                 width: 44, height: 44, flexShrink: 0,
@@ -538,7 +552,9 @@ export function XDriveOpenPreviewDialog({
             borderColor: 'divider',
             opacity: immersive && !chromeVisible ? 0 : 1,
             pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-            transition: 'opacity 160ms ease',
+            // Keyboard Tab must not enter faded-out Viewer controls.
+            visibility: immersive && !chromeVisible ? 'hidden' : 'visible',
+            transition: 'opacity 160ms ease, visibility 160ms',
               '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
