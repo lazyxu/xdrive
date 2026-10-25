@@ -130,6 +130,13 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A generated cache may have been left unreadable by an older runtime.
+	// Verify must prune the directory itself, without traversing cache children.
+	mediaDir := filepath.Join(root, ".xdrive-media")
+	if err := os.Chmod(mediaDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(mediaDir, 0o750) }()
 	report, err := Verify(db, root)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +145,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 || report.IgnoredCASLocks != 256 {
+		report.IgnoredTemps != 3 || report.IgnoredDerived != 0 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
