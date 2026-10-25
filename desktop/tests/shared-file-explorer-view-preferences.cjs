@@ -116,3 +116,55 @@ test('U09-B wide shared Details/Grid retains an authoritative logical anchor wit
   assert.doesNotMatch(explorer, /\[derivedPath, groupingSignature, sort\.key, sort\.direction, viewMode\]\)/)
   assert.match(explorer, /if \(focusedTop >= host\.scrollTop && focusedTop \+ rowHeight <= host\.scrollTop \+ host\.clientHeight\)/)
 })
+
+test('Safari storage denial cannot unmount the real shared Details/List/Grid preference effects', () => {
+  const ts = require('typescript')
+  const ast = ts.createSourceFile('FileExplorer.tsx', explorer, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // Execute the actual useEffect callbacks extracted from the production TSX,
+  // rather than copying their behavior into a test-only helper.
+  const effect = (dependencies, win) => {
+    const signatures = []
+    const visit = (node) => {
+      if (ts.isCallExpression(node) &&
+          node.expression.getText(ast) === 'useEffect' &&
+          node.arguments.length >= 2 &&
+          node.arguments[1].getText(ast).replace(/\s+/g, '') ===
+            '[' + dependencies.join(',') + ']') {
+        assert.ok(ts.isArrowFunction(node.arguments[0]))
+        signatures.push(node.arguments[0].getText(ast))
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(ast)
+    assert.equal(signatures.length, 1, 'exactly one real persistence effect for ' + dependencies)
+    return new Function('window', 'detailsPreferencesKey', 'detailsLayout',
+      'viewPreferencesKey', 'viewPreferences',
+      'return (' + signatures[0] + ')')(
+      win, 'files-details', { order: ['name'] },
+      'files-view', { gridSize: 'large', detailsDensity: 'compact' })
+  }
+  const detailsDeps = ['detailsLayout', 'detailsPreferencesKey']
+  const viewDeps = ['viewPreferences', 'viewPreferencesKey']
+  const saved = new Map()
+  const normal = { localStorage: { setItem(key, value) { saved.set(key, value) } } }
+  assert.doesNotThrow(() => effect(detailsDeps, normal)())
+  assert.doesNotThrow(() => effect(viewDeps, normal)())
+  assert.deepEqual(JSON.parse(saved.get('files-details')).order, ['name'])
+  assert.equal(JSON.parse(saved.get('files-view')).gridSize, 'large')
+
+  const deniedGetter = {}
+  Object.defineProperty(deniedGetter, 'localStorage', {
+    get() { throw new Error('SecurityError') },
+  })
+  for (const deps of [detailsDeps, viewDeps]) {
+    assert.doesNotThrow(() => effect(deps, deniedGetter)(),
+      'Safari may throw even when retrieving localStorage')
+  }
+  const deniedWrite = {
+    localStorage: { setItem() { throw new Error('QuotaExceededError') } },
+  }
+  for (const deps of [detailsDeps, viewDeps]) {
+    assert.doesNotThrow(() => effect(deps, deniedWrite)(),
+      'quota exhaustion must not turn a view preference into a fatal React effect')
+  }
+})
