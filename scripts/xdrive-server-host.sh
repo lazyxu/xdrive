@@ -45,6 +45,7 @@ Usage:
   xdrive-server lan-ca export /absolute/path/root.crt
   xdrive-server status [--summary-only]
   xdrive-server backup [create] [server-backup.sh options...]
+  xdrive-server backup --incremental [--repository-dir /absolute/local/path]
   xdrive-server backup list
   xdrive-server backup verify [BACKUP_DIR]
   xdrive-server backup sources BACKUP_DIR
@@ -771,55 +772,55 @@ backup_manifest_bool() {
 }
 
 latest_snapshot_backup() {
-  local root="$BACKUP_DIR/snapshots"
-  [[ -d "$root" ]] || return 1
-  find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r | head -n1
+  local root
+  for root in "$BACKUP_DIR/snapshots" "$BACKUP_DIR/incremental/snapshots"; do
+    [[ -d "$root" ]] || continue
+    find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' ! -name '*.partial' -print
+  done | awk -F/ '{print $NF "\t" $0}' | sort -r | head -n1 | cut -f2-
 }
 
 backup_list_cmd() {
-  [[ $# -eq 0 ]] || {
-    echo "usage: xdrive-server backup list" >&2
-    return 2
-  }
-  local root="$BACKUP_DIR/snapshots" dir name size created channel commit consistent file_data status found=0 required
-  if [[ ! -d "$root" ]]; then
-    echo "No snapshot backups found in $root"
-    return 0
-  fi
-  printf '%-26s %-20s %-9s %-10s %-14s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS"
-  while IFS= read -r dir; do
-    [[ -n "$dir" ]] || continue
-    found=1
-    name="$(basename "$dir")"
-    size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
-    created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
-    channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
-    commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
-    consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
-    file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
-    status="complete"
-    for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
-      if [[ ! -f "$dir/$required" ]]; then
+  [[ $# -eq 0 ]] || { echo "usage: xdrive-server backup list" >&2; return 2; }
+  local root dir name size created channel commit consistent file_data status found=0 required version
+  printf '%-30s %-20s %-9s %-10s %-14s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS"
+  for root in "$BACKUP_DIR/snapshots" "$BACKUP_DIR/incremental/snapshots"; do
+    [[ -d "$root" ]] || continue
+    while IFS= read -r dir; do
+      [[ -n "$dir" ]] || continue
+      found=1
+      name="$(basename "$dir")"
+      [[ "$root" != "$BACKUP_DIR/incremental/snapshots" ]] || name="cas:$name"
+      size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
+      created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
+      channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
+      commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
+      consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
+      file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
+      status="complete"
+      for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
+        [[ -f "$dir/$required" ]] || { status="incomplete"; break; }
+      done
+      if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$dir/manifest.json" 2>/dev/null; then
+        for required in objects.index legacy.tar; do
+          [[ -f "$dir/$required" ]] || status="incomplete"
+        done
+        [[ "$status" != "complete" ]] || status="cas-incremental"
+      elif [[ "$status" == "complete" && "$file_data" != "false" && ! -f "$dir/blobs.tar" ]]; then
         status="incomplete"
-        break
+      elif [[ "$status" == "complete" && "$file_data" == "false" ]]; then
+        status="database-only"
       fi
-    done
-    if [[ "$status" == "complete" && "$file_data" != "false" && ! -f "$dir/blobs.tar" ]]; then
-      status="incomplete"
-    fi
-    if [[ "$status" == "complete" && "$consistent" == "false" ]]; then
-      status="inconsistent"
-    elif [[ "$status" == "complete" && "$file_data" == "false" ]]; then
-      status="database-only"
-    fi
-    [[ -n "$created" ]] || created="-"
-    [[ -n "$size" ]] || size="-"
-    [[ -n "$channel" ]] || channel="-"
-    [[ -n "$commit" ]] || commit="-"
-    [[ "$commit" == "-" ]] || commit="${commit:0:12}"
-    printf '%-26s %-20s %-9s %-10s %-14s %s\n' "$name" "$created" "$size" "$channel" "$commit" "$status"
-  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r)
-  [[ "$found" == "1" ]] || echo "No snapshot backups found in $root"
+      [[ "$status" != "complete" || "$consistent" != "false" ]] || status="inconsistent"
+      [[ -n "$created" ]] || created="-"
+      [[ -n "$size" ]] || size="-"
+      [[ -n "$channel" ]] || channel="-"
+      [[ -n "$commit" ]] || commit="-"
+      [[ "$commit" == "-" ]] || commit="${commit:0:12}"
+      printf '%-30s %-20s %-9s %-10s %-14s %s\n' "$name" "$created" "$size" "$channel" "$commit" "$status"
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r)
+  done
+  [[ "$found" == "1" ]] || echo "No snapshot backups found"
+  echo "Note: incremental SIZE excludes shared CAS objects; use backup verify PATH for hash validation."
 }
 
 backup_verify_cmd() {
@@ -849,23 +850,64 @@ backup_verify_cmd() {
     echo "xdrive-server: backup is missing manifest.json: $dir" >&2
     return 1
   }
-  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json" || {
+  local backup_version=1 repository_dir server_image
+  if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$dir/manifest.json"; then
+    backup_version=2
+  elif ! grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json"; then
     echo "xdrive-server: unsupported backup format: $dir" >&2
     return 1
-  }
+  fi
   file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
   required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
-  [[ "$file_data" == "false" ]] || required_files+=(blobs.tar)
+  if [[ "$backup_version" == "2" ]]; then
+    required_files+=(objects.index legacy.tar)
+  elif [[ "$file_data" != "false" ]]; then
+    required_files+=(blobs.tar)
+  fi
   for required in "${required_files[@]}"; do
     [[ -f "$dir/$required" ]] || {
       echo "xdrive-server: backup is missing $required: $dir" >&2
       return 1
     }
+    if [[ "$backup_version" == "2" && -L "$dir/$required" ]]; then
+      echo "xdrive-server: v2 snapshot contains symlink $required: $dir" >&2
+      return 1
+    fi
   done
-  (
-    cd "$dir"
-    sha256sum -c SHA256SUMS.txt
-  )
+  if [[ "$backup_version" == "2" ]]; then
+    # Require the exact five committed v2 entries; sha256sum -c alone accepts
+    # partial lists that omit objects.index and other required files.
+    (
+      cd "$dir"
+      cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
+    ) || { echo "xdrive-server: v2 checksum manifest mismatch: $dir" >&2; return 1; }
+  else
+    (
+      cd "$dir"
+      sha256sum -c SHA256SUMS.txt
+    )
+  fi
+  if [[ "$backup_version" == "2" ]]; then
+    [[ "$(basename "$(dirname "$dir")")" == "snapshots" ]] || {
+      echo "xdrive-server: CAS snapshot must be in repository/snapshots." >&2; return 1;
+    }
+    repository_dir="$(cd "$dir/../.." && pwd)"
+    [[ -d "$repository_dir/objects/sha256" ]] || {
+      echo "xdrive-server: CAS objects repository is missing." >&2; return 1;
+    }
+    local backup_server_id
+    backup_server_id="$(compose ps -aq server | head -n1 || true)"
+    server_image=""
+    if [[ -n "$backup_server_id" ]]; then
+      server_image="$(docker inspect "$backup_server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+    fi
+    [[ -n "$server_image" ]] || server_image="$(env_value XD_SERVER_IMAGE)"
+    [[ -n "$server_image" ]] || { echo "xdrive-server: cannot resolve server image for CAS verification." >&2; return 1; }
+    docker run --rm --user 0:0 \
+      --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
+      --entrypoint /usr/local/bin/xdrive-backup-repo \
+      "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" </dev/null
+  fi
   created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
   channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
   commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
@@ -875,6 +917,8 @@ backup_verify_cmd() {
   [[ -n "$channel" ]] && echo "  release: $channel${commit:+ / ${commit:0:12}}"
   if [[ "$file_data" == "false" ]]; then
     echo "  file data: omitted (database-only backup)"
+  elif [[ "$backup_version" == "2" ]]; then
+    echo "  file data: CAS + Manifest incremental (verified)"
   else
     echo "  file data: included"
   fi

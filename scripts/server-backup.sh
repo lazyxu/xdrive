@@ -7,10 +7,17 @@ OUTPUT_ROOT=""
 ALLOW_INCONSISTENT=0
 LEAVE_SERVER_STOPPED=0
 INCLUDE_FILE_DATA=1
+INCREMENTAL=0
+REPOSITORY_DIR=""
 
 usage() {
   cat <<'EOF'
 Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped] [--skip-file-data]
+       server-backup.sh --incremental [--config-dir DIR] [--repository-dir DIR]
+
+--incremental stores immutable SHA-256 CAS blobs once across snapshots, with
+objects.index and a separate PostgreSQL dump per snapshot. The legacy tar
+backup format remains the default; no existing backups are changed.
 
 Creates an xDrive backup directory containing:
   database.dump   PostgreSQL custom-format dump
@@ -31,6 +38,8 @@ while [[ $# -gt 0 ]]; do
     --allow-inconsistent) ALLOW_INCONSISTENT=1; shift ;;
     --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
     --skip-file-data) INCLUDE_FILE_DATA=0; shift ;;
+    --incremental) INCREMENTAL=1; shift ;;
+    --repository-dir) REPOSITORY_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -45,8 +54,25 @@ command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 command -v df >/dev/null 2>&1 || { echo "df is required" >&2; exit 1; }
 
-if [[ -z "$OUTPUT_ROOT" ]]; then
-  OUTPUT_ROOT="$XDRIVE_HOME/backups/snapshots"
+if [[ "$INCREMENTAL" == "1" ]]; then
+  if [[ -n "$OUTPUT_ROOT" || "$INCLUDE_FILE_DATA" != "1" ]]; then
+    echo "xDrive backup: --incremental cannot be combined with --output-dir or --skip-file-data." >&2
+    exit 2
+  fi
+  REPOSITORY_DIR="${REPOSITORY_DIR:-$XDRIVE_HOME/backups/incremental}"
+  [[ "$REPOSITORY_DIR" == /* && ! -L "$REPOSITORY_DIR" ]] || {
+    echo "xDrive backup: --repository-dir must be an absolute non-symlink path." >&2
+    exit 2
+  }
+  mkdir -p "$REPOSITORY_DIR/snapshots"
+  REPOSITORY_DIR="$(cd "$REPOSITORY_DIR" && pwd)"
+  command -v flock >/dev/null 2>&1 || { echo "xDrive backup: flock is required." >&2; exit 1; }
+  exec 8>"$REPOSITORY_DIR/.backup.lock"
+  flock -n 8 || { echo "xDrive backup: another repository operation is active." >&2; exit 75; }
+  OUTPUT_ROOT="$REPOSITORY_DIR/snapshots"
+else
+  [[ -z "$REPOSITORY_DIR" ]] || { echo "xDrive backup: --repository-dir requires --incremental." >&2; exit 2; }
+  OUTPUT_ROOT="${OUTPUT_ROOT:-$XDRIVE_HOME/backups/snapshots}"
 fi
 mkdir -p "$OUTPUT_ROOT"
 OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
@@ -230,6 +256,19 @@ fi
   echo "cannot resolve xDrive /data mount without creating/recreating the server service" >&2
   exit 1
 }
+if [[ "$INCREMENTAL" == "1" && "$data_source" == /* ]]; then
+  source_resolved="$(readlink -f -- "$data_source" 2>/dev/null || true)"
+  backup_resolved="$(readlink -f -- "$REPOSITORY_DIR" 2>/dev/null || true)"
+  if [[ -n "$source_resolved" && -n "$backup_resolved" ]]; then
+    case "$backup_resolved/" in
+      "$source_resolved/"*) echo "xDrive backup: incremental repository must not be inside live file storage." >&2; exit 1 ;;
+    esac
+    case "$source_resolved/" in
+      "$backup_resolved/"*) echo "xDrive backup: live file storage must not be inside incremental repository." >&2; exit 1 ;;
+    esac
+  fi
+fi
+
 postgres_id="$(compose ps -q postgres | head -n1)"
 postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
@@ -237,7 +276,17 @@ write_backup_progress "计算备份大小" 0 0
 print_backup_progress "计算备份大小" 0 0
 
 blob_bytes=0
-if [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
+if [[ "$INCREMENTAL" == "1" ]]; then
+  # Space needed by new immutable objects + a fresh legacy tar, not all live
+  # objects and never zero. Run read-only before stopping API/Worker services.
+  backup_server_image="$(docker inspect "$server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  [[ -n "$backup_server_image" ]] || { echo "xDrive backup: server image not found for incremental preflight." >&2; exit 1; }
+  blob_bytes="$(docker run --rm --user 0:0 \
+    --mount "type=bind,src=$REPOSITORY_DIR,dst=/repo,readonly" \
+    -v "$data_source:/data:ro" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$backup_server_image" estimate --repo /repo --source /data </dev/null)"
+elif [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
   blob_bytes="$(docker run --rm --entrypoint sh \
     -v "$data_source:/data:ro" \
     "$postgres_image" \
@@ -286,7 +335,22 @@ fi
 run_to_file_with_progress "备份数据库" "$partial_dir/database.dump" 0 \
   compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc
 
-if [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
+if [[ "$INCREMENTAL" == "1" ]]; then
+  backup_server_image="$(docker inspect "$server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  [[ -n "$backup_server_image" ]] || { echo "xDrive backup: server image not found." >&2; exit 1; }
+  owner_flags=()
+  if ! docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -qi rootless; then
+    owner_flags=(--owner-uid "$(id -u)" --owner-gid "$(id -g)")
+  fi
+  print_backup_progress "增量复制 CAS Blob（已有对象直接复用）" 0 0
+  docker run --rm --user 0:0 \
+    --mount "type=bind,src=$REPOSITORY_DIR,dst=/repo" \
+    -v "$data_source:/data:ro" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$backup_server_image" capture \
+      --repo /repo --snapshot "$(basename "$partial_dir")" --source /data \
+      "${owner_flags[@]}" </dev/null
+elif [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
   run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes" \
     docker run --rm --entrypoint sh \
       -v "$data_source:/data:ro" \
@@ -309,10 +373,11 @@ update_source="$(env_value XD_UPDATE_SOURCE)"
 docker_mode="$(env_value XD_DOCKER_MODE)"
 cat > "$partial_dir/manifest.json" <<EOF
 {
-  "format_version": 1,
+  "format_version": $([[ "$INCREMENTAL" == "1" ]] && echo 2 || echo 1),
   "created_at_utc": "$created_at",
   "database": {"file": "database.dump", "format": "pg_dump_custom"},
-  "blobs": $([[ "$INCLUDE_FILE_DATA" == "1" ]] && printf '{"file":"blobs.tar","format":"tar"}' || printf 'null'),
+  "blobs": $([[ "$INCREMENTAL" == "1" ]] && printf '{"file":"objects.index","format":"cas-manifest-v1"}' || { [[ "$INCLUDE_FILE_DATA" == "1" ]] && printf '{"file":"blobs.tar","format":"tar"}' || printf 'null'; }),
+  "legacy_storage": $([[ "$INCREMENTAL" == "1" ]] && printf '{"file":"legacy.tar","format":"tar"}' || printf 'null'),
   "file_data_included": $([[ "$INCLUDE_FILE_DATA" == "1" ]] && echo true || echo false),
   "consistency_verified": $([[ "$verify_status" == "0" ]] && echo true || echo false),
   "server_image": "$server_image",
@@ -329,7 +394,11 @@ cat > "$partial_dir/manifest.json" <<EOF
 EOF
 
 checksum_files=(database.dump verify.json manifest.json)
-[[ "$INCLUDE_FILE_DATA" == "1" ]] && checksum_files+=(blobs.tar)
+if [[ "$INCREMENTAL" == "1" ]]; then
+  checksum_files+=(objects.index legacy.tar)
+elif [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
+  checksum_files+=(blobs.tar)
+fi
 checksum_total=0
 for checksum_name in "${checksum_files[@]}"; do
   checksum_size="$(file_size_bytes "$partial_dir/$checksum_name")"

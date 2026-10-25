@@ -1,0 +1,364 @@
+package main
+
+import (
+	"archive/tar"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func writeTestFile(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+func testCAS(t *testing.T, root, content string) string {
+	t.Helper()
+	h := sha256.Sum256([]byte(content))
+	digest := hex.EncodeToString(h[:])
+	writeTestFile(t, filepath.Join(root, filepath.FromSlash(casRoot), digest[:2], digest), []byte(content))
+	return digest
+}
+func snapshotPath(t *testing.T, repo, name string) string {
+	t.Helper()
+	s := filepath.Join(repo, "snapshots", name)
+	if err := os.MkdirAll(s, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+func TestTwoGenerationReuseRestoreAfterSourceDeleted(t *testing.T) {
+	base := t.TempDir()
+	source := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	os.MkdirAll(source, 0700)
+	h1 := testCAS(t, source, "hello immutable CAS")
+	writeTestFile(t, filepath.Join(source, "42", "file-legacy"), []byte("legacy"))
+	s1 := snapshotPath(t, repo, "generation1")
+	if err := capture(source, repo, s1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verify(repo, s1, true); err != nil {
+		t.Fatal(err)
+	}
+	st1, err := os.Stat(objectPath(repo, h1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2 := testCAS(t, source, "new upload immutable CAS")
+	s2 := snapshotPath(t, repo, "generation2")
+	if err := capture(source, repo, s2); err != nil {
+		t.Fatal(err)
+	}
+	st2, err := os.Stat(objectPath(repo, h1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(st1, st2) {
+		t.Fatal("second generation rewrote existing immutable CAS")
+	}
+	// A generation must still restore after the live source is permanently gone.
+	if err := os.RemoveAll(source); err != nil {
+		t.Fatal(err)
+	}
+	recovery1 := filepath.Join(base, "recovery1")
+	os.Mkdir(recovery1, 0700)
+	if err := restore(repo, s1, recovery1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(recovery1, filepath.FromSlash(casRoot), h2[:2], h2)); !os.IsNotExist(err) {
+		t.Fatal("generation1 includes a later blob")
+	}
+	recovery2 := filepath.Join(base, "recovery2")
+	os.Mkdir(recovery2, 0700)
+	if err := restore(repo, s2, recovery2); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(recovery2, "42", "file-legacy"))
+	if err != nil || string(got) != "legacy" {
+		t.Fatalf("legacy restore: %q %v", got, err)
+	}
+	for _, h := range []string{h1, h2} {
+		if _, err := os.Stat(filepath.Join(recovery2, filepath.FromSlash(casRoot), h[:2], h)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+func TestCorruptOrMissingCASRejectedBeforeDestructiveRestore(t *testing.T) {
+	for _, mode := range []string{"corrupt", "missing", "wrong-size"} {
+		t.Run(mode, func(t *testing.T) {
+			base := t.TempDir()
+			data := filepath.Join(base, "data")
+			repo := filepath.Join(base, "repo")
+			os.Mkdir(data, 0700)
+			hash := testCAS(t, data, "important")
+			snap := snapshotPath(t, repo, "backup1")
+			if err := capture(data, repo, snap); err != nil {
+				t.Fatal(err)
+			}
+			dst := filepath.Join(base, "restore")
+			os.Mkdir(dst, 0700)
+			writeTestFile(t, filepath.Join(dst, "do-not-remove"), []byte("safe"))
+			p := objectPath(repo, hash)
+			switch mode {
+			case "corrupt":
+				os.WriteFile(p, []byte("XmporYant"), 0600)
+			case "missing":
+				os.Remove(p)
+			case "wrong-size":
+				os.WriteFile(p, []byte("bad"), 0600)
+			}
+			if err := restore(repo, snap, dst); err == nil {
+				t.Fatal("corrupt repo restored successfully")
+			}
+			if got, err := os.ReadFile(filepath.Join(dst, "do-not-remove")); err != nil || string(got) != "safe" {
+				t.Fatal("preflight destroyed destination on corrupt repo")
+			}
+		})
+	}
+}
+func TestSnapshotIndexTamperingAndLegacySymlinksRejected(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	os.Mkdir(data, 0700)
+	_ = testCAS(t, data, "live")
+	snap := snapshotPath(t, repo, "backup1")
+	if err := capture(data, repo, snap); err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range []string{"../../oops\t3\n", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t1\n"} {
+		os.WriteFile(filepath.Join(snap, "objects.index"), []byte(index), 0600)
+		if _, err := verify(repo, snap, true); err == nil {
+			t.Fatal("accepted tampered index")
+		}
+	}
+	data2 := filepath.Join(base, "data2")
+	os.Mkdir(data2, 0700)
+	os.Symlink("/etc/passwd", filepath.Join(data2, "unsafe-link"))
+	snap2 := snapshotPath(t, repo, "backup2")
+	if err := capture(data2, repo, snap2); err == nil {
+		t.Fatal("accepted symlink in legacy data")
+	}
+}
+func TestTarEscapeIsRejected(t *testing.T) {
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	snap := snapshotPath(t, repo, "backup1")
+	writeTestFile(t, filepath.Join(snap, "objects.index"), nil)
+	var b bytes.Buffer
+	tw := tar.NewWriter(&b)
+	tw.WriteHeader(&tar.Header{Name: "../../escape", Mode: 0600, Size: 1, Typeflag: tar.TypeReg})
+	tw.Write([]byte{'x'})
+	tw.Close()
+	writeTestFile(t, filepath.Join(snap, "legacy.tar"), b.Bytes())
+	if _, err := verify(repo, snap, true); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("did not reject archive escape: %v", err)
+	}
+}
+func TestSourceCASMismatchNeverPublished(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	os.Mkdir(data, 0700)
+	wrong := strings.Repeat("a", 64)
+	writeTestFile(t, filepath.Join(data, filepath.FromSlash(casRoot), "aa", wrong), []byte("not matching hash"))
+	snap := snapshotPath(t, repo, "backup1")
+	if err := capture(data, repo, snap); err == nil {
+		t.Fatal("accepted bogus CAS")
+	}
+	if _, err := os.Stat(objectPath(repo, wrong)); !os.IsNotExist(err) {
+		t.Fatal("published corrupt CAS")
+	}
+}
+func TestInvalidOrNestedPaths(t *testing.T) {
+	// Only capture may target a hidden-in-progress generation name; published
+	// verify and restore must use the immutable committed name.
+	base2 := t.TempDir()
+	data2 := filepath.Join(base2, "source")
+	repo2 := filepath.Join(base2, "repo")
+	os.Mkdir(data2, 0700)
+	partial := snapshotPath(t, repo2, "xdrive-backup-20261025T000000Z.partial")
+	if err := run([]string{"capture", "--source", data2, "--repo", repo2, "--snapshot", filepath.Base(partial)}); err != nil {
+		t.Fatalf("incremental script staging snapshot was rejected: %v", err)
+	}
+	for _, s := range []string{"../x", "/root", "a/b", ".partial", "bad@name"} {
+		if safeName(s) {
+			t.Fatalf("accepted snapshot %q", s)
+		}
+	}
+	base := t.TempDir()
+	data := filepath.Join(base, "source")
+	os.Mkdir(data, 0700)
+	repo := filepath.Join(data, "repo")
+	snap := snapshotPath(t, repo, "backup1")
+	if err := capture(data, repo, snap); err == nil {
+		t.Fatal("accepted nested repo")
+	}
+}
+
+func TestEstimateIncrementalSpaceNewObjectsOnly(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload := strings.Repeat("immutable-byte", 600)
+	_ = testCAS(t, data, payload)
+	writeTestFile(t, filepath.Join(data, "old-legacy.txt"), []byte("old"))
+	first, err := estimateIncrementalBytes(data, repo)
+	if err != nil || first < int64(len(payload)) {
+		t.Fatalf("first estimate undercounts new CAS: %d, %v", first, err)
+	}
+	if err := capture(data, repo, snapshotPath(t, repo, "generation1")); err != nil {
+		t.Fatal(err)
+	}
+	second, err := estimateIncrementalBytes(data, repo)
+	if err != nil || first-second != int64(len(payload)) {
+		t.Fatalf("reused CAS should cost zero new bytes: first=%d second=%d err=%v", first, second, err)
+	}
+	_ = testCAS(t, data, "another new object")
+	third, err := estimateIncrementalBytes(data, repo)
+	if err != nil || third-second != int64(len("another new object")) {
+		t.Fatalf("incremental preflight should count new bytes: second=%d third=%d err=%v", second, third, err)
+	}
+	if err := run([]string{"estimate", "--source", data, "--repo", repo}); err != nil {
+		t.Fatalf("estimate CLI failed: %v", err)
+	}
+}
+
+func TestEstimateRejectsMalformedExistingObjectAndNestedRepo(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	hash := testCAS(t, data, "stored")
+	writeTestFile(t, objectPath(repo, hash), []byte("bad"))
+	if _, err := estimateIncrementalBytes(data, repo); err == nil {
+		t.Fatal("incorrectly sized reused object passed preflight")
+	}
+	if _, err := estimateIncrementalBytes(data, filepath.Join(data, "nested")); err == nil {
+		t.Fatal("nested repository accepted")
+	}
+	if err := run([]string{"estimate", "--repo", repo, "--source", data, "--snapshot", "backup1"}); err == nil {
+		t.Fatal("estimate accepted a snapshot flag")
+	}
+}
+
+func TestRepositorySymlinkDirectoriesFailClosed(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "live")
+	repo := filepath.Join(base, "backup")
+	external := filepath.Join(base, "outside")
+	if err := os.MkdirAll(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(external, 0700); err != nil {
+		t.Fatal(err)
+	}
+	hash := testCAS(t, data, "restore-me-not-somewhere-else")
+	snap := snapshotPath(t, repo, "generation1")
+	objectsRoot := filepath.Join(repo, "objects")
+	if err := os.MkdirAll(objectsRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(objectsRoot, "sha256")); err != nil {
+		t.Skipf("symlink fixture is unsupported on this host: %v", err)
+	}
+	if _, err := estimateIncrementalBytes(data, repo); err == nil {
+		t.Fatal("read-only preflight followed a symlinked object directory")
+	}
+	if err := capture(data, repo, snap); err == nil {
+		t.Fatal("capture followed a symlinked object directory")
+	}
+	files, err := os.ReadDir(external)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("backup wrote outside its repository: files=%v err=%v", files, err)
+	}
+	if err := os.Remove(filepath.Join(objectsRoot, "sha256")); err != nil {
+		t.Fatal(err)
+	}
+	if err := capture(data, repo, snap); err != nil {
+		t.Fatal(err)
+	}
+	bucket := filepath.Join(objectsRoot, "sha256", hash[:2])
+	if err := os.Rename(bucket, bucket+"-original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, bucket); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verify(repo, snap, true); err == nil {
+		t.Fatal("verification followed a symlinked hash bucket")
+	}
+	dst := filepath.Join(base, "restore")
+	if err := os.MkdirAll(dst, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dst, "untouched"), []byte("important"))
+	if err := restore(repo, snap, dst); err == nil {
+		t.Fatal("restore accepted a symlinked object bucket")
+	}
+	if bytes, err := os.ReadFile(filepath.Join(dst, "untouched")); err != nil || string(bytes) != "important" {
+		t.Fatal("failed restore modified destination despite invalid repository directory")
+	}
+}
+
+func TestLegacyArchiveConflictsFailBeforeDestructiveRestore(t *testing.T) {
+	for _, names := range [][]string{
+		{"duplicate.txt", "duplicate.txt"},
+		{"parent", "parent/child"},
+		{"parent/child", "parent"},
+		{"./alias"},
+		{"folder//double"},
+	} {
+		t.Run(strings.Join(names, ","), func(t *testing.T) {
+			base := t.TempDir()
+			repo := filepath.Join(base, "backup")
+			snapshot := snapshotPath(t, repo, "snapshot1")
+			writeTestFile(t, filepath.Join(snapshot, "objects.index"), nil)
+			var payload bytes.Buffer
+			writer := tar.NewWriter(&payload)
+			for _, name := range names {
+				if err := writer.WriteHeader(&tar.Header{
+					Name: name, Mode: 0600, Typeflag: tar.TypeReg, Size: 1,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := writer.Write([]byte("x")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, filepath.Join(snapshot, "legacy.tar"), payload.Bytes())
+			target := filepath.Join(base, "restore")
+			if err := os.MkdirAll(target, 0700); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, filepath.Join(target, "keep"), []byte("unchanged"))
+			if _, err := verify(repo, snapshot, true); err == nil {
+				t.Fatal("legacy tar conflict passed verification")
+			}
+			if err := restore(repo, snapshot, target); err == nil {
+				t.Fatal("legacy tar conflict reached destructive restore")
+			}
+			got, err := os.ReadFile(filepath.Join(target, "keep"))
+			if err != nil || string(got) != "unchanged" {
+				t.Fatalf("unsafe legacy archive modified target: %q %v", got, err)
+			}
+		})
+	}
+}

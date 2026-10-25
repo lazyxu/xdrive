@@ -188,4 +188,143 @@ if docker run --rm -v "$FILES_DIR:/data":ro --entrypoint sh postgres:17-alpine -
   exit 1
 fi
 
+# Seed a real referenced canonical immutable CAS alongside the pre-existing
+# legacy data file, so the Docker E2E covers both paths.
+cas_content='canonical-content-v1'
+cas_sha="$(printf '%s' "$cas_content" | sha256sum | awk '{print $1}')"
+cas_key=".xdrive-blobs/sha256/${cas_sha:0:2}/$cas_sha"
+cas_node_id="$(compose exec -T postgres psql -U xdrive -d xdrive -qAtc \
+  "INSERT INTO xd_nodes(parent_id,name,type,owner_id,revision,created_at,updated_at) VALUES ($root_id,'cas-backup.bin','file',$uid,1,now(),now()) RETURNING id" | tr -d '\r')"
+[[ "$cas_node_id" =~ ^[0-9]+$ ]] || { echo "invalid CAS test node" >&2; exit 1; }
+compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c \
+  "INSERT INTO xd_files(node_id,size,storage_key,created_at,updated_at) VALUES ($cas_node_id,${#cas_content},'$cas_key',now(),now())" >/dev/null
+compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c \
+  "INSERT INTO xd_content_blobs(sha256,size,storage_key,ref_count,state,created_at,updated_at) VALUES ('$cas_sha',${#cas_content},'$cas_key',1,'ready',now(),now())" >/dev/null
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c \
+  "mkdir -p /data/.xdrive-blobs/sha256/${cas_sha:0:2} && printf '%s' '$cas_content' > /data/$cas_key"
+"$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+
+# Incremental CAS+Manifest snapshot round trip, including legacy storage.
+# This is intentionally opt-in: scheduled backups and the original v1 test
+# retain their existing contracts.
+incremental_backup_dir="$(
+  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --incremental
+)"
+assert_runtime_services
+[[ -f "$incremental_backup_dir/objects.index" ]]
+[[ -f "$incremental_backup_dir/legacy.tar" ]]
+[[ ! -e "$incremental_backup_dir/blobs.tar" ]]
+grep -q '"format_version": 2' "$incremental_backup_dir/manifest.json"
+(
+  cd "$incremental_backup_dir"
+  sha256sum -c SHA256SUMS.txt >/dev/null
+)
+# A second generation with unchanged storage must not duplicate repo objects.
+sleep 1 # distinct seconds-based snapshot name
+second_incremental_backup_dir="$(
+  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --incremental
+)"
+[[ -f "$second_incremental_backup_dir/objects.index" ]]
+repo_root="$XDRIVE_HOME/backups/incremental"
+test -d "$repo_root/objects/sha256"
+[[ -f "$repo_root/objects/sha256/${cas_sha:0:2}/$cas_sha" ]]
+grep -Fq "$cas_sha" "$incremental_backup_dir/objects.index"
+grep -Fq "$cas_sha" "$second_incremental_backup_dir/objects.index"
+# v2's checksum list is itself untrusted: sha256sum -c would accept a
+# truncated list with objects.index omitted. Reject this without stopping
+# the healthy deployment or creating a default pre-restore safety backup.
+checksum_original="$TMP/v2-checksums-original"
+cp "$incremental_backup_dir/SHA256SUMS.txt" "$checksum_original"
+grep -v '  objects.index$' "$checksum_original" > "$incremental_backup_dir/SHA256SUMS.txt"
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes >"$TMP/omitted-checksum-restore.log" 2>&1; then
+  echo "restore accepted a v2 checksum manifest missing objects.index" >&2
+  exit 1
+fi
+grep -Fq 'v2 checksum manifest mismatch' "$TMP/omitted-checksum-restore.log"
+cp "$checksum_original" "$incremental_backup_dir/SHA256SUMS.txt"
+[[ ! -e "$XDRIVE_HOME/backups/pre-restore" ]] || {
+  echo "invalid checksum list triggered a safety backup" >&2
+  exit 1
+}
+assert_runtime_services
+
+# A file alias with the same byte-perfect digest is still not an acceptable
+# committed snapshot entry: reject symlinks before opening database.dump.
+mv "$incremental_backup_dir/database.dump" "$TMP/v2-database-held.dump"
+ln -s "$TMP/v2-database-held.dump" "$incremental_backup_dir/database.dump"
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes >"$TMP/symlink-database-restore.log" 2>&1; then
+  echo "restore accepted symlinked v2 database.dump" >&2
+  exit 1
+fi
+grep -Fq 'v2 snapshot contains symlink database.dump' "$TMP/symlink-database-restore.log"
+rm "$incremental_backup_dir/database.dump"
+mv "$TMP/v2-database-held.dump" "$incremental_backup_dir/database.dump"
+[[ ! -e "$XDRIVE_HOME/backups/pre-restore" ]] || {
+  echo "symlinked snapshot entry triggered a safety backup" >&2
+  exit 1
+}
+assert_runtime_services
+
+# A missing or silently corrupted shared object must fail before a destructive
+# restore, without stopping services or touching the live PostgreSQL database.
+# The object itself is intentionally not listed in SHA256SUMS.txt: v2's
+# objects.index is the only link to shared CAS bytes.
+cas_repo_object="$repo_root/objects/sha256/${cas_sha:0:2}/$cas_sha"
+cas_repo_held="$cas_repo_object.e2e-held"
+compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c \
+  "CREATE TABLE backup_restore_probe(marker text NOT NULL); INSERT INTO backup_restore_probe VALUES ('live-must-survive');" >/dev/null
+mv "$cas_repo_object" "$cas_repo_held"
+# Use the DEFAULT safety-backup policy to prove fail-closed preflight does
+# not create an unnecessary backup (or stop services) for an invalid repo.
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes >"$TMP/missing-cas-restore.log" 2>&1; then
+  echo "restore unexpectedly accepted a missing shared CAS object" >&2
+  exit 1
+fi
+grep -Fq "$cas_sha" "$TMP/missing-cas-restore.log"
+if [[ -e "$XDRIVE_HOME/backups/pre-restore" ]]; then
+  echo "invalid CAS unnecessarily triggered a safety backup before restore preflight" >&2
+  exit 1
+fi
+mv "$cas_repo_held" "$cas_repo_object"
+assert_runtime_services
+
+mv "$cas_repo_object" "$cas_repo_held"
+printf '%s' 'canonical-content-v2' >"$cas_repo_object" # same size, wrong SHA
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes --no-safety-backup >"$TMP/corrupt-cas-restore.log" 2>&1; then
+  echo "restore unexpectedly accepted corrupt shared CAS bytes" >&2
+  exit 1
+fi
+grep -Fq "CAS hash mismatch $cas_sha" "$TMP/corrupt-cas-restore.log"
+rm -f "$cas_repo_object"
+mv "$cas_repo_held" "$cas_repo_object"
+assert_runtime_services
+probe="$(compose exec -T postgres psql -U xdrive -d xdrive -Atc 'SELECT marker FROM backup_restore_probe' | tr -d '\r')"
+[[ "$probe" == 'live-must-survive' ]] || { echo "rejected restore changed live DB" >&2; exit 1; }
+live_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" --entrypoint cat postgres:17-alpine "/data/$cas_key")"
+[[ "$live_cas" == "$cas_content" ]] || { echo "rejected restore changed live CAS" >&2; exit 1; }
+
+# Restore the first incremental generation after deliberately altering the data.
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c \
+  "printf broken > /data/$storage_key"
+bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes --no-safety-backup >/dev/null
+assert_runtime_services
+"$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+restored_incremental="$(docker run --rm -v "$FILES_DIR:/data:ro" \
+  --entrypoint cat postgres:17-alpine "/data/$storage_key")"
+restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
+  --entrypoint cat postgres:17-alpine "/data/$cas_key")"
+[[ "$restored_cas" == "$cas_content" ]] || {
+  echo "incremental restore lost immutable canonical CAS file" >&2
+  exit 1
+}
+[[ "$restored_incremental" == "$content" ]] || {
+  echo "incremental restore lost legacy file content" >&2
+  exit 1
+}
+
 echo "backup/restore integration test passed"
