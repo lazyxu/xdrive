@@ -7,10 +7,13 @@ usage() {
 Migrate an xDrive server deployment from root to a normal Linux user.
 
 Usage:
-  server-migrate-user.sh USER [--grant-docker-group|--no-grant-docker-group]
+  server-migrate-user.sh USER [--grant-docker-group|--no-grant-docker-group] [--defer-backups]
+  server-migrate-user.sh USER --backups-only
 
 Typical:
   /root/.xd/bin/xdrive-server migrate-user alice
+  /root/.xd/bin/xdrive-server migrate-user alice --defer-backups
+  /root/.xd/bin/xdrive-server migrate-user alice --backups-only
 
 Defaults:
   source: /root/.xd (or the current xDrive home when invoked via xdrive-server)
@@ -22,31 +25,37 @@ Use --no-grant-docker-group to disable automatic authorization; the older
 --grant-docker-group option remains supported. A group grant is permanent even
 if migration fails.
 
+Backups are included by default. --defer-backups copies only the active xDrive
+deployment; existing backup archives remain under the root source, and MUST NOT
+be deleted. Once migration succeeds, --backups-only atomically imports older
+backup archives into the active target without stopping it or overwriting new
+target backups. A failed backup import can be retried.
+
 The source deployment is retained after success as a rollback copy. It is not
 deleted automatically.
 EOF
 }
 
 GRANT_DOCKER_GROUP=1
-case "$#" in
-  1)
-    [[ "$1" != -* ]] || { usage >&2; exit 2; }
-    TARGET_USER="$1"
-    ;;
-  2)
-    [[ "$1" != -* ]] || { usage >&2; exit 2; }
-    TARGET_USER="$1"
-    case "$2" in
-      --grant-docker-group) GRANT_DOCKER_GROUP=1 ;;
-      --no-grant-docker-group) GRANT_DOCKER_GROUP=0 ;;
-      *) usage >&2; exit 2 ;;
-    esac
-    ;;
-  *)
-    usage >&2
-    exit 2
-    ;;
-esac
+DEFER_BACKUPS=0
+BACKUPS_ONLY=0
+(( $# >= 1 )) || { usage >&2; exit 2; }
+[[ "$1" != -* ]] || { usage >&2; exit 2; }
+TARGET_USER="$1"
+shift
+for option in "$@"; do
+  case "$option" in
+    --grant-docker-group) GRANT_DOCKER_GROUP=1 ;;
+    --no-grant-docker-group) GRANT_DOCKER_GROUP=0 ;;
+    --defer-backups) DEFER_BACKUPS=1 ;;
+    --backups-only) BACKUPS_ONLY=1 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+if [[ "$DEFER_BACKUPS" == "1" && "$BACKUPS_ONLY" == "1" ]]; then
+  echo "xDrive migration: --defer-backups and --backups-only cannot be combined." >&2
+  exit 2
+fi
 
 if [[ "${EUID:-$(id -u)}" -ne 0 && "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" != "1" ]]; then
   echo "xDrive migration must be started by root because it reads the root deployment and changes file ownership." >&2
@@ -126,6 +135,134 @@ if ! flock -n 9; then
 fi
 printf '%s\n' "${BASHPID:-unknown}" 1>&9
 
+
+# Import only after a completed migration. This operation intentionally never
+# touches Docker or reconfigures services, so a failed import cannot roll back
+# a live target whose database may already contain newer user writes.
+import_backup_item() {
+  local source_item="$1" destination_dir="$2" destination_item stage
+  local entry_key journal_dir journal_entry
+  destination_item="$destination_dir/${source_item##*/}"
+  journal_dir="$TARGET_STATE/migration-backups-imported"
+  if [[ -L "$journal_dir" ]]; then
+    echo "xDrive migration: refusing to use a symlinked backup import journal." >&2
+    return 1
+  fi
+  mkdir -p "$journal_dir"
+  chmod 700 "$journal_dir"
+  entry_key="$(printf '%s' "$source_item" | sha256sum | awk '{print $1}')"
+  journal_entry="$journal_dir/$entry_key"
+  if [[ -e "$destination_item" || -L "$destination_item" ]]; then
+    if [[ -f "$journal_entry" ]] && grep -Fxq "$source_item" "$journal_entry"; then
+      echo "[xDrive] previously imported backup retained: $destination_item"
+      return 0
+    fi
+    echo "xDrive migration: backup name collision; keeping both originals untouched: $destination_item" >&2
+    echo "xDrive migration: deferred backup marker remains until the conflict is resolved." >&2
+    return 1
+  fi
+  stage="$(mktemp -d "$destination_dir/.xdrive-import.XXXXXXXX")" || return 1
+  IMPORT_STAGE="$stage"
+  echo "[xDrive] importing historical backup: $source_item"
+  if cp --help 2>/dev/null | grep -q -- '--reflink'; then
+    if ! cp -a --reflink=auto -- "$source_item" "$stage/"; then
+      rm -rf -- "$stage"
+      echo "xDrive migration: backup import copy failed; source remains unchanged." >&2
+      return 1
+    fi
+  elif ! cp -a -- "$source_item" "$stage/"; then
+    rm -rf -- "$stage"
+    echo "xDrive migration: backup import copy failed; source remains unchanged." >&2
+    return 1
+  fi
+  if ! chown -R "$TARGET_UID:$TARGET_GID" "$stage"; then
+    rm -rf -- "$stage"
+    echo "xDrive migration: failed to set ownership of imported backup." >&2
+    return 1
+  fi
+  # -n forbids overwriting a backup created by the target while we copied.
+  if ! mv -n -T -- "$stage/${source_item##*/}" "$destination_item"; then
+    rm -rf -- "$stage"
+    echo "xDrive migration: failed to publish imported backup." >&2
+    return 1
+  fi
+  if [[ -e "$stage/${source_item##*/}" || -L "$stage/${source_item##*/}" ]]; then
+    echo "xDrive migration: backup name collision during import; preserving the live target: $destination_item" >&2
+    rm -rf -- "$stage"
+    return 1
+  fi
+  rmdir "$stage"
+  IMPORT_STAGE=""
+  # An idempotency journal distinguishes archives imported by this command
+  # from an unrelated newer backup with the same name, without rereading huge
+  # blobs.tar files. A crash between publish and journal remains detectable as
+  # a conservative conflict and never silently marks backups complete.
+  printf '%s\n' "$source_item" > "$journal_entry"
+  chown "$TARGET_UID:$TARGET_GID" "$journal_entry"
+  chmod 600 "$journal_entry"
+}
+
+import_backup_history() {
+  local source_backups="$SOURCE_HOME/backups" target_backups="$TARGET_HOME/backups"
+  local marker="$TARGET_STATE/migrated-from-root" group target_group item
+  if [[ -L "$TARGET_HOME" || -L "$TARGET_STATE" ]]; then
+    echo "xDrive migration: refusing to import backups through a symlinked target home/state." >&2
+    return 1
+  fi
+  if [[ ! -f "$marker" || -L "$marker" ]] ||
+      ! grep -Fxq "source_home=$SOURCE_HOME" "$marker" ||
+      ! grep -Fxq "target_home=$TARGET_HOME" "$marker" ||
+      ! grep -Fxq "target_user=$TARGET_USER" "$marker"; then
+    echo "xDrive migration: --backups-only requires a completed migration from this source to this target." >&2
+    return 1
+  fi
+  if [[ ! -d "$source_backups" ]]; then
+    echo "[xDrive] no source backup history exists to import."
+    rm -f -- "$TARGET_STATE/migration-backups-pending"
+    return 0
+  fi
+  if [[ -L "$target_backups" ]]; then
+    echo "xDrive migration: refusing to import backups through a target symlink." >&2
+    return 1
+  fi
+  mkdir -p "$target_backups"
+  chown "$TARGET_UID:$TARGET_GID" "$target_backups"
+
+  # Include snapshots, pre-upgrade, pre-restore and any other preserved
+  # top-level archive categories, including hidden entries. Copy each snapshot
+  # through a private staging directory and atomically publish only when done.
+  shopt -s nullglob dotglob
+  for group in "$source_backups"/*; do
+    if [[ -d "$group" && ! -L "$group" ]]; then
+      target_group="$target_backups/${group##*/}"
+      if [[ -L "$target_group" || ( -e "$target_group" && ! -d "$target_group" ) ]]; then
+        echo "xDrive migration: target backup category is not a normal directory: $target_group" >&2
+        return 1
+      fi
+      mkdir -p "$target_group"
+      chown "$TARGET_UID:$TARGET_GID" "$target_group"
+      for item in "$group"/*; do
+        import_backup_item "$item" "$target_group" || return 1
+      done
+    else
+      import_backup_item "$group" "$target_backups" || return 1
+    fi
+  done
+  rm -f -- "$TARGET_STATE/migration-backups-pending"
+  echo "[xDrive] backup history import complete. Original history retained at $source_backups."
+}
+
+if [[ "$BACKUPS_ONLY" == "1" ]]; then
+  # Unlike the normal migration transaction, importing backups must never
+  # stop or roll back the already-running target server.
+  IMPORT_STAGE=""
+  trap 'if [[ -n "$IMPORT_STAGE" ]]; then rm -rf -- "$IMPORT_STAGE"; fi' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  import_backup_history
+  exit $?
+fi
+
 if [[ -e "$TARGET_HOME" ]]; then
   if find "$TARGET_HOME" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
     echo "xDrive migration: target $TARGET_HOME already contains files; refusing to overwrite it." >&2
@@ -135,7 +272,31 @@ else
   TARGET_CREATED=1
 fi
 
+# Root shells and minimal installer environments often omit /usr/sbin from PATH.
+# Resolve administrative tools without changing the PATH inherited by Docker.
+resolve_host_admin_command() {
+  local name="$1" dir
+  if [[ "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" == "1" && -n "${XD_MIGRATE_TEST_ADMIN_DIR:-}" ]]; then
+    # Isolated fixture lookup: never invoke the test host's real group tools.
+    [[ -x "$XD_MIGRATE_TEST_ADMIN_DIR/$name" ]] || return 1
+    printf '%s\n' "$XD_MIGRATE_TEST_ADMIN_DIR/$name"
+    return 0
+  fi
+  if command -v "$name" >/dev/null 2>&1; then
+    command -v "$name"
+    return 0
+  fi
+  for dir in /usr/sbin /sbin /usr/local/sbin /usr/bin /bin; do
+    if [[ -x "$dir/$name" && ! -d "$dir/$name" ]]; then
+      printf '%s\n' "$dir/$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
 run_as_target() {
+  local runuser_cmd
   local -a clean_env=(
     env
     -u DOCKER_HOST
@@ -153,11 +314,11 @@ run_as_target() {
   if [[ "$(id -u)" -eq "$TARGET_UID" ]]; then
     "${clean_env[@]}" "$@"
   else
-    command -v runuser >/dev/null 2>&1 || {
+    if ! runuser_cmd="$(resolve_host_admin_command runuser)"; then
       echo "xDrive migration: runuser is required to execute Docker as $TARGET_USER." >&2
       return 1
-    }
-    runuser -u "$TARGET_USER" -- "${clean_env[@]}" "$@"
+    fi
+    "$runuser_cmd" -u "$TARGET_USER" -- "${clean_env[@]}" "$@"
   fi
 }
 
@@ -199,7 +360,8 @@ select_target_docker() {
 }
 
 grant_target_docker_group() {
-  local group_line group_gid socket_gid security_options
+  local group_line group_gid socket_gid security_options runuser_cmd grant_cmd
+  local -a grant_args=()
   local -a clean_docker_env=(
     env
     -u DOCKER_HOST
@@ -216,11 +378,7 @@ grant_target_docker_group() {
     echo "xDrive migration: system docker group does not exist; no privileges changed." >&2
     return 1
   fi
-  if ! command -v usermod >/dev/null 2>&1; then
-    echo "xDrive migration: usermod is required to grant Docker group access." >&2
-    return 1
-  fi
-  if ! command -v runuser >/dev/null 2>&1; then
+  if ! runuser_cmd="$(resolve_host_admin_command runuser)"; then
     echo "xDrive migration: runuser is required to verify Docker group membership." >&2
     return 1
   fi
@@ -243,8 +401,22 @@ grant_target_docker_group() {
     return 1
   fi
 
+  # Prefer usermod, but support hosts where only gpasswd or Debian adduser
+  # exists. Do not retry another tool after an attempted grant fails.
+  if grant_cmd="$(resolve_host_admin_command usermod)"; then
+    grant_args=(-aG docker "$TARGET_USER")
+  elif grant_cmd="$(resolve_host_admin_command gpasswd)"; then
+    grant_args=(-a "$TARGET_USER" docker)
+  elif grant_cmd="$(resolve_host_admin_command adduser)"; then
+    grant_args=("$TARGET_USER" docker)
+  else
+    echo "xDrive migration: no supported group management command found (usermod, gpasswd, adduser)." >&2
+    echo "Install the system's passwd/adduser utilities; no privileges changed." >&2
+    return 1
+  fi
+
   echo "[xDrive] granting '$TARGET_USER' docker group membership (root-equivalent host access)..." >&2
-  if ! usermod -aG docker "$TARGET_USER"; then
+  if ! "$grant_cmd" "${grant_args[@]}"; then
     echo "xDrive migration: failed to update docker group membership." >&2
     return 1
   fi
@@ -253,7 +425,7 @@ grant_target_docker_group() {
   # The requested runuser -u USER -- docker info check is performed with a
   # clean target-user environment and the verified rootful system socket.
   # runuser starts a fresh process, so new supplementary groups take effect.
-  if ! runuser -u "$TARGET_USER" -- env \
+  if ! "$runuser_cmd" -u "$TARGET_USER" -- env \
       -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG \
       -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION \
       HOME="$TARGET_LOGIN_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
@@ -301,7 +473,12 @@ else
   TARGET_DOCKER_MODE="rootful"
 fi
 
-source_bytes="$(du -sb "$SOURCE_HOME" 2>/dev/null | awk '{print $1}' || true)"
+if [[ "$DEFER_BACKUPS" == "1" ]]; then
+  # Exclude the exact history tree so preflight also avoids scanning it.
+  source_bytes="$(du -sb --exclude="$SOURCE_HOME/backups" "$SOURCE_HOME" 2>/dev/null | awk '{print $1}' || true)"
+else
+  source_bytes="$(du -sb "$SOURCE_HOME" 2>/dev/null | awk '{print $1}' || true)"
+fi
 available_bytes="$(df -PB1 "$TARGET_LOGIN_HOME" 2>/dev/null | awk 'NR==2 {print $4}' || true)"
 if [[ "$source_bytes" =~ ^[0-9]+$ && "$available_bytes" =~ ^[0-9]+$ ]]; then
   required_bytes=$(( source_bytes + source_bytes / 10 + 64 * 1024 * 1024 ))
@@ -320,8 +497,90 @@ if command -v crontab >/dev/null 2>&1; then
   chown "$TARGET_UID:$TARGET_GID" "$TARGET_CRON_SNAPSHOT"
 fi
 
+
+# Keep GNU cp --reflink=auto (no rsync/pv requirement). Instead of repeatedly
+# scanning directory trees, monitor cp's cumulative I/O using Linux /proc.
+# Reflink/metadata copies make this an estimate, not an exact percentage.
+COPY_PROGRESS_PID=""
+stop_copy_progress() {
+  if [[ -n "$COPY_PROGRESS_PID" ]]; then
+    kill "$COPY_PROGRESS_PID" 2>/dev/null || true
+    wait "$COPY_PROGRESS_PID" 2>/dev/null || true
+    COPY_PROGRESS_PID=""
+  fi
+}
+
+start_copy_progress() {
+  local started_at="$1" interval=10 total="${source_bytes:-}" total_human=""
+  if [[ "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" == "1" &&
+        "${XD_MIGRATE_TEST_COPY_PROGRESS_INTERVAL:-}" =~ ^[1-9][0-9]*$ ]]; then
+    interval="$XD_MIGRATE_TEST_COPY_PROGRESS_INTERVAL"
+  fi
+  if [[ "$total" =~ ^[0-9]+$ && "$total" -gt 0 ]]; then
+    total_human="$(format_bytes "$total")"
+  fi
+  # Inspect only the active cp process. Recursively running du against the
+  # destination every 10 seconds can stall on millions of backup files.
+  local parent_pid="$BASHPID" baseline_wchar=""
+  baseline_wchar="$(awk '$1 == "wchar:" {print $2}' "/proc/$parent_pid/io" 2>/dev/null || true)"
+  [[ "$baseline_wchar" =~ ^[0-9]+$ ]] || baseline_wchar=0
+  (
+    local sleep_pid="" child_ids="" candidate="" copy_pid="" bytes="" elapsed=0 percent=0
+    local parent_written="" child_written=""
+    trap 'if [[ -n "$sleep_pid" ]]; then kill "$sleep_pid" 2>/dev/null || true; fi; exit 0' TERM INT
+    while :; do
+      sleep "$interval" &
+      sleep_pid=$!
+      wait "$sleep_pid" || break
+      sleep_pid=""
+      elapsed=$(( SECONDS - started_at ))
+      child_ids=""
+      copy_pid=""
+      # The migration has exactly one copy child at a time; exclude this
+      # monitor. /proc/.../children is a cheap Linux kernel process listing.
+      if [[ -r "/proc/$parent_pid/task/$parent_pid/children" ]]; then
+        IFS= read -r child_ids < "/proc/$parent_pid/task/$parent_pid/children" || true
+      fi
+      for candidate in $child_ids; do
+        [[ "$candidate" == "$BASHPID" ]] && continue
+        if [[ -r "/proc/$candidate/io" ]]; then
+          copy_pid="$candidate"
+          break
+        fi
+      done
+      # Linux includes reaped children's I/O in the parent's counters. Add
+      # the active child's counters, then subtract the pre-copy baseline so
+      # progress remains cumulative when --defer-backups copies separate dirs.
+      parent_written="$(awk '$1 == "wchar:" {print $2}' "/proc/$parent_pid/io" 2>/dev/null || true)"
+      if [[ "$parent_written" =~ ^[0-9]+$ ]]; then
+        bytes=$(( parent_written - baseline_wchar ))
+        if [[ -n "$copy_pid" ]]; then
+          child_written="$(awk '$1 == "wchar:" {print $2}' "/proc/$copy_pid/io" 2>/dev/null || true)"
+          if [[ "$child_written" =~ ^[0-9]+$ ]]; then
+            bytes=$(( bytes + child_written ))
+          fi
+        fi
+        (( bytes >= 0 )) || bytes=0
+        if [[ -n "$total_human" ]]; then
+          percent=$(( bytes * 100 / total ))
+          (( percent < 100 )) || percent=99
+          printf '[xDrive] copy progress (I/O estimate): %s / %s (~%d%%), elapsed %ds\n' \
+            "$(format_bytes "$bytes")" "$total_human" "$percent" "$elapsed"
+        else
+          printf '[xDrive] copy activity: %s written, elapsed %ds\n' \
+            "$(format_bytes "$bytes")" "$elapsed"
+        fi
+        continue
+      fi
+      printf '[xDrive] copy in progress, elapsed %ds (I/O counters unavailable)\n' "$elapsed"
+    done
+  ) &
+  COPY_PROGRESS_PID=$!
+}
+
 rollback() {
   local status=$?
+  stop_copy_progress
   [[ "$MIGRATION_COMMITTED" == "1" ]] && return "$status"
   trap - EXIT INT TERM
   set +e
@@ -447,6 +706,28 @@ install_target_backup_schedule() {
   rm -f "$tmp"
 }
 
+if [[ "$DEFER_BACKUPS" == "1" ]]; then
+  # Never omit live bind mounts merely because someone configured them beneath
+  # the historical backup tree (including symlinks into that tree).
+  for data_key in XD_FILES_DATA_DIR XD_POSTGRES_DATA_DIR XD_CADDY_DATA_DIR XD_CADDY_CONFIG_DIR; do
+    data_path="$(env_value "$SOURCE_ENV" "$data_key")"
+    [[ -n "$data_path" ]] || continue
+    resolved_data_path="$(readlink -f -- "$data_path" 2>/dev/null || true)"
+    case "$data_path" in
+      "$SOURCE_HOME/backups"|"$SOURCE_HOME/backups/"*)
+        echo "xDrive migration: --defer-backups would omit active $data_key; use complete migration instead." >&2
+        exit 1
+        ;;
+    esac
+    case "$resolved_data_path" in
+      "$SOURCE_HOME/backups"|"$SOURCE_HOME/backups/"*)
+        echo "xDrive migration: --defer-backups would omit active $data_key through a symlink; use complete migration instead." >&2
+        exit 1
+        ;;
+    esac
+  done
+fi
+
 echo "[xDrive] migrating server ownership"
 echo "  source:      $SOURCE_HOME (root)"
 echo "  target:      $TARGET_HOME ($TARGET_USER uid=$TARGET_UID gid=$TARGET_GID)"
@@ -460,11 +741,41 @@ SOURCE_STOPPED=1
 mkdir -p "$TARGET_HOME"
 TARGET_CREATED=1
 echo "[xDrive] copying xDrive home; the root copy is retained for rollback..."
-if cp --help 2>/dev/null | grep -q -- '--reflink'; then
-  cp -a --reflink=auto "$SOURCE_HOME/." "$TARGET_HOME/"
-else
-  cp -a "$SOURCE_HOME/." "$TARGET_HOME/"
+echo "[xDrive] progress uses cp process I/O counters; reflinks and metadata can make percentages approximate."
+if [[ "$source_bytes" =~ ^[0-9]+$ && "$source_bytes" -gt 0 ]]; then
+  echo "[xDrive] copy total (apparent size): $(format_bytes "$source_bytes")"
 fi
+copy_started_at=$SECONDS
+start_copy_progress "$copy_started_at"
+copy_status=0
+if [[ "$DEFER_BACKUPS" == "1" ]]; then
+  # Preserve reflink behavior for data files without traversing backup history.
+  # Copy top-level entries separately because GNU cp has no --exclude option.
+  shopt -s nullglob dotglob
+  for entry in "$SOURCE_HOME"/*; do
+    [[ "${entry##*/}" == "backups" ]] && continue
+    if cp --help 2>/dev/null | grep -q -- '--reflink'; then
+      cp -a --reflink=auto -- "$entry" "$TARGET_HOME/" || { copy_status=$?; break; }
+    else
+      cp -a -- "$entry" "$TARGET_HOME/" || { copy_status=$?; break; }
+    fi
+  done
+  shopt -u nullglob dotglob
+  mkdir -p "$TARGET_HOME/backups"
+  chown "$TARGET_UID:$TARGET_GID" "$TARGET_HOME/backups"
+else
+  if cp --help 2>/dev/null | grep -q -- '--reflink'; then
+    cp -a --reflink=auto "$SOURCE_HOME/." "$TARGET_HOME/" || copy_status=$?
+  else
+    cp -a "$SOURCE_HOME/." "$TARGET_HOME/" || copy_status=$?
+  fi
+fi
+stop_copy_progress
+if (( copy_status != 0 )); then
+  echo "xDrive migration: copy failed after $(( SECONDS - copy_started_at ))s; rolling back to root deployment." >&2
+  exit "$copy_status"
+fi
+printf '[xDrive] copy complete: 100%%, elapsed %ds\n' "$(( SECONDS - copy_started_at ))"
 
 [[ -f "$TARGET_ENV" && -f "$TARGET_COMPOSE" ]] || {
   echo "xDrive migration: copied deployment is incomplete." >&2
@@ -522,6 +833,15 @@ migrated_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chown "$TARGET_UID:$TARGET_GID" "$TARGET_STATE/migrated-from-root"
 chmod 600 "$TARGET_STATE/migrated-from-root"
+if [[ "$DEFER_BACKUPS" == "1" ]]; then
+  cat > "$TARGET_STATE/migration-backups-pending" <<EOF
+source_home=$SOURCE_HOME
+target_home=$TARGET_HOME
+backups_source=$SOURCE_HOME/backups
+EOF
+  chown "$TARGET_UID:$TARGET_GID" "$TARGET_STATE/migration-backups-pending"
+  chmod 600 "$TARGET_STATE/migration-backups-pending"
+fi
 
 CRON_CHANGED=1
 install_target_backup_schedule
@@ -536,6 +856,11 @@ echo
 echo "[xDrive] migration completed successfully."
 echo "Active deployment: $TARGET_HOME"
 echo "Original root copy retained: $SOURCE_HOME"
+if [[ "$DEFER_BACKUPS" == "1" ]]; then
+  echo "Historical backup archives were deferred; they remain only in $SOURCE_HOME/backups."
+  printf '[xDrive] to import historical backups later as root: %q migrate-user %q --backups-only\n' "$SOURCE_HOME/bin/xdrive-server" "$TARGET_USER"
+  echo "Do not delete the original root copy before backup history import is complete."
+fi
 echo "Command path was added to: $TARGET_SHELL_RC"
 echo
 echo "Open a new login shell as $TARGET_USER, or in an already-open target-user shell run:"
@@ -545,5 +870,9 @@ echo "Then verify:"
 echo "  xdrive-server status"
 echo "  xdrive-server doctor"
 echo
-echo "After you have verified the migrated deployment and backups, remove the old root copy manually if desired:"
-printf '  rm -rf -- %q\n' "$SOURCE_HOME"
+if [[ "$DEFER_BACKUPS" != "1" ]]; then
+  echo "After verifying the migrated deployment and backups, the original root copy may be removed manually:"
+  printf '  rm -rf -- %q\n' "$SOURCE_HOME"
+else
+  echo "The original root copy must be kept until deferred backup import and verification have finished."
+fi

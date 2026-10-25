@@ -227,8 +227,11 @@ process (conceptually `runuser -u USER -- docker info`). The verification
 clears inherited root Docker context and TLS overrides and pins
 `DOCKER_HOST=unix:///var/run/docker.sock`. It checks the target's Docker
 access **before** stopping the root-owned deployment. Unavailable daemon,
-mismatched socket/group, failed `usermod`, or failed target-user verification
-aborts before service downtime.
+mismatched socket/group, failed system group authorization, or failed target-user verification
+aborts before service downtime. The migration resolves administrative tools
+through standard sbin paths when the root PATH is restricted, and permits
+`gpasswd` / `adduser` fallback only after verifying the rootful system
+daemon and group-owned socket.
 
 To forbid automatic privilege changes, use:
 
@@ -246,9 +249,67 @@ automatic revocation. Prefer Docker Rootless Mode when host-root-equivalent
 permissions are not appropriate. The regular non-root installer still
 never modifies system groups.
 
-The migration command preflights the target user's Docker access and free disk space, stops the root-owned deployment, copies the complete xDrive home to `/home/USER/.xd`, rewrites xDrive-managed absolute data paths, transfers the managed backup schedule, starts the copied deployment through the target user's Docker context, and requires the server health check to pass before committing the migration. If startup or verification fails, the target deployment is stopped and the original root deployment is restarted.
+By default, the migration preflights the target user's Docker access and free
+disk space, stops the root-owned deployment, and copies the **complete** xDrive
+home (including all historical backup archives) to `/home/USER/.xd`. It then
+rewrites xDrive-managed absolute data paths, transfers the backup schedule,
+starts the copied deployment through the target user's Docker context, and
+requires the server health check to pass before committing the migration.
+Startup or verification failure restarts the original root deployment.
+The original root xDrive home is retained as a rollback copy, never deleted
+automatically.
 
-The original root xDrive home is intentionally retained after a successful migration as a rollback copy. It is never deleted automatically. The target user's shell PATH is updated to use `/home/USER/.xd/bin`; an already-open target-user shell must run the printed `source <rc-file>` command or start a new login shell.
+Copy progress is reported roughly every ten seconds from the live `cp`
+process's kernel I/O counters, not repeated `du` scans of the full target
+tree. Because copy-on-write reflinks and metadata are not reflected reliably
+in I/O byte counts, percentages are **estimates**, capped below 100% until
+the copy command actually succeeds.
+
+### Optional historical backup separation
+
+For hosts with many large historical archives, the operator can explicitly
+defer backup transfer to minimize the service downtime window:
+
+```bash
+/root/.xd/bin/xdrive-server migrate-user USER --defer-backups
+```
+
+This mode skips only `~/.xd/backups` during the initial copy. Live server
+files, configuration, database, and media storage are still copied before
+switching to the target user's Docker context. It creates an empty
+`/home/USER/.xd/backups` for new backups, records a pending-backups marker,
+and **never deletes** the original `/root/.xd/backups` archives. These
+historical archives will be absent from the target's backup list until they
+are imported, but remain recoverable from the original root copy. Do not
+remove the root copy while backups are pending.
+
+After the user-owned deployment has passed health checks, run this as root to
+bring over the historical archives **without stopping the active server**:
+
+```bash
+/root/.xd/bin/xdrive-server migrate-user USER --backups-only
+```
+
+This checks the recorded migration source and destination, copies individual
+archive directories through hidden staging paths, publishes them atomically,
+and does not overwrite snapshots created by the new deployment. Successful
+archive publications are recorded in a small idempotency journal, so retries
+can skip previously imported archives without rereading large `blobs.tar`
+files. If an unrelated new target backup has the same name, import reports a
+**conflict**, leaves the pending marker in place, and never silently discards
+the original history. Rename or resolve the conflicting snapshot explicitly
+before retrying. If interrupted, already published archives remain usable;
+the original archives remain at the root source. The pending marker is
+cleared only when all archive imports have succeeded. A backup import failure
+is not a reason to roll back a healthy target that may contain new user data.
+
+If the initial migration is already running, changing CLI options or replacing
+the script **does not alter that in-flight copy**. Do not interrupt an active
+migration just to enable the optional optimization.
+
+The original root xDrive home is intentionally retained after any successful
+migration, and operators should independently verify backups before deciding
+whether to remove it. The target user's shell PATH is updated to use `/home/USER/.xd/bin`; an already-open target-user shell must run the printed `source <rc-file>` command or start a new login shell.
 
 ## Non-root installation contract
 
