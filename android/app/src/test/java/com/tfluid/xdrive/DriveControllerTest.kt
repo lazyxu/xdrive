@@ -12,6 +12,17 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun galleryVisibleColumnsKeepsResponsiveBaselineAndBounds() {
+        assertEquals(3, galleryVisibleColumns(390f, 3))
+        assertEquals(2, galleryVisibleColumns(390f, 2))
+        assertEquals(4, galleryVisibleColumns(390f, 4))
+        assertEquals(2, galleryVisibleColumns(180f, 2))
+        assertEquals(5, galleryVisibleColumns(768f, 3))
+        assertEquals(10, galleryVisibleColumns(1500f, 10))
+        assertEquals(2, galleryVisibleColumns(Float.NaN, 2))
+        assertEquals(4, galleryVisibleColumns(576f, 3))
+    }
+
     private val root = DriveNode(1, name = "", type = "dir")
     private val folder = DriveNode(2, 1, "照片", "dir", revision = 1)
     private val file = DriveNode(3, 1, "readme.txt", "file", 42, revision = 1)

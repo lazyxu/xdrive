@@ -36,6 +36,7 @@ class DriveAppTest {
     private var galleryVideoFixture = false
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
+    private var galleryRangeReads = 0
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
@@ -48,6 +49,7 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
+            galleryRangeReads++
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
                 "video", durationMs = 10_000L)), 1, 0)
@@ -247,6 +249,37 @@ class DriveAppTest {
             controller.state.value.gallerySearchQuery.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
         }
+    }
+
+    @Test fun nativeGalleryDisplayOptionsAdjustRealGridWithoutReloadingOwnerPhotos() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        var readsBefore = 0
+        compose.runOnIdle { readsBefore = galleryRangeReads }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-zoom-out").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，方形裁切"))
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-aspect-contain").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，完整比例"))
+        // Display changes cannot trigger a second Owner Range or invalidate a tile.
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(readsBefore, galleryRangeReads)
+            org.junit.Assert.assertEquals(40L, controller.state.value.galleryItems.single().node.id)
+        }
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，完整比例"))
     }
 
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {

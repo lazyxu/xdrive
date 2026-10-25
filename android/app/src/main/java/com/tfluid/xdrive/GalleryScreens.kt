@@ -23,11 +23,22 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** Match the shared Mobile Gallery KFS column-first contract for All photos:
+ * reference width 144dp, three baseline columns, preference range 2..10.
+ * The preference shifts the responsive count without changing Owner rows. */
+internal fun galleryVisibleColumns(widthDp: Float, preference: Int): Int {
+    val available = if (widthDp.isFinite()) widthDp.coerceAtLeast(0f) else 0f
+    val baseline = maxOf(3, (available / 144f).toInt())
+    return (baseline + preference.coerceIn(2, 10) - 3).coerceIn(2, 10)
+}
 
 /** Native Owner Gallery with same Server range for wall and search, never a local
  * filter of the few visible thumbnails. Full Collections controls follow later. */
@@ -38,6 +49,10 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchDraft by remember(state.gallerySearchQuery) { mutableStateOf(state.gallerySearchQuery) }
+    // Display preferences are only local UI state and survive Viewer returns.
+    var preferredColumns by rememberSaveable { mutableIntStateOf(3) }
+    var containTiles by rememberSaveable { mutableStateOf(false) }
+    var displayMenuOpen by remember { mutableStateOf(false) }
     // Preserve the visible photo anchor while the Viewer is open.
     var positioned by rememberSaveable(state.gallerySearchQuery) { mutableStateOf(false) }
     // A single entrance to the oldest visible edge permits only one fetch.
@@ -56,6 +71,54 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            IconButton(
+                onClick = { displayMenuOpen = true },
+                modifier = Modifier.size(48.dp)
+                    .semantics {
+                        stateDescription = "缩略图密度 ${preferredColumns} 档，" +
+                            if (containTiles) "完整比例" else "方形裁切"
+                    }
+                    .testTag("gallery-view-options"),
+            ) {
+                Icon(painterResource(R.drawable.xd_more_vert), "图库显示选项")
+            }
+            DropdownMenu(expanded = displayMenuOpen,
+                onDismissRequest = { displayMenuOpen = false },
+                containerColor = MaterialTheme.colorScheme.surface) {
+                DropdownMenuItem(
+                    text = { Text("放大缩略图") },
+                    enabled = preferredColumns > 2,
+                    modifier = Modifier.testTag("gallery-zoom-in"),
+                    onClick = {
+                        preferredColumns = (preferredColumns - 1).coerceAtLeast(2)
+                        displayMenuOpen = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("缩小缩略图") },
+                    enabled = preferredColumns < 10,
+                    modifier = Modifier.testTag("gallery-zoom-out"),
+                    onClick = {
+                        preferredColumns = (preferredColumns + 1).coerceAtMost(10)
+                        displayMenuOpen = false
+                    },
+                )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("方形裁切") },
+                    trailingIcon = { if (!containTiles) Text("✓", color = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.testTag("gallery-aspect-crop"),
+                    onClick = { containTiles = false; displayMenuOpen = false },
+                )
+                DropdownMenuItem(
+                    text = { Text("完整比例（方形网格）") },
+                    trailingIcon = { if (containTiles) Text("✓", color = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.testTag("gallery-aspect-contain"),
+                    onClick = { containTiles = true; displayMenuOpen = false },
+                )
+            }
+        }
     }
     if (state.error != null) {
         ErrorNotice(state.error)
@@ -67,11 +130,12 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     }
 
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().testTag("gallery-wall")) {
-        val columns = maxOf(1, (maxWidth / 112.dp).toInt())
-        val cellWidth = (maxWidth - (columns - 1).dp) / columns
+        val columns = galleryVisibleColumns(maxWidth.value, preferredColumns)
+        val tileGap = 4.dp // Shared PWA Gallery grid gap.
+        val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
         val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
-            (maxHeight - (cellWidth + 1.dp) * rows - 8.dp).coerceAtLeast(0.dp)
+            (maxHeight - (cellWidth + tileGap) * rows - 8.dp).coerceAtLeast(0.dp)
         } else 0.dp
 
         // Initial tail is sparse: prefetch one earlier Range before first positioning.
@@ -114,8 +178,8 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
             state = gridState,
             modifier = Modifier.fillMaxSize().testTag("gallery-grid"),
             contentPadding = PaddingValues(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            horizontalArrangement = Arrangement.spacedBy(tileGap),
+            verticalArrangement = Arrangement.spacedBy(tileGap),
         ) {
             if (state.galleryLoaded && state.galleryItems.isEmpty() &&
                 !state.loading && state.error == null) {
@@ -127,7 +191,7 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
                 Spacer(Modifier.fillMaxWidth().height(blankTop))
             }
             items(state.galleryItems, key = { it.node.id }) { item ->
-                GalleryTile(item, controller, bitmaps)
+                GalleryTile(item, controller, bitmaps, containTiles)
             }
         }
     }
@@ -182,6 +246,7 @@ private fun decodeThumbnail(bytes: ByteArray): ImageBitmap? {
 private fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
+    containTiles: Boolean,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
     val bitmap by produceState<ImageBitmap?>(initialValue = cache.get(key), key1 = key) {
@@ -206,7 +271,8 @@ private fun GalleryTile(
         .testTag("gallery-item-${item.node.id}")) {
         if (bitmap != null) {
             Image(bitmap = bitmap!!, contentDescription = item.node.name,
-                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                contentScale = if (containTiles) ContentScale.Fit else ContentScale.Crop,
+                modifier = Modifier.fillMaxSize())
         } else {
             Icon(painterResource(if (item.mediaKind == "video") R.drawable.xd_movie else R.drawable.xd_image),
                 contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
