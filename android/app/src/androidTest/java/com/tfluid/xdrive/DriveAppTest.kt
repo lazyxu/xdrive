@@ -32,6 +32,7 @@ class DriveAppTest {
     private var extraRootFile = false
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryAutoPagingFixture = false
+    private var galleryManyPhotos = false
     private val galleryOffsets = mutableListOf<Int>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
@@ -44,6 +45,14 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
+            if (galleryManyPhotos) {
+            val originals = (0 until 60).map { index ->
+                GalleryAsset(DriveNode(1000L + index, 1L,
+                    "相片-${index}.jpg", "file", size = 44, revision = 1),
+                    "image", hasThumbnail = true)
+            }
+            return GalleryPage(originals, 60, 0)
+            }
             if (!galleryAutoPagingFixture) return GalleryPage(listOf(galleryFixture), 1, 0)
             galleryOffsets += if (initialLatest) 180 else offset
             return if (initialLatest) GalleryPage(listOf(galleryFixture), 181, 180)
@@ -239,6 +248,81 @@ class DriveAppTest {
                 40L, controller.state.value.galleryItems.last().node.id)
             org.junit.Assert.assertNull(controller.state.value.error)
         }
+    }
+
+    @Test fun nativePhotoTileOpensImageViewerAndBackPreservesGallery() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryViewer)
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+        }
+    }
+
+    @Test fun photoViewerBackRestoresActualGalleryScrollAnchor() {
+        galleryManyPhotos = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 60
+        }
+        compose.onNodeWithTag("gallery-grid").performScrollToIndex(30)
+        compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true)
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryViewer)
+        }
+    }
+
+    @Test fun leavingGalleryClearsOldViewportButViewerBackKeepsCurrentAnchor() {
+        galleryManyPhotos = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 60
+        }
+        compose.onNodeWithTag("gallery-grid").performScrollToIndex(0)
+        compose.onNodeWithTag("gallery-item-1000", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 60
+        }
+        // Re-entering a Gallery session must start at newest, rather than
+        // restoring the former session's oldest tile at index zero.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-item-1059", useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-item-1059", useUnmergedTree = true)
+            .assertIsDisplayed()
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {
