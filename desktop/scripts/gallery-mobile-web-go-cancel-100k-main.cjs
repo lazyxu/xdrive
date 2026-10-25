@@ -15,12 +15,14 @@ const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
 const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
+const p1ViewerVideoAbortMode = process.env.XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL === '1'
+assert(!p1ViewerVideoAbortMode || p1LiveMode, 'real Viewer video Range Abort requires original P1-C Live stage')
 assert(!p1LiveMode || p1H264Mode, 'Live native hold requires genuine P1 H264 video stage')
 assert(!p1H264Mode || p1Mode,
   'H264 presented-frame mode requires real Owner P1 Gallery Viewer')
 assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
+const out = path.join(__dirname, '..', p1ViewerVideoAbortMode ? 'pwa-p1-owner-100k-viewer-range-abort-results' : p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -752,6 +754,129 @@ async function p1MeasureLivePhotoHold(win){
     notMeasured:'native iOS touch long press; owner revoke while Video Range inflight; 115k physical CAS'}
 }
 
+
+// P1-D: actual shared Owner Viewer creates a genuine signed original H264
+// Range GET. Its real Back control must abort the in-progress Gin handler;
+// no direct AbortController, injected route or synthetic browser response.
+function p1RestoreDeepVideoViewport(){
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  if(!(grid instanceof HTMLElement)||!(host instanceof HTMLElement))return false
+  const extent=host.scrollHeight-host.clientHeight
+  if(extent<=10000)return false
+  window.__xdriveP1H264Scan={steps:0}
+  host.scrollTop=extent
+  host.dispatchEvent(new Event('scroll'))
+  return true
+}
+// Test the browser video element's original signed URL before it decodes.
+// Requiring videoWidth here would wait for an HTTP Range to finish and would
+// make a genuine in-flight Viewer cancellation unmeasurable.
+function p1OriginalSignedVideoElement(){
+  const video=document.querySelector(
+    '[data-xdrive-web-viewer] [data-xdrive-preview-media-state="video"] video'
+  )
+  if(!(video instanceof HTMLVideoElement)||!video.currentSrc)return false
+  const source=new URL(video.currentSrc,location.href)
+  return source.origin===location.origin &&
+    /^\/api\/v1\/file-preview\/\d+$/.test(source.pathname) &&
+    source.searchParams.has('ticket')
+}
+
+async function p1ViewerVideoProbeStats(base){
+  const response=await fetch(base+'/__perf/viewer-video-range-stats',{cache:'no-store'})
+  assert.equal(response.status,200,'genuine Go signed Viewer video range probe absent')
+  return response.json()
+}
+async function p1MeasureRealViewerRangeAbort(win,base){
+  const enabled=await fetch(base+'/__perf/viewer-video-range-enable',{method:'POST'})
+  assert.equal(enabled.status,204,'real Owner H264 signed video range probe enable failed')
+  const zero=await p1ViewerVideoProbeStats(base)
+  assert.equal(zero.started,0,'unscoped pre-enable original Range must not be counted')
+  assert(await win.webContents.executeJavaScript(
+    '('+p1RestoreDeepVideoViewport.toString()+')()',true
+  ),'genuine 100k Owner Gallery deep scroll host is absent')
+  const tile=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1VisibleH264Tile.toString()+')()',true
+  ),25000,'genuine visible deep H264 tile before signed Range cancellation')
+  assert(tile.depth>=0.7&&tile.tiles<1000,'real bounded video tile absent')
+  sendActualPointer(win,tile)
+  await until(async()=>win.webContents.executeJavaScript(
+    "location.hash.startsWith('#/app/media-viewer?') && !!document.querySelector('[data-xdrive-web-viewer]')",
+    true),30000,'real video Viewer route')
+  // A real 206 Range must be canceled WHILE decoding/buffering the original.
+  // Waiting for videoWidth can drain the padded real stream before Back.
+  await until(async()=>win.webContents.executeJavaScript(
+    '('+p1OriginalSignedVideoElement.toString()+')()',true
+  ),12000,'real Owner signed original Video element before Range completes')
+
+  let inFlight
+  try{
+    inFlight=await until(async()=>{
+      const stats=await p1ViewerVideoProbeStats(base)
+      return stats.signed_range>=1 && stats.partial_content>=1 &&
+        stats.first_chunks>=1 && stats.active>=1 &&
+        stats.emitted_bytes>0 ? stats : null
+    },12000,'real signed original H264 HTTP Range still in-flight')
+  }catch(error){
+    // Never expose signed URL, ticket, Authorization or original bytes.
+    const stats=await p1ViewerVideoProbeStats(base)
+    const browser=await win.webContents.executeJavaScript(
+      '(()=>{const v=document.querySelector("[data-xdrive-web-viewer] [data-xdrive-preview-media-state=video] video");return v?{mounted:true,readyState:v.readyState,networkState:v.networkState,videoWidth:v.videoWidth,videoHeight:v.videoHeight,bufferedCount:v.buffered.length,paused:v.paused,seekableCount:v.seekable.length}: {mounted:false}})()',true)
+    console.error('P1D_SANITIZED_RANGE_DIAGNOSTIC '+JSON.stringify({
+      requests:stats.started,ranged:stats.signed_range,
+      noRange:stats.signed_no_range,status206:stats.partial_content,
+      chunks:stats.first_chunks,active:stats.active,bytes:stats.emitted_bytes,
+      browser,
+    }))
+    throw error
+  }
+  // Resolve the actual visible Back button before starting the 160 ms
+  // Go Request.Context.Done stopwatch. Do not stop a standalone fetch.
+  win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
+  const back=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1BackPoint.toString()+')()',true
+  ),12000,'real video Viewer Back button while original Range is active')
+  const preClick=await p1ViewerVideoProbeStats(base)
+  assert(preClick.active>=1&&preClick.emitted_bytes===inFlight.emitted_bytes,
+    'signed original Range finished before genuine Viewer exit click')
+  const marked=await fetch(base+'/__perf/viewer-video-range-mark',{method:'POST'})
+  assert.equal(marked.status,204,'server Range cancellation stopwatch unavailable')
+  const markStats=await p1ViewerVideoProbeStats(base)
+  assert(markStats.active>=1&&markStats.mark_emitted_bytes===markStats.emitted_bytes,
+    'video Range emitted bytes before actual Viewer Back click')
+  const started=performance.now()
+  sendActualPointer(win,back)
+  const returned=await until(async()=>win.webContents.executeJavaScript(
+    '('+p1ReturnedToCaller.toString()+')()',true
+  ),12000,'real Owner video Viewer Back restores same Gallery virtual anchor')
+  await sleep(160)
+  const after=await p1ViewerVideoProbeStats(base)
+  const browserBackMs=performance.now()-started
+  const row={
+    passed:after.context_done>=1&&after.cancelled>=1&&
+      after.active===0&&after.max_cancel_us>0&&after.max_cancel_us<=160000&&
+      after.emitted_bytes===markStats.mark_emitted_bytes&&
+      returned.sameCaller&&returned.sameDocument&&
+      returned.sameHost&&returned.sameGrid&&returned.scrollDelta<=2,
+    watchedOriginals:after.watched_paths,rangeStarted:after.started,
+    signedPartialContent:after.partial_content,
+    firstChunks:after.first_chunks,activeAtMark:markStats.active,
+    goContextDone:after.context_done,cancelledHandlers:after.cancelled,
+    stillActiveAt160Ms:after.active,
+    wastedBytesAfterViewerBack:after.emitted_bytes-markStats.mark_emitted_bytes,
+    goContextMaxMs:after.max_cancel_us/1000,
+    backElapsedMs:browserBackMs,
+    sameCaller:returned.sameCaller,sameDocument:returned.sameDocument,
+    sameHost:returned.sameHost,sameGrid:returned.sameGrid,
+    restoredScrollDelta:returned.scrollDelta,
+    proof:'native Viewer Back unmount -> signed original H264 Range HTTP Go Request.Context.Done',
+    exclusions:'owner-switch cancellation, physical iOS Safari, 115k full original CAS',
+  }
+  assert(row.passed,'genuine Viewer video Range did not stop Go work: '+JSON.stringify(row))
+  return row
+}
+
 async function sampleOnce(sample, ready) {
   let fixture = null, win = null, resourceSampler = null
   try {
@@ -908,11 +1033,12 @@ async function sampleOnce(sample, ready) {
     const p1ViewerBack = p1Mode ? await p1MeasureRealViewerBack(win) : null
     const p1H264Frames = p1H264Mode ? await p1MeasureRealH264ViewerMotion(win) : null
     const p1LiveMotion = p1LiveMode ? await p1MeasureLivePhotoHold(win) : null
+    const p1ViewerRangeAbort = p1ViewerVideoAbortMode ? await p1MeasureRealViewerRangeAbort(win,fixture.config.url) : null
     const row = {
       sample, viewport, streamCount, resources, logicalAssets: 100000, physicalNodes: 115000,
       firstImageNodes: fixture.config.first_image_nodes,
       seedMsExcluded: fixture.config.seed_ms,
-      scroll, healthy, p1ViewerBack, p1H264Frames, p1LiveMotion, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
+      scroll, healthy, p1ViewerBack, p1H264Frames, p1LiveMotion, p1ViewerRangeAbort, pageLeaveMode:p0c2PageLeaveMode, spaMode:p0c2SPAMode,
       go: {
         started: started.started, canceled: after.cancelled - started.cancelled,
         contextDone: after.context_done - started.context_done,
@@ -961,19 +1087,32 @@ async function main() {
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
-      status: p1LiveMode ? 'measured-P1-100k-real-Owner-Live-hold-motion' : p1H264Mode ? 'measured-P1-100k-real-Owner-H264-presented-motion' : p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
+      status: p1ViewerVideoAbortMode ? 'measured-P1-100k-real-Owner-Viewer-H264-Range-Go-cancel' : p1LiveMode ? 'measured-P1-100k-real-Owner-Live-hold-motion' : p1H264Mode ? 'measured-P1-100k-real-Owner-H264-presented-motion' : p1Mode ? 'measured-P1-100k-real-Owner-JPEG-Viewer-Back' : p0c2SPAMode ?
         'measured-CURRENT-P0-C2b2-authenticated-Files-Gallery-Files-SPA-Go-cancellation' :
         p0c2PageLeaveMode ?
         'measured-CURRENT-P0-C2b1-390px-Gallery-pageleave-Go-cancellation' :
         'measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation',
       mobileCancelMode: true, cssWindowWidth:390, pageLeaveMode:p0c2PageLeaveMode,
       spaMode:p0c2SPAMode, p1ViewerBackMode:p1Mode, p1H264ViewerMode:p1H264Mode,
-      p1LiveHoldMode:p1LiveMode, p1LivePresentedP50Ms:p1LiveMode ? rows.map(x=>x.p1LiveMotion.displayedMs).sort((a,b)=>a-b)[1] : null,
+      p1LiveHoldMode:p1LiveMode, p1ViewerVideoAbortMode,
+      p1ViewerRangeGoMaxMs:p1ViewerVideoAbortMode ? Math.max(...rows.map(x=>x.p1ViewerRangeAbort.goContextMaxMs)) : null,
+      p1LivePresentedP50Ms:p1LiveMode ? rows.map(x=>x.p1LiveMotion.displayedMs).sort((a,b)=>a-b)[1] : null,
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!p1ViewerVideoAbortMode || (row.p1ViewerRangeAbort?.passed===true &&
+          row.p1ViewerRangeAbort.signedPartialContent>=1 &&
+          row.p1ViewerRangeAbort.goContextDone>=1 &&
+          row.p1ViewerRangeAbort.cancelledHandlers>=1 &&
+          row.p1ViewerRangeAbort.stillActiveAt160Ms===0 &&
+          row.p1ViewerRangeAbort.wastedBytesAfterViewerBack===0 &&
+          row.p1ViewerRangeAbort.goContextMaxMs<=160 &&
+          row.p1ViewerRangeAbort.sameCaller &&
+          row.p1ViewerRangeAbort.sameDocument &&
+          row.p1ViewerRangeAbort.sameHost && row.p1ViewerRangeAbort.sameGrid &&
+          row.p1ViewerRangeAbort.restoredScrollDelta<=2)) &&
         (!p1LiveMode || (row.p1LiveMotion?.passed===true &&
           row.p1LiveMotion.deepFraction>=0.7 &&
           row.p1LiveMotion.mediaDeltaMs>5 &&
@@ -1015,7 +1154,7 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: p1LiveMode ? 'n3 authentic 390px Owner 100k Live still + real signed motion CAS, held pointer via shared LivePhotoSurface RVFC two advancing frames, release pause/restore, Viewer Back exact virtual anchor; parent H264/JPEG/Go Abort gates retained, not physical iOS touch or full 115k physical files' : p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
+      limits: p1ViewerVideoAbortMode ? 'n3 real Owner 390px 100k Gallery signed H264 preview Range in actual Viewer, native Back unmount -> Go Context.Done <=160ms with 0 stale response bytes and same virtual grid/anchor. Reuses original JPEG/H264/Live checks. NOT owner switch, installed iOS or full 115k physical CAS' : p1LiveMode ? 'n3 authentic 390px Owner 100k Live still + real signed motion CAS, held pointer via shared LivePhotoSurface RVFC two advancing frames, release pause/restore, Viewer Back exact virtual anchor; parent H264/JPEG/Go Abort gates retained, not physical iOS touch or full 115k physical files' : p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
         'Actual Web App.tsx real Files→Gallery→Files same-document route click in Chromium 390px, true Go/Gin/PG17/CAS, 100k logical Gallery/115k nodes, 4-6 active JPEG requests, exact Context.Done + RSS/CPU; not iPhone/Safari, 100k independent originals or durable transfer.' :
         p0c2PageLeaveMode ?
         'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :

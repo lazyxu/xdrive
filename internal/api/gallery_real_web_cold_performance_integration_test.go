@@ -234,6 +234,17 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		t.Logf("P1C_LIVE_REAL_MOTION_CAS_READY count=%d", seeded)
 	}
 
+	// P1-D keeps the existing Owner's real 100k Gallery model, replacing only
+	// bounded visible H264 source bytes with a playable padded original.
+	var p1ViewerVideoRangeProbe *pwaP1ViewerVideoRangeProbe
+	if os.Getenv("XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL") == "1" {
+		if !p0c2SPAMode || physicalViewportMode {
+			t.Fatal("P1-D requires authentic bounded signed Owner SPA fixture")
+		}
+		seeded := pwaP1SeedSlowOriginalH264Videos(t, db, countingStore, ownerRoot.OwnerID, videos)
+		p1ViewerVideoRangeProbe = newPwaP1ViewerVideoRangeProbe(videos)
+		t.Logf("P1D_SIGNED_VIEWER_VIDEO_CAS_READY videos=%d", seeded)
+	}
 	if len(images) < 12 || len(videos) == 0 || liveCount == 0 {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
 			len(images), len(videos), liveCount)
@@ -290,6 +301,28 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		case "/__perf/stats":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(countingStore.Snapshot())
+		case "/__perf/viewer-video-range-stats":
+			if p1ViewerVideoRangeProbe == nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(p1ViewerVideoRangeProbe.snapshot())
+		case "/__perf/viewer-video-range-enable":
+			if p1ViewerVideoRangeProbe == nil || r.Method != http.MethodPost {
+				http.Error(w, "P1-D fixture only", http.StatusMethodNotAllowed)
+				return
+			}
+			p1ViewerVideoRangeProbe.start()
+			w.WriteHeader(http.StatusNoContent)
+		case "/__perf/viewer-video-range-mark":
+			if p1ViewerVideoRangeProbe == nil || r.Method != http.MethodPost {
+				http.Error(w, "P1-D fixture only", http.StatusMethodNotAllowed)
+				return
+			}
+			p1ViewerVideoRangeProbe.mark()
+			w.WriteHeader(http.StatusNoContent)
 		case "/__perf/physical-thumbnail-stats":
 			if !physicalViewportMode {
 				http.NotFound(w, r)
@@ -351,6 +384,10 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			if viewportProbe != nil && r.Method == http.MethodGet &&
 				viewportProbe.matches(r.URL.Path) {
 				viewportProbe.serve(w, r, router)
+				return
+			}
+			if p1ViewerVideoRangeProbe != nil && p1ViewerVideoRangeProbe.matches(r) {
+				p1ViewerVideoRangeProbe.serve(w, r, router)
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/api/") {
