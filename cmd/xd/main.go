@@ -66,7 +66,7 @@ Usage:
   xd password --current CURRENT --new NEW
   xd status
   xd config --mount PATH
-  xd mount [PATH]
+  xd mount [PATH]    (configure the owning Agent; CLI exits without stopping mount)
   xd version
   xd update [--source github|gitlab] [--channel stable|master] [--install] (Desktop only)
   xd update --cli-only [--download] [--source github|gitlab] [--channel stable|master]
@@ -267,57 +267,13 @@ func configCmd(args []string) error {
 	return nil
 }
 
-func mountCmd(args []string) error {
-	fs := flag.NewFlagSet("mount", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() > 1 {
-		return fmt.Errorf("mount accepts zero or one PATH")
-	}
-	cfg, err := userconfig.Load()
-	if err != nil {
-		return err
-	}
-	if cfg.MustChangePassword {
-		return fmt.Errorf("password change required; run xd password first")
-	}
-	var path string
-	if fs.NArg() == 1 {
-		path, err = filepath.Abs(fs.Arg(0))
-	} else {
-		path, err = userconfig.EffectiveMountPath(cfg)
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return err
-	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-	cli, err := userconfig.NewClient(cfg)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("xDrive mounted at %s; press Ctrl+C to stop\n", path)
-	return mount.RunWithOptions(ctx, cli, path, mountOptionsFromConfig(cfg))
-}
-
-func mountOptionsFromConfig(cfg userconfig.Config) mount.Options {
-	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes}
-	for _, rule := range cfg.SyncRules {
-		switch rule.Mode {
-		case userconfig.SyncModeExclude:
-			opts.ExcludedPaths = append(opts.ExcludedPaths, rule.Path)
-		case userconfig.SyncModeAlwaysLocal:
-			opts.AlwaysLocalPaths = append(opts.AlwaysLocalPaths, rule.Path)
-		}
-	}
-	return opts
-}
-
 func cleanupCmd() error {
+	// Windows CfAPI root unregister must never race an active owning Agent
+	// or a headless backup Agent; do not treat a malformed discovery as absent.
+	if err := refuseMountCleanupWhenAgentActive(); err != nil {
+		return err
+	}
+
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return nil

@@ -19,3 +19,13 @@ This small fix deliberately does **not** add live mode promotion. Explicit later
 - Authorized full-only and unknown future IPC routes are rejected in `backup_only`, while existing CLI bootstrap, per-file status, scheduling and receipt/recovery-read paths remain accessible; invalid token is rejected before mode disclosure.
 - Desktop `ensureRunning` and explicit `restart` do not spawn, stop or overwrite a live Backup-only Agent; missing runtime mode is also not treated as full.
 - Linux/Windows Go tests, Desktop Main contract tests and exact HEAD Final Gate; inaccessible production installation/safety acceptance remains **按用户决定跳过（未验收）**.
+
+## Agent-owned `xd mount` (dependent follow-up)
+
+- On a matched new client pair, `xd mount [ABS_OR_RELATIVE_PATH]` connects through exactly the same protected discovery, PID/protocol and same-OS-user loopback bearer path as `xd backup`. It requires verified `runtime_mode=full`, `settings` and `sync-control` capabilities. When absent, xd starts the same installed Agent **without** `--backup-only`; single-instance ownership remains in that Agent. It never replaces a live Backup-only Agent or falls back to a direct FUSE/CfAPI runner.
+- With a local PATH, CLI converts to a canonical absolute path and uses the **existing** authenticated `PATCH /v1/settings` with exactly `mount_path`; Agent persists settings and wakes its existing reconciliation loop, which already handles start/stop/cache and mount paths. Without PATH, xd uses `GET /v1/settings`. The response path must be explicit and match any requested PATH; unknown, stale or conflicting replies fail closed, without blind retry.
+- `xd mount` now exits after the Agent **accepts the configuration**, not when FUSE/CfAPI has fully mounted. Ctrl-C or process exit must not terminate the shared Agent, active transfers or ongoing backups. Users should inspect Agent diagnostics/logs for a platform mount error.
+- `xd cleanup` remains an explicit maintenance operation, but refuses while a live Agent can be reached; if discovery is malformed, unsafe, unreadable or still present after an endpoint timeout, refuse to unregister Windows CfAPI rather than guessing that the mount is inactive.
+- The separate `xd backup agent` user-level service and Desktop both use the same original Agent binary; no new Agent daemon, local state format, CAS writer, backup worker or remote device-write authority is introduced.
+
+This follow-up must be merged **after** the runtime-mode PR and its source-exact CI checks. Native Windows CfAPI and Linux FUSE test coverage must establish that CLI and Desktop never execute a second mount owner for one user; unavailable production-only safety acceptance remains **按用户决定跳过（未验收）**.

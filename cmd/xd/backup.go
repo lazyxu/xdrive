@@ -313,18 +313,29 @@ func backupTerminalResult(s localbackupipc.Summary) error {
 }
 
 func connectOwningBackupAgent(ctx context.Context) (*localbackupipc.Client, error) {
+	return connectOwningAgent(ctx, false)
+}
+
+// xd mount uses the same discovery and authentication as xd backup, but must
+// start/connect the FULL Agent; it must never upgrade a live Backup-only Agent
+// by stopping a durable in-flight backup Operation.
+func connectFullAgent(ctx context.Context) (*localbackupipc.Client, error) {
+	return connectOwningAgent(ctx, true)
+}
+
+func connectOwningAgent(ctx context.Context, requireFull bool) (*localbackupipc.Client, error) {
 	dir, err := userconfig.Dir()
 	if err != nil {
 		return nil, err
 	}
 	client, err := localbackupipc.Connect(ctx, dir)
 	if err == nil {
-		return client, nil
+		return verifiedOwningAgentMode(client, requireFull)
 	}
 	if !errors.Is(err, localbackupipc.ErrAgentUnavailable) {
 		return nil, err // unsafe discovery / wrong identity must NOT launch another Agent
 	}
-	if err := spawnOwningAgent(); err != nil {
+	if err := spawnOwningAgentForMode(requireFull); err != nil {
 		return nil, err
 	}
 	started, cancel := context.WithTimeout(ctx, backupAgentStartupTimeout)
@@ -334,7 +345,7 @@ func connectOwningBackupAgent(ctx context.Context) (*localbackupipc.Client, erro
 	for {
 		client, err := localbackupipc.Connect(started, dir)
 		if err == nil {
-			return client, nil
+			return verifiedOwningAgentMode(client, requireFull)
 		}
 		if !errors.Is(err, localbackupipc.ErrAgentUnavailable) {
 			return nil, err
@@ -345,6 +356,15 @@ func connectOwningBackupAgent(ctx context.Context) (*localbackupipc.Client, erro
 		case <-ticker.C:
 		}
 	}
+}
+
+func verifiedOwningAgentMode(c *localbackupipc.Client, requireFull bool) (*localbackupipc.Client, error) {
+	if requireFull {
+		if err := c.RequireFullMode(); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
 }
 
 func owningAgentCandidates() []string {
@@ -379,11 +399,19 @@ func findOwningAgent() (string, error) {
 }
 
 func spawnOwningAgent() error {
+	return spawnOwningAgentForMode(false)
+}
+
+func spawnOwningAgentForMode(full bool) error {
 	command, err := findOwningAgent()
 	if err != nil {
 		return err
 	}
-	process := exec.Command(command, "--backup-only")
+	args := []string{"--backup-only"}
+	if full {
+		args = nil
+	}
+	process := exec.Command(command, args...)
 	process.SysProcAttr = backupDetachedProcessAttr()
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
