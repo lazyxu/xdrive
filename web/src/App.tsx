@@ -1722,19 +1722,22 @@ function FileManager({
       action: 'upload-folder',
       itemsTotal: entries.length,
       bytesTotal: entries.reduce((sum, entry) => sum + Math.max(0, entry.file.size), 0),
-      resolveTargets: async () => {
+      resolveTargets: async (signal) => {
         const targets = await xDriveFileExplorerResolveFolderUploadTargets({
           rootParentID: parentID,
           entries,
           directoryPaths,
-          ensureDirectory: (directoryParentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+          signal,
+          ensureDirectory: (directoryParentID, name, directorySignal) => xDriveFileExplorerEnsureUploadDirectory({
             parentID: directoryParentID,
             name,
-            createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
-            findExistingDirectory: async (id, directoryName) => {
-              const page = await api.listPage(
+            signal: directorySignal,
+            createDirectory: (id, directoryName, pendingSignal) => api.createDirectory(id, directoryName, pendingSignal),
+            findExistingDirectory: async (id, directoryName, pendingSignal) => {
+              const page = await api.listPageAbortable(
                 id,
                 xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName),
+                pendingSignal,
               )
               return page.items[0] ?? null
             },

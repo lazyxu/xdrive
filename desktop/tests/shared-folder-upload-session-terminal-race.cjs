@@ -407,3 +407,32 @@ test('Group pre-upload control: a dispatched file upload is not cancelled on UI 
     await h.dispose()
   }
 })
+
+test('Web Owner cancellation reaches folder resolver before child tasks or uploads', async () => {
+  const abort = new AbortController()
+  const port = lifecycle({
+    abortSignal: () => abort.signal,
+    isCancelled: () => abort.signal.aborted,
+  })
+  const h = await mount(port, {
+    upload: async () => { throw new Error('cancelled scan must not upload') },
+  })
+  let passedSignal = null
+  try {
+    const result = await h.controller.runGroup(request(async signal => {
+      passedSignal = signal
+      abort.abort()
+      signal.throwIfAborted()
+      return targets()
+    }))
+    assert.strictEqual(passedSignal, abort.signal)
+    assert.equal(result.cancelled, true)
+    assert.deepEqual(finishedState(port), ['group-A:cancelled'])
+    assert.equal(port.events.some(event => event.startsWith('start-child:') ||
+      event.startsWith('start-children:')), false,
+    'cancelled directory resolution must not enqueue files')
+    assert.deepEqual(h.errors, [])
+  } finally {
+    await h.dispose()
+  }
+})

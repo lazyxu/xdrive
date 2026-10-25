@@ -302,10 +302,12 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     'xDriveFileExplorerResolveFolderUploadTargets({',
     'xDriveFileExplorerEnsureUploadDirectory({',
     'relativePath: file.webkitRelativePath',
-    'createDirectory: (id, directoryName) => api.createDirectory(id, directoryName)',
+    'createDirectory: (id, directoryName, pendingSignal) => api.createDirectory(id, directoryName, pendingSignal)',
     'xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName)',
-    'findExistingDirectory: async (id, directoryName) =>',
-    'api.listPage(',
+    'findExistingDirectory: async (id, directoryName, pendingSignal) =>',
+    'api.listPageAbortable(',
+    'resolveTargets: async (signal)',
+    'signal: directorySignal',
     'fileUploads.runGroup({',
     'itemsTotal: entries.length',
     'bytesTotal: entries.reduce',
@@ -319,6 +321,17 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
   assert.ok(app.includes("selected.some((file) => {"), 'missing-path rejection must precede upload')
   assert.ok(app.includes('文件夹文件处理完毕'), 'accepted upload must explain empty-directory limitations')
   assert.ok(explorer.includes('folderUploadPickerParentIDRef.current = current.id'), 'Web folder picker must capture its opening parent')
+  const folderSourceStart = app.indexOf('const uploadFolderEntriesTo = async (')
+  const folderSourceEnd = app.indexOf('const uploadFolderFiles = async', folderSourceStart)
+  assert.ok(folderSourceStart >= 0 && folderSourceEnd > folderSourceStart,
+    'Web folder upload must own one bounded group plan')
+  const folderSource = app.slice(folderSourceStart, folderSourceEnd)
+  for (const required of [
+    'resolveTargets: async (signal)',
+    'signal: directorySignal',
+    'api.createDirectory(id, directoryName, pendingSignal)',
+    'api.listPageAbortable(',
+  ]) assert.ok(folderSource.includes(required), 'Web folder plan must propagate cancel: ' + required)
   assert.equal(app.includes('listChildren: (id) => api.list(id)'), false, 'Web folder-upload conflict reuse must not list the whole parent directory')
 })
 

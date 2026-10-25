@@ -42,7 +42,7 @@ test('shared upload controller owns folder group and child lifecycle', () => {
   }
 
   const startGroup = controller.indexOf('groupID = await transferLifecycle.startGroup')
-  const resolveTargets = controller.indexOf('targets = await resolveTargets()', startGroup)
+  const resolveTargets = controller.indexOf('targets = await resolveTargets(transferLifecycle.abortSignal?.(groupID))', startGroup)
   const startChild = controller.indexOf('transferLifecycle.startChild(groupID', resolveTargets)
   const beginGroup = controller.indexOf('transferLifecycle.begin(groupID', startChild)
   assert.ok(startGroup >= 0, 'folder group must be created before scanning')
@@ -863,4 +863,64 @@ test('cancel during Web folder enumeration prevents all uploads', async () => {
   const outcome = await batch
   assert.equal(outcome.cancelled, true)
   assert.deepEqual(events, [['group-scan', 'cancelled']])
+})
+
+test('folder mkdir planning propagates AbortSignal and stops subsequent Server calls', async () => {
+  const ts = require('typescript')
+  const filename = 'ui/shared/src/file-explorer-controller.ts'
+  const source = read(...filename.split('/'))
+  const compiled = ts.transpileModule(source, {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const moduleExports = {}
+  new Function('exports', compiled)(moduleExports)
+  const { xDriveFileExplorerResolveFolderUploadTargets: resolve,
+    xDriveFileExplorerEnsureUploadDirectory: ensure } = moduleExports
+  const controller = new AbortController()
+  const created = []
+  await assert.rejects(resolve({
+    rootParentID: 1,
+    entries: [{ file: { name: 'one.txt' }, relativePath: 'top/child/one.txt' }],
+    signal: controller.signal,
+    ensureDirectory: async (_parent, name, signal) => {
+      assert.strictEqual(signal, controller.signal)
+      created.push(name)
+      controller.abort()
+      return 2
+    },
+  }), { name: 'AbortError' })
+  assert.deepEqual(created, ['top'],
+    'no second directory can be created after cancelling the first pending mkdir')
+
+  const rejected = new AbortController()
+  let fallbackLookups = 0
+  await assert.rejects(ensure({
+    parentID: 1, name: 'top', signal: rejected.signal,
+    createDirectory: async () => {
+      rejected.abort()
+      throw new Error('network request aborted after being sent')
+    },
+    findExistingDirectory: async () => { fallbackLookups += 1; return { id: 2, name: 'top', type: 'dir' } },
+  }), { name: 'AbortError' })
+  assert.equal(fallbackLookups, 0, 'cancelled mkdir must not trigger a second Owner HTTP lookup')
+
+  let lookupCount = 0
+  const id = await ensure({
+    parentID: 1, name: 'existing',
+    createDirectory: async () => { throw new Error('409 already exists') },
+    findExistingDirectory: async () => {
+      lookupCount += 1
+      return { id: 7, name: 'existing', type: 'dir' }
+    },
+  })
+  assert.equal(id, 7)
+  assert.equal(lookupCount, 1, 'ordinary 409 existing-directory resolution is preserved')
+  for (const required of [
+    'resolveTargets: async (signal)',
+    'signal: directorySignal',
+    'api.createDirectory(id, directoryName, pendingSignal)',
+    'api.listPageAbortable(',
+  ]) assert.ok(webApp.includes(required), 'Web Owner folder upload must forward abort: ' + required)
+  assert.ok(webApi.includes('createDirectory(parentID: number, name: string, signal?: AbortSignal)'))
 })
