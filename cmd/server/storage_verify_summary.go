@@ -34,12 +34,12 @@ func summarizeStorageVerify(r maintenance.VerifyReport) storageVerifySummary {
 	s := storageVerifySummary{
 		OK: r.OK(),
 		Counts: storageVerifyCounts{
-			Missing: len(r.Missing),
-			SizeMismatches: len(r.SizeMismatches),
-			DuplicateReferences: len(r.DuplicateRefs),
+			Missing:                    len(r.Missing),
+			SizeMismatches:             len(r.SizeMismatches),
+			DuplicateReferences:        len(r.DuplicateRefs),
 			ContentReferenceMismatches: len(r.ContentRefMismatch),
-			Orphans: len(r.Orphans),
-			HashMismatches: len(r.HashMismatches),
+			Orphans:                    len(r.Orphans),
+			HashMismatches:             len(r.HashMismatches),
 		},
 		MissingReasons: make(map[string]int),
 	}
