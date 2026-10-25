@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -232,4 +233,47 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 			t.Fatalf("unsafe %s failure state: %+v", kind, failed)
 		}
 	}
+
+	// The existing bounded retry policy prevents a broken model from hot-looping.
+	processed, err = runner.RunOwnerBatch(context.Background(), user.ID, 10)
+	if err != nil || processed != 0 {
+		t.Fatalf("failed OCR retried before cooldown: processed=%d err=%v", processed, err)
+	}
+	// Advance only the Runner's clock; no six-hour sleep or duplicate queue.
+	runner.Now = func() time.Time {
+		return time.Now().UTC().Add(smartAnalysisRetryInterval + time.Minute)
+	}
+	runner.Analyzer = fakeSmartAnalyzer{
+		info: info,
+		result: SmartAnalysisResult{
+			OCRText: "recovered OCR text 2026", OCRLanguage: "zh-en",
+		},
+	}
+	processed, err = runner.RunOwnerBatch(context.Background(), user.ID, 10)
+	if err != nil || processed != 1 {
+		t.Fatalf("OCR retry after cooldown failed: processed=%d err=%v", processed, err)
+	}
+	var recoveredOCR meta.PhotoOCRText
+	if err := db.Where("asset_id = ?", asset.ID).First(&recoveredOCR).Error; err != nil {
+		t.Fatal(err)
+	}
+	if recoveredOCR.Text != "recovered OCR text 2026" || recoveredOCR.Language != "zh-en" {
+		t.Fatalf("OCR content did not recover: %+v", recoveredOCR)
+	}
+	for _, kind := range []string{meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisKindOCRText} {
+		var ready meta.PhotoAnalysisState
+		if err := db.Where("asset_id = ? AND kind = ?", asset.ID, kind).
+			First(&ready).Error; err != nil {
+			t.Fatal(err)
+		}
+		if ready.State != meta.PhotoAnalysisStateReady ||
+			ready.LastError != "" || ready.CompletedAt == nil {
+			t.Fatalf("OCR/visual failure reason survived retry: %+v", ready)
+		}
+	}
+	processed, err = runner.RunOwnerBatch(context.Background(), user.ID, 10)
+	if err != nil || processed != 0 {
+		t.Fatalf("recovered OCR duplicated: processed=%d err=%v", processed, err)
+	}
+
 }
