@@ -813,6 +813,7 @@ export function XDriveLivePhotoSurface({
           : undefined,
         transformOrigin: 'center',
         transition: panRef.current || pinchRef.current ? 'none' : 'transform 100ms ease-out',
+        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}>
         {still}
       </Box>
@@ -884,6 +885,7 @@ export function XDriveLivePhotoSurface({
             bgcolor: 'black',
             opacity: stillReady && playing ? 1 : 0,
             transition: 'opacity 120ms ease',
+            '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
             pointerEvents: 'none',
           }}
         />
