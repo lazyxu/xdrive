@@ -136,6 +136,19 @@ test('P1 Gallery filmstrip uses one Tab stop and supports bounded arrow/Home/End
       Box: host('div'), Stack: host('div'), ButtonBase: host('button'), Typography: host('span'),
     }
     if (name === './MediaGalleryThumbnailScheduler') return { XDriveMediaThumbnailScheduler: scheduler }
+    // The shared Filmstrip now uses the existing Gallery duration formatter
+    // and Live glyph. This keyboard test must resolve their actual module
+    // signatures without replacing arrow/roving-focus handlers with mocks.
+    if (name === './MediaGalleryUtils') {
+      const utils = { exports: {} }
+      const compiled = ts.transpileModule(read('ui/shared/src/mui/MediaGalleryUtils.ts'), {
+        fileName: 'MediaGalleryUtils.ts',
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      new Function('module', 'exports', 'require', compiled)(utils, utils.exports, require)
+      return utils.exports
+    }
+    if (name === './LivePhotoSurface') return { XDriveLivePhotoGlyph: () => null }
     if (name === './MediaGalleryPreviewMedia') return {
       XDriveMediaAsyncThumbnail: () => null, xDriveMediaFallback: () => null,
     }
