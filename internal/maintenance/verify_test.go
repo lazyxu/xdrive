@@ -138,7 +138,8 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 || report.IgnoredCASLocks != 256 {
+		report.IgnoredTemps != 3 || report.IgnoredDerived != 0 ||
+		report.SkippedDerivedDirs != 1 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -247,8 +248,70 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.OK() || report.IgnoredCASLocks != 256 {
-		t.Fatalf("repaired storage with 256 valid shard locks not OK: %+v; okID=%d", report, okID)
+	if !report.OK() || report.IgnoredCASLocks != 256 || report.SkippedDerivedDirs != 1 {
+		t.Fatalf("repaired storage with valid shard locks / ignored caches not OK: %+v; okID=%d", report, okID)
+	}
+
+	// A prefix that merely resembles the reserved derived cache is still
+	// ordinary storage. It must remain visible as an orphan, never silently
+	// hidden by the new skip rule.
+	lookalike := filepath.Join(root, ".xdrive-media-copy", "unreferenced.bin")
+	if err := os.MkdirAll(filepath.Dir(lookalike), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lookalike, []byte("real-unreferenced-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookalikeReport, err := Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundLookalike := false
+	for _, orphan := range lookalikeReport.Orphans {
+		if orphan.StorageKey == ".xdrive-media-copy/unreferenced.bin" {
+			foundLookalike = true
+		}
+	}
+	if !foundLookalike || lookalikeReport.SkippedDerivedDirs != 1 {
+		t.Fatalf("non-derived lookalike must still fail consistency: %+v", lookalikeReport)
+	}
+	if err := os.RemoveAll(filepath.Dir(lookalike)); err != nil {
+		t.Fatal(err)
+	}
+
+	if os.Geteuid() > 0 {
+		cacheDir := filepath.Join(root, ".xdrive-media")
+		if err := os.Chmod(cacheDir, 0o100); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.ReadDir(cacheDir); err == nil {
+			_ = os.Chmod(cacheDir, 0o750)
+			t.Fatal("fixture cache directory unexpectedly readable")
+		}
+		cacheReport, verifyErr := Verify(db, root)
+		if err := os.Chmod(cacheDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if verifyErr != nil || !cacheReport.OK() || cacheReport.SkippedDerivedDirs != 1 {
+			t.Fatalf("unreadable generated cache must not abort canonical verification: %+v, %v", cacheReport, verifyErr)
+		}
+
+		// Fail closed everywhere else. An inaccessible arbitrary subtree
+		// must still abort verification rather than silently hide orphans.
+		otherDir := filepath.Join(root, "not-derived-user-data")
+		if err := os.MkdirAll(otherDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(otherDir, 0o100); err != nil {
+			t.Fatal(err)
+		}
+		_, verifyErr = Verify(db, root)
+		if err := os.Chmod(otherDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if verifyErr == nil || !strings.Contains(verifyErr.Error(), "walk storage:") {
+			t.Fatalf("unreadable non-derived data must fail storage verification, got %v", verifyErr)
+		}
 	}
 }
 

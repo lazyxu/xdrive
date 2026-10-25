@@ -74,6 +74,7 @@ type VerifyReport struct {
 	HashMismatches     []HashMismatch             `json:"hash_mismatches"`
 	IgnoredTemps       int                        `json:"ignored_temporary_files"`
 	IgnoredDerived     int                        `json:"ignored_derived_files"`
+	SkippedDerivedDirs int                        `json:"skipped_derived_directories"`
 	IgnoredCASLocks    int                        `json:"ignored_internal_lock_files"`
 }
 
@@ -238,7 +239,17 @@ func VerifyWithContext(
 				if relErr != nil {
 					return relErr
 				}
-				if filepath.ToSlash(rel) == ".xdrive-uploads" {
+				switch filepath.ToSlash(rel) {
+				case ".xdrive-uploads":
+					return filepath.SkipDir
+				case ".xdrive-media":
+					// All contents are regenerable derived media, not original
+					// blobs. Do not traverse this subtree at all: legacy
+					// caches can have root-owned nested directories after a
+					// user migration. Scanning it can fail an otherwise valid
+					// pre-upgrade consistency backup (and costs O(cache size)).
+					// Never skip CAS, user data, or other root-level paths.
+					report.SkippedDerivedDirs++
 					return filepath.SkipDir
 				}
 			}

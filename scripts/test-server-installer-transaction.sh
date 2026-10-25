@@ -133,6 +133,11 @@ if [[ "${TEST_BACKUP_LEGACY_CAS_LOCK_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" 
   printf "%s\n" "{\"orphans\":[{\"storage_key\":\".xdrive-cas-lifecycle-locks/ff.lock\",\"size\":0}],\"ignored_temporary_files\":34,\"ignored_derived_files\":3792,\"hash_mismatches\":null}" >&2
   exit 1
 fi
+if [[ -n "${TEST_BACKUP_LEGACY_WALK_DENIED_PATH:-}" && "${XD_SERVER_IMAGE:-}" != "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
+  echo "xDrive consistency verification failed; backup aborted." >&2
+  printf "%s\n" "{\"time\":\"2026-10-25T11:51:58Z\",\"level\":\"INFO\",\"msg\":\"walk storage: open ${TEST_BACKUP_LEGACY_WALK_DENIED_PATH}: permission denied\"}" >&2
+  exit 1
+fi
 if [[ "${TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" == "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
   printf "%s\n" "{\"orphans\":[{\"storage_key\":\"unreferenced-user-data.bin\",\"size\":8192}],\"hash_mismatches\":null}" >&2
@@ -464,6 +469,63 @@ if grep -q 'target verifier accepted the snapshot' "$TMP/cas-real-error.err"; th
   echo "genuine storage orphan bypassed by CAS compatibility check" >&2
   exit 1
 fi
+
+# A legacy backup may fail before emitting a JSON report, while walking an
+# inaccessible .xdrive-media subtree. Retry only that exact cache tree with
+# the published target verifier; never generalize to other directories.
+for scenario in cache-root cache-nested cache-lookalike canonical-cas cache-target-orphan; do
+  case "$scenario" in
+    cache-root) denied="/data/.xdrive-media"; retry=1; pass=1; target_orphan=0 ;;
+    cache-nested) denied="/data/.xdrive-media/thumbnails/aa"; retry=1; pass=1; target_orphan=0 ;;
+    cache-lookalike) denied="/data/.xdrive-media-copy"; retry=0; pass=0; target_orphan=0 ;;
+    canonical-cas) denied="/data/.xdrive-blobs/sha256"; retry=0; pass=0; target_orphan=0 ;;
+    cache-target-orphan) denied="/data/.xdrive-media"; retry=1; pass=0; target_orphan=1 ;;
+  esac
+  case_config="$TMP/$scenario-config"
+  case_state="$TMP/$scenario-state"
+  cp -a "$TMP/config" "$case_config"
+  mkdir -p "$case_state"
+  set +e
+  TEST_STATE="$case_state" \
+  TEST_BACKUP_LEGACY_WALK_DENIED_PATH="$denied" \
+  TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL="$target_orphan" \
+  TEST_HEALTH_OK=1 \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$case_config" \
+  XD_SHELL_RC_PATH="$TMP/$scenario.bashrc" \
+  XD_NONINTERACTIVE=1 \
+  XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" --channel master >"$TMP/$scenario.out" 2>"$TMP/$scenario.err"
+  walk_status=$?
+  set -e
+
+  if [[ "$retry" == 1 ]]; then
+    [[ "$(wc -l < "$case_state/backup-images")" -eq 2 ]]
+    grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$case_state/backup-images"
+    grep -q 'current deployment verifier rejected unreadable derived media cache directory' "$TMP/$scenario.err"
+  else
+    [[ "$(wc -l < "$case_state/backup-images")" -eq 1 ]]
+    if grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$case_state/backup-images"; then
+      echo "non-cache $denied incorrectly authorized target-verifier retry" >&2
+      exit 1
+    fi
+  fi
+  if [[ "$pass" == 1 ]]; then
+    [[ "$walk_status" -eq 0 ]]
+    grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/$scenario.err"
+  else
+    [[ "$walk_status" -ne 0 ]]
+    grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/$scenario.err"
+    if grep -q 'target verifier accepted the snapshot' "$TMP/$scenario.err"; then
+      echo "target verifier bypassed real failure for $denied" >&2
+      exit 1
+    fi
+  fi
+  if grep -q -- '--allow-inconsistent' "$case_state/backup-args"; then
+    echo "cache traversal retry must never use --allow-inconsistent" >&2
+    exit 1
+  fi
+done
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then
