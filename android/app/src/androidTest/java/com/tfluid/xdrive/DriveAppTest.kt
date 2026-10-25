@@ -19,6 +19,8 @@ class DriveAppTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var failNext = false
     private var paging = false
+    private var failOnSecondPage = false
+    private var manyFiles = false
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
@@ -26,8 +28,14 @@ class DriveAppTest {
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
-            if (failNext) { failNext = false; throw ApiException(503, "unavailable") }
+            if (failNext || (paging && offset == 100 && failOnSecondPage)) {
+                failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
+            }
             val rows = if (paging && offset == 100) listOf(DriveNode(4, 1, "第二页.txt", "file", 2048))
+                else if (manyFiles && parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir")) +
+                    (1..99).map { index -> if (index == 49)
+                        DriveNode(200, 1, "第二相册", "dir")
+                        else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir"))
                 else listOf(DriveNode(3, 2, "测试.txt", "file", 12, updatedAt = "2026-10-23T00:00:00Z"))
             return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
@@ -82,8 +90,8 @@ class DriveAppTest {
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
         compose.onNodeWithTag("server").assertTextEquals("http://drive.example:1080")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        // CONNECT validation updates the controller before Compose publishes the
-        // error. The keyboard may also cover the inline error on a small device.
+        // Adopt merged API35 fixture fix: wait for real Controller error, then
+        // scroll under the IME before checking that HTTP requires opt-in.
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("allow-http").performScrollTo().performClick()
@@ -108,17 +116,84 @@ class DriveAppTest {
         compose.onNodeWithTag("public-ip").performScrollTo().assertExists()
     }
 
-    @Test fun pagingFailureRetainsRowsAndRetryLoadsRequestedPage() {
+    @Test fun continuousScrollFailureKeepsFirstPageAndRetryAppends() {
         paging = true
+        failOnSecondPage = true
         startAndLogin()
-        compose.runOnIdle { failNext = true }
-        compose.onNodeWithText("下一页").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
         compose.onNodeWithText("保留上次成功读取的目录。").assertIsDisplayed()
         compose.onNodeWithText("重试").performClick()
-        compose.onNodeWithText("第二页.txt").assertIsDisplayed()
-        compose.onNodeWithText("假期照片").assertDoesNotExist()
-        compose.onNodeWithText("上一页").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.offset == 100 && !controller.state.value.loading
+        }
+        compose.onNodeWithText("第二页.txt").assertExists()
+        compose.onNodeWithText("假期照片").assertExists()
+    }
+
+    @Test fun longPressOnFolderOpensActionsWithoutEnteringIt() {
+        startAndLogin()
+        compose.onNodeWithTag("files-item-2").performTouchInput { longClick() }
+        compose.onNodeWithText("属性").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, controller.state.value.path.size) }
+        compose.onNodeWithText("属性").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.selected?.id == 2L }
+        compose.onNodeWithText("关闭").performClick()
+        compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.selected) }
+    }
+
+    @Test fun listGridSwitchRetainsVisibleItemAnchor() {
+        manyFiles = true
+        startAndLogin()
+        compose.onNodeWithTag("files").performScrollToIndex(50)
+        compose.onNodeWithText("item-50.txt").assertIsDisplayed()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-grid").assertExists()
+        compose.onNodeWithText("item-50.txt").assertExists()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("列表").performClick()
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithText("item-50.txt").assertExists()
+    }
+
+    @Test fun returningFromFolderRestoresPriorFirstPageViewport() {
+        manyFiles = true
+        startAndLogin()
+        compose.onNodeWithTag("files").performScrollToIndex(49)
+        compose.onNodeWithText("第二相册").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.path.size == 2 && !controller.state.value.loading
+        }
+        compose.onNodeWithContentDescription("返回上级").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.path.size == 1 && controller.state.value.loaded && !controller.state.value.loading
+        }
+        compose.onNodeWithText("item-50.txt").assertIsDisplayed()
+    }
+
+    @Test fun folderPathMenuReturnsToServerVerifiedAncestor() {
+        startAndLogin()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.path.size == 2 && !controller.state.value.loading }
+        compose.onNodeWithTag("files-path-menu").performClick()
+        compose.onNodeWithTag("files-path-1").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.path.size == 1 && controller.state.value.loaded }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun switchListAndGridKeepsTheSameFolderNavigation() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-grid").assertExists()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.path.size == 2 && controller.state.value.loaded
+        }
+        compose.onNodeWithText("测试.txt").assertExists()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("列表").performClick()
+        compose.onNodeWithTag("files").assertExists()
     }
 }

@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                         true
                     } catch (_: ActivityNotFoundException) { false }
                     catch (_: SecurityException) { false }
-                })
+                }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView)
             }
         }
     }
@@ -42,6 +42,11 @@ class MainActivity : ComponentActivity() {
 class DriveViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("connection", Application.MODE_PRIVATE)
     private val updatePreferences = application.getSharedPreferences("updates", Application.MODE_PRIVATE)
+    private val uiPreferences = application.getSharedPreferences("ui", Application.MODE_PRIVATE)
+    val initialFilesView = FileViewMode.fromPreference(uiPreferences.getString("files.view", null))
+    fun saveFilesView(value: FileViewMode) {
+        uiPreferences.edit { putString("files.view", value.name) }
+    }
     private val routeDns = deviceRouteDns(application.mainExecutor)
     private val routeSelector = ConnectionRouteSelector(resolve = routeDns::lookup)
     @Suppress("DEPRECATION")
