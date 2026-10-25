@@ -52,3 +52,26 @@ test('photo drawer drag handle offers mouse/keyboard click and touch/pen swipe',
     sheet.indexOf('<Stack direction="row" spacing={1}'))
   assert.doesNotMatch(handle, /<IconButton/)
 })
+
+test('narrow iOS map menus share one viewport-safe trailing overlay anchor', () => {
+  const anchor = map.indexOf('data-xdrive-places-map-menu-anchor')
+  const filter = map.indexOf('component="details" data-xdrive-places-map-filter-menu')
+  const more = map.indexOf('component="details" data-xdrive-places-map-more-menu')
+  assert.ok(anchor >= 0 && filter > anchor && more > filter)
+  const toolbar = map.indexOf('data-xdrive-places-map-toolbar')
+  assert.ok(toolbar >= 0 && toolbar < anchor)
+  assert.match(map.slice(toolbar,anchor), /position:'relative'/)
+  assert.match(map.slice(anchor - 130,anchor + 120), /position:'static',flexShrink:0/)
+  const filterSource = map.slice(filter,more)
+  assert.match(filterSource,/sx=\{\{position:'static'\}\}/)
+  assert.match(filterSource,/left:\{xs:12,sm:'auto'\},right:\{xs:12,sm:0\}/)
+  assert.match(filterSource,/width:\{xs:'auto',sm:480\},maxWidth:'calc\(100% - 24px\)'/)
+  const moreSource = map.slice(more)
+  assert.match(moreSource,/sx=\{\{position:'static'\}\}/)
+  assert.match(moreSource,/left:\{xs:12,sm:'auto'\},right:\{xs:12,sm:0\}/)
+  assert.match(moreSource,/width:\{xs:'auto',sm:520\},maxWidth:'calc\(100% - 24px\)'/)
+  assert.equal((map.match(/minWidth:\{xs:44,sm:60\}/g)||[]).length,2)
+  // The Parent controls both SDK Hosts and the filter must not be anchored
+  // to its own button, because the adjacent More button occupies that width.
+  assert.equal((map.match(/data-xdrive-places-map-menu-anchor/g)||[]).length,1)
+})
