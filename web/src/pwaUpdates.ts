@@ -50,7 +50,16 @@ function markWaiting() {
   const newlyWaiting = snapshot?.phase !== 'waiting'
   remoteUpdateHint = false
   publish(makeSnapshot('waiting'))
-  if (newlyWaiting) channel?.postMessage({ kind: 'xdrive-public-update-ready' })
+  if (newlyWaiting && channel) {
+    try {
+      channel.postMessage({ kind: 'xdrive-public-update-ready' })
+    } catch {
+      // Cross-window notification is optional; the local waiting worker remains
+      // authoritative even when this browser refuses a channel send.
+      try { channel.close() } catch { /* best-effort channel disposal */ }
+      channel = null
+    }
+  }
 }
 function observeRegistration(found: ServiceWorkerRegistration) {
   const replaced = registration !== found
@@ -119,13 +128,23 @@ export function startXDrivePwaUpdateObservation(): void {
   }
   publish(makeSnapshot('idle'))
   if (typeof BroadcastChannel !== 'undefined') {
-    channel = new BroadcastChannel('xdrive-pwa-public-updates')
-    channel.addEventListener('message', (event: MessageEvent) => {
-      if (event.data?.kind !== 'xdrive-public-update-ready' || snapshot?.phase === 'waiting') return
-      // Other windows can only suggest checking. Never claim THIS registration is waiting.
-      remoteUpdateHint = true
-      publish(makeSnapshot(snapshot?.phase ?? 'idle', snapshot?.lastError ?? null))
-    })
+    let opened: BroadcastChannel | null = null
+    try {
+      opened = new BroadcastChannel('xdrive-pwa-public-updates')
+      opened.addEventListener('message', (event: MessageEvent) => {
+        if (event.data?.kind !== 'xdrive-public-update-ready' || snapshot?.phase === 'waiting') return
+        // Other windows can only suggest checking. Never claim THIS registration is waiting.
+        remoteUpdateHint = true
+        publish(makeSnapshot(snapshot?.phase ?? 'idle', snapshot?.lastError ?? null))
+      })
+      channel = opened
+    } catch {
+      // The optional channel can throw even when BroadcastChannel is present
+      // (for example, a restricted Safari browsing context). Never stop the
+      // Web app boot or skip the ordinary Service Worker status observation.
+      try { opened?.close() } catch { /* best-effort partial channel disposal */ }
+      channel = null
+    }
   }
   window.addEventListener('online', refresh)
   window.addEventListener('offline', refresh)

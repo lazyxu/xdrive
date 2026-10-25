@@ -25,7 +25,26 @@ function fixture() {
     close() { this.closed = true; channels.delete(this) }
   }
   const uuid = () => '00000000-0000-4000-8000-' + String(++counter).padStart(12, '0')
-  function createWindow({ secure = true, supported = true } = {}) {
+  function createWindow({ secure = true, supported = true, channelFailure = null } = {}) {
+    class OptionalChannel extends TestBroadcastChannel {
+      constructor(name) {
+        if (channelFailure === 'constructor') throw new Error('BroadcastChannel denied')
+        super(name)
+      }
+      addEventListener(name, callback) {
+        if (channelFailure === 'listener') throw new Error('BroadcastChannel listener denied')
+        return super.addEventListener(name, callback)
+      }
+      postMessage(message) {
+        if (channelFailure === 'send' || channelFailure === 'send-and-close')
+          throw new Error('BroadcastChannel send denied')
+        return super.postMessage(message)
+      }
+      close() {
+        super.close()
+        if (channelFailure === 'send-and-close') throw new Error('BroadcastChannel close denied')
+      }
+    }
     let activity = { observed: false, browserUpload: false, browserDownload: false,
       viewerOpen: false, unsavedSystemDependencies: false }
     const localListeners = [], intervals = [], events = {}
@@ -46,7 +65,7 @@ function fixture() {
     vm.runInNewContext(code, {
       exports, window, document: { addEventListener: (name, fn) => { events[name] = fn } },
       crypto: { randomUUID: uuid },
-      BroadcastChannel: supported ? TestBroadcastChannel : undefined,
+      BroadcastChannel: supported ? OptionalChannel : undefined,
       Date: { now: () => clock },
       require: name => { assert.equal(name, './pwaWorkloadSafety'); return store },
     })
@@ -143,4 +162,20 @@ test('S3D2B: shared Web/Mobile wiring is read-only and never activates Service W
   assert.ok(docs.includes('PWA-S3D2B'))
   assert.doesNotMatch(code, /api\/v1|localStorage|sessionStorage|skipWaiting\s*\(|clients\.claim\s*\(|location\.reload\s*\(|fetch\s*\(/)
   assert.doesNotMatch(section, /skipWaiting|location\.reload|api\/v1/)
+})
+
+test('S3D2B Safari: denied optional peer channels never crash pre-React startup', () => {
+  const f = fixture()
+  for (const channelFailure of ['constructor', 'listener', 'send', 'send-and-close']) {
+    const view = f.createWindow({ channelFailure })
+    assert.doesNotThrow(() => view.start(), channelFailure)
+    assert.equal(view.current().available, false,
+      'unavailable cross-tab observations cannot be misrepresented as safe idle')
+    assert.equal(view.current().recentlyObservedPeers, 0)
+  }
+  const healthy = f.createWindow()
+  assert.doesNotThrow(() => healthy.start())
+  assert.equal(healthy.current().available, true,
+    'a failing previous tab must not disable independent healthy PWA sessions')
+  assert.equal(f.traffic.every(message => !('token' in message) && !('path' in message)), true)
 })
