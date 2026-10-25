@@ -102,6 +102,92 @@ class DriveControllerTest {
         assertEquals(0, c.state.value.offset)
     }
 
+    @Test fun continuousScrollAppendsDeduplicatedRowsWithoutReplacingEarlierPages() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertEquals(listOf(folder, file), c.state.value.items)
+        c.loadMore(); runCurrent()
+        assertEquals(100, c.state.value.offset)
+        assertEquals(listOf(folder, file), c.state.value.items)
+        assertFalse(c.state.value.hasNext)
+        c.loadMore(); runCurrent()
+        assertEquals(listOf(1L to 0, 1L to 100), api.calls)
+    }
+
+    @Test fun failedAppendKeepsOldRowsAndRetryAppendsOnlyTheMissingPage() = runTest {
+        val api = Service().apply { listing = { _, offset ->
+            NodeRange(if (offset == 0) listOf(folder) else listOf(file), 101, offset)
+        } }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.failure = ApiException(503, "retry")
+        c.loadMore(); runCurrent()
+        assertNotNull(c.state.value.error)
+        assertEquals(0, c.state.value.offset)
+        assertEquals(listOf(folder), c.state.value.items)
+        c.loadMore(); runCurrent()
+        assertEquals(2, api.calls.size) // no retry loop after failure
+        c.retry(); runCurrent()
+        assertEquals(listOf(folder, file), c.state.value.items)
+        assertEquals(100, c.state.value.offset)
+        c.refresh(); runCurrent()
+        assertEquals(listOf(folder), c.state.value.items)
+        assertEquals(0, c.state.value.offset)
+    }
+
+    @Test fun openingDetailsCancelsPendingPageSoItCannotDismissTheDialog() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val late = CompletableDeferred<NodeRange>()
+        api.listing = { _, offset -> if (offset == 100) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 101, offset) }
+        c.loadMore(); runCurrent()
+        c.open(file); runCurrent()
+        assertEquals(file, c.state.value.selected)
+        late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(file, c.state.value.selected)
+        assertEquals(0, c.state.value.offset)
+    }
+
+    @Test fun longPressFolderPropertiesNeverNavigatesAndCancelsStaleAppend() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.showDetails(folder); runCurrent()
+        assertEquals(folder, c.state.value.selected)
+        assertEquals(listOf(root), c.state.value.path)
+        c.dismissDetails()
+        assertNull(c.state.value.selected)
+    }
+
+    @Test fun ancestorNavigationUsesOnlyCurrentPathAndReloadsVerifiedRoot() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(folder); runCurrent()
+        assertEquals(listOf(root, folder), c.state.value.path)
+        val before = api.calls.size
+        c.navigateToAncestor(-1)
+        c.navigateToAncestor(2)
+        assertEquals(before, api.calls.size)
+        c.navigateToAncestor(0); runCurrent()
+        assertEquals(listOf(root), c.state.value.path)
+        assertEquals(1L to 0, api.calls.last())
+    }
+
+    @Test fun contradictoryEmptyPageStopsAutomaticPagination() = runTest {
+        val api = Service().apply { listing = { _, offset ->
+            if (offset == 0) NodeRange(listOf(folder), 301, 0)
+            else NodeRange(emptyList(), 301, offset)
+        } }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.loadMore(); runCurrent()
+        assertNotNull(c.state.value.error)
+        assertEquals(0, c.state.value.offset)
+        c.loadMore(); runCurrent()
+        assertEquals(2, api.calls.size)
+        assertEquals(listOf(folder), c.state.value.items)
+    }
+
     @Test fun failedFolderNavigationKeepsPathAndRetriesIntendedFolder() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()

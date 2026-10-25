@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.tfluid.xdrive.core.DriveNode
 import java.util.Locale
 
@@ -33,12 +34,12 @@ fun fileKind(name: String, directory: Boolean): String {
 }
 
 @Composable
-fun XDriveFileIcon(node: DriveNode, modifier: Modifier = Modifier) {
+fun XDriveFileIcon(node: DriveNode, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val kind = fileKind(node.name, node.isDirectory)
     if (kind == "folder") {
-        Box(modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        Box(modifier.size(size), contentAlignment = Alignment.Center) {
             Image(painterResource(R.drawable.xd_folder), contentDescription = null,
-                modifier = Modifier.size(width = 38.dp, height = (38f * 54f / 64f).dp))
+                modifier = Modifier.size(width = size * (38f / 40f), height = size * (38f / 40f) * (54f / 64f)))
         }
         return
     }
@@ -54,8 +55,8 @@ fun XDriveFileIcon(node: DriveNode, modifier: Modifier = Modifier) {
         "code" -> R.drawable.xd_code
         else -> R.drawable.xd_insert_drive_file
     }
-    Box(modifier.size(40.dp), contentAlignment = Alignment.Center) {
-        Icon(painterResource(resource), contentDescription = null, modifier = Modifier.size(24.dp),
+    Box(modifier.size(size), contentAlignment = Alignment.Center) {
+        Icon(painterResource(resource), contentDescription = null, modifier = Modifier.size(size * 0.6f),
             tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

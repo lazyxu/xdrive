@@ -49,6 +49,7 @@ class DriveController(
     private var active: Job? = null
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
+    private var retryAppend = false
 
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
         loadRoute(ServerAddress.parse(input, allowHttp).url)
@@ -130,36 +131,72 @@ class DriveController(
     fun open(node: DriveNode) {
         if (state.value.screen != Screen.FILES || state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
-        else mutableState.value = state.value.copy(selected = node)
+        else showDetails(node)
+    }
+
+    /** Long-press details may include folders; never use a stale/foreign row. */
+    fun showDetails(node: DriveNode) {
+        if (state.value.screen != Screen.FILES || state.value.items.none { it == node }) return
+        // The details surface belongs to the current UI generation, not a late append.
+        if (state.value.loading) { invalidate(); mutableState.value = state.value.copy(loading = false) }
+        mutableState.value = state.value.copy(selected = node)
     }
 
     fun dismissDetails() { mutableState.value = state.value.copy(selected = null) }
+
+    /** Jump to an already-visited ancestor without trusting an unverified path. */
+    fun navigateToAncestor(index: Int) {
+        val current = state.value
+        if (current.screen != Screen.FILES || index < 0 || index >= current.path.lastIndex) return
+        load(current.path.take(index + 1), 0)
+    }
+
     fun back() {
         if (state.value.selected != null) dismissDetails()
         else if (state.value.path.size > 1) load(state.value.path.dropLast(1), 0)
     }
-    fun refresh() { if (state.value.screen == Screen.FILES) load(state.value.path, state.value.offset) }
-    fun retry() { if (state.value.screen == Screen.FILES) load(retryPath ?: state.value.path, retryOffset) }
+    // Refresh from the first Server-authoritative page, not just the last appended page.
+    fun refresh() { if (state.value.screen == Screen.FILES) load(state.value.path, 0) }
+    fun retry() { if (state.value.screen == Screen.FILES) load(retryPath ?: state.value.path, retryOffset, retryAppend) }
+    fun loadMore() {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.loading || current.error != null ||
+            !current.hasNext || current.path.isEmpty()) return
+        load(current.path, current.offset + 100, append = true)
+    }
+    // Compatibility entry points; native Files UI uses loadMore instead.
     fun nextPage() { if (state.value.hasNext && !state.value.loading) load(state.value.path, state.value.offset + 100) }
     fun previousPage() { if (state.value.offset > 0 && !state.value.loading) load(state.value.path, (state.value.offset - 100).coerceAtLeast(0)) }
 
-    private fun load(path: List<DriveNode>, offset: Int) {
+    private fun load(path: List<DriveNode>, offset: Int, append: Boolean = false) {
         val service = api ?: return
         if (session == null) return
         retryPath = path.toList()
         retryOffset = offset
-        request { loadWithin(service, path, offset, it) }
+        retryAppend = append
+        request { loadWithin(service, path, offset, it, append) }
     }
 
-    private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long) {
+    private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long, append: Boolean = false) {
         retryPath = path.toList()
         retryOffset = offset
+        retryAppend = append
         val resolved = if (path.isEmpty()) listOf(authenticated(service, ticket) { service.root(it) }) else path
         checkCurrent(ticket)
         val page = authenticated(service, ticket) { service.children(it, resolved.last().id, offset) }
         checkCurrent(ticket)
-        mutableState.value = state.value.copy(
-            path = resolved, items = page.items, offset = page.offset, totalCount = page.totalCount,
+        val previous = state.value
+        if (append && (!previous.loaded || previous.path != resolved || page.offset != offset))
+            throw ApiException(0, "Directory page changed", ApiFailureReason.INVALID_RESPONSE)
+        // Do not spin through thousands of speculative empty/duplicate pages
+        // when a stale count disagrees with the actual Server range.
+        if (page.items.isEmpty() && page.totalCount > offset)
+            throw ApiException(0, "Empty range with remaining count", ApiFailureReason.INVALID_RESPONSE)
+        val rows = if (append) (previous.items + page.items).distinctBy { it.id } else page.items
+        if (append && rows.size == previous.items.size && offset + 100L < page.totalCount)
+            throw ApiException(0, "Repeated range without progress", ApiFailureReason.INVALID_RESPONSE)
+        mutableState.value = previous.copy(
+            path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
             loaded = true, selected = null, error = null,
         )
     }
@@ -208,6 +245,7 @@ class DriveController(
                         failure.reason != ApiFailureReason.CURRENT_PASSWORD_INCORRECT && session != null) {
                         session = null
                         retryPath = null
+                        retryAppend = false
                         if (state.value.route.enabled) { (api as? Closeable)?.close(); api = null }
                         mutableState.value = DriveState(
                             screen = Screen.LOGIN, server = state.value.server, allowHttp = state.value.allowHttp,
@@ -232,6 +270,7 @@ class DriveController(
         session = null
         retryPath = null
         retryOffset = 0
+        retryAppend = false
         api = if (!changeServer && !state.value.route.enabled) address?.let(serviceFactory) else null
         mutableState.value = DriveState(
             screen = if (changeServer) Screen.CONNECT else Screen.LOGIN,

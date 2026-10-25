@@ -49,6 +49,21 @@ It does not activate unfinished Local Push v2 or create another content writer.
 The native Compose adapter uses the canonical xDrive brand from
 `assets/icon/web/pwa-512.png`, the resolved shared MUI light/dark auth palette,
 and the shared filename classification and Rounded Material action/file glyphs.
+Phone Files now uses continuous-scroll authenticated 100-item Server pages and
+an explicit list/icon view toggle. The view preference is stored as a non-sensitive
+local UI setting; invalid values fall back to list. Pages append without replacing already visible
+rows; a failed append retains the prior page and retries only the failed offset.
+Short-tapping a folder opens it; long-pressing a row opens only real current actions
+(folder open and/or properties), not placeholder file mutations. Switching folders
+or refreshing starts a new first-page read. A bounded session-only viewport index
+cache restores a visited folder within the currently loaded range when returning,
+and grid/list switches seed the new viewport before its first frame. Persisted
+directory return after process restart and unloaded-page anchors are not yet supported.
+No second file
+transport or optimistic cross-folder merge was added. Global search, recent and
+favorites, thumbnails, Gallery, Viewer, transfers and upload/download are not yet
+implemented; this increment is **not** full iOS PWA UI/functionality parity.
+
 Phone folders use the actual blue iOS-style PWA `MobileFolderIcon` from
 `web/src/MobileFiles.tsx`, including both gradients and the highlight, with that
 page's flat list surfaces. This intentionally differs from Desktop's yellow
