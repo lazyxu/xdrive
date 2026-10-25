@@ -310,6 +310,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
               objectFit: imageFit, display: 'block', userSelect: 'none',
               transform: viewportTransform || undefined, transformOrigin: 'center',
               transition: viewportTransition,
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
             }}
           />
         )
