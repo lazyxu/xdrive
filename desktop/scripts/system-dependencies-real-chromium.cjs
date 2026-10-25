@@ -79,12 +79,29 @@ async function checkWidth(width, port) {
     record(width + ': overview has no document horizontal overflow', await noOverflow(page))
     await screenshot(page, 'overview-' + width)
     if (width === 320) {
+      const capabilityDisclosure = page.locator('[data-xdrive-system-dependencies-capability-matrix]')
+      record('320: optional capability matrix stays compact and collapsed',
+        await page.locator('[data-xdrive-system-dependency-capability]').count() === 0 &&
+        (await capabilityDisclosure.boundingBox())?.height < 62)
+      await page.getByRole('button', { name: '显示 11 项配置能力' }).click()
+      record('320: existing matrix expands all eleven service capabilities',
+        await page.locator('[data-xdrive-system-dependency-capability]').count() === 11)
+      await page.getByRole('button', { name: '隐藏配置能力' }).click()
+      record('320: capability disclosure closes without changing the service list',
+        await page.locator('[data-xdrive-system-dependency-capability]').count() === 0 &&
+        await page.locator('[data-xdrive-system-dependency-overview-card]').count() === 11)
       await page.locator('[data-xdrive-system-dependency-overview-card="geonames"]').click()
       await page.locator('[data-xdrive-system-dependency-detail]').waitFor()
       record('320: mobile dependency picker is visible',
         await page.getByLabel('选择系统依赖').isVisible())
       record('320: GeoNames detail does not overflow', await noOverflow(page))
+      const readScope = page.locator('[data-xdrive-geonames-read-scope]')
+      record('320: GeoNames technical scope is initially collapsed',
+        !(await readScope.evaluate(element => element.open)))
       await screenshot(page, 'geonames-320')
+      await readScope.locator('summary').click()
+      record('320: full GeoNames evidence scope expands on demand',
+        await readScope.evaluate(element => element.open))
       await page.getByRole('button', { name: '返回总览' }).click()
       const readBefore = await page.evaluate(() =>
         window.__xdriveSystemDependenciesFixture.readsA)
