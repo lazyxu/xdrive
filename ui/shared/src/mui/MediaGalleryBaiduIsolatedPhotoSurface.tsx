@@ -22,7 +22,9 @@ import type {
 } from '../media-gallery-places-photo-drawer'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
-import { xDriveCurrentMapPhotoCollections } from '../media-gallery-places-map-strip'
+import {
+  xDriveCurrentMapPhotoCollections, xDriveVerifiedMapPhotoProjections,
+} from '../media-gallery-places-map-strip'
 import {
   xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
 } from '../media-gallery-baidu-map-photo-scope'
@@ -464,7 +466,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // must await a true camera viewport, which can regrid the 8x8 Cells.
   if (scopeIsCurrent && acceptedViewport && projected?.width && projected.height &&
       loadThumbnail && phase === 'ready') {
-    for (const candidate of [...projected.cells].sort((a,b) => b.count-a.count)) {
+    // Revalidate untrusted SDK projections against the current signed Owner cells.
+    const verifiedCoverCandidates = xDriveVerifiedMapPhotoProjections(
+      trustedSummary, projected, accessible.map(cell => cell.selection))
+    for (const candidate of verifiedCoverCandidates) {
       if (coverPins.length >= 24) break
       // Projected SDK coordinates never authorize obsolete Owner selections.
       if (!hasAcceptedCell(candidate.selection)) continue

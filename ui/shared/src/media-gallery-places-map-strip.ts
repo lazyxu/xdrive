@@ -5,7 +5,11 @@ import type { MediaBaiduNativeCellSelection, MediaBaiduNativeCellsPage } from '.
 // NEVER a substitute for the full sparse Media Range / virtual photo wall.
 export const XDRIVE_PLACES_MAP_STRIP_MAX = 10
 
-export function xDriveCurrentMapPhotoCollections(
+/** Full validated camera projections for the trusted Parent cover pins.
+ * A third-party SDK supplies ONLY pixel positions; identity and displayed
+ * count are copied from the current Owner-signed /cells and approved scope.
+ * Both inline and isolated SDK hosts consume this same result. */
+export function xDriveVerifiedMapPhotoProjections(
   page: MediaBaiduNativeCellsPage | null,
   projected: XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null,
   approved: readonly MediaBaiduNativeCellSelection[],
@@ -81,9 +85,21 @@ export function xDriveCurrentMapPhotoCollections(
         selection.node_revision !== cell.node_revision ||
         selection.photo_count !== cell.photo_count || pin.count !== cell.photo_count) continue
     seen.add(key)
-    candidates.push(pin)
+    // Never render a Child/SDK supplied count or selection, even when its
+    // identity happens to match the Owner Cell. Use the trusted snapshot.
+    candidates.push({selection:original,count:cell.photo_count,x:pin.x,y:pin.y})
   }
   return candidates.sort((a,b) => b.count - a.count ||
     a.selection.cell_y-b.selection.cell_y || a.selection.cell_x-b.selection.cell_x)
-    .slice(0,XDRIVE_PLACES_MAP_STRIP_MAX)
+}
+
+/** The iOS-style bottom strip uses the same approved projections as cover pins,
+ * capped at ten previews; the full photo wall remains a separate Owner Range. */
+export function xDriveCurrentMapPhotoCollections(
+  page: MediaBaiduNativeCellsPage | null,
+  projected: XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null,
+  approved: readonly MediaBaiduNativeCellSelection[],
+): ReadonlyArray<Readonly<{selection:MediaBaiduNativeCellSelection;count:number;x:number;y:number}>> {
+  return xDriveVerifiedMapPhotoProjections(page, projected, approved)
+    .slice(0, XDRIVE_PLACES_MAP_STRIP_MAX)
 }
