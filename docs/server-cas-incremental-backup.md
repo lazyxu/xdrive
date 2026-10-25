@@ -14,12 +14,31 @@ xdrive-server backup verify "$HOME/.xd/backups/incremental/snapshots/xdrive-back
 xdrive-server restore "$HOME/.xd/backups/incremental/snapshots/xdrive-backup-YYYYMMDDTHHMMSSZ" --yes
 ```
 
-The first command is explicit opt-in. Existing `xdrive-server backup`,
-scheduled backups, upgrade and pre-restore safety backups **remain v1
-`blobs.tar`** until the new format has completed full deployment validation.
-Use `--repository-dir ABSOLUTE_PATH` to place the local repository on a
-separate disk; the absolute path must not point into the live files mount.
-Do not mix `--incremental` with `--output-dir` or `--skip-file-data`.
+The first command explicitly opts in for one v2 backup. Default manual,
+scheduled, pre-upgrade and pre-restore backups remain v1 `blobs.tar`. To
+explicitly use **v2 for scheduled backups only**, add to
+`$HOME/.xd/config/.env` (or the active `XD_CONFIG_DIR/config/.env`):
+
+```env
+XD_BACKUP_SCHEDULE_FORMAT=v2
+# Optional: if manual v2 backups use a different local repository
+XD_BACKUP_SCHEDULE_REPOSITORY_DIR=/absolute/local/repository
+```
+
+Omit the repository option to reuse `$HOME/.xd/backups/incremental`. The
+existing cron schedule runs the same `server-backup-scheduled.sh` wrapper; it
+selects `xdrive-server backup --incremental` on the next execution. Switching
+back to v1 is done by removing the setting or setting it to `v1`.
+
+**Safety:** v2 scheduled backup never applies `XD_BACKUP_RETENTION_DAYS` or
+automatically deletes v2 snapshots, shared CAS objects, or historical v1
+snapshots. Retention stays enabled only while scheduled backup format is v1.
+Manual `backup --incremental`, pre-upgrade safety backups, and restore logic
+are unchanged. A reference-aware v2 GC is still a separate future feature.
+
+Use `--repository-dir ABSOLUTE_PATH` for a manual v2 backup on a separate
+disk; the absolute path must not point into the live files mount. Do not
+combine `--incremental` with `--output-dir` or `--skip-file-data`.
 
 ## Repository format
 
