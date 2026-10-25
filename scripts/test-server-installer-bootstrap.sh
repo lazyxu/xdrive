@@ -369,12 +369,26 @@ if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Config.E
   exit 0
 fi
 if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Config.Env"* ]]; then
+  if [[ "${TEST_MIGRATED_DB_READY:-0}" == "1" ]]; then
+    if [[ "${TEST_MIGRATED_DSN_MISMATCH:-0}" == "1" ]]; then
+      echo "XD_DATABASE_URL=postgres://xdrive:different-secret@postgres:5432/xdrive?sslmode=disable"
+    else
+      echo "XD_DATABASE_URL=postgres://xdrive:stale-db-password@postgres:5432/xdrive?sslmode=disable"
+    fi
+  fi
   echo "XD_JWT_SECRET=legacy-jwt-secret"
   exit 0
 fi
 
 if [[ "$1" == "exec" && "$args" == *"pg_isready"* ]]; then
   exit 0
+fi
+# readyz is a genuine DB readiness probe in production. A migrated, freshly
+# restarted Server has the correct runtime DSN although the postgres container
+# address-based psql probe may fail in a different network configuration.
+if [[ "$1" == "exec" && "$args" == *"xdrive-server healthcheck http://127.0.0.1:8080/api/v1/readyz"* ]]; then
+  [[ "${TEST_MIGRATED_DB_READY:-0}" == "1" ]]
+  exit $?
 fi
 
 # Bridge-address authentication fails with the stale password until the local
@@ -423,6 +437,15 @@ echo "mock pre-upgrade backup"
 SH
 chmod +x "$TMP/config-upgrade/server-backup.sh"
 
+# Exercise a canonical post-migration layout, not only a legacy root install.
+cp -a "$TMP/config-upgrade" "$TMP/config-migrated"
+mkdir -p "$TMP/config-migrated/config" "$TMP/config-migrated/bin"
+mv "$TMP/config-migrated/.env" "$TMP/config-migrated/config/.env"
+mv "$TMP/config-migrated/docker-compose.yml" "$TMP/config-migrated/config/docker-compose.yml"
+mv "$TMP/config-migrated/server-backup.sh" "$TMP/config-migrated/bin/server-backup.sh"
+printf 'XD_DOCKER_MODE=rootful\n' >> "$TMP/config-migrated/config/.env"
+cp -a "$TMP/config-migrated" "$TMP/config-mismatched-dsn"
+
 rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
 if ! TEST_STATE="$TMP/state" \
 PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
@@ -461,5 +484,39 @@ grep -q '\[xDrive\] existing deployment detected; entering upgrade maintenance w
 grep -q '\[xDrive\] transaction armed; rollback backup:' "$TMP/upgrade.out"
 test -x "$TMP/config-upgrade/bin/xdrive-server"
 test -f "$TMP/config-upgrade/config/docker-compose.yml"
+
+# Regression: after root-to-normal-user migration the freshly restarted
+# Server still connects with the exact copied password. A Docker-container
+# self-IP probe failure must NOT trigger an unnecessary ALTER ROLE or abort.
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+if ! TEST_MIGRATED_DB_READY=1 TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$TMP/config-migrated" \
+  XD_SHELL_RC_PATH="$TMP/config-migrated.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" >"$TMP/migrated.out" 2>"$TMP/migrated.err"; then
+  echo "migrated running-Server database readiness recovery failed" >&2
+  cat "$TMP/migrated.out" "$TMP/migrated.err" >&2
+  exit 1
+fi
+test ! -e "$TMP/state/password-repaired"
+grep -Fq 'Preserved PostgreSQL password: the running xDrive Server uses this exact DSN and passes database readiness.' "$TMP/migrated.out"
+grep -Fxq "POSTGRES_PASSWORD=stale-db-password" "$TMP/config-migrated/config/.env"
+grep -Fq 'healthcheck http://127.0.0.1:8080/api/v1/readyz' "$TMP/state/docker-calls"
+# The readyz response alone must NOT be trusted when the running Server DSN
+# differs from the configured password: retain the legacy role-repair path.
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+if ! TEST_MIGRATED_DB_READY=1 TEST_MIGRATED_DSN_MISMATCH=1 TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$TMP/config-mismatched-dsn" \
+  XD_SHELL_RC_PATH="$TMP/config-mismatched-dsn.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" >"$TMP/mismatched-dsn.out" 2>"$TMP/mismatched-dsn.err"; then
+  echo "mismatched running-Server DSN should retain legacy role repair" >&2
+  cat "$TMP/mismatched-dsn.out" "$TMP/mismatched-dsn.err" >&2
+  exit 1
+fi
+test -f "$TMP/state/password-repaired"
+grep -Fq 'Repaired the managed PostgreSQL role password' "$TMP/mismatched-dsn.out"
 
 echo "server installer bootstrap and stage-reporting tests passed"

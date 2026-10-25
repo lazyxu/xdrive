@@ -1290,6 +1290,23 @@ postgres_password_works() {
   ' </dev/null >/dev/null 2>&1
 }
 
+# A successful root-to-normal-user migration starts a fresh Server with the
+# copied .env. The running Server's readyz checks a real PostgreSQL PingContext.
+# Use it as independent evidence when probing the DB container's bridge IP
+# fails (multi-network containers, restrictive pg_hba.conf, etc.). Never accept
+# a Server with a different runtime DSN or one that fails database readiness.
+postgres_password_works_via_running_server() {
+  local server_id="$1" password="$2" runtime_dsn expected_dsn
+  [[ -n "$server_id" && -n "$password" ]] || return 1
+  expected_dsn="postgres://xdrive:${password}@postgres:5432/xdrive?sslmode=disable"
+  runtime_dsn="$(container_env_value "$server_id" XD_DATABASE_URL)"
+  [[ "$runtime_dsn" == "$expected_dsn" ]] || return 1
+  # Pass the URL explicitly: never allow a container environment override to
+  # turn this into an unrelated health check. Do not log either DSN or secret.
+  docker exec "$server_id" /usr/local/bin/xdrive-server healthcheck \
+    http://127.0.0.1:8080/api/v1/readyz </dev/null >/dev/null 2>&1
+}
+
 repair_postgres_password_via_local_socket() {
   local container_id="$1" password="$2"
   [[ -n "$password" ]] || return 1
@@ -1319,6 +1336,11 @@ recover_existing_runtime_secrets() {
     elif postgres_password_works "$postgres_id" "$runtime_pg"; then
       set_env POSTGRES_PASSWORD "$runtime_pg"
       echo "Recovered PostgreSQL password from the existing xDrive container and verified Docker-network authentication."
+    elif postgres_password_works_via_running_server "$server_id" "$configured_pg"; then
+      echo "Preserved PostgreSQL password: the running xDrive Server uses this exact DSN and passes database readiness."
+    elif postgres_password_works_via_running_server "$server_id" "$runtime_pg"; then
+      set_env POSTGRES_PASSWORD "$runtime_pg"
+      echo "Recovered PostgreSQL password from the healthy xDrive Server's matching database configuration."
     else
       candidate="$configured_pg"
       [[ -n "$candidate" ]] || candidate="$runtime_pg"
