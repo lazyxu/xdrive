@@ -23,6 +23,7 @@ export function XDriveMediaViewerContent({
   loadLivePhotoMotion,
   loadPreviewURL,
   onPresentationStateChange,
+  videoControlsSafeArea,
   interactiveImage = true,
   onSwipePrevious,
   onSwipeNext,
@@ -34,6 +35,7 @@ export function XDriveMediaViewerContent({
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
+  videoControlsSafeArea?: 'actions' | 'actions-filmstrip'
   interactiveImage?: boolean
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
@@ -153,6 +155,7 @@ export function XDriveMediaViewerContent({
       onSwipePrevious={onSwipePrevious}
       onSwipeNext={onSwipeNext}
       mediaTransform={mediaTransform}
+      videoControlsSafeArea={videoControlsSafeArea}
       onPresentationStateChange={reportPresentation}
     />
   )

@@ -63,6 +63,8 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
   mediaTransform?: XDriveFilePreviewMediaTransform
+  // Reserve browser playback controls above mobile Gallery overlays only.
+  videoControlsSafeArea?: 'actions' | 'actions-filmstrip'
   onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
 }
 
@@ -132,6 +134,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   onSwipePrevious,
   onSwipeNext,
   mediaTransform,
+  videoControlsSafeArea,
   onPresentationStateChange,
 }: XDriveFilePreviewSurfaceProps<T>) {
   const previewKind = useMemo(
@@ -811,7 +814,23 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (!previewURL) return fallback
     if (previewKind === 'video') {
       return (
-        <Box data-xdrive-preview-media-state="video" sx={{ position: 'relative', width: '100%', height: '100%', minHeight }}>
+        <Box data-xdrive-preview-media-state="video" sx={{
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          minHeight,
+          boxSizing: 'border-box',
+          // Both original and edited video share the existing media player.
+          // Native controls must clear the 56px Gallery actions and optional
+          // ~72px filmstrip. Consume the shared Viewer chrome visibility
+          // variable: hidden chrome releases the reserved strip without
+          // restarting a video or adding a second native-media renderer.
+          pb: videoControlsSafeArea === 'actions-filmstrip'
+            ? 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'
+            : videoControlsSafeArea === 'actions'
+              ? 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'
+              : undefined,
+        }}>
           {mediaTransform ? (
             <XDriveTransformedVideoPreview
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}

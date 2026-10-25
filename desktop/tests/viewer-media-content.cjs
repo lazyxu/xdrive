@@ -76,3 +76,36 @@ test('only viewers with a real browsing contract carry previous/next context', (
   assert.equal(webAppContract.includes("'audio-player': { node: number; context?: string }"), false)
   assert.ok(docs.includes('Viewer navigation scope'))
 })
+
+test('both Gallery Viewer shells opt into one shared video playback controls clearance', () => {
+  assert.ok(galleryViewer.includes("videoControlsSafeArea={narrowViewer ? (filmstripEntries.length > 0 ? 'actions-filmstrip' : 'actions') : undefined}"),
+    'Desktop/shared Gallery should reserve mobile controls clearance')
+  assert.ok(webViewers.includes("videoControlsSafeArea={narrowMediaViewer ? (viewer.filmstripEntries.length > 0 ? 'actions-filmstrip' : 'actions') : undefined}"),
+    'routed Web/Mobile Gallery should use the same clearance')
+  assert.ok(content.includes('videoControlsSafeArea={videoControlsSafeArea}'),
+    'MediaViewerContent must pass a presentation-only clearance to the shared renderer')
+  assert.ok(previewSurface.includes("videoControlsSafeArea === 'actions-filmstrip'"),
+    'only the Preview Engine should implement native video controls clearance')
+})
+
+test('mobile video reserves space only while shared Viewer chrome is visible', () => {
+  const inlineFrame = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.tsx')
+  for (const frame of [inlineFrame, webViewers]) {
+    assert.match(frame, /'--xdrive-viewer-video-actions-clearance'/)
+    assert.match(frame, /'--xdrive-viewer-video-actions-filmstrip-clearance'/)
+    assert.match(frame, /chromeVisible\s*\?\s*'calc\(56px \+ env\(safe-area-inset-bottom\)\)'\s*:\s*'0px'/)
+    assert.match(frame, /chromeVisible\s*\?\s*'calc\(128px \+ env\(safe-area-inset-bottom\)\)'\s*:\s*'0px'/)
+  }
+  assert.match(previewSurface,
+    /var\(--xdrive-viewer-video-actions-clearance, calc\(56px \+ env\(safe-area-inset-bottom\)\)\)/)
+  assert.match(previewSurface,
+    /var\(--xdrive-viewer-video-actions-filmstrip-clearance, calc\(128px \+ env\(safe-area-inset-bottom\)\)\)/)
+  assert.match(previewSurface, /boxSizing: 'border-box'/)
+})
+
+test('empty Filmstrip never renders an otherwise blank Gallery chrome overlay', () => {
+  assert.match(galleryViewer, /const footer = item && filmstripEntries\.length > 0 \? \(/)
+  assert.match(webViewers, /filmstrip=\{mediaItem && viewer\.filmstripEntries\.length > 0 \? \(/)
+  assert.match(galleryViewer, /videoControlsSafeArea=\{narrowViewer \? \(filmstripEntries\.length > 0/)
+  assert.match(webViewers, /videoControlsSafeArea=\{narrowMediaViewer \? \(viewer\.filmstripEntries\.length > 0/)
+})

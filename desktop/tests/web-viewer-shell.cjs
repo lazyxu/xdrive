@@ -2564,6 +2564,101 @@ test('P1-320 routed media Viewer fits six 44px actions and preserves explicit Mo
   viewportWidth = 390
 })
 
+
+test('both mounted mobile Viewer frames release native video clearance when chrome hides', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const property = '--xdrive-viewer-video-actions-clearance'
+  const filmstripProperty = '--xdrive-viewer-video-actions-filmstrip-clearance'
+  const visible = 'calc(56px + env(safe-area-inset-bottom))'
+  const visibleWithFilmstrip = 'calc(128px + env(safe-area-inset-bottom))'
+
+  const exercise = async (renderer, selector) => {
+    const view = () => renderer.root.find(selector)
+    const frame = view()
+    assert.equal(frame.props.sx[property], visible)
+    assert.equal(frame.props.sx[filmstripProperty], visibleWithFilmstrip)
+    const timeout = Array.from(timers.values()).find(entry => entry.delay === 2200)
+    assert.ok(timeout, 'the original immersive chrome timer must still run')
+    await act(async () => timeout.callback())
+    assert.equal(view().props.sx[property], '0px')
+    assert.equal(view().props.sx[filmstripProperty], '0px')
+    // Mocked MUI Stack and its native host share props: count DOM only.
+    const hiddenHeaders = renderer.root.findAll(el => el.type === 'div' && (
+      el.props?.['data-xdrive-web-viewer-chrome'] === 'header' ||
+      el.props?.['data-xdrive-preview-chrome'] === 'header'))
+    assert.equal(hiddenHeaders.length, 1)
+    assert.equal(hiddenHeaders[0].props.sx.visibility, 'hidden',
+      'opacity zero alone leaves hidden Viewer actions in native keyboard Tab order')
+    // One short touch in an empty media area restores chrome. Native video
+    // controls themselves are interactive and never handled by this gesture.
+    const pointer = { pointerType: 'touch', pointerId: 7, clientX: 120, clientY: 120,
+      target: { closest() { return null } } }
+    const content = renderer.root.find(element => element.type === 'div' &&
+      (element.props['data-xdrive-web-viewer'] !== undefined ||
+       element.props.onPointerDownCapture && element.props.sx?.bgcolor === 'black'))
+    await act(async () => {
+      content.props.onPointerDownCapture(pointer)
+      content.props.onPointerUpCapture(pointer)
+    })
+    const tap = Array.from(timers.values()).find(entry => entry.delay === 260)
+    assert.ok(tap, 'normal short touch must still use the existing chrome gesture')
+    await act(async () => tap.callback())
+    assert.equal(view().props.sx[property], visible)
+    assert.equal(view().props.sx[filmstripProperty], visibleWithFilmstrip)
+    const headers = renderer.root.findAll(el => el.type === 'div' && (
+      el.props?.['data-xdrive-web-viewer-chrome'] === 'header' ||
+      el.props?.['data-xdrive-preview-chrome'] === 'header'))
+    assert.equal(headers.length, 1)
+    assert.equal(headers[0].props.sx.visibility, 'visible',
+      'showing controls restores normal keyboard access')
+  }
+
+  timers.clear()
+  let inline
+  try {
+    await act(async () => {
+      inline = create(React.createElement(XDriveOpenPreviewDialog, {
+        open: true, immersive: true, mobileEdgeToEdge: true, title: 'clip.mp4',
+        onClose() {}, footer: React.createElement('span', null, 'filmstrip'),
+      }, React.createElement('span', { 'data-native-video-canvas': true })))
+    })
+    await exercise(inline, el => el.type === 'div' && el.props.sx?.[property] !== undefined)
+  } finally {
+    if (inline) await act(async () => inline.unmount())
+  }
+
+  timers.clear()
+  let routed
+  try {
+    const videoNode = { id: 8142, revision: 1, name: 'clip.mp4', type: 'file', size: 64 }
+    await act(async () => {
+      routed = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: videoNode.id } },
+        api: {
+          node: async () => videoNode,
+          mediaItem: async () => ({ node: videoNode,
+            metadata: { media_kind: 'video', mime_type: 'video/mp4',
+              index_state: 'ready', has_thumbnail: false } }),
+        },
+        gallerySource: {}, shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    const frame = () => routed.root.find(el =>
+      el.type === 'div' && el.props['data-xdrive-web-viewer'] !== undefined)
+    await exercise(routed, el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer'] !== undefined)
+    assert.equal(frame().props.role, 'dialog')
+    assert.equal(frame().props['aria-modal'], 'true')
+    assert.equal(routed.root.findAllByType('media-content').length, 1,
+      'immersive hide/show must not discard the shared media content')
+  } finally {
+    if (routed) await act(async () => routed.unmount())
+    timers.clear()
+  }
+})
+
 function pendingRead() {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
