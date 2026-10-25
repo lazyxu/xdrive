@@ -118,11 +118,13 @@ class VisualParityTest {
         compose.onNodeWithTag("current-password").performTextInput("synthetic-old")
         compose.onNodeWithTag("new-password").performTextInput("synthetic-new")
         compose.onNodeWithTag("confirm-password").performTextInput("different")
-        compose.onNodeWithText("更新密码").performScrollTo().performClick()
-        compose.onNodeWithText("两次输入的密码不一致。").assertIsDisplayed()
+        // Click the actual Submit node: a text child can lose its click target
+        // while the IME and scroll position are changing on emulators.
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        compose.onNodeWithText("两次输入的密码不一致。").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { Assert.assertEquals(0, changes) }
         compose.onNodeWithTag("confirm-password").performTextReplacement("synthetic-new")
-        compose.onNodeWithText("更新密码").performScrollTo().performClick()
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         // The controller enters FILES before the Main coroutine finishes
         // its first authenticated root/children read. Compose idle alone does
         // not guarantee that the freshly loaded "Documents" row is visible.
@@ -132,6 +134,10 @@ class VisualParityTest {
             current.screen == Screen.FILES && current.loaded && !current.loading
         }
         compose.waitForIdle()
+        // The password box is visually masked: InputText holds the clear input
+        // while EditableText exposes bullets. Verify the actual successful
+        // backend call rather than asserting the masked semantics string.
+        compose.runOnIdle { Assert.assertEquals(1, changes) }
         compose.onNodeWithText("Documents").assertIsDisplayed()
     }
     @Test fun brandAndFileTypeGlyphsRender() {
