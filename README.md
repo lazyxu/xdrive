@@ -339,9 +339,12 @@ xdrive-server verify --mode fast --summary-json --progress
 
 The backup manifest and JSON report identify `verification_mode=fast|deep`;
 a successful fast check is **not** a content-integrity attestation.
-An older Server lacking this mode retains its original deep verification during
-the first upgrade, rather than bypassing errors. Restores always request deep
-content verification even though the normal default is fast.
+On the first upgrade, the installer obtains the exact published target Server
+image before stopping the old deployment and uses its verifier; this avoids
+an old-image deep sweep when the target supports fast mode. Target failure
+is fatal, not an excuse to bypass checks. `XD_UPGRADE_BACKUP_VERIFIER=legacy`
+is an explicit diagnostic fallback to the old deep verifier. Restores always
+request deep content verification even though the normal default is fast.
 
 For conservative CAS metadata repair, inspect the plan first and then apply it:
 

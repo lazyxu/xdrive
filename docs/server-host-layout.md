@@ -564,11 +564,17 @@ goes to stderr and records elapsed time, references and actual bytes hashed;
 `deep` reads each unique storage key once, as in the previous implementation.
 No unmeasured high-concurrency disk reads or buffer-size changes are introduced.
 
-**Legacy upgrade exception:** an installed Server built before `--mode`
-and the default-fast change keeps its old deep verification until upgraded;
-the backup script sets a harmless progress environment flag rather than
-passing unsupported CLI flags. It records legacy results as `deep`. Never
-fall back from a real verification inconsistency into an unchecked backup.
+**First upgrade:** the installer fetches the exact published target Server
+image *before* entering stage-5 maintenance and uses the target verifier,
+rather than serially hashing every CAS blob with an old Server. A locally
+cached target image is reused without fetching. The target independently
+checks the previous database/blob snapshot; if verification or image fetching
+fails, the upgrade rolls back, never bypasses an inconsistency, and never
+silently falls back to a weaker check. Older published targets that lack fast
+mode still perform deep verification. A diagnostic override
+`XD_UPGRADE_BACKUP_VERIFIER=legacy` retains the original deep validator and
+its narrow internal-cache compatibility retry. No new CLI flags are passed
+to an old Server. Every finished backup labels the actual verification level.
 
 ## Backup and restore invariants
 
