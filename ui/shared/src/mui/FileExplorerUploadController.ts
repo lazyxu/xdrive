@@ -94,7 +94,7 @@ export type XDriveFileExplorerUploadGroupInput<TFile> = {
   action?: Extract<XDriveFileExplorerUploadBusyAction, 'upload-folder' | 'drop-upload'>
   itemsTotal?: number
   bytesTotal?: number
-  resolveTargets: () => Promise<readonly XDriveFileExplorerUploadTarget<TFile>[]>
+  resolveTargets: (signal?: AbortSignal) => Promise<readonly XDriveFileExplorerUploadTarget<TFile>[]>
 }
 
 export function xDriveFileExplorerUploadGroupLabel<TFile>(
@@ -482,7 +482,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
       if (isGroupCancelled()) return finishDetachedUnstarted()
 
-      const targets = await resolveTargets()
+      const targets = await resolveTargets(transferLifecycle.abortSignal?.(groupID))
       if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
       if (isGroupCancelled()) return finishDetachedUnstarted()
       const childSizes = targets.map((target) => Math.max(0, fileSize(target.file)))

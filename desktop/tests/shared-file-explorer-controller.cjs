@@ -428,7 +428,8 @@ test('shared FileExplorer controller owns folder-upload path planning and direct
     "existing?.type === 'dir'",
     'xDriveFileExplorerResolveFolderUploadTargets',
     "new Map<string, number>([['', rootParentID]])",
-    'await ensureDirectory(parentID, directory.name)',
+    'await ensureDirectory(parentID, directory.name, signal)',
+    'signal?.throwIfAborted()',
     'return { ...file, parentID }',
   ]) {
     assert.ok(shared.includes(token), `missing shared folder-upload controller: ${token}`)

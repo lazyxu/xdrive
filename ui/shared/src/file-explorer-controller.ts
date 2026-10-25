@@ -950,21 +950,31 @@ export async function xDriveFileExplorerEnsureUploadDirectory<
 >({
   parentID,
   name,
+  signal,
   createDirectory,
   findExistingDirectory,
 }: {
   parentID: number
   name: string
-  createDirectory: (parentID: number, name: string) => Promise<TNode>
-  findExistingDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
+  signal?: AbortSignal
+  createDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<TNode>
+  findExistingDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<TNode | null | undefined>
 }) {
+  signal?.throwIfAborted()
   try {
-    return (await createDirectory(parentID, name)).id
+    const created = await createDirectory(parentID, name, signal)
+    signal?.throwIfAborted()
+    return created.id
   } catch (createError) {
+    // A cancelled POST may already have reached Server. Do not issue a
+    // follow-up lookup (or the next mkdir) on a cancelled upload's behalf.
+    signal?.throwIfAborted()
     try {
-      const existing = await findExistingDirectory(parentID, name)
+      const existing = await findExistingDirectory(parentID, name, signal)
+      signal?.throwIfAborted()
       if (existing?.type === 'dir') return existing.id
     } catch {
+      signal?.throwIfAborted()
       // Preserve the original create error when fallback lookup also fails.
     }
     throw createError
@@ -975,23 +985,29 @@ export async function xDriveFileExplorerResolveFolderUploadTargets<TFile>({
   rootParentID,
   entries,
   directoryPaths = [],
+  signal,
   ensureDirectory,
 }: {
   rootParentID: number
   entries: readonly XDriveFileExplorerFolderUploadEntry<TFile>[]
   directoryPaths?: readonly string[]
-  ensureDirectory: (parentID: number, name: string) => Promise<number>
+  signal?: AbortSignal
+  ensureDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<number>
 }): Promise<XDriveFileExplorerResolvedFolderUploadFile<TFile>[]> {
+  signal?.throwIfAborted()
   const plan = xDriveFileExplorerFolderUploadPlan(entries, directoryPaths)
   const directoryIDs = new Map<string, number>([['', rootParentID]])
 
   for (const directory of plan.directories) {
+    signal?.throwIfAborted()
     const parentID = directoryIDs.get(directory.parentPath)
     if (parentID === undefined) throw new Error(`文件夹上传路径无法解析：${directory.path}`)
-    const id = await ensureDirectory(parentID, directory.name)
+    const id = await ensureDirectory(parentID, directory.name, signal)
+    signal?.throwIfAborted()
     directoryIDs.set(directory.path, id)
   }
 
+  signal?.throwIfAborted()
   return plan.files.map((file) => {
     const parentID = directoryIDs.get(file.directoryPath)
     if (parentID === undefined) throw new Error(`文件夹上传路径无法解析：${file.relativePath}`)

@@ -2964,9 +2964,9 @@ export class XDriveApi {
     }
   }
 
-  createDirectory(parentID: number, name: string) {
+  createDirectory(parentID: number, name: string, signal?: AbortSignal) {
     return this.request<Node>(`/api/v1/nodes/${parentID}/directories`, {
-      method: 'POST', body: JSON.stringify({ name }),
+      method: 'POST', body: JSON.stringify({ name }), signal,
     })
   }
 
