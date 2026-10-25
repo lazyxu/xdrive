@@ -23,6 +23,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import com.tfluid.xdrive.core.*
 import kotlinx.coroutines.*
 import org.junit.*
@@ -48,7 +49,8 @@ class VisualParityTest {
             DriveNode(6, 1, "notes.txt", "file", 2048),
         ), 5, offset)
     }
-    private val controller = DriveController(scope, { service })
+    private val connectFactoryCalls = AtomicInteger()
+    private val controller = DriveController(scope, { connectFactoryCalls.incrementAndGet(); service })
     @After fun close() { controller.close(); scope.cancel() }
     private fun loginScreen(dark: Boolean = false, narrow: Boolean = false, landscape: Boolean = false) {
         compose.setContent {
@@ -69,10 +71,7 @@ class VisualParityTest {
         // connect() runs in the Controller's Main coroutine scope, which is
         // independent of Compose's current idle frame. A runOnIdle-only
         // assertion races the CONNECT -> LOGIN StateFlow transition on CI.
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.screen == Screen.LOGIN
-        }
-        compose.waitForIdle()
+        compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
         compose.onNodeWithTag("username").assertExists()
         compose.runOnIdle {
             Assert.assertEquals(Screen.LOGIN, controller.state.value.screen)
