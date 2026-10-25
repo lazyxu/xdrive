@@ -3789,6 +3789,16 @@ export function XDriveMediaGalleryPage({
     // A draft or failing Gallery Range is not current authorized membership.
     // Never base the map's Count on a filter still awaiting Server acceptance.
     const accepted = collectionTargetRef.current
+    // Viewer → Map from an already signed BD-09 Cell/Camera wall is a return,
+    // not a new all-library map entry. Cancel its reader and reveal the existing
+    // Parent map so that /cells is independently Owner/Consent-reauthorized.
+    // Desktop file: cannot mount an SDK here; retain its HTTPS-only boundary.
+    if (!onOpenSecureDesktopMap &&
+        (accepted?.kind === 'baidu-cell' || accepted?.kind === 'baidu-viewport')) {
+      setError('')
+      leaveBaiduCellWall()
+      return
+    }
     if (loading || collectionError || !accepted ||
         (currentAlbum
           ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
