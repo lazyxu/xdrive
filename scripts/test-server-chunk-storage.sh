@@ -248,6 +248,14 @@ docker run --rm --pull never --network none --user 0:0 \
       chown 0:0 "$dir"
       chmod 0700 "$dir"
     done
+    lockdir=/data/.xdrive-cas-lifecycle-locks
+    lockfile="$lockdir/$1.lock"
+    test -d "$lockdir"
+    test -f "$lockfile"
+    test ! -s "$lockfile"
+    chown 0:0 "$lockdir" "$lockfile"
+    chmod 0700 "$lockdir"
+    chmod 0600 "$lockfile"
   ' xdrive-cas-regression "${hash:0:2}"
 if docker run --rm --pull never --network none --user 65532:65532 \
   --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
@@ -255,8 +263,27 @@ if docker run --rm --pull never --network none --user 65532:65532 \
   echo "fixture error: CAS parent remained accessible despite simulated migration drift" >&2
   exit 1
 fi
+if docker run --rm --pull never --network none --user 65532:65532 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
+  -ec 'ls /data/.xdrive-cas-lifecycle-locks >/dev/null' >/dev/null 2>&1; then
+  echo "fixture error: CAS lifecycle locks remained accessible despite root drift" >&2
+  exit 1
+fi
 
+# Verify the fixed OS lock inode is retained across the one-shot repair.
+lock_inode_before="$(docker run --rm --pull never --network none --user 0:0 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
+  -ec 'stat -c "%i:%s" "/data/.xdrive-cas-lifecycle-locks/$1.lock"' \
+  xdrive-cas-regression "${hash:0:2}")"
 compose run -T --rm --no-deps storage-init >/dev/null
+lock_inode_after="$(docker run --rm --pull never --network none --user 0:0 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
+  -ec 'stat -c "%i:%s" "/data/.xdrive-cas-lifecycle-locks/$1.lock"' \
+  xdrive-cas-regression "${hash:0:2}")"
+[[ "$lock_inode_before" == "$lock_inode_after" ]] || {
+  echo "storage init replaced/truncated an active CAS lifecycle OS lock inode" >&2
+  exit 1
+}
 
 docker run --rm --pull never --network none --user 65532:65532 \
   --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
@@ -264,6 +291,9 @@ docker run --rm --pull never --network none --user 65532:65532 \
     ls /data/.xdrive-blobs >/dev/null
     ls /data/.xdrive-blobs/sha256 >/dev/null
     ls "/data/.xdrive-blobs/sha256/$1" >/dev/null
+    ls /data/.xdrive-cas-lifecycle-locks >/dev/null
+    test -r "/data/.xdrive-cas-lifecycle-locks/$1.lock"
+    test -w "/data/.xdrive-cas-lifecycle-locks/$1.lock"
     test -r "/data/$2"
   ' xdrive-cas-regression "${hash:0:2}" "$storage_key"
 

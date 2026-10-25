@@ -269,6 +269,13 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 	if err := repairCanonicalCASParents(abs, uid, gid); err != nil {
 		return "", err
 	}
+	// CAS shard lock inodes also survive upgrades. A current upload marker
+	// proves nothing about the separate lock directory or its 00..ff.lock
+	// files; the offline verifier must traverse it and live writers must open
+	// the *same* existing inodes after a root-to-user migration.
+	if err := repairCanonicalCASLifecycleLocks(abs, uid, gid); err != nil {
+		return "", err
+	}
 
 	if err := os.WriteFile(marker, []byte(target+"\n"), 0o640); err != nil {
 		return "", fmt.Errorf("write storage ownership marker: %w", err)
@@ -324,6 +331,40 @@ func repairCASParentIfPresent(path string, uid, gid int) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// repairCanonicalCASLifecycleLocks repairs at most one fixed lock directory
+// and 256 fixed zero-byte lock inodes, regardless of CAS object count.
+// No inode is removed, replaced, truncated, opened with O_TRUNC, or recreated:
+// flock-based readers/writers must continue coordinating on the same inode.
+// Unexpected/symlink/nonempty lock files are rejected, not silently blessed.
+func repairCanonicalCASLifecycleLocks(root string, uid, gid int) error {
+	lockRoot := filepath.Join(root, storage.CASLifecycleLockDir)
+	found, err := repairCASParentIfPresent(lockRoot, uid, gid)
+	if err != nil || !found {
+		return err
+	}
+
+	for shard := 0; shard < 256; shard++ {
+		path := filepath.Join(lockRoot, fmt.Sprintf("%02x.lock", shard))
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat canonical CAS lifecycle lock %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() != 0 {
+			return fmt.Errorf("canonical CAS lifecycle lock %s must be an empty regular file", path)
+		}
+		if err := os.Lchown(path, uid, gid); err != nil {
+			return fmt.Errorf("set CAS lifecycle lock owner %s: %w", path, err)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			return fmt.Errorf("set CAS lifecycle lock mode %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func repairStorageTree(root string, uid, gid int) error {

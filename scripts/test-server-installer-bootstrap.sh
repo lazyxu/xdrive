@@ -391,9 +391,12 @@ if [[ "$1" == "run" && -n "${TEST_CAS_MOUNT_DIR:-}" ]]; then
   [[ "$args" == *"type=bind,src=$TEST_CAS_MOUNT_DIR,dst=/data"* ]] || exit 92
   [[ "$args" == *".xdrive-blobs/sha256/[0-9a-f][0-9a-f]"* ]] || exit 93
   [[ "$args" == *"xdrive-cas-parent-repair 65532 65532"* ]] || exit 94
-  # The real image helper owns only CAS directory metadata; this mock
-  # separately verifies the Docker capability and bounded shell contract.
-  echo "[xDrive] checked 3 canonical CAS parents; owner corrections 1."
+  [[ "$args" == *".xdrive-cas-lifecycle-locks/[0-9a-f][0-9a-f].lock"* ]] || exit 95
+  [[ "$args" == *"chmod 0600"* ]] || exit 96
+  [[ "$args" != *"rm -f "* && "$args" != *"truncate "* ]] || exit 97
+  # The real image helper repairs only bounded directories and existing
+  # 256 fixed zero-byte CAS shard lock inodes. This mock verifies the scope.
+  echo "[xDrive] checked 4 CAS parent directories and 1 lifecycle lock files; owner corrections 2."
   exit 0
 fi
 if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Config.Env"* ]]; then
@@ -582,10 +585,12 @@ XD_MEDIA_WORKER_RUNTIME_DIR=/root/.xd/state/media-worker
 XD_PHOTO_FACE_RUNTIME_DIR=/root/.xd/state/photo-face
 EOF
 chmod 600 "$root_env"
-# Simulate an immutable CAS tree with a current staging marker but a migrated
-# root-owned .xdrive-blobs parent. The helper must be scoped to this exact mount
-# and run *before* the pre-upgrade backup on a valid migration marker.
+# Simulate CAS objects and persistent shard locks with a current staging
+# marker but old root ownership. Both canonical directories and lock inodes
+# require bounded repair before the strict stage-5 consistency scan.
 mkdir -p "$TMP/config-old-root-paths/data/files/.xdrive-blobs/sha256/ab"
+mkdir -p "$TMP/config-old-root-paths/data/files/.xdrive-cas-lifecycle-locks"
+: > "$TMP/config-old-root-paths/data/files/.xdrive-cas-lifecycle-locks/ab.lock"
 cp -a "$TMP/config-old-root-paths" "$TMP/config-old-root-paths-no-marker"
 rm -f "$TMP/config-old-root-paths-no-marker/state/migrated-from-root"
 cp -a "$TMP/config-old-root-paths" "$TMP/config-old-root-paths-override"
@@ -622,7 +627,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
   [[ "$(grep -Fc 'repaired migrated XD_' "$TMP/root-path-recovered.out")" -eq 4 ]]
   test ! -e "$TMP/state/password-repaired"
   grep -Fq 'validating migrated CAS directory permissions' "$TMP/root-path-recovered.out"
-  grep -Fq 'checked 3 canonical CAS parents; owner corrections 1.' "$TMP/root-path-recovered.out"
+  grep -Fq 'checked 4 CAS parent directories and 1 lifecycle lock files; owner corrections 2.' "$TMP/root-path-recovered.out"
   grep -Fq -- "--network none --user 0:0 --mount type=bind,src=$TMP/config-old-root-paths/data/files,dst=/data" "$TMP/state/docker-calls"
 
   # An active Server mount mismatch fails closed rather than re-owning an
