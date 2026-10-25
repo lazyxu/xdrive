@@ -89,7 +89,14 @@ function xDriveWebDownloadCancelled(error: unknown) {
 export async function xDriveOpenWebDownloadSink(
   filename: string,
 ): Promise<XDriveWebDownloadSink> {
-  const picker = (globalThis as XDriveWebDownloadGlobal).showSaveFilePicker
+  let picker: XDriveWebSaveFilePicker | undefined
+  try {
+    picker = (globalThis as XDriveWebDownloadGlobal).showSaveFilePicker
+  } catch {
+    // An optional File System Access getter may be blocked by a restricted
+    // browser. Keep the ordinary signed-ticket browser download available.
+    return { kind: 'blob' }
+  }
   if (typeof picker !== 'function') return { kind: 'blob' }
 
   try {
