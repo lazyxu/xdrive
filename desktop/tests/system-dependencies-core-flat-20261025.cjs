@@ -28,7 +28,7 @@ test('PG, storage and Worker share a flat all-expanded detail without new backen
 
 test('one refresh rereads inventory plus local config, but cannot destroy dirty or saving edits', () => {
   const page = parent(), core = detail(), pg = db(), wk = worker()
-  assert.match(page, /pageActions=\{\['caddy', 'database', 'storage', 'background-worker', 'baidu-map'\]\.includes\(selectedPage\) \? null : \(/)
+  assert.match(page, /pageActions=\{selectedPage !== 'overview' \? null : \(/)
   assert.match(core, /const controlsLocked = refreshing \|\| hasUnsavedEdits \|\| editorBusy/)
   assert.match(core, /if \(controlsLocked\) return/)
   assert.match(core, /setConfigRefreshID\(\(id\) => id \+ 1\)/)

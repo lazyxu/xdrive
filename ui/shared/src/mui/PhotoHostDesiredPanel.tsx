@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import type {
   XDrivePhotoHostConfig,
@@ -33,14 +34,20 @@ const hostLabels: Record<XDrivePhotoHostConfig['host_runtime_state'], string> = 
 }
 
 export function XDrivePhotoHostDesiredPanel({
-  source, section = 'config', onDirtyChange,
+  source, section = 'config', refreshID = 0, onDirtyChange, onBusyChange,
 }: {
   source: XDrivePhotoHostPort
-  section?: 'config' | 'verify' | 'history'
+  section?: 'config' | 'verify' | 'history' | 'all'
+  refreshID?: number
   onDirtyChange?: (dirty: boolean) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const epochRef = useRef(0)
-  const [config, setConfig] = useState<XDrivePhotoHostConfig | null>(null)
+  const configSourceRef = useRef(source)
+  const [configState, setConfig] = useState<XDrivePhotoHostConfig | null>(null)
+  const [configOwner, setConfigOwner] = useState<XDrivePhotoHostPort | null>(null)
+  // Fence at render time: never paint another Server/Owner's old admin config.
+  const config = configOwner === source ? configState : null
   const [draftEnabled, setDraftEnabled] = useState(false)
   const [history, setHistory] = useState<XDrivePhotoHostRevisionPage['items']>([])
   const [preflight, setPreflight] = useState<XDrivePhotoHostPreflight | null>(null)
@@ -55,19 +62,32 @@ export function XDrivePhotoHostDesiredPanel({
   const [confirmSave, setConfirmSave] = useState(false)
   const [confirmApply, setConfirmApply] = useState(false)
   const [confirmRollback, setConfirmRollback] = useState(false)
-  const dirty = section === 'config' && !!config && draftEnabled !== config.desired_enabled
+  const dirty = (section === 'config' || section === 'all') && !!config && draftEnabled !== config.desired_enabled
 
   useEffect(() => {
     onDirtyChange?.(dirty)
     return () => onDirtyChange?.(false)
   }, [dirty, onDirtyChange])
+  // The top-level read-only refresh cannot overwrite a pending admin operation.
+  useEffect(() => {
+    onBusyChange?.(loading || busy || preflightBusy || confirmSave || confirmApply || confirmRollback)
+  }, [onBusyChange, loading, busy, preflightBusy, confirmSave, confirmApply, confirmRollback])
+  useEffect(() => () => { onBusyChange?.(false) }, [onBusyChange])
 
   useEffect(() => {
     const epoch = ++epochRef.current
     let active = true
+    const sourceChanged = configSourceRef.current !== source
+    configSourceRef.current = source
     setLoading(true)
-    setConfig(null)
-    setHistory([])
+    // An ordinary readonly refresh preserves the last good configuration.
+    // A new Server/account source must clear previous credentials and state.
+    if (sourceChanged) {
+      setConfigOwner(null)
+      setConfig(null)
+      setHistory([])
+      setDraftEnabled(false)
+    }
     setPreflight(null)
     setPreflightBusy(false)
     setPreflightError('')
@@ -84,6 +104,7 @@ export function XDrivePhotoHostDesiredPanel({
     }
     void source.loadPhotoHostConfig().then((next) => {
       if (!active || epoch !== epochRef.current) return
+      setConfigOwner(source)
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
     }).catch(() => {
@@ -91,7 +112,7 @@ export function XDrivePhotoHostDesiredPanel({
     }).finally(() => {
       if (active && epoch === epochRef.current) setLoading(false)
     })
-    if (section === 'history' && source.loadPhotoHostRevisions) {
+    if ((section === 'history' || section === 'all') && source.loadPhotoHostRevisions) {
       void source.loadPhotoHostRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
@@ -99,10 +120,10 @@ export function XDrivePhotoHostDesiredPanel({
       })
     }
     return () => { active = false; ++epochRef.current }
-  }, [source, section])
+  }, [source, section, refreshID])
 
   const verifyLocalReadiness = async () => {
-    if (section !== 'verify' || !source.loadPhotoHostPreflight || loading || preflightBusy) return
+    if ((section !== 'verify' && section !== 'all') || !source.loadPhotoHostPreflight || loading || preflightBusy) return
     const epoch = epochRef.current
     setPreflightBusy(true)
     setPreflight(null)
@@ -131,14 +152,15 @@ export function XDrivePhotoHostDesiredPanel({
     try {
       const next = await source.loadPhotoHostConfig()
       if (epoch !== epochRef.current) return
+      setConfigOwner(source)
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
-      if (section === 'history' && source.loadPhotoHostRevisions) {
+      if ((section === 'history' || section === 'all') && source.loadPhotoHostRevisions) {
         const revisions = await source.loadPhotoHostRevisions().catch(() => null)
         if (revisions && epoch === epochRef.current) setHistory(revisions.items)
       }
-    } catch {
-      if (epoch === epochRef.current) setError('重新读取智能分析宿主状态失败，保留上次已取得的结果。')
+    } catch (err) {
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'photo-host', 'refresh'))
     } finally {
       if (epoch === epochRef.current) setLoading(false)
     }
@@ -159,8 +181,19 @@ export function XDrivePhotoHostDesiredPanel({
       setDraftEnabled(next.desired_enabled)
       setPreflight(null)
       setNotice('期望启停修订已保存并审计；没有操作任何宿主容器，实际启停仍需后续安全应用功能。')
-    } catch {
-      if (epoch === epochRef.current) setError('保存失败或修订已冲突；当前草稿未作为宿主已生效状态。请重新核对版本。')
+      if (section === 'all' && source.loadPhotoHostRevisions) {
+        // History is always visible in the flat detail. Its read is separate
+        // from the successful Save ACK: an error must not undo that success.
+        const updated = await source.loadPhotoHostRevisions().catch(() => null)
+        if (epoch === epochRef.current) {
+          if (updated) {
+            setHistory(updated.items)
+            setHistoryError('')
+          } else setHistoryError('配置已保存，历史读取暂不可用；请重新检测后核对修订。')
+        }
+      }
+    } catch (err) {
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'photo-host', 'save'))
     } finally {
       if (epoch === epochRef.current) {
         setBusy(false)
@@ -187,9 +220,9 @@ export function XDrivePhotoHostDesiredPanel({
         setConfig(latest)
         setDraftEnabled(latest.desired_enabled)
       }
-    } catch {
+    } catch (err) {
       if (epoch === epochRef.current) {
-        setError('安全启用未确认入队；可能存在修订冲突、执行中请求或宿主异常，请重新读取状态，勿重复盲目提交。')
+        setError(xDriveCoreDependencyErrorMessage(err, 'photo-host', 'apply'))
       }
     } finally {
       if (epoch === epochRef.current) {
@@ -200,7 +233,7 @@ export function XDrivePhotoHostDesiredPanel({
   }
 
   const rollback = async () => {
-    if (!config || !source.rollbackPhotoHost || !rollbackTarget || busy) return
+    if (!config || !source.rollbackPhotoHost || !rollbackTarget || busy || dirty) return
     const targetRevision = Number(rollbackTarget)
     if (!Number.isSafeInteger(targetRevision) || targetRevision < 0 ||
         targetRevision >= config.revision ||
@@ -223,8 +256,8 @@ export function XDrivePhotoHostDesiredPanel({
         const revisions = await source.loadPhotoHostRevisions().catch(() => null)
         if (revisions && epoch === epochRef.current) setHistory(revisions.items)
       }
-    } catch {
-      if (epoch === epochRef.current) setError('宿主配置回滚失败或目标修订已过期，已保存配置未变。')
+    } catch (err) {
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'photo-host', 'rollback'))
     } finally {
       if (epoch === epochRef.current) {
         setBusy(false)
@@ -237,17 +270,32 @@ export function XDrivePhotoHostDesiredPanel({
     <Paper variant="outlined" data-xdrive-photo-host-desired sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}>
       <Stack spacing={1.5}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-          <Typography variant="subtitle2" fontWeight={700}>照片智能分析 · 共享宿主容器</Typography>
-          <Button size="small" variant="outlined" onClick={() => { void reload() }}
-            disabled={busy || loading || dirty || !source.loadPhotoHostConfig}>重新读取实际状态</Button>
+          <Typography variant="subtitle2" fontWeight={700}>
+            {section === 'config' ? '共享宿主 · 期望配置与安全启用'
+              : section === 'verify' ? '共享宿主 · 生效与模型检测'
+                : section === 'all' ? '共享宿主 · 配置、检测与历史' : '共享宿主 · 配置历史'}
+          </Typography>
+          {section === 'verify' && (
+            <Button size="small" variant="outlined" onClick={() => { void reload() }}
+              disabled={busy || loading || dirty || !source.loadPhotoHostConfig}>重新读取宿主配置</Button>
+          )}
         </Stack>
-        <XDriveStatusAlert tone="warning">
-          保存配置只记录期望；仅允许经管理员审计的固定宿主安全启用请求，绝不自动启用或重建正在运行的容器。
-          停用、重启和跨实例分析任务排空尚不支持。「全局分析策略」的任务准入开关与宿主启用互不等价。
-        </XDriveStatusAlert>
+        {(section === 'config' || section === 'all') && (
+          <XDriveStatusAlert tone="warning">
+            保存配置只记录期望；仅允许经管理员审计的固定宿主安全启用请求，绝不自动启用或重建正在运行的容器。
+            停用、重启和跨实例分析任务排空尚不支持。「全局分析策略」的任务准入开关与宿主启用互不等价。
+          </XDriveStatusAlert>
+        )}
         {loading && <Typography variant="body2" color="text.secondary">正在读取宿主配置…</Typography>}
         {config && (
           <Stack spacing={1}>
+            {(section === 'config' || section === 'all') && (
+              <Typography variant="caption" color="text.secondary">
+                已保存期望修订 #{config.revision} · {config.source === 'saved' ? '管理员持久化' : '沿用部署配置'}
+                {' · '}{config.desired_enabled ? '期望启用' : '期望停用'}（并非已应用）
+              </Typography>
+            )}
+            {(section === 'verify' || section === 'all') && (<>
             <Typography variant="body2" color="text.secondary">
               配置来源：{config.source === 'saved' ? '管理员已保存期望' : '尚无管理员期望修订（沿用部署配置）'}
               {' · '}期望修订：#{config.revision}
@@ -283,8 +331,11 @@ export function XDrivePhotoHostDesiredPanel({
                       : '已保存期望仍待安全启用（未生效）'}
             </Typography>
             <Typography variant="caption" color="text.secondary">{config.requirement}</Typography>
-            {section === 'verify' && (
-              <Stack spacing={1} data-xdrive-photo-host-preflight>
+            </>)}
+            {(section === 'verify' || section === 'all') && (
+              <Stack spacing={1} data-xdrive-photo-host-preflight
+                id={section === 'all' ? 'dependency-photo-face-runtime-verify-header' : undefined}
+                sx={{ scrollMarginTop: 72 }}>
                 <Typography variant="subtitle2">宿主与模型执行检测（只读）</Typography>
                 <Typography variant="caption" color="text.secondary">
                   手动检查固定宿主前置条件；只有已保存的启用修订取得可信宿主回执时，才对四类模型执行独立 Info 探针。
@@ -502,8 +553,9 @@ export function XDrivePhotoHostDesiredPanel({
                 )}
               </Stack>
             )}
-            {section === 'config' && (
-              <Stack spacing={1}>
+            {(section === 'config' || section === 'all') && (
+              <Stack spacing={1} id={section === 'all' ? 'dependency-photo-face-config-header' : undefined}
+                sx={{ scrollMarginTop: 72 }}>
                 <FormControlLabel control={<Switch checked={draftEnabled}
                   onChange={(_event, checked) => setDraftEnabled(checked)}
                   disabled={!config.editable || busy || !source.savePhotoHostConfig} />}
@@ -527,13 +579,14 @@ export function XDrivePhotoHostDesiredPanel({
                 </Typography>
               </Stack>
             )}
-            {section === 'history' && (
-              <Stack spacing={1}>
+            {(section === 'history' || section === 'all') && (
+              <Stack spacing={1} id={section === 'all' ? 'dependency-photo-face-history-header' : undefined}
+                sx={{ scrollMarginTop: 72 }}>
                 <Typography variant="subtitle2">审计历史与期望回滚</Typography>
                 {historyError && <XDriveStatusAlert tone="warning">{historyError}</XDriveStatusAlert>}
                 <TextField select label="选择较早的期望修订" size="small"
                   value={rollbackTarget} onChange={(event) => setRollbackTarget(event.target.value)}
-                  disabled={!source.rollbackPhotoHost || busy || !config.editable}>
+                  disabled={!source.rollbackPhotoHost || busy || !config.editable || dirty}>
                   <MenuItem value="">请选择历史修订</MenuItem>
                   {history.filter((item) => item.revision < config.revision).map((item) => (
                     <MenuItem key={item.revision} value={String(item.revision)}>
@@ -543,27 +596,27 @@ export function XDrivePhotoHostDesiredPanel({
                   ))}
                 </TextField>
                 <Box>
-                  <Button size="small" variant="outlined" disabled={!rollbackTarget || busy || !source.rollbackPhotoHost}
+                  <Button size="small" variant="outlined" disabled={!rollbackTarget || busy || dirty || !source.rollbackPhotoHost}
                     onClick={() => setConfirmRollback(true)}>创建回滚修订（不应用宿主）</Button>
                 </Box>
               </Stack>
             )}
           </Stack>
         )}
-        {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
-        {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
-        <XDriveConfirmDialog open={confirmSave} loading={busy}
+        {configSourceRef.current === source && error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
+        {configSourceRef.current === source && notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
+        <XDriveConfirmDialog open={confirmSave && config !== null} loading={busy}
           title="保存照片智能分析宿主期望状态？"
           description={'仅写入审计后的管理员目标修订，不启动、不停止容器，也不会改变正在进行的任务。目标：' +
             (draftEnabled ? '期望启用' : '期望停用')}
           confirmLabel="只保存期望配置" onCancel={() => setConfirmSave(false)}
           onConfirm={() => { void save() }} />
-        <XDriveConfirmDialog open={confirmApply} loading={busy}
+        <XDriveConfirmDialog open={confirmApply && config !== null} loading={busy}
           title="经审计安全启用照片智能分析共享宿主？"
           description="仅对保存的正向启用修订提交一次固定容器请求。服务端必须完成管理员审计、跨实例互斥和可信宿主检查；不会停止或重建已经运行的模型。提交不是生效证明，停用和重启仍不可用。"
           confirmLabel="确认安全启用请求" onCancel={() => setConfirmApply(false)}
           onConfirm={() => { void applyHost() }} />
-        <XDriveConfirmDialog open={confirmRollback} loading={busy}
+        <XDriveConfirmDialog open={confirmRollback && config !== null} loading={busy}
           title="创建共享宿主的新回滚修订？"
           description="历史回滚只创建新的期望状态，不会向 Host Manager 下发宿主机操作。"
           confirmLabel="仅回滚期望状态" onCancel={() => setConfirmRollback(false)}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
+import { xDriveCoreDependencyErrorMessage } from '../core-dependency-error'
 import type {
   XDriveMediaWorkerConfig,
   XDriveMediaWorkerUpdate,
@@ -49,15 +50,20 @@ const states: Record<XDriveMediaWorkerConfig['apply_state'], string> = {
 }
 
 export function XDriveMediaWorkerConfigPanel({
-  source, refreshID, section = 'config', onDirtyChange,
+  source, refreshID, section = 'config', onDirtyChange, onBusyChange,
 }: {
   source: XDriveMediaWorkerPort
   refreshID: number
-  section?: 'config' | 'history' | 'verify'
+  section?: 'config' | 'history' | 'verify' | 'all'
   onDirtyChange?: (dirty: boolean) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const epochRef = useRef(0)
-  const [config, setConfig] = useState<XDriveMediaWorkerConfig | null>(null)
+  const configSourceRef = useRef(source)
+  const [configState, setConfig] = useState<XDriveMediaWorkerConfig | null>(null)
+  const [configOwner, setConfigOwner] = useState<XDriveMediaWorkerPort | null>(null)
+  // Fence at render time: never paint another Server/Owner's old admin config.
+  const config = configOwner === source ? configState : null
   const [history, setHistory] = useState<XDriveMediaWorkerRevisionPage['items']>([])
   const [draftEnabled, setDraftEnabled] = useState(false)
   const [draftMemory, setDraftMemory] = useState('768')
@@ -76,12 +82,19 @@ export function XDriveMediaWorkerConfigPanel({
   useEffect(() => {
     let active = true
     const epoch = ++epochRef.current
-    setConfig(null)
-    setDraftEnabled(false)
-    setDraftMemory('768')
-    setDraftCPU('750')
-    setDraftPIDs('128')
-    setHistory([])
+    const sourceChanged = configSourceRef.current !== source
+    configSourceRef.current = source
+    // Read-only refresh never blanks or unmounts the last accepted editor.
+    // A changed Server/Owner source still resets all old scoped state.
+    if (sourceChanged) {
+      setConfigOwner(null)
+      setConfig(null)
+      setDraftEnabled(false)
+      setDraftMemory('768')
+      setDraftCPU('750')
+      setDraftPIDs('128')
+      setHistory([])
+    }
     setRollbackTarget('')
     setBusy(false)
     setLoading(true)
@@ -94,6 +107,7 @@ export function XDriveMediaWorkerConfigPanel({
     if (source.loadMediaWorkerConfig) {
       void source.loadMediaWorkerConfig().then((next) => {
         if (!active || epoch !== epochRef.current) return
+        setConfigOwner(source)
         setConfig(next)
         setDraftEnabled(next.desired_enabled)
         setDraftMemory(String(next.desired_memory_mib ?? 768))
@@ -107,7 +121,7 @@ export function XDriveMediaWorkerConfigPanel({
     } else {
       setLoading(false)
     }
-    if (section === 'history' && source.loadMediaWorkerRevisions) {
+    if ((section === 'history' || section === 'all') && source.loadMediaWorkerRevisions) {
       void source.loadMediaWorkerRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
@@ -118,19 +132,20 @@ export function XDriveMediaWorkerConfigPanel({
   }, [source, refreshID, section])
 
   const reload = async () => {
-    if (!source.loadMediaWorkerConfig || busy) return
+    if (!source.loadMediaWorkerConfig || busy || dirty) return
     const epoch = ++epochRef.current
     setLoading(true)
     setError('')
     try {
       const next = await source.loadMediaWorkerConfig()
       if (epoch !== epochRef.current) return
+      setConfigOwner(source)
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
       setDraftMemory(String(next.desired_memory_mib ?? 768))
       setDraftCPU(String(next.desired_cpu_milli ?? 750))
       setDraftPIDs(String(next.desired_pids_limit ?? 128))
-      if (section === 'history' && source.loadMediaWorkerRevisions) {
+      if ((section === 'history' || section === 'all') && source.loadMediaWorkerRevisions) {
         const result = await source.loadMediaWorkerRevisions().catch(() => null)
         if (result && epoch === epochRef.current) {
           setHistory(result.items)
@@ -138,7 +153,7 @@ export function XDriveMediaWorkerConfigPanel({
         }
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '生效检测失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'media-worker', 'refresh'))
     } finally {
       if (epoch === epochRef.current) setLoading(false)
     }
@@ -146,24 +161,32 @@ export function XDriveMediaWorkerConfigPanel({
 
   const save = async () => {
     if (!config || !source.saveMediaWorkerConfig || busy) return
+    // Local validation never reaches the Server; do not describe invalid
+    // input as a potentially committed write when sanitizing transport errors.
+    const memory = validMediaMemory(draftMemory)
+    if (memory === null) {
+      setError('Worker 内存限额必须为 256–4096 MiB，且是 128 MiB 的整数倍。')
+      setConfirmSave(false)
+      return
+    }
+    const cpu = validMediaCPU(draftCPU)
+    if (cpu === null) {
+      setError('Worker CPU 限额必须为 250–4000 mCPU，且是 250 mCPU 的整数倍。')
+      setConfirmSave(false)
+      return
+    }
+    const pids = validMediaPIDs(draftPIDs)
+    if (pids === null) {
+      setError('Worker PID 上限必须为 64–1024，且为 32 的整数倍。')
+      setConfirmSave(false)
+      return
+    }
     const epoch = ++epochRef.current
     setBusy(true)
     setConfirmSave(false)
     setError('')
     setNotice('')
     try {
-      const memory = validMediaMemory(draftMemory)
-      if (memory === null) {
-        throw new Error('Worker 内存限额必须为 256–4096 MiB，且是 128 MiB 的整数倍。')
-      }
-      const cpu = validMediaCPU(draftCPU)
-      if (cpu === null) {
-        throw new Error('Worker CPU 限额必须为 250–4000 mCPU，且是 250 mCPU 的整数倍。')
-      }
-      const pids = validMediaPIDs(draftPIDs)
-      if (pids === null) {
-        throw new Error('Worker PID 上限必须为 64–1024，且为 32 的整数倍。')
-      }
       const next = await source.saveMediaWorkerConfig({
         revision: config.revision, enabled: draftEnabled,
         memory_mib: memory, cpu_milli: cpu, pids_limit: pids,
@@ -180,14 +203,14 @@ export function XDriveMediaWorkerConfigPanel({
         if (page && epoch === epochRef.current) setHistory(page.items)
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '保存启停配置失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'media-worker', 'save'))
     } finally {
       if (epoch === epochRef.current) setBusy(false)
     }
   }
 
   const apply = async () => {
-    if (!config || !source.applyMediaWorker || busy) return
+    if (!config || !source.applyMediaWorker || busy || dirty) return
     const epoch = ++epochRef.current
     setBusy(true)
     setConfirmApply(false)
@@ -200,14 +223,17 @@ export function XDriveMediaWorkerConfigPanel({
       const next = await source.loadMediaWorkerConfig?.().catch(() => null)
       if (next && epoch === epochRef.current) setConfig(next)
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : 'Host Manager 应用请求失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'media-worker', 'apply'))
     } finally {
       if (epoch === epochRef.current) setBusy(false)
     }
   }
 
   const rollback = async () => {
-    if (!config || !source.rollbackMediaWorker || busy || !rollbackTarget) return
+    if (!config || !source.rollbackMediaWorker || busy || !rollbackTarget || dirty) return
+    const targetRevision = Number(rollbackTarget)
+    if (!Number.isSafeInteger(targetRevision) || targetRevision < 0 ||
+        targetRevision >= config.revision || !history.some((item) => item.revision === targetRevision)) return
     const epoch = ++epochRef.current
     setBusy(true)
     setConfirmRollback(false)
@@ -215,7 +241,7 @@ export function XDriveMediaWorkerConfigPanel({
     setNotice('')
     try {
       const next = await source.rollbackMediaWorker({
-        revision: config.revision, target_revision: Number(rollbackTarget),
+        revision: config.revision, target_revision: targetRevision,
       })
       if (epoch !== epochRef.current) return
       setConfig(next)
@@ -230,46 +256,68 @@ export function XDriveMediaWorkerConfigPanel({
         if (page && epoch === epochRef.current) setHistory(page.items)
       }
     } catch (err) {
-      if (epoch === epochRef.current) setError(err instanceof Error ? err.message : '回滚期望配置失败。')
+      if (epoch === epochRef.current) setError(xDriveCoreDependencyErrorMessage(err, 'media-worker', 'rollback'))
     } finally {
       if (epoch === epochRef.current) setBusy(false)
     }
   }
 
+  const dirty = Boolean(config && (
+    draftEnabled !== config.desired_enabled ||
+    draftMemory !== String(config.desired_memory_mib ?? 768) ||
+    draftCPU !== String(config.desired_cpu_milli ?? 750) ||
+    draftPIDs !== String(config.desired_pids_limit ?? 128)
+  ))
   const operationActive = config?.host.state === 'queued' || config?.host.state === 'running'
   const canApply = !!config && config.revision > 0 && config.apply_supported &&
     typeof config.desired_memory_mib === 'number' && typeof config.desired_cpu_milli === 'number' &&
     typeof config.desired_pids_limit === 'number' &&
-    config.apply_state !== 'applied' && !operationActive
+    config.apply_state !== 'applied' && !operationActive && !dirty
   const canEdit = !!config?.editable && typeof config?.desired_memory_mib === 'number' &&
     typeof config?.desired_cpu_milli === 'number' && typeof config?.desired_pids_limit === 'number' &&
     !busy && !operationActive
   useEffect(() => {
-    onDirtyChange?.(Boolean(config && (
-      draftEnabled !== config.desired_enabled ||
-      draftMemory !== String(config.desired_memory_mib ?? 768) ||
-      draftCPU !== String(config.desired_cpu_milli ?? 750) ||
-      draftPIDs !== String(config.desired_pids_limit ?? 128)
-    )))
-  }, [onDirtyChange, config, draftEnabled, draftMemory, draftCPU, draftPIDs])
+    onDirtyChange?.(dirty)
+    return () => onDirtyChange?.(false)
+  }, [onDirtyChange, dirty])
+  useEffect(() => {
+    onBusyChange?.(loading || busy || confirmSave || confirmApply || confirmRollback)
+  }, [onBusyChange, loading, busy, confirmSave, confirmApply, confirmRollback])
+  useEffect(() => () => { onBusyChange?.(false) }, [onBusyChange])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-media-worker-control>
       <Stack spacing={1.5}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-          <Typography variant="subtitle2" fontWeight={700}>Media Worker · 全局启停与生效验证</Typography>
-          <Button size="small" variant="outlined" disabled={busy || loading || !source.loadMediaWorkerConfig}
-            onClick={() => { void reload() }}>验证实际生效</Button>
+          <Typography variant="subtitle2" fontWeight={700}>
+            {section === 'config' ? 'Media Worker · 期望配置与应用'
+              : section === 'verify' ? 'Media Worker · 实际生效'
+                : section === 'all' ? 'Media Worker · 配置、检测与历史' : 'Media Worker · 历史修订'}
+          </Typography>
+          {section === 'verify' && (
+            <Button size="small" variant="outlined" disabled={busy || loading || !source.loadMediaWorkerConfig}
+              onClick={() => { void reload() }}>验证实际生效</Button>
+          )}
         </Stack>
-        <Typography variant="body2" color="text.secondary">
-          仅启停独立 FFmpeg Media Worker，不涉及 Server、数据库、上传下载或同步容器。
-          首先保存期望配置及审计，再通过受限 Host Manager 执行；未经实际验证不会显示生效。
-          当前仅有运行时健康探针，媒体作业处理仍待后续接入。资源参数仅作用于独立 Worker 容器。
-        </Typography>
+        {(section === 'config' || section === 'all') && (
+          <Typography variant="body2" color="text.secondary">
+            仅控制独立 FFmpeg Media Worker，不影响数据库、文件存储及同步。
+            保存期望配置后需明确执行宿主应用，实际生效要另行验证。
+          </Typography>
+        )}
         {config ? (
           <>
-            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}>
+            {(section === 'config' || section === 'all') && (
+              <Typography variant="caption" color="text.secondary">
+                已保存修订 #{config.revision} · {config.source === 'saved' ? '管理员配置' : '默认未管理'}
+                {' · '}{config.desired_enabled ? '期望启用' : '期望停用'}（尚需核对实际生效）
+              </Typography>
+            )}
+            {(section === 'verify' || section === 'all') && (<>
+            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}
+              id={section === 'all' ? 'dependency-media-worker-runtime-verify-header' : undefined}
+              sx={{ scrollMarginTop: 72 }}>
               <Chip size="small" variant="outlined"
                 color={config.apply_state === 'applied' ? 'success' :
                   config.apply_state === 'failed' || config.apply_state === 'unavailable' ? 'error' : 'default'}
@@ -294,7 +342,11 @@ export function XDriveMediaWorkerConfigPanel({
                 (config.host.observed_enabled ? '（Docker 实际限制已核验）' : '（停用后配置文件已核验）') : '未核验'}
               {' · '}执行状态：{config.host.state}
             </Typography>
-            {section === 'config' && (<>
+            </>)}
+            {(section === 'config' || section === 'all') && (<Box
+              id={section === 'all' ? 'dependency-media-worker-config-header' : undefined}
+              sx={{ scrollMarginTop: 72 }}>
+              {section === 'all' && <Typography variant="subtitle2">配置与修改</Typography>}
             <FormControlLabel
               control={<Switch checked={draftEnabled} disabled={!canEdit}
                 onChange={(event) => setDraftEnabled(event.target.checked)} />}
@@ -353,13 +405,14 @@ export function XDriveMediaWorkerConfigPanel({
                 '。启用时仅重建 media-worker，并实际核验容器内存/CPU/PID 限制和 FFmpeg 探针。'}
               confirmLabel="提交受限执行" onCancel={() => setConfirmApply(false)}
               onConfirm={() => { void apply() }} />
-            </>)}
-            {section === 'history' && source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
-              <Box>
+            </Box>)}
+            {(section === 'history' || section === 'all') && source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
+              <Box id={section === 'all' ? 'dependency-media-worker-history-header' : undefined}
+                sx={{ scrollMarginTop: 72 }}>
                 <Typography variant="subtitle2" fontWeight={700}>历史配置与安全回滚</Typography>
                 <TextField select fullWidth size="small" label="选择历史修订" value={rollbackTarget}
                   sx={{ mt: 1 }} onChange={(event) => setRollbackTarget(event.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit || dirty}
                   helperText="回滚产生新的审计修订；必须再次由 Host Manager 实际应用。">
                   <MenuItem value="">请选择较早修订</MenuItem>
                   {history.filter((item) => item.revision < config.revision).map((item) => (
@@ -368,7 +421,7 @@ export function XDriveMediaWorkerConfigPanel({
                     </MenuItem>
                   ))}
                 </TextField>
-                <Button size="small" variant="outlined" sx={{ mt: 1 }} disabled={!canEdit || !rollbackTarget}
+                <Button size="small" variant="outlined" sx={{ mt: 1 }} disabled={!canEdit || dirty || !rollbackTarget}
                   onClick={() => setConfirmRollback(true)}>保存历史回滚修订</Button>
                 <XDriveConfirmDialog open={confirmRollback} loading={busy}
                   title="确认恢复 Media Worker 历史期望配置"
@@ -384,8 +437,8 @@ export function XDriveMediaWorkerConfigPanel({
             {loading ? '正在读取 Media Worker 状态…' : '此 Server/Agent 版本尚未支持实际启停控制；不会提供无效开关。'}
           </Typography>
         )}
-        {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
-        {notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
+        {configSourceRef.current === source && error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
+        {configSourceRef.current === source && notice && <XDriveStatusAlert tone="good">{notice}</XDriveStatusAlert>}
       </Stack>
     </Paper>
   )

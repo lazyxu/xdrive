@@ -110,13 +110,13 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   assert.ok(page.includes('source.load()'))
   assert.ok(agents.includes('系统依赖'))
   assert.ok(page.includes('XDriveWorkspaceSurface'))
-  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"))
+  assert.ok(page.includes("onDirtyChange={selectedPage === 'photo-face' ? setChildDirty : undefined}"))
   assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}"))
   assert.ok(page.includes('onDirtyChange={setCaddyAliDirty}'))
   assert.equal(page.includes('docker.sock'), false)
 })
 
-test('Only an opened service panel fetches its configuration and history', () => {
+test('only the active service panel loads config; flat core/media panels include history', () => {
   const panels = [
     ['PostgresPoolConfigPanel.tsx', 'PostgresPool'],
     ['SourceWorkerConfigPanel.tsx', 'SourceWorker'],
@@ -127,7 +127,8 @@ test('Only an opened service panel fetches its configuration and history', () =>
     const body = read('ui/shared/src/mui/' + name)
     assert.ok(body.includes("section = 'config'"), 'missing section scope: '+name)
     const allowFullHistory = name === 'PostgresPoolConfigPanel.tsx' ||
-      name === 'SourceWorkerConfigPanel.tsx'
+      name === 'SourceWorkerConfigPanel.tsx' ||
+      name === 'MediaWorkerConfigPanel.tsx'
     assert.ok(body.includes((allowFullHistory
       ? "(section === 'history' || section === 'all') && source.load"
       : "section === 'history' && source.load") + id + "Revisions"),
@@ -295,7 +296,7 @@ test('Baidu capability links require real JSAPI4 API rather than retired Static 
     { service: 'baidu-map', tab: 'verify' })
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
-  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
+  assert.match(page, /mode="all"/)
 })
 
 test('shared Web and Desktop service rows expose true configuration ownership, not fake activation', () => {
@@ -389,21 +390,21 @@ test('Status refresh preserves mounted editor, saved draft and last successful i
     'health refresh must not unmount active forms; only a source change may clear inventory')
   assert.ok(page.includes("  }, [source, refreshID])"),
     'the independent inventory effect must respond to explicit refresh')
-  assert.ok(page.includes("selectedPage === 'media-worker' && currentTab !== 'status'"))
+  assert.ok(page.includes("selectedPage === 'media-worker' && currentTab === 'status'"))
   assert.ok(page.includes("<XDriveCoreDependencyDetail"))
   const core = read('ui/shared/src/mui/CoreDependencyDetail.tsx')
   assert.ok(core.includes('section="all" singlePage onDirtyChange={onDirtyChange}'))
   assert.ok(core.includes('if (controlsLocked) return'))
-  assert.ok(page.includes("section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"))
-  assert.ok(page.includes('refreshID={0}'),
-    'read-only inventory refresh must not bump editor instance generations')
+  assert.ok(page.includes('section="all" onDirtyChange={setChildDirty} onBusyChange={setRuntimeBusy}'))
+  assert.ok(page.includes('refreshID={refreshID}'),
+    'only one active runtime editor refreshes its configuration alongside status')
   assert.ok(page.includes('refreshID={caddyEvidenceRevision}'),
     'Caddy preflight changes only when its own target credentials/revision changes')
 })
 
 test('Runtime verification tabs load exact service-specific status without eager history or edit controls', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  assert.ok(page.includes("const selectedRuntimeSection = currentTab === 'verify' ? 'verify'"))
+  assert.ok(page.includes("section={selectedPage === 'photo-face' ? 'all' : 'verify'}"))
   for (const [name, key] of [
     ['PostgresPoolConfigPanel.tsx', 'PostgresPool'],
     ['SourceWorkerConfigPanel.tsx', 'SourceWorker'],
@@ -415,9 +416,7 @@ test('Runtime verification tabs load exact service-specific status without eager
     assert.ok(panel.includes("section === 'history'"), name)
     const flatCore = name === 'PostgresPoolConfigPanel.tsx' ||
       name === 'SourceWorkerConfigPanel.tsx'
-    assert.ok(panel.includes((flatCore
-      ? "(section === 'history' || section === 'all') && source.load"
-      : "if (section === 'history' && source.load") + key + "Revisions)"),
+    assert.ok(panel.includes("(section === 'history' || section === 'all') && source.load" + key + "Revisions)"),
       'incorrect history scope for ' + name)
     assert.ok(panel.includes('const reload = async () => {'), name)
   }
@@ -439,26 +438,26 @@ test('Runtime verification tabs load exact service-specific status without eager
 })
 
 
-test('Caddy and core services are flat; remaining services retain their lazy history', () => {
+test('Caddy, core services and remaining dependencies share persistent detail sections', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const workspace = read('ui/shared/src/mui/CaddyDetailV1.tsx')
   const editor = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
   const preflight = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
 
-  // Other services retain their existing accordion, but core services
-  // bypass it just as Caddy does.
+  // All fixed service pages now use stable, always-visible sections rather
+  // than disclosure state; read-only history remains a separate fenced GET.
   const core = read('ui/shared/src/mui/CoreDependencyDetail.tsx')
   assert.ok(page.includes('<XDriveCoreDependencyDetail'))
   assert.ok(core.includes('section="all" singlePage'))
   assert.ok(core.includes('data-xdrive-core-dependency-flat'))
-  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"))
-  assert.ok(page.includes('<AccordionSummary'))
-  assert.ok(page.includes('<AccordionDetails'))
+  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify' &&"))
+  assert.ok(page.includes('data-xdrive-flat-dependency-section={sectionTab}'))
+  assert.equal(page.includes('<AccordionSummary'), false)
+  assert.equal(page.includes('<AccordionDetails'), false)
   assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"))
   assert.ok(page.includes("if (!historyExpanded) return"))
   assert.ok(page.includes("}, [source, selectedPage, historyExpanded])"))
-  assert.ok(page.includes("if (!next && unsavedRef.current) return"))
   assert.ok(page.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
 
   // Caddy has no accordion or editable lazy history; recent Host terminal history is readonly.
@@ -530,34 +529,26 @@ test('Photo model details expose shared manual verification but only the host ow
     'all model diagnostics must use the one shared existing host panel')
   assert.ok(page.includes("currentTab === 'verify')) &&"),
     'submodel verification must not mount a mutable host section')
-  assert.ok(hostPanel.includes("if (section !== 'verify' || !source.loadPhotoHostPreflight"),
+  assert.ok(hostPanel.includes("if ((section !== 'verify' && section !== 'all') || !source.loadPhotoHostPreflight"),
     'private model inference must remain behind an explicit administrator click')
   assert.ok(hostPanel.includes('source.loadPhotoHostPreflight()'))
 })
 
 
-test('SD-UI-V1.4: status and verification share one accordion without eager probes or broken deep links', () => {
+test('all remaining system dependency details stay visible with safe in-page anchors', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"),
-    'verify must not render a duplicate top-level accordion')
-  assert.ok(page.includes("sectionTab === 'status' && selectedTabs.includes('verify')"),
-    'one combined header retains a status and verification affordance')
-  assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"),
-    'expensive verification panels must remain unmounted until opened')
-  assert.ok(page.includes("data-xdrive-unified-verify-toggle aria-expanded={showVerify}"),
-    'inline verification control must expose its disclosure state')
-  assert.ok(page.includes('expandDependencySection(prior, selectedPage, next.tab)'),
-    'legacy verify links must reopen parent status accordion and verification content')
-  assert.ok(page.includes('expandDependencySection(prior, selectedPage, incoming.tab)'),
-    'external browser back/forward must preserve verify anchors')
-  assert.ok(page.includes('id={`dependency-${selectedPage}-verify-header`}'),
-    'legacy verify scroll target must still exist while expanded')
-  assert.ok(page.includes("currentTab === 'verify' && !showVerify"),
-    'hidden verification cannot be mistaken for visible scrolled-to panel')
-  assert.ok(page.includes("if (!next && unsavedRef.current) return"),
-    'editing and secret-reveal safety gates cannot regress')
-  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"),
-    'history must still be fetched only on deliberate expansion')
-  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'verify'"),
-    'original Caddy read-only host preflight remains separate from applying config')
+  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify' &&"))
+  assert.ok(page.includes("sectionTab === 'status' && selectedTabs.includes('verify')"))
+  assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"))
+  assert.ok(page.includes('data-xdrive-flat-dependency-section={sectionTab}'))
+  assert.ok(page.includes('data-xdrive-flat-dependency-refresh={selectedPage}'))
+  assert.equal(page.includes('data-xdrive-unified-verify-toggle'), false)
+  assert.equal(page.includes('expandDependencySection('), false)
+  assert.ok(page.includes('id={`dependency-${selectedPage}-verify-header`}'))
+  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"))
+  assert.ok(page.includes("if (!historyExpanded) return"))
+  assert.ok(page.includes("currentTab === 'verify' && !showVerify"))
+  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'verify'"))
+  assert.ok(page.includes('unsavedRef.current'))
+  assert.ok(page.includes('currentTab === \'history\' && hasUnsavedEdits'))
 })

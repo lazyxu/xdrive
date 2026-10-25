@@ -1,8 +1,8 @@
 // Shared Web/Mobile Web/Desktop administrator errors for the core-service
 // settings panels and the global service inventory. Never echo arbitrary
 // transport, Agent or backend diagnostics containing DSNs, paths or credentials.
-export type XDriveCoreService = 'postgres' | 'worker' | 'system'
-export type XDriveCoreOperation = 'refresh' | 'save' | 'rollback'
+export type XDriveCoreService = 'postgres' | 'worker' | 'media-worker' | 'photo-host' | 'geo-names' | 'photo-auto' | 'baidu-jsapi' | 'system'
+export type XDriveCoreOperation = 'refresh' | 'save' | 'rollback' | 'apply'
 
 function recognizedHTTPStatus(error: unknown): number | null {
   const obj = error != null && typeof error === 'object'
@@ -22,8 +22,12 @@ export function xDriveCoreDependencyErrorMessage(
   error: unknown, service: XDriveCoreService, operation: XDriveCoreOperation,
 ): string {
   const label = service === 'postgres' ? 'PostgreSQL 连接池'
-    : service === 'worker' ? '后台 Worker' : '系统依赖'
-  const action = operation === 'save' ? '保存' : operation === 'rollback' ? '回滚' : '刷新'
+    : service === 'worker' ? '后台 Worker' : service === 'media-worker' ? 'Media Worker'
+      : service === 'photo-host' ? 'Photo Intelligence 宿主'
+      : service === 'geo-names' ? 'GeoNames 地名索引'
+        : service === 'photo-auto' ? '全局自动分析策略'
+          : service === 'baidu-jsapi' ? '动态地图 Browser AK' : '系统依赖'
+  const action = operation === 'save' ? '保存' : operation === 'rollback' ? '回滚' : operation === 'apply' ? '应用' : '刷新'
   const status = recognizedHTTPStatus(error)
   switch (status) {
     case 400:
@@ -52,10 +56,11 @@ export function xDriveCoreDependencyErrorMessage(
   const message = typeof obj?.message === 'string' ? obj.message :
     error instanceof Error ? error.message : ''
   if (/failed to fetch|fetch failed|networkerror|network request failed|econnrefused|timed?\s*out/i.test(message)) {
-    return label + action + '无法连接 Server / Desktop Agent；请检查网络与服务状态。'
+    return label + action + '无法连接 Server / Desktop Agent；请检查网络与服务状态。' +
+      (operation === 'refresh' ? '' : ' 操作结果未确认，可能已经提交；请核对当前配置，勿盲目重试。')
   }
-  if (operation === 'save') {
-    return label + '保存结果未确认，可能已经提交。草稿已保留；请先核对当前配置，勿盲目重试。'
+  if (operation === 'save' || operation === 'apply') {
+    return label + (operation === 'apply' ? '应用' : '保存') + '结果未确认，可能已经提交。草稿已保留；请先核对当前配置，勿盲目重试。'
   }
   if (operation === 'rollback') {
     return label + '回滚结果未确认，可能已经提交。请核对当前配置及历史，勿盲目重试。'

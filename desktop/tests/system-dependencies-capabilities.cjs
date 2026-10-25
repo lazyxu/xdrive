@@ -313,10 +313,10 @@ test('shared Media Worker verify explicitly separates real health from applied H
   assert.match(panel, /config\.host\.cpu_verified/)
   assert.match(panel, /config\.host\.pids_verified/)
   assert.match(panel, /config\.host\.applied_revision/)
-  assert.match(panel, /\{section === 'config' && \(<>/)
-  assert.match(panel, /\{section === 'history' && source\.loadMediaWorkerRevisions/)
+  assert.match(panel, /\{\(section === 'config' \|\| section === 'all'\) && \(<Box/)
+  assert.match(panel, /\{\(section === 'history' \|\| section === 'all'\) && source\.loadMediaWorkerRevisions/)
   // Readonly snapshot refresh deliberately must not remount editor or submit apply.
-  assert.match(page, /<XDriveMediaWorkerConfigPanel source=\{source\} refreshID=\{0\}/)
+  assert.match(page, /<XDriveMediaWorkerConfigPanel source=\{source\} refreshID=\{refreshID\}/)
   for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
     assert.equal(page.includes(forbidden), false)
   }

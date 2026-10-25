@@ -81,9 +81,9 @@ test('shared Web/Desktop/Mobile Web panel separates saving, audited enable and r
   assert.ok(model.includes('apply_supported: boolean'))
   assert.ok(exports.includes("export * from './PhotoHostDesiredPanel'"))
   assert.ok(page.includes("case 'photo-face': return ['status', 'config', 'verify', 'history']"))
-  assert.ok(page.includes("selectedPage === 'photo-face' && currentTab !== 'status'"))
+  assert.ok(page.includes("selectedPage === 'photo-face' && currentTab === 'status'"))
   assert.ok(page.includes("XDrivePhotoHostDesiredPanel source={source}"))
-  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"),
+  assert.ok(page.includes("onDirtyChange={selectedPage === 'photo-face' ? setChildDirty : undefined}"),
     'only mutable Config can report a dirty draft; Verify/History cannot reset it')
   assert.ok(page.includes("service: 'photo-face', tab: 'config'"))
   for (const m of ['loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostRevisions', 'rollbackPhotoHost']) {
@@ -100,7 +100,7 @@ test('shared Web/Desktop/Mobile Web panel separates saving, audited enable and r
   assert.ok(panel.includes('保存期望配置（不应用）'))
   assert.ok(panel.includes('创建回滚修订（不应用宿主）'))
   assert.ok(panel.includes('没有操作任何宿主容器'))
-  assert.ok(panel.includes("section === 'history' && source.loadPhotoHostRevisions"))
+  assert.ok(panel.includes("(section === 'history' || section === 'all') && source.loadPhotoHostRevisions"))
   assert.ok(panel.includes('source.applyPhotoHost({ revision: config.revision })'))
   assert.ok(panel.includes('安全启用共享宿主（仅启用）'))
   assert.ok(panel.includes('具体模型尚未验证') || panel.includes('模型尚未验证'))

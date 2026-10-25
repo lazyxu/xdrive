@@ -36,7 +36,7 @@ test('one service title and four honest axes, with verbose hints only after disc
   assert.match(serviceRow, /service.id !== 'baidu-map'/)
   assert.match(page, /\{selectedPage === 'photo-auto' && \(\s*<Typography/)
   assert.match(page, /data-xdrive-unified-detail-intro/)
-  assert.match(page, /selectedTabs\.filter\(\(tab\) => tab !== 'verify'\)/)
+  assert.match(page, /selectedTabs\.filter\(\(tab\) => tab !== 'verify' &&/)
   for (const name of ['database','storage','background-worker','caddy','media-worker',
     'photo-face','photo-smart','photo-semantic','photo-creative','baidu-map','geonames']) {
     assert.ok(nav.includes("'"+name+"'"), 'must share rule for '+name)
@@ -45,7 +45,7 @@ test('one service title and four honest axes, with verbose hints only after disc
 test('Server AK and signed dynamic JSAPI4 remain separate authorities', () => {
   assert.match(read('ui/shared/src/mui/BaiduServerAPIDetail.tsx'), /XDriveSensitiveField label="Server AK"/)
   assert.match(page, /<XDriveBaiduJSAPIDesiredPanel source=\{source\}/)
-  assert.match(page, /mode=\{currentTab === 'verify' \? 'verify' : 'config'\}/)
+  assert.match(page, /mode="all"/)
   assert.doesNotMatch(page, /data-xdrive-baidu-static-unverified-hint|固定 128×128|verifyBaiduMap\(/)
   assert.equal((panel.match(/XDriveBaiduJSAPIConfigSnapshot config=/g) || []).length, 1)
   assert.match(snapshot, /detailsOpen && \(/)

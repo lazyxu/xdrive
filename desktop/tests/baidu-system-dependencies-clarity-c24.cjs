@@ -27,8 +27,8 @@ test('Admin Server AK remains separate from the signed dynamic JSAPI release', (
 })
 
 test('JSAPI Browser AK configuration is separate from signed production release evidence', () => {
-  assert.match(jsapi, /mode === 'config' \? '百度 JSAPI 4\.0 · Browser AK' : '动态地图 · Server 发布授权'/)
-  assert.match(jsapi, /config && mode === 'config'/)
+  assert.match(jsapi, /mode === 'all' \? 'Browser AK 配置与动态地图检测'/)
+  assert.match(jsapi, /config && mode !== 'verify'/)
   assert.match(jsapi, /data-xdrive-baidu-jsapi4-release-state/)
   assert.match(jsapi, /data-xdrive-baidu-jsapi4-release-blockers/)
   assert.match(jsapi, /config\.release_blockers\.map\(reason =>/)
