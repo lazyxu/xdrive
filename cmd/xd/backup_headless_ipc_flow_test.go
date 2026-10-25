@@ -156,20 +156,17 @@ func TestHeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent(t *testing.T) 
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	id, err := runBackupInit(ctx, agent, "Photos", path, 12,
-		sourceschedule.Spec{Type: "interval", Expression: "6h"}, &output)
+	id, err := runBackupInitAndMaybeOnce(ctx, agent, "Photos", path, 12,
+		sourceschedule.Spec{Type: "interval", Expression: "6h"}, true, &output)
 	if err != nil || id != 42 {
 		t.Fatalf("CLI bootstrap over same owning Agent failed: %d %v", id, err)
 	}
 	mu.Lock()
-	if runs != 0 {
-		t.Fatal("init started an implicit upload before explicit once")
+	if runs != 1 {
+		t.Fatal("explicit init --run-now failed to start exactly one owning Agent run")
 	}
 	mu.Unlock()
-	var first, unchanged bytes.Buffer
-	if err := runBackupOnce(ctx, agent, id, 250*time.Millisecond, &first); err != nil {
-		t.Fatal(err)
-	}
+	var unchanged bytes.Buffer
 	// A new xd invocation reconnects through discovery instead of keeping
 	// a private in-process upload queue. The owning Agent and Source remain
 	// unchanged across this client-side process-equivalent restart.
@@ -180,10 +177,10 @@ func TestHeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent(t *testing.T) 
 	if err := runBackupOnce(ctx, reattached, id, 250*time.Millisecond, &unchanged); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(first.String(), "uploaded=1") ||
+	if !strings.Contains(output.String(), "uploaded=1") ||
 		!strings.Contains(unchanged.String(), "unchanged=1") ||
-		strings.Contains(first.String()+unchanged.String(), "backup_complete") {
-		t.Fatalf("CLI lost per-file result or invented full backup: %q %q", first.String(), unchanged.String())
+		strings.Contains(output.String()+unchanged.String(), "backup_complete") {
+		t.Fatalf("CLI lost per-file result or invented full backup: %q %q", output.String(), unchanged.String())
 	}
 	want := []string{
 		"POST /v1/device-backups/local-cli-preflight", "POST /v1/sources",

@@ -1,10 +1,10 @@
 # xd Backup-only CLI (same owning Agent as Desktop)
 
-> **Architecture decision (2026-10-25):** [CLI-only Backup architecture](./xd-headless-backup-architecture.md) — B internally (`xd` + same-user `xdrive-agent`), C-like unified `xd backup` experience. Desktop is optional for the target headless deployment. **Current status:** existing-source CLI commands are released; first-run `xd backup init`, the no-mount Agent runtime and CLI-only packaging are implemented in Draft PR #2585, pending source-exact CI and merge (not yet released).
+> **Architecture decision (2026-10-25):** [CLI-only Backup architecture](./xd-headless-backup-architecture.md) — B internally (`xd` + same-user `xdrive-agent`), C-like unified `xd backup` experience. Desktop is optional for the target headless deployment. **Current status:** standalone `xd backup init` and no-mount Agent packaging merged via [#2585](https://github.com/lazyxu/xdrive/pull/2585); the two CLI-only Snapshot archives are published. This documents the merged source, not production installation acceptance.
 
 **Architecture:** The `xd` CLI controls the **same owning Agent** as Desktop; it does not implement another scanner, durable queue, uploader or cloud CAS writer. Linux/Windows Desktop UI is optional. In the headless distribution, `xd` auto-starts `xdrive-agent --backup-only`, without mounting a filesystem or requiring Electron.
 
-## Headless / Desktop-free setup (PR #2585 — verify exact CI before release)
+## Headless / Desktop-free setup (merged PR #2585)
 
 Install the CLI-only Linux tarball or Windows ZIP containing both `xd` and `xdrive-agent`. Run both as the **same OS user** who owns the local files and their protected credential store. The remote xDrive Server must already be reachable and the account must exist.
 
@@ -21,10 +21,11 @@ xd backup targets --parent 123
 
 # Single Agent-driven setup: read-only native preflight, device enrollment,
 # paused Source creation, native Root binding, optional schedule.
-xd backup init --name Photos --path /data/photos --target-id 123 --every 6h
+xd backup init --name Photos --path /data/photos --target-id 123 --every 6h --run-now
 
-# Take the returned Source ID, then arm the schedule via a verified run.
-xd backup once --source 42
+# The explicit --run-now uses the same Agent runner and arms the schedule
+# after a verified first file-level run. Use 'once' separately if you omit it.
+# xd backup once --source 42
 xd backup status --source 42
 xd backup history --source 42
 
@@ -40,11 +41,16 @@ and no CLI argument can select a foreign Device. An ambiguous Source creation
 is not blindly repeated: inspect the list of same-device paused drafts first.
 A failed Root bind leaves its Source paused for an explicit `bind` command.
 
-The `init` command **does not silently start** the first upload. A later
-`xd backup once --source ID` begins the existing persisted per-file runner;
-after saving or changing a schedule, that explicit verified run arms automatic
-incremental admissions. For backups with weak Linux inode identity, use the
-same fail-closed file/Root preconditions as the Desktop Backup-only Runner;
+By default, `init` **does not silently start** an upload. Pass explicit
+`--run-now` to start one run using the existing owning Agent immediately after
+Source creation, Root binding and optional schedule save are confirmed.
+Without this flag, run `xd backup once --source ID` separately; after saving
+or changing a schedule, a verified run arms automatic incremental admissions.
+If the first run fails, the Source and original durable outcome are preserved
+for `status` / `history`; no replacement Operation is created.
+
+For backups with weak Linux inode identity, use the same fail-closed file/Root
+preconditions as the Desktop Backup-only Runner;
 strong identity is only additionally mandatory for dangerous deletion modes,
 which the CLI deliberately does not support.
 
@@ -95,10 +101,10 @@ xd backup list
 xd backup once --source 42
 
 # Persist Agent-only scheduled incrementals (default six hours).
-# IMPORTANT: run once AFTER setting/changing the schedule. This modifies the
-# Source revision, and automatic admission requires a fresh verified checkpoint.
-xd backup auto --source 42 --every 6h
-xd backup once --source 42
+# The explicit --run-now performs the first verified run on the new Source
+# revision; otherwise invoke 'xd backup once --source 42' separately.
+xd backup auto --source 42 --every 6h --run-now
+# Without --run-now, use: xd backup once --source 42
 
 # Alternatives (choose one): five-field cron with IANA timezone, 1h/24h,
 # or explicit manual-only policy.
@@ -146,10 +152,10 @@ The wrapper has a bounded 5-second termination grace period.
   + interval/cron scheduler; both reuse the exact same persistent per-file
   original SQL Operation and ordinary `UploadSession/chunks/Finalize`.
 - Files with symlinks/unsafe kinds are not traversed and appear as unsupported.
-  A CLI exit status of zero for `once` means only an examined per-file run
+  A CLI exit status of zero for `once` or an explicit `--run-now` means only an examined per-file run
   with no unsupported/uncertain file counts. **It is not**
   `backup_complete`, `retirement_safe`, or `current_cas_verified`.
-  Otherwise `once` exits nonzero, and `status/history` show the reason.
+  Otherwise the explicit run exits nonzero, and `status/history` show the reason.
 - Cancel/pause are **next-file-boundary scheduling controls only**; no
   assertion of physical remote cancellation. A signed original receipt is
   required for per-file COMMIT. Unexpected/uncertain outcomes are not silently
