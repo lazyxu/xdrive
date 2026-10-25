@@ -1012,6 +1012,39 @@ async function testMobilePhotoDrawer(browser,mode,port){
       returned.ranges>opened&&returned.errors.length===0&&errors.length===0)
     record(mode+': mobile isolated SDK never accesses private media',
       requests.every(item=>item.host!=='child'||!item.path.startsWith('/api/v1/')))
+    // Both SDK runtimes share the same Parent overlay. Test actual rendered
+    // menus after the real touch/Viewer round-trip, across narrow iPhone widths.
+    // This catches a filter panel positioned from the Filter button instead of
+    // the trailing toolbar (which clips its left edge on 320/390px screens).
+    for (const width of [320,390,430]) {
+      await page.setViewportSize({width,height:844})
+      for (const kind of ['filter','more']) {
+        const menu=page.locator('[data-xdrive-places-map-'+kind+'-menu]')
+        await menu.locator('summary').first().click()
+        await page.waitForFunction(selector=>
+          Boolean(document.querySelector(selector)?.open),
+          '[data-xdrive-places-map-'+kind+'-menu]')
+        const bounds=await page.evaluate(kind=>{
+          const panel=document.querySelector(
+            '[data-xdrive-places-map-'+kind+'-panel]')?.getBoundingClientRect()
+          const toolbar=document.querySelector(
+            '[data-xdrive-places-map-toolbar]')?.getBoundingClientRect()
+          const anchor=document.querySelector(
+            '[data-xdrive-places-map-menu-anchor]')?.getBoundingClientRect()
+          return {width:document.documentElement.clientWidth,
+            left:panel?.left,right:panel?.right,top:panel?.top,
+            toolbarLeft:toolbar?.left,toolbarRight:toolbar?.right,
+            anchorRight:anchor?.right,scrollWidth:document.documentElement.scrollWidth}
+        },kind)
+        record(mode+': iOS '+width+'px '+kind+' map menu is visible and unclipped '+
+          JSON.stringify(bounds),
+          bounds.width===width&&Number.isFinite(bounds.left)&&
+          Number.isFinite(bounds.right)&&Number.isFinite(bounds.top)&&
+          bounds.left>=-0.5&&bounds.right<=width+0.5&&
+          bounds.top>=0&&bounds.toolbarRight<=width+0.5)
+        await menu.locator('summary').first().click()
+      }
+    }
     summary.mobileDrawerModes.push(mode)
   }finally{await context.close()}
 }

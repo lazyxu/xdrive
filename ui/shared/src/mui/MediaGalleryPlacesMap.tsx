@@ -281,7 +281,8 @@ export function XDriveMediaGalleryPlacesMap({
               : `探索 ${totalCount.toLocaleString('zh-CN')} 个地点`}
           </Typography>
         </Box>
-        <Stack direction="row" spacing={0.75} alignItems="center">
+        <Stack direction="row" spacing={0.75} alignItems="center"
+          data-xdrive-places-map-menu-anchor sx={{position:'static',flexShrink:0}}>
           {onMapPhotoScopeChange && !desktopOnly ? (
             <ClickAwayListener onClickAway={() => {
               if (filterMenuRef.current) filterMenuRef.current.open = false
@@ -298,10 +299,10 @@ export function XDriveMediaGalleryPlacesMap({
                   event.stopPropagation()
                   filterMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()
                 }}
-                sx={{position:'relative'}}>
+                sx={{position:'static'}}>
               <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
                 display:'flex',alignItems:'center',justifyContent:'center',
-                minWidth:60,minHeight:44,px:1.25,borderRadius:2,
+                minWidth:{xs:44,sm:60},minHeight:44,px:{xs:0.75,sm:1.25},borderRadius:2,
                 bgcolor:hasMapActiveFilters ? 'action.selected' : 'action.hover',
                 color:hasMapActiveFilters ? 'primary.main' : 'text.primary',
                 fontSize:13,fontWeight:600,
@@ -310,8 +311,9 @@ export function XDriveMediaGalleryPlacesMap({
                 {hasMapActiveFilters ? '筛选中' : '筛选'}
               </Box>
               <Paper elevation={8} data-xdrive-places-map-filter-panel
-                sx={{position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:25,
-                  width:{xs:'min(94vw,390px)',sm:480},maxWidth:'calc(100vw - 24px)',
+                sx={{position:'absolute',left:{xs:12,sm:'auto'},right:{xs:12,sm:0},
+                  top:'calc(100% + 6px)',zIndex:25,
+                  width:{xs:'auto',sm:480},maxWidth:'calc(100% - 24px)',
                   maxHeight:'min(70dvh,640px)',overflowY:'auto',
                   p:1.25,borderRadius:2}}>
       <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
@@ -397,18 +399,19 @@ export function XDriveMediaGalleryPlacesMap({
                 event.stopPropagation()
                 moreMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()
               }}
-              sx={{position:'relative'}}>
+              sx={{position:'static'}}>
             <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',
-              minWidth:60,minHeight:44,px:1.25,borderRadius:2,bgcolor:'action.hover',
+              minWidth:{xs:44,sm:60},minHeight:44,px:{xs:0.75,sm:1.25},borderRadius:2,bgcolor:'action.hover',
               fontSize:13,fontWeight:600,
               '&::-webkit-details-marker':{display:'none'},
               '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
               更多
             </Box>
             <Paper elevation={8} data-xdrive-places-map-more-panel
-              sx={{position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:25,
-                width:{xs:'min(94vw,420px)',sm:520},maxWidth:'calc(100vw - 24px)',
+              sx={{position:'absolute',left:{xs:12,sm:'auto'},right:{xs:12,sm:0},
+                top:'calc(100% + 6px)',zIndex:25,
+                width:{xs:'auto',sm:520},maxWidth:'calc(100% - 24px)',
                 maxHeight:'min(70dvh,640px)',overflowY:'auto',pt:1,pb:1,
                 borderRadius:2}}>
               <Typography variant="subtitle2" sx={{px:1.5,pb:0.5}}>
