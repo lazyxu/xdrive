@@ -3208,13 +3208,15 @@ export class XDriveApi {
     return this.request<XDriveFileTextPreview>(`/api/v1/files/${id}/preview/text`, { signal })
   }
 
-  async mediaLivePhotoStillURL(nodeID: number): Promise<string> {
+  async mediaLivePhotoStillURL(nodeID: number, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'image'
       mime_type: string
-    }>(`/api/v1/media/items/${nodeID}/live-photo-still-ticket`, { method: 'POST' })
+    }>(`/api/v1/media/items/${nodeID}/live-photo-still-ticket`, { method: 'POST', signal })
+    signal?.throwIfAborted()
     if (
       !ticket.url.startsWith('/api/v1/media-live-photo-still/') ||
       ticket.url.startsWith('//')

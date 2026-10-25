@@ -141,7 +141,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 
   assert.ok(sharedGallery.includes('XDriveLivePhotoGlyph'), 'Gallery must use the shared Live Photo glyph instead of a generic play icon')
   assert.ok(sharedMediaViewerContent.includes("kind !== 'live_photo'"), 'shared media content must admit the LIVP still preview kind')
-  assert.ok(webAdapter.includes('api.mediaLivePhotoStillURL(nodeID)'), 'Web Gallery must use the signed LIVP still source')
+  assert.match(webAdapter, /api\.mediaLivePhotoStillURL\(nodeID,\s*signal\)/, 'Web Gallery must use the signed, request-cancelable LIVP still source')
   assert.ok(desktopAdapter.includes('agent.getMediaLivePhotoStill(nodeID, requestID)'), 'Desktop Gallery must use request-scoped protected LIVP still tickets')
   assert.ok(desktopAdapter.includes('xDriveReleaseDiscardedDesktopPreviewURL(late.data'), 'Desktop Gallery must release late still tickets after cancellation')
 
