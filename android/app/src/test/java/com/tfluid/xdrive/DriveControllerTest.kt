@@ -44,6 +44,12 @@ class DriveControllerTest {
         var createHandler: suspend (Long, String) -> DriveNode = { parent, name ->
             DriveNode(8, parent, name, "dir", revision = 1)
         }
+        var copyHandler: suspend (DriveNode, Long) -> DriveNode = { node, parent ->
+            node.copy(id = 31, parentId = parent, name = node.name + " - 副本", revision = 1)
+        }
+        var moveHandler: suspend (DriveNode, Long) -> DriveNode = { node, parent ->
+            node.copy(parentId = parent, revision = node.revision + 1)
+        }
         var listing: suspend (Long, Int) -> NodeRange = { _, offset ->
             if (mutationListing) NodeRange(if (offset == 0) mutationRows else emptyList(),
                 mutationRows.size.toLong(), offset)
@@ -84,6 +90,23 @@ class DriveControllerTest {
             mutationFailure?.let { mutationFailure = null; throw it }
             mutationRows = mutationRows.filterNot { it.id == original.id }
             mutationListing = true
+        }
+        override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+            mutationCalls += "copy:${original.id}->$parentId"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            val copied = copyHandler(original, parentId)
+            if (parentId == root.id) mutationRows += copied
+            mutationListing = true
+            return copied
+        }
+        override suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+            mutationCalls += "move:${original.id}->$parentId@${original.revision}"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            val moved = moveHandler(original, parentId)
+            mutationRows = mutationRows.filterNot { it.id == original.id }
+            if (parentId == root.id) mutationRows += moved
+            mutationListing = true
+            return moved
         }
         override suspend fun fileRecent(accessToken: String) = recentListing()
         override suspend fun fileFavorites(accessToken: String) = favoriteListing()
@@ -271,6 +294,191 @@ class DriveControllerTest {
         c.moveBrowseNodeToTrash(changed); runCurrent()
         assertFalse(c.state.value.items.any { it.id == file.id })
         assertEquals(listOf("create:新建文件夹", "rename:renamed.txt", "trash:3"), api.mutationCalls)
+    }
+
+    @Test fun targetPickerIsServerVerifiedAndMovingFileUsesSameOwnerPath() = runTest {
+        val api = Service()
+        api.listing = { parent, offset ->
+            if (parent == root.id) NodeRange(api.mutationRows, api.mutationRows.size.toLong(), offset)
+            else NodeRange(emptyList(), 0, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.MOVE); runCurrent()
+        assertEquals(root.id, c.state.value.destinationPath.last().id)
+        assertEquals(listOf(folder), c.state.value.destinationFolders)
+        c.enterDestinationFolder(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.destinationPath.last().id)
+        c.commitDestination(); runCurrent()
+        assertEquals(listOf("move:3->2@1"), api.mutationCalls)
+        assertNull(c.state.value.destinationKind)
+        assertFalse(c.state.value.items.any { it.id == file.id })
+        assertEquals(listOf(root), c.state.value.path)
+    }
+
+    @Test fun nativeCopyToCurrentFolderAcceptsServerGeneratedDuplicateName() = runTest {
+        val api = Service()
+        api.listing = { parent, offset ->
+            if (parent == root.id) NodeRange(api.mutationRows, api.mutationRows.size.toLong(), offset)
+            else NodeRange(emptyList(), 0, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(listOf("copy:3->1"), api.mutationCalls)
+        assertEquals("readme.txt - 副本", c.state.value.items.single { it.id == 31L }.name)
+        assertNull(c.state.value.destinationKind)
+        assertTrue(c.state.value.items.any { it.id == file.id })
+    }
+
+    @Test fun targetPickerNeverOffersSelfMoveOrUntrustedFolderAndBackCancels() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(folder, FilesTransferKind.MOVE); runCurrent()
+        val calls = api.calls.size
+        c.enterDestinationFolder(folder); runCurrent()
+        assertEquals(calls, api.calls.size) // cannot descend into own subtree
+        c.commitDestination(); runCurrent() // same parent cannot move
+        assertTrue(api.mutationCalls.isEmpty())
+        c.enterDestinationFolder(DriveNode(987, 1, "foreign", "dir")); runCurrent()
+        assertEquals(calls, api.calls.size)
+        c.dismissDestination(); runCurrent()
+        assertNull(c.state.value.destinationKind)
+        assertEquals(listOf(root), c.state.value.path)
+    }
+
+    @Test fun targetFolderPickerPages100ItemServerRangesWithoutDuplication() = runTest {
+        val api = Service()
+        val firstPage = listOf(folder, file) +
+            (1..98).map { DriveNode(1000L + it, 1, "sub-$it", "dir", revision = 1) }
+        val lastFolder = DriveNode(2100, 1, "last-folder", "dir", revision = 1)
+        api.listing = { parent, offset ->
+            if (parent != root.id) NodeRange(emptyList(), 0, offset)
+            else if (offset == 0) NodeRange(firstPage, 101, 0)
+            else NodeRange(listOf(lastFolder), 101, 100)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        assertTrue(c.state.value.destinationHasNext)
+        assertEquals(99, c.state.value.destinationFolders.size)
+        c.loadMoreDestination(); runCurrent()
+        assertEquals(100, c.state.value.destinationOffset)
+        assertFalse(c.state.value.destinationHasNext)
+        assertEquals(100, c.state.value.destinationFolders.size)
+        assertEquals(lastFolder.id, c.state.value.destinationFolders.last().id)
+        c.loadMoreDestination(); runCurrent()
+        assertEquals(1, api.calls.count { it.first == root.id && it.second == 100 })
+    }
+
+    @Test fun failedTargetDirectoryReadCannotSendAnyMutation() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.failure = ApiException(503, "target unavailable")
+        c.chooseDestination(file, FilesTransferKind.MOVE); runCurrent()
+        assertNotNull(c.state.value.error)
+        assertFalse(c.state.value.destinationLoaded)
+        c.commitDestination(); runCurrent()
+        assertTrue(api.mutationCalls.isEmpty())
+        c.retryDestination(); runCurrent()
+        assertTrue(c.state.value.destinationLoaded)
+        assertEquals(root.id, c.state.value.destinationPath.last().id)
+    }
+
+    @Test fun failedChildFolderReadRetriesRequestedChildNotPreviousParent() = runTest {
+        val api = Service(); val c = controller(this, api)
+        var childReads = 0
+        api.listing = { parent, offset ->
+            if (parent == folder.id) {
+                childReads++
+                if (childReads == 1) throw ApiException(503, "temporary target failure")
+                NodeRange(emptyList(), 0, offset)
+            } else NodeRange(listOf(folder, file), 2, offset)
+        }
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        assertEquals(root.id, c.state.value.destinationPath.last().id)
+        c.enterDestinationFolder(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.destinationPath.last().id)
+        assertFalse(c.state.value.destinationLoaded)
+        assertNotNull(c.state.value.error)
+        c.commitDestination(); runCurrent()
+        assertTrue(api.mutationCalls.isEmpty())
+        c.retryDestination(); runCurrent()
+        assertEquals(folder.id, c.state.value.destinationPath.last().id)
+        assertTrue(c.state.value.destinationLoaded)
+        assertEquals(2, childReads)
+        assertTrue(api.mutationCalls.isEmpty())
+    }
+
+    @Test fun passwordRequiredDuringTargetLoadClearsPrivatePickerState() = runTest {
+        val api = object : Service() {
+            override suspend fun refresh(refreshToken: String): AuthSession =
+                AuthSession("new", "rotated", "owner", mustChangePassword = true)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.failure = ApiException(401, "expired")
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        assertEquals(Screen.PASSWORD, c.state.value.screen)
+        assertNull(c.state.value.destinationKind)
+        assertNull(c.state.value.destinationSource)
+        assertTrue(c.state.value.destinationPath.isEmpty())
+        assertTrue(c.state.value.destinationFolders.isEmpty())
+        assertTrue(c.state.value.path.isEmpty())
+        assertTrue(c.state.value.items.isEmpty())
+    }
+
+    @Test fun uncertainCopyAckAllowsNoSecondWriteUntilBrowseGetRefresh() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        api.mutationFailure = ApiException(503, "unknown if committed")
+        c.commitDestination(); runCurrent()
+        assertEquals(listOf("copy:3->1"), api.mutationCalls)
+        assertTrue(c.state.value.destinationWriteAttempted)
+        assertFalse(c.state.value.loaded)
+        assertNotNull(c.state.value.error)
+        c.commitDestination(); runCurrent()
+        c.retryDestination(); runCurrent()
+        assertEquals(listOf("copy:3->1"), api.mutationCalls)
+        c.dismissDestination(); runCurrent()
+        assertNull(c.state.value.destinationKind)
+        assertFalse(c.state.value.loaded)
+        c.refresh(); runCurrent()
+        assertTrue(c.state.value.loaded)
+        assertNull(c.state.value.error)
+        assertEquals(listOf("copy:3->1"), api.mutationCalls)
+    }
+
+    @Test fun oldTargetFolderResponseCannotShowAfterOwnerLogout() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        val late = CompletableDeferred<NodeRange>()
+        api.listing = { parent, offset ->
+            if (parent == folder.id) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 2, offset)
+        }
+        c.enterDestinationFolder(folder); runCurrent()
+        c.logout(); runCurrent()
+        late.complete(NodeRange(emptyList(), 0, 0)); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.destinationKind)
+        assertTrue(c.state.value.destinationFolders.isEmpty())
+    }
+
+    @Test fun destinationCopy401NeverRefreshesTokenOrRetriesWrite() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseDestination(file, FilesTransferKind.COPY); runCurrent()
+        api.mutationFailure = ApiException(401, "uncertain copy")
+        c.commitDestination(); runCurrent()
+        assertEquals(listOf("copy:3->1"), api.mutationCalls)
+        assertEquals(0, api.refreshed)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.destinationSource)
     }
 
     @Test fun uncertain401WriteNeverAutoRefreshesAndReplaysTheMutation() = runTest {
@@ -469,9 +677,7 @@ class DriveControllerTest {
         c.changeFilesSection(FilesSection.RECENT); runCurrent()
         c.openCollectionItem(api.recentFolder); runCurrent()
         assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
-        // Collection breadcrumbs contain stable directory IDs/names, not a
-        // revisioned Node snapshot. Never assert a fabricated revision=0
-        // against the writable fixture's revision=1.
+        // Breadcrumbs carry owned IDs/names but do not promise Node revision.
         assertEquals(listOf(root.id, folder.id), c.state.value.path.map { it.id })
         assertEquals(listOf(root.name, folder.name), c.state.value.path.map { it.name })
         assertEquals(folder.id to 0, api.calls.last())

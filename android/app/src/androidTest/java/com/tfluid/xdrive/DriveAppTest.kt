@@ -26,6 +26,9 @@ class DriveAppTest {
     private var createCalls = 0
     private var renameCalls = 0
     private var trashCalls = 0
+    private var copyCalls = 0
+    private var moveCalls = 0
+    private var extraRootFile = false
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) = AuthSession("fixture", "fixture-refresh", username)
@@ -63,6 +66,15 @@ class DriveAppTest {
             trashCalls++
             mutableRootRows.removeAll { it.id == original.id }
         }
+        override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+            copyCalls++
+            return original.copy(id = 770 + copyCalls.toLong(), parentId = parentId, revision = 1)
+        }
+        override suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+            moveCalls++
+            if (original.id == 70L) extraRootFile = false
+            return original.copy(parentId = parentId, revision = original.revision + 1)
+        }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
@@ -72,7 +84,9 @@ class DriveAppTest {
                     (1..99).map { index -> if (index == 49)
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
-                else if (parentId == 1L) mutableRootRows.toList()
+                else if (parentId == 1L) mutableRootRows.toList() +
+                    (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
+                        else emptyList())
                 else listOf(DriveNode(3, 2, "测试.txt", "file", 12, updatedAt = "2026-10-23T00:00:00Z"))
             return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
         }
@@ -85,7 +99,13 @@ class DriveAppTest {
         compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
-        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        // Do not dispatch the CONNECT click while Compose is still applying
+        // keyboard-focus and scroll changes. A single interaction must be
+        // visibly enabled and placed before sending it; never retry blindly.
+        compose.waitForIdle()
+        compose.onNodeWithTag("auth-submit").performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         // Controller.connect() advances the Main coroutine separately from the
         // current Compose frame. Waiting only for idleness races on CI.
         compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
@@ -96,6 +116,49 @@ class DriveAppTest {
             controller.state.value.screen == Screen.FILES && controller.state.value.loaded
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun nativeCopyPickerSelectsVerifiedChildFolder() {
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-item-70").performTouchInput { longClick() }
+        compose.onNodeWithText("复制到…").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-item-2").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationPath.lastOrNull()?.id == 2L &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            copyCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.destinationKind == null
+        }
+        compose.onNodeWithTag("files-item-70").assertExists()
+    }
+
+    @Test fun nativeMovePickerRejectsSameParentThenMovesIntoFolder() {
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-item-70").performTouchInput { longClick() }
+        compose.onNodeWithText("移动到…").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("files-destination-item-2").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationPath.lastOrNull()?.id == 2L &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            moveCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.items.none { it.id == 70L }
+        }
+        compose.onNodeWithTag("files-item-70").assertDoesNotExist()
     }
 
     @Test fun createFolderFromMoreUsesActualServerAndValidatesName() {

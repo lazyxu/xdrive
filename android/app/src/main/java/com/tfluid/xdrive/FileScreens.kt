@@ -67,7 +67,8 @@ internal class FilesViewportAnchors(private val capacity: Int = 64) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode,
-    onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {}) {
+    onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {},
+    onCopy: (DriveNode) -> Unit = {}, onMove: (DriveNode) -> Unit = {}) {
     val dark = LocalXDriveDarkTheme.current
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
@@ -171,6 +172,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                             }
                             FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                                 onRename = onRename, onTrash = onTrash,
+                                onCopy = onCopy, onMove = onMove,
                                 canMutate = !state.loading)
                         }
                         if (node.id != state.items.lastOrNull()?.id)
@@ -204,6 +206,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                         }
                         FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                             onRename = onRename, onTrash = onTrash,
+                            onCopy = onCopy, onMove = onMove,
                             canMutate = !state.loading)
                     }
                 }
@@ -346,6 +349,7 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
     controller: DriveController, collection: DriveCollectionItem? = null,
     section: FilesSection = FilesSection.BROWSE,
     onRename: ((DriveNode) -> Unit)? = null, onTrash: ((DriveNode) -> Unit)? = null,
+    onCopy: ((DriveNode) -> Unit)? = null, onMove: ((DriveNode) -> Unit)? = null,
     canMutate: Boolean = true) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface) {
@@ -357,6 +361,10 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
         if (collection != null) DropdownMenuItem(text = { Text("显示所在位置") },
             onClick = { dismiss(); controller.locateCollectionItem(collection) })
         if (collection == null && node.revision > 0 && canMutate) {
+            if (onCopy != null) DropdownMenuItem(text = { Text("复制到…") },
+                onClick = { dismiss(); onCopy(node) })
+            if (onMove != null) DropdownMenuItem(text = { Text("移动到…") },
+                onClick = { dismiss(); onMove(node) })
             if (onRename != null) DropdownMenuItem(text = { Text("重命名") },
                 onClick = { dismiss(); onRename(node) })
             if (onTrash != null) DropdownMenuItem(text = { Text("移到回收站") },
@@ -373,6 +381,95 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
             controller.showDetails(node)
         })
     }
+}
+
+/** Native destination picker reused by list and grid. Directory choices come
+ * only from Owner-scoped Server root/children reads; no local path guessing. */
+@Composable
+internal fun FilesDestinationDialog(state: DriveState, controller: DriveController) {
+    val kind = state.destinationKind ?: return
+    val source = state.destinationSource ?: return
+    val submitting = state.destinationSubmitting
+    val isCopy = kind == FilesTransferKind.COPY
+    val destination = state.destinationPath.lastOrNull()
+    val forbidden = source.isDirectory && state.destinationPath.any { it.id == source.id }
+    val sameParent = !isCopy && destination?.id == source.parentId
+    val canCommit = !state.loading && !submitting && !state.destinationWriteAttempted &&
+        state.destinationLoaded && destination != null && !forbidden && !sameParent &&
+        state.error == null
+
+    AlertDialog(
+        onDismissRequest = { controller.dismissDestination() },
+        title = { Text(if (isCopy) "复制到文件夹" else "移动到文件夹") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(source.name, style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("目标：" + (if (state.destinationPath.isEmpty()) "正在读取…"
+                    else state.destinationPath.joinToString(" / ") { it.name.ifBlank { "浏览" } }),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (state.destinationPath.size > 1) TextButton(
+                    onClick = controller::backDestinationFolder,
+                    enabled = !state.loading && !submitting,
+                    modifier = Modifier.testTag("files-destination-up"),
+                ) { Text("返回上一级") }
+                if (state.destinationLoaded) {
+                    if (state.destinationFolders.isEmpty() && !state.destinationHasNext)
+                        Text("此目录没有子文件夹", style = MaterialTheme.typography.bodySmall)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                        .testTag("files-destination-list")) {
+                        items(state.destinationFolders, key = { it.id }) { folder ->
+                            val disallowed = source.isDirectory && folder.id == source.id
+                            TextButton(onClick = { controller.enterDestinationFolder(folder) },
+                                enabled = !state.loading && !submitting && !disallowed,
+                                modifier = Modifier.fillMaxWidth()
+                                    .testTag("files-destination-item-${folder.id}")) {
+                                FileGlyph(folder, size = 32)
+                                Spacer(Modifier.width(10.dp))
+                                Text(folder.name, Modifier.weight(1f), textAlign = TextAlign.Start,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        if (state.destinationHasNext) item(key = "target-more") {
+                            TextButton(onClick = controller::loadMoreDestination,
+                                enabled = !state.loading && !submitting,
+                                modifier = Modifier.fillMaxWidth().testTag("files-destination-more")) {
+                                Text("继续加载文件夹")
+                            }
+                        }
+                    }
+                }
+                if (sameParent) Text("文件已经在当前文件夹中。",
+                    style = MaterialTheme.typography.bodySmall)
+                if (forbidden) Text("不能将文件夹复制或移动到自身或子文件夹中。",
+                    style = MaterialTheme.typography.bodySmall)
+                if (state.error != null) {
+                    Text(state.error, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    if (state.destinationWriteAttempted) {
+                        Text("本次写入结果未确认。请取消并刷新原目录确认，不要再次提交。",
+                            style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        TextButton(onClick = controller::retryDestination,
+                            enabled = !state.loading && !submitting) { Text("重试读取目标文件夹") }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = controller::commitDestination, enabled = canCommit,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("files-destination-confirm")) {
+                Text(if (isCopy) "复制到这里" else "移动到这里")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = controller::dismissDestination,
+                enabled = !submitting, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+        },
+    )
 }
 
 /** The same editable operation surface is used for list and grid. No
