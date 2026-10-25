@@ -28,12 +28,17 @@ class DriveControllerTest {
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
         var galleryGate: CompletableDeferred<Unit>? = null
+        var galleryFailOlderOnce = false
         override suspend fun galleryPage(
             accessToken: String, offset: Int, initialLatest: Boolean,
         ): GalleryPage {
             galleryRequests += offset to initialLatest
             galleryGate?.await()
             if (initialLatest) return GalleryPage(listOf(latestGallery), 121, 120)
+            if (galleryFailOlderOnce) {
+                galleryFailOlderOnce = false
+                throw ApiException(503, "temporary gallery failure")
+            }
             val items = (offset until offset + 60).map { id ->
                 GalleryAsset(DriveNode(2000L + id, 1, "image-$id.jpg", "file", size = 10, revision = 1),
                     "image", hasThumbnail = true)
@@ -358,6 +363,24 @@ class DriveControllerTest {
         assertEquals(Screen.FILES, c.state.value.screen)
         assertEquals(root.id, c.state.value.path.last().id)
         assertTrue(c.state.value.galleryItems.isEmpty())
+    }
+
+    @Test fun GalleryOlderRetryPreservesLoadedPhotosAndSameAbsoluteOffset() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals(120, c.state.value.galleryOffset)
+        api.galleryFailOlderOnce = true
+        c.galleryLoadOlder(); runCurrent()
+        assertEquals(120, c.state.value.galleryOffset)
+        assertEquals(listOf(990L), c.state.value.galleryItems.map { it.node.id })
+        assertNotNull(c.state.value.error)
+        c.retryGallery(); runCurrent()
+        assertNull(c.state.value.error)
+        assertEquals(60, c.state.value.galleryOffset)
+        assertEquals(61, c.state.value.galleryItems.size)
+        assertEquals(listOf(0 to true, 60 to false, 60 to false), api.galleryRequests)
+        assertEquals(990L, c.state.value.galleryItems.last().node.id)
     }
 
     @Test fun GalleryOldOwnerRangeCannotReturnAfterLeavingApp() = runTest {

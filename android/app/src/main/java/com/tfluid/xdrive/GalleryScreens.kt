@@ -35,18 +35,12 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     val gridState = rememberLazyGridState()
     val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
     var positioned by remember { mutableStateOf(false) }
-
-    // Go returns an aligned sparse tail: when the final page is short,
-    // prefetch one older Range rather than showing a lone photo in a 100k wall.
-    LaunchedEffect(state.galleryLoaded, state.galleryOffset, state.galleryItems.size, state.loading) {
-        if (!state.galleryLoaded || state.loading || state.error != null || positioned) return@LaunchedEffect
-        if (state.galleryOffset > 0 && state.galleryItems.size < 24) {
-            controller.galleryLoadOlder()
-        } else {
-            val last = state.galleryItems.lastIndex
-            if (last >= 0) gridState.scrollToItem(last + if (state.galleryOffset > 0) 1 else 0)
-            positioned = true
-        }
+    // A single entrance to the oldest visible edge permits only one fetch.
+    // Re-arm after scrolling away: do not recursively traverse a 100k library
+    // while Compose is still remeasuring newly prepended rows.
+    var olderEdgeArmed by remember { mutableStateOf(true) }
+    val nearOlderEdge by remember(gridState) {
+        derivedStateOf { gridState.firstVisibleItemIndex <= 3 }
     }
 
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
@@ -59,9 +53,10 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     }
     if (state.error != null) {
         ErrorNotice(state.error)
-        TextButton(onClick = controller::refreshGallery,
-            modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp)) {
-            Text("重新加载照片")
+        TextButton(onClick = controller::retryGallery,
+            modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp)
+                .testTag("gallery-retry-page")) {
+            Text(if (state.galleryLoaded) "重试加载更早的照片" else "重新加载照片")
         }
     }
 
@@ -72,6 +67,41 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
         val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
             (maxHeight - (cellWidth + 1.dp) * rows - 8.dp).coerceAtLeast(0.dp)
         } else 0.dp
+
+        // Initial tail is sparse: prefetch one earlier Range before first positioning.
+        // Never reposition after a prepend; stable item keys retain the photo anchor.
+        LaunchedEffect(state.galleryLoaded, state.galleryOffset, state.galleryItems.size,
+            state.loading, state.error) {
+            if (!state.galleryLoaded) {
+                positioned = false // An explicit refresh must position latest again.
+                return@LaunchedEffect
+            }
+            if (state.loading || state.error != null || positioned) return@LaunchedEffect
+            if (state.galleryOffset > 0 && state.galleryItems.size < 24) {
+                controller.galleryLoadOlder()
+            } else {
+                val last = state.galleryItems.lastIndex
+                if (last >= 0) {
+                    gridState.scrollToItem(last + if (blankTop > 0.dp) 1 else 0)
+                }
+                positioned = true
+            }
+        }
+
+        // No permanent "load older" row: a stable-key grid keeps the visible
+        // existing photo anchored when older rows are inserted at index zero.
+        // A failed Owner Range stays visible and cannot produce a fetch storm.
+        LaunchedEffect(positioned, nearOlderEdge, state.galleryOffset,
+            state.galleryLoaded, state.loading, state.error) {
+            if (!positioned || !state.galleryLoaded) return@LaunchedEffect
+            if (!nearOlderEdge) {
+                olderEdgeArmed = true
+            } else if (olderEdgeArmed && state.galleryOffset > 0 &&
+                !state.loading && state.error == null) {
+                olderEdgeArmed = false
+                controller.galleryLoadOlder()
+            }
+        }
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
@@ -85,14 +115,6 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
                 !state.loading && state.error == null) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text("暂无照片或视频", Modifier.padding(24.dp))
-                }
-            }
-            if (state.galleryOffset > 0 && state.galleryLoaded) {
-                item(key = "older", span = { GridItemSpan(maxLineSpan) }) {
-                    TextButton(onClick = controller::galleryLoadOlder,
-                        enabled = !state.loading && state.error == null,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .testTag("gallery-load-older")) { Text("加载更早的照片") }
                 }
             }
             if (blankTop > 0.dp) item(key = "tail-spacer", span = { GridItemSpan(maxLineSpan) }) {
