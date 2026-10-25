@@ -226,6 +226,45 @@ PostgreSQL and Caddy retain their image-native ownership behavior inside their b
 
 Because bind-mounted data is intentionally owned according to container runtime identities, the host user must not rely on direct recursive `rm -rf`, `chown`, or in-place editing of `data/postgres` or other container-owned trees. xDrive maintenance, migration, backup, restore, and eventual uninstall/cleanup flows must use Docker/container-assisted operations when ownership translation is required. This is especially important for Rootless Docker, where container UIDs can map to subordinate host IDs.
 
+
+### Repair one migrated user's directory access without touching Blob files
+
+After a root-to-user migration, a correct upload ownership marker proves only
+the staging area is prepared. Old numeric user storage trees (for example,
+`/data/1/docs`) may still be owned by the previous host UID and fail the
+offline backup verifier. **Do not hide or skip these original storage paths.**
+
+From a **root-run xDrive Server container** with the actual canonical `/data`
+bind mount, first inspect with the default dry-run:
+
+```text
+xdrive-server storage repair-user-directories --user-id 1
+```
+
+Then explicitly apply only if the reported owner/mode changes are expected:
+
+```text
+xdrive-server storage repair-user-directories --user-id 1 --apply
+```
+
+The operation accepts numeric owner IDs and absolute root paths only, refuses symlinked roots and nested
+mount devices, never follows symlinks, and touches only directory ownership and
+owner rwx bits under that one user's numeric storage path. It does not change
+regular files, immutable CAS, cache, lock inodes, PostgreSQL or other users.
+It does **not** repair read-denied regular files, missing files, metadata
+refcounts, or hash/size mismatches. Those still fail strict verification.
+
+To avoid a multi-thousand-line `shared_references` report when diagnosing
+what actually prevents an upgrade:
+
+```text
+xdrive-server storage verify --summary-json
+```
+
+This retains strict verification and its nonzero exit status, reporting only
+six actionable issue counts, grouped missing reasons and up to five samples per
+category. Use `--json` for the full report.
+
 ## Root-to-user migration
 
 A deployment originally installed as root can be migrated to a normal user with:
