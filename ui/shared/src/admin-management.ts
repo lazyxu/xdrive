@@ -1,6 +1,6 @@
 import type {
   AdminUser, AuditEventRange, StorageStats, StorageHealth, StorageHistory,
-  StorageLegacyObjectPage, StorageUnreferencedBlobPage, UploadStagingDetail,
+  StorageLegacyObjectPage, StorageUnreferencedBlobPage, StorageOptimizationAdvice, UploadStagingDetail,
   StagingCleanupRun, StagingCleanupFailure, StorageCacheCleanupKind, StorageCacheCleanup,
   UploadStagingCleanup,
 } from './models'
@@ -44,6 +44,7 @@ export type XDriveAdminAuditPort = {
 export type XDriveAdminStorageOperation =
   | 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced' | 'staging'
   | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
+  | 'optimization-advice'
 export type XDriveAdminStorageRequest = {
   operation: XDriveAdminStorageOperation
   limit?: number
@@ -59,6 +60,7 @@ export type XDriveAdminStoragePort = {
   adminStorageStats(): Promise<StorageStats>
   adminStorageHealth(): Promise<StorageHealth>
   adminStorageHistory(days?: number): Promise<StorageHistory>
+  adminStorageOptimizationAdvice(): Promise<StorageOptimizationAdvice>
   adminStorageLegacyObjects(limit?: number, cursor?: string): Promise<StorageLegacyObjectPage>
   adminStorageUnreferencedBlobs(limit?: number, cursor?: string): Promise<StorageUnreferencedBlobPage>
   adminUploadStaging(limit?: number, cursor?: string, fresh?: boolean): Promise<UploadStagingDetail>

@@ -2149,6 +2149,7 @@ export default function App({
     storageStats: () => adminStorageRequest({ operation: 'stats' }),
     adminStorageStats: () => adminStorageRequest({ operation: 'stats' }),
     adminStorageHealth: () => adminStorageRequest({ operation: 'health' }),
+    adminStorageOptimizationAdvice: () => adminStorageRequest({ operation: 'optimization-advice' }),
     adminStorageHistory: (days = 30) => adminStorageRequest({
       operation: 'history', days: days as 30 | 90 | 180,
     }),

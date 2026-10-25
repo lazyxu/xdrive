@@ -8,7 +8,7 @@ import (
 
 func TestDesktopAdminStorageFixedOperations(t *testing.T) {
 	for _, req := range []client.AdminStorageRequest{
-		{Operation: "stats"}, {Operation: "health"}, {Operation: "history", Days: 30},
+		{Operation: "stats"}, {Operation: "health"}, {Operation: "optimization-advice"}, {Operation: "history", Days: 30},
 		{Operation: "history", Days: 90}, {Operation: "history", Days: 180},
 		{Operation: "legacy", Limit: 20}, {Operation: "unreferenced", Limit: 20},
 		{Operation: "staging", Limit: 20}, {Operation: "cleanup-runs", Limit: 20},

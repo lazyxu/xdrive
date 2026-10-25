@@ -218,8 +218,8 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 8 {
-		t.Fatalf("maintenance tasks=%d want=8: %+v", len(tasks), tasks)
+	if len(tasks) != 9 {
+		t.Fatalf("maintenance tasks=%d want=9: %+v", len(tasks), tasks)
 	}
 	janitor := backgroundTaskByID(
 		tasks,
@@ -306,6 +306,17 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 			backgroundTaskActionRun,
 		) {
 		t.Fatalf("unexpected storage repair capability row: %+v", storageRepair)
+	}
+	storageOptimization := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindStorageOptimization),
+	)
+	if storageOptimization == nil || storageOptimization.State != "idle" ||
+		!backgroundTaskActionAllowed(
+			storageOptimization.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected storage optimization capability row: %+v", storageOptimization)
 	}
 
 	oldFinished := time.Now().UTC().Add(

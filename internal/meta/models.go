@@ -176,14 +176,15 @@ func (BackgroundRuntimePresence) TableName() string {
 }
 
 const (
-	SystemMaintenanceKindJanitor        = "janitor"
-	SystemMaintenanceKindStorageSampler = "storage_sampler"
-	SystemMaintenanceKindSourceVerify   = "source_verify"
-	SystemMaintenanceKindSourceRepair   = "source_repair"
-	SystemMaintenanceKindMediaVerify    = "media_verify"
-	SystemMaintenanceKindMediaRepair    = "media_repair"
-	SystemMaintenanceKindStorageVerify  = "storage_verify"
-	SystemMaintenanceKindStorageRepair  = "storage_repair"
+	SystemMaintenanceKindJanitor             = "janitor"
+	SystemMaintenanceKindStorageSampler      = "storage_sampler"
+	SystemMaintenanceKindSourceVerify        = "source_verify"
+	SystemMaintenanceKindSourceRepair        = "source_repair"
+	SystemMaintenanceKindMediaVerify         = "media_verify"
+	SystemMaintenanceKindMediaRepair         = "media_repair"
+	SystemMaintenanceKindStorageVerify       = "storage_verify"
+	SystemMaintenanceKindStorageRepair       = "storage_repair"
+	SystemMaintenanceKindStorageOptimization = "storage_optimization"
 
 	SystemMaintenanceStatusQueued          = "queued"
 	SystemMaintenanceStatusRunning         = "running"
@@ -214,6 +215,7 @@ const (
 	SystemMaintenancePhaseMediaRepair             = "media_repair"
 	SystemMaintenancePhaseStorageVerify           = "storage_verify"
 	SystemMaintenancePhaseStorageRepair           = "storage_repair"
+	SystemMaintenancePhaseStorageOptimization     = "storage_optimization"
 	SystemMaintenancePhaseFinished                = "finished"
 )
 
@@ -234,6 +236,7 @@ type SystemMaintenanceRun struct {
 	ProgressErrors    int64      `gorm:"not null;default:0"`
 	ProgressMessage   string     `gorm:"type:text"`
 	Summary           string     `gorm:"type:text"`
+	ReportJSON        string     `gorm:"type:text"`
 	Error             string     `gorm:"type:text"`
 	CancelRequestedAt *time.Time `gorm:"index"`
 	StartedAt         time.Time  `gorm:"not null;index"`

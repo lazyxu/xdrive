@@ -58,6 +58,7 @@ func systemMaintenanceInteractiveKinds() []string {
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
 		meta.SystemMaintenanceKindStorageRepair,
+		meta.SystemMaintenanceKindStorageOptimization,
 	}
 }
 
@@ -69,7 +70,8 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
-		meta.SystemMaintenanceKindStorageRepair:
+		meta.SystemMaintenanceKindStorageRepair,
+		meta.SystemMaintenanceKindStorageOptimization:
 		return true
 	default:
 		return false
@@ -92,6 +94,8 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseStorageVerify
 	case meta.SystemMaintenanceKindStorageRepair:
 		return meta.SystemMaintenancePhaseStorageRepair
+	case meta.SystemMaintenanceKindStorageOptimization:
+		return meta.SystemMaintenancePhaseStorageOptimization
 	default:
 		return ""
 	}
@@ -114,7 +118,8 @@ func systemMaintenanceLeaderKey(kind string) string {
 		meta.SystemMaintenanceKindMediaRepair:
 		return maintenanceLeaderMediaIntegrity
 	case meta.SystemMaintenanceKindStorageVerify,
-		meta.SystemMaintenanceKindStorageRepair:
+		meta.SystemMaintenanceKindStorageRepair,
+		meta.SystemMaintenanceKindStorageOptimization:
 		// Full verification and deterministic CAS metadata repair must not race
 		// the Janitor's CAS GC/state transitions.
 		return maintenanceLeaderJanitor
@@ -626,6 +631,12 @@ func (s *Server) executeSystemMaintenanceTask(
 	run meta.SystemMaintenanceRun,
 ) (string, string, error) {
 	switch run.Kind {
+	case meta.SystemMaintenanceKindStorageOptimization:
+		summary, err := s.evaluateStorageOptimizationTask(ctx, run.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return summary, meta.SystemMaintenanceStatusSuccess, nil
 	case meta.SystemMaintenanceKindStorageSampler:
 		force := systemMaintenanceTrigger(run) == background.TriggerAdminAction
 		emit := s.storageSamplerProgressReporter(ctx, run.ID)
