@@ -109,6 +109,7 @@ import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDrive
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
+import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
@@ -179,6 +180,7 @@ const REFRESH_KEY = 'xdrive.refresh_token'
 const EXPIRES_KEY = 'xdrive.access_expires_at'
 const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
+const AUTH_STORAGE_KEYS = [ACCESS_KEY, LEGACY_TOKEN_KEY, REFRESH_KEY, EXPIRES_KEY, USER_KEY] as const
 
 // Public share links belong to the current URL, including browser Back/Forward.
 // Do not persist the capability token outside its URL or keep a prior share's
@@ -212,11 +214,11 @@ type AppView = XDriveWorkspaceViewKey<
 >
 
 function initialSession(): AuthSession {
-  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
+  const legacy = xDriveBrowserStorageRead(LEGACY_TOKEN_KEY) ?? ''
   return {
-    accessToken: localStorage.getItem(ACCESS_KEY) ?? legacy,
-    refreshToken: localStorage.getItem(REFRESH_KEY) ?? '',
-    accessExpiresAt: Number(localStorage.getItem(EXPIRES_KEY) ?? '0') || 0,
+    accessToken: xDriveBrowserStorageRead(ACCESS_KEY) ?? legacy,
+    refreshToken: xDriveBrowserStorageRead(REFRESH_KEY) ?? '',
+    accessExpiresAt: Number(xDriveBrowserStorageRead(EXPIRES_KEY) ?? '0') || 0,
   }
 }
 
@@ -313,7 +315,7 @@ function App({
   onAppearanceChange: (appearance: XDriveAppearance) => void
 }) {
   const [session, setSession] = useState<AuthSession>(initialSession)
-  const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
+  const [username, setUsername] = useState(() => xDriveBrowserStorageRead(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
   const transferApiRef = useRef<XDriveApi | null>(null)
@@ -356,10 +358,16 @@ function App({
   }, [])
 
   const persistSession = useCallback((next: AuthSession) => {
-    localStorage.setItem(ACCESS_KEY, next.accessToken)
-    localStorage.setItem(LEGACY_TOKEN_KEY, next.accessToken)
-    localStorage.setItem(REFRESH_KEY, next.refreshToken)
-    localStorage.setItem(EXPIRES_KEY, String(next.accessExpiresAt))
+    // Storage can be denied (or fail partway through) without invalidating a
+    // successful Server login/refresh in this live window. Remove partial
+    // durable credentials so a later launch never revives a mixed session.
+    const saved = [
+      xDriveBrowserStorageWrite(ACCESS_KEY, next.accessToken),
+      xDriveBrowserStorageWrite(LEGACY_TOKEN_KEY, next.accessToken),
+      xDriveBrowserStorageWrite(REFRESH_KEY, next.refreshToken),
+      xDriveBrowserStorageWrite(EXPIRES_KEY, String(next.accessExpiresAt)),
+    ].every(Boolean)
+    if (!saved) xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
     setSession(next)
   }, [])
 
@@ -370,14 +378,12 @@ function App({
     void xDrivePwaClearOfflineMetadata().catch(() => {
       setAuthNotice('无法确认本设备的离线摘要已清理，请在浏览器站点数据中手动清理。')
     })
-    localStorage.removeItem(ACCESS_KEY)
-    localStorage.removeItem(LEGACY_TOKEN_KEY)
-    localStorage.removeItem(REFRESH_KEY)
-    localStorage.removeItem(EXPIRES_KEY)
-    localStorage.removeItem(USER_KEY)
+    const storageCleared = xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
     setSession({ accessToken: '', refreshToken: '', accessExpiresAt: 0 })
     setUsername('')
-    setAuthNotice(notice)
+    setAuthNotice(storageCleared ? notice : [notice,
+      '无法确认浏览器已清除本地登录记录；请在浏览器设置中清理本站点数据。',
+    ].filter(Boolean).join(' '))
   }, [])
 
   const api = useMemo(
@@ -458,7 +464,10 @@ function App({
         onAuthenticated={(result) => {
           setAuthNotice('')
           persistSession(sessionFromAuth(result))
-          localStorage.setItem(USER_KEY, result.username)
+          if (!xDriveBrowserStorageWrite(USER_KEY, result.username)) {
+            // Do not leave persisted tokens without their matching username.
+            xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+          }
           setUsername(result.username)
         }}
       />
