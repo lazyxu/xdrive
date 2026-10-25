@@ -139,6 +139,9 @@ grep -Fq "./$storage_key" <<<"$v1_entries" || {
   exit 1
 }
 [[ -f "$backup_dir/manifest.json" ]]
+grep -q '"verification_mode": "fast"' "$backup_dir/manifest.json"
+grep -q '"verification_mode": "fast"' "$backup_dir/verify.json"
+grep -q '"hashed_bytes": 0' "$backup_dir/verify.json"
 [[ -f "$backup_dir/SHA256SUMS.txt" ]]
 grep -q '"release_channel": "master"' "$backup_dir/manifest.json"
 grep -q '"release_commit": "0123456789abcdef0123456789abcdef01234567"' "$backup_dir/manifest.json"
@@ -238,6 +241,7 @@ grep -Fq "$storage_key" <<<"$v2_entries" || {
 }
 [[ ! -e "$incremental_backup_dir/blobs.tar" ]]
 grep -q '"format_version": 2' "$incremental_backup_dir/manifest.json"
+grep -q '"verification_mode": "fast"' "$incremental_backup_dir/manifest.json"
 (
   cd "$incremental_backup_dir"
   sha256sum -c SHA256SUMS.txt >/dev/null

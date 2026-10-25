@@ -11,6 +11,10 @@ import (
 // strict verification fail. The complete report remains available via --json.
 type storageVerifySummary struct {
 	OK               bool                                   `json:"ok"`
+	Mode             maintenance.VerifyMode                 `json:"verification_mode"`
+	HashedFiles      int                                    `json:"hashed_files"`
+	HashedBytes      int64                                  `json:"hashed_bytes"`
+	ElapsedMillis    int64                                  `json:"elapsed_ms"`
 	Counts           storageVerifyCounts                    `json:"counts"`
 	MissingReasons   map[string]int                         `json:"missing_reasons"`
 	MissingSamples   []maintenance.MissingBlob              `json:"missing_samples"`
@@ -33,6 +37,10 @@ type storageVerifyCounts struct {
 func summarizeStorageVerify(r maintenance.VerifyReport) storageVerifySummary {
 	s := storageVerifySummary{
 		OK: r.OK(),
+		Mode: r.Mode,
+		HashedFiles: r.HashedFiles,
+		HashedBytes: r.HashedBytes,
+		ElapsedMillis: r.ElapsedMillis,
 		Counts: storageVerifyCounts{
 			Missing:                    len(r.Missing),
 			SizeMismatches:             len(r.SizeMismatches),

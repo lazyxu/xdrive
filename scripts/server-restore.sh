@@ -258,7 +258,10 @@ echo "Repairing restored storage ownership..."
 compose run -T --rm --no-deps --user 0:0 server storage prepare --force </dev/null
 
 echo "Verifying restored metadata and blobs..."
-compose run -T --rm --no-deps server storage verify --json </dev/null
+# Restore is a high-stakes integrity operation. Deep is mandatory even though
+# normal verification and new pre-upgrade backups default to fast.
+# Legacy Server images ignore this env var and already run deep by default.
+compose run -T --rm --no-deps -e XD_STORAGE_VERIFY_MODE=deep server storage verify --json </dev/null
 
 if [[ "$server_was_running" == "1" ]]; then
   compose start server >/dev/null
