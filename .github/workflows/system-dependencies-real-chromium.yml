@@ -1,0 +1,93 @@
+name: System Dependencies Shared MUI Real Chromium
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/system-dependencies-real-chromium.yml'
+      - 'desktop/scripts/system-dependencies-real-chromium.*'
+      - 'desktop/tests/system-dependencies-real-chromium.cjs'
+      - 'ui/shared/src/mui/ServiceDependenciesPage.tsx'
+      - 'ui/shared/src/mui/PhotoHostDesiredPanel.tsx'
+      - 'ui/shared/src/mui/WorkspaceSurface.tsx'
+      - 'ui/shared/src/system-dependencies-navigation.ts'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/system-dependencies-real-chromium.yml'
+      - 'desktop/scripts/system-dependencies-real-chromium.*'
+      - 'desktop/tests/system-dependencies-real-chromium.cjs'
+      - 'ui/shared/src/mui/ServiceDependenciesPage.tsx'
+      - 'ui/shared/src/mui/PhotoHostDesiredPanel.tsx'
+      - 'ui/shared/src/mui/WorkspaceSurface.tsx'
+      - 'ui/shared/src/system-dependencies-navigation.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: system-deps-browser-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mounted-shared-admin-responsive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare real shared React/MUI compiler and native Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          npm --prefix desktop install --no-audit --no-fund
+          # Make screenshots readable: the default hosted runner has no
+          # reliable CJK glyph coverage, despite successful geometry checks.
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-cjk
+          fc-match -f '%{family}\n' ':lang=zh-cn' | grep -F 'Noto Sans CJK'
+          mkdir -p "$RUNNER_TEMP/xdrive-admin-chromium"
+          npm install --prefix "$RUNNER_TEMP/xdrive-admin-chromium" \
+            --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-admin-chromium/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null 2>&1; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          fi
+      - name: Verify source contract and actual 320px / 390px / Desktop chromium UI
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          XD_SYSTEM_DEPS_CHROMIUM_OUT: ${{ github.workspace }}/desktop/system-dependencies-chromium-results
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          node --check desktop/scripts/system-dependencies-real-chromium.cjs
+          node --test desktop/tests/system-dependencies-real-chromium.cjs
+          node desktop/scripts/system-dependencies-real-chromium.cjs
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const p = JSON.parse(fs.readFileSync(
+            'desktop/system-dependencies-chromium-results/summary.json', 'utf8'))
+          if (!p.passed || !p.realChromium || !p.mountedSharedMUI ||
+              !p.syntheticOnly || p.sourceCommit !== process.env.XD_PR_HEAD ||
+              p.widths.join(',') !== '320,390,1280' ||
+              p.checks.length < 22 || p.checks.some(check => !check.passed) ||
+              p.pageErrors.length || p.externalRequests || p.error) process.exit(1)
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: system-dependencies-shared-mui-chromium-${{ github.event.pull_request.head.sha || github.sha }}
+          path: desktop/system-dependencies-chromium-results/
+          if-no-files-found: warn
+          retention-days: 14
