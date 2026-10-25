@@ -101,13 +101,13 @@ test('Web and shared Gallery viewers wire range navigation into image swipes', (
     assert.ok(webViewers.includes(token), 'Web Viewer swipe navigation missing: ' + token)
   }
   assert.ok(
-    galleryViewer.includes('onSwipePrevious={canPrevious ? onPrevious : undefined}') &&
-      galleryViewer.includes('onSwipeNext={canNext ? onNext : undefined}'),
+    galleryViewer.includes('onSwipePrevious={canPrevious ? previousIfCurrent : undefined}') &&
+      galleryViewer.includes('onSwipeNext={canNext ? nextIfCurrent : undefined}'),
     'shared Gallery Viewer swipe navigation is missing',
   )
   assert.ok(
-    quickLook.includes('onSwipePrevious={canPrevious ? onPrevious : undefined}') &&
-      quickLook.includes('onSwipeNext={canNext ? onNext : undefined}'),
+    quickLook.includes('onSwipePrevious={canPrevious ? previousIfCurrent : undefined}') &&
+      quickLook.includes('onSwipeNext={canNext ? nextIfCurrent : undefined}'),
     'shared Quick Look swipe navigation is missing',
   )
 })

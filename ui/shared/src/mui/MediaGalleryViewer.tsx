@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -182,6 +182,38 @@ export function XDriveMediaGalleryViewer({
     }
   }
   const actionOwner = actionOwnerRef.current
+  // An unmounted Gallery Viewer receives no new render to invalidate queued
+  // callbacks. Layout cleanup retires this exact media/source session.
+  const mountedOwnerRef = useRef<typeof actionOwner | null>(actionOwner)
+  mountedOwnerRef.current = actionOwner
+  useLayoutEffect(() => {
+    mountedOwnerRef.current = actionOwner
+    return () => {
+      if (mountedOwnerRef.current === actionOwner) mountedOwnerRef.current = null
+    }
+  }, [actionOwner])
+  const navigationRef = useRef({ canPrevious, canNext, onPrevious, onNext, onFilmstripSelect })
+  navigationRef.current = { canPrevious, canNext, onPrevious, onNext, onFilmstripSelect }
+  const isCurrentActionOwner = () => Boolean(item) &&
+    actionOwnerRef.current === actionOwner && mountedOwnerRef.current === actionOwner
+  const previousIfCurrent = () => {
+    if (isCurrentActionOwner() && navigationRef.current.canPrevious &&
+        navigationRef.current.onPrevious === onPrevious) onPrevious()
+  }
+  const nextIfCurrent = () => {
+    if (isCurrentActionOwner() && navigationRef.current.canNext &&
+        navigationRef.current.onNext === onNext) onNext()
+  }
+  const filmstripIfCurrent = (index: number) => {
+    if (isCurrentActionOwner() &&
+        navigationRef.current.onFilmstripSelect === onFilmstripSelect) onFilmstripSelect(index)
+  }
+  const setFullScreenIfCurrent = (value: boolean) => {
+    if (isCurrentActionOwner()) setFullScreen(value)
+  }
+  const toggleSlideshowIfCurrent = () => {
+    if (isCurrentActionOwner()) setSlideshowPlaying((value) => !value)
+  }
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
   const slideshowKind = item ? xDriveClassifyFilePreview({
     name: item.node.name, kind: 'file', mimeType: item.metadata.mime_type,
@@ -198,17 +230,17 @@ export function XDriveMediaGalleryViewer({
   // The last queued pointer event from a replaced photo must not start a
   // synchronous Share or Inspector action against the old media identity.
   const runCurrentItemAction = (handler?: (value: MediaItem) => void) => {
-    if (item && handler && actionOwnerRef.current === actionOwner) handler(item)
+    if (isCurrentActionOwner() && handler) handler(item!)
   }
   const [moreOwner, setMoreOwner] = useState<typeof actionOwner | null>(null)
   const moreOpen = Boolean(item && narrowViewer && moreAnchor && moreOwner === actionOwner)
   const openMore = (anchor: HTMLElement) => {
-    if (actionOwnerRef.current !== actionOwner) return
+    if (!isCurrentActionOwner()) return
     setMoreOwner(actionOwner)
     setMoreAnchor(anchor)
   }
   const closeMore = () => {
-    if (actionOwnerRef.current !== actionOwner) return
+    if (!isCurrentActionOwner()) return
     setMoreAnchor(null)
     setMoreOwner(null)
   }
@@ -231,22 +263,24 @@ export function XDriveMediaGalleryViewer({
     presentationState: slideshowPresentation.presentationState,
     canNext,
     interactionPaused: externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen,
-    onNext,
-    onStop: () => setSlideshowPlaying(false),
+    onNext: nextIfCurrent,
+    onStop: () => {
+      if (isCurrentActionOwner()) setSlideshowPlaying(false)
+    },
   })
   // Old JSX callbacks remain callable after a Filmstrip navigation. Reject
   // them even if A is selected again after A → B → A.
   const setDeleteOpen = (open: boolean) => {
-    if (actionOwnerRef.current === actionOwner) setDeleteDialogOwner(open ? actionOwner : null)
+    if (isCurrentActionOwner()) setDeleteDialogOwner(open ? actionOwner : null)
   }
   const setCreativeOpen = (open: boolean) => {
-    if (actionOwnerRef.current === actionOwner) setCreativeDialogOwner(open ? actionOwner : null)
+    if (isCurrentActionOwner()) setCreativeDialogOwner(open ? actionOwner : null)
   }
   const setEditOpen = (open: boolean) => {
-    if (actionOwnerRef.current === actionOwner) setEditDialogOwner(open ? actionOwner : null)
+    if (isCurrentActionOwner()) setEditDialogOwner(open ? actionOwner : null)
   }
   const setLocationOpen = (open: boolean) => {
-    if (actionOwnerRef.current === actionOwner) setLocationDialogOwner(open ? actionOwner : null)
+    if (isCurrentActionOwner()) setLocationDialogOwner(open ? actionOwner : null)
   }
   const [busyState, setBusyState] = useState<{
     owner: typeof actionOwner
@@ -274,7 +308,7 @@ export function XDriveMediaGalleryViewer({
   ): Promise<boolean> => {
     // Claim ownership synchronously, before React can publish disabled state.
     // Old JSX callbacks and same-tick repeated actions are both rejected.
-    if (!item || actionOwnerRef.current !== actionOwner || actionOwner.inFlight) {
+    if (!isCurrentActionOwner() || actionOwner.inFlight) {
       return false
     }
     actionOwner.inFlight = true
@@ -282,20 +316,20 @@ export function XDriveMediaGalleryViewer({
     setActionError(null)
     try {
       await task()
-      return actionOwnerRef.current === actionOwner
+      return isCurrentActionOwner()
     } catch (error) {
-      if (actionOwnerRef.current === actionOwner &&
-          !parentReportsViewerActionErrors) {
+      if (isCurrentActionOwner() && !parentReportsViewerActionErrors) {
         setActionError({ owner: actionOwner, action })
       }
       throw error
     } finally {
       actionOwner.inFlight = false
-      if (actionOwnerRef.current === actionOwner) setBusyState(null)
+      if (isCurrentActionOwner()) setBusyState(null)
     }
   }, [actionOwner, item, parentReportsViewerActionErrors])
 
   const close = () => {
+    if (!isCurrentActionOwner()) return
     // A close/reopen of the same Node still starts a fresh action session.
     actionOwnerRef.current = {
       ...actionOwnerRef.current,
@@ -306,11 +340,12 @@ export function XDriveMediaGalleryViewer({
     }
     setBusyState(null)
     setActionError(null)
-    setDeleteOpen(false)
-    setCreativeOpen(false)
-    setEditOpen(false)
-    setLocationOpen(false)
-    closeMore()
+    setDeleteDialogOwner(null)
+    setCreativeDialogOwner(null)
+    setEditDialogOwner(null)
+    setLocationDialogOwner(null)
+    setMoreAnchor(null)
+    setMoreOwner(null)
     setFullScreen(false)
     setSlideshowPlaying(false)
     onClose()
@@ -384,7 +419,7 @@ export function XDriveMediaGalleryViewer({
         <Tooltip title={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}>
           <IconButton size="small"
             aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
-            onClick={() => setSlideshowPlaying((value) => !value)}>
+            onClick={toggleSlideshowIfCurrent}>
             {slideshowPlaying ? <PauseRoundedIcon fontSize="small" /> : <PlayArrowRoundedIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
@@ -467,7 +502,7 @@ export function XDriveMediaGalleryViewer({
         entries={filmstripEntries}
         activeIndex={activeIndex}
         loadThumbnail={loadThumbnail}
-        onSelect={onFilmstripSelect}
+        onSelect={filmstripIfCurrent}
       />
     </Box>
   ) : null
@@ -481,8 +516,8 @@ export function XDriveMediaGalleryViewer({
         positionLabel={positionLabel}
         canPrevious={canPrevious}
         canNext={canNext}
-        onPrevious={onPrevious}
-        onNext={onNext}
+        onPrevious={previousIfCurrent}
+        onNext={nextIfCurrent}
         actions={actions}
         footer={footer}
         keepChromeVisible={externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
@@ -490,7 +525,7 @@ export function XDriveMediaGalleryViewer({
         immersive
         mobileEdgeToEdge
         fullScreen={fullScreen}
-        onFullScreenChange={setFullScreen}
+        onFullScreenChange={setFullScreenIfCurrent}
         onClose={close}
       >
         {item ? (
@@ -503,8 +538,8 @@ export function XDriveMediaGalleryViewer({
             onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
             videoControlsSafeArea={narrowViewer ? (filmstripEntries.length > 0 ? 'actions-filmstrip' : 'actions') : undefined}
             interactiveImage
-            onSwipePrevious={canPrevious ? onPrevious : undefined}
-            onSwipeNext={canNext ? onNext : undefined}
+            onSwipePrevious={canPrevious ? previousIfCurrent : undefined}
+            onSwipeNext={canNext ? nextIfCurrent : undefined}
             minHeight={0}
             maxHeight="none"
           />
@@ -520,22 +555,22 @@ export function XDriveMediaGalleryViewer({
       >
         {ultraNarrowViewer && canPrevious ? (
           <MenuItem aria-label="上一张" onClick={() => {
-            if (actionOwnerRef.current !== actionOwner) return
+            if (!isCurrentActionOwner()) return
             closeMore()
-            onPrevious()
+            previousIfCurrent()
           }}>上一张</MenuItem>
         ) : null}
         {ultraNarrowViewer && canNext ? (
           <MenuItem aria-label="下一张" onClick={() => {
-            if (actionOwnerRef.current !== actionOwner) return
+            if (!isCurrentActionOwner()) return
             closeMore()
-            onNext()
+            nextIfCurrent()
           }}>下一张</MenuItem>
         ) : null}
         {slideshowEligible && (canNext || slideshowPlaying) ? (
           <MenuItem aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'} onClick={() => {
             closeMore()
-            setSlideshowPlaying((value) => !value)
+            toggleSlideshowIfCurrent()
           }}>{slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}</MenuItem>
         ) : null}
         {item && onCreateCreativeGeneration && onGetCreativeGeneration && loadPreviewURL &&
@@ -565,14 +600,18 @@ export function XDriveMediaGalleryViewer({
       <XDriveMediaGalleryViewerLocationDialog
         open={locationOpen}
         item={item}
-        onOpenDynamicMap={onOpenDynamicMap}
+        onOpenDynamicMap={onOpenDynamicMap ? () => {
+          if (isCurrentActionOwner()) onOpenDynamicMap()
+        } : undefined}
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}
         revokeBaiduMapConsent={revokeBaiduMapConsent}
         getBaiduMapIndexJob={getBaiduMapIndexJob}
         enqueueBaiduMapIndexJob={enqueueBaiduMapIndexJob}
         cancelBaiduMapIndexJob={cancelBaiduMapIndexJob}
-        onClose={() => setLocationOpen(false)}
+        onClose={() => {
+          if (isCurrentActionOwner()) setLocationOpen(false)
+        }}
       />
 
       <XDriveMediaGalleryCreativeDialog
