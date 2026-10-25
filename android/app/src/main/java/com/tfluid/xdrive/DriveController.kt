@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.*
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.InputStream
 import java.io.OutputStream
@@ -54,6 +55,7 @@ data class DriveState(
     val galleryTotal: Long = 0,
     val galleryLoaded: Boolean = false,
     val gallerySelected: GalleryAsset? = null,
+    val galleryViewer: GalleryAsset? = null,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -98,6 +100,7 @@ class DriveController(
     private var generation = 0L
     private var active: Job? = null
     private val galleryThumbnailLimit = Semaphore(4)
+    private var galleryViewerEpoch = 0L
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
     private var retryAppend = false
@@ -810,7 +813,7 @@ class DriveController(
             fileExportPending = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null)
+            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
     }
 
@@ -821,7 +824,7 @@ class DriveController(
         mutableState.value = current.copy(
             screen = Screen.FILES, loading = false, error = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null)
+            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
     }
 
@@ -830,7 +833,8 @@ class DriveController(
         invalidate() // Stop prior Owner range before replacing its query intent.
         mutableState.value = state.value.copy(loading = false, error = null,
             galleryItems = emptyList(), galleryOffset = 0,
-            galleryTotal = 0, galleryLoaded = false, gallerySelected = null)
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
+            galleryViewer = null)
         loadGallery(initialLatest = true)
     }
 
@@ -909,6 +913,51 @@ class DriveController(
         }
     }
 
+
+    /** Gallery image Viewer is backed by the same revisioned Owner file API
+     * used for SAF export. Opening a video must not fake native playback. */
+    fun openGalleryViewer(item: GalleryAsset) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.loading ||
+            !current.galleryLoaded || item.mediaKind != "image" ||
+            item.node.type != "file" || item.node.revision <= 0 ||
+            current.galleryItems.none { it == item }) return
+        galleryViewerEpoch++
+        mutableState.value = current.copy(galleryViewer = item, gallerySelected = null)
+    }
+
+    fun dismissGalleryViewer() {
+        if (state.value.galleryViewer == null) return
+        galleryViewerEpoch++ // Reject stale non-cooperative results, including A -> B -> A.
+        mutableState.value = state.value.copy(galleryViewer = null, gallerySelected = null)
+    }
+
+    /** Read a *single* compressed photo, never a second remote media transport.
+     * The 32 MiB cap bounds temporary RAM. No raw bytes/token go to UI state,
+     * disk cache, saved state or logging. Large originals need tiled decoding. */
+    suspend fun galleryImageBytes(item: GalleryAsset): ByteArray {
+        val ticket = generation
+        val epoch = galleryViewerEpoch
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryViewer != item ||
+            item.mediaKind != "image" || item.node.type != "file" ||
+            item.node.revision <= 0) throw CancellationException()
+        if (item.node.size !in 1L..(32L * 1024 * 1024)) {
+            throw ApiException(413, "Image exceeds bounded native preview size")
+        }
+        val service = api ?: throw CancellationException()
+        val buffer = ByteArrayOutputStream(minOf(item.node.size.toInt(), 1024 * 1024))
+        val count = authenticated(service, ticket) { token ->
+            service.downloadFile(token, item.node, { buffer })
+        }
+        checkCurrent(ticket)
+        if (galleryViewerEpoch != epoch || state.value.screen != Screen.GALLERY ||
+            state.value.galleryViewer != item) throw CancellationException()
+        if (count != item.node.size || buffer.size().toLong() != count)
+            throw ApiException(0, "Image length mismatch", ApiFailureReason.INVALID_RESPONSE)
+        return buffer.toByteArray()
+    }
+
     fun showGalleryInfo(item: GalleryAsset) {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.galleryItems.none { it == item }) return
@@ -930,7 +979,11 @@ class DriveController(
     fun back() {
         val current = state.value
         if (current.screen == Screen.GALLERY) {
-            if (current.gallerySelected != null) dismissGalleryInfo() else openFilesApp()
+            when {
+                current.gallerySelected != null -> dismissGalleryInfo()
+                current.galleryViewer != null -> dismissGalleryViewer()
+                else -> openFilesApp()
+            }
             return
         }
         if (current.destinationKind != null) dismissDestination()
@@ -1045,7 +1098,7 @@ class DriveController(
                 fileDownloadSaved = false, fileUploadPickerParent = null,
                 fileUploadActive = false, fileUploadCommitted = false,
                 galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-                galleryLoaded = false, gallerySelected = null)
+                galleryLoaded = false, gallerySelected = null, galleryViewer = null)
             throw CancellationException()
         }
         return block(refreshed.accessToken)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -30,6 +31,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     onDownload: ((DriveNode) -> Unit)? = null,
     onUpload: (() -> Unit)? = null) {
     val state by controller.state.collectAsStateWithLifecycle()
+    // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
+    // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
+    val gallerySaveable = rememberSaveableStateHolder()
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
     var filesEdit by remember(state.screen, state.filesSection, state.path.map { it.id }) {
         mutableStateOf<FilesEditIntent?>(null)
@@ -45,11 +49,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else if (filesEdit != null) filesEdit = null
         else controller.back()
     }
+    val photoViewerOpen = state.screen == Screen.GALLERY && state.galleryViewer != null
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
             mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
-        if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
+        if (!photoViewerOpen &&
+            (state.screen == Screen.FILES || state.screen == Screen.GALLERY))
             Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
@@ -119,7 +125,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
                     onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
                     onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
-                Screen.GALLERY -> Gallery(state, controller)
+                Screen.GALLERY -> {
+                    val photo = state.galleryViewer
+                    if (photo != null) GalleryPhotoViewer(photo, controller)
+                    else gallerySaveable.SaveableStateProvider(
+                        "gallery:${state.server}:${state.username}") {
+                        Gallery(state, controller)
+                    }
+                }
             }
         }
     }

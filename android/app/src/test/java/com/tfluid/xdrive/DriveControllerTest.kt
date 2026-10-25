@@ -24,7 +24,7 @@ class DriveControllerTest {
         var refreshFailure: Exception? = null
         var loggedOut = false
         val latestGallery = GalleryAsset(
-            DriveNode(990L, 1, "today.jpg", "file", size = 32, revision = 1),
+            DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
         var galleryGate: CompletableDeferred<Unit>? = null
@@ -381,6 +381,45 @@ class DriveControllerTest {
         assertEquals(61, c.state.value.galleryItems.size)
         assertEquals(listOf(0 to true, 60 to false, 60 to false), api.galleryRequests)
         assertEquals(990L, c.state.value.galleryItems.last().node.id)
+    }
+
+    @Test fun galleryImageViewerUsesRevisionedOwnerDownloadAndBackReturnsToWall() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        assertEquals(photo, c.state.value.galleryViewer)
+        assertArrayEquals("hello".toByteArray(), c.galleryImageBytes(photo))
+        assertEquals(1, api.downloadReads)
+        c.back()
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        // Media metadata is not a fake image Viewer for a video tile.
+        c.openGalleryViewer(photo.copy(mediaKind = "video"))
+        assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun galleryViewerOldBytesAreDiscardedAfterCloseAndReopen() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        val pending = async { c.galleryImageBytes(photo) }
+        runCurrent()
+        assertEquals(1, api.downloadReads)
+        c.dismissGalleryViewer()
+        c.openGalleryViewer(photo)
+        api.downloadGate?.complete(Unit)
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        assertEquals(photo, c.state.value.galleryViewer)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.galleryViewer)
+        assertTrue(c.state.value.galleryItems.isEmpty())
     }
 
     @Test fun GalleryOldOwnerRangeCannotReturnAfterLeavingApp() = runTest {

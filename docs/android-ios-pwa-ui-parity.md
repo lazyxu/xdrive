@@ -129,6 +129,15 @@ node scripts/shared-ui.mjs --check
 
 - Gallery API35 端到端登录夹具继承基础 Android `IME Done` 收起键盘与单次点击合同；其余照片查询继续共享 Owner 安全会话。
 
+## P0-08 · Android 原生图片 Viewer（Gallery 后续独立增量）
+
+- 点击真正的图片项目进入全屏图片 Viewer，视频/Live 播放继续保持未实现，不用元数据弹窗冒充播放。
+- 沿用现有 Go `files/:id/content` 和 Android SAF 下载共享的 Owner/TLS/SNI/选定 IP/ETag/大小及 SHA-256 链路，不再建第二套媒体服务；仅以 Android RAM 暂存压缩文件（上限 32 MiB），后台采样到不超过 2048px 长边，拒绝无限制内存。
+- Viewer 具备原生返回、Info、双击缩放、双指缩放和平移；退出时取消请求，viewer epoch 屏蔽旧请求 A→B→A 迟到回包，退出登录清除图片与 UI。
+- 此阶段尚未实现超过 32 MiB 原图的磁盘短期/Tile 解码、视频与 Live、相邻照片滑动、iOS 27 年/月/日/全部、相册、地图、端到端截图校准。对应 Controller JVM 与 Compose API35 测试必须以当前 PR 准确 SHA 为准；不可访问生产验收按用户决定跳过（未验收）。
+
+- 图片 Viewer 返回位置 P0：将 Gallery 的 LazyGrid 可保存位置与初次定位标志在同 App Shell 中保存，仅跨 Viewer 临时离开时恢复；新 Owner Range 重置定位。API35 真实 Compose fixture 在第 30 项打开图片、返回后断言同项仍可见，不能只断言页面回到了 Gallery。任何 Owner 私有缩略图/Token 都不进入保存状态。
+
 ## P0-07 · Gallery 无限向前分页（独立增量）
 
 - Android 原生 Gallery 保持 iOS 照片墙最新在底部，不再显示与 iOS 不符的永久“加载更早的照片”列表项；触达照片墙顶部自动按 Go Owner Range offset 向前加载 60 项。

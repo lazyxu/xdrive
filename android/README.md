@@ -326,3 +326,33 @@ Albums, year/month/day time-scale chrome, full-resolution Viewer and playback,
 map, editing, selection, upload/download from Gallery and final iOS 27 screenshot
 parity remain separate P0/P1 work. The new code is not production-complete
 until its exact Android Native JVM/lint/APK/API35 Compose CI passes.
+
+## Gallery original image Viewer — native P0 increment
+
+Image tiles now open a real full-screen native photo Viewer rather than the
+metadata dialog. The Viewer reuses the existing authenticated, route-pinned
+`GET /api/v1/files/:id/content` streaming code with its Node revision/ETag,
+size and available SHA-256 verification. The compressed source stays in bounded
+RAM (32 MiB maximum), is sampled to at most 2048 pixels on the long edge,
+and is never written to a public URL, preferences or a persistent image cache.
+Closing the Viewer cancels its scoped request; a separate viewer epoch discards
+late bytes even when the same item is reopened. Native Back returns to the same
+Gallery Range; double-tap zoom, pinch and pan are supported. Info remains a real
+metadata dialog. No WebView or second Server endpoint is introduced.
+
+This is only the *image* slice of P0 Viewer. Originals exceeding 32 MiB,
+image tiling, adjacent-item swipe/filmstrip, actual video/Live playback, PDF,
+full transfer center and pixel-for-pixel iOS 27 screenshot comparisons remain
+open. Tests require the exact incremental PR SHA; no physical device
+verification is claimed.
+
+### Gallery → photo Viewer → exact scroll anchor
+
+The Gallery's LazyGrid saveable viewport position and initial-latest positioning latch
+now live in an Owner-keyed `SaveableStateProvider` on the same root App while the
+Viewer replaces the Gallery. Returning to the wall restores its previous
+visible position instead of jumping to the newest photo. Loading an entirely
+new Gallery Range clears the positioning latch; Owner/session and private
+thumbnail data remain non-persistent. A Compose API35 fixture scrolls to an
+older photo, opens it, returns, and asserts that specific photo is still
+visible (not merely that Gallery reopened).

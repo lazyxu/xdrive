@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,7 +35,8 @@ import kotlinx.coroutines.withContext
 internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController) {
     val gridState = rememberLazyGridState()
     val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
-    var positioned by remember { mutableStateOf(false) }
+    // Preserve the visible photo anchor while the Viewer is open.
+    var positioned by rememberSaveable { mutableStateOf(false) }
     // A single entrance to the oldest visible edge permits only one fetch.
     // Re-arm after scrolling away: do not recursively traverse a 100k library
     // while Compose is still remeasuring newly prepended rows.
@@ -157,7 +159,10 @@ private fun GalleryTile(
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        .clickable(onClick = { controller.showGalleryInfo(item) })
+        .clickable(onClick = {
+            if (item.mediaKind == "image") controller.openGalleryViewer(item)
+            else controller.showGalleryInfo(item)
+        })
         .testTag("gallery-item-${item.node.id}")) {
         if (bitmap != null) {
             Image(bitmap = bitmap!!, contentDescription = item.node.name,
