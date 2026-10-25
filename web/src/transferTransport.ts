@@ -42,19 +42,33 @@ export function xDriveUploadBytes(
     xhr.upload.onprogress = (event) => {
       progress.progress(Math.min(bodySize, Math.max(0, event.loaded)))
     }
+    // A progress observer may have been disposed while a browser-owned XHR
+    // terminal event was still pending. Its exception must not strand the
+    // transfer Promise or override the actual HTTP/network outcome.
+    const flushProgress = () => { try { progress.flush() } catch { /* optional telemetry */ } }
     xhr.onload = () => {
       cleanup()
-      progress.flush()
-      resolve(new Response(xhr.responseText || null, { status: xhr.status, statusText: xhr.statusText }))
+      flushProgress()
+      if (input.signal?.aborted) { reject(xDriveTransferAbortError()); return }
+      // A browser may deliver an anomalous onload without an HTTP status.
+      // Response(status: 0) would throw inside an async event handler and leave
+      // the upload pending forever instead of showing a retryable failure.
+      if (xhr.status === 0) { reject(new TypeError('上传连接失败。')); return }
+      try {
+        resolve(new Response(xhr.responseText || null, { status: xhr.status, statusText: xhr.statusText }))
+      } catch (error) {
+        // Malformed browser/proxy terminal responses must settle as failures.
+        reject(error)
+      }
     }
     xhr.onerror = () => {
       cleanup()
-      progress.flush()
+      flushProgress()
       reject(new TypeError('上传连接失败。'))
     }
     xhr.ontimeout = () => {
       cleanup()
-      progress.flush()
+      flushProgress()
       reject(new TypeError('上传连接超时。'))
     }
     xhr.onabort = () => {
