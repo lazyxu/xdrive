@@ -128,3 +128,10 @@ node scripts/shared-ui.mjs --check
 - 本轮 **不等同于完整 iOS PWA 1:1**：精选集、年月日分组控件、Gallery Viewer/Live 播放、地图、搜索、选择、上传/下载与彻底像素校准仍未完成。CI 必须在本独立准确 HEAD 验证。
 
 - Gallery API35 端到端登录夹具继承基础 Android `IME Done` 收起键盘与单次点击合同；其余照片查询继续共享 Owner 安全会话。
+
+## P0-07 · Gallery 无限向前分页（独立增量）
+
+- Android 原生 Gallery 保持 iOS 照片墙最新在底部，不再显示与 iOS 不符的永久“加载更早的照片”列表项；触达照片墙顶部自动按 Go Owner Range offset 向前加载 60 项。
+- 首次 sparse latest 末页若少于 24 项，仅预取一页后定位最新照片，绝不在首次进入就把 100k 全库扫描完；真正靠近顶部才继续分页。LazyVerticalGrid 稳定 item key 维持已可见照片锚点，不因 prepend 回跳到底部。
+- 错误明确提供“重试加载更早的照片”，不清除已显示 Range，不重新读取 last page；Owner/total/offset/ID 一致性继续由 Controller 验证。自动加载在错误状态停止，避免循环请求。
+- 核心 Controller JVM 覆盖失败 Range 的原 offset 重试和保留已读图片，Compose API35 fixture 覆盖首次 bounded prefetch、滚到顶部续页与旧尾部照片不丢失。准确提交 CI 未通过前不标记完成，生产环境安全验收仍按用户决定跳过（未验收）。

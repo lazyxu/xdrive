@@ -31,6 +31,8 @@ class DriveAppTest {
     private var moveCalls = 0
     private var extraRootFile = false
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
+    private var galleryAutoPagingFixture = false
+    private val galleryOffsets = mutableListOf<Int>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
         capturedAt = "2026-10-24T00:00:00Z", hasThumbnail = true)
@@ -41,7 +43,16 @@ class DriveAppTest {
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryPage(accessToken: String, offset: Int,
-            initialLatest: Boolean) = GalleryPage(listOf(galleryFixture), 1, 0)
+            initialLatest: Boolean): GalleryPage {
+            if (!galleryAutoPagingFixture) return GalleryPage(listOf(galleryFixture), 1, 0)
+            galleryOffsets += if (initialLatest) 180 else offset
+            return if (initialLatest) GalleryPage(listOf(galleryFixture), 181, 180)
+            else GalleryPage((offset until offset + 60).map { index ->
+                GalleryAsset(
+                    DriveNode(1000L + index, 1L, "相片-${index}.jpg", "file",
+                        size = 44, revision = 1), "image", hasThumbnail = true)
+            }, 181, offset)
+        }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long) = byteArrayOf(1,2,3)
         override suspend fun fileRecent(accessToken: String) = listOf(
@@ -205,6 +216,29 @@ class DriveAppTest {
             controller.state.value.screen == Screen.FILES
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun GalleryAutomaticallyFetchesOlderOwnerRangeAtScrolledTop() {
+        galleryAutoPagingFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        // Initial latest single tile triggers one bounded sparse-tail prefetch.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryOffset == 120 &&
+                controller.state.value.galleryItems.size == 61
+        }
+        compose.onNodeWithTag("gallery-grid").performScrollToIndex(0)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryOffset == 60 &&
+                controller.state.value.galleryItems.size == 121
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(180, 120, 60), galleryOffsets)
+            org.junit.Assert.assertEquals(
+                40L, controller.state.value.galleryItems.last().node.id)
+            org.junit.Assert.assertNull(controller.state.value.error)
+        }
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {

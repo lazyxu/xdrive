@@ -834,6 +834,18 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** Retry the failed original Range without resetting existing Owner rows. */
+    fun retryGallery() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.loading) return
+        if (!current.galleryLoaded) {
+            refreshGallery()
+        } else if (current.error != null && current.galleryOffset > 0) {
+            mutableState.value = current.copy(error = null)
+            loadGallery(initialLatest = false)
+        }
+    }
+
     fun galleryLoadOlder() {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
