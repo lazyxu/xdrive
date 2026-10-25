@@ -136,22 +136,25 @@ func backupCmd(args []string) error {
 		}
 		ctxRead, done := context.WithTimeout(ctx, 30*time.Second)
 		defer done()
-		previous, err := client.ReadSchedule(ctxRead, *id)
+		saved, changed, err := saveBackupScheduleIfChanged(ctxRead, client, *id, spec)
 		if err != nil {
 			return err
 		}
-		saved, err := client.SaveSchedule(ctxRead, *id, previous.Revision,
-			localbackupipc.Schedule{SourceID: *id, ScheduleType: spec.Type,
-				ScheduleExpression: spec.Expression, ScheduleTimezone: spec.Timezone})
-		if err != nil {
-			return err
+		if changed {
+			fmt.Printf("Source %d: saved %s %s %s (revision %d)\n",
+				*id, saved.ScheduleType, saved.ScheduleExpression, saved.ScheduleTimezone, saved.Revision)
+		} else {
+			fmt.Printf("Source %d: schedule unchanged (%s %s %s, revision %d)\n",
+				*id, saved.ScheduleType, saved.ScheduleExpression, saved.ScheduleTimezone, saved.Revision)
 		}
-		fmt.Printf("Source %d: %s %s %s (revision %d)\n",
-			*id, saved.ScheduleType, saved.ScheduleExpression, saved.ScheduleTimezone, saved.Revision)
 		if saved.ScheduleType != "manual" {
 			if !*runNow {
-				fmt.Println("After saving a schedule, run: xd backup once --source " + strconv.FormatUint(*id, 10))
-				fmt.Println("The schedule changes Source revision; automatic admission requires a fresh verified partial checkpoint.")
+				if changed {
+					fmt.Println("After changing a schedule, run: xd backup once --source " + strconv.FormatUint(*id, 10))
+					fmt.Println("The schedule changes Source revision; automatic admission requires a fresh verified partial checkpoint.")
+				} else {
+					fmt.Println("Existing Source revision retained; automatic admission still requires a valid prior checkpoint.")
+				}
 			}
 			fmt.Println("Keep xdrive-agent running; use 'xd backup agent' under your service manager to survive reboots.")
 		}
@@ -224,6 +227,54 @@ func backupCmd(args []string) error {
 		return nil
 	}
 	return errors.New("unknown backup action")
+}
+
+// A repeated xd backup auto/schedule command must not rewrite an identical
+// policy: the owning Agent rejects identical PATCH requests, which would
+// otherwise surface as an error despite no configuration change. A read-only
+// match also preserves the existing Source revision and run checkpoint.
+type backupScheduleWriteAgent interface {
+	ReadSchedule(context.Context, uint64) (localbackupipc.Schedule, error)
+	SaveSchedule(context.Context, uint64, uint64, localbackupipc.Schedule) (localbackupipc.Schedule, error)
+}
+
+func saveBackupScheduleIfChanged(
+	ctx context.Context, agent backupScheduleWriteAgent, id uint64, desired sourceschedule.Spec,
+) (localbackupipc.Schedule, bool, error) {
+	if ctx == nil || ctx.Err() != nil || agent == nil || !localbackupipc.ValidSourceID(id) {
+		return localbackupipc.Schedule{}, false, errors.New("invalid owning backup schedule request")
+	}
+	normalized, err := sourceschedule.Normalize(desired.Type, desired.Expression, desired.Timezone)
+	if err != nil || normalized != desired || desired.Type == "" {
+		return localbackupipc.Schedule{}, false, errors.New("invalid normalized backup schedule")
+	}
+	current, err := agent.ReadSchedule(ctx, id)
+	if err != nil {
+		return localbackupipc.Schedule{}, false, err
+	}
+	if !localbackupipc.ValidateSchedule(current, id) {
+		return localbackupipc.Schedule{}, false, errors.New("unverified owning backup schedule")
+	}
+	if current.ScheduleType == desired.Type &&
+		current.ScheduleExpression == desired.Expression &&
+		current.ScheduleTimezone == desired.Timezone {
+		return current, false, nil
+	}
+	saved, err := agent.SaveSchedule(ctx, id, current.Revision,
+		localbackupipc.Schedule{
+			SourceID: id, ScheduleType: desired.Type,
+			ScheduleExpression: desired.Expression, ScheduleTimezone: desired.Timezone,
+		})
+	if err != nil {
+		return localbackupipc.Schedule{}, false, err
+	}
+	if !localbackupipc.ValidateSchedule(saved, id) || saved.Revision <= current.Revision ||
+		saved.ScheduleType != desired.Type ||
+		saved.ScheduleExpression != desired.Expression ||
+		saved.ScheduleTimezone != desired.Timezone {
+		return localbackupipc.Schedule{}, false, errors.New("unverified updated backup schedule")
+	}
+	return saved, true, nil
 }
 
 func parseBackupSchedule(action, every, cron, zone string, manual bool) (sourceschedule.Spec, error) {

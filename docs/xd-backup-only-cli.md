@@ -135,6 +135,11 @@ xd backup agent
 ~~~
 
 `xd backup auto --source 42` uses the Desktop's existing six-hour default.
+Reapplying an identical, verified `auto` / `schedule` policy is now read-only:
+it avoids the existing Agent's explicit no-change PATCH error, while preserving
+the Source revision and any still-valid checkpoint. Changing the policy still
+advances the revision and requires a new explicit verified run. `--run-now` always means
+an explicit Agent run, including when the saved policy is unchanged.
 The Agent is auto-started in Backup-only mode in the background when needed; `XD_AGENT_PATH` can
 explicitly point at the installed `xdrive-agent` binary. The local Agent must
 remain running for scheduled backups; configure a user-level login/boot service
