@@ -261,6 +261,15 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 		}
 	}
 
+	// The upload ownership marker does not attest CAS traversal. A migrated
+	// host can keep a correct marker while .xdrive-blobs or its sha256 shard
+	// parents are unreadable to the runtime, breaking backup verification even
+	// while /readyz is healthy. Touch ONLY the fixed CAS parent directories
+	// (at most 258 paths), never walk/chown immutable blob files on this path.
+	if err := repairCanonicalCASParents(abs, uid, gid); err != nil {
+		return "", err
+	}
+
 	if err := os.WriteFile(marker, []byte(target+"\n"), 0o640); err != nil {
 		return "", fmt.Errorf("write storage ownership marker: %w", err)
 	}
@@ -271,6 +280,50 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 		return "", fmt.Errorf("set storage ownership marker mode: %w", err)
 	}
 	return abs, nil
+}
+
+// repairCanonicalCASParents repairs bounded directory metadata needed for
+// immutable CAS reads. All paths are fixed canonical directories; files are
+// deliberately untouched. Lstat prevents a symlink from escaping this root.
+func repairCanonicalCASParents(root string, uid, gid int) error {
+	casRoot := filepath.Join(root, storage.ContentBlobDir)
+	found, err := repairCASParentIfPresent(casRoot, uid, gid)
+	if err != nil || !found {
+		return err
+	}
+
+	shaRoot := filepath.Join(casRoot, "sha256")
+	found, err = repairCASParentIfPresent(shaRoot, uid, gid)
+	if err != nil || !found {
+		return err
+	}
+
+	// Every valid sha256 CAS object uses a two-hex shard directory. Probing
+	// only these 256 possible parents is independent of library size.
+	for shard := 0; shard < 256; shard++ {
+		path := filepath.Join(shaRoot, fmt.Sprintf("%02x", shard))
+		if _, err := repairCASParentIfPresent(path, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func repairCASParentIfPresent(path string, uid, gid int) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat canonical CAS directory %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf("canonical CAS parent %s must be a real directory", path)
+	}
+	if err := repairStorageEntryWithInfo(path, info, uid, gid); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func repairStorageTree(root string, uid, gid int) error {

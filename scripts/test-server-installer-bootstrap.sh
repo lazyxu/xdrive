@@ -163,6 +163,7 @@ grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/c
 grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
 grep -q "XD_PHOTO_FACE_IMAGE=ghcr.io/lazyxu/xdrive-photo-face:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
 grep -Fq "XD_PHOTO_FACE_RUNTIME_DIR=$TMP/config-ok/state/photo-face" "$TMP/config-ok/config/.env"
+grep -Fq "XD_GEONAMES_HOST_DIR=$TMP/config-ok/data/geonames" "$TMP/config-ok/config/.env"
 if grep -q '^XD_WEB_IMAGE=' "$TMP/config-ok/config/.env"; then
   echo "new installs must not persist the retired XD_WEB_IMAGE" >&2
   exit 1
@@ -368,6 +369,33 @@ if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Config.E
   echo "POSTGRES_PASSWORD=stale-db-password"
   exit 0
 fi
+if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Mounts"* && -n "${TEST_CAS_MOUNT_DIR:-}" ]]; then
+  if [[ "$args" == *".Type"* ]]; then
+    echo bind
+  elif [[ "$args" == *".Source"* ]]; then
+    if [[ "${TEST_CAS_MOUNT_MISMATCH:-0}" == "1" ]]; then
+      echo /unrelated/custom-file-data
+    else
+      echo "$TEST_CAS_MOUNT_DIR"
+    fi
+  fi
+  exit 0
+fi
+if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Image"* && -n "${TEST_CAS_MOUNT_DIR:-}" ]]; then
+  printf 'sha256:%064d\n' 0
+  exit 0
+fi
+if [[ "$1" == "run" && -n "${TEST_CAS_MOUNT_DIR:-}" ]]; then
+  [[ "$args" == *"--pull never"* && "$args" == *"--network none"* &&
+     "$args" == *"--user 0:0"* ]] || exit 91
+  [[ "$args" == *"type=bind,src=$TEST_CAS_MOUNT_DIR,dst=/data"* ]] || exit 92
+  [[ "$args" == *".xdrive-blobs/sha256/[0-9a-f][0-9a-f]"* ]] || exit 93
+  [[ "$args" == *"xdrive-cas-parent-repair 65532 65532"* ]] || exit 94
+  # The real image helper owns only CAS directory metadata; this mock
+  # separately verifies the Docker capability and bounded shell contract.
+  echo "[xDrive] checked 3 canonical CAS parents; owner corrections 1."
+  exit 0
+fi
 if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Config.Env"* ]]; then
   if [[ "${TEST_MIGRATED_DB_READY:-0}" == "1" ]]; then
     if [[ "${TEST_MIGRATED_DSN_MISMATCH:-0}" == "1" ]]; then
@@ -413,6 +441,14 @@ fi
 
 if [[ "$1" == "compose" && ( "$args" == *" ps -q server"* || "$args" == *" ps -aq server"* ) ]]; then
   echo "xdrive-server-1"
+  exit 0
+fi
+# Exercise installer rollback after a deliberately refused stale /root path:
+# it must restore the old active files and start the old deployment.
+if [[ "$1" == "compose" && "$args" == *" up -d --remove-orphans"* ]]; then
+  exit 0
+fi
+if [[ "$1" == "compose" && "$args" == *" exec -T server xdrive-server healthcheck"* ]]; then
   exit 0
 fi
 
@@ -518,5 +554,124 @@ if ! TEST_MIGRATED_DB_READY=1 TEST_MIGRATED_DSN_MISMATCH=1 TEST_STATE="$TMP/stat
 fi
 test -f "$TMP/state/password-repaired"
 grep -Fq 'Repaired the managed PostgreSQL role password' "$TMP/mismatched-dsn.out"
+
+# A previously successful root-to-user migration may have been made with an
+# older migrator that rewrote only four paths. Four persisted host directories
+# remain under /root/.xd, making the NEXT normal-user update fail at stage 4.
+# This must recover strictly from the verified root migration marker, without
+# ever attempting to mkdir a directory in /root or touching unrelated paths.
+cp -a "$TMP/config-migrated" "$TMP/config-old-root-paths"
+# Keep all already-normalized host paths under the cloned installation.
+sed -i "s#$TMP/config-migrated#$TMP/config-old-root-paths#g" \
+  "$TMP/config-old-root-paths/config/.env"
+mkdir -p "$TMP/config-old-root-paths/state"
+cat > "$TMP/config-old-root-paths/state/migrated-from-root" <<EOF
+source_home=/root/.xd
+target_home=$TMP/config-old-root-paths
+target_user=$(id -un)
+migrated_at_utc=2026-10-25T00:00:00Z
+EOF
+chmod 600 "$TMP/config-old-root-paths/state/migrated-from-root"
+root_env="$TMP/config-old-root-paths/config/.env"
+grep -Ev '^XD_(CADDY_ASSET|MEDIA_WORKER_RUNTIME|PHOTO_FACE_RUNTIME|GEONAMES_HOST)_DIR=' "$root_env" > "$root_env.cleaned"
+mv "$root_env.cleaned" "$root_env"
+cat >> "$root_env" <<'EOF'
+XD_CADDY_ASSET_DIR=/root/.xd/data/caddy/assets
+XD_GEONAMES_HOST_DIR=/root/.xd/data/geonames
+XD_MEDIA_WORKER_RUNTIME_DIR=/root/.xd/state/media-worker
+XD_PHOTO_FACE_RUNTIME_DIR=/root/.xd/state/photo-face
+EOF
+chmod 600 "$root_env"
+# Simulate an immutable CAS tree with a current staging marker but a migrated
+# root-owned .xdrive-blobs parent. The helper must be scoped to this exact mount
+# and run *before* the pre-upgrade backup on a valid migration marker.
+mkdir -p "$TMP/config-old-root-paths/data/files/.xdrive-blobs/sha256/ab"
+cp -a "$TMP/config-old-root-paths" "$TMP/config-old-root-paths-no-marker"
+rm -f "$TMP/config-old-root-paths-no-marker/state/migrated-from-root"
+cp -a "$TMP/config-old-root-paths" "$TMP/config-old-root-paths-override"
+# The negative override case has valid migration identity. It must still
+# reject an explicit operator override rather than silently rewriting it.
+sed -i "s#^target_home=.*#target_home=$TMP/config-old-root-paths-override#" \
+  "$TMP/config-old-root-paths-override/state/migrated-from-root"
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+  if ! TEST_MIGRATED_DB_READY=1 TEST_STATE="$TMP/state" \
+    PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/config-old-root-paths" \
+    XD_SHELL_RC_PATH="$TMP/config-old-root-paths.bashrc" \
+    TEST_CAS_MOUNT_DIR="$TMP/config-old-root-paths/data/files" \
+    XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+    bash "$INSTALLER" >"$TMP/root-path-recovered.out" 2>"$TMP/root-path-recovered.err"; then
+    echo "post-migration old-root path recovery failed" >&2
+    cat "$TMP/root-path-recovered.out" "$TMP/root-path-recovered.err" >&2
+    exit 1
+  fi
+  grep -Fxq "XD_CADDY_ASSET_DIR=$TMP/config-old-root-paths/data/caddy/assets" \
+    "$TMP/config-old-root-paths/config/.env"
+  grep -Fxq "XD_GEONAMES_HOST_DIR=$TMP/config-old-root-paths/data/geonames" \
+    "$TMP/config-old-root-paths/config/.env"
+  grep -Fxq "XD_MEDIA_WORKER_RUNTIME_DIR=$TMP/config-old-root-paths/state/media-worker" \
+    "$TMP/config-old-root-paths/config/.env"
+  grep -Fxq "XD_PHOTO_FACE_RUNTIME_DIR=$TMP/config-old-root-paths/state/photo-face" \
+    "$TMP/config-old-root-paths/config/.env"
+  test -d "$TMP/config-old-root-paths/data/caddy/assets"
+  test -d "$TMP/config-old-root-paths/data/geonames"
+  test -d "$TMP/config-old-root-paths/state/media-worker"
+  test -d "$TMP/config-old-root-paths/state/photo-face"
+  [[ "$(grep -Fc 'repaired migrated XD_' "$TMP/root-path-recovered.out")" -eq 4 ]]
+  test ! -e "$TMP/state/password-repaired"
+  grep -Fq 'validating migrated CAS directory permissions' "$TMP/root-path-recovered.out"
+  grep -Fq 'checked 3 canonical CAS parents; owner corrections 1.' "$TMP/root-path-recovered.out"
+  grep -Fq -- "--network none --user 0:0 --mount type=bind,src=$TMP/config-old-root-paths/data/files,dst=/data" "$TMP/state/docker-calls"
+
+  # An active Server mount mismatch fails closed rather than re-owning an
+  # unrelated user-selected file storage directory.
+  cp -a "$TMP/config-old-root-paths-no-marker" "$TMP/config-cas-mount-mismatch"
+  sed -i "s#$TMP/config-old-root-paths#$TMP/config-cas-mount-mismatch#g" \
+    "$TMP/config-cas-mount-mismatch/config/.env"
+  cp "$TMP/config-old-root-paths/state/migrated-from-root" "$TMP/config-cas-mount-mismatch/state/migrated-from-root"
+  sed -i "s#^target_home=.*#target_home=$TMP/config-cas-mount-mismatch#" \
+    "$TMP/config-cas-mount-mismatch/state/migrated-from-root"
+  set +e
+  TEST_MIGRATED_DB_READY=1 TEST_STATE="$TMP/state" \
+    TEST_CAS_MOUNT_DIR="$TMP/config-cas-mount-mismatch/data/files" \
+    TEST_CAS_MOUNT_MISMATCH=1 PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/config-cas-mount-mismatch" \
+    XD_SHELL_RC_PATH="$TMP/config-cas-mount-mismatch.bashrc" \
+    XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+    bash "$INSTALLER" >"$TMP/cas-mismatch.out" 2>"$TMP/cas-mismatch.err"
+  cas_mismatch_status=$?
+  set -e
+  [[ "$cas_mismatch_status" -ne 0 ]]
+  grep -Fq 'migrated CAS mount mismatch; refusing permission changes before backup' "$TMP/cas-mismatch.err"
+  grep -Fq 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/cas-mismatch.err"
+
+  # A copied .env alone is insufficient authority to rewrite a protected
+  # root-owned path: no marker, wrong owner or explicit env overrides fail
+  # before attempting mkdir in /root.
+  set +e
+  TEST_MIGRATED_DB_READY=1 TEST_STATE="$TMP/state" \
+    PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/config-old-root-paths-no-marker" \
+    XD_SHELL_RC_PATH="$TMP/config-old-root-paths-no-marker.bashrc" \
+    XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+    bash "$INSTALLER" >"$TMP/root-no-marker.out" 2>"$TMP/root-no-marker.err"
+  missing_status=$?
+  XD_CADDY_ASSET_DIR=/root/.xd/data/caddy/assets \
+    TEST_MIGRATED_DB_READY=1 TEST_STATE="$TMP/state" \
+    PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$TMP/config-old-root-paths-override" \
+    XD_SHELL_RC_PATH="$TMP/config-old-root-paths-override.bashrc" \
+    XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+    bash "$INSTALLER" >"$TMP/root-override.out" 2>"$TMP/root-override.err"
+  override_status=$?
+  set -e
+  [[ "$missing_status" -ne 0 && "$override_status" -ne 0 ]]
+  grep -Fq 'XD_CADDY_ASSET_DIR still points to an inaccessible root-owned path' "$TMP/root-no-marker.err"
+  grep -Fq 'XD_CADDY_ASSET_DIR still points to an inaccessible root-owned path' "$TMP/root-override.err"
+  grep -Fq 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/root-no-marker.err"
+  grep -Fq 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/root-override.err"
+fi
 
 echo "server installer bootstrap and stage-reporting tests passed"
