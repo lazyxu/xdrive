@@ -31,6 +31,7 @@ import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStorageDistributionChart } from './StorageDistributionChart'
+import { XDriveStorageOptimizationAdvisor } from './StorageOptimizationAdvisor'
 import { XDriveStorageInventorySection } from './StorageInventorySection'
 import { XDriveTableSurface } from './TableSurface'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
@@ -59,7 +60,7 @@ const STORAGE_OPERATION_LABELS: Record<NonNullable<StorageStats['performance']>[
 const STAGING_PAGE_SIZE = 20
 const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
 
-type StorageMaintenanceKind = 'storage_verify' | 'storage_repair'
+type StorageMaintenanceKind = 'storage_verify' | 'storage_repair' | 'storage_optimization'
 type StorageHistoryDays = 30 | 90 | 180
 
 function unreferencedBlobStatus(blob: StorageUnreferencedBlob) {
@@ -432,7 +433,7 @@ export default function StorageStatsPanel({
     try {
       await onRunStorageMaintenance(kind)
       setMaintenanceLoading('')
-      onOpenTaskCenter?.()
+      if (kind !== 'storage_optimization') onOpenTaskCenter?.()
     } catch (err) {
       setMaintenanceLoading('')
       setError(err instanceof Error && err.message.trim()
@@ -1112,6 +1113,11 @@ export default function StorageStatsPanel({
                     <XDriveMetricCard title="平均 Blob" value={formatBytes(averageBlobSizeBytes)} />
                     <XDriveMetricCard title="P50 / P90 / P99" value={`${formatBytes(p50BlobSizeBytes)} / ${formatBytes(p90BlobSizeBytes)} / ${formatBytes(p99BlobSizeBytes)}`} />
                   </XDriveMetricGrid>
+                  <XDriveStorageOptimizationAdvisor
+                    api={api}
+                    onRun={onRunStorageMaintenance ? () => runStorageMaintenance('storage_optimization') : undefined}
+                    onOpenTaskCenter={onOpenTaskCenter}
+                  />
 
                   {unreferencedBlobCount > 0 && (
                     <Accordion

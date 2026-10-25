@@ -81,6 +81,7 @@ import type {
   QuotaUsage,
   StorageHealth,
   StorageHistory,
+  StorageOptimizationAdvice,
   StorageLegacyObjectPage,
   StorageUnreferencedBlobPage,
   StorageStats,
@@ -1122,6 +1123,10 @@ export class XDriveApi {
 
   adminStorageHistory(days = 30) {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
+  }
+
+  adminStorageOptimizationAdvice() {
+    return this.request<StorageOptimizationAdvice>('/api/v1/admin/storage/optimization-advice')
   }
 
   adminStorageLegacyObjects(limit = 20, cursor = '') {

@@ -454,6 +454,52 @@ export interface StorageHistoryAnomaly {
   age_hours?: number
 }
 
+export interface StorageOptimizationCompression {
+  algorithm: string
+  sample_bytes: number
+  output_bytes: number
+  ratio: number
+  savings_percent: number
+  compress_ms: number
+  decompress_ms: number
+}
+export interface StorageOptimizationPack {
+  objects: number
+  payload_bytes: number
+  index_bytes: number
+  source_allocated_bytes: number
+  projected_allocated_bytes: number
+  projected_savings_percent: number
+  build_ms: number
+  allocation_model: string
+}
+export interface StorageOptimizationRecommendation {
+  scope: 'online_storage' | 'backup_repository'
+  feature: 'compression' | 'pack'
+  decision: 'observe' | 'candidate' | 'not_recommended'
+  reason: string
+}
+export interface StorageOptimizationReport {
+  sample_objects: number
+  sample_bytes: number
+  partial_objects: number
+  full_objects: number
+  skipped_objects: number
+  confidence: 'low' | 'medium' | 'high'
+  sample_method: string
+  compression: StorageOptimizationCompression[]
+  pack: StorageOptimizationPack
+  recommendations: StorageOptimizationRecommendation[]
+  limitations: string[]
+}
+export interface StorageOptimizationAdvice {
+  status: 'not_run' | 'queued' | 'running' | 'success' | 'failed' | 'cancel_requested' | 'cancelled'
+  run_id?: number
+  generated_at?: string
+  error?: string
+  report?: StorageOptimizationReport
+}
+
 export interface StorageHistory {
   samples: StorageHistoryPoint[]
   anomalies: StorageHistoryAnomaly[]

@@ -32,6 +32,8 @@ func (c *Client) AdminStorage(ctx context.Context, input AdminStorageRequest) (j
 		endpoint = "/api/v1/admin/storage"
 	case "health":
 		endpoint = "/api/v1/admin/storage/health"
+	case "optimization-advice":
+		endpoint = "/api/v1/admin/storage/optimization-advice"
 	case "history":
 		endpoint = "/api/v1/admin/storage/history"
 		params.Set("days", strconv.Itoa(input.Days))

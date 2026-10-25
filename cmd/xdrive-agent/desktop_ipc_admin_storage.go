@@ -13,7 +13,7 @@ type desktopIPCAdminStorageController interface {
 }
 
 var desktopAdminStorageOperations = map[string]bool{
-	"stats": true, "health": true, "history": true, "legacy": true,
+	"stats": true, "health": true, "history": true, "legacy": true, "optimization-advice": true,
 	"unreferenced": true, "staging": true, "cleanup-runs": true,
 	"cleanup-failures": true, "cleanup-staging": true, "cleanup-cache": true,
 }
