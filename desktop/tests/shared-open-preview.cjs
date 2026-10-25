@@ -180,7 +180,7 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   ]) assert.ok(preview.includes(token), 'shared LIVP preview missing: ' + token)
 
   assert.ok(
-    web.includes('api.mediaLivePhotoStillURL(Number(item.id))'),
+    /api\.mediaLivePhotoStillURL\(Number\(item\.id\),\s*signal\)/.test(web),
     'Web FileExplorer must use the signed LIVP still preview before thumbnail fallback',
   )
   assert.ok(

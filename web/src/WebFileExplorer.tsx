@@ -1041,7 +1041,7 @@ export default function WebFileExplorer({
     if (item.kind !== 'file') return null
     try {
       if (kind === 'live_photo') {
-        return await api.mediaLivePhotoStillURL(Number(item.id))
+        return await api.mediaLivePhotoStillURL(Number(item.id), signal)
       }
       if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
         return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision), onProgress)

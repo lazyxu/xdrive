@@ -929,7 +929,7 @@ function WebPreviewApp({
           loadImagePreview={loadThumbnail}
           loadPreviewURL={async (_target, kind, signal) => (
             kind === 'live_photo'
-              ? api.mediaLivePhotoStillURL(viewer.node!.id)
+              ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
               : kind === 'image' && xDriveFileUsesRawCompatibilityPreview(_target.name)
                 ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision)
                 : api.filePreviewURL(viewer.node!.id, signal)
