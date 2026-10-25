@@ -313,10 +313,34 @@ jobs:
           )
           gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
           gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
+      # Elevated Git ref permission is opt-in and never exposed to ordinary CI.
+      # Keep the original GITHUB_TOKEN fallback and the existing fail-closed
+      # temporary-ref permission probe when no publisher App is configured.
+      - name: Validate optional Snapshot publisher identity
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          HAS_SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID != '' }}
+          HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY" ]]; then
+            echo "[xDrive] Snapshot publisher App configuration is incomplete; refusing publication." >&2
+            exit 1
+          fi
+      - name: Mint scoped Snapshot publisher token
+        if: github.ref == 'refs/heads/master' && vars.XD_SNAPSHOT_APP_CLIENT_ID != ''
+        id: snapshot_app_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
       - name: Reject stale master snapshot before channel promotion
         if: github.ref == 'refs/heads/master'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -338,7 +362,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
@@ -403,7 +427,7 @@ jobs:
       - name: Publish rolling snapshot prerelease
         if: github.ref == 'refs/heads/master'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash
         run: |
           set -euo pipefail

@@ -18,6 +18,33 @@ assert release.index(marker) < release.index("      - name: Log in to GHCR for c
 assert release.index(marker) < release.index("      - name: Publish rolling snapshot prerelease")
 assert "python3 scripts/test-snapshot-tag-preflight.py" in ci
 
+
+# The optional App token must be minted in the trusted release bundle,
+# after signing, and before any public image or Release mutation.
+identity = "      - name: Validate optional Snapshot publisher identity\n"
+mint = "      - name: Mint scoped Snapshot publisher token\n"
+stale = "      - name: Reject stale master snapshot before channel promotion\n"
+assert release.count(identity) == 1 and release.count(mint) == 1
+assert release.index("      - name: Cryptographically verify signed bundle before releasing") < release.index(identity)
+assert release.index(identity) < release.index(mint) < release.index(stale) < release.index(marker)
+guard = release.split(identity, 1)[1].split(mint, 1)[0]
+assert "HAS_SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID != '' }}" in guard
+assert "HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}" in guard
+assert '"$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY"' in guard
+action = release.split(mint, 1)[1].split(stale, 1)[0]
+assert "if: github.ref == 'refs/heads/master' && vars.XD_SNAPSHOT_APP_CLIENT_ID != ''" in action
+assert "id: snapshot_app_token" in action
+assert "uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0" in action
+assert "client-id: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID }}" in action
+assert "private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}" in action
+assert "permission-contents: write" in action and "permission-workflows: write" in action
+assert "repositories:" not in action and "owner:" not in action, "App token must default to current repository only"
+token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
+assert release.count(token) == 3, "preflight, permission probe and Snapshot publish must share token"
+assert release.count("GH_TOKEN: ${{ github.token }}") == 2, "attestation check and stable publish keep original token"
+assert release.index(token) < release.index(marker)
+assert token in release.split(marker, 1)[1].split("      - name: Log in to GHCR for channel promotion", 1)[0]
+assert token in release.split("      - name: Publish rolling snapshot prerelease", 1)[1].split("      - name: Assert distribution assets", 1)[0]
 OLD = "a" * 40
 NEW = "b" * 40
 MOCK_GH = r'''#!/usr/bin/env python3
