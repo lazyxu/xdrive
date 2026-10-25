@@ -26,9 +26,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         mutableStateOf<FilesEditIntent?>(null)
     }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(filesEdit != null || state.selected != null || (state.screen == Screen.FILES &&
-        (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) {
-        if (filesEdit != null) filesEdit = null else controller.back()
+    BackHandler(state.destinationKind != null || filesEdit != null || state.selected != null ||
+        (state.screen == Screen.FILES &&
+            (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) {
+        if (state.destinationKind != null) controller.dismissDestination()
+        else if (filesEdit != null) filesEdit = null
+        else controller.back()
     }
     Scaffold(modifier = Modifier.imePadding(), containerColor = if (state.screen == Screen.FILES) mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
@@ -86,10 +89,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
                 Screen.FILES -> Files(state, controller, filesView,
                     onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
-                    onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) })
+                    onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
+                    onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
+                    onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) })
             }
         }
     }
+    if (state.destinationKind != null) FilesDestinationDialog(state, controller)
     filesEdit?.let { intent ->
         FilesEditDialog(intent = intent, busy = state.loading, onDismiss = { filesEdit = null }) { name ->
             if (!state.loading && state.screen == Screen.FILES &&

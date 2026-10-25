@@ -107,6 +107,10 @@ interface XDriveService {
     suspend fun trashNode(accessToken: String, original: DriveNode) {
         throw ApiException(501, "Trash API unavailable")
     }
+    suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
+        throw ApiException(501, "Copy API unavailable")
+    suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
+        throw ApiException(501, "Move API unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -182,6 +186,33 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         request("nodes/${original.id}", accessToken, method = "DELETE",
             ifMatch = original.revision, emptyResponse = true)
+    }
+
+    /** Go copy and move share a numeric JSON parent_id, never a string.
+     * Move requires If-Match; copy is a single no-replay Server POST. */
+    override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+        require(original.id > 0 && original.parentId != null &&
+            original.revision > 0 && parentId > 0) { "Invalid copy target" }
+        require(!original.isDirectory || parentId != original.id) { "Cannot copy into self" }
+        val copied = node(request("nodes/${original.id}/copy", accessToken,
+            numberValues = mapOf("parent_id" to parentId)))
+        if (copied.id == original.id || copied.parentId != parentId ||
+            copied.type != original.type || copied.revision <= 0) invalidPayload()
+        return copied
+    }
+
+    override suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
+        require(original.id > 0 && original.parentId != null &&
+            original.revision > 0 && parentId > 0 &&
+            parentId != original.parentId &&
+            (!original.isDirectory || parentId != original.id)) { "Invalid move target" }
+        val moved = node(request("nodes/${original.id}", accessToken,
+            numberValues = mapOf("parent_id" to parentId), method = "PATCH",
+            ifMatch = original.revision))
+        if (moved.id != original.id || moved.parentId != parentId ||
+            moved.name != original.name || moved.type != original.type ||
+            moved.revision <= original.revision) invalidPayload()
+        return moved
     }
 
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
@@ -289,7 +320,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         emptyResponse: Boolean = false,
         method: String? = null,
         ifMatch: Long? = null,
-    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method, ifMatch)
+        numberValues: Map<String, Long> = emptyMap(),
+    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method, ifMatch, numberValues)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -307,6 +339,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         emptyResponse: Boolean = false,
         method: String? = null,
         ifMatch: Long? = null,
+        numberValues: Map<String, Long> = emptyMap(),
     ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             query.forEach { (name, value) -> addQueryParameter(name, value) }
@@ -320,9 +353,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             require(ifMatch > 0) { "Invalid node revision" }
             builder.header("If-Match", "\"$ifMatch\"")
         }
-        if (values != null) {
-            val payload = JsonObject(values.mapValues { JsonPrimitive(it.value) })
-                .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        if (values != null || numberValues.isNotEmpty()) {
+            val fields = mutableMapOf<String, JsonElement>()
+            values?.forEach { (name, value) -> fields[name] = JsonPrimitive(value) }
+            numberValues.forEach { (name, value) ->
+                require(name !in fields && value > 0) { "Invalid numeric mutation field" }
+                fields[name] = JsonPrimitive(value)
+            }
+            val payload = JsonObject(fields).toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
             when (method) {
                 null -> builder.post(payload)
                 "PATCH" -> builder.patch(payload)

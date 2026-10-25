@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class Screen { CONNECT, LOGIN, PASSWORD, FILES }
 enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
+enum class FilesTransferKind { COPY, MOVE }
 
 data class DriveState(
     val screen: Screen = Screen.CONNECT,
@@ -30,9 +31,28 @@ data class DriveState(
     val searchQuery: String = "",
     val searchNextCursor: String = "",
     val searchReturnSection: FilesSection = FilesSection.BROWSE,
+    val destinationKind: FilesTransferKind? = null,
+    val destinationSource: DriveNode? = null,
+    val destinationPath: List<DriveNode> = emptyList(),
+    val destinationFolders: List<DriveNode> = emptyList(),
+    val destinationOffset: Int = 0,
+    val destinationTotal: Long = 0,
+    val destinationLoaded: Boolean = false,
+    val destinationSubmitting: Boolean = false,
+    val destinationWriteAttempted: Boolean = false,
 ) {
     val hasNext get() = loaded && offset.toLong() + 100 < totalCount && offset <= Int.MAX_VALUE - 100
+    val destinationHasNext get() = destinationLoaded &&
+        destinationOffset.toLong() + 100 < destinationTotal &&
+        destinationOffset <= Int.MAX_VALUE - 100
 }
+
+private fun DriveState.withoutDestination(): DriveState = copy(
+    destinationKind = null, destinationSource = null, destinationPath = emptyList(),
+    destinationFolders = emptyList(), destinationOffset = 0, destinationTotal = 0,
+    destinationLoaded = false, destinationSubmitting = false,
+    destinationWriteAttempted = false,
+)
 
 /** One active intent; cancellation stops transport, generation also fences non-cooperative replies. */
 class DriveController(
@@ -137,7 +157,7 @@ class DriveController(
 
     fun open(node: DriveNode) {
         if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
-            state.value.items.none { it == node }) return
+            state.value.destinationKind != null || state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else showDetails(node)
     }
@@ -145,7 +165,7 @@ class DriveController(
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
-        if (current.screen != Screen.FILES) return
+        if (current.screen != Screen.FILES || current.destinationKind != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
@@ -162,9 +182,154 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
             current.loading || !current.loaded || current.path.isEmpty() || session == null) return null
+        if (current.destinationKind != null) return null
         if (node != null && (node.parentId != current.path.last().id ||
             node.revision <= 0 || current.items.none { it == node })) return null
         return current
+    }
+
+    /** Real Owner-checked target folder picker. All folders come from
+     * XDriveService.root/children, never synthetic paths or arbitrary IDs. */
+    fun chooseDestination(node: DriveNode, kind: FilesTransferKind) {
+        val current = editableBrowseState(node) ?: return
+        val service = api ?: return
+        mutableState.value = current.copy(
+            destinationKind = kind, destinationSource = node,
+            destinationPath = emptyList(), destinationFolders = emptyList(),
+            destinationOffset = 0, destinationTotal = 0, destinationLoaded = false,
+            destinationSubmitting = false, destinationWriteAttempted = false)
+        request { ticket ->
+            val root = authenticated(service, ticket) { service.root(it) }
+            checkCurrent(ticket)
+            loadDestination(service, listOf(root), 0, ticket)
+        }
+    }
+
+    fun dismissDestination() {
+        val current = state.value
+        if (current.destinationKind == null || current.destinationSubmitting) return
+        invalidate() // Cancel remote folder enumeration, not an in-flight write.
+        mutableState.value = current.withoutDestination().copy(loading = false, error = null)
+    }
+
+    fun enterDestinationFolder(node: DriveNode) {
+        val current = state.value
+        if (current.destinationKind == null || !current.destinationLoaded ||
+            current.loading || current.destinationFolders.none { it == node } ||
+            !node.isDirectory) return
+        if (current.destinationSource?.isDirectory == true &&
+            node.id == current.destinationSource.id) return
+        val service = api ?: return
+        val path = current.destinationPath + node
+        // Record the *requested* destination before the GET starts. If the
+        // Server rejects/times out, Retry must read this same child, not the
+        // previously displayed parent folder.
+        mutableState.value = current.copy(
+            destinationPath = path, destinationFolders = emptyList(),
+            destinationOffset = 0, destinationTotal = 0, destinationLoaded = false)
+        request { ticket -> loadDestination(service, path, 0, ticket) }
+    }
+
+    fun backDestinationFolder() {
+        val current = state.value
+        if (current.destinationKind == null || current.loading ||
+            current.destinationPath.size < 2) return
+        val service = api ?: return
+        val path = current.destinationPath.dropLast(1)
+        mutableState.value = current.copy(
+            destinationPath = path, destinationFolders = emptyList(),
+            destinationOffset = 0, destinationTotal = 0, destinationLoaded = false)
+        request { ticket -> loadDestination(service, path, 0, ticket) }
+    }
+
+    fun loadMoreDestination() {
+        val current = state.value
+        if (current.destinationKind == null || !current.destinationHasNext ||
+            current.loading || current.error != null || current.destinationPath.isEmpty()) return
+        val service = api ?: return
+        val path = current.destinationPath.toList()
+        val next = current.destinationOffset + 100
+        request { ticket -> loadDestination(service, path, next, ticket, append = true) }
+    }
+
+    fun retryDestination() {
+        val current = state.value
+        if (current.destinationKind == null || current.loading ||
+            current.destinationSubmitting || current.destinationWriteAttempted) return
+        if (current.destinationPath.isEmpty()) {
+            val node = current.destinationSource ?: return
+            val kind = current.destinationKind
+            dismissDestination()
+            chooseDestination(node, kind)
+            return
+        }
+        val service = api ?: return
+        val path = current.destinationPath.toList()
+        request { ticket -> loadDestination(service, path, 0, ticket) }
+    }
+
+    private suspend fun loadDestination(
+        service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long,
+        append: Boolean = false,
+    ) {
+        checkCurrent(ticket)
+        if (path.isEmpty() || path.any { !it.isDirectory }) throw ApiException(
+            0, "Invalid target folder path", ApiFailureReason.INVALID_RESPONSE)
+        val page = authenticated(service, ticket) { service.children(it, path.last().id, offset) }
+        checkCurrent(ticket)
+        val current = state.value
+        if (current.destinationKind == null || current.destinationSource == null) throw CancellationException()
+        if (append && (current.destinationPath != path ||
+                current.destinationOffset + 100 != offset || !current.destinationLoaded))
+            throw CancellationException()
+        if (page.offset != offset || (page.items.isEmpty() && page.totalCount > offset))
+            throw ApiException(0, "Invalid destination page", ApiFailureReason.INVALID_RESPONSE)
+        val folders = page.items.filter { it.isDirectory }
+        val merged = if (append) (current.destinationFolders + folders).distinctBy { it.id } else folders
+        // A legitimate later 100-item range may contain files only. The
+        // Server advances the full (folders-first) NodeRange offset, so zero
+        // new folders is not evidence of stalled pagination.
+        mutableState.value = current.copy(
+            destinationPath = path, destinationFolders = merged,
+            destinationOffset = offset, destinationTotal = page.totalCount,
+            destinationLoaded = true, error = null,
+        )
+    }
+
+    /** No token refresh/replay for either physical copy or move commit. */
+    fun commitDestination() {
+        val current = state.value
+        val source = current.destinationSource ?: return
+        val kind = current.destinationKind ?: return
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.loading || current.destinationSubmitting || current.destinationWriteAttempted ||
+            !current.destinationLoaded || current.error != null || current.destinationPath.isEmpty() ||
+            current.path.isEmpty() || current.items.none { it == source } ||
+            source.parentId != current.path.last().id) return
+        val targetID = current.destinationPath.last().id
+        if (kind == FilesTransferKind.MOVE && source.parentId == targetID) return
+        if (source.isDirectory && current.destinationPath.any { it.id == source.id }) return
+        val service = api ?: return
+        val path = current.path.toList()
+        mutableState.value = current.copy(
+            destinationSubmitting = true, destinationWriteAttempted = true)
+        request { ticket ->
+            val result = authenticatedMutation(ticket) {
+                if (kind == FilesTransferKind.COPY) service.copyNode(it, source, targetID)
+                else service.moveNode(it, source, targetID)
+            }
+            checkCurrent(ticket)
+            mutableState.value = state.value.withoutDestination()
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                if (kind == FilesTransferKind.MOVE) fresh.copy(
+                    items = fresh.items.filterNot { it.id == source.id },
+                    totalCount = (fresh.totalCount - 1).coerceAtLeast(0))
+                else if (targetID == path.last().id) fresh.copy(
+                    items = (fresh.items + result).distinctBy { it.id },
+                    totalCount = fresh.totalCount + 1)
+                else fresh
+            }
+        }
     }
 
     fun createFolder(name: String) {
@@ -257,8 +422,8 @@ class DriveController(
 
     fun changeFilesSection(next: FilesSection) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection == next ||
-            next == FilesSection.SEARCH) return
+        if (current.screen != Screen.FILES || current.destinationKind != null ||
+            current.filesSection == next || next == FilesSection.SEARCH) return
         invalidate() // Unmount/cancel old Owner range/collection before switching.
         mutableState.value = current.copy(filesSection = next, selected = null,
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
@@ -272,7 +437,7 @@ class DriveController(
      * directory's loaded 100 rows. The query/cursor are scoped to one ticket. */
     fun submitGlobalSearch(input: String) {
         val current = state.value
-        if (current.screen != Screen.FILES) return
+        if (current.screen != Screen.FILES || current.destinationKind != null) return
         val query = input.trim()
         if (query.codePointCount(0, query.length) < 2 || query.toByteArray(Charsets.UTF_8).size > 256) {
             mutableState.value = current.copy(error = "搜索需要至少两个字符，且不能超过 256 字节。")
@@ -400,13 +565,14 @@ class DriveController(
     fun navigateToAncestor(index: Int) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
-            index < 0 || index >= current.path.lastIndex) return
+            current.destinationKind != null || index < 0 || index >= current.path.lastIndex) return
         load(current.path.take(index + 1), 0)
     }
 
     fun back() {
         val current = state.value
-        if (current.selected != null) dismissDetails()
+        if (current.destinationKind != null) dismissDestination()
+        else if (current.selected != null) dismissDetails()
         else if (current.filesSection == FilesSection.SEARCH) changeFilesSection(current.searchReturnSection)
         else if (current.filesSection != FilesSection.BROWSE) changeFilesSection(FilesSection.BROWSE)
         else if (current.path.size > 1) load(current.path.dropLast(1), 0)
@@ -414,12 +580,12 @@ class DriveController(
     // Refresh from first Server-authoritative browse page, or restart the
     // bounded current Recent/Favorites/Search query; never mix stale cursors.
     fun refresh() {
-        if (state.value.screen != Screen.FILES) return
+        if (state.value.screen != Screen.FILES || state.value.destinationKind != null) return
         if (state.value.filesSection == FilesSection.BROWSE) load(state.value.path, 0)
         else loadCollection()
     }
     fun retry() {
-        if (state.value.screen != Screen.FILES) return
+        if (state.value.screen != Screen.FILES || state.value.destinationKind != null) return
         if (state.value.filesSection == FilesSection.BROWSE)
             load(retryPath ?: state.value.path, retryOffset, retryAppend)
         else if (state.value.filesSection == FilesSection.SEARCH &&
@@ -430,7 +596,8 @@ class DriveController(
     fun loadMore() {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
-            current.loading || current.error != null || !current.hasNext || current.path.isEmpty()) return
+            current.destinationKind != null || current.loading || current.error != null ||
+            !current.hasNext || current.path.isEmpty()) return
         load(current.path, current.offset + 100, append = true)
     }
     // Compatibility entry points; native Files UI uses loadMore instead.
@@ -493,8 +660,13 @@ class DriveController(
         checkCurrent(ticket)
         session = refreshed
         if (refreshed.mustChangePassword && !allowPasswordChange) {
-            mutableState.value = state.value.copy(screen = Screen.PASSWORD, path = emptyList(),
-                items = emptyList(), loaded = false, collectionItems = emptyList(), collectionLoaded = false)
+            // A token refresh may require password rotation while the
+            // destination picker is open. Clear its Owner-private folder rows
+            // before rendering the password screen.
+            mutableState.value = state.value.withoutDestination().copy(
+                screen = Screen.PASSWORD, path = emptyList(),
+                items = emptyList(), loaded = false, collectionItems = emptyList(),
+                collectionLoaded = false, selected = null)
             throw CancellationException()
         }
         return block(refreshed.accessToken)
@@ -522,10 +694,17 @@ class DriveController(
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
+                    } else if (state.value.destinationWriteAttempted) {
+                        // A lost copy/move ACK may have committed on the Server.
+                        // Freeze further writes against this browse snapshot
+                        // until the user explicitly returns and reloads it.
+                        mutableState.value = state.value.copy(
+                            loaded = false, error = "操作结果未确认，请取消并刷新原目录，切勿重复提交。")
                     } else mutableState.value = state.value.copy(error = safeError(failure))
                 }
             } finally {
-                if (ticket == generation) mutableState.value = state.value.copy(loading = false)
+                if (ticket == generation) mutableState.value =
+                    state.value.copy(loading = false, destinationSubmitting = false)
             }
         }
     }

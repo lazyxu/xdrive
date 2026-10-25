@@ -79,7 +79,20 @@ authoritative Server listing only after a successful acknowledgement.
 If that follow-up read fails, it reports the mutation as committed but the
 directory as stale, with GET-only refresh; it does **not** repeat the write.
 
-Structured filtering, saved searches, batch copy/move, upload/download,
+Android Files additionally supports one-item Copy and Move through the
+existing Go `POST /api/v1/nodes/{id}/copy` and revision-fenced
+`PATCH /api/v1/nodes/{id}` contracts, with numeric `parent_id` JSON.
+The native destination-folder picker walks authenticated `nodes/root` and
+100-item `children` pages without trusting display paths. Selecting the
+same folder for Move or a directory's own subtree is disabled. The original
+file remains visible during Copy; Move removes it from its former folder only
+after Server acknowledgement. Neither operation is automatically replayed if
+the response or token-refresh outcome is uncertain. An uncertain write
+freezes the picker confirmation and invalidates the stale browse snapshot
+until a read-only refresh. Failed child-folder reads retry the intended
+child rather than silently returning to the previous parent.
+
+Structured filtering, saved searches, bulk file actions, upload/download,
 thumbnails, Gallery, Viewer, and transfers are still unimplemented; this
 increment is **not** full iOS PWA UI/functionality parity.
 

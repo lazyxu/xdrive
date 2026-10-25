@@ -23,6 +23,64 @@ class XDriveApiTest {
         throw AssertionError("Expected safe API failure")
     }
 
+    @Test fun `copy and move use numeric parent id Owner bearer and move If Match`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val original = DriveNode(10, 1, "notes.txt", "file", size = 123, revision = 4)
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"id":11,"parent_id":9,"name":"notes.txt","type":"file","size":123,"revision":1}"""))
+            val copied = api.copyNode("access-secret", original, 9)
+            assertEquals(11L, copied.id)
+            val copyReq = server.takeRequest()
+            assertEquals("POST", copyReq.method)
+            assertEquals("/api/v1/nodes/10/copy", copyReq.path)
+            assertEquals("Bearer access-secret", copyReq.getHeader("Authorization"))
+            assertNull(copyReq.getHeader("If-Match"))
+            val copyValue = body(copyReq)["parent_id"]!!.jsonPrimitive
+            assertFalse(copyValue.isString)
+            assertEquals(9L, copyValue.long)
+
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                """{"id":10,"parent_id":9,"name":"notes.txt","type":"file","size":123,"revision":5}"""))
+            val moved = api.moveNode("access-secret", original, 9)
+            assertEquals(9L, moved.parentId)
+            assertEquals(5L, moved.revision)
+            val moveReq = server.takeRequest()
+            assertEquals("PATCH", moveReq.method)
+            assertEquals("/api/v1/nodes/10", moveReq.path)
+            assertEquals("Bearer access-secret", moveReq.getHeader("Authorization"))
+            assertEquals("\"4\"", moveReq.getHeader("If-Match"))
+            val moveValue = body(moveReq)["parent_id"]!!.jsonPrimitive
+            assertFalse(moveValue.isString)
+            assertEquals(9L, moveValue.long)
+        } }
+    }
+
+    @Test fun `copy target and move revision errors fail closed without replay`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val original = DriveNode(10, 1, "notes.txt", "file", revision = 4)
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.moveNode("access-secret", original, 1) }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.copyNode("access-secret", original, 0) }
+            }
+            assertEquals(0, server.requestCount)
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"conflict","token":"access-secret"}"""))
+            val conflict = failure { api.moveNode("access-secret", original, 9) }
+            assertEquals(409, conflict.statusCode)
+            assertFalse(conflict.toString().contains("secret"))
+            assertEquals(1, server.requestCount)
+            server.takeRequest()
+
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"id":11,"parent_id":8,"name":"notes.txt","type":"file","revision":1}"""))
+            val wrongParent = failure { api.copyNode("access-secret", original, 9) }
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, wrongParent.reason)
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     @Test fun `native Files mutation routes use same bearer client and exact node revisions`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setResponseCode(201).setBody(
