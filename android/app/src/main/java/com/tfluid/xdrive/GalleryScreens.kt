@@ -53,12 +53,17 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     var preferredColumns by rememberSaveable { mutableIntStateOf(3) }
     var containTiles by rememberSaveable { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
+    var kindMenuOpen by remember { mutableStateOf(false) }
     // Preserve the visible photo anchor while the Viewer is open.
-    var positioned by rememberSaveable(state.gallerySearchQuery) { mutableStateOf(false) }
+    var positioned by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind) {
+        mutableStateOf(false)
+    }
     // A single entrance to the oldest visible edge permits only one fetch.
     // Re-arm after scrolling away: do not recursively traverse a 100k library
     // while Compose is still remeasuring newly prepended rows.
-    var olderEdgeArmed by remember(state.gallerySearchQuery) { mutableStateOf(true) }
+    var olderEdgeArmed by remember(state.gallerySearchQuery, state.galleryMediaKind) {
+        mutableStateOf(true)
+    }
     val nearOlderEdge by remember(gridState) {
         derivedStateOf { gridState.firstVisibleItemIndex <= 3 }
     }
@@ -71,6 +76,43 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            IconButton(
+                onClick = { kindMenuOpen = true },
+                modifier = Modifier.size(48.dp)
+                    .semantics {
+                        stateDescription = when (state.galleryMediaKind) {
+                            "image" -> "仅照片"
+                            "video" -> "仅视频"
+                            else -> "全部媒体"
+                        }
+                    }
+                    .testTag("gallery-kind-filter"),
+            ) {
+                Icon(painterResource(R.drawable.xd_more_vert), "图库媒体筛选")
+            }
+            DropdownMenu(expanded = kindMenuOpen,
+                onDismissRequest = { kindMenuOpen = false },
+                containerColor = MaterialTheme.colorScheme.surface) {
+                for ((value, label) in listOf(
+                    "" to "全部媒体", "image" to "仅照片", "video" to "仅视频"
+                )) {
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (state.galleryMediaKind == value)
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.testTag("gallery-kind-" +
+                            if (value.isEmpty()) "all" else value),
+                        onClick = {
+                            kindMenuOpen = false
+                            controller.filterGalleryKind(value)
+                        },
+                    )
+                }
+            }
+        }
         Box {
             IconButton(
                 onClick = { displayMenuOpen = true },
@@ -184,7 +226,12 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
             if (state.galleryLoaded && state.galleryItems.isEmpty() &&
                 !state.loading && state.error == null) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(if (state.gallerySearchQuery.isEmpty()) "暂无照片或视频" else "没有匹配的照片或视频", Modifier.padding(24.dp))
+                    Text(when {
+                        state.gallerySearchQuery.isNotEmpty() -> "没有匹配的照片或视频"
+                        state.galleryMediaKind == "image" -> "暂无照片"
+                        state.galleryMediaKind == "video" -> "暂无视频"
+                        else -> "暂无照片或视频"
+                    }, Modifier.padding(24.dp))
                 }
             }
             if (blankTop > 0.dp) item(key = "tail-spacer", span = { GridItemSpan(maxLineSpan) }) {

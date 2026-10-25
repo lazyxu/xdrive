@@ -146,6 +146,38 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `Gallery media kind filters full Owner range and rejects wrong kind`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":80,"parent_id":1,"name":"movie.mp4",
+                    "type":"file","size":256,"revision":7},
+                    "metadata":{"media_kind":"video","duration_ms":1000,"has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.galleryKindPage("owner-secret", 0, true, "holiday", "video")
+            assertEquals(listOf(80L), page.items.map { it.node.id })
+            val request = server.takeRequest()
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals("video", request.requestUrl!!.queryParameter("kind"))
+            assertEquals("holiday", request.requestUrl!!.queryParameter("q"))
+            assertEquals("true", request.requestUrl!!.queryParameter("range"))
+            assertEquals("latest", request.requestUrl!!.queryParameter("initial_position"))
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":81,"parent_id":1,"name":"wrong.jpg",
+                    "type":"file","size":100,"revision":3},
+                    "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryKindPage("owner-secret", 0, true, "", "video") }.reason)
+            try {
+                api.galleryKindPage("owner-secret", 0, true, "", "audio")
+                fail("Unsupported media kind accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     @Test fun `Gallery rejects malformed or cross-range pages rather than publishing private items`() = runBlocking {
         val cases = listOf(
             """{"items":[],"total_count":4,"offset":0,"limit":60}""",

@@ -38,6 +38,7 @@ class DriveAppTest {
     private val galleryOffsets = mutableListOf<Int>()
     private var galleryRangeReads = 0
     private val gallerySearchQueries = mutableListOf<String>()
+    private val galleryKindQueries = mutableListOf<Pair<String, String>>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
         capturedAt = "2026-10-24T00:00:00Z", hasThumbnail = true)
@@ -76,6 +77,15 @@ class DriveAppTest {
             return GalleryPage(listOf(GalleryAsset(
                 DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
                 "image", hasThumbnail = true)), 1, 0)
+        }
+        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String): GalleryPage {
+            galleryKindQueries += search to kind
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(if (kind == "video") 47L else 48L, 1,
+                    if (kind == "video") "filtered.mp4" else "filtered.jpg",
+                    "file", size = 64, revision = 1),
+                kind, hasThumbnail = true)), 1, 0)
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long) = byteArrayOf(1,2,3)
@@ -248,6 +258,39 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.gallerySearchQuery.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
+        }
+    }
+
+    @Test fun nativeGalleryKindFilterUsesServerAndResetsPositionOnChangedScope() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-kind-filter").performClick()
+        compose.onNodeWithTag("gallery-kind-video").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMediaKind == "video" &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 47L
+        }
+        compose.onNodeWithTag("gallery-kind-filter")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "仅视频"))
+        compose.onNodeWithTag("gallery-search-button").performClick()
+        compose.onNodeWithTag("gallery-search-input").performTextInput("sunset")
+        compose.onNodeWithTag("gallery-search-apply").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery == "sunset" &&
+                controller.state.value.galleryMediaKind == "video"
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("" to "video", "sunset" to "video"),
+                galleryKindQueries)
+        }
+        compose.onNodeWithTag("gallery-kind-filter").performClick()
+        compose.onNodeWithTag("gallery-kind-all").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMediaKind.isEmpty() &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
         }
     }
 

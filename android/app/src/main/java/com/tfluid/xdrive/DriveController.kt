@@ -55,6 +55,7 @@ data class DriveState(
     val galleryTotal: Long = 0,
     val galleryLoaded: Boolean = false,
     val gallerySearchQuery: String = "",
+    val galleryMediaKind: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
     val destinationKind: FilesTransferKind? = null,
@@ -815,7 +816,7 @@ class DriveController(
             fileExportPending = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySearchQuery = "",
+            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
     }
@@ -827,7 +828,7 @@ class DriveController(
         mutableState.value = current.copy(
             screen = Screen.FILES, loading = false, error = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySearchQuery = "",
+            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
     }
@@ -851,6 +852,21 @@ class DriveController(
         invalidate() // Cancel the previous query and prevent A→B→A stale replies.
         mutableState.value = current.copy(loading = false, error = null,
             gallerySearchQuery = query, galleryItems = emptyList(), galleryOffset = 0,
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
+            galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    /** Scope the entire Owner photo wall, including pagination and search,
+     * to one Server-validated media kind. Never filter just the loaded tiles. */
+    fun filterGalleryKind(kind: String) {
+        if (kind != "" && kind != "image" && kind != "video") return
+        val current = state.value
+        if (current.screen != Screen.GALLERY || session == null || api == null ||
+            kind == current.galleryMediaKind) return
+        invalidate() // Cancels prior Range/thumbnail/Viewer and fences stale replies.
+        mutableState.value = current.copy(loading = false, error = null,
+            galleryMediaKind = kind, galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -881,15 +897,20 @@ class DriveController(
         val service = api ?: return
         val requestedOffset = if (initialLatest) 0 else (current.galleryOffset - 60).coerceAtLeast(0)
         val search = current.gallerySearchQuery
+        val mediaKind = current.galleryMediaKind
         request { ticket ->
             val page = authenticated(service, ticket) {
-                if (search.isEmpty()) service.galleryPage(it, requestedOffset, initialLatest)
-                else service.gallerySearchPage(it, requestedOffset, initialLatest, search)
+                when {
+                    mediaKind.isNotEmpty() ->
+                        service.galleryKindPage(it, requestedOffset, initialLatest, search, mediaKind)
+                    search.isNotEmpty() -> service.gallerySearchPage(it, requestedOffset, initialLatest, search)
+                    else -> service.galleryPage(it, requestedOffset, initialLatest)
+                }
             }
             checkCurrent(ticket)
             val latest = state.value
-            if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search)
-                throw CancellationException()
+            if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search ||
+                latest.galleryMediaKind != mediaKind) throw CancellationException()
             if (initialLatest) {
                 mutableState.value = latest.copy(
                     galleryItems = page.items, galleryOffset = page.offset,

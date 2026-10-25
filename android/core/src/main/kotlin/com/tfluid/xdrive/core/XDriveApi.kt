@@ -154,6 +154,10 @@ interface XDriveService {
     suspend fun gallerySearchPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String): GalleryPage =
         throw ApiException(501, "Gallery Owner search unavailable")
+    /** Combined media kind + optional search, authoritative Owner Server Range. */
+    suspend fun galleryKindPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner kind filter unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
@@ -518,8 +522,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return ownerGalleryPage(accessToken, offset, initialLatest, search)
     }
 
+    override suspend fun galleryKindPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String): GalleryPage {
+        require(kind == "image" || kind == "video")
+        require(search.length <= 200 && search == search.trim())
+        return ownerGalleryPage(accessToken, offset, initialLatest, search, kind)
+    }
+
     private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
-        initialLatest: Boolean, search: String): GalleryPage {
+        initialLatest: Boolean, search: String, mediaKind: String = ""): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
@@ -528,6 +539,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         )
         if (initialLatest) query["initial_position"] = "latest"
         if (search.isNotEmpty()) query["q"] = search
+        if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
         val result = request("media/items", accessToken, query = query)
         val raw = result["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 60) invalidPayload()
@@ -543,7 +555,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             val metadata = entry["metadata"] as? JsonObject ?: invalidPayload()
             val kind = metadata.string("media_kind")
             if (itemNode.type != "file" || itemNode.id <= 0 || itemNode.revision <= 0 ||
-                kind !in listOf("image", "video")) invalidPayload()
+                kind !in listOf("image", "video") ||
+                (mediaKind.isNotEmpty() && mediaKind != kind)) invalidPayload()
             val captured = metadata.optionalString("captured_at") ?: ""
             if (captured.length > 64) invalidPayload()
             val duration = when (metadata["duration_ms"]) {

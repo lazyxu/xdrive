@@ -39,6 +39,17 @@ class DriveControllerTest {
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
         val gallerySearchRequests = mutableListOf<String>()
+        val galleryKindRequests = mutableListOf<Pair<String, String>>()
+        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String): GalleryPage {
+            galleryKindRequests += search to kind
+            galleryGate?.await()
+            val media = if (kind == "video") "video" else "image"
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(if (kind == "video") 992L else 993L, 1,
+                    if (kind == "video") "filtered.mp4" else "filtered.jpg",
+                    "file", size = 100, revision = 1), media, hasThumbnail = true)), 1, 0)
+        }
         override suspend fun gallerySearchPage(accessToken: String, offset: Int,
             initialLatest: Boolean, search: String): GalleryPage {
             gallerySearchRequests += search
@@ -373,6 +384,28 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun GalleryKindFiltersEntireOwnerRangeAndKeepsSearchScope() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.filterGalleryKind("audio"); runCurrent()
+        assertEquals("", c.state.value.galleryMediaKind)
+        c.filterGalleryKind("video"); runCurrent()
+        assertEquals("video", c.state.value.galleryMediaKind)
+        assertEquals(listOf("" to "video"), api.galleryKindRequests)
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("sunset"); runCurrent()
+        assertEquals(listOf("" to "video", "sunset" to "video"), api.galleryKindRequests)
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        c.filterGalleryKind("image"); runCurrent()
+        assertEquals(993L, c.state.value.galleryItems.single().node.id)
+        c.filterGalleryKind(""); runCurrent()
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
+        c.openFilesApp(); runCurrent()
+        assertEquals("", c.state.value.galleryMediaKind)
+        c.close()
     }
 
     @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
