@@ -1738,23 +1738,22 @@ export function XDriveServiceDependenciesPage({
                     </Button>
                   )}
                 </Stack>
-                <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 1.5 }, mb: 2, borderRadius: 2 }}
-                  data-xdrive-system-dependencies-capability-matrix>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}
-                    alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
-                    <Box>
-                      <Typography variant="subtitle2" fontWeight={700}>配置、启停与生效检测支持度</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        这里只列出已实现的操作范围，不代表服务运行、已应用或全实例生效；实际权限和结果以详情及 Server 为准。
-                      </Typography>
-                    </Box>
-                    <Button size="small" variant="outlined"
-                      onClick={() => setShowCapabilityMatrix((value) => !value)}>
-                      {showCapabilityMatrix ? '隐藏配置能力' : '显示 11 项配置能力'}
-                    </Button>
-                  </Stack>
-                  {showCapabilityMatrix && (
-                    <Box sx={{
+                <Paper variant="outlined" sx={{
+                  p: showCapabilityMatrix ? { xs: 1.25, sm: 1.5 } : 0.5,
+                  mb: 1.5, borderRadius: 2,
+                }} data-xdrive-system-dependencies-capability-matrix>
+                  <Button size="small" variant="text" color="inherit"
+                    aria-expanded={showCapabilityMatrix}
+                    aria-controls="xdrive-system-dependency-capability-rows"
+                    onClick={() => setShowCapabilityMatrix((value) => !value)}>
+                    {showCapabilityMatrix ? '隐藏配置能力' : '显示 11 项配置能力'}
+                  </Button>
+                  {showCapabilityMatrix && (<>
+                    <Typography variant="caption" color="text.secondary"
+                      sx={{ display: 'block', mt: 0.5 }}>
+                      这里只列出已实现的操作范围，不代表服务运行、已应用或全实例生效；实际权限和结果以详情及 Server 为准。
+                    </Typography>
+                    <Box id="xdrive-system-dependency-capability-rows" sx={{
                       display: 'grid', gap: 1, mt: 1.5,
                       gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: 'repeat(2, minmax(0,1fr))' },
                     }} data-xdrive-system-dependencies-capability-rows>
@@ -1828,7 +1827,7 @@ export function XDriveServiceDependenciesPage({
                         )
                       })}
                     </Box>
-                  )}
+                  </>)}
                 </Paper>
                 {groups.map((group) => {
                   const items = overviewEntries.filter((item) =>
@@ -2279,14 +2278,20 @@ export function XDriveServiceDependenciesPage({
                 </Paper>
               )}
               {selectedPage === 'geonames' && currentTab === 'verify' && (
-                <Stack spacing={1.5} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>
+                <Stack spacing={1} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>
                   <Typography variant="body2" color="text.secondary">
-                    本次只读状态检测重新读取当前 Server 已加载的 GeoNames 解析器及其版本，
-                    不扫描文件、不重新计算 SHA-256、不中断地名解析，也不会切换数据集。
-                    「可用」仅代表此 Server 当前已加载索引，不等于持久目标修订、所有副本或地名标签结果已验证。
-                    上方「重新检测」同时只读刷新目标与副本修订；
-                    「校验并热加载」才会修改正在使用的索引，两类操作必须明确区分。
+                    「重新检测」只读当前 Server 的索引及修订；不会热加载或切换数据集。
                   </Typography>
+                  <Box component="details" data-xdrive-geonames-read-scope>
+                    <Box component="summary" sx={{ cursor: 'pointer', typography: 'caption',
+                      color: 'text.secondary' }}>查看检测范围与限制</Box>
+                    <Typography variant="caption" color="text.secondary"
+                      sx={{ display: 'block', mt: 1 }}>
+                      当前检测只读取已加载解析器及版本，不扫描文件、不重新计算 SHA-256，也不中断地名解析。
+                      「可用」只代表当前 Server 已加载索引，不证明持久目标修订、其他 Server 副本或地名标签准确。
+                      目标与副本修订仍为只读刷新；只有明确执行「校验并热加载」才会改变当前索引。
+                    </Typography>
+                  </Box>
                 </Stack>
               )}
               {selectedPage === 'geonames' && (currentTab === 'config' || currentTab === 'verify' || currentTab === 'history') && (
@@ -2295,9 +2300,17 @@ export function XDriveServiceDependenciesPage({
                     {currentTab === 'verify' && <>
                     <Typography variant="subtitle2" fontWeight={700}>GeoNames 地名索引</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      GeoNames 只负责地名标签，地图仍只使用百度地图。数据文件位置保持受信任的只读部署挂载；
-                      匹配距离可在本页修改并持久化，验证完整索引后在当前 Server 热生效，运行中批次不受影响。
+                      GeoNames 仅提供地名标签，地图仍使用百度地图；下方展示当前 Server 的实际索引状态。
                     </Typography>
+                    <Box component="details" data-xdrive-geonames-index-guidance>
+                      <Box component="summary" sx={{ cursor: 'pointer', typography: 'caption',
+                        color: 'text.secondary' }}>查看索引配置说明</Box>
+                      <Typography variant="caption" color="text.secondary"
+                        sx={{ display: 'block', mt: 1 }}>
+                        数据文件来自受信任的只读部署挂载；匹配距离可持久修改。验证完整索引后
+                        仅在当前 Server 热生效，不中断已运行批次，也不证明其他 Server 已同步。
+                      </Typography>
+                    </Box>
                     {geoNamesConfig ? (
                       <Stack spacing={1}>
                         <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
