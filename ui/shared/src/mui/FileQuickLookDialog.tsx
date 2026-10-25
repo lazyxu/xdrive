@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
@@ -62,11 +62,12 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   // A same-ID file opened from another Agent/account must reset pending
   // chrome taps as well as the Preview Engine's existing byte leases.
   const chromeOwnerRef = useRef({
-    id: item?.id, revision: item?.revision,
+    open, id: item?.id, revision: item?.revision,
     text: loadTextPreview, image: loadImagePreview,
     url: loadPreviewURL, motion: loadLivePhotoMotion, session: 0,
   })
   if (
+    chromeOwnerRef.current.open !== open ||
     chromeOwnerRef.current.id !== item?.id ||
     chromeOwnerRef.current.revision !== item?.revision ||
     chromeOwnerRef.current.text !== loadTextPreview ||
@@ -75,11 +76,46 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     chromeOwnerRef.current.motion !== loadLivePhotoMotion
   ) {
     chromeOwnerRef.current = {
-      id: item?.id, revision: item?.revision,
+      open, id: item?.id, revision: item?.revision,
       text: loadTextPreview, image: loadImagePreview,
       url: loadPreviewURL, motion: loadLivePhotoMotion,
       session: chromeOwnerRef.current.session + 1,
     }
+  }
+
+  // Action callbacks can remain queued after closing, reopening, or replacing an
+  // Owner/Agent loader for the same Node ID. Fence dispatch synchronously; the
+  // Preview Engine's byte cancellation alone does not protect UI actions.
+  const chromeOwner = chromeOwnerRef.current
+  // A keyed FileExplorer remount can retire the entire Quick Look instance.
+  // Unlike a prop change, it never gets another render to rotate chromeOwnerRef.
+  // Layout cleanup revokes queued clicks before the discarded frame can act.
+  const mountedOwnerRef = useRef<typeof chromeOwner | null>(chromeOwner)
+  useLayoutEffect(() => {
+    mountedOwnerRef.current = chromeOwner
+    return () => {
+      if (mountedOwnerRef.current === chromeOwner) mountedOwnerRef.current = null
+    }
+  }, [chromeOwner])
+  // Navigation and menu capabilities can change without changing the file.
+  // A queued event must not bypass the *current* disabled/neighbor state or
+  // execute a replaced callback from an obsolete browsing context.
+  const currentActionsRef = useRef(actions)
+  currentActionsRef.current = actions
+  const currentNavigationRef = useRef({ canPrevious, canNext, onPrevious, onNext, onClose })
+  currentNavigationRef.current = { canPrevious, canNext, onPrevious, onNext, onClose }
+  const isCurrentChromeOwner = () => open && Boolean(item) &&
+    chromeOwnerRef.current === chromeOwner && mountedOwnerRef.current === chromeOwner
+  const previousIfCurrent = () => {
+    if (isCurrentChromeOwner() && currentNavigationRef.current.canPrevious &&
+        currentNavigationRef.current.onPrevious === onPrevious) onPrevious?.()
+  }
+  const nextIfCurrent = () => {
+    if (isCurrentChromeOwner() && currentNavigationRef.current.canNext &&
+        currentNavigationRef.current.onNext === onNext) onNext?.()
+  }
+  const closeIfCurrent = () => {
+    if (isCurrentChromeOwner() && currentNavigationRef.current.onClose === onClose) onClose()
   }
 
   const previewKind = item ? xDriveClassifyFilePreview(item) : 'none'
@@ -113,8 +149,10 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     sourceKey: presentation.sourceKey,
     presentationState: presentation.presentationState,
     canNext,
-    onNext,
-    onStop: () => setSlideshowPlaying(false),
+    onNext: onNext ? nextIfCurrent : undefined,
+    onStop: () => {
+      if (isCurrentChromeOwner()) setSlideshowPlaying(false)
+    },
     intervalMs: slideshowIntervalMs,
   })
 
@@ -128,7 +166,13 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
               size="small"
               aria-label={action.label}
               disabled={action.disabled}
-              onClick={action.onSelect}
+              onClick={() => {
+                if (!isCurrentChromeOwner()) return
+                const current = currentActionsRef.current.find((candidate) => candidate.id === action.id)
+                if (current && !current.disabled && current.onSelect === action.onSelect) {
+                  current.onSelect()
+                }
+              }}
             >
               {action.icon}
             </IconButton>
@@ -140,7 +184,9 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
           <IconButton
             size="small"
             aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
-            onClick={() => setSlideshowPlaying((value) => !value)}
+            onClick={() => {
+              if (isCurrentChromeOwner()) setSlideshowPlaying((value) => !value)
+            }}
           >
             {slideshowPlaying
               ? <PauseRoundedIcon fontSize="small" />
@@ -157,21 +203,23 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
       title={item?.name ?? ''}
       positionLabel={positionLabel}
       quickLook
-      chromeSessionKey={chromeOwnerRef.current.session}
+      chromeSessionKey={chromeOwner.session}
       actions={headerActions}
       immersive={fullScreen}
       fullScreen={fullScreen}
       onFullScreenChange={(next) => {
+        if (!isCurrentChromeOwner()) return
         setFullScreen(next)
         if (!next) setSlideshowPlaying(false)
       }}
       canPrevious={canPrevious}
       canNext={canNext}
-      onPrevious={onPrevious}
-      onNext={onNext}
-      onClose={onClose}
+      onPrevious={onPrevious ? previousIfCurrent : undefined}
+      onNext={onNext ? nextIfCurrent : undefined}
+      onClose={closeIfCurrent}
     >
       <XDriveFilePreviewSurface
+        key={chromeOwner.session}
         target={item}
         loadTextPreview={loadTextPreview}
         loadImagePreview={loadImagePreview}
