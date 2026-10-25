@@ -362,13 +362,24 @@ compose stop server >/dev/null 2>&1 || true
 write_backup_progress "一致性检查" 0 0
 print_backup_progress "一致性检查" 0 0
 verify_status=0
-compose run -T --rm --no-deps server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
+compose run -T --rm --no-deps -e XD_STORAGE_VERIFY_PROGRESS=1 server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
 if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
   cat "$partial_dir/verify.json" >&2 || true
   rm -rf "$partial_dir"
   exit "$verify_status"
 fi
+
+# A new Server reports exactly which checks were made. Old installed images
+# predate this field and always performed the full deep SHA-256 verification.
+# Do not claim the fast result proves content hashes were checked.
+verification_mode="$(sed -n 's/.*"verification_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$partial_dir/verify.json" | head -n1)"
+case "$verification_mode" in
+  fast|deep) ;;
+  "") verification_mode=deep ;;
+  *) echo "xDrive backup: unknown verification mode in report; refusing unlabelled backup." >&2; exit 1 ;;
+esac
+echo "[xDrive] backup storage verification mode=$verification_mode (fast does not hash file contents)" >&2
 
 run_to_file_with_progress "备份数据库" "$partial_dir/database.dump" 0 \
   compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc
@@ -418,6 +429,7 @@ cat > "$partial_dir/manifest.json" <<EOF
   "legacy_storage": $([[ "$INCREMENTAL" == "1" ]] && printf '{"file":"legacy.tar","format":"tar"}' || printf 'null'),
   "file_data_included": $([[ "$INCLUDE_FILE_DATA" == "1" ]] && echo true || echo false),
   "consistency_verified": $([[ "$verify_status" == "0" ]] && echo true || echo false),
+  "verification_mode": "$verification_mode",
   "server_image": "$server_image",
   "caddy_image": "$caddy_image",
   "release_channel": "$release_channel",

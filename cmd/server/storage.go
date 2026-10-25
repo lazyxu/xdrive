@@ -44,11 +44,20 @@ func runStorageVerify(args []string) error {
 	fs := flag.NewFlagSet("storage verify", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "write machine-readable JSON")
 	summaryJSON := fs.Bool("summary-json", false, "write only issue counts and bounded samples")
+	defaultMode := os.Getenv("XD_STORAGE_VERIFY_MODE")
+	if defaultMode == "" {
+		defaultMode = "fast"
+	}
+	modeName := fs.String("mode", defaultMode, "fast: metadata/read-access (default) or deep: full SHA-256")
+	progress := fs.Bool("progress", os.Getenv("XD_STORAGE_VERIFY_PROGRESS") == "1", "emit bounded verification progress on stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || (*asJSON && *summaryJSON) {
-		return fmt.Errorf("usage: xdrive-server storage verify [--json | --summary-json]")
+		return fmt.Errorf("usage: xdrive-server storage verify [--mode fast|deep] [--json | --summary-json] [--progress]")
+	}
+	if *modeName != "fast" && *modeName != "deep" {
+		return fmt.Errorf("unknown storage verify mode %q: expected fast or deep", *modeName)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -58,7 +67,14 @@ func runStorageVerify(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	report, err := maintenance.Verify(db, cfg.StorageRoot)
+	options := maintenance.VerifyOptions{Mode: maintenance.VerifyMode(*modeName)}
+	if *progress {
+		options.OnProgress = func(p maintenance.VerifyProgress) {
+			fmt.Fprintf(os.Stderr, "[xDrive] storage verify mode=%s phase=%s references=%d/%d hashed=%d bytes_read=%d scanned=%d elapsed_ms=%d\n",
+				p.Mode, p.Phase, p.ReferencesDone, p.ReferencesTotal, p.HashedFiles, p.HashedBytes, p.ScannedEntries, p.ElapsedMillis)
+		}
+	}
+	report, err := maintenance.VerifyWithOptions(context.Background(), db, cfg.StorageRoot, options)
 	if err != nil {
 		return err
 	}

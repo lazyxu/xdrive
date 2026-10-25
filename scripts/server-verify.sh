@@ -7,17 +7,20 @@ ENV_PATH=""
 ONLINE=0
 REPAIR=0
 DRY_RUN=0
+MODE=""
+PROGRESS=0
+SUMMARY=0
 
 usage() {
   cat <<'EOF'
-Usage: server-verify.sh [--config-dir DIR] [--online] [--repair [--dry-run]]
+Usage: server-verify.sh [--config-dir DIR] [--online] [--mode fast|deep] [--progress] [--summary-json] [--repair [--dry-run]]
 
 By default xDrive briefly stops the API service to produce a stable consistency
 check. --online avoids the maintenance window but can report transient results
 while files are being written.
 
 --repair runs the conservative CAS metadata repair while the API service is
-stopped, then runs the full physical/hash verification. --dry-run reports the
+stopped, then runs the chosen physical verification (fast by default). --dry-run reports the
 deterministic repair plan without changing metadata. Repair never reconstructs
 missing/corrupt content or deletes legacy/orphan data.
 EOF
@@ -29,11 +32,18 @@ while [[ $# -gt 0 ]]; do
     --online) ONLINE=1; shift ;;
     --repair) REPAIR=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --mode) [[ $# -ge 2 ]] || { echo "--mode requires fast or deep" >&2; exit 2; }; MODE="$2"; shift 2 ;;
+    --progress) PROGRESS=1; shift ;;
+    --summary-json) SUMMARY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
+if [[ -n "$MODE" && "$MODE" != fast && "$MODE" != deep ]]; then
+  echo "--mode must be fast or deep" >&2
+  exit 2
+fi
 if [[ "$DRY_RUN" == "1" && "$REPAIR" != "1" ]]; then
   echo "--dry-run requires --repair" >&2
   exit 2
@@ -66,8 +76,14 @@ wait_postgres() {
   return 1
 }
 
+verify_env=()
+verify_args=(storage verify --json)
+[[ "$SUMMARY" == "1" ]] && verify_args=(storage verify --summary-json)
+[[ -n "$MODE" ]] && verify_env+=(-e "XD_STORAGE_VERIFY_MODE=$MODE")
+[[ "$PROGRESS" == "1" ]] && verify_env+=(-e XD_STORAGE_VERIFY_PROGRESS=1)
+
 if [[ "$ONLINE" == "1" ]]; then
-  compose exec -T server xdrive-server storage verify --json </dev/null
+  compose exec -T "${verify_env[@]}" server xdrive-server "${verify_args[@]}" </dev/null
   exit $?
 fi
 
@@ -94,4 +110,4 @@ if [[ "$REPAIR" == "1" ]]; then
     exit $?
   fi
 fi
-compose run -T --rm --no-deps server storage verify --json </dev/null
+compose run -T --rm --no-deps "${verify_env[@]}" server "${verify_args[@]}" </dev/null

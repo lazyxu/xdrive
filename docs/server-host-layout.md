@@ -540,6 +540,36 @@ xdrive-server cleanup legacy-volumes --yes
 
 Before removal each candidate is checked through Docker. Any volume still referenced by a container is refused and remains recorded. Missing volumes are treated as already cleaned. The record is deleted only when every recorded volume is absent.
 
+## Storage verification modes and performance
+
+**Default: `fast`** for `xdrive-server storage verify` and new backups,
+including stage-5 pre-upgrade backups when the installed Server supports it.
+`fast` checks database/CAS references, referenced file existence, actual
+open/read permissions, recorded size, all filesystem entries and orphans.
+**It does not read every byte or calculate SHA-256**, so it cannot detect
+contents changed without changing size. `verification_mode=fast` is carried
+in the JSON report and backup manifest; `consistency_verified=true` means
+only the checks of that recorded mode succeeded.
+
+Choose **`deep`** explicitly to hash every unique referenced file in full:
+
+```text
+xdrive-server verify --mode deep --progress
+# Within the Server container:
+xdrive-server storage verify --mode deep --progress
+```
+
+Use `xdrive-server verify --mode fast --progress --summary-json` for bounded diagnostics from the host; the summary contains only anomaly counts/samples, not thousands of benign CAS shared references. Progress
+goes to stderr and records elapsed time, references and actual bytes hashed;
+`deep` reads each unique storage key once, as in the previous implementation.
+No unmeasured high-concurrency disk reads or buffer-size changes are introduced.
+
+**Legacy upgrade exception:** an installed Server built before `--mode`
+and the default-fast change keeps its old deep verification until upgraded;
+the backup script sets a harmless progress environment flag rather than
+passing unsupported CLI flags. It records legacy results as `deep`. Never
+fall back from a real verification inconsistency into an unchecked backup.
+
 ## Backup and restore invariants
 
 Backups are storage-backend neutral. They must work whether `/data` and PostgreSQL are backed by a bind mount or a legacy named volume.

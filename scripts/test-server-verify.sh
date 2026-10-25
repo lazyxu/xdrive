@@ -36,7 +36,7 @@ if [[ "$1" == "compose" ]]; then
       if [[ "$*" == *"postgres pg_isready"* ]]; then
         exit 0
       fi
-      if [[ "$*" == *"server xdrive-server storage verify --json"* ]]; then
+      if [[ "$*" == *"server xdrive-server storage verify --json"* || "$*" == *"server xdrive-server storage verify --summary-json"* ]]; then
         echo '{"ok":true}'
         exit 0
       fi
@@ -50,7 +50,7 @@ if [[ "$1" == "compose" ]]; then
         echo '{"dry_run":false}'
         exit 0
       fi
-      if [[ "$*" == *"server storage verify --json"* ]]; then
+      if [[ "$*" == *"server storage verify --json"* || "$*" == *"server storage verify --summary-json"* ]]; then
         echo '{"ok":true}'
         exit 0
       fi
@@ -90,6 +90,26 @@ if grep -q 'storage verify --json' "$TMP/state/docker-args"; then
   exit 1
 fi
 
+run_verify --summary-json >"$TMP/summary.out"
+grep -q 'compose.*run -T --rm --no-deps server storage verify --summary-json' "$TMP/state/docker-args"
+
+run_verify --mode deep --summary-json >"$TMP/deep-summary.out"
+grep -q 'compose.*run -T --rm --no-deps -e XD_STORAGE_VERIFY_MODE=deep server storage verify --summary-json' "$TMP/state/docker-args"
+
+run_verify --mode deep --progress >"$TMP/deep.out"
+grep -q 'compose.*run -T --rm --no-deps -e XD_STORAGE_VERIFY_MODE=deep -e XD_STORAGE_VERIFY_PROGRESS=1 server storage verify --json' "$TMP/state/docker-args"
+if grep -q 'storage repair' "$TMP/state/docker-args"; then
+  echo "manual deep verification unexpectedly performed a repair" >&2
+  exit 1
+fi
+
+run_verify --online --mode deep --progress >"$TMP/online-deep.out"
+grep -q 'compose.*exec -T -e XD_STORAGE_VERIFY_MODE=deep -e XD_STORAGE_VERIFY_PROGRESS=1 server xdrive-server storage verify --json' "$TMP/state/docker-args"
+if grep -q 'compose.*stop server' "$TMP/state/docker-args"; then
+  echo "manual online deep verification must not stop Server" >&2
+  exit 1
+fi
+
 run_verify --online >"$TMP/online.out"
 grep -q 'compose.*exec -T server xdrive-server storage verify --json' "$TMP/state/docker-args"
 if grep -q 'compose.*stop server' "$TMP/state/docker-args"; then
@@ -103,5 +123,14 @@ status=$?
 set -e
 [[ "$status" -eq 2 ]]
 grep -q -- '--repair cannot be combined with --online' "$TMP/invalid.err"
+
+set +e
+run_verify --mode invalid >"$TMP/mode-invalid.out" 2>"$TMP/mode-invalid.err"
+mode_status=$?
+set -e
+[[ "$mode_status" -eq 2 ]]
+grep -q -- '--mode must be fast or deep' "$TMP/mode-invalid.err"
+
+grep -q "XD_STORAGE_VERIFY_MODE=deep" "$ROOT/scripts/server-restore.sh"
 
 echo "server verify tests passed"

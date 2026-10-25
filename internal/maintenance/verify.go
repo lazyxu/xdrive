@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -60,7 +61,36 @@ type HashMismatch struct {
 	Actual     string `json:"actual_sha256"`
 }
 
+// VerifyMode labels exactly which integrity guarantees were checked.
+type VerifyMode string
+
+const (
+	VerifyModeFast VerifyMode = "fast" // metadata, disk entries and actual read access
+	VerifyModeDeep VerifyMode = "deep" // all fast checks plus SHA-256 of full bytes
+)
+
+type VerifyProgress struct {
+	Mode            VerifyMode
+	Phase           string
+	ReferencesDone  int
+	ReferencesTotal int
+	HashedFiles     int
+	HashedBytes     int64
+	ScannedEntries  int64
+	ElapsedMillis   int64
+}
+
+type VerifyOptions struct {
+	Mode       VerifyMode
+	OnProgress func(VerifyProgress)
+}
+
 type VerifyReport struct {
+	Mode               VerifyMode                 `json:"verification_mode"`
+	HashedFiles        int                        `json:"hashed_files"`
+	HashedBytes        int64                      `json:"hashed_bytes"`
+	UniqueKeys         int                        `json:"unique_reference_keys"`
+	ElapsedMillis      int64                      `json:"elapsed_ms"`
 	ReferencedFiles    int                        `json:"referenced_files"`
 	ReferencedVersions int                        `json:"referenced_versions"`
 	BlobFiles          int                        `json:"blob_files"`
@@ -93,6 +123,7 @@ type blobInspection struct {
 	HashComputed bool
 	Err          error
 	Regular      bool
+	ReadChecked  bool
 }
 
 type blobReference struct {
@@ -111,7 +142,51 @@ func VerifyWithContext(
 	db *gorm.DB,
 	storageRoot string,
 ) (VerifyReport, error) {
-	var report VerifyReport
+	return VerifyWithOptions(ctx, db, storageRoot, VerifyOptions{Mode: VerifyModeDeep})
+}
+
+// VerifyWithOptions keeps the reference and filesystem checks unchanged.
+// Fast checks open/read permissions but deliberately skips content hashing.
+func VerifyWithOptions(
+	ctx context.Context,
+	db *gorm.DB,
+	storageRoot string,
+	options VerifyOptions,
+) (VerifyReport, error) {
+	mode := options.Mode
+	if mode == "" {
+		mode = VerifyModeFast
+	}
+	if mode != VerifyModeFast && mode != VerifyModeDeep {
+		return VerifyReport{}, fmt.Errorf("invalid storage verification mode %q", mode)
+	}
+	start := time.Now()
+	report := VerifyReport{Mode: mode}
+	refsDone, refsTotal := 0, 0
+	var scannedEntries int64
+	lastUpdate := start
+	emit := func(phase string) {
+		if options.OnProgress == nil {
+			return
+		}
+		options.OnProgress(VerifyProgress{
+			Mode: mode, Phase: phase,
+			ReferencesDone: refsDone, ReferencesTotal: refsTotal,
+			HashedFiles: report.HashedFiles, HashedBytes: report.HashedBytes,
+			ScannedEntries: scannedEntries, ElapsedMillis: time.Since(start).Milliseconds(),
+		})
+		lastUpdate = time.Now()
+	}
+	maybeEmit := func(phase string) {
+		if options.OnProgress != nil && time.Since(lastUpdate) >= 2*time.Second {
+			emit(phase)
+		}
+	}
+	onRead := func(n int64) {
+		report.HashedBytes += n
+		maybeEmit("hashing")
+	}
+	emit("starting")
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -140,6 +215,8 @@ func VerifyWithContext(
 	}
 	report.ReferencedFiles = len(files)
 	report.ReferencedVersions = len(versions)
+	refsTotal = len(files) + len(versions)
+	emit("metadata")
 
 	references := make(map[string][]blobReference, len(files)+len(versions))
 	inspections := make(map[string]*blobInspection, len(files)+len(versions))
@@ -152,9 +229,12 @@ func VerifyWithContext(
 			root,
 			file.StorageKey,
 			blobReference{NodeID: file.NodeID, Size: file.Size, SHA256: file.SHA256},
+			mode, onRead,
 		); err != nil {
 			return report, err
 		}
+		refsDone++
+		maybeEmit("references")
 	}
 	for _, version := range versions {
 		if err := addReference(
@@ -168,10 +248,15 @@ func VerifyWithContext(
 				NodeID: version.NodeID, VersionID: version.ID,
 				Size: version.Size, SHA256: version.SHA256,
 			},
+			mode, onRead,
 		); err != nil {
 			return report, err
 		}
+		refsDone++
+		maybeEmit("references")
 	}
+	report.UniqueKeys = len(inspections)
+	emit("references")
 	for key, refs := range references {
 		if len(refs) <= 1 {
 			continue
@@ -226,7 +311,12 @@ func VerifyWithContext(
 		})
 	}
 
+	emit("filesystem")
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		scannedEntries++
+		if scannedEntries%512 == 0 {
+			maybeEmit("filesystem")
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -330,6 +420,8 @@ func VerifyWithContext(
 	})
 	sort.Slice(report.Orphans, func(i, j int) bool { return report.Orphans[i].StorageKey < report.Orphans[j].StorageKey })
 	sort.Slice(report.HashMismatches, func(i, j int) bool { return report.HashMismatches[i].StorageKey < report.HashMismatches[j].StorageKey })
+	report.ElapsedMillis = time.Since(start).Milliseconds()
+	emit("complete")
 	return report, nil
 }
 
@@ -340,6 +432,8 @@ func addReference(
 	inspections map[string]*blobInspection,
 	root, rawKey string,
 	ref blobReference,
+	mode VerifyMode,
+	onRead func(int64),
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -386,12 +480,31 @@ func addReference(
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Actual: inspection.Size,
 		})
 	}
+	// A successful Stat can still hide read-denied CAS bytes (Gen10 migration).
+	// Fast mode must explicitly open each referenced regular file.
+	if mode == VerifyModeFast {
+		if !inspection.ReadChecked {
+			file, openErr := os.Open(filepath.Join(root, filepath.FromSlash(key)))
+			if openErr == nil {
+				openErr = file.Close()
+			}
+			inspection.ReadChecked = true
+			inspection.Err = openErr
+		}
+		if inspection.Err != nil {
+			report.Missing = append(report.Missing, MissingBlob{
+				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key,
+				Expected: ref.Size, Reason: inspection.Err.Error(),
+			})
+		}
+		return nil
+	}
 	if ref.SHA256 == "" {
 		return nil
 	}
 	if !inspection.HashComputed {
 		full := filepath.Join(root, filepath.FromSlash(key))
-		hash, hashErr := hashFileWithContext(ctx, full)
+		hash, hashErr := hashFileWithContextProgress(ctx, full, onRead)
 		if hashErr != nil {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -400,6 +513,7 @@ func addReference(
 		} else {
 			inspection.Hash = hash
 			inspection.HashComputed = true
+			report.HashedFiles++
 		}
 	}
 	if inspection.Err != nil {
@@ -419,6 +533,10 @@ func addReference(
 }
 
 func hashFileWithContext(ctx context.Context, path string) (string, error) {
+	return hashFileWithContextProgress(ctx, path, nil)
+}
+
+func hashFileWithContextProgress(ctx context.Context, path string, onRead func(int64)) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -432,6 +550,9 @@ func hashFileWithContext(ctx context.Context, path string) (string, error) {
 		}
 		n, readErr := file.Read(buf)
 		if n > 0 {
+			if onRead != nil {
+				onRead(int64(n))
+			}
 			if _, writeErr := h.Write(buf[:n]); writeErr != nil {
 				_ = file.Close()
 				return "", writeErr

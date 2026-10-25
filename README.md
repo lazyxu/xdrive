@@ -329,11 +329,19 @@ By default, the installer registers a daily scheduled backup at 03:17 local serv
 
 #### Consistency verification
 
-A normal verification briefly stops the API so the database and blob tree cannot change during the scan:
+A normal verification briefly stops the API so the database and blob tree cannot change during the scan. **The default mode is `fast`**: it checks references, existence, actual file-open permissions, size, CAS bookkeeping and orphans, **but does not read/hash all file bytes**. Upgrade pre-backup checks also use `fast` when the installed Server supports it. For full SHA-256 verification use `deep` explicitly:
 
 ```bash
 ~/.xd/bin/server-verify.sh
+xdrive-server verify --mode deep --progress
+xdrive-server verify --mode fast --summary-json --progress
 ```
+
+The backup manifest and JSON report identify `verification_mode=fast|deep`;
+a successful fast check is **not** a content-integrity attestation.
+An older Server lacking this mode retains its original deep verification during
+the first upgrade, rather than bypassing errors. Restores always request deep
+content verification even though the normal default is fast.
 
 For conservative CAS metadata repair, inspect the plan first and then apply it:
 
@@ -348,7 +356,7 @@ It checks current `xd_files.storage_key` **and historical `xd_file_versions.stor
 
 - database references whose blob is missing;
 - blob size mismatches;
-- SHA-256 mismatches for current or historical blobs that have a recorded content hash;
+- SHA-256 mismatches for current or historical blobs with recorded content hashes (**deep mode only**);
 - unexpected duplicate references to legacy blob keys;
 - valid shared references to content-addressed blobs as informational `shared_references`;
 - CAS refcount/state/key drift between `xd_content_blobs` and current/history metadata;

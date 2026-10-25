@@ -406,6 +406,73 @@ func TestVerifyAcceptsSharedCASReferences(t *testing.T) {
 		t.Fatalf("unexpected duplicate/drift: duplicates=%+v drift=%+v", report.DuplicateRefs, report.ContentRefMismatch)
 	}
 
+	// Fast is intentionally a weaker *content* guarantee than deep.
+	defaultFast, err := VerifyWithOptions(context.Background(), db, root, VerifyOptions{})
+	if err != nil || !defaultFast.OK() || defaultFast.Mode != VerifyModeFast || defaultFast.HashedBytes != 0 {
+		t.Fatalf("zero options must default to fast without hashing: %+v %v", defaultFast, err)
+	}
+	// Both modes still verify shared CAS metadata and canonical size.
+	var progress []VerifyProgress
+	fast, err := VerifyWithOptions(context.Background(), db, root, VerifyOptions{
+		Mode: VerifyModeFast, OnProgress: func(p VerifyProgress) { progress = append(progress, p) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fast.OK() || fast.Mode != VerifyModeFast || fast.HashedFiles != 0 || fast.HashedBytes != 0 ||
+		fast.UniqueKeys != 1 || fast.ReferencedFiles != 2 || len(fast.SharedRefs) != 1 {
+		t.Fatalf("fast verification must check references without hashing: %+v", fast)
+	}
+	if len(progress) == 0 || progress[len(progress)-1].Phase != "complete" ||
+		progress[len(progress)-1].ReferencesDone != 2 {
+		t.Fatalf("fast progress missing completion: %+v", progress)
+	}
+	progress = nil
+	deep, err := VerifyWithOptions(context.Background(), db, root, VerifyOptions{
+		Mode: VerifyModeDeep, OnProgress: func(p VerifyProgress) { progress = append(progress, p) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deep.OK() || deep.Mode != VerifyModeDeep || deep.HashedFiles != 1 ||
+		deep.HashedBytes != int64(len(content)) || len(deep.SharedRefs) != 1 {
+		t.Fatalf("deep shared CAS must hash actual bytes only once: %+v", deep)
+	}
+	if len(progress) == 0 || progress[len(progress)-1].HashedBytes != int64(len(content)) {
+		t.Fatalf("deep progress did not count physical bytes read: %+v", progress)
+	}
+
+	// Corruption with unchanged size is *not* covered by fast. Deep must
+	// still detect it, and both modes retain their accurate level labels.
+	if err := os.WriteFile(full, []byte(strings.Repeat("Z", len(content))), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	fastCorrupt, err := VerifyWithOptions(context.Background(), db, root, VerifyOptions{Mode: VerifyModeFast})
+	if err != nil || !fastCorrupt.OK() {
+		t.Fatalf("fast mode should not claim to detect same-size content corruption: %+v %v", fastCorrupt, err)
+	}
+	deepCorrupt, err := VerifyWithOptions(context.Background(), db, root, VerifyOptions{Mode: VerifyModeDeep})
+	if err != nil || deepCorrupt.OK() || len(deepCorrupt.HashMismatches) != 2 {
+		t.Fatalf("deep must detect same-size shared CAS content corruption: %+v %v", deepCorrupt, err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stat succeeds on unreadable files, as seen after Gen10 migration.
+	// Fast must open each unique file to reject that incident.
+	if os.Geteuid() != 0 {
+		if err := os.Chmod(full, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		unreadable, verifyErr := VerifyWithOptions(context.Background(), db, root, VerifyOptions{Mode: VerifyModeFast})
+		_ = os.Chmod(full, 0o640)
+		if verifyErr != nil || unreadable.OK() || len(unreadable.Missing) != 2 {
+			t.Fatalf("fast must detect permission denied on shared CAS: %+v %v", unreadable, verifyErr)
+		}
+	}
+
+	// The same metadata drift must fail closed in fast and deep modes.
 	if err := db.Model(&meta.ContentBlob{}).Where("sha256 = ?", hash).Update("ref_count", 1).Error; err != nil {
 		t.Fatal(err)
 	}
