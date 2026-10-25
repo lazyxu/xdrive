@@ -17,6 +17,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
+/** A root Files selection consumes Android Back before the Activity can exit. */
+internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
+    state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
+        (state.screen == Screen.FILES &&
+            (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
+
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {}) {
@@ -25,18 +31,21 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var filesEdit by remember(state.screen, state.filesSection, state.path.map { it.id }) {
         mutableStateOf<FilesEditIntent?>(null)
     }
+    var batchTrashConfirm by remember(
+        state.screen, state.filesSection, state.path.map { it.id },
+    ) { mutableStateOf(false) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.destinationKind != null || filesEdit != null || state.selected != null ||
-        (state.screen == Screen.FILES &&
-            (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) {
+    BackHandler(shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
+        else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
         else controller.back()
     }
     Scaffold(modifier = Modifier.imePadding(), containerColor = if (state.screen == Screen.FILES) mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
         if (state.screen == Screen.FILES) Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
-            Row(Modifier.statusBarsPadding().fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp),
+            Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
+                .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
                     IconButton(onClick = controller::back) { Icon(painterResource(R.drawable.xd_arrow_back), "返回上级") }
@@ -91,11 +100,33 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
                     onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
                     onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
-                    onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) })
+                    onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
+                    onBatchTrash = { batchTrashConfirm = true })
             }
         }
     }
     if (state.destinationKind != null) FilesDestinationDialog(state, controller)
+    if (batchTrashConfirm && state.screen == Screen.FILES &&
+        state.browseSelectionMode && state.browseSelectedIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { batchTrashConfirm = false },
+            title = { Text("移到回收站") },
+            text = { Text("确定将选中的 ${state.browseSelectedIds.size} 项移到回收站？文件夹及其内容也会一并移入。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    controller.trashSelectedBrowseNodes()
+                    batchTrashConfirm = false
+                }, enabled = !state.loading && !state.browseBatchWriteAttempted,
+                    modifier = Modifier.testTag("files-batch-trash-confirm")
+                        .heightIn(min = 48.dp)) { Text("移到回收站") }
+            },
+            dismissButton = {
+                TextButton(onClick = { batchTrashConfirm = false },
+                    modifier = Modifier.testTag("files-batch-trash-cancel")
+                        .heightIn(min = 48.dp)) { Text("取消") }
+            },
+        )
+    }
     filesEdit?.let { intent ->
         FilesEditDialog(intent = intent, busy = state.loading, onDismiss = { filesEdit = null }) { name ->
             if (!state.loading && state.screen == Screen.FILES &&

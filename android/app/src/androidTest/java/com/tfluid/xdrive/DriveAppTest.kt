@@ -26,6 +26,7 @@ class DriveAppTest {
     private var createCalls = 0
     private var renameCalls = 0
     private var trashCalls = 0
+    private var batchTrashCalls = 0
     private var copyCalls = 0
     private var moveCalls = 0
     private var extraRootFile = false
@@ -65,6 +66,12 @@ class DriveAppTest {
         override suspend fun trashNode(accessToken: String, original: DriveNode) {
             trashCalls++
             mutableRootRows.removeAll { it.id == original.id }
+        }
+        override suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
+            batchTrashCalls++
+            val ids = originals.map { it.id }.toSet()
+            mutableRootRows.removeAll { it.id in ids }
+            if (70L in ids) extraRootFile = false
         }
         override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
             copyCalls++
@@ -116,6 +123,54 @@ class DriveAppTest {
             controller.state.value.screen == Screen.FILES && controller.state.value.loaded
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun batchTrashRequiresExplicitConfirmationAndNeverDeletesOnCancel() {
+        startAndLogin()
+        compose.onNodeWithTag("xdrive-mobile-app-header").assertIsDisplayed()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        compose.onNodeWithTag("files-item-2").performClick()
+        // combinedClickable merges its child semantics in the default tree.
+        // Verify the actual selected Owner id AND the rendered checkbox in the
+        // unmerged tree; neither assertion is a fake success from a mock delete.
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(setOf(2L), controller.state.value.browseSelectedIds)
+        }
+        compose.onNodeWithTag("files-select-2", useUnmergedTree = true).assertIsSelected()
+        compose.onNodeWithText("1 项已选择（最多 200）").assertIsDisplayed()
+        compose.onNodeWithTag("files-batch-trash-action").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(0, batchTrashCalls) }
+        compose.onNodeWithTag("files-batch-trash-cancel").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(0, batchTrashCalls) }
+        compose.onNodeWithTag("files-batch-trash-action").performClick()
+        compose.onNodeWithTag("files-batch-trash-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            batchTrashCalls == 1 && !controller.state.value.loading &&
+                controller.state.value.items.none { it.id == 2L }
+        }
+        compose.onNodeWithTag("files-item-2").assertDoesNotExist()
+        compose.onNodeWithText("此文件夹为空").assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+        }
+    }
+
+    @Test fun selectingInGridDoesNotOpenFolderAndCanExitSelectionMode() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-grid").assertExists()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        compose.onNodeWithTag("files-item-2").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(setOf(2L), controller.state.value.browseSelectedIds)
+            org.junit.Assert.assertEquals(1, controller.state.value.path.size)
+        }
+        compose.onNodeWithTag("files-select-mode").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
+        }
+        compose.onNodeWithTag("files-grid").assertExists()
     }
 
     @Test fun nativeCopyPickerSelectsVerifiedChildFolder() {

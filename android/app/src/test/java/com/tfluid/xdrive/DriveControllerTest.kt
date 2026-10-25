@@ -91,6 +91,13 @@ class DriveControllerTest {
             mutationRows = mutationRows.filterNot { it.id == original.id }
             mutationListing = true
         }
+        override suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
+            mutationCalls += "batch-trash:${originals.joinToString(",") { "${it.id}@${it.revision}" }}"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            val ids = originals.map { it.id }.toSet()
+            mutationRows = mutationRows.filterNot { it.id in ids }
+            mutationListing = true
+        }
         override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
             mutationCalls += "copy:${original.id}->$parentId"
             mutationFailure?.let { mutationFailure = null; throw it }
@@ -277,6 +284,117 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun rootBackFirstExitsFilesSelectionWithoutLeavingOwnerSession() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertFalse(shouldHandleFilesBack(c.state.value, false, false))
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(folder)
+        assertEquals(setOf(folder.id), c.state.value.browseSelectedIds)
+        assertTrue(shouldHandleFilesBack(c.state.value, false, false))
+        c.back()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(listOf(root), c.state.value.path)
+        assertFalse(c.state.value.browseSelectionMode)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertFalse(shouldHandleFilesBack(c.state.value, false, false))
+        assertTrue(shouldHandleFilesBack(c.state.value, false, true))
+    }
+
+    @Test fun batchTrashUsesRevisionedOwnedBrowseRowsAndClearsSelectionAfterAck() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(folder)
+        c.toggleBrowseSelection(file)
+        assertEquals(setOf(2L, 3L), c.state.value.browseSelectedIds)
+        assertEquals(listOf("照片", "readme.txt"), c.state.value.items.map { it.name })
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertEquals(listOf("batch-trash:2@1,3@1"), api.mutationCalls)
+        assertTrue(c.state.value.items.isEmpty())
+        assertEquals(0L, c.state.value.totalCount)
+        assertFalse(c.state.value.browseSelectionMode)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertFalse(c.state.value.browseBatchWriteAttempted)
+    }
+
+    @Test fun failedBatchTrashDoesNotRetryWriteAndRequiresFreshBrowseRead() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        api.mutationFailure = ApiException(503, "unknown commit")
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertFalse(c.state.value.loaded)
+        assertTrue(c.state.value.browseBatchWriteAttempted)
+        assertEquals(listOf("batch-trash:3@1"), api.mutationCalls)
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertEquals(1, api.mutationCalls.size)
+        c.refresh(); runCurrent()
+        assertTrue(c.state.value.loaded)
+        assertFalse(c.state.value.browseBatchWriteAttempted)
+        assertEquals(listOf("batch-trash:3@1"), api.mutationCalls)
+    }
+
+    @Test fun selectionLimit200WorksAcrossPagedBrowseAndAllowsDeselect() = runTest {
+        val rows = (1..201).map { DriveNode(1000L + it, 1, "item-$it", "file", revision = 1) }
+        val api = Service().apply { listing = { _, offset ->
+            NodeRange(rows.drop(offset).take(100), rows.size.toLong(), offset)
+        } }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.state.value.items.forEach(c::toggleBrowseSelection)
+        assertEquals(100, c.state.value.browseSelectedIds.size)
+        c.loadMore(); runCurrent()
+        c.state.value.items.drop(100).forEach(c::toggleBrowseSelection)
+        assertEquals(200, c.state.value.browseSelectedIds.size)
+        c.loadMore(); runCurrent()
+        c.toggleBrowseSelection(rows.last())
+        assertEquals(200, c.state.value.browseSelectedIds.size)
+        assertNotNull(c.state.value.error)
+        c.toggleBrowseSelection(rows.first())
+        assertNull(c.state.value.error)
+        assertEquals(199, c.state.value.browseSelectedIds.size)
+        c.toggleBrowseSelection(rows.last())
+        assertEquals(200, c.state.value.browseSelectedIds.size)
+        assertEquals(0, api.mutationCalls.size)
+    }
+
+    @Test fun batchTrash401DoesNotRefreshAndReplayUnknownCommittedDelete() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        api.mutationFailure = ApiException(401, "uncertain batch delete")
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertEquals(listOf("batch-trash:3@1"), api.mutationCalls)
+        assertEquals(0, api.refreshed)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertFalse(c.state.value.loaded)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertFalse(c.state.value.browseSelectionMode)
+    }
+
+    @Test fun selectionCannotEscapeBrowseOrOperateOnUnseenNode() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file.copy(revision = 99))
+        c.toggleBrowseSelection(DriveNode(111, 1, "foreign", "file", revision = 1))
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        c.toggleBrowseSelection(file)
+        assertEquals(setOf(3L), c.state.value.browseSelectedIds)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertFalse(c.state.value.browseSelectionMode)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertTrue(api.mutationCalls.isEmpty())
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
     }
 
     @Test fun nativeFileMutationsUseOwnerBrowseAndRefreshOnlyAfterServerAck() = runTest {

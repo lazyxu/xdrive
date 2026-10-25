@@ -23,6 +23,59 @@ class XDriveApiTest {
         throw AssertionError("Expected safe API failure")
     }
 
+    @Test fun `atomic batch Trash sends numeric revisioned Owner refs once`() = runBlocking {
+        val first = DriveNode(7, 1, "a.txt", "file", revision = 3)
+        val second = DriveNode(8, 1, "folder", "dir", revision = 2)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody(
+                """{"operation_id":"ack-batch-1","deleted_ids":[7,8]}"""))
+            api.trashNodes("access-secret", listOf(first, second))
+            assertEquals(1, server.requestCount)
+            val sent = server.takeRequest()
+            assertEquals("POST", sent.method)
+            assertEquals("/api/v1/nodes/batch/delete", sent.path)
+            assertEquals("Bearer access-secret", sent.getHeader("Authorization"))
+            val items = body(sent)["items"]!!.jsonArray
+            assertEquals(2, items.size)
+            assertEquals(7L, items[0].jsonObject["id"]!!.jsonPrimitive.long)
+            assertEquals(3L, items[0].jsonObject["revision"]!!.jsonPrimitive.long)
+            assertFalse(items[0].jsonObject["id"]!!.jsonPrimitive.isString)
+            assertFalse(items[1].jsonObject["revision"]!!.jsonPrimitive.isString)
+            assertNull(sent.getHeader("If-Match")) // each item owns its revision
+        } }
+    }
+
+    @Test fun `batch Trash refuses empty duplicate oversized or versionless selections`() = runBlocking {
+        val node = DriveNode(2, 1, "item.txt", "file", revision = 3)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (nodes in listOf(emptyList(), listOf(node, node),
+                listOf(node.copy(revision = 0)),
+                (1..201).map { DriveNode(it.toLong(), 1, "n$it", "file", revision = 1) })) {
+                assertThrows(IllegalArgumentException::class.java) {
+                    runBlocking { api.trashNodes("access-secret", nodes) }
+                }
+            }
+            assertEquals(0, server.requestCount)
+        } }
+    }
+
+    @Test fun `batch Trash fails closed on mismatched ACK and never retries 409`() = runBlocking {
+        val node = DriveNode(2, 1, "item.txt", "file", revision = 4)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody(
+                """{"operation_id":"ack-batch","deleted_ids":[100]}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.trashNodes("access-secret", listOf(node)) }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision_conflict","private":"secret"}"""))
+            val conflict = failure { api.trashNodes("access-secret", listOf(node)) }
+            assertEquals(409, conflict.statusCode)
+            assertFalse(conflict.toString().contains("secret"))
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     @Test fun `copy and move use numeric parent id Owner bearer and move If Match`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val original = DriveNode(10, 1, "notes.txt", "file", size = 123, revision = 4)
