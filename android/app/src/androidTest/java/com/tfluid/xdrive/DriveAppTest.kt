@@ -102,13 +102,16 @@ class DriveAppTest {
     private val controller = DriveController(scope, { connectFactoryCalls.incrementAndGet(); service })
     @After fun cleanup() { controller.close(); scope.cancel() }
 
-    private fun startAndLogin(onDownload: ((DriveNode) -> Unit)? = null) {
-        compose.setContent { XDriveTheme { DriveApp(controller, onDownload = onDownload) } }
+    private fun startAndLogin(
+        onDownload: ((DriveNode) -> Unit)? = null,
+        onUpload: (() -> Unit)? = null,
+    ) {
+        compose.setContent { XDriveTheme {
+            DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+        } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
-        // Dismiss the native keyboard through the real IME Done action, without
-        // triggering a connect or login request.  The keyboard previously
-        // covered CONNECT on API35 when the form re-laid out after focus.
+        // Dismiss the native keyboard through real IME Done, never resubmit.
         compose.onNodeWithTag("server").performImeAction()
         // Do not dispatch the CONNECT click while Compose is still applying
         // keyboard-focus and scroll changes. A single interaction must be
@@ -177,6 +180,14 @@ class DriveAppTest {
             org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
         }
         compose.onNodeWithTag("files-grid").assertExists()
+    }
+
+    @Test fun nativeUploadActionStartsRealSafPickerCallback() {
+        var picks = 0
+        startAndLogin(onUpload = { picks++ })
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-upload-action").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 
     @Test fun nativeDownloadMenuUsesOnlyRealCurrentFile() {

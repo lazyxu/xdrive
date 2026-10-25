@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+ import android.provider.OpenableColumns
 import android.os.Bundle
 import java.io.IOException
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +40,34 @@ class MainActivity : ComponentActivity() {
             },
         )
     }
+    private val uploadSource = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) model.controller.cancelFileUploadPicker()
+        else {
+            var filename = ""
+            var byteSize = -1L
+            try {
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                    null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex >= 0 && !cursor.isNull(nameIndex))
+                            filename = cursor.getString(nameIndex).orEmpty()
+                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex))
+                            byteSize = cursor.getLong(sizeIndex)
+                    }
+                }
+            } catch (_: Exception) {
+                // Invalid SAF provider metadata is rejected by the Controller.
+            }
+            model.controller.acceptFileUpload(filename, byteSize) {
+                contentResolver.openInputStream(uri)
+                    ?: throw IOException("Selected file is unavailable")
+            }
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -56,6 +85,12 @@ class MainActivity : ComponentActivity() {
                         if (model.controller.prepareFileExport(node)) {
                             try { fileDestination.launch(node.name) }
                             catch (_: Exception) { model.controller.cancelFileExport() }
+                        }
+                    },
+                    onUpload = {
+                        if (model.controller.prepareFileUpload()) {
+                            try { uploadSource.launch(arrayOf("*/*")) }
+                            catch (_: Exception) { model.controller.cancelFileUploadPicker() }
                         }
                     })
             }

@@ -27,7 +27,8 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
-    onDownload: ((DriveNode) -> Unit)? = null) {
+    onDownload: ((DriveNode) -> Unit)? = null,
+    onUpload: (() -> Unit)? = null) {
     val state by controller.state.collectAsStateWithLifecycle()
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
     var filesEdit by remember(state.screen, state.filesSection, state.path.map { it.id }) {
@@ -87,7 +88,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 AccountMenu(state, controller, updates?.let { it::show },
                     fileView = if (state.filesSection == FilesSection.BROWSE) filesView else null,
                     onFileViewChange = { filesView = it; saveFilesView(it) },
-                    onCreateFolder = { filesEdit = FilesEditIntent(FilesEditKind.CREATE_FOLDER) })
+                    onCreateFolder = { filesEdit = FilesEditIntent(FilesEditKind.CREATE_FOLDER) },
+                    onUpload = onUpload)
             }
         }
     }) { padding ->
@@ -162,7 +164,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
 @Composable
 internal fun AccountMenu(state: DriveState, controller: DriveController, checkUpdates: (() -> Unit)? = null,
     fileView: FileViewMode? = null, onFileViewChange: (FileViewMode) -> Unit = {},
-    onCreateFolder: (() -> Unit)? = null) {
+    onCreateFolder: (() -> Unit)? = null, onUpload: (() -> Unit)? = null) {
     var expanded by remember(state.screen) { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) { Icon(painterResource(R.drawable.xd_more_vert), "账户菜单") }
@@ -179,6 +181,13 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 HorizontalDivider()
             }
             if (fileView != null) {
+                if (onUpload != null) DropdownMenuItem(
+                    text = { Text("上传文件") },
+                    enabled = !state.loading && state.loaded &&
+                        !state.fileDownloadActive && !state.fileUploadActive &&
+                        !state.browseSelectionMode,
+                    modifier = Modifier.testTag("files-upload-action"),
+                    onClick = { expanded = false; onUpload() })
                 if (onCreateFolder != null) DropdownMenuItem(
                     text = { Text("新建文件夹") },
                     enabled = !state.loading && state.loaded,

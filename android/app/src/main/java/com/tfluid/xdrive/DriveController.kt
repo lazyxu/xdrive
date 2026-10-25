@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.*
 import java.io.Closeable
+import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,11 @@ data class DriveState(
     val fileDownloadSaved: Boolean = false,
     val fileDownloadBytes: Long = 0,
     val fileDownloadTotal: Long = 0,
+    val fileUploadPickerParent: Long? = null,
+    val fileUploadActive: Boolean = false,
+    val fileUploadCommitted: Boolean = false,
+    val fileUploadBytes: Long = 0,
+    val fileUploadTotal: Long = 0,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -272,6 +278,74 @@ class DriveController(
             loading = false, fileDownloadActive = false, fileExportPending = null,
             fileDownloadSaved = false, fileDownloadBytes = 0, fileDownloadTotal = 0,
             error = "下载已取消。")
+    }
+
+
+    /** The OS chooser does not retain an Owner reference or a URI in UI state. */
+    fun prepareFileUpload(): Boolean {
+        val current = editableBrowseState() ?: return false
+        if (current.fileUploadPickerParent != null || current.fileUploadActive ||
+            current.fileDownloadActive || current.fileExportPending != null) return false
+        mutableState.value = current.copy(fileUploadPickerParent = current.path.last().id,
+            fileUploadCommitted = false, error = null)
+        return true
+    }
+
+    fun cancelFileUploadPicker() {
+        mutableState.value = state.value.copy(fileUploadPickerParent = null)
+    }
+
+    /** SAF callback may return after navigation/logout. Refuse old Owner paths
+     * before requesting even an upload session; bytes never enter UI state. */
+    fun acceptFileUpload(name: String, size: Long, openInput: () -> InputStream) {
+        val current = state.value
+        val parent = current.path.lastOrNull()
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.fileUploadPickerParent == null || current.fileUploadPickerParent != parent?.id ||
+            current.fileDownloadActive || current.fileUploadActive || current.loading ||
+            !current.loaded || current.browseSelectionMode || current.destinationKind != null ||
+            session == null) {
+            mutableState.value = current.copy(fileUploadPickerParent = null)
+            return
+        }
+        if (!validDriveNodeName(name) || size < 0L) {
+            mutableState.value = current.copy(fileUploadPickerParent = null,
+                error = "所选文件名称或大小无效，无法上传。")
+            return
+        }
+        val service = api ?: return
+        val path = current.path.toList()
+        val destination = parent!!
+        mutableState.value = current.copy(fileUploadPickerParent = null,
+            fileUploadActive = true, fileUploadCommitted = false,
+            fileUploadBytes = 0, fileUploadTotal = size)
+        request(isFileUpload = true) { ticket ->
+            val result = authenticatedMutation(ticket) { token ->
+                service.uploadFile(token, destination, name, size, openInput) { confirmed ->
+                    if (ticket == generation)
+                        mutableState.value = state.value.copy(fileUploadBytes = confirmed)
+                }
+            }
+            checkCurrent(ticket)
+            mutableState.value = state.value.copy(
+                fileUploadActive = false, fileUploadCommitted = true,
+                fileUploadBytes = size)
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                fresh.copy(
+                    items = (fresh.items + result).distinctBy { it.id },
+                    totalCount = fresh.totalCount + 1,
+                    fileUploadCommitted = true, fileUploadActive = false)
+            }
+        }
+    }
+
+    fun cancelFileUpload() {
+        if (!state.value.fileUploadActive) return
+        invalidate() // Also cancels chunk/finalize HTTP and closes the SAF stream.
+        mutableState.value = state.value.copy(
+            loading = false, fileUploadActive = false, fileUploadPickerParent = null,
+            fileUploadCommitted = false, fileUploadBytes = 0, fileUploadTotal = 0,
+            error = "上传已取消或结果未确认，请刷新目录核对后再尝试。")
     }
 
     /** Real Owner-checked target folder picker. All folders come from
@@ -574,7 +648,9 @@ class DriveController(
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = "", searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
-            fileExportPending = null, fileDownloadSaved = false)
+            fileExportPending = null, fileDownloadSaved = false,
+            fileUploadPickerParent = null, fileUploadCommitted = false,
+            fileUploadActive = false)
         if (next == FilesSection.BROWSE) {
             if (!state.value.loaded) load(state.value.path, 0)
         } else loadCollection(next)
@@ -596,6 +672,8 @@ class DriveController(
             searchQuery = query, searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             fileExportPending = null, fileDownloadSaved = false,
+            fileUploadPickerParent = null, fileUploadCommitted = false,
+            fileUploadActive = false,
             searchReturnSection = if (current.filesSection == FilesSection.SEARCH)
                 current.searchReturnSection else current.filesSection)
         loadCollection(FilesSection.SEARCH)
@@ -793,6 +871,9 @@ class DriveController(
             browseBatchWriteAttempted = if (append) previous.browseBatchWriteAttempted else false,
             fileExportPending = if (append) previous.fileExportPending else null,
             fileDownloadSaved = if (append) previous.fileDownloadSaved else false,
+            fileUploadPickerParent = if (append) previous.fileUploadPickerParent else null,
+            fileUploadActive = if (append) previous.fileUploadActive else false,
+            fileUploadCommitted = previous.fileUploadCommitted && resolved == previous.path,
         )
     }
 
@@ -826,7 +907,8 @@ class DriveController(
                 screen = Screen.PASSWORD, path = emptyList(),
                 items = emptyList(), loaded = false, collectionItems = emptyList(),
                 collectionLoaded = false, selected = null, fileExportPending = null,
-                fileDownloadSaved = false)
+                fileDownloadSaved = false, fileUploadPickerParent = null,
+                fileUploadActive = false, fileUploadCommitted = false)
             throw CancellationException()
         }
         return block(refreshed.accessToken)
@@ -835,7 +917,10 @@ class DriveController(
     /** Any new Owner request cancels the prior transport, including SAF export.
      * Only the originating download request is allowed to keep download chrome;
      * a folder change, refresh, search or other request clears it immediately. */
-    private fun request(isFileDownload: Boolean = false, block: suspend (Long) -> Unit) {
+    private fun request(
+        isFileDownload: Boolean = false, isFileUpload: Boolean = false,
+        block: suspend (Long) -> Unit,
+    ) {
         invalidate()
         val ticket = generation
         val prior = state.value
@@ -846,6 +931,11 @@ class DriveController(
             fileDownloadSaved = false,
             fileDownloadBytes = if (isFileDownload) prior.fileDownloadBytes else 0,
             fileDownloadTotal = if (isFileDownload) prior.fileDownloadTotal else 0,
+            fileUploadPickerParent = null,
+            fileUploadActive = isFileUpload && prior.fileUploadActive,
+            fileUploadCommitted = false,
+            fileUploadBytes = if (isFileUpload) prior.fileUploadBytes else 0,
+            fileUploadTotal = if (isFileUpload) prior.fileUploadTotal else 0,
         )
         active = scope.launch {
             try {
@@ -864,6 +954,16 @@ class DriveController(
                             screen = Screen.LOGIN, server = state.value.server, allowHttp = state.value.allowHttp,
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
+                        )
+                    } else if (state.value.fileUploadActive) {
+                        // Finalize or its ACK may have been lost. Unfreeze controls,
+                        // but never imply that a new upload is safe to auto-retry.
+                        mutableState.value = state.value.copy(
+                            fileUploadActive = false, fileUploadCommitted = false,
+                            fileUploadPickerParent = null,
+                            error = if (failure is ApiException && failure.statusCode == 409)
+                                "上传目标名称冲突，请刷新目录后决定如何处理。"
+                            else "上传结果未确认，请刷新目录检查；不要自动重复上传。",
                         )
                     } else if (state.value.browseBatchWriteAttempted) {
                         // The Server may have committed an atomic batch before

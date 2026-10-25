@@ -2,6 +2,7 @@ package com.tfluid.xdrive.core
 
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Locale
@@ -9,6 +10,10 @@ import java.net.URI
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
@@ -121,6 +126,10 @@ interface XDriveService {
     suspend fun downloadFile(accessToken: String, node: DriveNode,
         openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
         throw ApiException(501, "Native file download unavailable")
+    /** One manual file, current verified Owner directory. No new content writer. */
+    suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
+        throw ApiException(501, "Native upload unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -333,6 +342,141 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
     }
 
+
+    /**
+     * Manual Android SAF upload via the existing Go UploadSession / CAS writer.
+     * 8 MiB bounded chunks; no persisted grants, second upload runner, retries,
+     * overwrite policy or speculative success. The caller owns the SAF URI.
+     */
+    override suspend fun uploadFile(
+        accessToken: String, parent: DriveNode, name: String, size: Long,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit,
+    ): DriveNode = withContext(Dispatchers.IO) {
+        require(parent.isDirectory && parent.id > 0 && validDriveNodeName(name) && size >= 0)
+        require(validToken(accessToken)) { "Invalid access token" }
+        val chunkSize = 8 * 1024 * 1024
+        val chunkCount = if (size == 0L) 0L else ((size - 1) / chunkSize + 1)
+        require(chunkCount <= 1_000_000) { "Upload has too many chunks" }
+        val session = request("uploads", accessToken, bodyObject = JsonObject(mapOf(
+            "parent_id" to JsonPrimitive(parent.id),
+            "name" to JsonPrimitive(name),
+            "size" to JsonPrimitive(size),
+            "chunk_size" to JsonPrimitive(chunkSize),
+            "conflict_policy" to JsonPrimitive("fail"),
+        )))
+        val id = session.string("id")
+        if (!id.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")) ||
+            session.string("status") != "active" || session.long("parent_id") != parent.id ||
+            session.string("name") != name || session.long("size") != size ||
+            session.long("chunk_size") != chunkSize.toLong() ||
+            session.long("chunk_count") != chunkCount) invalidPayload()
+
+        var completed = false
+        try {
+            var uploaded = 0L
+            openSource().use { input ->
+                for (index in 0 until chunkCount.toInt()) {
+                    val wanted = minOf(chunkSize.toLong(), size - uploaded).toInt()
+                    val bytes = ByteArray(wanted)
+                    var count = 0
+                    var emptyReads = 0
+                    while (count < wanted) {
+                        val received = input.read(bytes, count, wanted - count)
+                        if (received < 0) throw ApiException(0, "Selected file ended before expected size")
+                        if (received == 0) {
+                            // Misbehaving SAF providers must not pin an IO worker forever.
+                            if (++emptyReads > 16) throw ApiException(0, "Selected file did not make progress")
+                        } else {
+                            count += received
+                            emptyReads = 0
+                        }
+                    }
+                    val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
+                        "%02x".format(Locale.ROOT, it.toInt() and 0xff)
+                    }
+                    val ack = putUploadChunk(accessToken, id, index, bytes, hash)
+                    if (ack.long("index") != index.toLong() ||
+                        ack.long("size") != wanted.toLong() ||
+                        !ack.string("sha256").equals(hash, ignoreCase = true)) invalidPayload()
+                    uploaded += wanted
+                    onProgress(uploaded) // Only server-confirmed bytes count as uploaded.
+                }
+                if (input.read() != -1) throw ApiException(0, "Selected file grew during upload")
+            }
+            val finalized = request("uploads/$id/finalize", accessToken,
+                bodyObject = JsonObject(emptyMap()), longRunning = true)
+            if (finalized.string("id") != id || finalized.string("status") != "finalized" ||
+                finalized.long("parent_id") != parent.id ||
+                finalized.long("size") != size) invalidPayload()
+            val result = node(finalized["result"] as? JsonObject ?: invalidPayload())
+            if (result.id <= 0 || result.type != "file" || result.parentId != parent.id ||
+                result.name != name || result.size != size || result.revision <= 0)
+                invalidPayload()
+            completed = true
+            result
+        } finally {
+            if (!completed) {
+                // May already be finalized after a lost ACK. DELETE is best effort;
+                // it cannot remove a finalized Node. Never retry the finalize write.
+                withContext(NonCancellable) {
+                    withTimeoutOrNull(2_000) {
+                        try {
+                            request("uploads/$id", accessToken,
+                                emptyResponse = true, method = "DELETE")
+                        } catch (_: Exception) { /* Server TTL also reaps staging. */ }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun putUploadChunk(
+        accessToken: String, sessionId: String, index: Int,
+        bytes: ByteArray, checksum: String,
+    ): JsonObject = suspendCancellableCoroutine { continuation ->
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/uploads/$sessionId/chunks/$index").build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer $accessToken")
+            .header("X-Chunk-SHA256", checksum)
+            .header("Accept", "application/json")
+            .put(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
+        val call = http.newCall(request)
+        call.timeout().timeout(0, TimeUnit.MILLISECONDS)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(transportFailure(e))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val obj = response.use { reply ->
+                        if (!reply.isSuccessful) throw ApiException(reply.code, "Upload chunk rejected")
+                        val body = reply.body ?: invalidPayload()
+                        if (body.contentLength() > 4_096) invalidPayload()
+                        val buffer = Buffer()
+                        val source = body.source()
+                        while (buffer.size <= 4_096) {
+                            val read = source.read(buffer, minOf(4_097L - buffer.size, 4_096L))
+                            if (read == -1L) break
+                        }
+                        if (buffer.size > 4_096) invalidPayload()
+                        json.parseToJsonElement(buffer.readUtf8()) as? JsonObject
+                            ?: invalidPayload()
+                    }
+                    if (continuation.isActive) continuation.resume(obj)
+                } catch (e: ApiException) {
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                } catch (e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(transportFailure(e))
+                } catch (_: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(
+                        ApiException(0, "Invalid upload acknowledgement", ApiFailureReason.INVALID_RESPONSE))
+                }
+            }
+        })
+    }
+
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
         val trimmed = query.trim()
         require(trimmed.codePointCount(0, trimmed.length) >= 2 && trimmed.toByteArray(Charsets.UTF_8).size <= 256) { "Invalid search query" }
@@ -440,8 +584,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         ifMatch: Long? = null,
         numberValues: Map<String, Long> = emptyMap(),
         bodyObject: JsonObject? = null,
+        longRunning: Boolean = false,
     ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
-        ifMatch, numberValues, bodyObject)
+        ifMatch, numberValues, bodyObject, longRunning)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -461,6 +606,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         ifMatch: Long? = null,
         numberValues: Map<String, Long> = emptyMap(),
         bodyObject: JsonObject? = null,
+        longRunning: Boolean = false,
     ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             query.forEach { (name, value) -> addQueryParameter(name, value) }
@@ -499,7 +645,14 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             else -> throw IllegalArgumentException("Invalid HTTP method")
         }
         return suspendCancellableCoroutine { continuation ->
-            val call = http.newCall(builder.build())
+            // Go CAS Finalize may legitimately spend minutes assembling a large
+            // object before its first response byte. Disable only the total
+            // timeout and extend its read-idle limit; retain the same pinned
+            // DNS/TLS/SNI client, redirect/retry prohibitions and cancellation.
+            val call = if (longRunning) http.newBuilder()
+                .callTimeout(0, TimeUnit.MILLISECONDS)
+                .readTimeout(10, TimeUnit.MINUTES).build().newCall(builder.build())
+            else http.newCall(builder.build())
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

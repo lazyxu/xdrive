@@ -108,6 +108,14 @@ node scripts/shared-ui.mjs --check
 
 - 新 Owner 请求（切目录、搜索、刷新、分页等）必须取消同一代下载 HTTP，并同步清空下载进度与 SAF 待保存节点；旧流的 finally 负责删除未完成文档，不能保留“下载中”或成功状态。
 
-- 继承 #2651 的 Android 选择辅助功能修复：使用 `Semantics.selected` 验证实际复选框状态与可见已选数，不能再依赖非交互 Checkbox 的 ToggleableState。
+## P0-02 · Android 手动单文件上传 (SAF)
+- Files 更多 > 上传文件，通过 Android OpenDocument 选择来源；Controller 仅接受当前 Owner、当前已读 Browse 文件夹且名称/大小可用的迟到选择器结果。SAF URI 不进入 State/日志/偏好设置。
+- 复用服务端普通 /api/v1/uploads UploadSession、PUT 8MiB Chunk、POST finalize 与原有 CAS，不自建 Mobile 上传 Runner。每 Chunk 发送 SHA-256，仅 Server ACK 增加字节进度，默认同名冲突 fail，不覆盖/跳过。
+- 操作取消/失效清空 UI 并取消网络，已有 session 尽量 DELETE，丢失 finalize ACK 不重放写入；Server 的 UploadSession TTL 清理作为兜底。
+- 待后续：批量、历史、后台前台服务、严格断点续传、完整传输中心、Gallery/Viewer 和 1:1 UI 截图验证。准确 API35 CI 未通过前不认定完成。
 
-- Auth CONNECT/LOGIN 的输入框 IME Done 只收起键盘、清除焦点，不提交凭据。API35 公共 UI fixture 在真实 Done + Idle 后分别只点击一次连接及登录，避免键盘遮挡 Button 或旧 UI 调度吞掉单次登录；不允许靠盲目重试写请求伪造通过。
+- 终态 409/传输失败要解除「上传中」但不能假报提交；409 展示明确名称冲突，其余不确定 ACK 提醒刷新目录核对且不自动重放。SAF Provider 连续返回 0 字节达到 16 次时停止，避免上传线程无限循环。
+
+- 对齐 #2651 的可访问性修复：被动 Checkbox 通过 `Semantics.selected` 与实际 Owner 选中 ID 和已选择数量验证。Go CAS Finalize 可能超过普通 JSON 30s 总时限或默认 10s read-idle，因此仅该请求继承同一加密/路由 Client 后使用 10min read-idle、无总时限，并保持调用者取消；不得放宽其他 HTTP 请求。
+
+- 同步 Android Auth 的 `ImeAction.Done` 及正确单次提交 fixture：收起系统键盘并等待 Compose 布局稳定后只点击一次连接/登录，不重复执行写请求。
