@@ -101,6 +101,11 @@ compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c   "INSER
 
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "mkdir -p /data/$uid/e2e && printf '%s' '$content' > /data/$storage_key"
 
+# Regenerable thumbnails must be omitted from both snapshot formats.
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -ec \
+  'mkdir -p /data/.xdrive-media/thumbnails/2026 && printf cached > /data/.xdrive-media/thumbnails/2026/unreferenced.jpg && chown -R 65532:65532 /data/.xdrive-media'
+
+
 compose up -d server worker >/dev/null
 wait_server
 assert_runtime_services
@@ -124,6 +129,15 @@ fi
 assert_runtime_services
 [[ -f "$backup_dir/database.dump" ]]
 [[ -f "$backup_dir/blobs.tar" ]]
+v1_entries="$(tar -tf "$backup_dir/blobs.tar")"
+if grep -Eq '^([.]/)?[.]xdrive-media(/|$)' <<<"$v1_entries"; then
+  echo "v1 full backup archived regenerable media cache" >&2
+  exit 1
+fi
+grep -Fq "./$storage_key" <<<"$v1_entries" || {
+  echo "v1 full backup omitted canonical file" >&2
+  exit 1
+}
 [[ -f "$backup_dir/manifest.json" ]]
 [[ -f "$backup_dir/SHA256SUMS.txt" ]]
 grep -q '"release_channel": "master"' "$backup_dir/manifest.json"
@@ -213,6 +227,15 @@ incremental_backup_dir="$(
 assert_runtime_services
 [[ -f "$incremental_backup_dir/objects.index" ]]
 [[ -f "$incremental_backup_dir/legacy.tar" ]]
+v2_entries="$(tar -tf "$incremental_backup_dir/legacy.tar")"
+if grep -Eq '^([.]/)?[.]xdrive-media(/|$)' <<<"$v2_entries"; then
+  echo "incremental legacy.tar archived regenerable media cache" >&2
+  exit 1
+fi
+grep -Fq "$storage_key" <<<"$v2_entries" || {
+  echo "incremental legacy.tar omitted canonical file" >&2
+  exit 1
+}
 [[ ! -e "$incremental_backup_dir/blobs.tar" ]]
 grep -q '"format_version": 2' "$incremental_backup_dir/manifest.json"
 (

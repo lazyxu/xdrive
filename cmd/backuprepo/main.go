@@ -277,6 +277,10 @@ func encodeTarLegacy(root, outPath string) (err error) {
 		if slash == casRoot {
 			return filepath.SkipDir
 		}
+		if slash == ".xdrive-media" && d.IsDir() {
+			// This exact root-level derived cache is disposable, unlike user data.
+			return filepath.SkipDir
+		}
 		if d.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink unsupported in incremental backup: %s (use legacy tar)", slash)
 		}
@@ -372,6 +376,10 @@ func estimateIncrementalBytes(source, repo string) (int64, error) {
 			return err
 		}
 		slash := filepath.ToSlash(rel)
+		if slash == ".xdrive-media" && d.IsDir() {
+			// Align space preflight with legacy.tar without walking caches.
+			return filepath.SkipDir
+		}
 		if d.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink unsupported in incremental backup: %s", slash)
 		}
