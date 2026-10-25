@@ -1,0 +1,119 @@
+#!/bin/sh
+# DSM 7 Package Center controls this SAME xdrive-agent used by Desktop and xd.
+# No daemon fork, mount, second Runner, or privileged root helper.
+set -eu
+umask 077
+
+package=xdrivenas
+prefix="/var/packages/$package"
+dest="${SYNOPKG_PKGDEST:-$prefix/target}"
+home="${SYNOPKG_PKGHOME:-$prefix/home}"
+var="${SYNOPKG_PKGVAR:-$prefix/var}"
+agent="$dest/bin/xdrive-agent"
+state="$var/run"
+pidfile="$state/agent.pid"
+logdir="$var/log"
+
+# The same package user must own both interactive xd and the background Agent.
+# DSM's package home and var survive SPK upgrades; target does not.
+export HOME="$home"
+export XDG_CONFIG_HOME="$home/.config"
+export XDG_CACHE_HOME="$var/cache"
+export XD_DISABLE_SECRET_SERVICE=1
+# The DS218j has only 512 MiB RAM; these are conservative soft Go settings.
+export GOMAXPROCS="${GOMAXPROCS:-1}"
+export GOMEMLIMIT="${GOMEMLIMIT:-128MiB}"
+
+read_pid() {
+    [ -f "$pidfile" ] || return 1
+    IFS= read -r pid < "$pidfile" || return 1
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$pid" -gt 1 ] || return 1
+}
+
+# Never kill an arbitrary reused PID or another user's Agent.
+is_ours() {
+    read_pid || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    [ -r "/proc/$pid/cmdline" ] || return 1
+    # argv[0] can be forged (exec -a); verify the actual original Agent ELF.
+    # DSM's package target may be a FHS symlink, so resolve both paths.
+    expected_exe="$(readlink -f "$agent" 2>/dev/null)" || return 1
+    actual_exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null)" || return 1
+    [ -n "$expected_exe" ] && [ "$actual_exe" = "$expected_exe" ] || return 1
+    first="$(tr '\000' '\n' < "/proc/$pid/cmdline" | sed -n '1p')"
+    second="$(tr '\000' '\n' < "/proc/$pid/cmdline" | sed -n '2p')"
+    [ "$first" = "$agent" ] && [ "$second" = '--backup-only' ]
+}
+
+prepare_dirs() {
+    # DSM FHS home/var paths are managed symlinks into @apphome/@appdata.
+    mkdir -p "$home" "$var"
+    for dir in "$state" "$logdir" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; do
+        if [ -L "$dir" ]; then
+            echo "xDrive NAS: refusing symlink for private directory: $dir" >&2
+            return 1
+        fi
+        mkdir -p "$dir"
+    done
+    chmod 0700 "$state" "$logdir" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+}
+
+start() {
+    if is_ours; then
+        return 0
+    fi
+    [ -x "$agent" ] || { echo "xDrive NAS: missing Agent: $agent" >&2; return 1; }
+    prepare_dirs || return 1
+    # A stale PID is safe to replace only after verifying it is NOT our Agent.
+    rm -f "$pidfile"
+    (
+        trap '' HUP
+        exec "$agent" --backup-only </dev/null >>"$logdir/agent.log" 2>&1
+    ) &
+    child=$!
+    tmp="$state/.agent.pid.$$"
+    printf '%s\n' "$child" > "$tmp"
+    mv -f "$tmp" "$pidfile"
+    sleep 1
+    if is_ours; then
+        return 0
+    fi
+    rm -f "$pidfile"
+    echo 'xDrive NAS: Agent exited during startup (inspect var/log/agent.log)' >&2
+    return 1
+}
+
+stop() {
+    if ! is_ours; then
+        # A stale pidfile must not authorize a signal to another process.
+        rm -f "$pidfile"
+        return 0
+    fi
+    child=$pid
+    kill -TERM "$child" || return 1
+    count=0
+    while [ "$count" -lt 30 ]; do
+        if ! is_ours; then
+            rm -f "$pidfile"
+            return 0
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    # Do not SIGKILL a process potentially holding an in-flight file Operation.
+    echo 'xDrive NAS: Agent did not stop gracefully; leaving PID for inspection' >&2
+    return 1
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop ;;
+    status)
+        if is_ours; then exit 0; fi
+        if [ -e "$pidfile" ]; then exit 1; fi
+        exit 3
+        ;;
+    prestart|prestop) exit 0 ;;
+    *) echo 'Usage: start-stop-status {start|stop|status|prestart|prestop}' >&2; exit 2 ;;
+esac

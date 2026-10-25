@@ -1,0 +1,82 @@
+name: Synology ARMv7 SPK
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'cmd/xd/**'
+      - 'cmd/xdrive-agent/**'
+      - 'internal/localpush*/**'
+      - 'internal/localbackupipc/**'
+      - 'packaging/synology/**'
+      - 'scripts/build-synology-spk.sh'
+      - 'scripts/synology-spk-icons.go'
+      - 'scripts/ci/test-synology-*.sh'
+      - 'scripts/ci/test-synology-*.py'
+      - 'scripts/ci/synology-armv7-largefile-probe.go'
+      - '.github/workflows/synology-spk.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'cmd/xd/**'
+      - 'cmd/xdrive-agent/**'
+      - 'internal/localpush*/**'
+      - 'internal/localbackupipc/**'
+      - 'packaging/synology/**'
+      - 'scripts/build-synology-spk.sh'
+      - 'scripts/synology-spk-icons.go'
+      - 'scripts/ci/test-synology-*.sh'
+      - 'scripts/ci/test-synology-*.py'
+      - 'scripts/ci/synology-armv7-largefile-probe.go'
+      - '.github/workflows/synology-spk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  armada38x:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify DSM lifecycle without a NAS or production credentials
+        run: bash scripts/ci/test-synology-lifecycle.sh
+      - name: Cross-compile original Go CLI and Agent and package SPK
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XDRIVE_BUILD_VERSION=0.1.0+synology-dev
+          bash scripts/build-synology-spk.sh 0.1.0-1 release/synology
+          python3 scripts/ci/test-synology-spk.py \
+            release/synology/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology/core 0.1.0-1
+      - name: Execute real ARMv7 CLI and Agent under Cortex-A9 emulation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+          bash scripts/ci/test-synology-armv7-qemu.sh release/synology/core 0.1.0+synology-dev
+      - name: Rebuild SPK from exact same binaries (byte-for-byte)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build-synology-spk.sh 0.1.0-1 release/synology-repeat release/synology/core
+          cmp release/synology/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-repeat/xdrivenas-armada38x-0.1.0-1.spk
+      - name: Upload source-exact ARMv7 candidate (not yet device-validated)
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrivenas-armada38x-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            release/synology/*.spk
+            release/synology/*.sha256
+          if-no-files-found: error
+          retention-days: 7

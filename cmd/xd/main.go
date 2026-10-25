@@ -61,7 +61,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `xDrive CLI
 
 Usage:
-  xd login --server https://drive.example.com --username USER --password PASS
+  xd login --server https://drive.example.com --username USER --password-stdin
   xd password --current CURRENT --new NEW
   xd status
   xd config --mount PATH
@@ -83,20 +83,19 @@ func login(args []string) error {
 	server := fs.String("server", "http://localhost:8080", "xDrive server URL")
 	username := fs.String("username", "", "username")
 	password := fs.String("password", "", "password (or XD_PASSWORD)")
+	passwordStdin := fs.Bool("password-stdin", false, "read password from stdin (no argv/env secret)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *username == "" {
 		return fmt.Errorf("--username is required")
 	}
-	if *password == "" {
-		*password = os.Getenv("XD_PASSWORD")
-	}
-	if *password == "" {
-		return fmt.Errorf("--password or XD_PASSWORD is required")
+	resolvedPassword, err := resolveLoginPassword(*password, os.Getenv("XD_PASSWORD"), *passwordStdin, os.Stdin)
+	if err != nil {
+		return err
 	}
 	cli := client.New(strings.TrimRight(*server, "/"), "")
-	resp, err := cli.Login(context.Background(), *username, *password)
+	resp, err := cli.Login(context.Background(), *username, resolvedPassword)
 	if err != nil {
 		return err
 	}
