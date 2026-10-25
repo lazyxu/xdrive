@@ -9,8 +9,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
     private val root = DriveNode(1, name = "", type = "dir")
-    private val folder = DriveNode(2, 1, "照片", "dir")
-    private val file = DriveNode(3, 1, "readme.txt", "file", 42)
+    private val folder = DriveNode(2, 1, "照片", "dir", revision = 1)
+    private val file = DriveNode(3, 1, "readme.txt", "file", 42, revision = 1)
 
     private open inner class Service : XDriveService {
         val calls = mutableListOf<Pair<Long, Int>>()
@@ -36,8 +36,18 @@ class DriveControllerTest {
             if (cursor.isEmpty()) FileSearchPage(listOf(searchFile), "cursor-1")
             else FileSearchPage(listOf(recentFolder), "")
         }
+        var mutationRows = listOf(folder, file)
+        var mutationListing = false
+        val mutationCalls = mutableListOf<String>()
+        var mutationFailure: Exception? = null
+        var refreshAfterCommitFailure = false
+        var createHandler: suspend (Long, String) -> DriveNode = { parent, name ->
+            DriveNode(8, parent, name, "dir", revision = 1)
+        }
         var listing: suspend (Long, Int) -> NodeRange = { _, offset ->
-            NodeRange(if (offset == 0) listOf(folder, file) else listOf(file), 101, offset)
+            if (mutationListing) NodeRange(if (offset == 0) mutationRows else emptyList(),
+                mutationRows.size.toLong(), offset)
+            else NodeRange(if (offset == 0) listOf(folder, file) else listOf(file), 101, offset)
         }
         override suspend fun login(username: String, password: String) = AuthSession("access", "refresh", username, required)
         override suspend fun refresh(refreshToken: String): AuthSession { refreshed++; refreshFailure?.let { throw it }; return AuthSession("new", "rotated", "owner") }
@@ -47,7 +57,33 @@ class DriveControllerTest {
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             calls += parentId to offset
             failure?.let { failure = null; throw it }
+            if (refreshAfterCommitFailure) {
+                refreshAfterCommitFailure = false
+                throw ApiException(503, "refresh unavailable")
+            }
             return listing(parentId, offset)
+        }
+        override suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode {
+            mutationCalls += "create:$name"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            val created = createHandler(parentId, name)
+            mutationRows += created
+            mutationListing = true
+            return created
+        }
+        override suspend fun renameNode(accessToken: String, original: DriveNode, name: String): DriveNode {
+            mutationCalls += "rename:$name"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            val renamed = original.copy(name = name, revision = original.revision + 1)
+            mutationRows = mutationRows.map { if (it.id == original.id) renamed else it }
+            mutationListing = true
+            return renamed
+        }
+        override suspend fun trashNode(accessToken: String, original: DriveNode) {
+            mutationCalls += "trash:${original.id}"
+            mutationFailure?.let { mutationFailure = null; throw it }
+            mutationRows = mutationRows.filterNot { it.id == original.id }
+            mutationListing = true
         }
         override suspend fun fileRecent(accessToken: String) = recentListing()
         override suspend fun fileFavorites(accessToken: String) = favoriteListing()
@@ -220,6 +256,87 @@ class DriveControllerTest {
         assertEquals(listOf(folder), c.state.value.items)
     }
 
+    @Test fun nativeFileMutationsUseOwnerBrowseAndRefreshOnlyAfterServerAck() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.createFolder("新建文件夹"); runCurrent()
+        assertTrue(c.state.value.items.any { it.name == "新建文件夹" })
+        assertEquals(listOf("create:新建文件夹"), api.mutationCalls)
+        assertEquals(1L to 0, api.calls.last())
+
+        c.renameBrowseNode(file, "renamed.txt"); runCurrent()
+        val changed = c.state.value.items.single { it.id == file.id }
+        assertEquals("renamed.txt", changed.name)
+        assertEquals(2L, changed.revision)
+        c.moveBrowseNodeToTrash(changed); runCurrent()
+        assertFalse(c.state.value.items.any { it.id == file.id })
+        assertEquals(listOf("create:新建文件夹", "rename:renamed.txt", "trash:3"), api.mutationCalls)
+    }
+
+    @Test fun uncertain401WriteNeverAutoRefreshesAndReplaysTheMutation() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.mutationFailure = ApiException(401, "uncertain mutation")
+        c.createFolder("no-replay"); runCurrent()
+        assertEquals(listOf("create:no-replay"), api.mutationCalls)
+        assertEquals(0, api.refreshed)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.items.isEmpty())
+    }
+
+    @Test fun revisionConflictDoesNotOptimisticallyRenameOrAutomaticallyRetry() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.mutationFailure = ApiException(409, "conflict")
+        c.renameBrowseNode(file, "other.txt"); runCurrent()
+        assertNotNull(c.state.value.error)
+        assertTrue(c.state.value.items.contains(file))
+        assertEquals(listOf("rename:other.txt"), api.mutationCalls)
+        c.retry(); runCurrent()
+        assertEquals(listOf("rename:other.txt"), api.mutationCalls) // GET, never replay PATCH
+    }
+
+    @Test fun confirmedMutationReadFailureShowsCommittedStatusAndGetRetryOnly() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.refreshAfterCommitFailure = true
+        c.createFolder("已保存"); runCurrent()
+        assertTrue(c.state.value.error.orEmpty().contains("已提交"))
+        assertTrue(c.state.value.items.any { it.name == "已保存" })
+        c.retry(); runCurrent()
+        assertEquals(listOf("create:已保存"), api.mutationCalls)
+        assertNull(c.state.value.error)
+        assertTrue(c.state.value.items.any { it.name == "已保存" })
+    }
+
+    @Test fun lateCommittedMutationCannotRestoreRowsAfterLogout() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val delayed = CompletableDeferred<DriveNode>()
+        api.createHandler = { parentId, name ->
+            withContext(NonCancellable) { delayed.await() }
+        }
+        c.createFolder("private"); runCurrent()
+        assertTrue(c.state.value.loading)
+        c.logout(); runCurrent()
+        delayed.complete(DriveNode(55, 1, "private", "dir", revision = 1)); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.items.isEmpty())
+        assertTrue(c.state.value.collectionItems.isEmpty())
+    }
+
+    @Test fun collectionAndStaleNodesCannotIssueBrowseMutations() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.renameBrowseNode(file.copy(revision = 5), "stale.txt")
+        c.moveBrowseNodeToTrash(file.copy(revision = 5))
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.createFolder("not-a-folder")
+        c.renameBrowseNode(file, "file.txt")
+        c.moveBrowseNodeToTrash(file)
+        assertTrue(api.mutationCalls.isEmpty())
+    }
+
     @Test fun globalSearchUsesServerCursorAndRestoresBrowseState() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -352,7 +469,11 @@ class DriveControllerTest {
         c.changeFilesSection(FilesSection.RECENT); runCurrent()
         c.openCollectionItem(api.recentFolder); runCurrent()
         assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
-        assertEquals(listOf(root, folder), c.state.value.path)
+        // Collection breadcrumbs contain stable directory IDs/names, not a
+        // revisioned Node snapshot. Never assert a fabricated revision=0
+        // against the writable fixture's revision=1.
+        assertEquals(listOf(root.id, folder.id), c.state.value.path.map { it.id })
+        assertEquals(listOf(root.name, folder.name), c.state.value.path.map { it.name })
         assertEquals(folder.id to 0, api.calls.last())
     }
 

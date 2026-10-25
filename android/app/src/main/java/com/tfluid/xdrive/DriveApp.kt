@@ -22,9 +22,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {}) {
     val state by controller.state.collectAsStateWithLifecycle()
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
+    var filesEdit by remember(state.screen, state.filesSection, state.path.map { it.id }) {
+        mutableStateOf<FilesEditIntent?>(null)
+    }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.selected != null || (state.screen == Screen.FILES &&
-        (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) { controller.back() }
+    BackHandler(filesEdit != null || state.selected != null || (state.screen == Screen.FILES &&
+        (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) {
+        if (filesEdit != null) filesEdit = null else controller.back()
+    }
     Scaffold(modifier = Modifier.imePadding(), containerColor = if (state.screen == Screen.FILES) mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
         if (state.screen == Screen.FILES) Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
@@ -66,10 +71,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         textAlign = TextAlign.Center)
                 }
                 AccountMenu(state, controller, updates?.let { it::show },
-                    if (state.filesSection == FilesSection.BROWSE) filesView else null) {
-                    filesView = it
-                    saveFilesView(it)
-                }
+                    fileView = if (state.filesSection == FilesSection.BROWSE) filesView else null,
+                    onFileViewChange = { filesView = it; saveFilesView(it) },
+                    onCreateFolder = { filesEdit = FilesEditIntent(FilesEditKind.CREATE_FOLDER) })
             }
         }
     }) { padding ->
@@ -80,7 +84,22 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.CONNECT -> ConnectionForm(state, controller::connect, controller::savedRoute) { if (updates != null) AccountMenu(state, controller, updates::show) }
                 Screen.LOGIN -> LoginForm(state, controller::login) { AccountMenu(state, controller, updates?.let { it::show }) }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
-                Screen.FILES -> Files(state, controller, filesView)
+                Screen.FILES -> Files(state, controller, filesView,
+                    onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
+                    onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) })
+            }
+        }
+    }
+    filesEdit?.let { intent ->
+        FilesEditDialog(intent = intent, busy = state.loading, onDismiss = { filesEdit = null }) { name ->
+            if (!state.loading && state.screen == Screen.FILES &&
+                state.filesSection == FilesSection.BROWSE) {
+                when (intent.kind) {
+                    FilesEditKind.CREATE_FOLDER -> controller.createFolder(name)
+                    FilesEditKind.RENAME -> intent.node?.let { controller.renameBrowseNode(it, name) }
+                    FilesEditKind.TRASH -> intent.node?.let(controller::moveBrowseNodeToTrash)
+                }
+                filesEdit = null
             }
         }
     }
@@ -103,7 +122,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
 
 @Composable
 internal fun AccountMenu(state: DriveState, controller: DriveController, checkUpdates: (() -> Unit)? = null,
-    fileView: FileViewMode? = null, onFileViewChange: (FileViewMode) -> Unit = {}) {
+    fileView: FileViewMode? = null, onFileViewChange: (FileViewMode) -> Unit = {},
+    onCreateFolder: (() -> Unit)? = null) {
     var expanded by remember(state.screen) { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) { Icon(painterResource(R.drawable.xd_more_vert), "账户菜单") }
@@ -120,6 +140,11 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 HorizontalDivider()
             }
             if (fileView != null) {
+                if (onCreateFolder != null) DropdownMenuItem(
+                    text = { Text("新建文件夹") },
+                    enabled = !state.loading && state.loaded,
+                    modifier = Modifier.testTag("files-create-folder-action"),
+                    onClick = { expanded = false; onCreateFolder() })
                 DropdownMenuItem(text = { Text("图标") },
                     trailingIcon = { if (fileView == FileViewMode.GRID) Text("✓", color = MaterialTheme.colorScheme.primary) },
                     onClick = { expanded = false; onFileViewChange(FileViewMode.GRID) })

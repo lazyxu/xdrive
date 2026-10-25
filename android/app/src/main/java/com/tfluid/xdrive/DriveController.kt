@@ -156,6 +156,105 @@ class DriveController(
 
     fun dismissDetails() { mutableState.value = state.value.copy(selected = null) }
 
+    /** Mutations only target the current Owner's confirmed browse directory;
+     * never the Search/Recent collection, stale rows or the root itself. */
+    private fun editableBrowseState(node: DriveNode? = null): DriveState? {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.loading || !current.loaded || current.path.isEmpty() || session == null) return null
+        if (node != null && (node.parentId != current.path.last().id ||
+            node.revision <= 0 || current.items.none { it == node })) return null
+        return current
+    }
+
+    fun createFolder(name: String) {
+        val current = editableBrowseState() ?: return
+        if (!validDriveNodeName(name)) {
+            mutableState.value = current.copy(error = "文件夹名称不符合要求：请检查保留字符、末尾空格及 255 字节限制。")
+            return
+        }
+        val service = api ?: return
+        val path = current.path.toList()
+        val parentID = path.last().id
+        request { ticket ->
+            val created = authenticatedMutation(ticket) { service.createDirectory(it, parentID, name) }
+            checkCurrent(ticket)
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                fresh.copy(items = (fresh.items + created).distinctBy { it.id },
+                    totalCount = fresh.totalCount + 1)
+            }
+        }
+    }
+
+    fun renameBrowseNode(node: DriveNode, name: String) {
+        val current = editableBrowseState(node) ?: return
+        if (!validDriveNodeName(name)) {
+            mutableState.value = current.copy(error = "名称不符合要求：请检查保留字符、末尾空格及 255 字节限制。")
+            return
+        }
+        if (name == node.name) return
+        val service = api ?: return
+        val path = current.path.toList()
+        request { ticket ->
+            val renamed = authenticatedMutation(ticket) { service.renameNode(it, node, name) }
+            checkCurrent(ticket)
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                fresh.copy(items = fresh.items.map { if (it.id == node.id) renamed else it })
+            }
+        }
+    }
+
+    /** The underlying Go endpoint moves an active subtree into Trash.
+     * The UI asks for confirmation before invoking this destructive action. */
+    fun moveBrowseNodeToTrash(node: DriveNode) {
+        val current = editableBrowseState(node) ?: return
+        val service = api ?: return
+        val path = current.path.toList()
+        request { ticket ->
+            authenticatedMutation(ticket) { service.trashNode(it, node) }
+            checkCurrent(ticket)
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                fresh.copy(items = fresh.items.filterNot { it.id == node.id },
+                    totalCount = (fresh.totalCount - 1).coerceAtLeast(0))
+            }
+        }
+    }
+
+    /** Single physical write attempt: unlike idempotent Owner reads, a lost
+     * response must never cause a token-refresh replay of POST/PATCH/DELETE. */
+    private suspend fun <T> authenticatedMutation(
+        ticket: Long, block: suspend (String) -> T,
+    ): T {
+        checkCurrent(ticket)
+        val current = session ?: throw CancellationException()
+        val result = block(current.accessToken)
+        checkCurrent(ticket)
+        return result
+    }
+
+    private suspend fun reconcileBrowseAfterCommit(
+        service: XDriveService, path: List<DriveNode>, ticket: Long,
+        provisional: (DriveState) -> DriveState,
+    ) {
+        checkCurrent(ticket)
+        val current = state.value
+        if (current.filesSection != FilesSection.BROWSE || current.path != path)
+            throw CancellationException()
+        // Server already ACKed. Never re-issue a mutation merely because the
+        // subsequent read fails; show a committed-but-stale notice instead.
+        mutableState.value = provisional(current)
+        try {
+            loadWithin(service, path, 0, ticket)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            checkCurrent(ticket)
+            if (failure is ApiException && failure.statusCode == 401) throw failure
+            mutableState.value = state.value.copy(
+                error = "操作已提交，但目录刷新失败。请点刷新读取最新状态。")
+        }
+    }
+
     fun changeFilesSection(next: FilesSection) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == next ||
@@ -480,7 +579,8 @@ class DriveController(
         401 -> "用户名或密码不正确，或登录已失效。"
         403 -> "当前账户无权执行此操作，请检查账户状态。"
         404 -> "文件夹不存在或已被移动，请刷新后重试。"
-        409 -> "内容已发生变化，请刷新后重试。"
+        409 -> "名称冲突或文件版本已变化，请刷新后重试。"
+        412, 428 -> "文件版本校验失败，请刷新后重试。"
         429 -> "请求过于频繁，请稍后重试。"
         in 500..599 -> "服务器暂时不可用，请稍后重试。"
         else -> "连接失败或服务器响应无效。请检查网络、地址及 HTTPS 证书。"

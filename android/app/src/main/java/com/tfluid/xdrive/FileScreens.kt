@@ -26,7 +26,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.DriveCollectionItem
 import com.tfluid.xdrive.core.DriveNode
+import com.tfluid.xdrive.core.validDriveNodeName
 import kotlinx.coroutines.flow.collect
+
+internal enum class FilesEditKind { CREATE_FOLDER, RENAME, TRASH }
+internal data class FilesEditIntent(val kind: FilesEditKind, val node: DriveNode? = null)
 
 enum class FileViewMode {
     LIST, GRID;
@@ -62,7 +66,8 @@ internal class FilesViewportAnchors(private val capacity: Int = 64) {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode) {
+internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode,
+    onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {}) {
     val dark = LocalXDriveDarkTheme.current
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
@@ -164,7 +169,9 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            FilesContextMenu(node, contextOpen, { contextOpen = false }, controller)
+                            FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
+                                onRename = onRename, onTrash = onTrash,
+                                canMutate = !state.loading)
                         }
                         if (node.id != state.items.lastOrNull()?.id)
                             HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outline)
@@ -195,7 +202,9 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                             Text(node.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
                                 textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
-                        FilesContextMenu(node, contextOpen, { contextOpen = false }, controller)
+                        FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
+                            onRename = onRename, onTrash = onTrash,
+                            canMutate = !state.loading)
                     }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
@@ -335,7 +344,9 @@ private fun ColumnScope.FilesSectionsBar(section: FilesSection, select: (FilesSe
 @Composable
 private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> Unit,
     controller: DriveController, collection: DriveCollectionItem? = null,
-    section: FilesSection = FilesSection.BROWSE) {
+    section: FilesSection = FilesSection.BROWSE,
+    onRename: ((DriveNode) -> Unit)? = null, onTrash: ((DriveNode) -> Unit)? = null,
+    canMutate: Boolean = true) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface) {
         if (node.isDirectory) DropdownMenuItem(text = { Text("打开文件夹") },
@@ -345,6 +356,12 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
             })
         if (collection != null) DropdownMenuItem(text = { Text("显示所在位置") },
             onClick = { dismiss(); controller.locateCollectionItem(collection) })
+        if (collection == null && node.revision > 0 && canMutate) {
+            if (onRename != null) DropdownMenuItem(text = { Text("重命名") },
+                onClick = { dismiss(); onRename(node) })
+            if (onTrash != null) DropdownMenuItem(text = { Text("移到回收站") },
+                onClick = { dismiss(); onTrash(node) })
+        }
         if (!node.isDirectory) {
             if (section == FilesSection.FAVORITES) DropdownMenuItem(text = { Text("取消收藏") },
                 onClick = { dismiss(); controller.unfavoriteFile(node) })
@@ -356,6 +373,57 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
             controller.showDetails(node)
         })
     }
+}
+
+/** The same editable operation surface is used for list and grid. No
+ * destructive request is sent until the user explicitly confirms it. */
+@Composable
+internal fun FilesEditDialog(
+    intent: FilesEditIntent, busy: Boolean, onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val deleting = intent.kind == FilesEditKind.TRASH
+    val original = intent.node?.name.orEmpty()
+    var draft by remember(intent) { mutableStateOf(if (intent.kind == FilesEditKind.RENAME) original else "") }
+    val allowed = when (intent.kind) {
+        FilesEditKind.CREATE_FOLDER -> validDriveNodeName(draft)
+        FilesEditKind.RENAME -> validDriveNodeName(draft) && draft != original
+        FilesEditKind.TRASH -> intent.node != null
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(when (intent.kind) {
+            FilesEditKind.CREATE_FOLDER -> "新建文件夹"
+            FilesEditKind.RENAME -> "重命名"
+            FilesEditKind.TRASH -> "移到回收站"
+        }) },
+        text = {
+            if (deleting) Text(if (intent.node?.isDirectory == true)
+                "确定将「$original」及其子项移到回收站？"
+                else "确定将「$original」移到回收站？")
+            else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = draft, onValueChange = { draft = it.take(255) },
+                    modifier = Modifier.fillMaxWidth().testTag("files-edit-name"),
+                    label = { Text("名称") }, singleLine = true,
+                    isError = draft.isNotEmpty() && !validDriveNodeName(draft),
+                )
+                Text("不允许保留名称、特殊字符、末尾空格或超过 255 字节。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(draft) },
+                enabled = allowed && !busy,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("files-edit-confirm"),
+            ) { Text(if (deleting) "移到回收站" else "保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+        },
+    )
 }
 
 @Composable

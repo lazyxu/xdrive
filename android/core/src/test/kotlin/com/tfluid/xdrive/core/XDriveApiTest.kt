@@ -23,6 +23,73 @@ class XDriveApiTest {
         throw AssertionError("Expected safe API failure")
     }
 
+    @Test fun `native Files mutation routes use same bearer client and exact node revisions`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"id":9,"parent_id":1,"name":"旅行","type":"dir","revision":1}"""))
+            val created = api.createDirectory("access-secret", 1, "旅行")
+            assertEquals(9L, created.id)
+            val post = server.takeRequest()
+            assertEquals("POST", post.method)
+            assertEquals("/api/v1/nodes/1/directories", post.path)
+            assertEquals("Bearer access-secret", post.getHeader("Authorization"))
+            assertNull(post.getHeader("If-Match"))
+            assertEquals("旅行", body(post)["name"]!!.jsonPrimitive.content)
+
+            val previous = DriveNode(10, 1, "before.txt", "file", 128, revision = 3)
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                """{"id":10,"parent_id":1,"name":"after.txt","type":"file","size":128,"revision":4}"""))
+            val renamed = api.renameNode("access-secret", previous, "after.txt")
+            assertEquals("after.txt", renamed.name)
+            assertEquals(4L, renamed.revision)
+            val patch = server.takeRequest()
+            assertEquals("PATCH", patch.method)
+            assertEquals("/api/v1/nodes/10", patch.path)
+            assertEquals("Bearer access-secret", patch.getHeader("Authorization"))
+            assertEquals("\"3\"", patch.getHeader("If-Match"))
+            assertEquals("after.txt", body(patch)["name"]!!.jsonPrimitive.content)
+
+            server.enqueue(MockResponse().setResponseCode(204))
+            api.trashNode("access-secret", renamed)
+            val delete = server.takeRequest()
+            assertEquals("DELETE", delete.method)
+            assertEquals("/api/v1/nodes/10", delete.path)
+            assertEquals("Bearer access-secret", delete.getHeader("Authorization"))
+            assertEquals("\"4\"", delete.getHeader("If-Match"))
+        } }
+    }
+
+    @Test fun `file mutation name rules match Go Windows subset and reject bad inputs locally`() = runBlocking {
+        assertTrue(validDriveNodeName("旅行 2026"))
+        assertTrue(validDriveNodeName(".gitignore"))
+        for (value in listOf("", ".", "..", "bad/", "a?", "a.", "a ", "CON", "NUL.txt",
+            "com1.log", "Lpt9", "a\\b", "x".repeat(256))) {
+            assertFalse(value, validDriveNodeName(value))
+        }
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.createDirectory("access-secret", 1, "NUL.txt") }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { api.renameNode("access-secret", DriveNode(4, 1, "a", "file", revision = 0), "b") }
+            }
+            assertEquals(0, server.requestCount)
+        } }
+    }
+
+    @Test fun `409 revision conflicts never retry destructive write or leak credentials`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision_conflict","detail":"password-secret"}"""))
+            val before = DriveNode(2, 1, "a.txt", "file", revision = 7)
+            val err = failure { api.trashNode("access-secret", before) }
+            assertEquals(409, err.statusCode)
+            assertFalse(err.toString().contains("secret"))
+            assertEquals(1, server.requestCount)
+            assertEquals("\"7\"", server.takeRequest().getHeader("If-Match"))
+        } }
+    }
+
     @Test fun `wrong current password has a safe endpoint specific reason`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"current password is incorrect","detail":"password-secret"}"""))

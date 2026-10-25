@@ -71,9 +71,17 @@ Native Files also offers real Owner-scoped global search through the existing
 `GET /api/v1/search` Server cursor contract, with 100 items per authenticated
 page, cancellation on new queries, explicit failed-page retry and correct
 Breadcrumb-based folder location. This is never a filter of only the visible
-directory. Structured filtering, saved searches, thumbnails, Gallery, Viewer,
-transfers and upload/download are still unimplemented; this increment is
-**not** full iOS PWA UI/functionality parity.
+directory. Basic native Files mutations now also use the existing Owner
+Node API: New Folder (POST), Rename (PATCH with `If-Match`), and Move to Trash
+(DELETE with `If-Match`). Android shows a confirmation before trashing an
+item or subtree, never retries a write automatically, and refreshes the
+authoritative Server listing only after a successful acknowledgement.
+If that follow-up read fails, it reports the mutation as committed but the
+directory as stale, with GET-only refresh; it does **not** repeat the write.
+
+Structured filtering, saved searches, batch copy/move, upload/download,
+thumbnails, Gallery, Viewer, and transfers are still unimplemented; this
+increment is **not** full iOS PWA UI/functionality parity.
 
 Phone folders use the actual blue iOS-style PWA `MobileFolderIcon` from
 `web/src/MobileFiles.tsx`, including both gradients and the highlight, with that
