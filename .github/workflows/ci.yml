@@ -2970,6 +2970,8 @@ jobs:
           go test ./cmd/backuprepo -count=1
           bash -n scripts/server-backup.sh
           bash -n scripts/server-backup-scheduled.sh
+          bash -n scripts/test-server-backup-scheduled.sh
+          bash scripts/test-server-backup-scheduled.sh
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-verify.sh
