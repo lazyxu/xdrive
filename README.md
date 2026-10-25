@@ -4,6 +4,8 @@
 
 xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, a Web file manager, and native desktop filesystem clients.
 
+**Android master APK (development):** Every push to `master` builds a separately downloadable Debug APK. Open [Android Master APK Actions](https://github.com/lazyxu/xdrive/actions/workflows/android-master-apk.yml?query=branch%3Amaster), select the latest successful master run, then download its `xdrive-android-master-<commit SHA>` Artifact (GitHub login required). The ZIP includes the APK, SHA-256 checksum and source commit metadata. This is **not** a stable signed update or GitHub Release asset; see [Android build details](android/README.md).
+
 ## MVP scope
 
 | Area | First release |

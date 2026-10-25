@@ -36,3 +36,19 @@ test('rejects debug, foreign app, split APK, invalid versions and traversing pat
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('master Android APK artifact is independent of emulator and release gates', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/android-master-apk.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /^name: Android Master APK$/m);
+  assert.ok(workflow.includes('  push:\n    branches: [master]\n'));
+  assert.match(workflow, /^  workflow_dispatch:$/m);
+  assert.ok(workflow.includes("if: github.ref == 'refs/heads/master'"));
+  assert.ok(workflow.includes('ref: ${{ github.sha }}'));
+  assert.ok(workflow.includes(':app:assembleDebug'));
+  assert.ok(workflow.includes('apksigner" verify'));
+  assert.ok(workflow.includes('aapt" dump badging'));
+  assert.ok(workflow.includes('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"'));
+  assert.ok(workflow.includes('sha256sum -c SHA256SUMS.txt'));
+  assert.ok(workflow.includes('name: xdrive-android-master-${{ github.sha }}'));
+  assert.ok(workflow.includes('retention-days: 30'));
+  assert.doesNotMatch(workflow, /pull_request:|needs:|connectedDebugAndroidTest|gh release (create|upload)/);});

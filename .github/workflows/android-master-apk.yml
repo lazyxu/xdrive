@@ -1,0 +1,77 @@
+name: Android Master APK
+run-name: Android Master APK · ${{ github.sha }}
+
+# Standalone master Artifact: no dependency on the emulator or full CI.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-master-apk:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact master commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build Android APK without emulator or full CI
+        working-directory: android
+        run: bash gradlew --no-daemon :app:assembleDebug
+      - name: Verify exact APK and prepare downloadable artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          source_apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$source_apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$source_apk"
+          package_line="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$source_apk" | head -n 1)"
+          [[ "$package_line" == "package: name='com.tfluid.xdrive' "* ]] || {
+            echo "Refusing APK with wrong applicationId" >&2
+            exit 1
+          }
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          dir=dist/android-master
+          mkdir -p "$dir"
+          apk="$dir/xdrive-android-master-$short_sha-debug.apk"
+          cp "$source_apk" "$apk"
+          cmp "$source_apk" "$apk"
+          {
+            echo "Source commit: $GITHUB_SHA"
+            echo "Source branch: master"
+            echo "Actions run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "Application ID: com.tfluid.xdrive"
+            echo "Variant: debug"
+            echo "Signing: ephemeral GitHub Actions debug key; NOT a stable update key."
+            echo "Use for testing only. A different debug signing key requires uninstall before install."
+          } > "$dir/BUILD_INFO.txt"
+          (
+            cd "$dir"
+            sha256sum ./*.apk > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+      - name: Upload exact-master Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-android-master-${{ github.sha }}
+          path: dist/android-master/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
