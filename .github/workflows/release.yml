@@ -334,6 +334,49 @@ jobs:
             ahead|identical) ;;
             *) echo "Refusing stale Snapshot promotion before channel update: $relation" >&2; exit 1 ;;
           esac
+      - name: Probe snapshot Git ref authorization before release mutation
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
+          [[ "$published" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "[xDrive] Snapshot tag cannot be resolved; refusing promotion." >&2
+            exit 1
+          }
+          # Contents:write can be insufficient to retarget a Git ref to a
+          # historical commit with changed GitHub workflows. Probe the EXACT
+          # target SHA on an isolated temporary ref before touching the public
+          # Snapshot assets or any floating GHCR edge tags.
+          scratch_name="xdrive-snapshot-ref-probe-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          scratch_endpoint="repos/$repo/git/refs/tags/$scratch_name"
+          scratch_created=0
+          cleanup_scratch() {
+            if [[ "$scratch_created" == "1" ]]; then
+              gh api --method DELETE "$scratch_endpoint" >/dev/null || {
+                echo "[xDrive] Unable to delete temporary Snapshot ref $scratch_name." >&2
+                return 1
+              }
+              scratch_created=0
+            fi
+          }
+          trap cleanup_scratch EXIT
+          gh api --method POST "repos/$repo/git/refs" \
+            -f "ref=refs/tags/$scratch_name" -f "sha=$published" >/dev/null
+          scratch_created=1
+          if ! gh api --method PATCH "$scratch_endpoint" \
+            -f "sha=$GITHUB_SHA" -F force=true >/dev/null; then
+            echo "[xDrive] Snapshot ref promotion is denied for exact commit $GITHUB_SHA." >&2
+            echo "[xDrive] Verify repository Git ref / Workflows-write permissions before publishing; no public release assets were modified." >&2
+            exit 1
+          fi
+          cleanup_scratch
+          trap - EXIT
+          echo "[xDrive] Snapshot ref permission probe passed for $GITHUB_SHA"
+
       - name: Log in to GHCR for channel promotion
         uses: docker/login-action@v3
         with:
