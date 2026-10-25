@@ -356,3 +356,64 @@ test('S3A Safari: denied optional BroadcastChannel cannot block Web boot or SW c
   assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
   assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked')
 })
+
+test('S3A Safari: denied Service Worker getter, controller listener or ready never aborts pre-React startup', async () => {
+  // Exercise the real production module transpiled by the existing harness,
+  // not a hand-written approximation of the startup observer.
+  for (const failure of ['getter', 'listener', 'ready', 'controller']) {
+    const events = new Map()
+    let found = {
+      waiting: {}, installing: null,
+      addEventListener() {},
+      async update() {},
+    }
+    const worker = {
+      async getRegistration() { return found },
+      addEventListener() {
+        if (failure === 'listener') throw new Error('SW controller listener denied')
+      },
+    }
+    if (failure === 'controller') {
+      Object.defineProperty(worker, 'controller', {
+        get() { throw new Error('SW controller getter denied') },
+      })
+    } else worker.controller = {}
+    if (failure === 'ready') {
+      Object.defineProperty(worker, 'ready', {
+        get() { throw new Error('SW ready getter denied') },
+      })
+    } else worker.ready = Promise.resolve(found)
+    const navigator = { onLine: true }
+    if (failure === 'getter') {
+      Object.defineProperty(navigator, 'serviceWorker', {
+        get() { throw new Error('SW container getter denied') },
+      })
+    } else navigator.serviceWorker = worker
+    const win = {
+      isSecureContext: true,
+      addEventListener(kind, fn) { events.set(kind, fn) },
+    }
+    const code = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+    const exports = {}
+    new Function('exports', 'window', 'navigator', 'BroadcastChannel', code)(
+      exports, win, navigator, undefined)
+    assert.doesNotThrow(() => exports.startXDrivePwaUpdateObservation(), failure)
+    await flush()
+    const expected = failure === 'getter' ? 'unsupported'
+      : failure === 'controller' ? 'idle' : 'waiting'
+    assert.equal(exports.xDrivePwaUpdateSnapshot().phase, expected, failure)
+    assert.equal(exports.xDrivePwaUpdateSnapshot().hasController,
+      failure !== 'getter' && failure !== 'controller')
+    assert.equal(await exports.checkXDrivePwaUpdate(),
+      failure === 'getter' ? 'unsupported' : failure === 'controller' ? 'checked' : 'waiting')
+    if (failure === 'listener' || failure === 'ready') {
+      found = undefined
+      events.get('pageshow')()
+      await flush()
+      assert.equal(exports.xDrivePwaUpdateSnapshot().phase, 'idle',
+        'a denied optional observer must not strand an obsolete waiting result')
+    }
+  }
+})
