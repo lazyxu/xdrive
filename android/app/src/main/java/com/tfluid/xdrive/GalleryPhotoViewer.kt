@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -51,6 +56,13 @@ private fun decodeGalleryOriginal(bytes: ByteArray): ImageBitmap? {
  * real playback work; they are never displayed as a pretend full Viewer. */
 @Composable
 internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController) {
+    // Persist no private media bytes; zoom and pan only live for one image.
+    var zoom by remember(photo.node.id, photo.node.revision) { mutableFloatStateOf(1f) }
+    var pan by remember(photo.node.id, photo.node.revision) { mutableStateOf(Offset.Zero) }
+    val currentZoom by rememberUpdatedState(zoom)
+    val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
+    val older = controller.galleryViewerNeighbor(-1)
+    val newer = controller.galleryViewerNeighbor(1)
     val stage by produceState<ImageStage>(ImageStage.Loading, photo.node.id, photo.node.revision) {
         value = try {
             val original = controller.galleryImageBytes(photo)
@@ -77,7 +89,45 @@ internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController
                 Text("信息", color = Color.White)
             }
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(),
+        BoxWithConstraints(
+            Modifier.weight(1f).fillMaxWidth()
+                .testTag("gallery-photo-gesture")
+                // One-finger swipes are only page navigation at default zoom.
+                // Pinch/pan remains owned by the image transformable recognizer.
+                .pointerInput(photo.node.id, photo.node.revision) {
+                    var distance = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { distance = 0f },
+                        onDragEnd = {
+                            if (currentZoom <= 1.001f) {
+                                if (distance < -swipeThreshold) controller.shiftGalleryViewer(1)
+                                if (distance > swipeThreshold) controller.shiftGalleryViewer(-1)
+                            }
+                            distance = 0f
+                        },
+                        onDragCancel = { distance = 0f },
+                        onHorizontalDrag = { change, drag ->
+                            if (currentZoom <= 1.001f) {
+                                distance += drag
+                                change.consume()
+                            }
+                        },
+                    )
+                }
+                // TalkBack exposes the same real current-Owner navigation without
+                // inventing extra iOS-foreign overlay arrows or media controls.
+                .semantics {
+                    customActions = buildList {
+                        if (older != null) add(CustomAccessibilityAction("上一张照片") {
+                            controller.shiftGalleryViewer(-1)
+                            true
+                        })
+                        if (newer != null) add(CustomAccessibilityAction("下一张照片") {
+                            controller.shiftGalleryViewer(1)
+                            true
+                        })
+                    }
+                },
             contentAlignment = Alignment.Center) {
             when (val current = stage) {
                 ImageStage.Loading -> CircularProgressIndicator(
@@ -88,8 +138,6 @@ internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController
                         color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                 }
                 is ImageStage.Ready -> {
-                    var zoom by remember(photo.node.id, photo.node.revision) { mutableFloatStateOf(1f) }
-                    var pan by remember(photo.node.id, photo.node.revision) { mutableStateOf(Offset.Zero) }
                     val maxX = constraints.maxWidth.toFloat()
                     val maxY = constraints.maxHeight.toFloat()
                     val gesture = rememberTransformableState { change, drag, _ ->

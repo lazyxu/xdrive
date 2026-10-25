@@ -401,6 +401,69 @@ class DriveControllerTest {
         assertNull(c.state.value.galleryViewer)
     }
 
+    @Test fun galleryViewerNavigationOnlyMovesToImmediateVerifiedPhotos() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.galleryLoadOlder(); runCurrent()
+        val latest = c.state.value.galleryItems.last()
+        c.openGalleryViewer(latest)
+        assertNull(c.galleryViewerNeighbor(1)) // The next Owner Range is not loaded.
+        assertEquals(2119L, c.galleryViewerNeighbor(-1)?.node?.id)
+        c.shiftGalleryViewer(-1)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        c.shiftGalleryViewer(1)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.shiftGalleryViewer(2)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.showGalleryInfo(latest)
+        c.shiftGalleryViewer(-1)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.dismissGalleryInfo()
+        c.openFilesApp()
+        c.shiftGalleryViewer(-1)
+        assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun galleryViewerSwipeDiscardsOldOriginalAfterAdjacentImageChange() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.galleryLoadOlder(); runCurrent()
+        val latest = c.state.value.galleryItems.last()
+        c.openGalleryViewer(latest)
+        val previousRead = async { c.galleryImageBytes(latest) }
+        runCurrent()
+        assertEquals(1, api.downloadReads)
+        c.shiftGalleryViewer(-1)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(previousRead.isCancelled)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+    }
+
+    @Test fun galleryViewerDoesNotSkipUnimplementedVideoItem() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage = GalleryPage(listOf(
+                GalleryAsset(DriveNode(301, 1, "a.jpg", "file", 5, revision = 1), "image"),
+                GalleryAsset(DriveNode(302, 1, "b.mp4", "file", 5, revision = 1), "video"),
+                GalleryAsset(DriveNode(303, 1, "c.jpg", "file", 5, revision = 1), "image"),
+            ), 3, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryViewer(c.state.value.galleryItems[0])
+        assertNull(c.galleryViewerNeighbor(1))
+        c.shiftGalleryViewer(1)
+        assertEquals(301L, c.state.value.galleryViewer?.node?.id)
+        assertNull(c.galleryViewerNeighbor(-1))
+    }
+
     @Test fun galleryViewerOldBytesAreDiscardedAfterCloseAndReopen() = runTest {
         val api = Service().apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)

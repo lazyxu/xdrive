@@ -138,6 +138,13 @@ node scripts/shared-ui.mjs --check
 
 - 图片 Viewer 返回位置 P0：将 Gallery 的 LazyGrid 可保存位置与初次定位标志在同 App Shell 中保存，仅跨 Viewer 临时离开时恢复；新 Owner Range 重置定位。API35 真实 Compose fixture 在第 30 项打开图片、返回后断言同项仍可见，不能只断言页面回到了 Gallery。任何 Owner 私有缩略图/Token 都不进入保存状态。
 
+## P0-08 · Android Gallery Viewer 相邻照片切换
+
+- 新增原生水平手势切换相邻照片：只在已加载的当前 Owner chronological Range 内移动，视频/未加载范围均为真实边界；绝不猜下一页、跳过视频或新建第二套索引。单指左右滑动且缩放为 1x 时切换；放大后单指操作保留给图片平移。
+- Controller 相邻项仅由同一已验证 `galleryItems` 中当前 `GalleryAsset` 的直接邻居确定，切换会递增 Viewer epoch；旧原图读取无论正常取消还是丢失 cancel ACK 均不得覆盖新 Viewer。
+- 不叠加常驻切换按钮。通过 TalkBack 的「上一张照片」「下一张照片」可访问性操作触发同一 Controller，避免屏幕浮层污染 iOS 27 视觉。
+- 增加 Controller JVM（边界、视频阻挡、旧原图取消）和 API35 Compose（真实水平手势、打开照片后返回位置）回归。真实播放视频、Live 与跨未加载 Range 衔接继续待做；以本增量准确 SHA CI 为准。
+
 ## P0-07 · Gallery 无限向前分页（独立增量）
 
 - Android 原生 Gallery 保持 iOS 照片墙最新在底部，不再显示与 iOS 不符的永久“加载更早的照片”列表项；触达照片墙顶部自动按 Go Owner Range offset 向前加载 60 项。

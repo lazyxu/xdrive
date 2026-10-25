@@ -356,3 +356,13 @@ new Gallery Range clears the positioning latch; Owner/session and private
 thumbnail data remain non-persistent. A Compose API35 fixture scrolls to an
 older photo, opens it, returns, and asserts that specific photo is still
 visible (not merely that Gallery reopened).
+
+### Gallery image Viewer adjacent navigation
+
+Single-finger horizontal swipes at 1x zoom advance to the immediate verified
+Owner photo in the current chronological Range. The Viewer does not silently
+skip video tiles or fabricate an unloaded neighbor. A new selection invalidates
+inflight original streams by Viewer epoch, and Compose cancels the old scoped
+request; zoomed-in gestures remain for image pan. TalkBack has real previous/next
+custom actions without floating buttons. JVM and API35 Compose fixtures cover
+bounds, cancellation, swipe and return to the original Gallery scroll anchor.
