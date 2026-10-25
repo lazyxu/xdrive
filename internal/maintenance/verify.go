@@ -238,7 +238,15 @@ func VerifyWithContext(
 				if relErr != nil {
 					return relErr
 				}
-				if filepath.ToSlash(rel) == ".xdrive-uploads" {
+				switch filepath.ToSlash(rel) {
+				case ".xdrive-uploads":
+					return filepath.SkipDir
+				case ".xdrive-media":
+					// This entire root-scoped subtree is reproducible preview/cache
+					// data. Skip BEFORE WalkDir reads its child entries, which may
+					// be inaccessible after a host UID migration. This is not a
+					// blanket exclusion: original files, version blobs, canonical
+					// CAS, and other sibling directories remain strictly checked.
 					return filepath.SkipDir
 				}
 			}

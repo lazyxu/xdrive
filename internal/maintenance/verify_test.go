@@ -103,6 +103,15 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// An old root-owned cache can be unreadable by the runtime UID. Verify
+	// must not enumerate the media subtree at all; a cache file inside it
+	// must not cause a pre-upgrade consistency check to fail.
+	mediaCacheRoot := filepath.Join(root, ".xdrive-media")
+	if err := os.Chmod(mediaCacheRoot, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(mediaCacheRoot, 0o750) })
+
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-upload-temp"), []byte("temp"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +147,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 || report.IgnoredCASLocks != 256 {
+		report.IgnoredTemps != 3 || report.IgnoredDerived != 0 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -150,6 +159,45 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if len(report.Orphans) != 1 || report.Orphans[0].StorageKey != "orphan.bin" {
 		t.Fatalf("derived media cache must be ignored while real orphans remain visible: %+v", report.Orphans)
 	}
+	// Only the exact top-level .xdrive-media directory is skipped.
+	// Similarly named and nested user directories must still be walked and
+	// reported as orphans when their bytes are not referenced by metadata.
+	lookalikes := []string{
+		".xdrive-media-old/not-a-cache.bin",
+		"1/docs/.xdrive-media/not-a-cache.bin",
+	}
+	for _, key := range lookalikes {
+		full := filepath.Join(root, filepath.FromSlash(key))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("original"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	strictReport, err := Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range lookalikes {
+		found := false
+		for _, orphan := range strictReport.Orphans {
+			if orphan.StorageKey == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("non-cache lookalike %q was incorrectly skipped: %+v", key, strictReport.Orphans)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(root, ".xdrive-media-old")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "1", "docs", ".xdrive-media")); err != nil {
+		t.Fatal(err)
+	}
+
 	// The internal lockfile is valid only while it is a zero-byte
 	// root-scoped sentinel; corruption must still be reported as an orphan.
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), []byte("unexpected"), 0o600); err != nil {
