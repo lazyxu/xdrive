@@ -251,7 +251,18 @@ class DriveAppTest {
     @Test fun nativeMovePickerRejectsSameParentThenMovesIntoFolder() {
         extraRootFile = true
         startAndLogin()
-        compose.onNodeWithTag("files-item-70").performTouchInput { longClick() }
+        // The real Compose LazyColumn may not mount its second row while the
+        // IME/viewport settles. Verify actual Owner rows before scrolling to
+        // the fixture target; never synthesize a click or retry a write.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.loaded &&
+                controller.state.value.filesSection == FilesSection.BROWSE &&
+                controller.state.value.items.any { it.id == 70L }
+        }
+        val targetIndex = controller.state.value.items.indexOfFirst { it.id == 70L }
+        compose.onNodeWithTag("files").performScrollToIndex(targetIndex)
+        compose.onNodeWithTag("files-item-70").assertIsDisplayed()
+            .performTouchInput { longClick() }
         compose.onNodeWithText("移动到…").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.destinationLoaded && !controller.state.value.loading
