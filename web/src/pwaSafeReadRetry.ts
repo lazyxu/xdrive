@@ -67,6 +67,14 @@ export async function xDriveFetchPwaSafeRead(
   if (!eligible || !foreground(init.signal)) return first
   const waitMs = retryDelay(first)
   if (waitMs === null) return first
+  // The first retryable error response is no longer needed. Release its body
+  // before waiting, otherwise a slow 429/503 proxy may continue streaming
+  // abandoned bytes while the next authenticated Owner GET is queued.
+  // Never wait for or depend on optional cancellation to settle the retry.
+  try {
+    const cancellation = first.body?.cancel()
+    if (cancellation) void cancellation.catch(() => {})
+  } catch { /* Best-effort cleanup of an abandoned read-only response. */ }
   await delayBeforeRetry(waitMs, init.signal)
   if (!foreground(init.signal)) throw abortedError()
   return send(url, init)
