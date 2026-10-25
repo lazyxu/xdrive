@@ -203,6 +203,10 @@ if [[ "$1" == "compose" && "$2" == "version" ]]; then
   exit 0
 fi
 if [[ "$1" == "compose" ]]; then
+  if [[ "${USER:-}" == "alice" && "$*" == *" run -T --rm --no-deps storage-init"* && "${TEST_STORAGE_INIT_FAIL:-0}" == "1" ]]; then
+    echo "fixture: copied storage initialization failed" >&2
+    exit 81
+  fi
   exit 0
 fi
 echo "unexpected docker invocation: $*" >&2
@@ -243,6 +247,10 @@ XD_FILES_DATA_DIR=$base/source/data/files
 XD_POSTGRES_DATA_DIR=$base/source/data/postgres
 XD_CADDY_DATA_DIR=$base/source/data/caddy/data
 XD_CADDY_CONFIG_DIR=$base/source/data/caddy/config
+XD_CADDY_ASSET_DIR=$base/source/data/caddy/assets
+XD_GEONAMES_HOST_DIR=$base/source/data/geonames
+XD_MEDIA_WORKER_RUNTIME_DIR=$base/source/state/media-worker
+XD_PHOTO_FACE_RUNTIME_DIR=$base/source/state/photo-face
 XD_DOCKER_MODE=rootful
 XD_BACKUP_SCHEDULE=17 3 * * *
 EOF
@@ -285,6 +293,7 @@ invoke_case() {
   TEST_COPY_DELAY_SECS="${TEST_COPY_DELAY_SECS:-0}" \
   TEST_COPY_FAIL="${TEST_COPY_FAIL:-0}" \
   TEST_COPY_FAIL_ON_BACKUPS="${TEST_COPY_FAIL_ON_BACKUPS:-0}" \
+  TEST_STORAGE_INIT_FAIL="${TEST_STORAGE_INIT_FAIL:-0}" \
   bash "$MIGRATOR" alice "$@" >"$base/migrate.out" 2>"$base/migrate.err"
 }
 
@@ -326,6 +335,10 @@ run_case() {
   grep -q "^XD_POSTGRES_DATA_DIR=$base/target/data/postgres$" "$base/target/config/.env"
   grep -q "^XD_CADDY_DATA_DIR=$base/target/data/caddy/data$" "$base/target/config/.env"
   grep -q "^XD_CADDY_CONFIG_DIR=$base/target/data/caddy/config$" "$base/target/config/.env"
+  grep -Fqx "XD_CADDY_ASSET_DIR=$base/target/data/caddy/assets" "$base/target/config/.env"
+  grep -Fqx "XD_GEONAMES_HOST_DIR=$base/target/data/geonames" "$base/target/config/.env"
+  grep -Fqx "XD_MEDIA_WORKER_RUNTIME_DIR=$base/target/state/media-worker" "$base/target/config/.env"
+  grep -Fqx "XD_PHOTO_FACE_RUNTIME_DIR=$base/target/state/photo-face" "$base/target/config/.env"
   local expected_docker_mode="$mode"
   [[ "$expected_docker_mode" == "needs-group" ]] && expected_docker_mode="rootful"
   grep -q "^XD_DOCKER_MODE=$expected_docker_mode$" "$base/target/config/.env"
@@ -336,7 +349,15 @@ run_case() {
 
   grep -q -- "--env-file $base/source/config/.env -f $base/source/config/docker-compose.yml down --remove-orphans" "$base/state/docker-calls"
   grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml up -d --remove-orphans" "$base/state/docker-calls"
+  grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml run -T --rm --no-deps storage-init" "$base/state/docker-calls"
   grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml exec -T server xdrive-server healthcheck" "$base/state/docker-calls"
+  # Storage initialization must use target-user Docker and the *copied*
+  # config/mount, and must finish before a target Server can start.
+  local init_at up_at
+  init_at="$(grep -nF -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml run -T --rm --no-deps storage-init" "$base/state/docker-calls" | head -n1 | cut -d: -f1)"
+  up_at="$(grep -nF -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml up -d --remove-orphans" "$base/state/docker-calls" | head -n1 | cut -d: -f1)"
+  [[ -n "$init_at" && -n "$up_at" ]] && (( init_at < up_at ))
+  grep -Fq "user=alice " "$base/state/docker-env-calls"
 
   if grep -q 'user=alice .*context=root-only' "$base/state/docker-env-calls" || \
      grep -q 'user=alice .*config=/root/.docker' "$base/state/docker-env-calls" || \
@@ -425,8 +446,37 @@ run_case rootful rootful
 run_case rootless rootless
 run_case rootful-opt-in rootful --grant-docker-group
 run_case rootless-opt-in rootless --grant-docker-group
+
+# User-selected paths outside SOURCE_HOME are deliberate external mounts.
+# Migration must not rebase them or guess that every /root-like path is owned.
+prepare_case external-caddy-assets
+external="$TMP/external-caddy-assets"
+mkdir -p "$external"
+sed -i "s#^XD_CADDY_ASSET_DIR=.*#XD_CADDY_ASSET_DIR=$external#" \
+  "$TMP/external-caddy-assets/source/config/.env"
+invoke_case external-caddy-assets rootful
+grep -Fxq "XD_CADDY_ASSET_DIR=$external" \
+  "$TMP/external-caddy-assets/target/config/.env"
+
 run_case default-auto-grant needs-group
 run_case legacy-explicit-grant needs-group --grant-docker-group
+
+# Failure of the real target storage initialization is a hard migration error:
+# do not start an unwritable Server or delete the original root deployment.
+prepare_case failed-target-storage-init
+if TEST_STORAGE_INIT_FAIL=1 invoke_case failed-target-storage-init rootful; then
+  echo "failed storage-init unexpectedly allowed a committed migration" >&2
+  exit 1
+fi
+test -f "$TMP/failed-target-storage-init/source/data/files/file.bin"
+test ! -e "$TMP/failed-target-storage-init/target"
+grep -Fq 'target file storage initialization failed' "$TMP/failed-target-storage-init/migrate.err"
+grep -Fq 'migration rollback: restarting original root deployment' "$TMP/failed-target-storage-init/migrate.err"
+grep -Fq -- "--env-file $TMP/failed-target-storage-init/source/config/.env -f $TMP/failed-target-storage-init/source/config/docker-compose.yml up -d --remove-orphans" "$TMP/failed-target-storage-init/state/docker-calls"
+if grep -Fq -- "--env-file $TMP/failed-target-storage-init/target/config/.env -f $TMP/failed-target-storage-init/target/config/docker-compose.yml up -d --remove-orphans" "$TMP/failed-target-storage-init/state/docker-calls"; then
+  echo "target Server was started before storage-init passed" >&2
+  exit 1
+fi
 
 run_failing_case opt-out needs-group 'cannot access a Docker daemon' --no-grant-docker-group
 TEST_GROUP_PRESENT=0 run_failing_case missing-group needs-group 'system docker group does not exist'

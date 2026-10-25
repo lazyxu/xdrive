@@ -72,6 +72,15 @@ Contains the persistent application data as host bind mounts.
 - `data/postgres` -> PostgreSQL `/var/lib/postgresql/data`
 - `data/caddy/data` -> Caddy `/data`
 - `data/caddy/config` -> Caddy `/config`
+- `data/caddy/assets` -> Caddy `/srv/assets`
+- `data/geonames` -> read-only Server `/geonames`
+
+Operational sockets may appear under container-local `/run`, and Docker
+Engine may keep image layers under its own data root (such as
+`/var/lib/docker`). Neither location is a separate xDrive-managed
+persistent data home. All default xDrive-managed bind mounts, runtime state,
+logs, configuration and backups resolve beneath the active `$XD_CONFIG_DIR`
+(default `~/.xd`); explicit operator-chosen external data paths are retained.
 
 Docker named volumes are not the default for new installations.
 
@@ -82,6 +91,10 @@ XD_FILES_DATA_DIR
 XD_POSTGRES_DATA_DIR
 XD_CADDY_DATA_DIR
 XD_CADDY_CONFIG_DIR
+XD_CADDY_ASSET_DIR
+XD_GEONAMES_HOST_DIR
+XD_MEDIA_WORKER_RUNTIME_DIR
+XD_PHOTO_FACE_RUNTIME_DIR
 ```
 
 Overrides must be absolute host paths. The installer persists the resolved paths so later updates use the same data locations.
@@ -252,9 +265,50 @@ never modifies system groups.
 By default, the migration preflights the target user's Docker access and free
 disk space, stops the root-owned deployment, and copies the **complete** xDrive
 home (including all historical backup archives) to `/home/USER/.xd`. It then
-rewrites xDrive-managed absolute data paths, transfers the backup schedule,
+rewrites all eight xDrive-managed absolute data/runtime paths (file data,
+PostgreSQL, Caddy data/config/assets, GeoNames data, media worker and photo
+runtime), and
+transfers the backup schedule,
+**explicitly reruns the target Compose `storage-init` using the copied
+configuration and target Docker context before starting any target Server**,
 starts the copied deployment through the target user's Docker context, and
 requires the server health check to pass before committing the migration.
+Storage initialization re-applies the container UID/GID and upload-staging
+ownership contract; a failed initialization aborts and restores the original
+root deployment. It does not chown the complete host data tree to the login
+user or modify PostgreSQL volume ownership. A later `docker compose up
+--no-deps --force-recreate server` intentionally skips the one-shot dependency;
+for an owner-mismatch incident, rerun `storage-init` first with the canonical
+Compose config. Even when the marker is current, the one-shot preparer
+now also repairs directory access for `.xdrive-blobs`, `sha256` and the
+existing 00–ff shard parents (up to 258 directories). This fixes the case
+where the Server health probe succeeds but the stage-5 offline consistency
+verifier reports `walk storage: open /data/.xdrive-blobs: permission denied`.
+It never recursively changes immutable CAS file ownership in this bounded
+path; any still-unreadable blobs remain a hard verification failure.
+
+For older currently deployed images, the non-root upgrade installer performs
+the same **bounded parent-directory-only** repair before stage 5. It first
+requires a valid `state/migrated-from-root` record, the canonical in-home
+file data directory, an exact matching active Server bind mount, and a locally
+pinned helper image; it rejects unexpected symlinks/ownership environments
+rather than mounting arbitrary external data. No verification bypass or
+database restore is introduced. Note: an absent/stale
+`.xdrive-uploads/.ownership-v1` marker can cause the built-in preparer
+to traverse the full file storage tree during an explicit preparation.
+Old root-to-user migrations wrote a `state/migrated-from-root` marker but
+sometimes left `XD_CADDY_ASSET_DIR`, `XD_GEONAMES_HOST_DIR`,
+`XD_MEDIA_WORKER_RUNTIME_DIR` and `XD_PHOTO_FACE_RUNTIME_DIR` pointing
+into the previous root home. The next
+unprivileged update previously failed in stage 4 with `mkdir /root: Permission
+denied`. The installer now repairs only those persisted paths whose exact
+prefix matches the migration record's `source_home`, with matching
+`target_home` and current login; intentional paths elsewhere remain unchanged.
+A missing/invalid marker or an explicit process-environment override inside
+`/root` fails with a named key and recovery instructions, before `mkdir`.
+The saved `.env` and runtime configuration must never be replaced wholesale,
+because PostgreSQL, JWT and connector secrets must survive the update.
+
 Startup or verification failure restarts the original root deployment.
 The original root xDrive home is retained as a rollback copy, never deleted
 automatically.

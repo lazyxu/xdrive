@@ -781,7 +781,16 @@ printf '[xDrive] copy complete: 100%%, elapsed %ds\n' "$(( SECONDS - copy_starte
   echo "xDrive migration: copied deployment is incomplete." >&2
   exit 1
 }
-for key in XD_FILES_DATA_DIR XD_POSTGRES_DATA_DIR XD_CADDY_DATA_DIR XD_CADDY_CONFIG_DIR; do
+# Rewrite every xDrive-managed host bind/runtime path. Earlier migrations
+# converted only four storage paths and left Caddy assets, GeoNames snapshots
+# and optional worker runtime directories pointing into /root/.xd.
+# A later non-root update then
+# failed at stage 4 when it tried to mkdir those inaccessible old paths.
+# Custom external paths remain unchanged; rewrite_data_path only substitutes
+# the old deployment's exact SOURCE_HOME prefix.
+for key in XD_FILES_DATA_DIR XD_POSTGRES_DATA_DIR XD_CADDY_DATA_DIR XD_CADDY_CONFIG_DIR \
+           XD_CADDY_ASSET_DIR XD_GEONAMES_HOST_DIR XD_MEDIA_WORKER_RUNTIME_DIR \
+           XD_PHOTO_FACE_RUNTIME_DIR; do
   rewrite_data_path "$key"
 done
 set_env_file "$TARGET_ENV" XD_DOCKER_MODE "$TARGET_DOCKER_MODE"
@@ -797,6 +806,17 @@ if [[ "$TARGET_DOCKER_MODE" == "rootless" && -d "$TARGET_HOME/data" ]]; then
 fi
 chmod 700 "$TARGET_HOME" "$TARGET_CONFIG" "$TARGET_BIN" "$TARGET_STATE" "$TARGET_LOG" 2>/dev/null || true
 chmod 600 "$TARGET_ENV"
+
+# Docker Compose may retain a previously completed storage-init container
+# across ownership/host-layout changes. Explicitly run the copied deployment's
+# root-owned, image-provided one-shot preparer with the TARGET .env/mount,
+# before the Server can access CAS. The preparer owns the UID/GID/marker
+# contract; do not chown the entire host data tree to TARGET_USER.
+echo "[xDrive] preparing copied file storage for Server container ownership..."
+if ! target_compose run -T --rm --no-deps storage-init; then
+  echo "xDrive migration: target file storage initialization failed; refusing to start the new Server and restoring the original deployment." >&2
+  exit 1
+fi
 
 echo "[xDrive] starting the copied deployment as $TARGET_USER..."
 target_compose up -d --remove-orphans

@@ -233,4 +233,44 @@ http -fsS \
 printf 'test' > "$TMP/expected.bin"
 cmp "$TMP/expected.bin" "$download_file"
 
+# Production regression: after root-to-user migration the staging ownership
+# marker can be correct while the CAS parents were copied as root 0700. HTTP
+# readyz still passes because it probes only /data and staging, but an offline
+# backup consistency verifier cannot traverse .xdrive-blobs. The one-shot
+# storage-init must restore ONLY the bounded CAS parent directories without
+# re-owning immutable blob files.
+pg_image="$(docker inspect xdrive-postgres --format '{{.Image}}')"
+[[ "$pg_image" =~ ^sha256:[a-f0-9]{64}$ ]]
+docker run --rm --pull never --network none --user 0:0 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data" --entrypoint sh "$pg_image" -ec '
+    test "$(cat /data/.xdrive-uploads/.ownership-v1)" = "65532:65532"
+    for dir in /data/.xdrive-blobs /data/.xdrive-blobs/sha256 /data/.xdrive-blobs/sha256/"$1"; do
+      chown 0:0 "$dir"
+      chmod 0700 "$dir"
+    done
+  ' xdrive-cas-regression "${hash:0:2}"
+if docker run --rm --pull never --network none --user 65532:65532 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
+  -ec 'ls /data/.xdrive-blobs >/dev/null' >/dev/null 2>&1; then
+  echo "fixture error: CAS parent remained accessible despite simulated migration drift" >&2
+  exit 1
+fi
+
+compose run -T --rm --no-deps storage-init >/dev/null
+
+docker run --rm --pull never --network none --user 65532:65532 \
+  --mount "type=bind,src=$FILES_DIR,dst=/data,readonly" --entrypoint sh "$pg_image" \
+  -ec '
+    ls /data/.xdrive-blobs >/dev/null
+    ls /data/.xdrive-blobs/sha256 >/dev/null
+    ls "/data/.xdrive-blobs/sha256/$1" >/dev/null
+    test -r "/data/$2"
+  ' xdrive-cas-regression "${hash:0:2}" "$storage_key"
+
+# Ensure repairs never modify actual CAS bytes or the deduplication identity.
+http -fsS -H "Authorization: Bearer $token" \
+  "http://server:8080/api/v1/files/$node_id/content" > "$TMP/after-cas-parent-repair.bin"
+cmp "$TMP/expected.bin" "$TMP/after-cas-parent-repair.bin"
+[[ "$(compose exec -T postgres psql -U xdrive -d xdrive -Atc "SELECT ref_count FROM xd_content_blobs WHERE sha256='$hash'")" == "2" ]]
+
 echo "chunk storage deployment test passed"

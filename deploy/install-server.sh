@@ -1123,16 +1123,62 @@ compose_profile_enabled() {
   [[ "$profiles" == *",$needle,"* ]]
 }
 
+# The completed root-to-user migration records both homes and the target
+# login. Only this exact, locally held migration record may authorize rebasing
+# persisted xDrive-owned paths; custom external directories are never guessed.
+migrated_source_home() {
+  local marker="$STATE_DIR/migrated-from-root" source target user
+  [[ -f "$marker" && ! -L "$marker" ]] || return 1
+  source="$(sed -n 's/^source_home=//p' "$marker" | tail -n1)"
+  target="$(sed -n 's/^target_home=//p' "$marker" | tail -n1)"
+  user="$(sed -n 's/^target_user=//p' "$marker" | tail -n1)"
+  [[ "$source" == /* && "$source" != "/" && "$source" != "$XDRIVE_HOME" &&
+     "$target" == "$XDRIVE_HOME" && "$user" == "$(id -un)" ]] || return 1
+  printf '%s\n' "$source"
+}
+
 configure_data_path() {
-  local key="$1" default_path="$2" value
+  local key="$1" default_path="$2" value source="" from_override=0
   value="$(printenv "$key" 2>/dev/null || true)"
+  [[ -z "$value" ]] || from_override=1
   [[ -n "$value" ]] || value="$(env_value "$key")"
   [[ -n "$value" ]] || value="$default_path"
   case "$value" in
     /*) ;;
     *) echo "xDrive server installer: $key must be an absolute host path; got $value" >&2; return 1 ;;
   esac
-  mkdir -p "$value"
+
+  # Older migration tools missed XD_CADDY_ASSET_DIR and the optional media/
+  # photo-worker directories. The service may still run from the copied home,
+  # but future updates cannot mkdir /root/.xd as an unprivileged operator.
+  # Rebase only previously persisted values under the validated source home.
+  # An explicit process-environment override stays authoritative and must be
+  # corrected by its caller, not rewritten without consent.
+  if [[ "$(id -u)" != "0" && "$from_override" == "0" ]]; then
+    source="$(migrated_source_home || true)"
+    if [[ -n "$source" ]]; then
+      case "$value" in
+        "$source")
+          value="$XDRIVE_HOME"
+          echo "[xDrive] repaired migrated $key host path under the active xDrive home."
+          ;;
+        "$source"/*)
+          value="$XDRIVE_HOME${value#"$source"}"
+          echo "[xDrive] repaired migrated $key host path under the active xDrive home."
+          ;;
+      esac
+    fi
+  fi
+
+  if [[ "$(id -u)" != "0" && ( "$value" == "/root" || "$value" == /root/* ) ]]; then
+    echo "xDrive server installer: $key still points to an inaccessible root-owned path: $value" >&2
+    echo "Fix this key in the active ~/.xd/config/.env, or remove a root-owned process-environment override. No root directory was created." >&2
+    return 1
+  fi
+  if ! mkdir -p -- "$value"; then
+    echo "xDrive server installer: cannot prepare $key directory: $value (check owner and access)." >&2
+    return 1
+  fi
   set_env "$key" "$value"
 }
 
@@ -1868,6 +1914,7 @@ configure_data_path XD_POSTGRES_DATA_DIR "$DATA_DIR/postgres"
 configure_data_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data"
 configure_data_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config"
 configure_data_path XD_CADDY_ASSET_DIR "$DATA_DIR/caddy/assets"
+configure_data_path XD_GEONAMES_HOST_DIR "$DATA_DIR/geonames"
 set_env XD_HOME_HOST_DIR "$(cd "$XDRIVE_HOME" && pwd)"
 set_env XD_BACKUP_ROOT_HOST_DIR "$(cd "$BACKUP_ROOT" && pwd)"
 configure_data_path XD_MEDIA_WORKER_RUNTIME_DIR "$STATE_DIR/media-worker"
@@ -2032,6 +2079,71 @@ if [[ -z "$domain" && -z "$lan_https_ip" ]]; then
 else
   set_env XD_LEGACY_HTTP_ONLY "0"
 fi
+
+# Root-to-user migration may leave .xdrive-blobs mode 0700 owned by the
+# old host user. The old storage-init only repairs /data and .xdrive-uploads
+# when the marker is current; the stopped-Server backup verifier then fails
+# with "walk storage: open /data/.xdrive-blobs: permission denied".
+#
+# This pre-backup repair is intentionally limited to fixed CAS parent dirs
+# (root, sha256, and <=256 shard dirs), never blob contents, database mounts
+# or generic user trees. Use only the active canonical bind mount with a
+# matching root-to-user migration marker and a local pinned PostgreSQL image.
+repair_migrated_cas_parents_before_backup() {
+  [[ "$UPGRADE_EXISTING" == "1" && "$DOCKER_MODE" == rootful ]] || return 0
+  local source_home data_dir mount_info postgres_id helper_image
+  source_home="$(migrated_source_home || true)"
+  [[ -n "$source_home" ]] || return 0
+  data_dir="$(env_value XD_FILES_DATA_DIR)"
+  [[ "$data_dir" == "$DATA_DIR/files" && -d "$data_dir" && ! -L "$data_dir" ]] || return 0
+  [[ -e "$data_dir/.xdrive-blobs" || -L "$data_dir/.xdrive-blobs" ]] || return 0
+
+  # Never attach a root helper to an arbitrary path inferred from .env.
+  # The actual running Server must already mount the same canonical data.
+  mount_info="$(existing_mount_info server /data)"
+  if [[ "$mount_info" != "bind|$data_dir" ]]; then
+    echo "xDrive installer: migrated CAS mount mismatch; refusing permission changes before backup." >&2
+    return 1
+  fi
+  if [[ "${docker_security_options:-}" == *userns* ]]; then
+    echo "xDrive installer: userns remapping requires storage-specific repair; refusing unverified CAS ownership changes." >&2
+    return 1
+  fi
+  postgres_id="$(managed_container_id postgres)"
+  helper_image="$(docker inspect "$postgres_id" --format '{{.Image}}' </dev/null 2>/dev/null || true)"
+  if [[ ! "$helper_image" =~ ^sha256:[a-fA-F0-9]{64}$ ]]; then
+    echo "xDrive installer: locally pinned PostgreSQL helper image unavailable; cannot safely repair migrated CAS directory traversal." >&2
+    return 1
+  fi
+
+  echo "[xDrive] validating migrated CAS directory permissions (no blob contents will change)..."
+  docker run --rm --pull never --network none --user 0:0 \
+    --mount "type=bind,src=$data_dir,dst=/data" \
+    --entrypoint sh "$helper_image" -ec '
+      uid="$1"; gid="$2"; checked=0; changed=0
+      for dir in /data/.xdrive-blobs /data/.xdrive-blobs/sha256 \
+                 /data/.xdrive-blobs/sha256/[0-9a-f][0-9a-f]; do
+        if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then continue; fi
+        if [ -L "$dir" ] || [ ! -d "$dir" ]; then
+          echo "xDrive: non-directory or symlinked canonical CAS parent; refusing repair." >&2
+          exit 1
+        fi
+        checked=$((checked + 1))
+        current="$(stat -c "%u:%g" "$dir")" || exit 1
+        if [ "$current" != "$uid:$gid" ]; then
+          chown "$uid:$gid" "$dir" || exit 1
+          changed=$((changed + 1))
+        fi
+        chmod u+rwx "$dir" || exit 1
+      done
+      printf "[xDrive] checked %s canonical CAS parents; owner corrections %s.\n" "$checked" "$changed"
+    ' xdrive-cas-parent-repair "$SERVER_UID" "$SERVER_GID" </dev/null
+}
+
+# Legacy-image permission repairs must happen *before* stage 5: the new
+# storage-init image is not installed until later, and stage 5 must keep
+# verifying every immutable CAS file without bypass flags.
+repair_migrated_cas_parents_before_backup
 
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
