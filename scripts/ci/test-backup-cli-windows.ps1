@@ -59,6 +59,19 @@ try {
         throw 'independent Backup-only command entrypoints are missing'
     }
 
+    # A portable CLI-only archive must never install Desktop or replace its
+    # Agent without a verified two-binary stop/restart/rollback transaction.
+    $desktopUpdate = Start-Process -FilePath $xd -Wait -PassThru -NoNewWindow `
+        -ArgumentList @('update', '--install', '--channel', 'master')
+    if ($desktopUpdate.ExitCode -ne 1) {
+        throw "standalone xd accepted Desktop update: exit=$($desktopUpdate.ExitCode)"
+    }
+    $cliUpdate = Start-Process -FilePath $xd -Wait -PassThru -NoNewWindow `
+        -ArgumentList @('update', '--cli-only', '--install')
+    if ($cliUpdate.ExitCode -ne 1) {
+        throw "standalone xd accepted unfinished CLI-only install: exit=$($cliUpdate.ExitCode)"
+    }
+
     # Invalid absolute-path and mixed runtime arguments must fail before
     # touching any real Server or registering any OS directory.
     $rejected = Start-Process -FilePath $xd -Wait -PassThru -NoNewWindow `

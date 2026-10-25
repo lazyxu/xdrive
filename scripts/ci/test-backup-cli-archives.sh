@@ -37,6 +37,20 @@ expected_members="$(printf '%s\n' \
 "$dir/xdrive-backup/xd" backup help > "$dir/backup-help.txt"
 grep -Fq 'xd backup init' "$dir/backup-help.txt"
 grep -Fq 'xd backup agent' "$dir/backup-help.txt"
+# Standalone CLI-only installations must refuse Desktop/partial installs
+# before any updater network access or GUI launch.
+if "$dir/xdrive-backup/xd" update --install --channel master > "$dir/forbidden-unified-update.txt" 2>&1; then
+  echo "standalone CLI unexpectedly accepted the Desktop updater" >&2
+  exit 1
+fi
+grep -Fq 'CLI-only in-place install is not yet safe' "$dir/forbidden-unified-update.txt"
+if "$dir/xdrive-backup/xd" update --cli-only --install > "$dir/forbidden-cli-only-install.txt" 2>&1; then
+  echo "standalone CLI unexpectedly claimed an atomic updater" >&2
+  exit 1
+fi
+grep -Fq 'no Desktop installer will be launched' "$dir/forbidden-cli-only-install.txt"
+go version -m "$dir/xdrive-backup/xd" | grep -Fq 'github.com/lazyxu/xdrive/cmd/xd'
+go version -m "$dir/xdrive-backup/xdrive-agent" | grep -Fq 'github.com/lazyxu/xdrive/cmd/xdrive-agent'
 if "$dir/xdrive-backup/xd" backup init --name Smoke --path relative --target-id 1 > "$dir/rejected-init.txt" 2>&1; then
   echo "relative local Root unexpectedly accepted by standalone CLI" >&2
   exit 1
