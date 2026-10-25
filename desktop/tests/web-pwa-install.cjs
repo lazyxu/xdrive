@@ -9,7 +9,8 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const logicSource = read('web/src/pwaInstall.ts')
 
 function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true,
-  protocol = 'https:', hostname = 'drive.example', fetchReply } = {}) {
+  protocol = 'https:', hostname = 'drive.example', fetchReply,
+  matchMediaFailure = null, navigatorStandalone = false } = {}) {
   const events = new Map()
   const mediaEvents = new Map()
   const queries = []
@@ -18,12 +19,27 @@ function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true
     location: { protocol, hostname },
     addEventListener(name, callback) { events.set(name, callback) },
     matchMedia(query) {
-      return { matches: query === '(display-mode: ' + mode + ')',
-        addEventListener(name, fn) { mediaEvents.set(query, fn) } }
+      if (matchMediaFailure === 'call') throw new Error('display-mode query denied')
+      return {
+        get matches() {
+          if (matchMediaFailure === 'matches') throw new Error('display-mode result denied')
+          return query === '(display-mode: ' + mode + ')'
+        },
+        addEventListener(name, fn) {
+          if (matchMediaFailure === 'listener') throw new Error('display-mode listener denied')
+          mediaEvents.set(query, fn)
+        },
+      }
     },
+  }
+  if (matchMediaFailure === 'getter') {
+    Object.defineProperty(win, 'matchMedia', {
+      get() { throw new Error('display-mode API getter denied') },
+    })
   }
   const nav = { userAgent, platform: userAgent.includes('Mac') ? 'MacIntel' : 'Linux',
     maxTouchPoints: userAgent.includes('Touch') ? 5 : 0,
+    ...(navigatorStandalone ? { standalone: true } : {}),
     ...(sw ? { serviceWorker: {} } : {}),
   }
   const answers = fetchReply ?? (url => ({ status: 200, headers: { get(name) {
@@ -266,4 +282,39 @@ test('S2B8: an already cancelled check must issue zero network requests', async 
   const result = await h.mod.checkXDrivePwaAssets({ signal: source.signal })
   assert.equal(h.queries.length, 0)
   assert(result.slice(2).every(x => /取消/.test(x.detail)))
+})
+
+test('S2 Safari: denied display-mode media query never blocks Web boot or user install', async () => {
+  for (const failure of ['getter', 'call', 'matches', 'listener']) {
+    const h = harness({ userAgent: 'iPhone Safari', mode: 'standalone', matchMediaFailure: failure })
+    assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation(), failure)
+    const state = h.mod.xDrivePwaInstallSnapshot()
+    assert.equal(state.platformHint, 'ios')
+    assert.equal(state.displayMode, failure === 'listener' ? 'standalone' : 'browser')
+    assert.equal(h.events.has('pageshow'), true, 'regular lifecycle observation remains')
+    let invoked = 0
+    assert.doesNotThrow(() => h.events.get('beforeinstallprompt')({
+      preventDefault() {},
+      prompt() { invoked++; return Promise.resolve({ outcome: 'accepted' }) },
+    }))
+    if (state.displayMode === 'browser') {
+      assert.equal(await h.mod.requestXDrivePwaInstall(), 'accepted')
+      assert.equal(invoked, 1)
+    } else {
+      assert.equal(await h.mod.requestXDrivePwaInstall(), 'unavailable')
+      assert.equal(invoked, 0)
+    }
+    assert.doesNotThrow(() => h.events.get('appinstalled')())
+    assert.equal(h.mod.xDrivePwaInstallSnapshot().installedEventObserved, true)
+  }
+  const fallback = harness({ userAgent: 'iPhone Safari', mode: 'browser',
+    navigatorStandalone: true, matchMediaFailure: 'getter' })
+  assert.doesNotThrow(() => fallback.mod.startXDrivePwaInstallObservation())
+  assert.equal(fallback.mod.xDrivePwaInstallSnapshot().displayMode, 'standalone',
+    'iOS navigator.standalone remains an independent fallback to denied matchMedia')
+  const normal = harness({ userAgent: 'iPhone Safari', mode: 'standalone' })
+  normal.mod.startXDrivePwaInstallObservation()
+  assert.equal(normal.mod.xDrivePwaInstallSnapshot().displayMode, 'standalone',
+    'healthy browsers still observe the same display-mode event contract')
+  assert.equal(normal.mediaEvents.size, 4)
 })
