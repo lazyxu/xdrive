@@ -2167,20 +2167,46 @@ repair_migrated_cas_parents_before_backup() {
     ' xdrive-cas-parent-repair "$SERVER_UID" "$SERVER_GID" </dev/null
 }
 
-# Legacy-image permission repairs must happen *before* stage 5: the new
-# storage-init image is not installed until later, and stage 5 must keep
-# verifying every immutable CAS file without bypass flags.
+# Legacy-image permission repairs happen *before* stage 5: the new
+# storage-init image is not installed until later. Stage 5 still checks
+# canonical original references/physical objects (target fast or legacy deep)
+# and must never bypass a real detected inconsistency.
 repair_migrated_cas_parents_before_backup
 
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
+  target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+  # The old runtime can predate fast verification. Pull the EXACT published
+  # target verifier while the existing app is still serving traffic, so stage
+  # 5 does not need to repeat a multi-minute legacy deep hash sweep.
+  #
+  # A deliberate "legacy" override is only for diagnosing target/old-schema
+  # compatibility problems. It retains the full old deep validation and the
+  # narrowly scoped legacy-derived-cache retry path below.
+  upgrade_backup_verifier="${XD_UPGRADE_BACKUP_VERIFIER:-target}"
+  case "$upgrade_backup_verifier" in
+    target|legacy) ;;
+    *) echo "xDrive installer: XD_UPGRADE_BACKUP_VERIFIER must be target or legacy." >&2; exit 2 ;;
+  esac
+  if [[ "$upgrade_backup_verifier" == "target" ]]; then
+    if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
+      echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
+      if ! docker pull "$target_server_image" </dev/null; then
+        echo "xDrive installer: cannot fetch pinned target verifier; refusing to enter backup without verified image." >&2
+        exit 1
+      fi
+    fi
+    echo "[xDrive] stage-5 verifier: published target image (fast by default on current releases)."
+  else
+    echo "[xDrive] stage-5 verifier: legacy runtime deep mode (explicit opt-out)."
+  fi
+
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
   docker stop xdrive-caddy xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
   backup_output=""
   backup_error="$STAGING_DIR/pre-upgrade-backup.err"
   backup_stdout="$STAGING_DIR/pre-upgrade-backup.out"
-  target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 
   run_pre_upgrade_backup() {
     local server_image_override="${1:-}" backup_pid status=0 shown_lines=0 current_lines=0
@@ -2226,7 +2252,18 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     return "$status"
   }
 
-  if run_pre_upgrade_backup ""; then
+  if [[ "$upgrade_backup_verifier" == "target" ]]; then
+    # Target verification must independently accept the OLD snapshot.
+    # A failed target check is never downgraded to a cheaper or unchecked
+    # backup, and never retried with --allow-inconsistent.
+    if run_pre_upgrade_backup "$target_server_image"; then
+      :
+    else
+      backup_status=$?
+      echo "xDrive target pre-upgrade verifier failed; refusing backup and restoring previous deployment." >&2
+      exit "$backup_status"
+    fi
+  elif run_pre_upgrade_backup ""; then
     :
   else
     backup_status=$?

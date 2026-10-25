@@ -185,6 +185,16 @@ if [[ "$1" == "inspect" ]]; then
   exit 1
 fi
 
+if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then
+  [[ "${TEST_TARGET_IMAGE_PRESENT:-0}" == "1" ]] && exit 0
+  exit 1
+fi
+
+if [[ "$1" == "pull" ]]; then
+  [[ "${TEST_TARGET_PULL_FAIL:-0}" == "1" ]] && exit 1
+  exit 0
+fi
+
 if [[ "$1" == "stop" ]]; then
   exit 0
 fi
@@ -337,6 +347,10 @@ for script in server-backup.sh server-backup-scheduled.sh server-restore.sh serv
   printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/config/$script"
   chmod +x "$TMP/config/$script"
 done
+
+# All existing fixtures explicitly exercise the old-runtime deep fallback;
+# add independent target-first scenarios below for the new default path.
+export XD_UPGRADE_BACKUP_VERIFIER=legacy
 
 set +e
 rm -f "$TMP/state"/pull-count-*
@@ -684,5 +698,71 @@ test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
 test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
+
+
+# Default target-first verification: the pinned target is acquired before
+# stopping Caddy and used directly, without running the legacy validator.
+for scenario in target-new target-cached target-orphan target-no-image; do
+  case "$scenario" in
+    target-new) cached=0; pull_fail=0; corrupt=0; expect_success=1 ;;
+    target-cached) cached=1; pull_fail=1; corrupt=0; expect_success=1 ;;
+    target-orphan) cached=0; pull_fail=0; corrupt=1; expect_success=0 ;;
+    target-no-image) cached=0; pull_fail=1; corrupt=0; expect_success=0 ;;
+  esac
+  scenario_config="$TMP/$scenario-config"
+  scenario_state="$TMP/$scenario-state"
+  cp -a "$TMP/config" "$scenario_config"
+  mkdir -p "$scenario_state"
+  set +e
+  XD_UPGRADE_BACKUP_VERIFIER=target \
+  TEST_TARGET_IMAGE_PRESENT="$cached" \
+  TEST_TARGET_PULL_FAIL="$pull_fail" \
+  TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL="$corrupt" \
+  TEST_STATE="$scenario_state" \
+  TEST_HEALTH_OK=1 \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$scenario_config" \
+  XD_SHELL_RC_PATH="$TMP/$scenario.bashrc" \
+  XD_NONINTERACTIVE=1 \
+  XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" --channel master >"$TMP/$scenario.out" 2>"$TMP/$scenario.err"
+  scenario_status=$?
+  set -e
+  if [[ "$expect_success" == 1 ]]; then
+    [[ "$scenario_status" -eq 0 ]]
+  else
+    [[ "$scenario_status" -ne 0 ]]
+    grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/$scenario.err"
+  fi
+  if [[ "$cached" == 0 ]]; then
+    grep -q '^pull ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$scenario_state/docker-calls"
+  else
+    if grep -q '^pull ghcr.io/lazyxu/xdrive-server:' "$scenario_state/docker-calls"; then
+      echo "cached target should not be pulled again" >&2; exit 1
+    fi
+  fi
+  if [[ "$pull_fail" == 1 && "$cached" == 0 ]]; then
+    grep -q 'cannot fetch pinned target verifier' "$TMP/$scenario.err"
+    [[ ! -e "$scenario_state/backup-images" ]]
+    continue
+  fi
+  grep -q 'stage-5 verifier: published target image' "$TMP/$scenario.out"
+  [[ "$(wc -l < "$scenario_state/backup-images")" -eq 1 ]]
+  [[ "$(cat "$scenario_state/backup-images")" == "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]
+  if grep -q 'current deployment verifier rejected' "$TMP/$scenario.err"; then
+    echo "target-first must not execute old validator first" >&2; exit 1
+  fi
+  if [[ "$cached" == 0 ]]; then
+    prefetch_line="$(grep -n '^pull ghcr.io/lazyxu/xdrive-server:' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    stop_line="$(grep -n '^stop xdrive-caddy' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    [[ -n "$prefetch_line" && -n "$stop_line" && "$prefetch_line" -lt "$stop_line" ]]
+  fi
+  if [[ "$corrupt" == 1 ]]; then
+    grep -q 'target pre-upgrade verifier failed' "$TMP/$scenario.err"
+    if grep -q -- '--allow-inconsistent' "$scenario_state/backup-args"; then
+      echo "target failure must not bypass integrity" >&2; exit 1
+    fi
+  fi
+done
 
 echo "server transactional upgrade tests passed"
