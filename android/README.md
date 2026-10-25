@@ -249,3 +249,17 @@ fixture tests alone do not prove a live provider-to-device upgrade.
 All credentials stay out of saved UI state/logs/backups. The app blocks screenshots
 and recent-task previews. Logout clears local rows immediately and attempts remote
 session revocation; an unreachable Server cannot be claimed to have revoked it.
+
+Native Files selection mode now works in the existing list/grid rows without
+creating a second browser or backend. Up to 200 currently loaded Owner nodes
+may be selected for one atomic `POST /api/v1/nodes/batch/delete` Trash
+operation with per-item `{id, revision}` numeric fields. A confirmation is
+required before any write; response `operation_id` and `deleted_ids` are
+validated before showing success. Lost acknowledgement freezes the stale
+browse selection until a new GET, and successful writes are followed by a
+Server-authoritative refresh. Batch copy/move, selection across unloaded
+ranges, and undo remain out of scope for this increment.
+
+Root Files selection intercepts Android system Back to clear selected nodes before
+leaving the Activity; the unselected root retains normal system Back. The native
+App header uses the PWA 52dp content-height baseline plus status-bar insets.

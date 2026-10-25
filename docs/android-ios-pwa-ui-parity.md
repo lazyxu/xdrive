@@ -88,3 +88,14 @@ node scripts/shared-ui.mjs --check
 - 移动到原父目录、将目录复制/移动到自身或后代、目标根路径无法验证的情形禁止确认；Go Server 的 Owner、受管目标、冲突和祖先判断仍是最终准绳。页面上不自行预测复制或移动成功；只有服务端 ACK 后才更新已读列表并重新 GET，ACK 已到而 GET 失败时只允许手动重新读取。
 - 新增 MockWebServer JSON/If-Match/Owner HTTP 契约、Controller JVM 延迟结果与 401 无重放、目标 100 项分页、API35 Compose 真实目标选择回归。所有测试须等待各自准确提交 CI 实际执行；不能借用 #2641 的先前结果。
 - 批量选择及批量操作、冲突策略、Undo、回收站浏览和恢复、大文件上传/下载/Transfer Center 仍在后续任务中，不把本增量标记为完整 iOS 1:1。
+
+## P0-05 · Android 多选及批量回收站（最小独立增量）
+
+- 原生 Browse 的列表和网格共用 Selection Mode：点击「选择」后轻触切换当前已加载节点的选择状态，最多 200 项；长按普通上下文菜单在该模式内不执行。离开 Browse、切换目录或 Owner、刷新目录及退出登录都会清理旧选择，不持久化用户私有 ID。
+- 仅提供已核对的批量「移到回收站」：用户在二次确认后请求 Go 原有 `POST /api/v1/nodes/batch/delete`，每项提交数字类型 `{id, revision}`，限 1–200 且不能重复/不可为根，Server 执行 Owner 范围/版本/同步受管目标与事务校验。Response 必须有非空 `operation_id` 以及与请求匹配的 `deleted_ids`；否则客户端不得显示成功。
+- 沿用当前唯一 OkHttp/TLS/Bearer 会话与 `authenticatedMutation` 单次写入契约，任何超时/断开/丢失 ACK 都冻结该页已选择快照，不能用 Token 刷新重新提交，直到 Server GET 重新读取已确认状态。返回明确结果后才更新列表并刷新。
+- 本增量不做跨目录未加载项的全库选择、批量复制/移动、Undo 与复杂冲突 UI。相应单项复制/移动仍由前置 PR #2646 承担；测试以本 PR 的准确 Android Native / API35 模拟器 CI 为准，不得借用父 PR 测试证据。
+
+- Android 根目录多选必须先拦截系统 Back 并清理选中项，保留 Owner 浏览状态；根目录未选择交还 Android 系统。顶栏以 iOS PWA 52dp 内容高度为基准，叠加 Android 状态栏安全区域，仍须后续真机截图校准。
+
+- API35 真实 Compose 回归暴露被动复选框在 `onCheckedChange=null` 时不保证提供 ToggleableState；列表与网格已为选择标记显式声明 `Semantics.selected`，保持父行唯一点击入口，并以选中 Owner ID + 未合并语义树 `Selected` + 选中计数共同验收。

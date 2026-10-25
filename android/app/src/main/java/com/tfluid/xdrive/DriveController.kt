@@ -31,6 +31,9 @@ data class DriveState(
     val searchQuery: String = "",
     val searchNextCursor: String = "",
     val searchReturnSection: FilesSection = FilesSection.BROWSE,
+    val browseSelectionMode: Boolean = false,
+    val browseSelectedIds: Set<Long> = emptySet(),
+    val browseBatchWriteAttempted: Boolean = false,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -157,7 +160,8 @@ class DriveController(
 
     fun open(node: DriveNode) {
         if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
-            state.value.destinationKind != null || state.value.items.none { it == node }) return
+            state.value.destinationKind != null || state.value.browseSelectionMode ||
+            state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else showDetails(node)
     }
@@ -182,7 +186,8 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
             current.loading || !current.loaded || current.path.isEmpty() || session == null) return null
-        if (current.destinationKind != null) return null
+        if (current.destinationKind != null || current.browseSelectionMode ||
+            current.browseBatchWriteAttempted) return null
         if (node != null && (node.parentId != current.path.last().id ||
             node.revision <= 0 || current.items.none { it == node })) return null
         return current
@@ -190,6 +195,65 @@ class DriveController(
 
     /** Real Owner-checked target folder picker. All folders come from
      * XDriveService.root/children, never synthetic paths or arbitrary IDs. */
+    /** Browse-only, in-memory iOS Files selection. Server batch mutation limit
+     * is 200, with no selection carried across Owner, directory or logout. */
+    fun setBrowseSelectionMode(enabled: Boolean) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.loading || current.destinationKind != null ||
+            current.browseBatchWriteAttempted || !current.loaded ||
+            (enabled && current.error != null)) return
+        mutableState.value = current.copy(
+            browseSelectionMode = enabled, browseSelectedIds = emptySet(), error = null)
+    }
+
+    fun toggleBrowseSelection(node: DriveNode) {
+        val current = state.value
+        if (!current.browseSelectionMode || current.screen != Screen.FILES ||
+            current.filesSection != FilesSection.BROWSE || current.loading ||
+            !current.loaded || current.destinationKind != null ||
+            current.browseBatchWriteAttempted || current.path.isEmpty() ||
+            node.parentId != current.path.last().id ||
+            node.revision <= 0 || current.items.none { it == node }) return
+        val selected = current.browseSelectedIds
+        if (node.id in selected) {
+            mutableState.value = current.copy(browseSelectedIds = selected - node.id,
+                error = if (current.error == "一次最多选择 200 项。") null else current.error)
+        } else if (current.error != null) {
+            return
+        } else if (selected.size >= 200) {
+            mutableState.value = current.copy(error = "一次最多选择 200 项。")
+        } else {
+            mutableState.value = current.copy(browseSelectedIds = selected + node.id)
+        }
+    }
+
+    fun trashSelectedBrowseNodes() {
+        val current = state.value
+        if (!current.browseSelectionMode || current.screen != Screen.FILES ||
+            current.filesSection != FilesSection.BROWSE || current.loading ||
+            current.destinationKind != null || current.browseBatchWriteAttempted ||
+            !current.loaded || current.error != null || current.path.isEmpty()) return
+        val ids = current.browseSelectedIds
+        if (ids.isEmpty() || ids.size > 200) return
+        val nodes = current.items.filter { it.id in ids && it.revision > 0 &&
+            it.parentId == current.path.last().id }
+        if (nodes.size != ids.size) return
+        val service = api ?: return
+        val path = current.path.toList()
+        mutableState.value = current.copy(browseBatchWriteAttempted = true)
+        request { ticket ->
+            authenticatedMutation(ticket) { service.trashNodes(it, nodes) }
+            checkCurrent(ticket)
+            reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
+                fresh.copy(items = fresh.items.filterNot { it.id in ids },
+                    totalCount = (fresh.totalCount - ids.size).coerceAtLeast(0),
+                    browseSelectionMode = false, browseSelectedIds = emptySet(),
+                    browseBatchWriteAttempted = false)
+            }
+        }
+    }
+
     fun chooseDestination(node: DriveNode, kind: FilesTransferKind) {
         val current = editableBrowseState(node) ?: return
         val service = api ?: return
@@ -427,7 +491,8 @@ class DriveController(
         invalidate() // Unmount/cancel old Owner range/collection before switching.
         mutableState.value = current.copy(filesSection = next, selected = null,
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
-            searchQuery = "", searchNextCursor = "")
+            searchQuery = "", searchNextCursor = "",
+            browseSelectionMode = false, browseSelectedIds = emptySet())
         if (next == FilesSection.BROWSE) {
             if (!state.value.loaded) load(state.value.path, 0)
         } else loadCollection(next)
@@ -447,6 +512,7 @@ class DriveController(
         mutableState.value = current.copy(filesSection = FilesSection.SEARCH, selected = null,
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = query, searchNextCursor = "",
+            browseSelectionMode = false, browseSelectedIds = emptySet(),
             searchReturnSection = if (current.filesSection == FilesSection.SEARCH)
                 current.searchReturnSection else current.filesSection)
         loadCollection(FilesSection.SEARCH)
@@ -572,6 +638,10 @@ class DriveController(
     fun back() {
         val current = state.value
         if (current.destinationKind != null) dismissDestination()
+        else if (current.browseSelectionMode) {
+            mutableState.value = current.copy(
+                browseSelectionMode = false, browseSelectedIds = emptySet())
+        }
         else if (current.selected != null) dismissDetails()
         else if (current.filesSection == FilesSection.SEARCH) changeFilesSection(current.searchReturnSection)
         else if (current.filesSection != FilesSection.BROWSE) changeFilesSection(FilesSection.BROWSE)
@@ -634,6 +704,9 @@ class DriveController(
         mutableState.value = previous.copy(
             path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
             loaded = true, selected = null, error = null,
+            browseSelectionMode = if (append) previous.browseSelectionMode else false,
+            browseSelectedIds = if (append) previous.browseSelectedIds else emptySet(),
+            browseBatchWriteAttempted = if (append) previous.browseBatchWriteAttempted else false,
         )
     }
 
@@ -694,6 +767,12 @@ class DriveController(
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
+                    } else if (state.value.browseBatchWriteAttempted) {
+                        // The Server may have committed an atomic batch before
+                        // its ACK was lost. Do not leave the stale selection
+                        // actionable; only a new GET can re-enable mutation.
+                        mutableState.value = state.value.copy(
+                            loaded = false, error = "批量操作结果未确认，请刷新目录核对后再操作。")
                     } else if (state.value.destinationWriteAttempted) {
                         // A lost copy/move ACK may have committed on the Server.
                         // Freeze further writes against this browse snapshot

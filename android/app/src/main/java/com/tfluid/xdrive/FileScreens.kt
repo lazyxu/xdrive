@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,7 +69,8 @@ internal class FilesViewportAnchors(private val capacity: Int = 64) {
 @Composable
 internal fun ColumnScope.Files(state: DriveState, controller: DriveController, viewMode: FileViewMode,
     onRename: (DriveNode) -> Unit = {}, onTrash: (DriveNode) -> Unit = {},
-    onCopy: (DriveNode) -> Unit = {}, onMove: (DriveNode) -> Unit = {}) {
+    onCopy: (DriveNode) -> Unit = {}, onMove: (DriveNode) -> Unit = {},
+    onBatchTrash: () -> Unit = {}) {
     val dark = LocalXDriveDarkTheme.current
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
@@ -119,8 +121,21 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         if (state.path.size > 1) Text(state.path.joinToString(" / ") { it.name.ifEmpty { "浏览" } },
             style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(state.totalCount.toString() + " 项", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (state.browseSelectionMode)
+                "${state.browseSelectedIds.size} 项已选择（最多 200）"
+                else "${state.totalCount} 项",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = {
+                controller.setBrowseSelectionMode(!state.browseSelectionMode)
+            }, enabled = !state.loading && state.loaded &&
+                !state.browseBatchWriteAttempted && state.destinationKind == null,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("files-select-mode")) {
+                Text(if (state.browseSelectionMode) "完成" else "选择")
+            }
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = globalSearchText,
@@ -156,10 +171,23 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                         Box {
                             Row(Modifier.fillMaxWidth().background(rowColor)
                                 .testTag("files-item-${node.id}")
-                                .combinedClickable(onClick = { controller.open(node) },
-                                    onLongClick = { contextOpen = true })
+                                .combinedClickable(onClick = {
+                                    if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
+                                    else controller.open(node)
+                                },
+                                    onLongClick = {
+                                    if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
+                                    else contextOpen = true
+                                })
                                 .heightIn(min = 64.dp).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
+                                if (state.browseSelectionMode) {
+                                    Checkbox(checked = node.id in state.browseSelectedIds,
+                                        onCheckedChange = null,
+                                        modifier = Modifier.testTag("files-select-${node.id}")
+                                            .semantics { selected = node.id in state.browseSelectedIds })
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 FileGlyph(node)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -170,10 +198,11 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
-                                onRename = onRename, onTrash = onTrash,
-                                onCopy = onCopy, onMove = onMove,
-                                canMutate = !state.loading)
+                            if (!state.browseSelectionMode)
+                                FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
+                                    onRename = onRename, onTrash = onTrash,
+                                    onCopy = onCopy, onMove = onMove,
+                                    canMutate = !state.loading)
                         }
                         if (node.id != state.items.lastOrNull()?.id)
                             HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outline)
@@ -196,18 +225,30 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     Box {
                         Column(Modifier.fillMaxWidth()
                             .testTag("files-item-${node.id}")
-                            .combinedClickable(onClick = { controller.open(node) },
-                                onLongClick = { contextOpen = true })
+                            .combinedClickable(onClick = {
+                                    if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
+                                    else controller.open(node)
+                                },
+                                onLongClick = {
+                                    if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
+                                    else contextOpen = true
+                                })
                             .heightIn(min = 112.dp).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (state.browseSelectionMode)
+                                Checkbox(checked = node.id in state.browseSelectedIds,
+                                    onCheckedChange = null,
+                                    modifier = Modifier.testTag("files-select-${node.id}")
+                                        .semantics { selected = node.id in state.browseSelectedIds })
                             FileGlyph(node, 64)
                             Text(node.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
                                 textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
-                        FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
-                            onRename = onRename, onTrash = onTrash,
-                            onCopy = onCopy, onMove = onMove,
-                            canMutate = !state.loading)
+                        if (!state.browseSelectionMode)
+                            FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
+                                onRename = onRename, onTrash = onTrash,
+                                onCopy = onCopy, onMove = onMove,
+                                canMutate = !state.loading)
                     }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
@@ -216,7 +257,33 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         }
     }
     }
-    FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+    if (state.browseSelectionMode) FilesSelectionActions(state, controller, onBatchTrash)
+    else FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+}
+
+@Composable
+private fun ColumnScope.FilesSelectionActions(
+    state: DriveState, controller: DriveController, onBatchTrash: () -> Unit,
+) {
+    Surface(Modifier.fillMaxWidth().navigationBarsPadding()
+        .padding(horizontal = 12.dp, vertical = 6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { controller.setBrowseSelectionMode(false) },
+                enabled = !state.loading && !state.browseBatchWriteAttempted,
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+            Text("${state.browseSelectedIds.size} 项", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onBatchTrash,
+                enabled = state.browseSelectedIds.isNotEmpty() &&
+                    !state.loading && state.error == null &&
+                    !state.browseBatchWriteAttempted,
+                modifier = Modifier.testTag("files-batch-trash-action")
+                    .heightIn(min = 48.dp)) { Text("移到回收站") }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

@@ -111,6 +111,9 @@ interface XDriveService {
         throw ApiException(501, "Copy API unavailable")
     suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
         throw ApiException(501, "Move API unavailable")
+    suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
+        throw ApiException(501, "Batch Trash API unavailable")
+    }
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -213,6 +216,25 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             moved.name != original.name || moved.type != original.type ||
             moved.revision <= original.revision) invalidPayload()
         return moved
+    }
+
+    /** Atomic Go batch Trash, capped at 200 Server-verified revisions.
+     * No optimistic success is inferred from an uncertain response. */
+    override suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
+        require(originals.isNotEmpty() && originals.size <= 200 &&
+            originals.all { it.id > 0 && it.parentId != null && it.revision > 0 } &&
+            originals.map { it.id }.toSet().size == originals.size) { "Invalid batch selection" }
+        val items = JsonArray(originals.map { node ->
+            JsonObject(mapOf("id" to JsonPrimitive(node.id),
+                "revision" to JsonPrimitive(node.revision)))
+        })
+        val response = request("nodes/batch/delete", accessToken,
+            bodyObject = JsonObject(mapOf("items" to items)))
+        if (response.string("operation_id").isBlank()) invalidPayload()
+        val deleted = response["deleted_ids"] as? JsonArray ?: invalidPayload()
+        if (deleted.size != originals.size ||
+            deleted.map { (it as? JsonPrimitive)?.longOrNull ?: invalidPayload() }.toSet() !=
+                originals.map { it.id }.toSet()) invalidPayload()
     }
 
     override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage {
@@ -321,7 +343,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         method: String? = null,
         ifMatch: Long? = null,
         numberValues: Map<String, Long> = emptyMap(),
-    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method, ifMatch, numberValues)
+        bodyObject: JsonObject? = null,
+    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
+        ifMatch, numberValues, bodyObject)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -340,6 +364,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         method: String? = null,
         ifMatch: Long? = null,
         numberValues: Map<String, Long> = emptyMap(),
+        bodyObject: JsonObject? = null,
     ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             query.forEach { (name, value) -> addQueryParameter(name, value) }
@@ -353,9 +378,13 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             require(ifMatch > 0) { "Invalid node revision" }
             builder.header("If-Match", "\"$ifMatch\"")
         }
-        if (values != null || numberValues.isNotEmpty()) {
+        if (values != null || numberValues.isNotEmpty() || bodyObject != null) {
             val fields = mutableMapOf<String, JsonElement>()
-            values?.forEach { (name, value) -> fields[name] = JsonPrimitive(value) }
+            bodyObject?.let { fields.putAll(it) }
+            values?.forEach { (name, value) ->
+                require(name !in fields) { "Duplicate JSON field" }
+                fields[name] = JsonPrimitive(value)
+            }
             numberValues.forEach { (name, value) ->
                 require(name !in fields && value > 0) { "Invalid numeric mutation field" }
                 fields[name] = JsonPrimitive(value)
