@@ -584,6 +584,14 @@ Offline consistency verification skips only the exact root-level `.xdrive-media`
 
 Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name. Full backups estimate file-data bytes plus PostgreSQL database bytes before entering the maintenance window; database-only backups estimate only the database portion. Both add a 10% margin and 64 MiB fixed reserve and refuse to start when the backup filesystem does not have enough free space.
 
+When a backup fails strict verification, the host prints only issue counts,
+the leading two examples per category and grouped permission/missing reasons;
+a single full JSON report is kept with mode 0600 at
+`~/.xd/logs/storage-verify-last-failed.json` for later diagnosis (under the
+configured xDrive home if customized). A failing `.partial` snapshot is
+removed. This avoids repeating thousands of benign CAS shared-reference
+entries in terminal logs and never reruns SHA-256 merely to summarize errors.
+
 Each completed backup contains checksums and a manifest with its creation time, consistency status, whether file data was included, server/Caddy images, release channel and commit, update source, Docker mode, and the space-preflight measurements. A full backup contains `blobs.tar`; a database-only backup intentionally omits it and records `file_data_included=false`. Checksums are verified once before the partial directory is atomically promoted to a completed backup.
 
 Host-side backup inspection is available without touching the running services:

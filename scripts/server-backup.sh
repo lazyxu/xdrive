@@ -365,7 +365,65 @@ verify_status=0
 compose run -T --rm --no-deps -e XD_STORAGE_VERIFY_PROGRESS=1 server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
 if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
-  cat "$partial_dir/verify.json" >&2 || true
+  # Preserve one full report with user-only permissions instead of printing
+  # tens of thousands of normal CAS shared references and missing entries.
+  # This file is diagnostic evidence, not a completed/verified backup.
+  failure_log_dir="$XDRIVE_HOME/logs"
+  if [[ -s "$partial_dir/verify.json" ]]; then
+    if mkdir -p "$failure_log_dir" && [[ -d "$failure_log_dir" && ! -L "$failure_log_dir" ]]; then
+      failure_tmp="$(mktemp "$failure_log_dir/.storage-verify-failed.XXXXXX" 2>/dev/null || true)"
+      if [[ -n "$failure_tmp" ]]; then
+        if cp "$partial_dir/verify.json" "$failure_tmp" &&
+           chmod 600 "$failure_tmp" &&
+           mv -f "$failure_tmp" "$failure_log_dir/storage-verify-last-failed.json"; then
+          echo "[xDrive] full failed verification report: $failure_log_dir/storage-verify-last-failed.json (private)" >&2
+        else
+          rm -f "$failure_tmp"
+          echo "[xDrive] warning: could not retain the full failed verification report." >&2
+        fi
+      fi
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+      # Summarize the existing JSON; NEVER execute another full verification.
+      python3 - "$partial_dir/verify.json" <<'PY' >&2 || true
+import collections
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        report = json.load(source)
+except (OSError, ValueError) as exc:
+    print(f"[xDrive] verification report could not be summarized: {exc}")
+    raise SystemExit(0)
+
+categories = (
+    "missing", "size_mismatches", "duplicate_references",
+    "content_reference_mismatches", "orphans", "hash_mismatches",
+)
+print("[xDrive] verification level:", report.get("verification_mode", "legacy-deep"))
+print("[xDrive] actionable issue counts:",
+      ", ".join(f"{key}={len(report.get(key) or [])}" for key in categories))
+missing = report.get("missing") or []
+reasons = collections.Counter(
+    "permission_denied" if "permission denied" in str(item.get("reason", "")).lower()
+    else item.get("reason", "other")
+    for item in missing
+)
+if reasons:
+    print("[xDrive] missing reasons:", dict(reasons.most_common(8)))
+for name in categories:
+    for item in (report.get(name) or [])[:2]:
+        print(f"[xDrive] {name} example: {json.dumps(item, ensure_ascii=False)}")
+PY
+    else
+      # Old/minimal hosts may lack Python; keep console output bounded.
+      echo "[xDrive] python3 unavailable; inspect the private full report for detailed counts." >&2
+      sed -n '1,20p' "$partial_dir/verify.json" >&2 || true
+    fi
+  else
+    echo "[xDrive] verifier returned no JSON report (see error output above)." >&2
+  fi
   rm -rf "$partial_dir"
   exit "$verify_status"
 fi

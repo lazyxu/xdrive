@@ -189,6 +189,26 @@ if "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null 2>&1;
   exit 1
 fi
 
+# A failed backup must not dump an entire shared-reference JSON report into
+# the installer log, and must retain a private full report for diagnostics.
+set +e
+bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" \
+  --output-dir "$TMP/failing-backups" --skip-file-data \
+  >"$TMP/failed-backup.out" 2>"$TMP/failed-backup.err"
+failed_backup_status=$?
+set -e
+[[ "$failed_backup_status" -ne 0 ]]
+grep -q 'xDrive consistency verification failed; backup aborted.' "$TMP/failed-backup.err"
+grep -q 'actionable issue counts:' "$TMP/failed-backup.err"
+grep -q 'missing=' "$TMP/failed-backup.err"
+grep -q 'orphans=' "$TMP/failed-backup.err"
+[[ "$(wc -l < "$TMP/failed-backup.err")" -lt 120 ]]
+test -s "$XDRIVE_HOME/logs/storage-verify-last-failed.json"
+grep -q '"missing"' "$XDRIVE_HOME/logs/storage-verify-last-failed.json"
+grep -q '"orphans"' "$XDRIVE_HOME/logs/storage-verify-last-failed.json"
+test "$(stat -c '%a' "$XDRIVE_HOME/logs/storage-verify-last-failed.json")" = 600
+assert_runtime_services
+
 bash "$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$XDRIVE_HOME"   --yes   --no-safety-backup >/dev/null
 wait_server
 assert_runtime_services
