@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
+const ts = require('typescript')
 
 const root = path.join(__dirname, '..', '..')
 const read = (...segments) => fs.readFileSync(path.join(root, ...segments), 'utf8')
@@ -111,4 +112,74 @@ test('worker never intercepts API, file tickets, media, non-navigation or other 
   }
   assert.equal(h.calls.length, 0)
   assert.equal([...h.stores.get('xdrive-pwa-public-offline-v1').keys()].length, 1)
+})
+
+test('PWA optional registration survives synchronous browser denial without blocking Web startup', async () => {
+  // Execute transpiled production pwaRuntime.ts (not a copied approximation).
+  // Vite's static DEV replacement is the sole source substitution.
+  const production = runtime.replace('import.meta.env.DEV', 'false')
+  assert.notEqual(production, runtime)
+  const code = ts.transpileModule(production, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  function browser({ readyState = 'complete', fail = 'sync', secure = true } = {}) {
+    let registered = 0
+    const events = []
+    const listeners = new Map()
+    const win = {
+      isSecureContext: secure,
+      addEventListener(name, cb, options) { listeners.set(name, { cb, options }) },
+      dispatchEvent(event) { events.push(event.type) },
+    }
+    const nav = {}
+    Object.defineProperty(nav, 'serviceWorker', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        if (fail === 'getter') throw new Error('restricted Service Worker getter')
+        return {
+          register(path, options) {
+            registered++
+            assert.equal(path, '/sw.js')
+            assert.equal(options.scope, '/')
+            assert.equal(options.updateViaCache, 'none')
+            if (fail === 'sync') throw new Error('SecurityError: registration blocked')
+            if (fail === 'async') return Promise.reject(new Error('registration denied'))
+            return Promise.resolve({})
+          },
+        }
+      },
+    })
+    const doc = { readyState }
+    class BrowserEvent { constructor(type) { this.type = type } }
+    const exports = {}
+    new Function('exports', 'window', 'navigator', 'document', 'Event', code)(
+      exports, win, nav, doc, BrowserEvent)
+    return {
+      register: exports.registerXDrivePwa,
+      listeners, events,
+      get registered() { return registered },
+    }
+  }
+
+  for (const fail of ['getter', 'sync', 'async', 'success']) {
+    const h = browser({ fail })
+    assert.doesNotThrow(() => h.register(), 'optional SW ' + fail + ' must not throw')
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(h.registered, fail === 'getter' ? 0 : 1)
+    assert.deepEqual(h.events, fail === 'success' ? ['xdrive-pwa-registered'] : [],
+      'only a real successful registration may announce readiness')
+  }
+  for (const fail of ['getter', 'sync']) {
+    const h = browser({ fail, readyState: 'loading' })
+    h.register()
+    assert.equal(h.registered, 0)
+    assert.equal(h.listeners.get('load')?.options?.once, true)
+    assert.doesNotThrow(() => h.listeners.get('load').cb())
+    assert.equal(h.registered, fail === 'getter' ? 0 : 1)
+  }
+  const h = browser({ secure: false, fail: 'sync' })
+  h.register()
+  assert.equal(h.registered, 0, 'insecure origins never attempt SW registration')
 })
