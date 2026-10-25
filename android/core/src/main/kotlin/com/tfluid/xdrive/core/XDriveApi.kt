@@ -150,6 +150,10 @@ interface XDriveService {
     suspend fun galleryPage(accessToken: String, offset: Int = 0,
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
+    /** Search uses the same bounded Owner range; no local visible-page filtering. */
+    suspend fun gallerySearchPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner search unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
@@ -505,7 +509,17 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
-    override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage {
+    override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage =
+        ownerGalleryPage(accessToken, offset, initialLatest, "")
+
+    override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String): GalleryPage {
+        require(search.isNotBlank() && search == search.trim() && search.length <= 200)
+        return ownerGalleryPage(accessToken, offset, initialLatest, search)
+    }
+
+    private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
@@ -513,6 +527,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             "unknown_first" to "true", "fold_duplicates" to "true",
         )
         if (initialLatest) query["initial_position"] = "latest"
+        if (search.isNotEmpty()) query["q"] = search
         val result = request("media/items", accessToken, query = query)
         val raw = result["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 60) invalidPayload()

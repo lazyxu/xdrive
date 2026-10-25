@@ -27,6 +27,15 @@ class DriveControllerTest {
             DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
+        val gallerySearchRequests = mutableListOf<String>()
+        override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String): GalleryPage {
+            gallerySearchRequests += search
+            galleryGate?.await()
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(991L, 1, "found.jpg", "file", size = 5, revision = 1),
+                "image", "2026-10-25T01:00:00Z", hasThumbnail = true)), 1, 0)
+        }
         var videoSessionsOpened = 0
         var videoSessionsClosed = 0
         override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
@@ -353,6 +362,24 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("  sunset  "); runCurrent()
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        assertEquals(listOf("sunset"), api.gallerySearchRequests)
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery(""); runCurrent()
+        assertTrue(c.state.value.gallerySearchQuery.isEmpty())
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("sunset"); runCurrent()
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertTrue(c.state.value.gallerySearchQuery.isEmpty())
     }
 
     @Test fun GalleryLoadsRealChronologicalTailAndPagesOlderWithoutLosingFilesOwner() = runTest {

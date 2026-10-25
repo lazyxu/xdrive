@@ -36,6 +36,7 @@ class DriveAppTest {
     private var galleryVideoFixture = false
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
+    private val gallerySearchQueries = mutableListOf<String>()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
         capturedAt = "2026-10-24T00:00:00Z", hasThumbnail = true)
@@ -66,6 +67,13 @@ class DriveAppTest {
                     DriveNode(1000L + index, 1L, "相片-${index}.jpg", "file",
                         size = 44, revision = 1), "image", hasThumbnail = true)
             }, 181, offset)
+        }
+        override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String): GalleryPage {
+            gallerySearchQueries += search
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
+                "image", hasThumbnail = true)), 1, 0)
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long) = byteArrayOf(1,2,3)
@@ -219,6 +227,26 @@ class DriveAppTest {
             org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
         }
         compose.onNodeWithTag("files-grid").assertExists()
+    }
+
+    @Test fun nativeGallerySearchUsesRealOwnerRangeAndClearsWithoutCrossOwnerRows() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-search-button").performClick()
+        compose.onNodeWithTag("gallery-search-input").performTextInput("sunset")
+        compose.onNodeWithTag("gallery-search-apply").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery == "sunset" &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf("sunset"), gallerySearchQueries) }
+        compose.onNodeWithTag("gallery-search-clear").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery.isEmpty() &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
+        }
     }
 
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {

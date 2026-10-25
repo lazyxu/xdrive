@@ -29,25 +29,29 @@ import com.tfluid.xdrive.core.GalleryAsset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Initial native Gallery wall: real Owner chronological Range, latest at
- * bottom, native thumbnails and bounded cancellation. No faux Viewer/Albums. */
+/** Native Owner Gallery with same Server range for wall and search, never a local
+ * filter of the few visible thumbnails. Full Collections controls follow later. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController) {
     val gridState = rememberLazyGridState()
     val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchDraft by remember(state.gallerySearchQuery) { mutableStateOf(state.gallerySearchQuery) }
     // Preserve the visible photo anchor while the Viewer is open.
-    var positioned by rememberSaveable { mutableStateOf(false) }
+    var positioned by rememberSaveable(state.gallerySearchQuery) { mutableStateOf(false) }
     // A single entrance to the oldest visible edge permits only one fetch.
     // Re-arm after scrolling away: do not recursively traverse a 100k library
     // while Compose is still remeasuring newly prepended rows.
-    var olderEdgeArmed by remember { mutableStateOf(true) }
+    var olderEdgeArmed by remember(state.gallerySearchQuery) { mutableStateOf(true) }
     val nearOlderEdge by remember(gridState) {
         derivedStateOf { gridState.firstVisibleItemIndex <= 3 }
     }
 
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text("图库", modifier = Modifier.weight(1f),
+        Text(if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
@@ -116,7 +120,7 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
             if (state.galleryLoaded && state.galleryItems.isEmpty() &&
                 !state.loading && state.error == null) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text("暂无照片或视频", Modifier.padding(24.dp))
+                    Text(if (state.gallerySearchQuery.isEmpty()) "暂无照片或视频" else "没有匹配的照片或视频", Modifier.padding(24.dp))
                 }
             }
             if (blankTop > 0.dp) item(key = "tail-spacer", span = { GridItemSpan(maxLineSpan) }) {
@@ -124,6 +128,41 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
             }
             items(state.galleryItems, key = { it.node.id }) { item ->
                 GalleryTile(item, controller, bitmaps)
+            }
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        if (state.gallerySearchQuery.isNotEmpty()) {
+            TextButton(onClick = { controller.searchGallery("") },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-clear")) {
+                Text("清除筛选")
+            }
+        }
+        FilledTonalButton(onClick = {
+            searchDraft = state.gallerySearchQuery
+            searchOpen = true
+        }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-button")) {
+            Text("搜索")
+        }
+    }
+    if (searchOpen) ModalBottomSheet(onDismissRequest = { searchOpen = false },
+        containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("搜索全部照片与视频", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(value = searchDraft, onValueChange = { if (it.length <= 200) searchDraft = it },
+                label = { Text("搜索图库") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    .testTag("gallery-search-input"))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { searchOpen = false },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+                Button(onClick = {
+                    searchOpen = false
+                    controller.searchGallery(searchDraft)
+                }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-apply")) {
+                    Text("搜索")
+                }
             }
         }
     }

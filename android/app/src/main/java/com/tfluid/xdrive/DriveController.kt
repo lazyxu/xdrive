@@ -54,6 +54,7 @@ data class DriveState(
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
     val galleryLoaded: Boolean = false,
+    val gallerySearchQuery: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
     val destinationKind: FilesTransferKind? = null,
@@ -814,7 +815,8 @@ class DriveController(
             fileExportPending = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
+            galleryLoaded = false, gallerySearchQuery = "",
+            gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
     }
 
@@ -825,7 +827,8 @@ class DriveController(
         mutableState.value = current.copy(
             screen = Screen.FILES, loading = false, error = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
+            galleryLoaded = false, gallerySearchQuery = "",
+            gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
     }
 
@@ -834,6 +837,20 @@ class DriveController(
         invalidate() // Stop prior Owner range before replacing its query intent.
         mutableState.value = state.value.copy(loading = false, error = null,
             galleryItems = emptyList(), galleryOffset = 0,
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
+            galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    /** A new Owner-wide query replaces the entire Gallery Range intent. */
+    fun searchGallery(input: String) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || session == null || api == null) return
+        val query = input.trim()
+        if (query.length > 200 || query == current.gallerySearchQuery) return
+        invalidate() // Cancel the previous query and prevent A→B→A stale replies.
+        mutableState.value = current.copy(loading = false, error = null,
+            gallerySearchQuery = query, galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -863,13 +880,16 @@ class DriveController(
         if (current.screen != Screen.GALLERY || current.loading || session == null) return
         val service = api ?: return
         val requestedOffset = if (initialLatest) 0 else (current.galleryOffset - 60).coerceAtLeast(0)
+        val search = current.gallerySearchQuery
         request { ticket ->
             val page = authenticated(service, ticket) {
-                service.galleryPage(it, requestedOffset, initialLatest)
+                if (search.isEmpty()) service.galleryPage(it, requestedOffset, initialLatest)
+                else service.gallerySearchPage(it, requestedOffset, initialLatest, search)
             }
             checkCurrent(ticket)
             val latest = state.value
-            if (latest.screen != Screen.GALLERY) throw CancellationException()
+            if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search)
+                throw CancellationException()
             if (initialLatest) {
                 mutableState.value = latest.copy(
                     galleryItems = page.items, galleryOffset = page.offset,

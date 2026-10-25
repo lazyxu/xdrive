@@ -161,3 +161,13 @@ node scripts/shared-ui.mjs --check
 - 首次 sparse latest 末页若少于 24 项，仅预取一页后定位最新照片，绝不在首次进入就把 100k 全库扫描完；真正靠近顶部才继续分页。LazyVerticalGrid 稳定 item key 维持已可见照片锚点，不因 prepend 回跳到底部。
 - 错误明确提供“重试加载更早的照片”，不清除已显示 Range，不重新读取 last page；Owner/total/offset/ID 一致性继续由 Controller 验证。自动加载在错误状态停止，避免循环请求。
 - 核心 Controller JVM 覆盖失败 Range 的原 offset 重试和保留已读图片，Compose API35 fixture 覆盖首次 bounded prefetch、滚到顶部续页与旧尾部照片不丢失。准确提交 CI 未通过前不标记完成，生产环境安全验收仍按用户决定跳过（未验收）。
+
+## Android Gallery P0 · Native Owner-wide search
+
+- Bottom-right Search opens an actual search sheet; applying a keyword makes the
+  existing pinned Owner Gallery Range call with `q`, not an in-memory filter of
+  the loaded photos. The displayed total and sparse tail come from Server.
+- Query changes and clear cancel old requests, reset the Viewer and visible
+  Range, and never re-use another Owner's private rows. Leaving the Gallery
+  clears the query. This is the first functional bottom control, not a claim
+  that Year/Month/Day/All, Collections, sort and batch actions are done.

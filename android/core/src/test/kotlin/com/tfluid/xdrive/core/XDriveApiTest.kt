@@ -122,6 +122,30 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `Gallery search is remote Owner query with the same sparse latest Range`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":78,"parent_id":1,"name":"sunset.jpg","type":"file",
+                    "size":128,"revision":6},"metadata":{"media_kind":"image",
+                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.gallerySearchPage("owner-secret", 0, true, "sunset")
+            assertEquals(listOf(78L), page.items.map { it.node.id })
+            val sent = server.takeRequest()
+            assertEquals("sunset", sent.requestUrl!!.queryParameter("q"))
+            assertEquals("latest", sent.requestUrl!!.queryParameter("initial_position"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("range"))
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+            assertFalse(sent.path!!.contains("owner-secret"))
+            try {
+                api.gallerySearchPage("owner-secret", 0, true, " ")
+                fail("Blank search accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(1, server.requestCount)
+        } }
+    }
+
     @Test fun `Gallery rejects malformed or cross-range pages rather than publishing private items`() = runBlocking {
         val cases = listOf(
             """{"items":[],"total_count":4,"offset":0,"limit":60}""",

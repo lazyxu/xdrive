@@ -388,3 +388,13 @@ previous 1.11.1 choice requires compileSdk 36 and failed the actual Android
 Native `checkDebugAarMetadata` check (9 AAR metadata errors). Version 1.7.1
 contains the same stable library code as 1.6.1; do not raise `targetSdk`
 or globally upgrade the Android toolchain solely for this playback increment.
+
+## Native Gallery Owner search (stacked follow-up)
+
+The Gallery bottom-right Search entry queries the existing authenticated Go
+`GET /api/v1/media/items?range=true&q=...` contract, never only the currently
+loaded 60 thumbnails. It preserves chronological tail, verified absolute Range
+pagination and the current Owner/TLS/route-pinned client. Changing or clearing
+the query cancels its predecessor and invalidates the Viewer/thumbnail scope;
+returning to Files or logging out discards the search terms. No full iOS 27
+Collections, time-scale groups or generalized filters are claimed here.
