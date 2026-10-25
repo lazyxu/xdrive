@@ -1,6 +1,6 @@
 # xd Backup-only CLI (same owning Agent as Desktop)
 
-> **Architecture decision (2026-10-25):** [CLI-only Backup architecture](./xd-headless-backup-architecture.md) — B internally (`xd` + same-user `xdrive-agent`), C-like unified `xd backup` experience. Desktop is optional for the target headless deployment. **Current status:** standalone `xd backup init` and no-mount Agent packaging merged via [#2585](https://github.com/lazyxu/xdrive/pull/2585); the two CLI-only Snapshot archives are published. This documents the merged source, not production installation acceptance.
+> **Architecture decision (2026-10-25):** [CLI-only Backup architecture](./xd-headless-backup-architecture.md) — B internally (`xd` + same-user `xdrive-agent`), C-like unified `xd backup` experience. Desktop is optional for the target headless deployment. **Current status:** standalone `xd backup init` and no-mount Agent packaging merged via [#2585](https://github.com/lazyxu/xdrive/pull/2585); the two CLI-only Snapshot archives are published. This documents merged source, not production installation acceptance. CLI-only update checks/downloads are available; in-place installation and rollback are deliberately not supported.
 
 **Architecture:** The `xd` CLI controls the **same owning Agent** as Desktop; it does not implement another scanner, durable queue, uploader or cloud CAS writer. Linux/Windows Desktop UI is optional. In the headless distribution, `xd` auto-starts `xdrive-agent --backup-only`, without mounting a filesystem or requiring Electron.
 
@@ -80,10 +80,23 @@ checksum-verified release also publishes these two archives as named assets;
 a missing or mismatched archive blocks publication. Linux smoke tests cover
 no-mount Agent SIGTERM, restart and cooperative foreground-wrapper shutdown.
 These checks do not substitute for authenticated PostgreSQL/CAS end-to-end
-backup and incremental/scheduler regression tests. The
-existing `xd update --install` may install the Desktop distribution, so
-do not use it as an unattended CLI-only upgrader until a dedicated CLI
-update target exists. Update the matching `xd` and Agent binaries together.
+backup and incremental/scheduler regression tests. The unified Desktop installer
+and CLI-only archives are separate distribution targets. On a CLI-only install,
+`xd update --cli-only` checks the published Linux/Windows two-binary package,
+and `--download` verifies its release SHA-256, Go binary identity and strict
+archive allowlist before saving it to a user cache:
+
+```sh
+xd update --cli-only --source github --channel master
+xd update --cli-only --download --source github --channel master
+```
+
+**Downloaded does not mean installed.** CLI-only `xd update --install`
+is deliberately rejected until a safe atomic pair replacement, Agent restart
+and rollback protocol is implemented. It never falls back to Electron/Desktop.
+To apply an archive meanwhile, coordinate a same-user service stop and replace
+both matching binaries together. Preserve the local operation journal and
+Source/Root identity; never infer that uncertain Operations were resolved.
 
 ### Using an already configured Source
 

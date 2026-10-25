@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -67,7 +68,8 @@ Usage:
   xd config --mount PATH
   xd mount [PATH]
   xd version
-  xd update [--source github|gitlab] [--channel stable|master] [--install]
+  xd update [--source github|gitlab] [--channel stable|master] [--install] (Desktop only)
+  xd update --cli-only [--download] [--source github|gitlab] [--channel stable|master]
   xd update --status
   xd doctor [--strict]
   xd backup init|bind|drafts|list|once|auto|schedule|status|history|pause|cancel|agent [options]
@@ -330,16 +332,34 @@ func cleanupCmd() error {
 
 func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	install := fs.Bool("install", false, "install the available update now")
-	showStatus := fs.Bool("status", false, "show the most recent platform update transaction")
+	install := fs.Bool("install", false, "install the Desktop update (only for an existing Desktop installation)")
+	cliOnly := fs.Bool("cli-only", false, "target the standalone xd + xdrive-agent portable archive, never the Desktop installer")
+	download := fs.Bool("download", false, "CLI-only: download and verify the portable archive without installing")
+	showStatus := fs.Bool("status", false, "show the most recent Desktop platform update transaction")
 	sourceFlag := fs.String("source", "", "update source: github or gitlab")
 	channelFlag := fs.String("channel", "", "update channel: stable or master")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	self, selfErr := os.Executable()
+	if selfErr != nil {
+		return fmt.Errorf("cannot establish xd installation identity: %w", selfErr)
+	}
+	useCLIOnly := *cliOnly || portableCLIOnlyDistribution(self, runtime.GOOS)
+	if *download && (*install || !useCLIOnly) {
+		return fmt.Errorf("--download is supported only for CLI-only archive staging, without --install")
+	}
+	if err := rejectCLIOnlyInstall(*install, useCLIOnly); err != nil {
+		return err
+	}
+	if *install {
+		if err := requireExistingDesktopDistribution(self, runtime.GOOS); err != nil {
+			return err
+		}
+	}
 	if *showStatus {
-		if *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" {
-			return fmt.Errorf("--status cannot be combined with --install, --source, or --channel")
+		if useCLIOnly || *download || *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" {
+			return fmt.Errorf("--status is only for an installed Desktop update transaction and cannot be combined with CLI-only, download or install options")
 		}
 		status, err := xupdate.LastInstallStatus()
 		if err != nil {
@@ -405,6 +425,9 @@ func updateCmd(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	if useCLIOnly {
+		return runCLIOnlyUpdate(ctx, current, normalized, source, *download)
+	}
 
 	if *install {
 		started, installed, err := xupdate.InstallTargetFromSourceWithProgress(ctx, current, normalized, source, func(event xupdate.ProgressEvent) {
