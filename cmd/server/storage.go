@@ -22,7 +22,7 @@ const defaultStorageOwnerID = 65532
 
 func runStorageCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair> [options]")
+		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair|repair-user-directories> [options]")
 	}
 	switch args[0] {
 	case "prepare":
@@ -33,19 +33,22 @@ func runStorageCommand(args []string) error {
 		return runStorageVerify(args[1:])
 	case "repair":
 		return runStorageRepair(args[1:])
+	case "repair-user-directories":
+		return runStorageRepairUserDirectories(args[1:])
 	default:
-		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair> [options]")
+		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair|repair-user-directories> [options]")
 	}
 }
 
 func runStorageVerify(args []string) error {
 	fs := flag.NewFlagSet("storage verify", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "write machine-readable JSON")
+	summaryJSON := fs.Bool("summary-json", false, "write only issue counts and bounded samples")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: xdrive-server storage verify [--json]")
+	if fs.NArg() != 0 || (*asJSON && *summaryJSON) {
+		return fmt.Errorf("usage: xdrive-server storage verify [--json | --summary-json]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -59,7 +62,13 @@ func runStorageVerify(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *asJSON {
+	if *summaryJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(summarizeStorageVerify(report)); err != nil {
+			return err
+		}
+	} else if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(report); err != nil {
