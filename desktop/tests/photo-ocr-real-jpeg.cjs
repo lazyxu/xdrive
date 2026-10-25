@@ -9,6 +9,7 @@ test('real JPEG OCR checks use the pinned Photo Intelligence image, not a mock',
   const image = read('internal/api/ocr_real_model_e2e_test.go')
   const gallery = read('internal/api/media_filters_integration_test.go')
   const workflow = read('.github/workflows/ci.yml')
+  const smoke = read('scripts/ci/test-photo-ocr-real-model.sh')
   assert.match(image, /photointelligence\.NewUnixSmartAnalyzer/)
   assert.match(image, /photointelligence\.SmartRunner/)
   assert.match(image, /server\.queryMediaItems/)
@@ -25,9 +26,10 @@ test('real JPEG OCR checks use the pinned Photo Intelligence image, not a mock',
   assert.match(gallery, /XD_OCR_REAL_MODEL_E2E/)
   assert.match(gallery, /runOCRRealModelGalleryFixture\(/)
   assert.match(workflow, /Real JPEG PP-OCR and Gallery search PostgreSQL integration/)
-  assert.match(workflow, /XD_OCR_REAL_MODEL_IMAGE=xdrive\/photo-face:test/)
-  assert.match(workflow, /XD_OCR_REAL_MODEL_E2E=1/)
-  assert.match(workflow, /TestQueryMediaItemsFilters\/real_JPEG_pinned_OCR_model_to_Gallery_search/)
+  assert.match(workflow, /bash scripts\/ci\/test-photo-ocr-real-model.sh/)
+  assert.match(smoke, /XD_OCR_REAL_MODEL_IMAGE=xdrive\/photo-face:test/)
+  assert.match(smoke, /XD_OCR_REAL_MODEL_E2E=1/)
+  assert.match(smoke, /TestQueryMediaItemsFilters\/real_JPEG_pinned_OCR_model_to_Gallery_search/)
 })
 
 test('real OCR fixture is opt-in and keeps ordinary publishing gates unchanged', () => {
@@ -38,4 +40,24 @@ test('real OCR fixture is opt-in and keeps ordinary publishing gates unchanged',
   assert.match(workflow, /publish-master:/)
   assert.match(workflow, /final-gate:/)
   assert.match(workflow, /photo-face-image:/)
+})
+
+test('master post-image OCR smoke does not delay snapshot publish, but gates stable tags', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  const afterSmoke = workflow.split('  photo-ocr-master-smoke:')[1]
+  assert.ok(afterSmoke, 'detached OCR smoke job missing')
+  const smokeJob = afterSmoke.split('  caddy-image:')[0]
+  assert.match(smokeJob, /needs: photo-face-image/)
+  assert.match(smokeJob, /github.ref == 'refs\/heads\/master'/)
+  assert.match(smokeJob, /startsWith\(github.ref, 'refs\/tags\/v'\)/)
+  assert.match(smokeJob, /startsWith\(github.head_ref, 'test\/photo-ocr-master-smoke-'\)/)
+  assert.match(smokeJob, /actions\/download-artifact@v4/)
+  assert.match(smokeJob, /gzip -dc dist\/photo-face-image\/image.tar.gz \| docker load/)
+  assert.match(smokeJob, /bash scripts\/ci\/test-photo-ocr-real-model.sh/)
+  const publishMaster = workflow.split('  publish-master:')[1]?.split('  publish-stable:')[0] || ''
+  assert.match(publishMaster, /needs:/)
+  assert.match(publishMaster, /- photo-face-image/)
+  assert.doesNotMatch(publishMaster, /photo-ocr-master-smoke/)
+  const publishStable = workflow.split('  publish-stable:')[1]?.split('  trash-range-go-context-cancel-100k-performance:')[0] || ''
+  assert.match(publishStable, /needs: \[final-gate, photo-ocr-master-smoke\]/)
 })

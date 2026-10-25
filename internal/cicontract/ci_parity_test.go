@@ -40,8 +40,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		// Android v1 uses GitHub-hosted KVM; GitLab Android deployment is outside this slice.
 		"android-native":      {},
 		"server-rootless-e2e": {},
-		"publish-master":      {},
-		"publish-stable":      {},
+		// GitHub-hosted post-build real-model acceptance; GitLab is package-first.
+		"photo-ocr-master-smoke": {},
+		"publish-master":         {},
+		"publish-stable":         {},
 	}
 	var githubCoreJobs []string
 	for _, name := range githubJobs {
@@ -462,7 +464,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"final-gate:",
 		"publish-master:",
 		"publish-stable:",
-		"needs: [final-gate]",
+		"needs: [final-gate, photo-ocr-master-smoke]",
 	)
 	requireRaw(t, "GitLab build-once contract", gitlabRaw,
 		"package-linux-client:",
@@ -514,6 +516,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitHubJobNeeds(t, github, "caddy-image", []string{"web"})
 	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
 	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
+	// Post-build real OCR model smoke must consume the exact Photo Host image,
+	// not compile or fetch a second unpinned model.
+	assertGitHubJobNeeds(t, github, "photo-ocr-master-smoke", []string{"photo-face-image"})
 	assertGitLabJobNeeds(t, gitlab, "server-backup", []string{"server-image"})
 	assertGitHubJobNeeds(t, github, "server-rootless-e2e", []string{"server-image", "caddy-image"})
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
@@ -527,7 +532,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
-	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate"})
+	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",
 		"test-windows-upgrade-artifact",
@@ -984,7 +989,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"if: github.event_name == 'push' && github.ref == 'refs/heads/master'",
 		"publish-stable:",
 		"if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
-		"needs: [final-gate]",
+		"needs: [final-gate, photo-ocr-master-smoke]",
 	)
 	requireRaw(t, "GitHub Publish Packages", githubRelease,
 		"workflow_call:",

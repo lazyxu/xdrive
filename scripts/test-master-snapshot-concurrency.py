@@ -53,13 +53,19 @@ required_builds = {
 }
 assert required_builds <= needed, f"required publishable artifacts missing: {required_builds - needed}"
 assert "final-gate" not in needed, "snapshot must not wait for full race/E2E Final Gate"
+assert "photo-ocr-master-smoke" not in needed, "snapshot must not wait for OCR model acceptance"
 
 publish_stable = re.search(
     r"(?ms)^  publish-stable:\s*\n(.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
     jobs,
 )
 assert publish_stable is not None
-assert "needs: [final-gate]" in publish_stable.group(1), "stable tags require complete Final Gate"
+stable_needs_match = re.search(r"(?m)^    needs: \[([^\]]+)\]$", publish_stable.group(1))
+assert stable_needs_match is not None, "stable tags must name explicit dependencies"
+stable_needs = {name.strip() for name in stable_needs_match.group(1).split(",")}
+assert {"final-gate", "photo-ocr-master-smoke"} <= stable_needs, (
+    "stable tags require complete Final Gate and real-model OCR acceptance"
+)
 
 # Builds from different master commits can now complete out of order. The
 # floating release/edge promotion must be a FIFO queue with an ancestry
