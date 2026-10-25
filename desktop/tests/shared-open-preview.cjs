@@ -153,7 +153,7 @@ test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip an
   for (const token of [
     'immersive',
     'fullScreen={fullScreen}',
-    'onFullScreenChange={setFullScreen}',
+    'onFullScreenChange={setFullScreenIfCurrent}',
     '<XDriveMediaGalleryFilmstrip',
     'interactiveImage',
     '收藏',
@@ -164,6 +164,12 @@ test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip an
   ]) {
     assert.ok(galleryViewer.includes(token), 'Gallery Viewer 2.0 missing: ' + token)
   }
+
+  assert.match(
+    galleryViewer,
+    /const setFullScreenIfCurrent = \(value: boolean\) => \{\s*if \(isCurrentActionOwner\(\)\) setFullScreen\(value\)/,
+    'fullscreen must remain present and reject a retired Gallery Owner callback',
+  )
 
   assert.ok(gallery.includes('previewIndex - 6'), 'Gallery Viewer neighbor prefetch must stay bounded')
   assert.ok(gallery.includes('previewIndex + 6'), 'Gallery Viewer neighbor prefetch must stay bounded')

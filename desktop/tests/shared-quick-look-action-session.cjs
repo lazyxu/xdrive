@@ -87,7 +87,8 @@ async function mounted(run) {
       await act(async () => tree.unmount())
       tree = null
     }
-    await run({ calls, shell, download, update, unmount })
+    const preview = () => tree.root.findByType('preview-content').props
+    await run({ calls, shell, preview, download, update, unmount })
   } finally {
     if (tree) await act(async () => tree.unmount())
   }
@@ -198,5 +199,38 @@ test('same-Node Owner/Agent loader replacement releases the old preview lease', 
     assert.notEqual(shell().chromeSessionKey, session)
     assert.deepEqual(previewLifecycle, ['mount:7', 'dispose:7', 'mount:7'],
       'old source must unmount and release preview tickets/requests before new source')
+  })
+})
+
+test('Quick Look touch swipes reject old A-B-A, revoked neighbor and rebind callbacks', async () => {
+  await mounted(async ({ calls, preview, update }) => {
+    const originalSwipeNext = preview().onSwipeNext
+    const originalSwipePrevious = preview().onSwipePrevious
+    assert.equal(typeof originalSwipeNext, 'function')
+    assert.equal(typeof originalSwipePrevious, 'function')
+    await update({ item: { id: 8, revision: 1, name: 'other.jpg', kind: 'file' } })
+    await update({ item: { id: 7, revision: 1, name: 'photo.jpg', kind: 'file' } })
+    await act(async () => { originalSwipeNext(); originalSwipePrevious() })
+    assert.deepEqual(calls, [], 'old A swipe cannot navigate a revisited A')
+    const activeNext = preview().onSwipeNext
+    await update({ canNext: false })
+    await act(async () => activeNext())
+    assert.deepEqual(calls, [], 'current neighbor revocation must invalidate queued swipe')
+    await update({ canNext: true })
+    const priorSourceSwipe = preview().onSwipeNext
+    await update({ loadPreviewURL: async () => null })
+    await act(async () => priorSourceSwipe())
+    assert.deepEqual(calls, [], 'previous Agent/Owner source may not navigate by swipe')
+    await act(async () => { preview().onSwipeNext(); preview().onSwipePrevious() })
+    assert.deepEqual(calls, ['next', 'previous'])
+  })
+})
+
+test('Quick Look touch swipes are inert after the Viewer is unmounted', async () => {
+  await mounted(async ({ calls, preview, unmount }) => {
+    const formerSwipe = preview().onSwipeNext
+    await unmount()
+    await act(async () => formerSwipe())
+    assert.deepEqual(calls, [])
   })
 })

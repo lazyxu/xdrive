@@ -18,7 +18,7 @@ const entire = component.getText(file)
 const index = entire.search(/\n\s*const actions = item \? \(/)
 assert.ok(index > 0, 'missing Viewer action presentation boundary')
 const extracted = entire.slice(0, index) +
-  '\n return {run, close, busyAction, actionError: visibleActionError, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
+  '\n return {run, close, previousIfCurrent, nextIfCurrent, filmstripIfCurrent, setFullScreenIfCurrent, toggleSlideshowIfCurrent, fullScreen, slideshowPlaying, busyAction, actionError: visibleActionError, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
 const compiled = ts.transpileModule(extracted, {
   fileName: filename,
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS},
@@ -79,10 +79,19 @@ function fixture(ports = {}) {
   }
   const useRef = initial => next(() => ({current: initial}))
   const useCallback = fn => { next(() => ({})); return fn }
+  const useLayoutEffect = (make, deps) => {
+    const holder = next(() => ({deps: null, cleanup: null}))
+    if (!holder.deps || holder.deps.length !== deps.length ||
+        deps.some((value, index) => !Object.is(value, holder.deps[index]))) {
+      holder.cleanup?.()
+      holder.deps = deps
+      holder.cleanup = make()
+    }
+  }
   // Owner/action-only fixture. The slideshow is exercised by mounted React tests;
   // keep this harness focused on the original Favorite/Download/Delete races.
   const hooks = {
-    useState, useRef, useCallback, useEffect: () => {}, useMediaQuery: () => false,
+    useState, useRef, useCallback, useLayoutEffect, useEffect: () => {}, useMediaQuery: () => false,
     xDriveClassifyFilePreview: () => 'image',
     useXDrivePreviewPresentation: () => ({
       sourceKey: 'action-only', presentationState: 'loading',
@@ -106,6 +115,9 @@ function fixture(ports = {}) {
   let current
   const harness = {
     calls, closes,
+    unmount() {
+      for (const slot of slots) slot?.cleanup?.()
+    },
     get view() {return current},
     render(id, loaders = {}) {
       cursor = 0
@@ -119,6 +131,11 @@ function fixture(ports = {}) {
         loadPreviewURL: loaders.preview,
         loadLivePhotoMotion: loaders.motion,
         parentReportsViewerActionErrors: Boolean(loaders.parentReportsErrors),
+        canPrevious: loaders.canPrevious ?? true,
+        canNext: loaders.canNext ?? true,
+        onPrevious: loaders.onPrevious ?? (() => calls.push('previous:' + id)),
+        onNext: loaders.onNext ?? (() => calls.push('next:' + id)),
+        onFilmstripSelect: loaders.onFilmstripSelect ?? (index => calls.push('filmstrip:' + id + ':' + index)),
         onClose: () => closes.push('closed'),
       })
       return current
@@ -425,4 +442,64 @@ test('Viewer: host-reported Download and Delete errors do not duplicate local fe
   await flush()
   assert.equal(h.render(55, loaders).actionError, null,
     'host Snackbar already reported the Favorite failure as well')
+})
+
+test('Gallery Viewer stale Close cannot close B or revisit A after A→B→A', () => {
+  const h = fixture()
+  const first = h.render(101)
+  h.render(102)
+  first.close()
+  assert.deepEqual(h.closes, [], 'A Close must not dismiss B')
+  h.render(101)
+  first.close()
+  assert.deepEqual(h.closes, [], 'the original A cannot close a new A session')
+  h.view.close()
+  assert.deepEqual(h.closes, ['closed'], 'current A Close stays functional')
+  h.view.close()
+  assert.deepEqual(h.closes, ['closed'], 'a second queued Close is ignored')
+})
+
+test('Gallery Viewer blocks stale arrows, filmstrip, fullscreen and slideshow intent', () => {
+  const h = fixture()
+  const old = h.render(201)
+  const current = h.render(202, { canPrevious: false, canNext: false })
+  old.previousIfCurrent()
+  old.nextIfCurrent()
+  old.filmstripIfCurrent(5)
+  old.setFullScreenIfCurrent(true)
+  old.toggleSlideshowIfCurrent()
+  assert.deepEqual(h.calls, [], 'all old source gestures must be inert')
+  assert.equal(h.render(202, { canPrevious: false, canNext: false }).fullScreen, false)
+  assert.equal(h.view.slideshowPlaying, false)
+  current.previousIfCurrent()
+  current.nextIfCurrent()
+  assert.deepEqual(h.calls, [], 'latest neighbor boundaries must be enforced')
+})
+
+test('Gallery Viewer navigation uses current capabilities and rejects replaced commands', () => {
+  const h = fixture()
+  const callback = () => h.calls.push('previous:current')
+  const next = () => h.calls.push('next:current')
+  const old = h.render(301, { onPrevious: callback, onNext: next })
+  h.render(301, { onPrevious: callback, onNext: next, canNext: false })
+  old.nextIfCurrent()
+  assert.deepEqual(h.calls, [], 'revoked next boundary must reject queued event')
+  old.previousIfCurrent()
+  assert.deepEqual(h.calls, ['previous:current'], 'still-valid previous navigation works')
+  const current = h.render(301, { onPrevious: () => h.calls.push('previous:new'), onNext: next })
+  old.previousIfCurrent()
+  current.previousIfCurrent()
+  assert.deepEqual(h.calls, ['previous:current', 'previous:new'],
+    'a replaced source command rejects the old callback')
+})
+
+test('Gallery Viewer unmount invalidates captured close and navigation', () => {
+  const h = fixture()
+  const old = h.render(401)
+  h.unmount()
+  old.close()
+  old.nextIfCurrent()
+  old.filmstripIfCurrent(0)
+  assert.deepEqual(h.closes, [])
+  assert.deepEqual(h.calls, [])
 })
