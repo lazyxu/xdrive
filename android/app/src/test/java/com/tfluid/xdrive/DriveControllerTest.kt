@@ -19,6 +19,16 @@ class DriveControllerTest {
         var refreshed = 0
         var refreshFailure: Exception? = null
         var loggedOut = false
+        val recentFolder = DriveCollectionItem(folder, "照片",
+            listOf(DriveCrumb(1, ""), DriveCrumb(2, "照片")))
+        val favoriteFile = DriveCollectionItem(file, "readme.txt",
+            listOf(DriveCrumb(1, ""), DriveCrumb(3, "readme.txt")))
+        var recentRows = listOf(recentFolder)
+        var favoriteRows = listOf(favoriteFile)
+        var recentListing: suspend () -> List<DriveCollectionItem> = { recentRows }
+        var favoriteListing: suspend () -> List<DriveCollectionItem> = { favoriteRows }
+        var favoritePuts = 0
+        var favoriteDeletes = 0
         var listing: suspend (Long, Int) -> NodeRange = { _, offset ->
             NodeRange(if (offset == 0) listOf(folder, file) else listOf(file), 101, offset)
         }
@@ -31,6 +41,17 @@ class DriveControllerTest {
             calls += parentId to offset
             failure?.let { failure = null; throw it }
             return listing(parentId, offset)
+        }
+        override suspend fun fileRecent(accessToken: String) = recentListing()
+        override suspend fun fileFavorites(accessToken: String) = favoriteListing()
+        override suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem {
+            assertEquals(file.id, nodeId)
+            favoritePuts++
+            return favoriteFile
+        }
+        override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
+            assertEquals(file.id, nodeId)
+            favoriteDeletes++
         }
     }
 
@@ -186,6 +207,67 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun recentAndFavoriteSectionsLoadOwnerCollectionsAndPreserveBrowsePath() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val browse = c.state.value.items
+        val path = c.state.value.path
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        assertEquals(FilesSection.RECENT, c.state.value.filesSection)
+        assertTrue(c.state.value.collectionLoaded)
+        assertEquals(listOf(api.recentFolder), c.state.value.collectionItems)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        c.showDetails(file)
+        assertEquals(file, c.state.value.selected)
+        c.dismissDetails()
+        c.changeFilesSection(FilesSection.BROWSE); runCurrent()
+        assertEquals(path, c.state.value.path)
+        assertEquals(browse, c.state.value.items)
+        assertTrue(c.state.value.collectionItems.isEmpty())
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.collectionItems.isEmpty())
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+    }
+
+    @Test fun staleRecentResponseCannotOverwriteSelectedFavoritesOrNextOwner() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val late = CompletableDeferred<List<DriveCollectionItem>>()
+        api.recentListing = { withContext(NonCancellable) { late.await() } }
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        late.complete(listOf(api.recentFolder)); runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.collectionItems.isEmpty())
+    }
+
+    @Test fun recentFolderNavigationRevalidatesOwnedRootAndUsesOneBrowsePipeline() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.openCollectionItem(api.recentFolder); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(listOf(root, folder), c.state.value.path)
+        assertEquals(folder.id to 0, api.calls.last())
+    }
+
+    @Test fun favoritesMutationsOnlyAffectUiAfterServerAcknowledges() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.favoriteFile(file); runCurrent()
+        assertEquals(1, api.favoritePuts)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertEquals(1, c.state.value.collectionItems.size)
+        c.unfavoriteFile(file); runCurrent()
+        assertEquals(1, api.favoriteDeletes)
+        assertTrue(c.state.value.collectionItems.isEmpty())
     }
 
     @Test fun failedFolderNavigationKeepsPathAndRetriesIntendedFolder() = runTest {

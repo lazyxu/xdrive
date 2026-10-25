@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | P0-01 | 原生 App Shell | iOS PWA 52/56px 顶栏、返回、当前标题、更多操作、全屏安全区域、状态与导航栏；Android Back/IME 适配 |
 | P0-02 | Files 连续分页 | **本 PR 首轮实现** 100 项增量追加、同页重试、已载入行不被下一页替换、列表/网格开关；待补目录返回及视图切换时的锚点保持 |
-| P0-03 | 最近 / 浏览 / 收藏三入口 | 现无完整入口；需读取真实最近、收藏、文件夹位置及计数，避免空壳 Tab |
+| P0-03 | 最近 / 浏览 / 收藏三入口 | **本 PR 接入** Go Owner 最近（最多50项）与文件收藏（最多256项）、真实三入口、文件位置跳转、收藏 PUT/DELETE；未实现全量视觉图标细节与搜索 |
 | P0-04 | Files 全局搜索 | 现无；必须复用 Server 全库搜索、过滤和取消语义，不能把本页筛选冒充全局搜索 |
 | P0-05 | 文件操作 | 新建文件夹、上传文件/文件夹、下载、删除到回收站、移动/复制、重命名、批量选择、冲突对话框与可靠撤销 |
 | P0-06 | 文件排列与交互 | 列表/图标状态及菜单、排序/分组、长按上下文菜单、文件夹拖放、路径面包屑、快速访问及虚拟列表 |
@@ -56,3 +56,11 @@ node scripts/shared-ui.mjs --check
 ```
 
 逐次以 PR 准确 HEAD 的 Android emulator API35 与 Final Gate 结果为准；未运行不能写通过。生产环境无法访问的专项验收：**按用户决定跳过（未验收）**，但源码级安全、权限及 CI 不跳过。
+
+## Android 最近 / 收藏真实接口增量（继 #2621）
+
+- REST 契约沿用 Go Server 已实现的 `GET /api/v1/file-recent?limit=50`、`GET /api/v1/file-favorites`、`PUT /api/v1/file-favorites/{id}` 和 `DELETE /api/v1/file-favorites/{id}`，不得新建第二条网络链路或新表。收藏只支持文件，Recent 可包含文件夹。
+- `XDriveApi` 的两类 JSON 返回共用已有可取消、禁止自动重试、2 MiB 上限的同源 Bearer Client；校验 crumbs 对应 node ID、父级和最终名称，错误时拒绝替代为“空收藏”。
+- `DriveController` 使用同一 generation、Owner/session 刷新机制管理 Recent/Favorites/Browse，切换页面取消旧请求，退出/更换服务器清除列表；浏览目录数据在切换回来时保留。
+- Recent 文件夹短按通过已验证目录根 + Server children 进入浏览；文件短按显示现有属性（Viewer 尚未实现）；长按真实加入/取消收藏操作在服务端确认后更新，失败不能谎称成功。
+- 当前未实现“在 Android 真正打开媒体后记录 Recent”（待 Viewer）、全库搜索、批量操作以及 iOS PWA 最终图标与细节校准；不得把这些标为已验收。

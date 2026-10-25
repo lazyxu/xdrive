@@ -23,18 +23,26 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val state by controller.state.collectAsStateWithLifecycle()
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.selected != null || (state.screen == Screen.FILES && state.path.size > 1)) { controller.back() }
+    BackHandler(state.selected != null || (state.screen == Screen.FILES &&
+        (state.filesSection != FilesSection.BROWSE || state.path.size > 1))) { controller.back() }
     Scaffold(modifier = Modifier.imePadding(), containerColor = if (state.screen == Screen.FILES) mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
         if (state.screen == Screen.FILES) Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (state.path.size > 1) IconButton(onClick = controller::back) { Icon(painterResource(R.drawable.xd_arrow_back), "返回上级") }
+                if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
+                    IconButton(onClick = controller::back) { Icon(painterResource(R.drawable.xd_arrow_back), "返回上级") }
                 else Spacer(Modifier.size(48.dp))
                 Box(Modifier.weight(1f), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    var pathMenuOpen by remember(state.path.map { it.id }) { mutableStateOf(false) }
-                    val title = state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览"
-                    if (state.path.size > 1) {
+                    var pathMenuOpen by remember(state.filesSection, state.path.map { it.id }) {
+                        mutableStateOf(false)
+                    }
+                    val title = when (state.filesSection) {
+                        FilesSection.RECENT -> "最近"
+                        FilesSection.FAVORITES -> "收藏"
+                        FilesSection.BROWSE -> state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览"
+                    }
+                    if (state.filesSection == FilesSection.BROWSE && state.path.size > 1) {
                         TextButton(onClick = { pathMenuOpen = true }, modifier = Modifier.fillMaxWidth().testTag("files-path-menu")) {
                             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
@@ -56,7 +64,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center)
                 }
-                AccountMenu(state, controller, updates?.let { it::show }, filesView) {
+                AccountMenu(state, controller, updates?.let { it::show },
+                    if (state.filesSection == FilesSection.BROWSE) filesView else null) {
                     filesView = it
                     saveFilesView(it)
                 }
@@ -80,6 +89,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             title = { Text(node.name) }, text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (node.isDirectory) "文件夹" else formatSize(node.size))
+                    state.collectionItems.firstOrNull { it.node == node }?.let { item ->
+                        if (item.path.isNotBlank()) Text("位置：${item.path}")
+                    }
                     Text("修改时间：${node.updatedAt.ifEmpty { "未知" }}")
                     Text("版本：${node.revision}"); Text("文件 ID：${node.id}")
                 }
@@ -99,12 +111,14 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 if (state.username.isNotEmpty()) Text(state.username, style = MaterialTheme.typography.titleSmall)
                 Text(state.server, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (fileView != null) {
+            if (state.screen == Screen.FILES) {
                 DropdownMenuItem(text = { Text("刷新") },
                     leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) },
                     enabled = !state.loading,
                     onClick = { expanded = false; controller.refresh() })
                 HorizontalDivider()
+            }
+            if (fileView != null) {
                 DropdownMenuItem(text = { Text("图标") },
                     trailingIcon = { if (fileView == FileViewMode.GRID) Text("✓", color = MaterialTheme.colorScheme.primary) },
                     onClick = { expanded = false; onFileViewChange(FileViewMode.GRID) })

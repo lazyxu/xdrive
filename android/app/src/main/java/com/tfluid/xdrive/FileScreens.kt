@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tfluid.xdrive.core.DriveCollectionItem
 import com.tfluid.xdrive.core.DriveNode
 import kotlinx.coroutines.flow.collect
 
@@ -67,6 +68,12 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
     val folderKey = state.path.map { it.id }
     val anchors = remember { FilesViewportAnchors() }
+
+    if (state.filesSection != FilesSection.BROWSE) {
+        FilesCollection(state, controller, pageColor, rowColor)
+        FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+        return
+    }
 
     // Changing list ↔ grid or switching folders must use the correct index in
     // the *first rendered frame*. A post-render scrollToItem allowed the grid
@@ -178,15 +185,109 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         }
     }
     }
+    FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveController,
+    pageColor: Color, rowColor: Color) {
+    val title = if (state.filesSection == FilesSection.RECENT) "最近" else "收藏"
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (state.collectionLoaded) Text("${state.collectionItems.size} 项",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ErrorNotice(state.error)
+        if (state.error != null) TextButton(onClick = controller::retry, enabled = !state.loading,
+            modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
+    }
+    Surface(Modifier.weight(1f).fillMaxWidth(), color = pageColor) {
+        LazyColumn(Modifier.fillMaxSize().testTag("files-collection")) {
+            if (state.collectionLoaded && state.collectionItems.isEmpty() &&
+                state.error == null && !state.loading) item {
+                Text(if (state.filesSection == FilesSection.RECENT) "暂无最近项目" else "暂无收藏的文件",
+                    Modifier.padding(24.dp))
+            }
+            items(state.collectionItems, key = { it.node.id }) { item ->
+                var contextOpen by remember(item.node.id) { mutableStateOf(false) }
+                Column {
+                    Box {
+                        Row(Modifier.fillMaxWidth().background(rowColor)
+                            .testTag("files-collection-item-${item.node.id}")
+                            .combinedClickable(onClick = { controller.openCollectionItem(item) },
+                                onLongClick = { contextOpen = true })
+                            .heightIn(min = 68.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            FileGlyph(item.node)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(item.node.name, style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(item.path.ifEmpty {
+                                    if (item.node.isDirectory) "文件夹" else formatSize(item.node.size)
+                                }, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        FilesContextMenu(item.node, contextOpen, { contextOpen = false }, controller,
+                            item, state.filesSection)
+                    }
+                    if (item.node.id != state.collectionItems.lastOrNull()?.node?.id)
+                        HorizontalDivider(Modifier.padding(start = 68.dp),
+                            color = MaterialTheme.colorScheme.outline)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.FilesSectionsBar(section: FilesSection, select: (FilesSection) -> Unit) {
+    Surface(Modifier.fillMaxWidth().navigationBarsPadding()
+        .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow, shadowElevation = 3.dp) {
+        Row(Modifier.fillMaxWidth().padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            listOf(FilesSection.RECENT to "最近", FilesSection.FAVORITES to "收藏",
+                FilesSection.BROWSE to "浏览").forEach { (value, label) ->
+                TextButton(onClick = { select(value) },
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                        .testTag("files-section-${value.name.lowercase()}"),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = if (section == value)
+                            MaterialTheme.colorScheme.primary.copy(alpha = .12f) else Color.Transparent,
+                        contentColor = if (section == value)
+                            MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )) { Text(label) }
+            }
+        }
+    }
 }
 
 @Composable
 private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> Unit,
-    controller: DriveController) {
+    controller: DriveController, collection: DriveCollectionItem? = null,
+    section: FilesSection = FilesSection.BROWSE) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface) {
         if (node.isDirectory) DropdownMenuItem(text = { Text("打开文件夹") },
-            onClick = { dismiss(); controller.open(node) })
+            onClick = {
+                dismiss()
+                if (collection != null) controller.locateCollectionItem(collection) else controller.open(node)
+            })
+        if (collection != null) DropdownMenuItem(text = { Text("显示所在位置") },
+            onClick = { dismiss(); controller.locateCollectionItem(collection) })
+        if (!node.isDirectory) {
+            if (section == FilesSection.FAVORITES) DropdownMenuItem(text = { Text("取消收藏") },
+                onClick = { dismiss(); controller.unfavoriteFile(node) })
+            else DropdownMenuItem(text = { Text("加入收藏") },
+                onClick = { dismiss(); controller.favoriteFile(node) })
+        }
         DropdownMenuItem(text = { Text("属性") }, onClick = {
             dismiss()
             controller.showDetails(node)

@@ -56,6 +56,10 @@ data class DriveNode(
 
 data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
 
+/** Owner-checked location emitted by the existing Go recent/favorite API. */
+data class DriveCrumb(val id: Long, val name: String)
+data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
+
 /** Messages are client-owned constants; response bodies and transport causes are never retained. */
 enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTION, TIMEOUT, TLS, INVALID_RESPONSE }
 
@@ -68,6 +72,17 @@ interface XDriveService {
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
+    // The safe defaults keep independent core/Compose fixtures explicit: a
+    // missing collection capability is an error, never a fabricated empty list.
+    suspend fun fileRecent(accessToken: String): List<DriveCollectionItem> =
+        throw ApiException(501, "File recent API unavailable")
+    suspend fun fileFavorites(accessToken: String): List<DriveCollectionItem> =
+        throw ApiException(501, "File favorites API unavailable")
+    suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem =
+        throw ApiException(501, "Favorite API unavailable")
+    suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
+        throw ApiException(501, "Favorite API unavailable")
+    }
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -118,6 +133,53 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return NodeRange(items, count, offset)
     }
 
+    override suspend fun fileRecent(accessToken: String): List<DriveCollectionItem> =
+        collectionList(requestArray("file-recent", accessToken, query = mapOf("limit" to "50")), 50)
+
+    override suspend fun fileFavorites(accessToken: String): List<DriveCollectionItem> =
+        collectionList(requestArray("file-favorites", accessToken), 256)
+
+    override suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem {
+        require(nodeId > 0) { "Invalid file ID" }
+        // Existing Server endpoint returns the full Owner-checked collection
+        // record. PUT is idempotent; no optimistic local mutation on failure.
+        return collectionItem(request("file-favorites/$nodeId", accessToken,
+            method = "PUT"), expectedID = nodeId)
+    }
+
+    override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
+        require(nodeId > 0) { "Invalid file ID" }
+        request("file-favorites/$nodeId", accessToken, method = "DELETE", emptyResponse = true)
+    }
+
+    private fun collectionList(raw: JsonArray, max: Int): List<DriveCollectionItem> {
+        if (raw.size > max) invalidPayload()
+        val result = raw.map { collectionItem(it as? JsonObject ?: invalidPayload()) }
+        if (result.map { it.node.id }.toSet().size != result.size) invalidPayload()
+        return result
+    }
+
+    private fun collectionItem(data: JsonObject, expectedID: Long? = null): DriveCollectionItem {
+        val entry = node(data["node"] as? JsonObject ?: invalidPayload())
+        if (expectedID != null && entry.id != expectedID) invalidPayload()
+        val path = data.string("path")
+        if (path.length > 4096) invalidPayload()
+        val rawCrumbs = data["crumbs"] as? JsonArray ?: invalidPayload()
+        if (rawCrumbs.isEmpty() || rawCrumbs.size > 512) invalidPayload()
+        val crumbs = rawCrumbs.map { raw ->
+            val c = raw as? JsonObject ?: invalidPayload()
+            val id = c.long("id")
+            val name = c.string("name")
+            if (id <= 0 || name.length > 255) invalidPayload()
+            DriveCrumb(id, name)
+        }
+        if (crumbs.map { it.id }.toSet().size != crumbs.size ||
+            crumbs.last().id != entry.id || crumbs.last().name != entry.name ||
+            (entry.parentId != null && (crumbs.size < 2 ||
+                crumbs[crumbs.lastIndex - 1].id != entry.parentId))) invalidPayload()
+        return DriveCollectionItem(entry, path, crumbs)
+    }
+
     private fun session(data: JsonObject): AuthSession {
         val access = data.optionalString("access_token")?.takeIf { it.isNotBlank() }
             ?: data.optionalString("token") ?: invalidPayload()
@@ -149,7 +211,25 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         values: Map<String, String>? = null,
         query: Map<String, String> = emptyMap(),
         emptyResponse: Boolean = false,
-    ): JsonObject {
+        method: String? = null,
+    ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method)
+        as? JsonObject ?: invalidPayload()
+
+    private suspend fun requestArray(
+        path: String,
+        accessToken: String,
+        query: Map<String, String> = emptyMap(),
+    ): JsonArray = requestElement(path, accessToken, query = query) as? JsonArray ?: invalidPayload()
+
+    /** Shared single bounded, cancellable Owner-authenticated JSON transport. */
+    private suspend fun requestElement(
+        path: String,
+        accessToken: String? = null,
+        values: Map<String, String>? = null,
+        query: Map<String, String> = emptyMap(),
+        emptyResponse: Boolean = false,
+        method: String? = null,
+    ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             query.forEach { (name, value) -> addQueryParameter(name, value) }
         }.build()
@@ -159,6 +239,12 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             builder.header("Authorization", "Bearer $accessToken")
         }
         if (values != null) builder.post(JsonObject(values.mapValues { JsonPrimitive(it.value) }).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        else when (method) {
+            "PUT" -> builder.put("".toRequestBody())
+            "DELETE" -> builder.delete()
+            null -> Unit
+            else -> throw IllegalArgumentException("Invalid HTTP method")
+        }
         return suspendCancellableCoroutine { continuation ->
             val call = http.newCall(builder.build())
             continuation.invokeOnCancellation { call.cancel() }
@@ -181,7 +267,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                                 if (read == -1L) break
                             }
                             if (buffer.size > max) invalidPayload()
-                            json.parseToJsonElement(buffer.readUtf8()) as? JsonObject ?: invalidPayload()
+                            json.parseToJsonElement(buffer.readUtf8())
                         }
                         continuation.resume(result)
                     } catch (e: ApiException) {
