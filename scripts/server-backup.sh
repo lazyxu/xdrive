@@ -275,6 +275,44 @@ postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </d
 write_backup_progress "计算备份大小" 0 0
 print_backup_progress "计算备份大小" 0 0
 
+# The PostgreSQL Alpine image may use BusyBox tar/du (no --exclude).
+# Enumerate top-level entries once; never walk the derived .xdrive-media tree.
+# Use the identical source set for v1 space preflight and archive capture.
+full_backup_source_script="$(cat <<'SH'
+set -eu
+cd /data
+mode="$1"
+set --
+for entry in ./* ./.[!.]* ./..?*; do
+  if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+    continue
+  fi
+  if [ "$entry" = "./.xdrive-media" ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
+    continue
+  fi
+  set -- "$@" "$entry"
+done
+case "$mode" in
+  estimate)
+    if [ "$#" -eq 0 ]; then
+      printf '0\n'
+    else
+      sizes="$(du -sk "$@")" || exit 1
+      printf '%s\n' "$sizes" | awk '{total += $1} END {printf "%.0f\n", total * 1024}'
+    fi
+    ;;
+  archive)
+    if [ "$#" -eq 0 ]; then
+      dd if=/dev/zero bs=1024 count=1 2>/dev/null
+    else
+      tar -cf - "$@"
+    fi
+    ;;
+  *) exit 2 ;;
+esac
+SH
+)"
+
 blob_bytes=0
 if [[ "$INCREMENTAL" == "1" ]]; then
   # Space needed by new immutable objects + a fresh legacy tar, not all live
@@ -290,7 +328,7 @@ elif [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
   blob_bytes="$(docker run --rm --entrypoint sh \
     -v "$data_source:/data:ro" \
     "$postgres_image" \
-    -c "du -sk /data | awk '{print \$1 * 1024}'" </dev/null)"
+    -c "$full_backup_source_script" xdrive-full-backup estimate </dev/null)"
 fi
 database_bytes="$(compose exec -T postgres psql -U xdrive -d postgres -Atqc "SELECT pg_database_size('xdrive')" | tr -d '\r')"
 available_bytes="$(df -PB1 "$OUTPUT_ROOT" | awk 'NR==2 {print $4}')"
@@ -355,7 +393,7 @@ elif [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
     docker run --rm --entrypoint sh \
       -v "$data_source:/data:ro" \
       "$postgres_image" \
-      -c 'cd /data && tar -cf - .'
+      -c "$full_backup_source_script" xdrive-full-backup archive
 else
   write_backup_progress "跳过文件数据备份" 0 0
   print_backup_progress "跳过文件数据备份（升级选项未开启）" 0 0

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -92,6 +93,90 @@ func TestTwoGenerationReuseRestoreAfterSourceDeleted(t *testing.T) {
 		}
 	}
 }
+func TestIncrementalPrunesOnlyRootMediaCache(t *testing.T) {
+	base := t.TempDir()
+	source := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	hash := testCAS(t, source, "canonical immutable CAS")
+	writeTestFile(t, filepath.Join(source, "1", "original.bin"), []byte("original"))
+	writeTestFile(t, filepath.Join(source, ".xdrive-media-copy", "user-data.bin"), []byte("must-retain"))
+	cache := filepath.Join(source, ".xdrive-media")
+	writeTestFile(t, filepath.Join(cache, "thumbnails", "2026", "cache.jpg"), []byte("regenerable"))
+	before, err := estimateIncrementalBytes(source, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(cache, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(cache, 0700) })
+	}
+	after, err := estimateIncrementalBytes(source, repo)
+	if err != nil || before != after {
+		t.Fatalf("cache must not affect incremental preflight: before=%d after=%d err=%v", before, after, err)
+	}
+	snap := snapshotPath(t, repo, "cache-pruned")
+	if err := capture(source, repo, snap); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verify(repo, snap, true); err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	if err := walkLegacyArchive(snap, func(header *tar.Header, _ *tar.Reader) error {
+		names[strings.TrimSuffix(header.Name, "/")] = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for name := range names {
+		if name == ".xdrive-media" || strings.HasPrefix(name, ".xdrive-media/") {
+			t.Fatalf("derived cache unexpectedly archived: %s", name)
+		}
+	}
+	if !names["1/original.bin"] || !names[".xdrive-media-copy/user-data.bin"] {
+		t.Fatalf("canonical or similarly named user content missing: %+v", names)
+	}
+	restored := filepath.Join(base, "restored")
+	if err := os.MkdirAll(restored, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := restore(repo, snap, restored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(restored, ".xdrive-media")); !os.IsNotExist(err) {
+		t.Fatalf("cache must be regenerated rather than restored: %v", err)
+	}
+	for name, want := range map[string]string{
+		"1/original.bin": "original",
+		".xdrive-media-copy/user-data.bin": "must-retain",
+		filepath.ToSlash(filepath.Join(casRoot, hash[:2], hash)): "canonical immutable CAS",
+	} {
+		contents, err := os.ReadFile(filepath.Join(restored, filepath.FromSlash(name)))
+		if err != nil || string(contents) != want {
+			t.Fatalf("restored %q: %q, %v", name, contents, err)
+		}
+	}
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		nonCache := filepath.Join(source, "unreadable-user-data")
+		writeTestFile(t, filepath.Join(nonCache, "blob"), []byte("critical"))
+		if err := os.Chmod(nonCache, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(nonCache, 0700) })
+		if _, err := estimateIncrementalBytes(source, repo); err == nil {
+			t.Fatal("unreadable canonical storage was silently ignored by preflight")
+		}
+		if err := encodeTarLegacy(source, filepath.Join(base, "invalid-legacy.tar")); err == nil {
+			t.Fatal("unreadable canonical storage was silently ignored by archive")
+		}
+	}
+}
+
 func TestCorruptOrMissingCASRejectedBeforeDestructiveRestore(t *testing.T) {
 	for _, mode := range []string{"corrupt", "missing", "wrong-size"} {
 		t.Run(mode, func(t *testing.T) {
