@@ -2973,6 +2973,8 @@ jobs:
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/test-server-backup-scheduled.sh
           bash scripts/test-server-backup-scheduled.sh
+          bash -n scripts/test-server-backup-retention-plan-host.sh
+          bash scripts/test-server-backup-retention-plan-host.sh
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-verify.sh

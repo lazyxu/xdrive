@@ -16,6 +16,8 @@ export XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:edge
 bash -n deploy/install-server.sh
 bash -n scripts/server-backup.sh
 bash -n scripts/server-backup-scheduled.sh
+bash -n scripts/test-server-backup-retention-plan-host.sh
+bash scripts/test-server-backup-retention-plan-host.sh
 bash -n scripts/test-server-backup-scheduled.sh
 bash scripts/test-server-backup-scheduled.sh
 bash -n scripts/server-restore.sh
