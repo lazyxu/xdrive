@@ -53,17 +53,19 @@ go version -m "$dir/xdrive-backup/xd" | grep -q 'GOARCH=amd64'
 go version -m "$dir/xdrive-backup/xdrive-agent" | grep -q 'GOARCH=amd64'
 grep -Fq -- '--backup-only' "$dir/xdrive-backup/xdrive-backup-agent.service"
 
-python3 - "$OUT_DIR/xdrive-backup-windows-amd64.zip" "$dir" "$CORE_DIR" <<'PY'
+python3 - "$OUT_DIR/xdrive-backup-windows-amd64.zip" "$dir" "$CORE_DIR" "$ROOT" <<'PY'
 import pathlib
 import sys
 import zipfile
-archive_path, output, core = map(pathlib.Path, sys.argv[1:])
+archive_path, output, core, repo_root = map(pathlib.Path, sys.argv[1:])
 with zipfile.ZipFile(archive_path) as archive:
     members = set(archive.namelist())
     expected = {
         "xdrive-backup/xd.exe",
         "xdrive-backup/xdrive-agent.exe",
         "xdrive-backup/README.md",
+        "xdrive-backup/WINDOWS_TASK.md",
+        "xdrive-backup/install-backup-agent-task.ps1",
     }
     assert members == expected, (members, expected)
     for relative, original in (
@@ -72,6 +74,13 @@ with zipfile.ZipFile(archive_path) as archive:
     ):
         assert archive.read(relative) == (core / original).read_bytes(), (
             "Windows CLI archive binary differs from original client core", relative
+        )
+    for member, source in (
+        ("xdrive-backup/WINDOWS_TASK.md", "docs/xd-backup-agent-windows-task.md"),
+        ("xdrive-backup/install-backup-agent-task.ps1", "packaging/windows/install-backup-agent-task.ps1"),
+    ):
+        assert archive.read(member) == (repo_root / source).read_bytes(), (
+            "Windows login helper differs from reviewed source", member
         )
     archive.extractall(output)
 PY

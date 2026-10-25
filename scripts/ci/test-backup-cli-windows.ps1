@@ -22,9 +22,32 @@ try {
     $xd = Join-Path $root 'xd.exe'
     $agentBin = Join-Path $root 'xdrive-agent.exe'
     $members = @(Get-ChildItem -LiteralPath $root -File | ForEach-Object { $_.Name } | Sort-Object)
-    $expected = @('README.md', 'xd.exe', 'xdrive-agent.exe')
+    $expected = @('README.md', 'WINDOWS_TASK.md', 'install-backup-agent-task.ps1', 'xd.exe', 'xdrive-agent.exe')
     if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $members).Count -ne 0) {
         throw "unexpected CLI-only archive members: $members"
+    }
+    # Inspect the shipped helper without registering a task in CI.
+    $helper = Join-Path $root 'install-backup-agent-task.ps1'
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $helper, [ref]$tokens, [ref]$parseErrors) | Out-Null
+    if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) {
+        throw "Windows login helper parse errors: $parseErrors"
+    }
+    $taskSource = Get-Content -LiteralPath $helper -Raw
+    foreach ($required in @('-LogonType Interactive', '-RunLevel Limited',
+                            '--backup-only', '-MultipleInstances IgnoreNew',
+                            'Test-OurBackupTask', "'Uninstall'")) {
+        if (-not $taskSource.Contains($required)) {
+            throw "Windows user-task helper missing contract: $required"
+        }
+    }
+    foreach ($forbidden in @('-RunLevel Highest', '-LogonType Password',
+                             '-LogonType ServiceAccount', 'New-Service')) {
+        if ($taskSource.Contains($forbidden)) {
+            throw "Windows user-task helper has forbidden privilege mode: $forbidden"
+        }
     }
     $version = (& $xd version | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $version -ne $ExpectedVersion) {
