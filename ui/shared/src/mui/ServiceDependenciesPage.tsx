@@ -1975,11 +1975,8 @@ export function XDriveServiceDependenciesPage({
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
                     状态、配置和历史直接展示；只读检测不修改服务，保存、应用与回滚仍需明确操作。
                   </Typography>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}
+                  <Stack direction="row" alignItems="center" justifyContent="flex-end" gap={1}
                     flexWrap="wrap" sx={{ mb: 1.5 }} data-xdrive-flat-dependency-toolbar>
-                    <Typography variant="caption" color="text.secondary">
-                      {checkedAt ? `最近检测：${checkedAt}` : '尚无检测时间'}
-                    </Typography>
                     <Button size="small" variant="outlined" startIcon={<RefreshRoundedIcon fontSize="small" />}
                       disabled={loading || refreshing || unsavedRef.current || geoNamesBusy || photoPolicyBusy || runtimeBusy}
                       onClick={() => {
@@ -2064,10 +2061,6 @@ export function XDriveServiceDependenciesPage({
                           OCR 与动物／物体识别共用自动任务开关和 photo.smart_search 队列；
                           我的任务和全局后台任务展示同一任务，取消和重新分析同时作用于两种分析结果。
                         </Typography>
-                        <Button size="small" variant="outlined" sx={{ alignSelf: 'flex-start' }}
-                          onClick={() => navigateTo({ service: 'photo-smart', tab: 'verify' })}>
-                          检测 OCR 模型
-                        </Button>
                       </Stack>
                     </Paper>
                   )}
@@ -2083,8 +2076,7 @@ export function XDriveServiceDependenciesPage({
                   )}
                   {selectedPage === 'photo-auto' && currentTab === 'status' && (
                     <Typography variant="body2" color="text.secondary">
-                      全局策略集中控制后续自动分析任务的准入，并不启动、停止或证明模型容器健康。
-                      请进入「配置」调整任务开关，或进入「历史」检查已审计修订。
+                      自动分析策略只控制后续任务的准入，不会启停模型容器；下方直接展示配置与历史。
                     </Typography>
                   )}
                   {currentTab === 'verify' &&

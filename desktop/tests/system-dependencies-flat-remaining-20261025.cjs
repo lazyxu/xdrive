@@ -257,3 +257,18 @@ test('Photo Host Save refreshes history only in the mounted all-page editor', ()
   assert.match(save, /setNotice\('期望启停修订已保存并审计/)
   assert.match(save, /setHistoryError\('配置已保存，历史读取暂不可用/)
 });
+
+test('flat system dependency details avoid duplicate checks and misleading legacy navigation', () => {
+  assert.equal((page.match(/最近检测：/g) || []).length, 1,
+    'the page-wide checked timestamp is sufficient; do not repeat it in the flat toolbar')
+  assert.match(page, /data-xdrive-flat-dependency-toolbar/)
+  assert.match(page, /justifyContent="flex-end" gap=\{1\}/)
+  assert.match(page, /data-xdrive-ocr-dependency-status/)
+  assert.match(page, /自动 OCR：/)
+  assert.doesNotMatch(page, /检测 OCR 模型/,
+    'the real manual model probe is inside the verification section, not an anchor masquerading as a probe')
+  assert.match(page, /<XDrivePhotoHostDesiredPanel source=\{source\}/)
+  assert.doesNotMatch(page, /请进入「配置」调整任务开关/,
+    'configuration and history are already mounted in the single-page view')
+  assert.match(page, /下方直接展示配置与历史/)
+})
