@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import type { SyntheticEvent } from 'react'
 import { Box } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform } from '../file-preview'
+import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'
 
 const maxEditedPreviewEdge = 4096
 
@@ -165,6 +166,11 @@ export function XDriveTransformedVideoPreview({
   onError?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  useLayoutEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    return () => xDriveAbortHTMLMediaElement(video)
+  }, [src])
   const trimStart = Math.max(0, (transform.trimStartMS || 0) / 1000)
   const trimEnd = Math.max(0, (transform.trimEndMS || 0) / 1000)
   const rotation = ((transform.rotationDegrees || 0) % 360 + 360) % 360

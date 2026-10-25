@@ -20,6 +20,7 @@ import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-pre
 import type { XDrivePreviewImageDimensions, XDrivePreviewPoint, XDrivePreviewViewport } from '../file-preview-viewport'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'
 import { XDriveDecodedImagePreview } from './FilePreviewImage'
 import {
   XDriveTransformedVideoPreview,
@@ -162,6 +163,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [mediaBuffering, setMediaBuffering] = useState(false)
   const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; bufferedStartSeconds?: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
   const previewURLRef = useRef('')
+  const videoStreamElementRef = useRef<HTMLVideoElement | null>(null)
+  const audioStreamElementRef = useRef<HTMLAudioElement | null>(null)
   const previewGenerationRef = useRef(0)
   const previewTargetRef = useRef(target)
   const previewLoadersRef = useRef({
@@ -534,6 +537,20 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setPreviewRetryNonce((value) => value + 1)
   }
 
+  // Detaching a video element alone may not cancel an active signed HTTP 206
+  // Range. Release its native stream synchronously on Viewer Back or source/
+  // Owner/revision change; use the same cleanup for audio as for video.
+  const hasTransformedVideo = Boolean(mediaTransform)
+  useLayoutEffect(() => {
+    if (!previewURL || loading || failed ||
+        (previewKind !== 'video' && previewKind !== 'audio') ||
+        (previewKind === 'video' && hasTransformedVideo)) return
+    const media = previewKind === 'video'
+      ? videoStreamElementRef.current : audioStreamElementRef.current
+    if (!media) return
+    return () => xDriveAbortHTMLMediaElement(media)
+  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
+
   const mediaGeneration = previewGenerationRef.current
   const isCurrentMedia = useCallback(() => (
     acquiredIdentityRef.current === sourceIdentity &&
@@ -809,6 +826,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             <Box
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
               component="video"
+              ref={videoStreamElementRef}
               src={previewURL}
               controls
               playsInline
@@ -834,6 +852,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           <Box
             key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
             component="audio"
+            ref={audioStreamElementRef}
             src={previewURL}
             controls
             preload="metadata"
