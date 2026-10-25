@@ -17,6 +17,7 @@ on:
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
       - 'desktop/tests/gallery-places-ios27-shared-interaction.cjs'
       - 'desktop/tests/gallery-places-trusted-cover-projections.cjs'
+      - 'desktop/tests/gallery-places-ios27-nearby-owner-camera.cjs'
       - 'ui/shared/src/media-gallery-places-map-strip.ts'
       - 'desktop/scripts/places-web-viewer-history-browser.*'
       - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
@@ -45,6 +46,7 @@ on:
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
       - 'desktop/tests/gallery-places-ios27-shared-interaction.cjs'
       - 'desktop/tests/gallery-places-trusted-cover-projections.cjs'
+      - 'desktop/tests/gallery-places-ios27-nearby-owner-camera.cjs'
       - 'ui/shared/src/media-gallery-places-map-strip.ts'
       - 'desktop/scripts/places-web-viewer-history-browser.*'
       - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
@@ -138,7 +140,8 @@ jobs:
           node --test desktop/tests/gallery-places-ios27-map-first-ui.cjs \
             desktop/tests/gallery-places-ios27-photo-drawer.cjs \
             desktop/tests/gallery-places-ios27-shared-interaction.cjs \
-            desktop/tests/gallery-places-trusted-cover-projections.cjs
+            desktop/tests/gallery-places-trusted-cover-projections.cjs \
+            desktop/tests/gallery-places-ios27-nearby-owner-camera.cjs
       - name: Actual mounted Gallery Parent in inline and independent HTTPS Child
         shell: bash
         env:

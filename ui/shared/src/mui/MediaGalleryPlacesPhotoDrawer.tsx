@@ -12,7 +12,7 @@ import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, phase, expanded, loadThumbnail, onExpand,
-  onClose, onRetry, onOpenPhoto, onOpenAll, initialPresentation,
+  onClose, onRetry, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
@@ -24,6 +24,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onRetry: () => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
+  /** Same signed Owner camera viewport as the map's original camera wall. */
+  onOpenNearby?: () => void
   initialPresentation?: XDrivePlacesDrawerPresentation
 }) {
   const dragStart = useRef<{ pointerId: number; startX: number; startY: number } | null>(null)
@@ -245,17 +247,27 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             ))}
           </Box>
           <Stack direction="row" alignItems="center" justifyContent="space-between"
-            spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0}}>
+            spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
               {items.length < total
                 ? `预览前 ${items.length.toLocaleString('zh-CN')} 张`
                 : '此地点全部照片'}
             </Typography>
-            <Button data-xdrive-places-photo-drawer-open-all
-              variant="text" onClick={onOpenAll}
-              sx={{minHeight:44,textTransform:'none'}}>
-              查看全部
-            </Button>
+            <Stack direction="row" alignItems="center" spacing={0.25}>
+              {onOpenNearby ? (
+                <Button data-xdrive-places-photo-drawer-nearby
+                  variant="text" onClick={onOpenNearby}
+                  aria-label="显示当前地图范围的附近照片"
+                  sx={{minHeight:44,textTransform:'none'}}>
+                  显示附近照片
+                </Button>
+              ) : null}
+              <Button data-xdrive-places-photo-drawer-open-all
+                variant="text" onClick={onOpenAll}
+                sx={{minHeight:44,textTransform:'none'}}>
+                查看全部
+              </Button>
+            </Stack>
           </Stack>
         </>
       )}

@@ -643,6 +643,26 @@ async function testFullGalleryPage(browser,mode,port){
         !item.path.startsWith('/api/v1/')))
     record(mode+': mounted production Gallery has no runtime error',
       errors.length===0)
+    // Both SDK Hosts must reauthorize the SAME current camera Owner Range.
+    const priorCameraReads=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(read=>read.kind==='viewport').length)
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    await page.locator('[data-xdrive-places-photo-drawer-nearby]').waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-photo-drawer-nearby]').click()
+    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    const nearby=await page.evaluate(()=>({
+      reads:window.__mapProbe.galleryPageReads.filter(read=>read.kind==='viewport'),
+      errors:window.__mapProbe.galleryPageErrors,
+    }))
+    record(mode+': nearby sheet uses freshly authorized Camera Range',
+      nearby.reads.length>priorCameraReads &&
+      nearby.reads.at(-1)?.total===3 &&
+      nearby.errors.length===0)
+    await page.getByRole('button',{name:'返回上一级'}).click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(mode+': nearby sheet back returns to Owner map without SDK error',
+      await page.locator('[data-xdrive-gallery-places-map]').count()===1 &&
+      errors.length===0)
     // Mark a mode only after the complete shipped Page → Cell → Viewer →
     // Wall → Map flow has passed all real Gin/PG and browser assertions.
     summary.fullGalleryPageModes.push(mode)

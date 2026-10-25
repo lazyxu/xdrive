@@ -5,6 +5,7 @@ import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
 import { xDriveRememberPlacesDrawerViewerReturn } from '../../ui/shared/src/media-gallery-places-photo-drawer'
 import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
+import { xDriveBaiduNativeViewportRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 
 type Bounds = {coordinate_space:'bd09ll';west:number;east:number;south:number;north:number}
 type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favorite?:boolean}}
@@ -234,11 +235,12 @@ const galleryDataSource={
   },
   listBaiduNativeViewportItems:async(bounds:Bounds,limit:number,offset:number,
     query:any,signal:AbortSignal,albumKey?:string)=>{
-    const params=geometry(bounds)
-    params.set('range','true');params.set('offset',String(offset))
-    params.set('limit',String(limit))
-    for(const [key,value] of galleryQuery(query))params.set(key,value)
-    if(albumKey)params.set('album',albumKey)
+    // Use the production Web adapter's exact signed BD09 Range serializer.
+    // A generic Gallery query adds fold_duplicates=false, which this Server
+    // endpoint intentionally rejects even though the Gallery wall uses it.
+    const params=xDriveBaiduNativeViewportRangeParams(
+      bounds,limit,offset,query,albumKey ?? '')
+    if(!params)throw Error('invalid trusted Camera Range parameters')
     const page=await ownerRequest('viewport-items',params,signal)
     probe.galleryPageReads.push({kind:'viewport',offset,limit,total:page.total_count})
     return page
