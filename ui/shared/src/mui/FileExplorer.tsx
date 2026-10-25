@@ -1372,7 +1372,12 @@ export function XDriveFileExplorer({
 
   useEffect(() => {
     if (!detailsPreferencesKey || typeof window === 'undefined') return
-    window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))
+    try {
+      window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))
+    } catch {
+      // Safari/managed browser storage failures must not unmount FileExplorer.
+      // Keep the current in-memory Details layout without persisting it.
+    }
   }, [detailsLayout, detailsPreferencesKey])
 
   useEffect(() => {
@@ -1381,7 +1386,11 @@ export function XDriveFileExplorer({
 
   useEffect(() => {
     if (!viewPreferencesKey || typeof window === 'undefined') return
-    window.localStorage.setItem(viewPreferencesKey, JSON.stringify(viewPreferences))
+    try {
+      window.localStorage.setItem(viewPreferencesKey, JSON.stringify(viewPreferences))
+    } catch {
+      // List/Grid choice remains usable in memory when persistence is denied.
+    }
   }, [viewPreferences, viewPreferencesKey])
 
   useEffect(() => {
