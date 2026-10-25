@@ -8,6 +8,7 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.Locale
@@ -27,6 +28,83 @@ class XDriveApiTest {
         throw AssertionError("Expected safe API failure")
     }
 
+
+
+    @Test fun `native manual upload uses exact Go session chunks and final result`() = runBlocking {
+        val file = "hello xdrive".toByteArray()
+        val digest = MessageDigest.getInstance("SHA-256").digest(file).joinToString("") {
+            "%02x".format(Locale.ROOT, it.toInt() and 0xff)
+        }
+        val id = "11111111-1111-4111-8111-111111111111"
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"id":"$id","status":"active","parent_id":1,"name":"hello.txt","size":12,"chunk_size":8388608,"chunk_count":1}"""))
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"index":0,"size":12,"sha256":"$digest"}"""))
+            server.enqueue(MockResponse().setBody(
+                """{"id":"$id","status":"finalized","parent_id":1,"size":12,
+                "result":{"id":83,"parent_id":1,"name":"hello.txt","type":"file","revision":1,"size":12}}"""))
+            val progress = mutableListOf<Long>()
+            val result = api.uploadFile("access-secret", DriveNode(1, name = "", type = "dir"),
+                "hello.txt", file.size.toLong(), { ByteArrayInputStream(file) }, progress::add)
+            assertEquals(83L, result.id)
+            assertEquals(listOf(12L), progress)
+            assertEquals(3, server.requestCount)
+            val create = server.takeRequest()
+            assertEquals("POST", create.method)
+            assertEquals("/api/v1/uploads", create.path)
+            assertEquals("Bearer access-secret", create.getHeader("Authorization"))
+            // RecordedRequest.body is a consumable Buffer: parse it exactly once.
+            val createFields = body(create)
+            assertEquals(1L, createFields["parent_id"]!!.jsonPrimitive.long)
+            assertEquals(12L, createFields["size"]!!.jsonPrimitive.long)
+            assertEquals("fail", createFields["conflict_policy"]!!.jsonPrimitive.content)
+            val chunk = server.takeRequest()
+            assertEquals("PUT", chunk.method)
+            assertEquals("/api/v1/uploads/$id/chunks/0", chunk.path)
+            assertEquals(digest, chunk.getHeader("X-Chunk-SHA256"))
+            assertEquals("Bearer access-secret", chunk.getHeader("Authorization"))
+            assertArrayEquals(file, chunk.body.readByteArray())
+            val finalize = server.takeRequest()
+            assertEquals("POST", finalize.method)
+            assertEquals("/api/v1/uploads/$id/finalize", finalize.path)
+        } }
+    }
+
+    @Test fun `native upload fails closed when selected SAF content is truncated`() = runBlocking {
+        val id = "11111111-1111-4111-8111-111111111111"
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                """{"id":"$id","status":"active","parent_id":1,"name":"file.txt","size":5,"chunk_size":8388608,"chunk_count":1}"""))
+            server.enqueue(MockResponse().setResponseCode(204))
+            val exception = failure {
+                api.uploadFile("access-secret", DriveNode(1, name = "", type = "dir"),
+                    "file.txt", 5, { ByteArrayInputStream("abc".toByteArray()) })
+            }
+            assertTrue(exception.message!!.contains("Selected file ended"))
+            assertEquals(2, server.requestCount)
+            assertEquals("/api/v1/uploads/$id", server.takeRequest().let { request ->
+                assertEquals("POST", request.method)
+                server.takeRequest().also { assertEquals("DELETE", it.method) }.path
+            })
+        } }
+    }
+
+    @Test fun `manual upload validates name size and directory before network`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for ((node, name, size) in listOf(
+                Triple(DriveNode(1, name = "root", type = "dir"), "CON", 1L),
+                Triple(DriveNode(1, name = "root", type = "file"), "a.txt", 1L),
+                Triple(DriveNode(1, name = "root", type = "dir"), "a.txt", -1L),
+            )) {
+                assertThrows(IllegalArgumentException::class.java) {
+                    runBlocking { api.uploadFile("token", node, name, size,
+                        { ByteArrayInputStream(byteArrayOf(1)) }) }
+                }
+            }
+            assertEquals(0, server.requestCount)
+        } }
+    }
 
     @Test fun `native Owner download streams authenticated file with verified size and hash`() = runBlocking {
         val raw = ByteArray(160_000) { (it % 251).toByte() }

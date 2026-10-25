@@ -1,7 +1,9 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.*
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
@@ -53,6 +55,22 @@ class DriveControllerTest {
             }
             onProgress(5)
             return 5
+        }
+        var uploadCount = 0
+        var uploadGate: CompletableDeferred<Unit>? = null
+        var uploadFailure: Exception? = null
+        override suspend fun uploadFile(accessToken: String, parent: DriveNode,
+            name: String, size: Long, openSource: () -> InputStream,
+            onProgress: (Long) -> Unit): DriveNode {
+            uploadCount++
+            uploadFailure?.let { throw it }
+            openSource().use { source -> source.readBytes() }
+            uploadGate?.await()
+            onProgress(size)
+            val created = DriveNode(800L + uploadCount, parent.id, name, "file", size, revision = 1)
+            mutationRows += created
+            mutationListing = true
+            return created
         }
         var mutationRows = listOf(folder, file)
         var mutationListing = false
@@ -302,6 +320,56 @@ class DriveControllerTest {
         c.loadMore(); runCurrent()
         assertEquals(2, api.calls.size)
         assertEquals(listOf(folder), c.state.value.items)
+    }
+
+    @Test fun manualFileUploadUsesCurrentOwnerFolderAndNoStalePicker() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.acceptFileUpload("new.txt", 3, { ByteArrayInputStream("abc".toByteArray()) })
+        runCurrent()
+        assertEquals(0, api.uploadCount)
+        c.changeFilesSection(FilesSection.BROWSE); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("new.txt", 3, { ByteArrayInputStream("abc".toByteArray()) })
+        runCurrent()
+        assertEquals(1, api.uploadCount)
+        assertTrue(c.state.value.fileUploadCommitted)
+        assertFalse(c.state.value.fileUploadActive)
+        assertEquals(3L, c.state.value.fileUploadBytes)
+        assertTrue(c.state.value.items.any { it.name == "new.txt" })
+    }
+
+    @Test fun uploadConflictUnfreezesProgressAndDoesNotRepeatMutation() = runTest {
+        val api = Service().apply { uploadFailure = ApiException(409, "conflict") }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("new.txt", 3, { ByteArrayInputStream("abc".toByteArray()) })
+        runCurrent()
+        assertEquals(1, api.uploadCount)
+        assertFalse(c.state.value.fileUploadActive)
+        assertFalse(c.state.value.fileUploadCommitted)
+        assertTrue(c.state.value.error?.contains("名称冲突") == true)
+        assertNull(c.state.value.fileUploadPickerParent)
+        assertEquals(0, api.mutationCalls.size)
+    }
+
+    @Test fun cancellingUploadClearsOwnerProgressAndCancelsWork() = runTest {
+        val api = Service().apply { uploadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("new.txt", 3, { ByteArrayInputStream("abc".toByteArray()) })
+        runCurrent()
+        assertTrue(c.state.value.fileUploadActive)
+        assertEquals(1, api.uploadCount)
+        c.cancelFileUpload(); runCurrent()
+        assertFalse(c.state.value.fileUploadActive)
+        assertFalse(c.state.value.fileUploadCommitted)
+        assertEquals(0L, c.state.value.fileUploadBytes)
+        assertNull(c.state.value.fileUploadPickerParent)
     }
 
     @Test fun fileExportRejectsOldOwnerPickerAndExportsCurrentFileOnce() = runTest {

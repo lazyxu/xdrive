@@ -151,6 +151,23 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             ) { Text("搜索") }
         }
         ErrorNotice(state.error)
+        if (state.fileUploadCommitted && !state.fileUploadActive) {
+            Text("上传已完成", style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("files-upload-success"))
+        }
+        if (state.fileUploadActive) {
+            Text("正在上传：${formatSize(state.fileUploadBytes)} / ${formatSize(state.fileUploadTotal)}",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("files-upload-progress"))
+            LinearProgressIndicator(
+                progress = { if (state.fileUploadTotal == 0L) 1f else
+                    (state.fileUploadBytes.toDouble() / state.fileUploadTotal).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = controller::cancelFileUpload,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("files-upload-cancel")) {
+                Text("取消上传")
+            }
+        }
         if (state.fileDownloadSaved && !state.fileDownloadActive) {
             Text("已保存到设备", style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("files-download-success"))

@@ -274,3 +274,12 @@ are deleted on a best-effort basis, and revision, length and available SHA-256
 metadata must match before completion. The SAF target URI is never retained in
 UI state, logs or preferences. This is one-item export, not an upload flow,
 resumable download or complete Transfer Center.
+
+Manual Files upload uses Android OpenDocument to choose a single file. Only an
+Owner-verified Browse directory can accept the late picker return. The original
+Go /uploads UploadSession/8MiB chunk/finalize CAS pipeline is reused with
+fail-on-conflict, bounded memory, chunk SHA-256 and Server-ACKed byte progress.
+No new Server writer, WebView, persistent document URI grants or broad storage
+permissions. The UI supports an explicit cancel action. Unknown file size or
+invalid names fail before network. Full durable resume/foreground Service and
+batch uploads are deferred; a lost final ACK is never automatically retried.
