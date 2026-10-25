@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Autocomplete, Box, Button, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Button, CircularProgress, ClickAwayListener, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
@@ -80,6 +80,22 @@ export function XDriveMediaGalleryPlacesMap({
   const [retry, setRetry] = useState(0)
   const [modeWarning, setModeWarning] = useState('')
   const [modeSwitching, setModeSwitching] = useState(false)
+  // Both SDK Hosts use the same trusted Parent menus. Native <details> retains
+  // keyboard activation; click-away / Escape restores the photo map canvas.
+  const filterMenuRef = useRef<HTMLDetailsElement | null>(null)
+  const moreMenuRef = useRef<HTMLDetailsElement | null>(null)
+  const dismissMapMenus = useCallback(() => {
+    if (filterMenuRef.current) filterMenuRef.current.open = false
+    if (moreMenuRef.current) moreMenuRef.current.open = false
+  }, [])
+  // ClickAwayListener sees Parent DOM clicks, but cannot receive events inside
+  // the cross-Origin SDK iframe. Window blur and both Hosts' common onCamera
+  // signal therefore dismiss the exact same Parent menus.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('blur', dismissMapMenus)
+    return () => window.removeEventListener('blur', dismissMapMenus)
+  }, [dismissMapMenus])
   const handoffAbort = useRef<AbortController | null>(null)
   useEffect(() => () => { handoffAbort.current?.abort() }, [])
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
@@ -150,10 +166,13 @@ export function XDriveMediaGalleryPlacesMap({
   }, [onNativeCameraClear])
   const rememberCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
     if (!xDriveValidBaiduNativeCameraSnapshot(camera)) return
+    // The same signed SDK camera callback works in both modes, including an
+    // isolated Child whose pointer events never enter the Parent document.
+    dismissMapMenus()
     cameraRef.current = { coordinate_space: 'bd09ll', latitude: camera.latitude,
       longitude: camera.longitude, zoom: camera.zoom }
     onNativeCameraChange?.(camera)
-  }, [onNativeCameraChange])
+  }, [onNativeCameraChange, dismissMapMenus])
   const [diagnosis, setDiagnosis] = useState<{ scope: string; value: XDriveBaiduMapDiagnostic | null }>(
     { scope: diagnosticScope ?? '', value: null },
   )
@@ -264,7 +283,22 @@ export function XDriveMediaGalleryPlacesMap({
         </Box>
         <Stack direction="row" spacing={0.75} alignItems="center">
           {onMapPhotoScopeChange && !desktopOnly ? (
-            <Box component="details" data-xdrive-places-map-filter-menu sx={{position:'relative'}}>
+            <ClickAwayListener onClickAway={() => {
+              if (filterMenuRef.current) filterMenuRef.current.open = false
+            }}>
+              <Box component="details" data-xdrive-places-map-filter-menu
+                ref={filterMenuRef}
+                onToggle={() => {
+                  if (filterMenuRef.current?.open && moreMenuRef.current)
+                    moreMenuRef.current.open = false
+                }}
+                onKeyDown={event => {
+                  if (event.key !== 'Escape') return
+                  if (filterMenuRef.current) filterMenuRef.current.open = false
+                  event.stopPropagation()
+                  filterMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()
+                }}
+                sx={{position:'relative'}}>
               <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
                 display:'flex',alignItems:'center',justifyContent:'center',
                 minWidth:60,minHeight:44,px:1.25,borderRadius:2,
@@ -345,9 +379,25 @@ export function XDriveMediaGalleryPlacesMap({
         </Box>
 
               </Paper>
-            </Box>
+              </Box>
+            </ClickAwayListener>
           ) : null}
-          <Box component="details" data-xdrive-places-map-more-menu sx={{position:'relative'}}>
+          <ClickAwayListener onClickAway={() => {
+            if (moreMenuRef.current) moreMenuRef.current.open = false
+          }}>
+            <Box component="details" data-xdrive-places-map-more-menu
+              ref={moreMenuRef}
+              onToggle={() => {
+                if (moreMenuRef.current?.open && filterMenuRef.current)
+                  filterMenuRef.current.open = false
+              }}
+              onKeyDown={event => {
+                if (event.key !== 'Escape') return
+                if (moreMenuRef.current) moreMenuRef.current.open = false
+                event.stopPropagation()
+                moreMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()
+              }}
+              sx={{position:'relative'}}>
             <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',
               minWidth:60,minHeight:44,px:1.25,borderRadius:2,bgcolor:'action.hover',
@@ -437,7 +487,8 @@ export function XDriveMediaGalleryPlacesMap({
         ownerScope={diagnosticScope}/></Box>
 
             </Paper>
-          </Box>
+            </Box>
+          </ClickAwayListener>
         </Stack>
       </Stack>
       {modeWarning ? <Typography data-xdrive-map-mode-scope-warning

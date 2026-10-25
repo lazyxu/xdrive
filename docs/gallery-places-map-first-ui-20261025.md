@@ -81,3 +81,104 @@ PR is separate; do not report its pending results as passing this new drawer pat
 Production-only acceptance not accessible to the assistant: **按用户决定跳过（未验收）**.
 This does not waive code-level Owner/Consent/revision/CSP/HTTPS isolation tests and
 does not block further development.
+
+## Post-merge 390px touch and safe-area follow-up
+
+The original #2596 exact-head P0-17 Chromium/Gin and full Final Gate completed
+successfully before merge. This follow-up changes **presentation only**,
+without altering Owner/Consent/revision checks, independent HTTPS Child
+boundary or the original shared Gallery Viewer.
+
+- At 390px the trusted photo sheet, photo strip and floating count respect
+  bottom and left/right safe-area insets. The sheet uses left+right anchors
+  rather than mixing asymmetric safe-area offsets with a fixed width.
+- Only the grip captures a touch pointer with `touch-action: none`.
+  Predominantly vertical gestures over 36px expand/collapse; cancellation and
+  nonprimary pointers are ignored. The photo grid retains native horizontal
+  strip scrolling and vertical expanded scrolling. Separate 44px expand/close
+  controls remain accessible to keyboard, mouse and VoiceOver.
+- New real Chromium 390×844 touch tests exercise both Hosts, actual touch
+  grip gestures, a distinct Gin Owner Cell Range, shared Viewer and freshly
+  reauthorized drawer after Back. These must pass at this exact branch SHA.
+
+Chromium does not establish physical iOS 27 Safari, pixel-perfect or VoiceOver
+acceptance. Production-only inaccessible acceptance: 按用户决定跳过（未验收）.
+
+### Exact-head CI triage: 390px Viewer Back and hostile SDK CDP startup
+
+The first 390px genuine Gin/PG Chromium run completed 126 checks but attempted
+the desktop-only "关闭预览" control on the immersive mobile Viewer. The
+shipped shared `XDriveOpenPreviewDialog` uses the touch-visible "返回图库`
+action at 390px. The test now taps that real accessible control and wakes
+auto-hidden chrome with a genuine touch if needed, preserving its second
+Owner Range, CAS original decode and fresh Viewer-return assertions.
+
+The independent malicious SDK job hit the Chrome debugger bootstrap's
+hard-coded 15-second stderr-only timeout; it did not reach a CSP/Origin test
+failure. Startup now uses Chrome's `DevToolsActivePort` file as an additional
+readiness signal and a bounded 30-second limit, and distinguishes browser exit
+from startup timeout without logging credentials. The same cross-Origin
+hostile test remains required at this exact commit.
+
+### 390px actual mobile touch regression triage
+
+The new exact-head real Gin/PG browser run again passed **125 checks**, including
+both Hosts' complete desktop CAS Viewer and reauthorized Back, and the new
+390px safe-area + up/down touch grip checks. It then timed out waiting for
+the mobile Viewer original. That result does **not** identify whether a touch
+click was delivered, the second Owner /cell-items Range completed, the
+Viewer opened, or the physical PNG failed to decode.
+
+The browser test now independently gates these stages with bounded,
+non-sensitive diagnostics: actual hit testing, a browser-generated click
+counter, authenticated Range count, original Gallery Viewer entry count,
+dialog/image phase and HTTP status codes of signed CAS preview responses.
+It does not synthesize a click or skip security and binary-original assertions.
+Both Host modes must complete the full 390px flow.
+
+### Post-merge #2618 genuine 390px tap failure and native-scroll correction
+
+Exact SHA `e467c3d` P0-17 mounted Gin/PG17 Chromium failed after 127 checks: the
+390px photo drawer was visible, touch grip expanded and collapsed, and the tile
+was hit-testable. However a Playwright real touch did **not** fire its tile
+`click` (zero DOM click observations), so neither the second Owner Range nor
+Viewer was invoked. This is not a success, and is not an Owner auth failure.
+
+The photo list now defers touch action to the browser's native overflow scroller
+(`touch-action: auto`), both horizontal and vertical. Only the dedicated grip
+uses pointer capture and `touch-action: none`. The existing genuine touch
+browser smoke also records a bounded, anonymized pointer/touch/click event trace
+in failure diagnostics without synthetic user events or Owner data. Verify this
+commit against the same real Gin/PG17, both inline and isolated SDK Hosts.
+
+
+### 2026-10-25 · 原生触控点击合成专项继续修复
+
+在准确 HEAD `605faecb` 的 [真实 Gin/PG17 浏览器专项](https://github.com/lazyxu/xdrive/actions/runs/40139977038) 中，127 项检查后仍重现 390px inline 缩略图 `pointerdown/touchstart/pointerup/touchend` 已发生但没有任何原生 `click`、没有第二次 Owner Range 或 Viewer 的问题。该专项 **FAIL**，原完整 CI 单独 SUCCESS 不等于触控通过。
+
+本增量保留照片容器 `touch-action: auto` 和 grip 单独 `none`，只对实际照片 `button` 设置 `touch-action: manipulation`，在浏览器保留原生 pan/zoom 的同时禁用双击缩放对单击激活的潜在干扰。额外记录捕获阶段和冒泡阶段的 `defaultPrevented` 布尔值以区分浏览器抑制与事件处理器主动取消；无注入点击、没有放宽真实 `/cell-items` Range、CAS 解码、Viewer 返回或双 Host 权限断言。
+
+这是待独立准确 HEAD P0-17 浏览器专项证明的候选修复，**尚不能称已解决**。真实 iOS 27 Safari/Home Screen 仍 `NOT RUN`；生产专属不可接触验收按用户决定跳过（未验收），代码级安全及真实 CI 不跳过。
+
+### 2026-10-25 · Genuine native touch activation fix
+
+Real Gin/PG Chromium at `347adaf5` confirmed a stationary touch reached the
+photo button's `pointerdown/touchstart/pointerup/touchend` with
+`defaultPrevented=false` but Chrome withheld compatibility `click`.
+A CSS `touch-action: manipulation` change alone was insufficient.
+
+The trusted **shared Parent** photo button now accepts a real short primary
+touch `pointerup` (≤12px movement, ≤700ms, no `pointercancel`), calling the
+existing `onOpenPhoto` and therefore the existing **second signed Owner
+`/cell-items` validation**, never opening media in the Child. A subsequent
+browser-generated compatibility click within 900ms is deduplicated; ordinary
+mouse/keyboard clicks remain accessible. Scrolling tiles never capture the
+pointer and the map Host is unchanged. The 390×844 genuine touch Chromium
+assertion still requires a real unprevented pointer/touch event sequence,
+exactly one Viewer opening, an additional Owner Range and actual CAS PNG
+decode/Viewer Back. It explicitly records whether the browser provided a
+native DOM click, rather than mistaking its absence for absent user input.
+
+This is a code candidate until the new **exact HEAD** browser/CI pass. Real
+iOS Safari and VoiceOver remain untested; production-only acceptance skipped
+per user decision (unverified).
