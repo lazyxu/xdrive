@@ -2237,7 +2237,13 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     # that the old verifier rejected a known internal path. Any real
     # inconsistency is still rejected by the target verifier.
     verifier_compat_reason=""
-    if grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error" &&
+    if grep -Fq 'xDrive consistency verification failed; backup aborted.' "$backup_error" &&
+       grep -Eq 'walk storage: open /data/[.]xdrive-media(/[^[:cntrl:]]*)?: permission denied' "$backup_error"; then
+      # The old pre-upgrade verifier can traverse inaccessible derived caches.
+      # Retry the full backup with the published target verifier; all genuine
+      # file, CAS, version, and DB inconsistencies must still fail closed.
+      verifier_compat_reason="unreadable derived media cache directory"
+    elif grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error" &&
        ! grep -q '"ignored_derived_files"' "$backup_error"; then
       verifier_compat_reason="derived media cache"
     elif grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-ready-[^"]*"' "$backup_error"; then

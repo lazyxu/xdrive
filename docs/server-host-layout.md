@@ -505,6 +505,8 @@ Before removal each candidate is checked through Docker. Any volume still refere
 
 Backups are storage-backend neutral. They must work whether `/data` and PostgreSQL are backed by a bind mount or a legacy named volume.
 
+Offline consistency verification skips only the exact root-level `.xdrive-media` directory (regenerable previews and thumbnails) before descending. All referenced originals, versions, CAS objects and database references remain strictly checked; `.xdrive-media-copy` and unreadable canonical data are not exempt. The report distinguishes `skipped_derived_directories` from `ignored_derived_files`. This verifier exclusion does not itself mean full backup archives omit cached content.
+
 Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name. Full backups estimate file-data bytes plus PostgreSQL database bytes before entering the maintenance window; database-only backups estimate only the database portion. Both add a 10% margin and 64 MiB fixed reserve and refuse to start when the backup filesystem does not have enough free space.
 
 Each completed backup contains checksums and a manifest with its creation time, consistency status, whether file data was included, server/Caddy images, release channel and commit, update source, Docker mode, and the space-preflight measurements. A full backup contains `blobs.tar`; a database-only backup intentionally omits it and records `file_data_included=false`. Checksums are verified once before the partial directory is atomically promoted to a completed backup.
