@@ -537,8 +537,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         {!activeDrawer && loadThumbnail && photoStrip.length > 0 ? (
           <Box data-xdrive-places-photo-collection-strip
             aria-label="地图照片区域封面"
-            sx={{position:'absolute',left:{xs:8,sm:16},right:{xs:8,sm:16},
-              bottom:{xs:10,sm:16},zIndex:5,pointerEvents:'none'}}>
+            sx={{position:'absolute',
+              left:{xs:'max(8px, env(safe-area-inset-left))',sm:16},
+              right:{xs:'max(8px, env(safe-area-inset-right))',sm:16},
+              bottom:{xs:'max(10px, env(safe-area-inset-bottom))',sm:16},
+              zIndex:5,pointerEvents:'none'}}>
             <Box sx={{pointerEvents:'auto',p:0.8,px:1,borderRadius:2,
               bgcolor:'background.paper',boxShadow:3,
               border:'1px solid',borderColor:'divider',maxWidth:{xs:'100%',sm:720},
@@ -584,8 +587,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ) : null}
       {!activeDrawer && trustedSummary ? (
         <Box data-xdrive-places-map-photo-summary
-          sx={{position:'absolute',left:{xs:10,sm:16},right:{xs:10,sm:16},
-            bottom:photoStrip.length>0 ? {xs:135,sm:145} : {xs:12,sm:16},
+          sx={{position:'absolute',
+            left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
+            right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
+            bottom:photoStrip.length>0
+              ? {xs:'calc(135px + env(safe-area-inset-bottom, 0px))',sm:145}
+              : {xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
             zIndex:5,display:'flex',alignItems:'center',justifyContent:'space-between',
             gap:1,flexWrap:'wrap',pointerEvents:'none'}}>
           <Typography variant="caption" color="text.primary"

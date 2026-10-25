@@ -26,7 +26,17 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onOpenAll: () => void
   initialPresentation?: XDrivePlacesDrawerPresentation
 }) {
-  const touchY = useRef<number | null>(null)
+  const dragStart = useRef<{ pointerId: number; startX: number; startY: number } | null>(null)
+  const suppressDragClick = useRef(false)
+  // A real touch can end on an authorized photo button without a subsequent
+  // browser-synthesized click (e.g. after an inertial scroll/drag). Activate the
+  // genuine short tap once from pointerup; preserve native click for mouse,
+  // keyboard and platforms that do emit it. Never capture the scrolling tile.
+  const photoTouch = useRef<{
+    pointerId:number; nodeID:number; startX:number; startY:number;
+    startAt:number; moved:boolean
+  } | null>(null)
+  const touchActivated = useRef<{nodeID:number; at:number} | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const appliedReturn = useRef(false)
   // Restore only after the *fresh* Owner Range has produced real grid cells.
@@ -50,28 +60,60 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   return (
     <Box component="section" role="region" aria-label="当前位置的照片"
       data-xdrive-places-photo-drawer
-      sx={{position:'absolute',left:{xs:8,sm:16},right:{xs:8,sm:'auto'},
+      sx={{position:'absolute',
+        left:{xs:'max(8px, env(safe-area-inset-left))',sm:16},
+        right:{xs:'max(8px, env(safe-area-inset-right))',sm:'auto'},
         bottom:{xs:'max(8px, env(safe-area-inset-bottom))',sm:16},
-        width:{xs:'calc(100% - 16px)',sm:'min(560px, calc(100% - 32px))'},
+        width:{xs:'auto',sm:'min(560px, calc(100% - 32px))'},
         zIndex:8,pointerEvents:'auto',bgcolor:'background.paper',
         border:'1px solid',borderColor:'divider',borderRadius:3,
         boxShadow:'0 12px 42px rgba(15,23,42,.36)',overflow:'hidden',
         height:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 'auto',
         maxHeight:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 250,
         display:'flex',flexDirection:'column'}}>
-      <Box data-xdrive-places-photo-drawer-handle
-        onTouchStart={event => { touchY.current = event.touches[0]?.clientY ?? null }}
-        onTouchEnd={event => {
-          const start=touchY.current
-          touchY.current=null
-          const finish=event.changedTouches[0]?.clientY
-          if(start===null || finish===undefined)return
-          if(start-finish>28)onExpand(true)
-          else if(finish-start>28)onExpand(false)
-        }}
-        sx={{touchAction:'pan-y',pt:0.75,flexShrink:0}}>
-        <Box sx={{width:38,height:4,borderRadius:3,mx:'auto',
-          bgcolor:'text.disabled',mb:0.75}} />
+      <Box sx={{flexShrink:0}}>
+        <Box component="button" type="button"
+          data-xdrive-places-photo-drawer-handle
+          data-xdrive-places-photo-drawer-grip
+          aria-label={expanded ? '收起照片抽屉' : '展开照片抽屉'}
+          aria-expanded={expanded}
+          onPointerDown={event => {
+            suppressDragClick.current = false
+            if (!event.isPrimary ||
+                (event.pointerType !== 'touch' && event.pointerType !== 'pen')) return
+            dragStart.current = {pointerId:event.pointerId,
+              startX:event.clientX,startY:event.clientY}
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerUp={event => {
+            const start = dragStart.current
+            dragStart.current = null
+            if (!start || start.pointerId !== event.pointerId) return
+            const dx = event.clientX-start.startX
+            const dy = event.clientY-start.startY
+            // Reject small motions and horizontal scrolling.
+            if (Math.abs(dy)<36 || Math.abs(dy)<Math.abs(dx)*1.25) return
+            suppressDragClick.current = true
+            onExpand(dy<0)
+          }}
+          onPointerCancel={() => { dragStart.current = null }}
+          onLostPointerCapture={() => { dragStart.current = null }}
+          onClick={event => {
+            // A synthesized touch click must not undo the successful swipe.
+            if (event.detail > 0 && suppressDragClick.current) {
+              suppressDragClick.current = false
+              event.preventDefault()
+              return
+            }
+            onExpand(!expanded)
+          }}
+          sx={{width:'100%',minHeight:36,display:'grid',placeItems:'center',
+            border:0,p:0,bgcolor:'transparent',color:'text.primary',
+            cursor:'grab',touchAction:'none',
+            '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main',
+              outlineOffset:-3}}}>
+          <Box sx={{width:38,height:4,borderRadius:3,bgcolor:'text.disabled'}} />
+        </Box>
         <Stack direction="row" spacing={1} alignItems="center" sx={{px:1.25,pb:0.5}}>
           <Box sx={{flex:1,minWidth:0}}>
             <Typography variant="body2" fontWeight={750}>此地点的照片</Typography>
@@ -117,13 +159,69 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               flex:expanded?'1 1 auto':'0 1 auto',
               display:expanded?'grid':'flex',gap:1,
               gridTemplateColumns:expanded?'repeat(auto-fill, minmax(92px, 1fr))':undefined,
-              overscrollBehavior:'contain',touchAction:expanded?'pan-y':'pan-x'}}>
+              overscrollBehavior:'contain',touchAction:'auto'}}>
             {items.map(item => (
               <Box key={item.node.id} component="button" type="button"
                 data-xdrive-places-photo-drawer-item={item.node.id}
                 aria-label={`查看 ${item.node.name}`}
-                onClick={() => onOpenPhoto(item, position())}
-                sx={{appearance:'none',p:0,flex:expanded?undefined:'0 0 92px',
+                onPointerDown={event => {
+                  if (event.pointerType !== 'touch') {
+                    // A real mouse press is not the prior touch's compatibility click.
+                    if (event.pointerType === 'mouse') touchActivated.current=null
+                    return
+                  }
+                  if (!event.isPrimary) {
+                    // A second contact cancels the first tap without granting access.
+                    const former=photoTouch.current
+                    if (former) touchActivated.current={nodeID:former.nodeID,at:event.timeStamp}
+                    photoTouch.current=null
+                    return
+                  }
+                  photoTouch.current = {pointerId:event.pointerId,nodeID:item.node.id,
+                    startX:event.clientX,startY:event.clientY,startAt:event.timeStamp,
+                    moved:false}
+                }}
+                onPointerMove={event => {
+                  const tap=photoTouch.current
+                  if (!tap || tap.pointerId!==event.pointerId) return
+                  if (Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12)
+                    tap.moved=true
+                }}
+                onPointerCancel={event => {
+                  const tap=photoTouch.current
+                  if (!tap || tap.pointerId!==event.pointerId) return
+                  // Browser-generated clicks following a cancelled scroll/contact
+                  // must never open a private Viewer.
+                  touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}
+                  photoTouch.current=null
+                }}
+                onPointerUp={event => {
+                  const tap=photoTouch.current
+                  if (!tap || tap.pointerId!==event.pointerId) return
+                  photoTouch.current=null
+                  if (event.pointerType!=='touch' || tap.nodeID!==item.node.id) return
+                  // Consume any subsequent compatibility click, including after
+                  // an invalid long press or drag. Only a valid short primary
+                  // touch is allowed to activate the authorized Owner range.
+                  touchActivated.current={nodeID:item.node.id,at:event.timeStamp}
+                  if (tap.moved ||
+                      Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12 ||
+                      event.timeStamp-tap.startAt>700) return
+                  onOpenPhoto(item,position())
+                }}
+                onClick={event => {
+                  const handled=touchActivated.current
+                  if (event.detail>0 && handled?.nodeID===item.node.id &&
+                      event.timeStamp>=handled.at &&
+                      event.timeStamp-handled.at<900) {
+                    // Native compatibility click follows the handled touch.
+                    // Do not issue a second Viewer authorization /cell-items.
+                    touchActivated.current=null
+                    return
+                  }
+                  onOpenPhoto(item,position())
+                }}
+                sx={{appearance:'none',touchAction:'manipulation',p:0,flex:expanded?undefined:'0 0 92px',
                   width:expanded?'100%':92,minWidth:0,
                   border:'1px solid',borderColor:'divider',borderRadius:1.5,
                   bgcolor:'action.hover',textAlign:'left',overflow:'hidden',

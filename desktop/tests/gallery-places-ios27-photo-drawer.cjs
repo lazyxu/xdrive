@@ -130,7 +130,8 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
   assert.match(sheet,/revision=\{item.node.revision\}/)
-  assert.match(sheet,/onClick=\{\(\) => onOpenPhoto\(item, position\(\)\)\}/)
+  assert.match(sheet,/onOpenPhoto\(item,position\(\)\)/)
+  assert.match(sheet,/onClick=\{event => \{/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-open-all/)
   assert.match(sheet,/useLayoutEffect/)
   assert.match(sheet,/node.scrollTop = initialPresentation.scrollTop/)
@@ -143,6 +144,69 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.match(gallery,/index < 0 \|\| range.total_count!==cell.photo_count/)
   assert.match(gallery,/xDriveRememberPlacesDrawerViewerReturn\(preferenceScope,cell,approved\)/)
 })
+
+
+test('390px trusted photo drawer uses safe-area layout and touch-only pointer grip',()=>{
+  const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const host=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  assert.match(sheet,/data-xdrive-places-photo-drawer-grip/)
+  assert.match(sheet,/onPointerDown=/)
+  assert.match(sheet,/setPointerCapture\(event\.pointerId\)/)
+  assert.match(sheet,/onPointerUp=/)
+  assert.match(sheet,/onPointerCancel=/)
+  assert.match(sheet,/onLostPointerCapture=/)
+  assert.match(sheet,/touchAction:'none'/)
+  assert.match(sheet,/Math\.abs\(dy\)<36/)
+  assert.match(sheet,/Math\.abs\(dy\)<Math\.abs\(dx\)\*1\.25/)
+  assert.doesNotMatch(sheet,/onTouchEnd=/)
+  assert.match(sheet,/safe-area-inset-left/)
+  assert.match(sheet,/safe-area-inset-right/)
+  assert.match(sheet,/width:\{xs:'auto',sm:'min\(560px/)
+  assert.match(sheet,/overscrollBehavior:'contain',touchAction:'auto'/)
+  // Cards opt out of double-tap click suppression while their scroll parent
+  // remains free to handle native horizontal/vertical scrolling.
+  assert.match(sheet,/appearance:'none',touchAction:'manipulation'/)
+  // Real stationary touch/pen activation is routed only by the trusted photo
+  // button and never by Child map SDK, with scroll/long-press/pointercancel
+  // exclusions and a compatibility-click singleflight.
+  assert.match(sheet,/const photoTouch = useRef/)
+  // Real touch termination is consumed even if it was rejected; keyboard
+  // activation and a subsequent true mouse pointer remain independent.
+  assert.ok(sheet.includes('onPointerCancel={event => {'))
+  assert.ok(sheet.includes('touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}'))
+  assert.ok(sheet.includes('if (!event.isPrimary) {'))
+  assert.ok(sheet.includes("if (event.pointerType === 'mouse') touchActivated.current=null"))
+  assert.match(sheet,/onPointerMove=\{event =>/)
+  assert.match(sheet,/Math\.hypot\(event\.clientX-tap\.startX,event\.clientY-tap\.startY\)>12/)
+  assert.match(sheet,/event\.timeStamp-tap\.startAt>700/)
+  assert.match(sheet,/touchActivated\.current=\{nodeID:item\.node\.id,at:event\.timeStamp\}/)
+  assert.match(sheet,/event\.timeStamp-handled\.at<900/)
+  assert.doesNotMatch(sheet,/dispatchEvent\(|\.click\(\)/)
+  assert.match(host,/calc\(135px \+ env\(safe-area-inset-bottom, 0px\)\)/)
+  assert.match(host,/max\(10px, env\(safe-area-inset-bottom\)\)/)
+  const viewer=read('ui/shared/src/mui/FileOpenPreviewDialog.tsx')
+  const smoke=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(smoke,/type:type\+'-bubble'/)
+  assert.match(viewer,/aria-label="返回图库"/)
+  assert.match(viewer,/mobileOverlay \? \(/)
+  assert.match(smoke,/getByRole\('button',\{name:'返回图库'\}\)/)
+  assert.match(smoke,/mobileBack.tap\(\)/)
+  assert.match(smoke,/mobilePhotoDOMClicks/)
+  assert.match(smoke,/mobileTouchTrace/)
+  assert.ok(smoke.includes('after.reads===initial.reads&&after.opens===initial.opens'))
+  assert.ok(smoke.includes("type:kind==='cancel'?'touchCancel':'touchEnd'"))
+  assert.ok(!smoke.includes('dispatchEvent(new MouseEvent'))
+  assert.match(smoke,/real mobile touch uses genuine uncancelled tile pointer/)
+  assert.match(smoke,/real mobile photo touch activates one Viewer Owner Range/)
+  assert.match(smoke,/touchPhoto\.tap\(\)/)
+  for (const gesture of ['long-hold','drag','cancel'])
+    assert.ok(smoke.includes("await nativeNoOpen('"+gesture+"')"))
+  assert.ok(smoke.includes("type:kind==='cancel'?'touchCancel':'touchEnd'"))
+  assert.doesNotMatch(smoke,/touchPhoto\.click\(\)/)
+  assert.match(smoke,/mobile photo Viewer decodes real signed CAS PNG/)
+  assert.match(smoke,/previewStatuses.includes\(200\)/)
+})
+
 
 test('Shared map, Gallery and photo drawer remain syntactically valid TSX',()=>{
   for(const name of [

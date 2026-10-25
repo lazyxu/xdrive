@@ -15,6 +15,7 @@ on:
       - 'ui/shared/src/mui/MediaGallery.tsx'
       - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/tests/gallery-places-ios27-shared-interaction.cjs'
       - 'desktop/scripts/places-web-viewer-history-browser.*'
       - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
       - 'web/src/webAppRuntime.ts'
@@ -40,6 +41,7 @@ on:
       - 'ui/shared/src/mui/MediaGallery.tsx'
       - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
       - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+      - 'desktop/tests/gallery-places-ios27-shared-interaction.cjs'
       - 'desktop/scripts/places-web-viewer-history-browser.*'
       - 'desktop/tests/places-web-viewer-private-scope-p0.cjs'
       - 'web/src/webAppRuntime.ts'
@@ -130,7 +132,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           node --test desktop/tests/gallery-places-ios27-map-first-ui.cjs \
-            desktop/tests/gallery-places-ios27-photo-drawer.cjs
+            desktop/tests/gallery-places-ios27-photo-drawer.cjs \
+            desktop/tests/gallery-places-ios27-shared-interaction.cjs
       - name: Actual mounted Gallery Parent in inline and independent HTTPS Child
         shell: bash
         env:

@@ -27,6 +27,10 @@ function loadSharedMap() {
     'Autocomplete', 'Box', 'Button', 'Chip', 'CircularProgress', 'MenuItem', 'Paper', 'Stack',
     'TextField', 'Typography',
   ].map(name => [name, name.toLowerCase()]))
+  // This unit fixture substitutes ordinary MUI DOM hosts to inspect map
+  // membership/mounting. The real ClickAway behavior is exercised in the
+  // dual-Host Chromium test; here it must transparently retain its child.
+  mui.ClickAwayListener = ({ children }) => children
   const injected = {
     '@mui/material': mui,
     '../media-gallery-baidu-map-photo-scope': mapScopeHelper,
