@@ -27,6 +27,10 @@ install -m 0644 "$ROOT/docs/xd-backup-only-cli.md" "$staging/linux/xdrive-backup
 install -m 0644 "$CORE_DIR/windows-amd64/xd.exe" "$staging/windows/xdrive-backup/xd.exe"
 install -m 0644 "$CORE_DIR/windows-amd64/xdrive-agent.exe" "$staging/windows/xdrive-backup/xdrive-agent.exe"
 install -m 0644 "$ROOT/docs/xd-backup-only-cli.md" "$staging/windows/xdrive-backup/README.md"
+install -m 0644 "$ROOT/packaging/windows/install-backup-agent-task.ps1" \
+  "$staging/windows/xdrive-backup/install-backup-agent-task.ps1"
+install -m 0644 "$ROOT/docs/xd-backup-agent-windows-task.md" \
+  "$staging/windows/xdrive-backup/WINDOWS_TASK.md"
 
 tar -C "$staging/linux" -czf "$OUTPUT_DIR/xdrive-backup-linux-amd64.tar.gz" xdrive-backup
 
