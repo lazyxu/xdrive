@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.selected
+import com.tfluid.xdrive.core.ServerAddress
 
 @Composable
 private fun AuthCard(title: String, subtitle: String, actions: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
@@ -143,7 +144,14 @@ internal fun UnifiedLoginForm(
     var allowHttp by remember(state.server) { mutableStateOf(state.allowHttp) }
     var advanced by remember { mutableStateOf(false) }
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
-        AuthField("服务器", server, { server = it }, "server", !state.loading,
+        AuthField("服务器", server, { value ->
+            // Do not carry an optional private socket from one Server to another.
+            // Compare normalized HTTPS Origins, not a URL string's trailing slash.
+            val oldOrigin = runCatching { ServerAddress.parse(server, allowHttp).url }.getOrNull()
+            val newOrigin = runCatching { ServerAddress.parse(value, allowHttp).url }.getOrNull()
+            if (oldOrigin != newOrigin) lanIp = ""
+            server = value
+        }, "server", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "https://drive.example.com:8443")
         AuthField("内网 IP（可选）", lanIp, { lanIp = it }, "lan-ip", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")
@@ -175,9 +183,10 @@ internal fun UnifiedLoginForm(
         }
         ErrorNotice(state.error)
         Submit("登录", state.loading) {
-            val supplied = password
-            password = ""
-            login(server, allowHttp, lanIp, username, supplied, keepLogin)
+            // Keep the entered value until successful navigation so Android
+            // Autofill can offer to save it; never persist it in app state.
+            // Invalid server or password errors remain editable in place.
+            login(server, allowHttp, lanIp, username, password, keepLogin)
         }
         Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
