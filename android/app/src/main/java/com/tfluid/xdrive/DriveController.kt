@@ -926,6 +926,31 @@ class DriveController(
         mutableState.value = current.copy(galleryViewer = item, gallerySelected = null)
     }
 
+    /** The only valid adjacent Viewer targets are immediate neighbors in the
+     * current Owner-verified chronological Range. Never skip a video or invent
+     * a yet-unloaded item. A future real video Viewer can extend this rule. */
+    fun galleryViewerNeighbor(direction: Int): GalleryAsset? {
+        val current = state.value
+        val selected = current.galleryViewer ?: return null
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            direction !in listOf(-1, 1)) return null
+        val index = current.galleryItems.indexOfFirst { it == selected }
+        if (index < 0) return null
+        return current.galleryItems.getOrNull(index + direction)?.takeIf {
+            it.mediaKind == "image" && it.node.type == "file" &&
+                it.node.revision > 0 && it.node.id > 0
+        }
+    }
+
+    /** A new image invalidates in-flight old original reads (including the
+     * noncooperative old-A -> B -> A case) without refetching Gallery rows. */
+    fun shiftGalleryViewer(direction: Int) {
+        val next = galleryViewerNeighbor(direction) ?: return
+        if (state.value.gallerySelected != null) return // Info dialog has priority.
+        galleryViewerEpoch++
+        mutableState.value = state.value.copy(galleryViewer = next, gallerySelected = null)
+    }
+
     fun dismissGalleryViewer() {
         if (state.value.galleryViewer == null) return
         galleryViewerEpoch++ // Reject stale non-cooperative results, including A -> B -> A.

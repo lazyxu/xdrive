@@ -325,6 +325,33 @@ class DriveAppTest {
             .assertIsDisplayed()
     }
 
+    @Test fun galleryViewerSwipeChangesOnlyVerifiedAdjacentOwnerPhotos() {
+        galleryManyPhotos = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 60
+        }
+        compose.onNodeWithTag("gallery-grid").performScrollToIndex(30)
+        compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-gesture").performTouchInput { swipeLeft() }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1031L,
+                controller.state.value.galleryViewer?.node?.id)
+        }
+        compose.onNodeWithTag("gallery-photo-gesture").performTouchInput { swipeRight() }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1030L,
+                controller.state.value.galleryViewer?.node?.id)
+        }
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {
         var picks = 0
         startAndLogin(onUpload = { picks++ })
