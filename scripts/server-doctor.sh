@@ -306,19 +306,28 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   done
 
   pg_id="$(compose ps -q postgres 2>/dev/null | head -n1 || true)"
+  server_id="$(compose ps -q server 2>/dev/null | head -n1 || true)"
   pg_password="$(env_value POSTGRES_PASSWORD)"
-  if [[ -n "$pg_id" && -n "$pg_password" ]]; then
-    if docker exec -e "PGPASSWORD=$pg_password" "$pg_id" sh -ec '
-      set -- $(hostname -i)
-      [ "$#" -gt 0 ]
-      exec psql -h "$1" -U xdrive -d xdrive -Atqc "SELECT 1"
-    ' </dev/null >/dev/null 2>&1; then
-      record PASS "PostgreSQL auth" "xdrive role authenticates over the Docker network"
-    else
-      record FAIL "PostgreSQL auth" "xdrive role password does not authenticate over the Docker network"
-    fi
-  else
+  pg_image=""
+  if [[ -n "$pg_id" ]]; then
+    pg_image="$(docker inspect "$pg_id" --format '{{.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  # The DB container's own IP and the Server's actual network path can have
+  # different pg_hba.conf rules. Verify using the PostgreSQL image as a
+  # temporary client attached to the live Server namespace, with no DB mounts.
+  if [[ -z "$pg_id" || -z "$pg_password" ]]; then
     record FAIL "PostgreSQL auth" "PostgreSQL container or configured password unavailable"
+  elif [[ -z "$server_id" ||
+       "$(docker inspect "$server_id" --format '{{.State.Running}}' </dev/null 2>/dev/null || true)" != "true" ]]; then
+    record WARN "PostgreSQL auth" "Server is not running; cannot verify its actual database connection path"
+  elif [[ ! "$pg_image" =~ ^sha256:[[:xdigit:]]{64}$ ]]; then
+    record FAIL "PostgreSQL auth" "local PostgreSQL client image is unavailable; no password conclusion"
+  elif PGPASSWORD="$pg_password" docker run --rm --pull never --network "container:$server_id" \
+      --entrypoint psql -e PGPASSWORD -e PGCONNECT_TIMEOUT=5 "$pg_image" \
+      -h postgres -U xdrive -d xdrive -Atqc 'SELECT 1' </dev/null >/dev/null 2>&1; then
+    record PASS "PostgreSQL auth" "xdrive role authenticates from the live Server network"
+  else
+    record FAIL "PostgreSQL auth" "Server-network login probe failed; check credentials, Docker network and local client availability"
   fi
 
   cas_health=""

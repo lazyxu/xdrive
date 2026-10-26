@@ -45,10 +45,28 @@ if [[ "$1" == "inspect" ]]; then
     esac
     exit 0
   fi
+  if [[ "$args" == *".State.Running"* ]]; then
+    echo "${XD_TEST_SERVER_RUNNING:-true}"
+    exit 0
+  fi
+  if [[ "$args" == *".Image"* && "$args" != *".Config.Image"* ]]; then
+    printf 'sha256:%064d\n' 0
+    exit 0
+  fi
   if [[ "$args" == *".State.Status"* ]]; then echo "running"; exit 0; fi
   if [[ "$args" == *".State.Health"* ]]; then echo "healthy"; exit 0; fi
   if [[ "$args" == *".Config.Image"* ]]; then echo "ghcr.io/lazyxu/test:sha-test"; exit 0; fi
   if [[ "$args" == *".Mounts"* ]]; then echo "volume=xdrive_test-data"; exit 0; fi
+fi
+if [[ "$1" == "run" ]]; then
+  [[ "$args" == *"--pull never"* ]] || exit 9
+  [[ "$args" == *"--network container:server-id"* ]] || exit 9
+  [[ "$args" == *"--entrypoint psql"* ]] || exit 9
+  [[ "$args" == *"-e PGPASSWORD"* && "$args" == *"-e PGCONNECT_TIMEOUT=5"* ]] || exit 9
+  [[ "${PGPASSWORD:-}" == "super-secret-db-password" ]] || exit 9
+  [[ "$args" != *"PGPASSWORD=super-secret-db-password"* ]] || exit 9
+  [[ "${XD_TEST_DB_AUTH_FAIL:-0}" != "1" ]]
+  exit $?
 fi
 if [[ "$1" == "exec" ]]; then exit 0; fi
 if [[ "$1" == "compose" ]]; then
@@ -137,6 +155,20 @@ grep -q '\[PASS\] Docker access' "$TMP/report"
 grep -q 'mode=rootful; usable without sudo' "$TMP/report"
 grep -q '\[PASS\] host layout' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
+grep -Fq 'from the live Server network' "$TMP/report"
+# A 503 from the application does not invalidate a separately authenticated
+# PostgreSQL client, and failed auth must not be mislabeled as success.
+XD_TEST_DB_AUTH_FAIL=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+  HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-db-failed" 2>"$TMP/err-db-failed"
+grep -q '\[FAIL\] PostgreSQL auth' "$TMP/report-db-failed"
+grep -Fq 'Server-network login probe failed' "$TMP/report-db-failed"
+XD_TEST_SERVER_RUNNING=false TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+  HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-server-stopped" 2>"$TMP/err-server-stopped"
+grep -q '\[WARN\] PostgreSQL auth' "$TMP/report-server-stopped"
+grep -Fq 'cannot verify its actual database connection path' "$TMP/report-server-stopped"
+! grep -Fq 'super-secret-db-password' "$TMP/report-db-failed" "$TMP/err-db-failed" "$TMP/report-server-stopped" "$TMP/err-server-stopped"
 grep -q '\[PASS\] CAS metadata health' "$TMP/report"
 grep -q 'Caddy Host witness.*reason=snapshot-missing' "$TMP/report"
 grep -q 'Caddy Host producer.*snapshot=directory-unavailable' "$TMP/report"
