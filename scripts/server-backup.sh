@@ -67,7 +67,19 @@ if [[ "$INCREMENTAL" == "1" ]]; then
   mkdir -p "$REPOSITORY_DIR/snapshots"
   REPOSITORY_DIR="$(cd "$REPOSITORY_DIR" && pwd)"
   command -v flock >/dev/null 2>&1 || { echo "xDrive backup: flock is required." >&2; exit 1; }
-  exec 8>"$REPOSITORY_DIR/.backup.lock"
+  # Never open a symlink or special inode (FIFO, device, directory) as the
+  # repository lock. A FIFO could block indefinitely before flock executes.
+  # Append-only opening also avoids truncating existing regular lock contents.
+  repository_lock="$REPOSITORY_DIR/.backup.lock"
+  if [[ -L "$repository_lock" ]]; then
+    echo "xDrive backup: repository lock must not be a symlink." >&2
+    exit 1
+  fi
+  if [[ -e "$repository_lock" && ! -f "$repository_lock" ]]; then
+    echo "xDrive backup: repository lock must be a regular file." >&2
+    exit 1
+  fi
+  exec 8>>"$repository_lock"
   flock -n 8 || { echo "xDrive backup: another repository operation is active." >&2; exit 75; }
   OUTPUT_ROOT="$REPOSITORY_DIR/snapshots"
 else

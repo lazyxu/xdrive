@@ -908,6 +908,31 @@ backup_verify_cmd() {
     echo "xdrive-server: unsupported backup format: $dir" >&2
     return 1
   fi
+  # Keep a shared lease through the entire v2 hash verification and, when
+  # invoked via 'backup sources', through the following pg_restore read.
+  # This coordinates with the existing exclusive snapshot publication lock
+  # and any future reference-aware prune. Never create or truncate the lock.
+  if [[ "$backup_version" == "2" ]]; then
+    [[ "$(basename "$(dirname "$dir")")" == "snapshots" ]] || {
+      echo "xdrive-server: CAS snapshot must be in repository/snapshots." >&2
+      return 1
+    }
+    repository_dir="$(cd "$dir/../.." && pwd -P)" || return 1
+    local repository_lock="$repository_dir/.backup.lock"
+    [[ -f "$repository_lock" && ! -L "$repository_lock" ]] || {
+      echo "xdrive-server: missing or unsafe v2 repository lock: $repository_lock" >&2
+      return 1
+    }
+    command -v flock >/dev/null 2>&1 || {
+      echo "xdrive-server: flock is required for v2 repository verification." >&2
+      return 1
+    }
+    exec 7<"$repository_lock"
+    flock -s -n 7 || {
+      echo "xdrive-server: v2 repository is busy with another operation" >&2
+      return 75
+    }
+  fi
   file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
   required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
   if [[ "$backup_version" == "2" ]]; then

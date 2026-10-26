@@ -35,7 +35,32 @@ touch -d '20 days ago' "$old_v1"
 # Existing installed configuration still creates v1 tar backups and prunes only
 # the old v1 snapshots according to the existing retention setting.
 printf 'XD_BACKUP_RETENTION_DAYS=7\n' > "$env_file"
+
+# A scheduled lock must never truncate an unrelated file via a symlink, nor
+# accept a directory in place of the lock inode. Reject before backup launch.
+mkdir -p "$XD_CONFIG_DIR/state"
+schedule_lock="$XD_CONFIG_DIR/state/scheduled-backup.lock"
+lock_sentinel="$TMP/scheduled-lock-sentinel"
+printf 'do not modify this sentinel\n' > "$lock_sentinel"
+ln -s "$lock_sentinel" "$schedule_lock"
+if invoke >"$TMP/unsafe-scheduled-lock.log" 2>&1; then
+  echo 'scheduled backup followed a symlinked lock' >&2; exit 1
+fi
+grep -Fq 'unsafe scheduled-backup.lock' "$TMP/unsafe-scheduled-lock.log"
+[[ ! -s "$XD_SCHEDULE_TEST_LOG" ]]
+[[ "$(cat "$lock_sentinel")" == 'do not modify this sentinel' ]]
+rm "$schedule_lock"
+mkdir "$schedule_lock"
+if invoke >"$TMP/directory-scheduled-lock.log" 2>&1; then
+  echo 'scheduled backup accepted directory as lock' >&2; exit 1
+fi
+grep -Fq 'unsafe scheduled-backup.lock' "$TMP/directory-scheduled-lock.log"
+[[ ! -s "$XD_SCHEDULE_TEST_LOG" ]]
+rmdir "$schedule_lock"
+# Existing lock bytes must not be truncated on normal reentry, either.
+printf 'preserve existing lock bytes\n' > "$schedule_lock"
 invoke
+[[ "$(cat "$schedule_lock")" == 'preserve existing lock bytes' ]]
 expect_args backup --output-dir
 [[ ! -d "$old_v1" ]]
 [[ "$(sed -n '3p' "$XD_SCHEDULE_TEST_LOG")" == "$XD_CONFIG_DIR/backups/snapshots" ]]
@@ -90,6 +115,14 @@ custom_list="$(bash "$manager" backup list)"
 grep -Fq "cas:$(basename "$custom_snapshot")" <<<"$custom_list"
 grep -Fq 'cas:xdrive-backup-20000101T000000Z' <<<"$custom_list"
 [[ "$(grep -Fc "$custom_snapshot" <<<"$custom_list")" -eq 1 ]]
+# New shared-reader contract: mock schedules never created the writer's
+# .backup.lock. Verify must reject this invalid v2 repository before checksum
+# reads. After materializing a real lock, it must still reject bad checksums.
+if bash "$manager" backup verify >"$TMP/missing-v2-lock-verify.log" 2>&1; then
+  echo 'custom v2 fixture with missing repository lock unexpectedly verified' >&2; exit 1
+fi
+grep -Fq "missing or unsafe v2 repository lock: $custom_repo/.backup.lock" "$TMP/missing-v2-lock-verify.log"
+: > "$custom_repo/.backup.lock"
 if bash "$manager" backup verify >"$TMP/custom-latest-verify.log" 2>&1; then
   echo 'custom v2 fixture unexpectedly verified' >&2; exit 1
 fi

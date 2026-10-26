@@ -197,20 +197,38 @@ backup_drill_stage="corruption-and-rejection"
 # unreferenced blob appears. Verification must reject the state.
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"
 
-if "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null 2>&1; then
+# A rejected corruption probe must be a real structured missing/orphan report,
+# never a spurious process failure or an empty stdout stream.
+if "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" \
+    >"$TMP/corrupt-verify.json" 2>"$TMP/corrupt-verify.err"; then
   echo "verify unexpectedly accepted missing/orphan blobs" >&2
   exit 1
 fi
+python3 - "$TMP/corrupt-verify.json" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        report = json.load(stream)
+except (OSError, ValueError):
+    print("corrupt storage verify returned no valid JSON", file=sys.stderr)
+    raise SystemExit(1)
+for key in ("missing", "orphans"):
+    issues = report.get(key)
+    if not isinstance(issues, list) or not issues:
+        print(f"corrupt storage verify lacks expected {key} issues", file=sys.stderr)
+        raise SystemExit(1)
+PY
 
 # A failed backup must not dump an entire shared-reference JSON report into
 # the installer log, and must retain a private full report for diagnostics.
-set +e
-bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" \
-  --output-dir "$TMP/failing-backups" --skip-file-data \
-  >"$TMP/failed-backup.out" 2>"$TMP/failed-backup.err"
-failed_backup_status=$?
-set -e
-[[ "$failed_backup_status" -ne 0 ]]
+# An expected failure must not trigger the global stage ERR trap.
+if bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" \
+    --output-dir "$TMP/failing-backups" --skip-file-data \
+    >"$TMP/failed-backup.out" 2>"$TMP/failed-backup.err"; then
+  echo "backup unexpectedly accepted missing/orphan blobs" >&2
+  exit 1
+fi
 grep -q 'xDrive consistency verification failed; backup aborted.' "$TMP/failed-backup.err"
 if ! grep -q 'actionable issue counts:' "$TMP/failed-backup.err"; then
   echo "server-backup-restore: corrupt snapshot failed without bounded issue counts" >&2
@@ -319,6 +337,77 @@ test -d "$repo_root/objects/sha256"
 [[ -f "$repo_root/objects/sha256/${cas_sha:0:2}/$cas_sha" ]]
 grep -Fq "$cas_sha" "$incremental_backup_dir/objects.index"
 grep -Fq "$cas_sha" "$second_incremental_backup_dir/objects.index"
+
+# A future reference-aware prune will take the EXCLUSIVE repository lease.
+# Verify and destructive restore must both reject a concurrent writer BEFORE
+# touching live PostgreSQL, triggering safety backup, or stopping services.
+[[ -f "$repo_root/.backup.lock" && ! -L "$repo_root/.backup.lock" ]]
+exec 9<"$repo_root/.backup.lock"
+flock -x -n 9
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes --no-safety-backup \
+  >"$TMP/locked-restore.log" 2>&1; then
+  echo "v2 restore ignored exclusive repository lock" >&2
+  exit 1
+fi
+grep -Fq 'v2 repository is busy with another operation' "$TMP/locked-restore.log"
+if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup verify "$incremental_backup_dir" >"$TMP/locked-verify.log" 2>&1; then
+  echo "v2 verify ignored exclusive repository lock" >&2
+  exit 1
+fi
+grep -Fq 'v2 repository is busy with another operation' "$TMP/locked-verify.log"
+if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup sources "$incremental_backup_dir" >"$TMP/locked-sources.log" 2>&1; then
+  echo "v2 backup sources ignored exclusive repository lock" >&2
+  exit 1
+fi
+grep -Fq 'v2 repository is busy with another operation' "$TMP/locked-sources.log"
+assert_runtime_services
+flock -u 9
+exec 9<&-
+
+# A repository lock symlink must never be followed or truncated by a new
+# v2 backup, even if its target is a legitimate regular file.
+mv "$repo_root/.backup.lock" "$TMP/backup-lock-held"
+printf 'must not change\n' >"$TMP/lock-sentinel"
+ln -s "$TMP/lock-sentinel" "$repo_root/.backup.lock"
+if bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" \
+  --incremental >"$TMP/symlink-lock-backup.log" 2>&1; then
+  echo "v2 backup accepted symlinked repository lock" >&2
+  exit 1
+fi
+grep -Fq 'repository lock must not be a symlink' "$TMP/symlink-lock-backup.log"
+if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes --no-safety-backup \
+  >"$TMP/symlink-lock-restore.log" 2>&1; then
+  echo "v2 restore followed a symlinked repository lock" >&2
+  exit 1
+fi
+grep -Fq 'missing or unsafe v2 repository lock' "$TMP/symlink-lock-restore.log"
+if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup verify "$incremental_backup_dir" >"$TMP/symlink-lock-verify.log" 2>&1; then
+  echo "v2 verify followed a symlinked repository lock" >&2
+  exit 1
+fi
+grep -Fq 'missing or unsafe v2 repository lock' "$TMP/symlink-lock-verify.log"
+[[ "$(cat "$TMP/lock-sentinel")" == 'must not change' ]]
+assert_runtime_services
+rm "$repo_root/.backup.lock"
+# FIFO opens can block indefinitely before flock. The writer must reject a
+# nonregular inode without opening it, touching files, or stopping services.
+mkfifo "$repo_root/.backup.lock"
+if timeout 8s bash "$ROOT/scripts/server-backup.sh" \
+  --config-dir "$XDRIVE_HOME" --incremental >"$TMP/fifo-lock-backup.log" 2>&1; then
+  echo "v2 backup accepted FIFO repository lock" >&2
+  exit 1
+fi
+grep -Fq 'repository lock must be a regular file' "$TMP/fifo-lock-backup.log"
+assert_runtime_services
+rm "$repo_root/.backup.lock"
+mv "$TMP/backup-lock-held" "$repo_root/.backup.lock"
+assert_runtime_services
+
 # v2's checksum list is itself untrusted: sha256sum -c would accept a
 # truncated list with objects.index omitted. Reject this without stopping
 # the healthy deployment or creating a default pre-restore safety backup.
