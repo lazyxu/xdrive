@@ -101,8 +101,12 @@ test('signed isolated Child uses neutral photo-style markers with verified count
   assert.match(child,/new sdk.Size\(-28,-28\)/)
   assert.doesNotMatch(child,/backgroundColor:'#1677e9'/)
   assert.match(parent,/data-xdrive-places-trusted-photo-cover=/)
-  assert.match(parent,/\{pin.count.toLocaleString\('zh-CN'\)\}张/)
-  assert.match(parent,/bgcolor:'rgba\(15,23,42,\.94\)'/)
+  assert.match(parent,/\{pin.count.toLocaleString\('zh-CN'\)\}/)
+  assert.doesNotMatch(parent,/\{pin.count.toLocaleString\('zh-CN'\)\}张/,
+    'iOS photo count badges must omit the unit')
+  assert.match(parent,/bgcolor:theme => theme.palette.mode === 'dark' \? '#0A84FF' : '#007AFF'/)
+  assert.doesNotMatch(parent,/bgcolor:'rgba\(15,23,42,\.94\)'/,
+    'verified iOS badges use theme-aware blue, never the retired dark gray')
   assert.doesNotMatch(parent,/rotate\(9deg\)/)
   assert.match(places,/const hasMapPorts = Boolean\(/)
   assert.match(places,/activation_state === 'authorized_signed_release'/)

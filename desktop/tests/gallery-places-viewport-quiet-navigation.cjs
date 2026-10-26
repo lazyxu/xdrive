@@ -24,7 +24,7 @@ function loadSharedMap() {
   mod.paths = Module._nodeModulePaths(path.join(root, 'desktop'))
   const requireOriginal = mod.require.bind(mod)
   const mui = Object.fromEntries([
-    'Autocomplete', 'Box', 'Button', 'Chip', 'CircularProgress', 'MenuItem', 'Paper', 'Stack',
+    'Autocomplete', 'Box', 'Button', 'Chip', 'CircularProgress', 'IconButton', 'MenuItem', 'Paper', 'Stack',
     'TextField', 'Typography',
   ].map(name => [name, name.toLowerCase()]))
   // This unit fixture substitutes ordinary MUI DOM hosts to inspect map
@@ -33,6 +33,10 @@ function loadSharedMap() {
   mui.ClickAwayListener = ({ children }) => children
   const injected = {
     '@mui/material': mui,
+    '@mui/icons-material/CloseRounded': {
+      __esModule: true,
+      default: () => React.createElement('close-rounded'),
+    },
     '../media-gallery-baidu-map-photo-scope': mapScopeHelper,
     '../media-gallery-baidu-native-camera-session': {
       xDriveValidBaiduNativeCameraSnapshot: camera => Boolean(camera &&
@@ -280,4 +284,42 @@ test('unrestricted map without a valid camera switches directly without a ticket
   assert.equal(new URL(global.window.location.href).searchParams.get('places_map_mode'),'isolated')
   assert.equal(new URL(global.window.location.href).searchParams.has('places_map_handoff'),false)
   await act(async()=>view.unmount())
+})
+
+test('iOS map Close calls one shared trusted Parent action in both SDK Hosts', async () => {
+  for (const mode of ['prototype', 'isolated']) {
+    global.window.location.href = 'https://gallery.example.test/gallery' +
+      (mode === 'isolated' ? '?places_map_mode=isolated' : '')
+    let closed = 0
+    const view = await render({
+      getBaiduJSAPI4Status: async () => ({
+        provider: 'baidu-jsapi-4.0', enabled: true,
+        activation_state: 'authorized_signed_release',
+        isolated_child_origin: 'https://map.example.test',
+      }),
+      onCloseMap: () => { closed++ },
+    })
+    assert.equal(view.root.findAllByType('isolated-child').length, 1)
+    const close = view.root.findAll(node =>
+      node.props['data-xdrive-places-map-close'] !== undefined)
+    assert.equal(close.length, 1, mode + ' must show one Close')
+    assert.equal(close[0].type, 'iconbutton')
+    assert.equal(close[0].props['aria-label'], '关闭地图')
+    await act(async () => { close[0].props.onClick() })
+    assert.equal(closed, 1, mode + ' must call Parent exactly once')
+    await act(async () => view.unmount())
+  }
+})
+
+test('Desktop isolated HTTPS map never shows the Web/PWA collection Close', async () => {
+  global.window.location.href = 'https://gallery.example.test/gallery'
+  let closed = 0
+  const view = await render({
+    onOpenSecureDesktopMap: () => {},
+    onCloseMap: () => { closed++ },
+  })
+  assert.equal(view.root.findAll(node =>
+    node.props['data-xdrive-places-map-close'] !== undefined).length, 0)
+  assert.equal(closed, 0)
+  await act(async () => view.unmount())
 })

@@ -14,6 +14,7 @@ const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
+const favoritesMapEntry = new URLSearchParams(location.search).get('start_favorites') === '1'
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
   {cache:'no-store'}).then(async response=>{
@@ -212,7 +213,8 @@ const listOwnerGalleryRange=async(limit:number,offset:number,query:any={},signal
   params.set('range','true');params.set('limit',String(limit))
   params.set('offset',String(offset))
   const page=await ownerGalleryGet('/api/v1/media/items?'+params,signal)
-  probe.galleryPageReads.push({kind:'ordinary',offset,limit,total:page.total_count})
+  probe.galleryPageReads.push({kind:'ordinary',offset,limit,total:page.total_count,
+    favorite:query?.favorite===true})
   return page
 }
 const galleryDataSource={
@@ -267,7 +269,7 @@ function FullGalleryPage(){
   }
   return <XDriveMediaGalleryPage source={galleryDataSource as any}
     preferenceScope="p04-authenticated-full-gallery"
-    initialSection="places" pageSize={48}
+    initialSection={favoritesMapEntry ? 'favorites' : 'places'} pageSize={48}
     initialMapPhotoScope={{albumKey:'',filters:{
       sort_by:'captured',sort_dir:'desc',favorite:true}}}
     onOpenViewer={fullGalleryDirectPhoto ? (item,context)=>{

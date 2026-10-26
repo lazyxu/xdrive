@@ -33,6 +33,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
+  favoriteMapCloseModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const sdkStub='('+function sdkFactory(){
@@ -1016,7 +1017,7 @@ async function testMobilePhotoDrawer(browser,mode,port){
     // menus after the real touch/Viewer round-trip, across narrow iPhone widths.
     // This catches a filter panel positioned from the Filter button instead of
     // the trailing toolbar (which clips its left edge on 320/390px screens).
-    for (const width of [320,390,430]) {
+    for (const width of [320,375,390,430,899,900]) {
       await page.setViewportSize({width,height:844})
       for (const kind of ['filter','more']) {
         const menu=page.locator('[data-xdrive-places-map-'+kind+'-menu]')
@@ -1044,8 +1045,147 @@ async function testMobilePhotoDrawer(browser,mode,port){
           bounds.top>=0&&bounds.toolbarRight<=width+0.5)
         await menu.locator('summary').first().click()
       }
+      // Close is a third 44px toolbar action. In a 320px iPhone viewport it
+      // must remain visible and genuinely hit-testable after the menus close.
+      const closeBounds=await page.evaluate(()=>{
+        const close=document.querySelector('[data-xdrive-places-map-close]')
+        const rect=close?.getBoundingClientRect()
+        if (!close || !rect) return null
+        const hit=document.elementFromPoint(rect.left+rect.width/2,
+          rect.top+rect.height/2)
+        return {left:rect.left,right:rect.right,top:rect.top,
+          width:rect.width,height:rect.height,
+          hit:hit===close || close.contains(hit),
+          viewport:document.documentElement.clientWidth}
+      })
+      record(mode+': iOS '+width+'px map Close remains a hit-testable 44px target',
+        closeBounds?.viewport===width && closeBounds.left>=-0.5 &&
+        closeBounds.right<=width+0.5 && closeBounds.top>=0 &&
+        closeBounds.width>=44 && closeBounds.height>=44 && closeBounds.hit===true)
     }
+    // Apple-style Close uses the existing current Owner Gallery navigation,
+    // not an SDK Child route or a synthetic unfiltered photo reader.
+    const closeMap=page.locator('[data-xdrive-places-map-close]')
+    await closeMap.waitFor({state:'visible'})
+    await closeMap.tap()
+    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    const closed=await page.evaluate(()=>({
+      mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      ordinaryOwnerReads:window.__mapProbe.galleryPageReads.filter(
+        read=>read.kind==='ordinary').length,
+      errors:window.__mapProbe.galleryPageErrors.length,
+    }))
+    record(mode+': closing the mobile map returns to authenticated Gallery',
+      closed.mapCount===0&&closed.ordinaryOwnerReads>=1&&
+      closed.errors===0&&errors.length===0)
     summary.mobileDrawerModes.push(mode)
+  }finally{await context.close()}
+}
+
+async function testFavoritesMapClose(browser,mode,port){
+  // A real favorite-only Owner Range must survive Library→Map→Close without
+  // broadening to all photos. Use the mounted production Gallery/Router.
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},deviceScaleFactor:3,
+    locale:'zh-CN',isMobile:true,hasTouch:true,
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const url='https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&full_gallery=1&start_favorites=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto(url,{waitUntil:'domcontentloaded'})
+    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    const before=await page.evaluate(()=>{
+      const reads=window.__mapProbe.galleryPageReads.filter(r=>r.kind==='ordinary')
+      return reads.at(-1)
+    })
+    record(mode+': Favorites start from genuine scoped Owner Range',
+      before?.favorite===true&&before?.total===3)
+    await page.locator('[data-xdrive-gallery-show-map]').click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-map-close]').tap()
+    await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
+    const after=await page.evaluate(()=>{
+      const reads=window.__mapProbe.galleryPageReads.filter(r=>r.kind==='ordinary')
+      return {last:reads.at(-1),length:reads.length,
+        mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+        errors:window.__mapProbe.galleryPageErrors.length}
+    })
+    record(mode+': closing collection map restores favorite Owner membership',
+      after.length>=2&&after.last?.favorite===true&&after.last?.total===3&&
+      after.mapCount===0&&after.errors===0&&errors.length===0)
+    record(mode+': Favorites map Close never lets SDK Child read private media',
+      requests.every(item=>item.host!=='child'||!item.path.startsWith('/api/v1/')))
+    // Closing a previously signed Favorite map is NOT permission to reveal an
+    // unfiltered Gallery. The original Owner Range must independently succeed
+    // before the trusted React Parent commits the collection navigation.
+    await page.locator('[data-xdrive-gallery-show-map]').click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const beforeDeniedReads=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(r=>r.kind==='ordinary').length)
+    let deniedRanges=0
+    let unscopedReads=0
+    await page.route('**/api/v1/media/items?**',route=>{
+      const url=new URL(route.request().url())
+      if(url.searchParams.get('favorite')!=='true')unscopedReads++
+      deniedRanges++
+      return route.fulfill({status:403,contentType:'application/json',
+        body:'{"error":"test_only_owner_forbidden"}'})
+    })
+    await page.locator('[data-xdrive-places-map-close]').tap()
+    await page.waitForFunction(()=>window.__mapProbe.galleryPageErrors.length>=1)
+    const blocked=await page.evaluate(()=>({
+      mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      tiles:document.querySelectorAll('[data-xdrive-media-tile]').length,
+      ordinaryReads:window.__mapProbe.galleryPageReads.filter(
+        r=>r.kind==='ordinary').length,
+      errors:window.__mapProbe.galleryPageErrors.length,
+    }))
+    record(mode+': denied Favorite Owner return stays on map without unfiltered media',
+      deniedRanges>=1&&unscopedReads===0&&blocked.mapCount===1&&
+      blocked.tiles===0&&blocked.ordinaryReads===beforeDeniedReads&&
+      blocked.errors>=1&&errors.length===0)
+    await page.unroute('**/api/v1/media/items?**')
+    let expiredOwnerReads=0
+    page.on('request',request=>{
+      if(new URL(request.url()).pathname==='/api/v1/media/items')
+        expiredOwnerReads++
+    })
+    // The original Favorite map entry is a short-lived visual hint. Time
+    // expiry cannot become a second implicit invitation to all-library.
+    await page.evaluate(()=>{
+      const unadjustedNow=Date.now.bind(Date)
+      Date.now=()=>unadjustedNow()+600_001
+    })
+    const acceptedBeforeExpiry=await page.evaluate(()=>
+      window.__mapProbe.galleryPageReads.filter(r=>r.kind==='ordinary').length)
+    const closeAgain=page.locator('[data-xdrive-places-map-close]')
+    await closeAgain.tap()
+    await page.getByText('地图返回范围已失效，请从原收藏或相册重新打开地图。',
+      {exact:true}).waitFor({state:'visible'})
+    // Repeat is intentional: clearing an expired ref and then letting the
+    // second Close use root Library is a subtle Owner-scope widening bug.
+    await closeAgain.tap()
+    const expired=await page.evaluate(()=>({
+      mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      tiles:document.querySelectorAll('[data-xdrive-media-tile]').length,
+      accepted:window.__mapProbe.galleryPageReads.filter(
+        r=>r.kind==='ordinary').length,
+    }))
+    record(mode+': expired map return and repeated Close never open all-library',
+      expired.mapCount===1&&expired.tiles===0&&
+      expired.accepted===acceptedBeforeExpiry&&expiredOwnerReads===0&&
+      errors.length===0)
+    summary.favoriteMapCloseModes.push(mode)
   }finally{await context.close()}
 }
 
@@ -1151,6 +1291,10 @@ async function main(){
       await testMobilePhotoDrawer(browser,'isolated',port)
       record('both SDK Hosts completed 390px touch grip and real Owner Viewer return',
         summary.mobileDrawerModes.join(',')==='inline,isolated')
+      await testFavoritesMapClose(browser,'inline',port)
+      await testFavoritesMapClose(browser,'isolated',port)
+      record('both Hosts return from map to same authenticated Favorites membership',
+        summary.favoriteMapCloseModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}

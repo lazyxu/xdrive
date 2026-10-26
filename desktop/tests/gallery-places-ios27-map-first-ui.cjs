@@ -72,6 +72,24 @@ test('trusted photo covers wait for real Owner camera and reject stale SDK proje
   assert.match(source,/xDrivePlacesDrawerValidRange\(cell,range\)/)
 })
 
+test('shared iOS photo map pins show only verified blue counts above singleton photos', () => {
+  const source = read(photoMap)
+  const start = source.indexOf('data-xdrive-places-trusted-photo-cover-pins')
+  const end = source.indexOf('{!activeDrawer && loadThumbnail && photoStrip.length', start)
+  assert.ok(start >= 0 && end > start)
+  const pins = source.slice(start, end)
+  assert.ok(pins.includes('aria-label={`查看该区域 ${pin.count} 张照片`}'))
+  assert.match(pins, /onClick=\{\(\) => openVerifiedCell\(pin.selection\)\}/)
+  assert.match(pins, /\{pin.count > 1 \? \(/)
+  assert.match(pins, /data-xdrive-places-photo-count-badge/)
+  assert.match(pins, /aria-hidden="true"/)
+  assert.match(pins, /top:-8,right:-8,minWidth:24/)
+  assert.match(pins, /theme.palette.mode === 'dark' \? '#0A84FF' : '#007AFF'/)
+  assert.match(pins, /\{pin.count.toLocaleString\('zh-CN'\)\}/)
+  assert.doesNotMatch(pins, /\{pin.count.toLocaleString\('zh-CN'\)\}张/)
+  assert.match(pins, /revision=\{pin.selection.node_revision\}/)
+})
+
 test('photo thumbnails, real Owner camera count and wall action remain on map', () => {
   const source = read(photoMap)
   const mapStart = source.indexOf('data-xdrive-places-cluster-overview')
