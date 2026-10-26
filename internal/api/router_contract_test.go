@@ -33,6 +33,10 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/auth/login", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/refresh", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/logout", suite: "auth"},
+		{method: "POST", path: "/api/v1/auth/browser/login", suite: "auth-browser-cookie"},
+		{method: "POST", path: "/api/v1/auth/browser/refresh", suite: "auth-browser-cookie"},
+		{method: "POST", path: "/api/v1/auth/browser/logout", suite: "auth-browser-cookie"},
+		{method: "POST", path: "/api/v1/me/change-password/browser", suite: "auth-browser-cookie"},
 		{method: "GET", path: "/api/v1/public/share", suite: "shares"},
 		{method: "POST", path: "/api/v1/public/share/children", suite: "shares"},
 		{method: "POST", path: "/api/v1/public/share/download", suite: "shares"},
@@ -448,14 +452,20 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		// One-use map-only Ticket, exact Host, Origin and signed release take
 		// the place of Bearer on this one dedicated Child-origin endpoint.
 		// This exemption does not apply to any Owner /api/v1 route.
-		"POST /_xdrive_baidu_isolated/session":              {},
-		"GET /metrics":                                      {},
-		"GET /api/v1/healthz":                               {},
-		"GET /api/v1/readyz":                                {},
-		"GET /api/v1/version":                               {},
-		"POST /api/v1/auth/login":                           {},
-		"POST /api/v1/auth/refresh":                         {},
-		"POST /api/v1/auth/logout":                          {},
+		"POST /_xdrive_baidu_isolated/session": {},
+		"GET /metrics":                         {},
+		"GET /api/v1/healthz":                  {},
+		"GET /api/v1/readyz":                   {},
+		"GET /api/v1/version":                  {},
+		"POST /api/v1/auth/login":              {},
+		"POST /api/v1/auth/refresh":            {},
+		"POST /api/v1/auth/logout":             {},
+		// Dedicated browser auth uses an HttpOnly refresh cookie and strict
+		// same-origin HTTPS admission, NOT a Bearer header. The negative
+		// origin/CSRF and cookie-only checks live in auth_browser_cookie_test.
+		"POST /api/v1/auth/browser/login":                   {},
+		"POST /api/v1/auth/browser/refresh":                 {},
+		"POST /api/v1/auth/browser/logout":                  {},
 		"GET /api/v1/public/share":                          {},
 		"POST /api/v1/public/share/children":                {},
 		"POST /api/v1/public/share/download":                {},
