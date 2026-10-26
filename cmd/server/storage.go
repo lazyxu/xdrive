@@ -301,6 +301,13 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 	if err := repairCanonicalCASLifecycleLocks(abs, uid, gid); err != nil {
 		return "", err
 	}
+	// The upload ownership marker does not attest the separate, regenerable
+	// thumbnail/poster cache. A migrated Server can be healthy while every
+	// cold thumbnail PUT fails with EACCES. Repair only the fixed directories,
+	// never recursively chown potentially 100k cached image files.
+	if err := repairMediaCacheParents(abs, uid, gid); err != nil {
+		return "", err
+	}
 
 	if err := os.WriteFile(marker, []byte(target+"\n"), 0o640); err != nil {
 		return "", fmt.Errorf("write storage ownership marker: %w", err)
@@ -390,6 +397,59 @@ func repairCanonicalCASLifecycleLocks(root string, uid, gid int) error {
 		}
 	}
 	return nil
+}
+
+// repairMediaCacheParents makes existing regenerable cache directories
+// readable/writable to the runtime even when the upload ownership marker is
+// current. This is O(1) in photo count: one root, two categories, two "node"
+// parents and at most 512 SHA-256 shard directories. Missing directories are
+// created lazily by Local.Put; cached files and unrelated paths are untouched.
+func repairMediaCacheParents(root string, uid, gid int) error {
+	cacheRoot := filepath.Join(root, ".xdrive-media")
+	found, err := repairMediaCacheParentIfPresent(cacheRoot, uid, gid)
+	if err != nil || !found {
+		return err
+	}
+	for _, category := range []string{"thumbnails", "posters"} {
+		categoryRoot := filepath.Join(cacheRoot, category)
+		found, err := repairMediaCacheParentIfPresent(categoryRoot, uid, gid)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if _, err := repairMediaCacheParentIfPresent(filepath.Join(categoryRoot, "node"), uid, gid); err != nil {
+			return err
+		}
+		for shard := 0; shard < 256; shard++ {
+			if _, err := repairMediaCacheParentIfPresent(
+				filepath.Join(categoryRoot, fmt.Sprintf("%02x", shard)), uid, gid,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Reject symlinks and non-directories rather than following cache paths into
+// arbitrary host locations. Only existing directory metadata is changed.
+func repairMediaCacheParentIfPresent(path string, uid, gid int) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat media cache parent %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf("media cache parent %s must be a real directory", path)
+	}
+	if err := repairStorageEntryWithInfo(path, info, uid, gid); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func repairStorageTree(root string, uid, gid int) error {
