@@ -992,6 +992,11 @@ class DriveController(
                 page.totalCount != latest.trashTotal ||
                 page.items.any { row -> latest.trashItems.any { it.node.id == row.node.id } }))
                 throw ApiException(0, "Trash changed while paging", ApiFailureReason.INVALID_RESPONSE)
+            // A Server count is not evidence of rows. Treat an empty nonterminal
+            // range as stale/invalid instead of repeatedly paging the same offset.
+            // Keep the last successful rows and wait for an explicit GET refresh.
+            if (page.items.isEmpty() && page.totalCount > offset.toLong())
+                throw ApiException(0, "Empty Trash range with remaining count", ApiFailureReason.INVALID_RESPONSE)
             val rows = if (append) latest.trashItems + page.items else page.items
             mutableState.value = latest.copy(trashItems = rows,
                 trashTotal = page.totalCount, trashLoaded = true,

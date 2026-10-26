@@ -16,6 +16,8 @@ class TrashFlowTest {
         val offsets = mutableListOf<Int>()
         var restores = 0
         var lostAck = false
+        var emptyFirstPage = false
+        var emptyContinuationPage = false
         override suspend fun login(username: String, password: String) =
             AuthSession("access", "refresh", username)
         override suspend fun refresh(refreshToken: String) =
@@ -28,6 +30,8 @@ class TrashFlowTest {
             NodeRange(emptyList(), 0, offset)
         override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
             offsets += offset
+            if ((offset == 0 && emptyFirstPage) || (offset > 0 && emptyContinuationPage))
+                return TrashPage(emptyList(), deleted.size.toLong(), offset)
             return TrashPage(deleted.drop(offset).take(100), deleted.size.toLong(), offset)
         }
         override suspend fun restoreTrash(accessToken: String, original: DriveNode): DriveNode {
@@ -68,6 +72,62 @@ class TrashFlowTest {
         runCurrent()
         assertEquals(Screen.FILES, c.state.value.screen)
         assertTrue(c.state.value.trashItems.isEmpty())
+        c.close()
+    }
+
+    @Test fun `Empty continuation never loops and retains already loaded Trash rows`() = runTest {
+        val service = Service().apply { emptyContinuationPage = true }
+        val c = open(this, service)
+        runCurrent()
+        c.openTrash()
+        runCurrent()
+        assertEquals(100, c.state.value.trashItems.size)
+
+        c.loadMoreTrash()
+        runCurrent()
+        assertEquals(listOf(0, 100), service.offsets)
+        assertEquals(100, c.state.value.trashItems.size)
+        assertEquals(101L, c.state.value.trashTotal)
+        assertTrue(c.state.value.trashLoaded)
+        assertNotNull(c.state.value.error)
+
+        // The viewport can still be at the bottom; stale metadata must not
+        // trigger another fetch until a user explicitly refreshes this list.
+        c.loadMoreTrash()
+        runCurrent()
+        assertEquals(listOf(0, 100), service.offsets)
+
+        service.emptyContinuationPage = false
+        c.refreshTrash()
+        runCurrent()
+        c.loadMoreTrash()
+        runCurrent()
+        assertEquals(listOf(0, 100, 0, 100), service.offsets)
+        assertEquals(101, c.state.value.trashItems.size)
+        assertNull(c.state.value.error)
+        c.close()
+    }
+
+    @Test fun `Nonempty Trash total with empty first range is an error not empty success`() = runTest {
+        val service = Service().apply { emptyFirstPage = true }
+        val c = open(this, service)
+        runCurrent()
+        c.openTrash()
+        runCurrent()
+        assertEquals(listOf(0), service.offsets)
+        assertFalse(c.state.value.trashLoaded)
+        assertTrue(c.state.value.trashItems.isEmpty())
+        assertNotNull(c.state.value.error)
+
+        c.loadMoreTrash()
+        runCurrent()
+        assertEquals(listOf(0), service.offsets)
+        service.emptyFirstPage = false
+        c.refreshTrash()
+        runCurrent()
+        assertTrue(c.state.value.trashLoaded)
+        assertEquals(100, c.state.value.trashItems.size)
+        assertNull(c.state.value.error)
         c.close()
     }
 
