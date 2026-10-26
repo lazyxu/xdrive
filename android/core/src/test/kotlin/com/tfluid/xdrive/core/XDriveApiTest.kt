@@ -17,6 +17,81 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class XDriveApiTest {
+    @Test fun nodeLocationAndDirectoryPositionUseCurrentOwnerContracts() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "node_id":155,"revision":7,"node_type":"file","parent_id":20,
+                "path":"Photos/target.jpg","parent_path":"Photos",
+                "breadcrumbs":[{"id":1,"name":"","path":""},{"id":20,"name":"Photos","path":"Photos"}],
+                "sources":[],"sync_folders":[]
+            }"""))
+            val location = api.nodeLocation("owner-secret", 155)
+            assertEquals(155L, location.nodeId)
+            assertEquals(7L, location.revision)
+            assertEquals(20L, location.parentId)
+            assertEquals(listOf(1L, 20L), location.parentDirectories.map { it.id })
+            val request = server.takeRequest()
+            assertEquals("/api/v1/nodes/155/location", request.path)
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "node_id":155,"revision":7,"index":12345,
+                "sort":"name","order":"asc","group":"none","folders_first":true
+            }"""))
+            val position = api.childPosition("owner-secret", 20, 155)
+            assertEquals(12345, position.index)
+            assertEquals(7L, position.revision)
+            val requested = server.takeRequest()
+            assertEquals("/api/v1/nodes/20/children/position", requested.requestUrl!!.encodedPath)
+            assertEquals("155", requested.requestUrl!!.queryParameter("node_id"))
+            assertEquals("name", requested.requestUrl!!.queryParameter("sort"))
+            assertEquals("asc", requested.requestUrl!!.queryParameter("order"))
+            assertEquals("none", requested.requestUrl!!.queryParameter("group"))
+            assertEquals("true", requested.requestUrl!!.queryParameter("folders_first"))
+            assertEquals("Bearer owner-secret", requested.getHeader("Authorization"))
+            assertFalse(requested.path!!.contains("owner-secret"))
+        } }
+    }
+
+    @Test fun nodeLocationRejectsStaleOrUnverifiedOwnerResponse() = runBlocking {
+        val badLocations = listOf(
+            // Search item no longer matches the Owner Node identity.
+            """{"node_id":999,"revision":7,"node_type":"file","parent_id":20,
+                "breadcrumbs":[{"id":1,"name":""},{"id":20,"name":"Photos"}]}""",
+            // A parent must be the final current Owner directory.
+            """{"node_id":155,"revision":7,"node_type":"file","parent_id":21,
+                "breadcrumbs":[{"id":1,"name":""},{"id":20,"name":"Photos"}]}""",
+            // Directory breadcrumb must end at the actual directory Node.
+            """{"node_id":155,"revision":7,"node_type":"dir","parent_id":20,
+                "breadcrumbs":[{"id":1,"name":""},{"id":20,"name":"Photos"}]}""",
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (payload in badLocations) {
+                server.enqueue(MockResponse().setBody(payload))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.nodeLocation("owner-secret", 155) }.reason)
+            }
+            server.enqueue(MockResponse().setResponseCode(404))
+            assertEquals(404, failure { api.nodeLocation("owner-secret", 155) }.statusCode)
+            val invalidPositions = listOf(
+                """{"node_id":156,"revision":7,"index":12345,
+                    "sort":"name","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":155,"revision":7,"index":-1,
+                    "sort":"name","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":155,"revision":7,"index":12345,
+                    "sort":"updated","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":155,"revision":7,"index":12345,
+                    "sort":"name","order":"asc","group":"none","folders_first":false}""",
+            )
+            for (payload in invalidPositions) {
+                server.enqueue(MockResponse().setBody(payload))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.childPosition("owner-secret", 20, 155) }.reason)
+            }
+            assertEquals(8, server.requestCount)
+        } }
+    }
+
     @Test fun videoUsesExactPinnedOwnerRangeAndNoTokenInUrl() {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val video = DriveNode(71, 1, "clip.mp4", "file", size = 7, revision = 9)

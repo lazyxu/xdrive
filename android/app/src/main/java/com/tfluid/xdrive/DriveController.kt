@@ -29,6 +29,12 @@ data class DriveState(
     val offset: Int = 0,
     val totalCount: Long = 0,
     val loaded: Boolean = false,
+    /** First absolute page in the visible directory window. */
+    val browseWindowStart: Int = 0,
+    /** Focus after Show in Folder, distinct from multi-select edit mode. */
+    val focusedBrowseNodeId: Long? = null,
+    val focusedBrowseIndex: Int = 0,
+    val focusedBrowseEpoch: Long = 0,
     val selected: DriveNode? = null,
     val filesSection: FilesSection = FilesSection.BROWSE,
     val collectionItems: List<DriveCollectionItem> = emptyList(),
@@ -74,6 +80,7 @@ data class DriveState(
     val destinationWriteAttempted: Boolean = false,
 ) {
     val hasNext get() = loaded && offset.toLong() + 100 < totalCount && offset <= Int.MAX_VALUE - 100
+    val hasPrevious get() = loaded && browseWindowStart > 0
     val destinationHasNext get() = destinationLoaded &&
         destinationOffset.toLong() + 100 < destinationTotal &&
         destinationOffset <= Int.MAX_VALUE - 100
@@ -114,6 +121,7 @@ class DriveController(
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
     private var retryAppend = false
+    private var retryPrepend = false
 
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
         loadRoute(ServerAddress.parse(input, allowHttp).url)
@@ -905,15 +913,15 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
             current.collectionItems.none { it == item }) return
-        if (item.node.isDirectory) locateCollectionItem(item) else showDetails(item.node)
+        if (item.node.isDirectory) openCollectionFolder(item) else showDetails(item.node)
     }
 
     /** Navigate using an authenticated Owner-scoped breadcrumb, recheck root
      * and last directory with the same Server API. Never trust a display path. */
-    fun locateCollectionItem(item: DriveCollectionItem) {
+    private fun openCollectionFolder(item: DriveCollectionItem) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
-            current.collectionItems.none { it == item }) return
+            !item.node.isDirectory || current.collectionItems.none { it == item }) return
         // Search files already carry directory-only breadcrumbs; recent and
         // favorites include the file leaf. Reuse the actual parent in both.
         val crumbs = if (item.node.isDirectory || item.crumbs.lastOrNull()?.id != item.node.id)
@@ -934,6 +942,75 @@ class DriveController(
             if (root.id != candidate.first().id)
                 throw ApiException(0, "Stale breadcrumb root", ApiFailureReason.INVALID_RESPONSE)
             loadWithin(service, listOf(root) + candidate.drop(1), 0, ticket)
+        }
+    }
+
+    /** Exact Show in Folder: the Server returns current Owner location and
+     * ordinal. Never enumerate 100k siblings or trust a stale Search breadcrumb.
+     * Keep results visible on failure instead of selecting a wrong row. */
+    fun locateCollectionItem(item: DriveCollectionItem) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+            current.loading || current.destinationKind != null ||
+            current.collectionItems.none { it == item } || session == null) return
+        val service = api ?: return
+        val section = current.filesSection
+        request { ticket ->
+            val location = authenticated(service, ticket) {
+                service.nodeLocation(it, item.node.id)
+            }
+            checkCurrent(ticket)
+            val parent = location.parentDirectories
+            val root = authenticated(service, ticket) { service.root(it) }
+            checkCurrent(ticket)
+            if (parent.isEmpty() || root.id != parent.first().id)
+                throw ApiException(0, "Node location changed", ApiFailureReason.INVALID_RESPONSE)
+            val position = authenticated(service, ticket) {
+                service.childPosition(it, location.parentId, location.nodeId)
+            }
+            checkCurrent(ticket)
+            if (position.revision != location.revision)
+                throw ApiException(0, "Node position changed", ApiFailureReason.INVALID_RESPONSE)
+            val pageStart = (position.index / 100) * 100
+            val page = authenticated(service, ticket) {
+                service.children(it, location.parentId, pageStart)
+            }
+            checkCurrent(ticket)
+            val localIndex = position.index - pageStart
+            if (page.offset != pageStart || page.totalCount <= position.index.toLong() ||
+                localIndex !in page.items.indices)
+                throw ApiException(0, "Located range changed", ApiFailureReason.INVALID_RESPONSE)
+            val exactNode = page.items[localIndex]
+            if (exactNode.id != item.node.id || exactNode.revision != position.revision ||
+                exactNode.parentId != location.parentId ||
+                exactNode.isDirectory != item.node.isDirectory)
+                throw ApiException(0, "Located item changed", ApiFailureReason.INVALID_RESPONSE)
+            val latest = state.value
+            if (latest.screen != Screen.FILES || latest.filesSection != section ||
+                latest.collectionItems.none { it == item }) throw CancellationException()
+            val path = parent.mapIndexed { index, crumb ->
+                if (index == 0) root else DriveNode(
+                    id = crumb.id, parentId = parent[index - 1].id,
+                    name = crumb.name, type = "dir",
+                )
+            }
+            retryPrepend = false
+            retryPath = path
+            retryOffset = pageStart
+            retryAppend = false
+            mutableState.value = latest.copy(
+                filesSection = FilesSection.BROWSE, path = path,
+                items = page.items, offset = pageStart, browseWindowStart = pageStart,
+                totalCount = page.totalCount, loaded = true,
+                focusedBrowseNodeId = exactNode.id, focusedBrowseIndex = localIndex,
+                focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
+                selected = null, error = null,
+                collectionItems = emptyList(), collectionLoaded = false,
+                searchQuery = "", searchNextCursor = "",
+                browseSelectionMode = false, browseSelectedIds = emptySet(),
+                browseBatchWriteAttempted = false,
+                fileExportPending = null, fileUploadPickerParent = null,
+            )
         }
     }
 
@@ -1353,8 +1430,10 @@ class DriveController(
     }
     fun retry() {
         if (state.value.screen != Screen.FILES || state.value.destinationKind != null) return
-        if (state.value.filesSection == FilesSection.BROWSE)
-            load(retryPath ?: state.value.path, retryOffset, retryAppend)
+        if (state.value.filesSection == FilesSection.BROWSE) {
+            if (retryPrepend) loadPrevious(retryFailed = true)
+            else load(retryPath ?: state.value.path, retryOffset, retryAppend)
+        }
         else if (state.value.filesSection == FilesSection.SEARCH &&
             state.value.collectionLoaded && state.value.searchNextCursor.isNotBlank())
             loadMoreSearch(retryFailed = true)
@@ -1368,6 +1447,40 @@ class DriveController(
             current.fileExportPending != null) return
         load(current.path, current.offset + 100, append = true)
     }
+    /** Prepend a single authenticated page on reverse scroll, preserving the
+     * visible item and original exact selected Node using stable Lazy keys. */
+    fun loadPrevious(retryFailed: Boolean = false) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            current.destinationKind != null || current.loading ||
+            (current.error != null && !retryFailed) || !current.hasPrevious ||
+            current.fileExportPending != null || session == null) return
+        val service = api ?: return
+        val expected = current.browseWindowStart
+        val offset = (expected - 100).coerceAtLeast(0)
+        val path = current.path
+        retryPrepend = true
+        request { ticket ->
+            val page = authenticated(service, ticket) {
+                service.children(it, path.last().id, offset)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.FILES || latest.filesSection != FilesSection.BROWSE ||
+                latest.path != path || !latest.loaded || latest.browseWindowStart != expected ||
+                page.offset != offset || page.totalCount != latest.totalCount ||
+                page.items.size != expected - offset ||
+                page.items.any { row -> latest.items.any { it.id == row.id } })
+                throw ApiException(0, "Previous directory range changed", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(
+                items = page.items + latest.items, browseWindowStart = offset,
+                focusedBrowseIndex = latest.focusedBrowseIndex + page.items.size,
+                error = null,
+            )
+            retryPrepend = false
+        }
+    }
+
     // Compatibility entry points; native Files UI uses loadMore instead.
     fun nextPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.hasNext && !state.value.loading) load(state.value.path, state.value.offset + 100) }
     fun previousPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.offset > 0 && !state.value.loading) load(state.value.path, (state.value.offset - 100).coerceAtLeast(0)) }
@@ -1378,10 +1491,14 @@ class DriveController(
         retryPath = path.toList()
         retryOffset = offset
         retryAppend = append
+        retryPrepend = false
         request { loadWithin(service, path, offset, it, append) }
     }
 
     private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long, append: Boolean = false) {
+        // Login, owner switch, an ancestor jump and folder short-tap all enter
+        // here without load(); a failed previous-page retry must not survive.
+        if (!append) retryPrepend = false
         retryPath = path.toList()
         retryOffset = offset
         retryAppend = append
@@ -1402,6 +1519,9 @@ class DriveController(
         mutableState.value = previous.copy(
             path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
             loaded = true, selected = null, error = null,
+            browseWindowStart = if (append) previous.browseWindowStart else page.offset,
+            focusedBrowseNodeId = if (append) previous.focusedBrowseNodeId else null,
+            focusedBrowseIndex = if (append) previous.focusedBrowseIndex else 0,
             browseSelectionMode = if (append) previous.browseSelectionMode else false,
             browseSelectedIds = if (append) previous.browseSelectedIds else emptySet(),
             browseBatchWriteAttempted = if (append) previous.browseBatchWriteAttempted else false,

@@ -74,6 +74,15 @@ data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
 data class FileSearchPage(val items: List<DriveCollectionItem>, val nextCursor: String)
 
+/** Current Owner path from Go /nodes/:id/location, not stale search breadcrumbs. */
+data class OwnedNodeLocation(
+    val nodeId: Long, val revision: Long, val parentId: Long,
+    val parentDirectories: List<DriveCrumb>,
+)
+
+/** One precise logical index in the same sort as Android's 100-item directory range. */
+data class DirectoryItemPosition(val nodeId: Long, val revision: Long, val index: Int)
+
 /** Go /media/items?range=true: canonical Owner photo wall, not a Files filter.
  * Keep the Server's sparse absolute offset; mobile first-open starts at tail. */
 data class GalleryAsset(
@@ -117,6 +126,10 @@ interface XDriveService {
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
+    suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation =
+        throw ApiException(501, "Node location API unavailable")
+    suspend fun childPosition(accessToken: String, parentId: Long, nodeId: Long): DirectoryItemPosition =
+        throw ApiException(501, "Directory position API unavailable")
     // The safe defaults keep independent core/Compose fixtures explicit: a
     // missing collection capability is an error, never a fabricated empty list.
     suspend fun fileRecent(accessToken: String): List<DriveCollectionItem> =
@@ -224,6 +237,54 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
 
     /** Use the already-configured Owner-authenticated OkHttp request pipeline. */
+    /** Read the current authenticated Node tree, never assume a search crumb is fresh.
+     * No absolute source paths or connector identities are exposed to native UI. */
+    override suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation {
+        require(nodeId > 0 && validToken(accessToken))
+        val result = request("nodes/$nodeId/location", accessToken)
+        val returnedID = result.long("node_id")
+        val revision = result.long("revision")
+        val type = result.string("node_type")
+        val parentID = result.long("parent_id")
+        val raw = result["breadcrumbs"] as? JsonArray ?: invalidPayload()
+        if (returnedID != nodeId || revision <= 0 || parentID <= 0 ||
+            type !in listOf("dir", "file") || raw.isEmpty() || raw.size > 512) invalidPayload()
+        val crumbs = raw.map { entry ->
+            val crumb = entry as? JsonObject ?: invalidPayload()
+            val id = crumb.long("id")
+            val name = crumb.string("name")
+            if (id <= 0 || name.toByteArray(Charsets.UTF_8).size > 255) invalidPayload()
+            DriveCrumb(id, name)
+        }
+        if (crumbs.map { it.id }.toSet().size != crumbs.size) invalidPayload()
+        val directories = if (type == "dir") {
+            if (crumbs.last().id != nodeId || crumbs.size < 2) invalidPayload()
+            crumbs.dropLast(1)
+        } else crumbs
+        if (directories.isEmpty() || directories.last().id != parentID ||
+            directories.first().name.isNotEmpty()) invalidPayload()
+        return OwnedNodeLocation(nodeId, revision, parentID, directories)
+    }
+
+    /** Server computes the target ordinal without sending thousands of rows. */
+    override suspend fun childPosition(
+        accessToken: String, parentId: Long, nodeId: Long,
+    ): DirectoryItemPosition {
+        require(parentId > 0 && nodeId > 0 && validToken(accessToken))
+        val result = request("nodes/$parentId/children/position", accessToken, query = mapOf(
+            "node_id" to nodeId.toString(), "sort" to "name", "order" to "asc",
+            "group" to "none", "folders_first" to "true",
+        ))
+        val index = result.long("index")
+        val revision = result.long("revision")
+        if (result.long("node_id") != nodeId || revision <= 0 ||
+            index < 0 || index > Int.MAX_VALUE ||
+            result.string("sort") != "name" || result.string("order") != "asc" ||
+            result.string("group") != "none" ||
+            result["folders_first"] != JsonPrimitive(true)) invalidPayload()
+        return DirectoryItemPosition(nodeId, revision, index.toInt())
+    }
+
     override suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode {
         require(parentId > 0 && validDriveNodeName(name)) { "Invalid directory name" }
         val created = node(request("nodes/$parentId/directories", accessToken, values = mapOf("name" to name)))

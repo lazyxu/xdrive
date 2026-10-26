@@ -61,6 +61,24 @@ class DriveControllerTest {
             thumbnailGate?.await()
             return byteArrayOf(1, 2, 3)
         }
+        val locateCalls = mutableListOf<Long>()
+        val positionCalls = mutableListOf<Pair<Long, Long>>()
+        var locateNode: suspend (Long) -> OwnedNodeLocation = { node ->
+            OwnedNodeLocation(node, 1, 1, listOf(DriveCrumb(1, "")))
+        }
+        var positionNode: suspend (Long, Long) -> DirectoryItemPosition = { _, node ->
+            DirectoryItemPosition(node, 1, if (node == file.id) 1 else 0)
+        }
+        override suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation {
+            locateCalls += nodeId
+            return locateNode(nodeId)
+        }
+        override suspend fun childPosition(
+            accessToken: String, parentId: Long, nodeId: Long,
+        ): DirectoryItemPosition {
+            positionCalls += parentId to nodeId
+            return positionNode(parentId, nodeId)
+        }
         val recentFolder = DriveCollectionItem(folder, "照片",
             listOf(DriveCrumb(1, ""), DriveCrumb(2, "照片")))
         val favoriteFile = DriveCollectionItem(file, "readme.txt",
@@ -1177,6 +1195,144 @@ class DriveControllerTest {
         assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
         assertEquals(listOf(root), c.state.value.path)
         assertEquals(1L to 0, api.calls.last())
+    }
+
+    @Test fun searchShowInFolderScrollsToExactOwnerFileWithoutFullDirectoryScan() = runTest {
+        val target = DriveNode(1155, 1, "target.txt", "file", 12, revision = 3)
+        val api = Service()
+        api.searchListing = { _, _ ->
+            // Stale/misleading search crumbs must not determine destination.
+            FileSearchPage(listOf(DriveCollectionItem(target, "old/path/target.txt",
+                listOf(DriveCrumb(404, "not-owner")))), "")
+        }
+        api.locateNode = { node ->
+            OwnedNodeLocation(node, 3, 1, listOf(DriveCrumb(1, "")))
+        }
+        api.positionNode = { _, node -> DirectoryItemPosition(node, 3, 155) }
+        api.listing = { parent, offset ->
+            assertEquals(1L, parent)
+            val page = (offset until minOf(offset + 100, 301)).map { index ->
+                if (index == 155) target
+                else DriveNode(1000L + index, 1, "file-$index.txt", "file", 12, revision = 1)
+            }
+            NodeRange(page, 301, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("target"); runCurrent()
+        c.locateCollectionItem(c.state.value.collectionItems.single()); runCurrent()
+
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(listOf(root.id), c.state.value.path.map { it.id })
+        assertEquals(100, c.state.value.browseWindowStart)
+        assertEquals(100, c.state.value.offset)
+        assertEquals(301L, c.state.value.totalCount)
+        assertEquals(100, c.state.value.items.size)
+        assertEquals(target, c.state.value.items[55])
+        assertEquals(target.id, c.state.value.focusedBrowseNodeId)
+        assertEquals(55, c.state.value.focusedBrowseIndex)
+        assertTrue(c.state.value.focusedBrowseEpoch > 0)
+        assertEquals(listOf(1L to 100), api.calls.takeLast(1))
+        assertEquals(listOf(target.id), api.locateCalls)
+        assertEquals(listOf(1L to target.id), api.positionCalls)
+        assertTrue(c.state.value.hasPrevious)
+
+        c.loadPrevious(); runCurrent()
+        assertEquals(0, c.state.value.browseWindowStart)
+        assertEquals(200, c.state.value.items.size)
+        assertEquals(155, c.state.value.focusedBrowseIndex)
+        assertEquals(target, c.state.value.items[155])
+        assertEquals(listOf(1L to 100, 1L to 0), api.calls.takeLast(2))
+
+        c.loadMore(); runCurrent()
+        assertEquals(200, c.state.value.offset)
+        assertEquals(300, c.state.value.items.size)
+        assertEquals(target.id, c.state.value.focusedBrowseNodeId)
+        // Locate + two user-driven pages; never a scan of the first 155 rows.
+        assertEquals(listOf(1L to 100, 1L to 0, 1L to 200),
+            api.calls.takeLast(3))
+        c.close()
+    }
+
+    @Test fun searchShowInFolderAt95237LoadsOnlyExactPage() = runTest {
+        val target = DriveNode(990037L, 1L, "deep-photo.jpg", "file", 50, revision = 9)
+        val hit = DriveCollectionItem(target, "obsolete/foreign/path.jpg",
+            listOf(DriveCrumb(404L, "stale-search-crumb")))
+        val api = Service()
+        api.searchListing = { _, _ -> FileSearchPage(listOf(hit), "") }
+        api.locateNode = { id ->
+            assertEquals(target.id, id)
+            OwnedNodeLocation(id, target.revision, 1L, listOf(DriveCrumb(1L, "")))
+        }
+        api.positionNode = { parent, id ->
+            assertEquals(1L, parent)
+            assertEquals(target.id, id)
+            DirectoryItemPosition(id, target.revision, 95237)
+        }
+        api.listing = { parent, offset ->
+            assertEquals(1L, parent)
+            val page = (offset until offset + 100).map { index ->
+                if (index == 95237) target else
+                    DriveNode(1000000L + index, 1L, "row-$index.txt", "file",
+                        size = 12, revision = 9)
+            }
+            NodeRange(page, 100000, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertEquals(listOf(1L to 0), api.calls)
+        c.submitGlobalSearch("deep"); runCurrent()
+        c.locateCollectionItem(c.state.value.collectionItems.single()); runCurrent()
+        val state = c.state.value
+        assertEquals(FilesSection.BROWSE, state.filesSection)
+        assertEquals(95200, state.browseWindowStart)
+        assertEquals(95200, state.offset)
+        assertEquals(100000L, state.totalCount)
+        assertEquals(100, state.items.size)
+        assertEquals(target, state.items[37])
+        assertEquals(target.id, state.focusedBrowseNodeId)
+        assertEquals(37, state.focusedBrowseIndex)
+        assertEquals(listOf(1L to 0, 1L to 95200), api.calls)
+        assertEquals(listOf(target.id), api.locateCalls)
+        assertEquals(listOf(1L to target.id), api.positionCalls)
+        assertTrue(state.hasPrevious)
+        c.close()
+    }
+
+    @Test fun changedOwnerPositionFailsClosedAndKeepsSearchResults() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("readme"); runCurrent()
+        val oldRows = c.state.value.collectionItems.toList()
+        api.positionNode = { _, node -> DirectoryItemPosition(node, 999, 1) }
+        val readsBefore = api.calls.size
+        c.locateCollectionItem(oldRows.single()); runCurrent()
+        assertEquals(FilesSection.SEARCH, c.state.value.filesSection)
+        assertEquals(oldRows, c.state.value.collectionItems)
+        assertNull(c.state.value.focusedBrowseNodeId)
+        assertNotNull(c.state.value.error)
+        assertEquals(readsBefore, api.calls.size)
+        c.close()
+    }
+
+    @Test fun delayedOwnerLocationCannotSelectItemAfterLogout() = runTest {
+        val reply = CompletableDeferred<OwnedNodeLocation>()
+        val api = Service().apply {
+            locateNode = { withContext(NonCancellable) { reply.await() } }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("readme"); runCurrent()
+        c.locateCollectionItem(c.state.value.collectionItems.single()); runCurrent()
+        c.logout(); runCurrent()
+        reply.complete(OwnedNodeLocation(file.id, 1, 1, listOf(DriveCrumb(1, ""))))
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.collectionItems.isEmpty())
+        assertNull(c.state.value.focusedBrowseNodeId)
+        assertTrue(c.state.value.items.isEmpty())
+        c.close()
     }
 
     @Test fun staleGlobalSearchCannotOverwriteFreshQueryOrLogout() = runTest {

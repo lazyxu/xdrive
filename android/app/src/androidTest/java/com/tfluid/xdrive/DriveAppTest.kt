@@ -36,6 +36,9 @@ class DriveAppTest {
     private var copyCalls = 0
     private var moveCalls = 0
     private var extraRootFile = false
+    private var locateLargeFolder = false
+    private var locateRangeReads = 0
+    private val locatedFile = DriveNode(1155, 1, "target-155.txt", "file", 12, revision = 2)
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
@@ -125,9 +128,22 @@ class DriveAppTest {
             DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                 listOf(DriveCrumb(1, ""), DriveCrumb(7, "favorite.txt"))))
         override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage =
-            FileSearchPage(listOf(
+            if (locateLargeFolder) FileSearchPage(listOf(
+                DriveCollectionItem(locatedFile, "outdated/path/target-155.txt",
+                    listOf(DriveCrumb(888, "stale")))), "")
+            else FileSearchPage(listOf(
                 DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                     listOf(DriveCrumb(1, "")))), "")
+        override suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation {
+            check(locateLargeFolder && nodeId == locatedFile.id)
+            return OwnedNodeLocation(nodeId, locatedFile.revision, 1, listOf(DriveCrumb(1, "")))
+        }
+        override suspend fun childPosition(
+            accessToken: String, parentId: Long, nodeId: Long,
+        ): DirectoryItemPosition {
+            check(locateLargeFolder && parentId == 1L && nodeId == locatedFile.id)
+            return DirectoryItemPosition(nodeId, locatedFile.revision, 155)
+        }
         override suspend fun unfavoriteFile(accessToken: String, nodeId: Long) {
             if (nodeId == 7L) favoriteDeletes++
         }
@@ -166,6 +182,18 @@ class DriveAppTest {
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
+            }
+            if (locateLargeFolder && parentId == 1L) {
+                locateRangeReads++
+                val rows = (0..200).drop(offset).take(100).map { index ->
+                    when (index) {
+                        0 -> DriveNode(2, 1, "假期照片", "dir", revision = 1)
+                        155 -> locatedFile
+                        else -> DriveNode(1000L + index, 1, "file-$index.txt", "file",
+                            size = 12, revision = 1)
+                    }
+                }
+                return NodeRange(rows, 201, offset)
             }
             val rows = if (paging && offset == 100) listOf(DriveNode(4, 1, "第二页.txt", "file", 2048))
                 else if (manyFiles && parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir")) +
@@ -249,6 +277,38 @@ class DriveAppTest {
             org.junit.Assert.assertTrue(controller.state.value.browseSelectedIds.isEmpty())
         }
         compose.onNodeWithTag("files-grid").assertExists()
+    }
+
+    @Test fun showInFolderSelectsExactFileOnFirstFrameInListAndGrid() {
+        locateLargeFolder = true
+        startAndLogin()
+        compose.onNodeWithTag("files-global-search-input").performTextInput("target")
+        compose.onNodeWithTag("files-global-search-submit").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.SEARCH &&
+                controller.state.value.collectionLoaded &&
+                controller.state.value.collectionItems.singleOrNull()?.node?.id == 1155L
+        }
+        compose.onNodeWithTag("files-collection-item-1155", useUnmergedTree = true)
+            .performTouchInput { longClick() }
+        compose.onNodeWithText("显示所在位置").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.BROWSE &&
+                controller.state.value.focusedBrowseNodeId == 1155L &&
+                controller.state.value.loaded && !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(100, controller.state.value.browseWindowStart)
+            org.junit.Assert.assertEquals(55, controller.state.value.focusedBrowseIndex)
+            org.junit.Assert.assertEquals(100, controller.state.value.items.size)
+            // One initial page plus one precisely positioned Range.
+            org.junit.Assert.assertEquals(2, locateRangeReads)
+        }
+        compose.onNodeWithTag("files-item-1155").assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-item-1155").assertIsDisplayed().assertIsSelected()
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, locateRangeReads) }
     }
 
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {

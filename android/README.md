@@ -434,3 +434,32 @@ content URI callback, Owner/revision checks and cancellation/partial-cleanup
 logic. A chooser result with a non-`content:` URI is refused; no broad filesystem
 permission or duplicate transfer implementation is added. This does not claim
 that Android MediaStore automatically indexes SAF documents in every provider.
+
+## Files: exact "Show in Folder" with scroll-to-file and selection
+
+Recent, Favorites and Search now locate the **specific current Owner Node**, not merely
+its containing directory. Android uses the already-existing Go
+`GET /api/v1/nodes/:id/location` and
+`GET /api/v1/nodes/:parent/children/position` contracts to verify the latest
+parent breadcrumb, file revision and its absolute position in the same
+`name/asc/group=none/folders_first=true` order as native Files pages.
+It reads only the containing 100-item page even for a 100k directory, then
+renders the exact file in the first frame and highlights it as a selected
+(non-editing) item in either List or Grid.
+
+A stale/moved/deleted target leaves the original collection visible with an
+error; no old Owner or delayed request can select a different Node. Earlier
+pages are prepended only when scrolling back toward the top, while later
+pages still use the existing 100-item append path. Stable item IDs preserve
+the visible anchor and focused Node across paging. Folder **short-tap**
+still enters the folder; its context-menu "Show in Folder" instead locates
+and highlights the folder within its current parent.
+
+Regression coverage: MockWebServer exact auth/sort/position and rejection of
+malformed/stale DTOs; Controller 301-item position, bidirectional pagination,
+revision mismatch and logout A→B cancellation; API35 Compose first-frame
+List/Grid selection without enumerating all earlier rows.
+
+Physical device pixel-level parity is still **not verified**. Run accurate
+SHA JVM, lint, APK, API35 Compose and Final Gate before merging; do not
+suppress or skip the safety tests.
