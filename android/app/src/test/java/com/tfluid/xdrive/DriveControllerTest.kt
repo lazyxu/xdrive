@@ -54,8 +54,13 @@ class DriveControllerTest {
             }
             return GalleryPage(items, 121, offset)
         }
-        override suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long) =
-            byteArrayOf(1, 2, 3)
+        var thumbnailReads = 0
+        var thumbnailGate: CompletableDeferred<Unit>? = null
+        override suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray {
+            thumbnailReads++
+            thumbnailGate?.await()
+            return byteArrayOf(1, 2, 3)
+        }
         val recentFolder = DriveCollectionItem(folder, "照片",
             listOf(DriveCrumb(1, ""), DriveCrumb(2, "照片")))
         val favoriteFile = DriveCollectionItem(file, "readme.txt",
@@ -408,6 +413,48 @@ class DriveControllerTest {
         // Media metadata is not a fake image Viewer for a video tile.
         c.openGalleryViewer(photo.copy(mediaKind = "video"))
         assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun oversizedGalleryOriginalFallsBackToVerifiedThumbnailWithoutDownloadingFullBytes() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean) =
+                GalleryPage(listOf(latestGallery.copy(
+                    node = latestGallery.node.copy(size = 32L * 1024 * 1024 + 1L)
+                )), 1, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        val error = runCatching { c.galleryImageBytes(photo) }.exceptionOrNull()
+        assertTrue(error is ApiException)
+        assertEquals(413, (error as ApiException).statusCode)
+        assertEquals(0, api.downloadReads)
+        assertArrayEquals(byteArrayOf(1, 2, 3), c.galleryViewerThumbnail(photo))
+        assertEquals(1, api.thumbnailReads)
+        c.dismissGalleryViewer()
+        assertNull(c.galleryViewerThumbnail(photo))
+        assertEquals("Closed Viewer must not request private thumbnails", 1, api.thumbnailReads)
+    }
+
+    @Test fun delayedViewerThumbnailCannotEscapeOldOwnerEpochEvenForSamePhotoIdentity() = runTest {
+        val api = Service().apply { thumbnailGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        val old = async { c.galleryViewerThumbnail(photo) }
+        runCurrent()
+        assertEquals(1, api.thumbnailReads)
+        c.dismissGalleryViewer()
+        c.openGalleryViewer(photo) // A -> B -> A: equal node and revision, new epoch.
+        api.thumbnailGate?.complete(Unit); runCurrent()
+        assertTrue(old.isCancelled)
+        assertEquals(photo, c.state.value.galleryViewer)
+        assertArrayEquals(byteArrayOf(1, 2, 3), c.galleryViewerThumbnail(photo))
+        assertEquals(2, api.thumbnailReads)
     }
 
     @Test fun galleryViewerNavigationOnlyMovesToImmediateVerifiedPhotos() = runTest {

@@ -1158,6 +1158,21 @@ class DriveController(
     }
 
 
+    /** The Viewer may fall back to the existing small JPEG thumbnail when the
+     * verified original exceeds 32 MiB or cannot decode on this device.
+     * Never fetch an old Owner's thumbnail into an A -> B -> A Viewer session. */
+    suspend fun galleryViewerThumbnail(item: GalleryAsset): ByteArray? {
+        val epoch = galleryViewerEpoch
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryViewer != item ||
+            current.galleryItems.none { it == item } || item.mediaKind != "image" ||
+            item.node.type != "file" || item.node.revision <= 0 || !item.hasThumbnail) return null
+        val bytes = galleryThumbnail(item) // Reuse 4 MiB bound, Owner Bearer and cancellation.
+        if (galleryViewerEpoch != epoch || state.value.screen != Screen.GALLERY ||
+            state.value.galleryViewer != item) throw CancellationException()
+        return bytes
+    }
+
     /** Gallery image Viewer is backed by the same revisioned Owner file API
      * used for SAF export. Opening a video must not fake native playback. */
     fun openGalleryViewer(item: GalleryAsset) {
