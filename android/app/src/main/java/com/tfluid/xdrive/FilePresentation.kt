@@ -33,6 +33,37 @@ fun fileKind(name: String, directory: Boolean): String {
     }
 }
 
+/** A fixed MIME allowlist for native SAF CreateDocument, not a client permission
+ * decision. Unknown, compound or extensionless names stay octet-stream.
+ * Do not infer a more privileged media type from remote server content.
+ */
+internal fun exportMimeType(fileName: String): String {
+    val dot = fileName.lastIndexOf('.')
+    if (dot <= 0 || dot == fileName.lastIndex) return "application/octet-stream"
+    return when (fileName.substring(dot + 1).lowercase(Locale.ROOT)) {
+        "jpg", "jpeg", "jpe" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "heic" -> "image/heic"
+        "heif" -> "image/heif"
+        "avif" -> "image/avif"
+        "bmp" -> "image/bmp"
+        "tif", "tiff" -> "image/tiff"
+        "mp4", "m4v" -> "video/mp4"
+        "mov" -> "video/quicktime"
+        "webm" -> "video/webm"
+        "mkv" -> "video/x-matroska"
+        "3gp" -> "video/3gpp"
+        "avi" -> "video/x-msvideo"
+        "pdf" -> "application/pdf"
+        "txt", "md", "log" -> "text/plain"
+        "csv" -> "text/csv"
+        "json" -> "application/json"
+        else -> "application/octet-stream"
+    }
+}
+
 @Composable
 fun XDriveFileIcon(node: DriveNode, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val kind = fileKind(node.name, node.isDirectory)

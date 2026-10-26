@@ -162,6 +162,15 @@ node scripts/shared-ui.mjs --check
 - 错误明确提供“重试加载更早的照片”，不清除已显示 Range，不重新读取 last page；Owner/total/offset/ID 一致性继续由 Controller 验证。自动加载在错误状态停止，避免循环请求。
 - 核心 Controller JVM 覆盖失败 Range 的原 offset 重试和保留已读图片，Compose API35 fixture 覆盖首次 bounded prefetch、滚到顶部续页与旧尾部照片不丢失。准确提交 CI 未通过前不标记完成，生产环境安全验收仍按用户决定跳过（未验收）。
 
+## P0-08 增量：Gallery 原生单项下载（2026-10-26）
+
+- Gallery 已验证 Owner 媒体的 Info 对话框提供真实「保存到设备」，直接复用 Files SAF CreateDocument、原有认证 `/api/v1/files/:id/content`、revision 与校验管线；没有第二套传输器、媒体公网 URL 或广泛存储权限。
+- SAF 选择器返回时再次校验发起 App（Gallery/Files）、当前已载入 Owner 记录和 revision；离开 Gallery、刷新、关闭 Info、切换会话后的迟到结果不得请求内容，生成的空目标文档尽力删除。
+- Files/Gallery 共享下载进度及取消 UI；失败信息与 Gallery Range 加载错误区分，避免错误地展示「重试加载更早的照片」；下载新起的导航取消网络与未完成输出。
+- 未实现：Gallery 批量导出、Live Photo 动静资源打包、后台断点续传与完整传输中心、iOS 27 像素级截图验收；设备不可用时按照非阻断规则标记「未验收」，源码和准确 HEAD CI 仍需核查。
+
+- Gallery/Files 单文件 SAF 出口进一步使用白名单扩展名的实际 MIME（JPEG、HEIC、MOV、MP4、PDF 等），`ACTION_CREATE_DOCUMENT` 由原生系统决定目标；不明文件保持 `application/octet-stream`。仅接受返回的 `content:` 文档 URI，不开放任意 `file:` URI 或存储权限。
+
 ## Android P0 · 原生回收站列表及恢复（2026-10-26 增量）
 
 - Files 更多菜单中的回收站复用 Go 的 Owner 范围接口。GET `/api/v1/trash?range=true&offset=N&limit=100&sort=updated&order=desc&include_count=true`，强校验已删除时间、版本、分页位置、总数与行去重，避免全量加载。

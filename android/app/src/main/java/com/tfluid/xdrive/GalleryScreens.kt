@@ -55,6 +55,7 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    DownloadToDeviceStatus(state, controller, "gallery")
     if (state.error != null) {
         ErrorNotice(state.error)
         TextButton(onClick = controller::retryGallery,

@@ -1,5 +1,9 @@
 package com.tfluid.xdrive
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -286,12 +290,22 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-thumbnail-failed-40", useUnmergedTree = true)
             .assertDoesNotExist()
-        // The merged Viewer now owns short tap; failed-tile long press must
-        // still request a thumbnail without opening the Viewer.
+        // One initial error + one explicit long-press retry. Opening the
+        // Viewer is a separate lifecycle and must not be counted as another
+        // Gallery tile retry.
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
         compose.onNodeWithTag("gallery-item-40").performClick()
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithText("相册照片.jpg").assertIsDisplayed()
-        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
+        // The synthetic original is not decodable. The real native Viewer
+        // deliberately falls back to one new authenticated revisioned JPEG,
+        // without starting a background retry loop.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-fallback", useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-fallback").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(3, galleryThumbnailCalls.get()) }
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-thumbnail-ready-40", useUnmergedTree = true).assertExists()
     }
@@ -494,6 +508,39 @@ class DriveAppTest {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(1, videoTransportClosed)
         }
+    }
+
+    @Test fun galleryInfoOffersRealOwnerPhotoSafDownloadAndNoPlaceholderWhenUnavailable() {
+        val downloads = mutableListOf<Long>()
+        startAndLogin(onDownload = { downloads += it.id })
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-info").performClick()
+        compose.onNodeWithTag("gallery-download-action").assertExists().assertIsEnabled().performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf(40L), downloads) }
+    }
+
+    @Test fun nativeExportPickerUsesTypedDocumentIntentAndRejectsNonDocumentUri() {
+        val contract = NativeCreateDocument()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val image = contract.createIntent(context, NativeExportDocument("family.jpeg", "image/jpeg"))
+        org.junit.Assert.assertEquals(Intent.ACTION_CREATE_DOCUMENT, image.action)
+        org.junit.Assert.assertEquals("image/jpeg", image.type)
+        org.junit.Assert.assertEquals("family.jpeg", image.getStringExtra(Intent.EXTRA_TITLE))
+        org.junit.Assert.assertTrue(image.hasCategory(Intent.CATEGORY_OPENABLE))
+
+        val video = contract.createIntent(context, NativeExportDocument("clip.mov", "video/quicktime"))
+        org.junit.Assert.assertEquals("video/quicktime", video.type)
+        val forbidden = Intent().setData(Uri.parse("file:///data/local/tmp/foreign"))
+        org.junit.Assert.assertNull(contract.parseResult(Activity.RESULT_OK, forbidden))
+        org.junit.Assert.assertNull(contract.parseResult(Activity.RESULT_CANCELED,
+            Intent().setData(Uri.parse("content://fake/export"))))
+        val accepted = Uri.parse("content://fixture/export")
+        org.junit.Assert.assertEquals(accepted, contract.parseResult(Activity.RESULT_OK,
+            Intent().setData(accepted)))
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {

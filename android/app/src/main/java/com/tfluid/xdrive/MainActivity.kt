@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
+import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -8,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import java.io.IOException
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContract
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,11 +25,29 @@ import com.tfluid.xdrive.core.RouteMode
 import com.tfluid.xdrive.core.ConnectionRouteSelector
 import androidx.core.content.edit
 
+/** A single Android document picker whose MIME follows the verified file extension.
+ * SAF grant and choice stay with the OS. Reject non-document URI schemes.
+ */
+internal data class NativeExportDocument(val fileName: String, val mimeType: String)
+
+internal class NativeCreateDocument : ActivityResultContract<NativeExportDocument, Uri?>() {
+    override fun createIntent(context: Context, input: NativeExportDocument): Intent =
+        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = input.mimeType
+            putExtra(Intent.EXTRA_TITLE, input.fileName)
+        }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data?.takeIf { it.scheme == "content" }
+        else null
+}
+
 class MainActivity : ComponentActivity() {
     private val model by viewModels<DriveViewModel>()
     // SAF owns the destination; no broad storage permission or persistent URI grants.
     private val fileDestination = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
+        NativeCreateDocument()
     ) { uri ->
         if (uri == null) model.controller.cancelFileExport()
         else model.controller.saveFileExport(
@@ -83,7 +104,9 @@ class MainActivity : ComponentActivity() {
                 }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
                     onDownload = { node ->
                         if (model.controller.prepareFileExport(node)) {
-                            try { fileDestination.launch(node.name) }
+                            try {
+                                fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                            }
                             catch (_: Exception) { model.controller.cancelFileExport() }
                         }
                     },

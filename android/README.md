@@ -408,3 +408,29 @@ or globally upgrade the Android toolchain solely for this playback increment. Th
 this anchor when the user leaves Gallery for Files/logout/server switching;
 a later Gallery visit (even for the same username) starts at newest again.
 An API35 Compose regression covers old-position -> Files -> Gallery.
+
+## Gallery: native single-photo download to device (P0)
+
+Gallery's verified photo Info dialog now exposes **保存到设备** using the
+**same** native SAF CreateDocument picker, Owner session, original revision,
+TLS/SNI-pinned transport, stream verification and cancellation as Files.
+The launch is allowed only for a currently selected photo/video Owner Range row;
+a delayed picker callback after leaving Gallery, changing its Range, dismissing
+Info or switching accounts is rejected and its newly created output discarded.
+The Gallery and Files display the same transfer progress/success/cancel component;
+download failures are separate from Gallery paging errors. Starting a new Owner
+navigation cancels an in-flight export and best-effort deletes the partial file.
+This is single-item export, not Gallery batch transfer, offline storage, a durable
+transfer center, Live Photo resource-pair export or a production device acceptance.
+
+### Gallery and Files: correct Android SAF MIME types
+
+The unified Save to device uses one native `ACTION_CREATE_DOCUMENT` contract with
+an allowlisted MIME type from the verified filename extension. JPEG/PNG/HEIC and
+MP4/MOV, PDFs and plain text are declared as their real document/media type;
+unknown, extensionless and Live `.livp` resources remain binary
+`application/octet-stream`. Both Files and Gallery still share the exact same
+content URI callback, Owner/revision checks and cancellation/partial-cleanup
+logic. A chooser result with a non-`content:` URI is refused; no broad filesystem
+permission or duplicate transfer implementation is added. This does not claim
+that Android MediaStore automatically indexes SAF documents in every provider.
