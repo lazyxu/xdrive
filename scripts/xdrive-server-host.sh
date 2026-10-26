@@ -48,7 +48,8 @@ Usage:
   xdrive-server backup --incremental [--repository-dir /absolute/local/path]
   xdrive-server backup list   # includes an active custom scheduled v2 repository
   xdrive-server backup verify [BACKUP_DIR]  # latest also searches configured v2 repository
-  xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N]
+  xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N] [--mode fast|deep]
+  xdrive-server backup prune --keep-last N --yes [--repository-dir /absolute/local/path]
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -1157,6 +1158,108 @@ backup_retention_plan_cmd() {
     "$server_image" retention-plan --repo /repo --keep-last "$keep_last" --mode "$cas_mode" </dev/null
 }
 
+# A destructive backup-repository operation must not point at the live /data
+# mount, including any parent/child or symlink-alias of that mount. The normal
+# incremental backup writer already makes the same separation mandatory.
+backup_prune_require_separate_paths() {
+  local repository="$1" source="$2" resolved=""
+  [[ "$source" == /* ]] || {
+    echo "backup prune: live files location must be an absolute path" >&2
+    return 1
+  }
+  resolved="$(readlink -m -- "$source" 2>/dev/null || readlink -f -- "$source" 2>/dev/null || true)"
+  [[ -n "$resolved" ]] || {
+    echo "backup prune: cannot verify live file storage path" >&2
+    return 1
+  }
+  # Prefix checks with a trailing slash need an explicit root case:
+  # when either side is "/", the other path is necessarily nested.
+  if [[ "$repository" == "/" || "$resolved" == "/" ]]; then
+    echo "backup prune: repository overlaps live file storage" >&2
+    return 1
+  fi
+  case "$repository/" in
+    "$resolved/"*) echo "backup prune: repository overlaps live file storage" >&2; return 1 ;;
+  esac
+  case "$resolved/" in
+    "$repository/"*) echo "backup prune: repository overlaps live file storage" >&2; return 1 ;;
+  esac
+}
+
+# Destructive, manual-only v2 retention. The Linux helper owns the exclusive
+# .backup.lock inside Docker; taking a second host flock would deadlock.
+backup_prune_cmd() {
+  local repository_dir="" keep_last="" confirmed=0 server_id="" server_image="" configured=""
+  local live_files_dir="" mounted_data_dir=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repository-dir)
+        [[ $# -ge 2 ]] || { echo "backup prune: missing repository path" >&2; return 2; }
+        repository_dir="$2"
+        shift 2
+        ;;
+      --keep-last)
+        [[ $# -ge 2 ]] || { echo "backup prune: missing keep count" >&2; return 2; }
+        keep_last="$2"
+        shift 2
+        ;;
+      --yes)
+        confirmed=1
+        shift
+        ;;
+      *)
+        echo "usage: xdrive-server backup prune --keep-last N --yes [--repository-dir PATH]" >&2
+        return 2
+        ;;
+    esac
+  done
+  [[ "$keep_last" =~ ^[1-9][0-9]*$ && "$confirmed" == "1" ]] || {
+    echo "backup prune: explicit --keep-last N --yes is required" >&2
+    return 2
+  }
+  if [[ -z "$repository_dir" && "$(env_value XD_BACKUP_SCHEDULE_FORMAT)" == "v2" ]]; then
+    configured="$(env_value XD_BACKUP_SCHEDULE_REPOSITORY_DIR)"
+    [[ -z "$configured" ]] || repository_dir="$configured"
+  fi
+  [[ -n "$repository_dir" ]] || repository_dir="$BACKUP_DIR/incremental"
+  [[ "$repository_dir" == /* && -d "$repository_dir" && ! -L "$repository_dir" ]] || {
+    echo "backup prune: repository must be an existing absolute non-symlink directory" >&2
+    return 2
+  }
+  repository_dir="$(cd "$repository_dir" && pwd -P)" || return 1
+  live_files_dir="${XD_FILES_DATA_DIR:-}"
+  [[ -n "$live_files_dir" ]] || live_files_dir="$(env_value XD_FILES_DATA_DIR)"
+  [[ -n "$live_files_dir" ]] || live_files_dir="$DATA_DIR/files"
+  backup_prune_require_separate_paths "$repository_dir" "$live_files_dir" || return 1
+  [[ -f "$repository_dir/.backup.lock" && ! -L "$repository_dir/.backup.lock" ]] || {
+    echo "backup prune: existing regular repository .backup.lock is required" >&2
+    return 1
+  }
+  command -v docker >/dev/null 2>&1 || { echo "backup prune: Docker is required" >&2; return 1; }
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
+    server_id="$(compose ps -aq server | head -n1 || true)"
+  fi
+  if [[ -n "$server_id" ]]; then
+    # Use the live Server's actual mount source as an additional check;
+    # configuration may have changed after that container was created.
+    mounted_data_dir="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null 2>/dev/null || true)"
+    if [[ -n "$mounted_data_dir" ]]; then
+      backup_prune_require_separate_paths "$repository_dir" "$mounted_data_dir" || return 1
+    fi
+    server_image="$(docker inspect "$server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  [[ -n "$server_image" ]] || server_image="$(env_value XD_SERVER_IMAGE)"
+  [[ -n "$server_image" ]] || {
+    echo "backup prune: Server image is not configured" >&2
+    return 1
+  }
+  # One writable repository bind, no network, no automatic execution.
+  docker run --rm --network none --user 0:0 \
+    --mount "type=bind,src=$repository_dir,dst=/repo" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$server_image" prune --repo /repo --keep-last "$keep_last" --yes </dev/null
+}
+
 backup_cmd() {
   local subcommand="${1:-}"
   case "$subcommand" in
@@ -1171,6 +1274,10 @@ backup_cmd() {
     retention-plan)
       shift
       backup_retention_plan_cmd "$@"
+      ;;
+    prune)
+      shift
+      backup_prune_cmd "$@"
       ;;
     sources)
       shift
