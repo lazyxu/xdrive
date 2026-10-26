@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const vm = require('node:vm')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
@@ -10,14 +11,20 @@ const logicSource = read('web/src/pwaInstall.ts')
 
 function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true,
   protocol = 'https:', hostname = 'drive.example', fetchReply,
-  matchMediaFailure = null, navigatorStandalone = false, navigatorStandaloneFailure = false } = {}) {
+  matchMediaFailure = null, navigatorStandalone = false, navigatorStandaloneFailure = false,
+  installEventFailure = null } = {}) {
   const events = new Map()
   const mediaEvents = new Map()
   const queries = []
   const win = {
     isSecureContext: secure,
     location: { protocol, hostname },
-    addEventListener(name, callback) { events.set(name, callback) },
+    addEventListener(name, callback) {
+      if (installEventFailure === name || installEventFailure === 'all') {
+        throw new Error('install event listener denied: ' + name)
+      }
+      events.set(name, callback)
+    },
     matchMedia(query) {
       if (matchMediaFailure === 'call') throw new Error('display-mode query denied')
       return {
@@ -376,4 +383,80 @@ test('S2 Safari: restricted secure context getter fails closed without preventin
   assert.equal(h.queries.length, 5, 'public HEAD diagnostics remain bounded')
   assert.ok(h.queries.every(([url, options]) =>
     url.startsWith('/') && options.credentials === 'omit' && options.redirect === 'error'))
+})
+
+
+test('S2 Safari: denied optional install-event subscription cannot abort first Web/PWA paint', async () => {
+  const eventNames = ['beforeinstallprompt', 'appinstalled', 'pageshow']
+  for (const denied of [...eventNames, 'all']) {
+    const h = harness({ userAgent: 'iPhone Safari', installEventFailure: denied })
+    assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation(), denied)
+    assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation(),
+      'repeated startup cannot retry a denied listener or throw')
+    assert.equal(h.mod.xDrivePwaInstallSnapshot().displayMode, 'browser')
+    assert.equal(h.mod.xDrivePwaInstallSnapshot().platformHint, 'ios')
+    assert.equal(h.mod.xDrivePwaInstallSnapshot().secureContext, true)
+    for (const event of eventNames) {
+      assert.equal(h.events.has(event), denied !== event && denied !== 'all',
+        'independent install listeners must survive a denial of ' + denied)
+    }
+    assert.equal(h.mediaEvents.size, 4, 'display mode change listeners remain independent')
+    let prompts = 0
+    if (h.events.has('beforeinstallprompt')) {
+      h.events.get('beforeinstallprompt')({
+        preventDefault() {},
+        prompt() { prompts++; return Promise.resolve({ outcome: 'accepted' }) },
+      })
+      assert.equal(await h.mod.requestXDrivePwaInstall(), 'accepted')
+      assert.equal(prompts, 1)
+    } else {
+      assert.equal(await h.mod.requestXDrivePwaInstall(), 'unavailable')
+      assert.equal(prompts, 0, 'no fabricated native prompt when event is denied')
+    }
+    if (h.events.has('appinstalled')) {
+      h.events.get('appinstalled')()
+      assert.equal(h.mod.xDrivePwaInstallSnapshot().installedEventObserved, true)
+    } else {
+      assert.equal(h.mod.xDrivePwaInstallSnapshot().installedEventObserved, false)
+    }
+    assert.equal(h.queries.length, 0, 'startup observation cannot issue network requests')
+  }
+})
+
+
+test('PWA first-render boot independently tolerates denied optional observers and SW registration', () => {
+  // Compile and run the actual ordinary main.tsx bootstrap, not a copy of the
+  // expected guards. The benchmark-only branches are deliberately excluded.
+  const main = read('web/src/main.tsx')
+  const marker = '\n} else {\n'
+  const lastBranch = main.lastIndexOf(marker)
+  assert(lastBranch >= 0, 'normal app bootstrap branch not found')
+  const branch = main.slice(lastBranch + marker.length).replace(/\n}\s*$/, '')
+  assert.match(branch, /root\.render\(/)
+  assert.match(branch, /registerXDrivePwa\(\)/)
+  const code = ts.transpileModule(
+    'function boot() {\n' + branch + '\n}\nboot()',
+    { fileName: 'main.tsx', compilerOptions: {
+      jsx: ts.JsxEmit.React, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+    } },
+  ).outputText
+  for (const denied of [null, 'install', 'update', 'peer', 'register', 'all']) {
+    const calls = []
+    const observe = name => {
+      calls.push(name)
+      if (denied === name || denied === 'all') throw new Error('browser API denied: ' + name)
+    }
+    const context = {
+      startXDrivePwaInstallObservation: () => observe('install'),
+      startXDrivePwaUpdateObservation: () => observe('update'),
+      startXDrivePwaPeerActivityObservation: () => observe('peer'),
+      registerXDrivePwa: () => observe('register'),
+      root: { render: () => calls.push('render') },
+      React: { StrictMode: 'strict', createElement: () => ({}) },
+      Root: () => {},
+    }
+    assert.doesNotThrow(() => vm.runInNewContext(code, context), String(denied))
+    assert.deepEqual(calls, ['install', 'update', 'peer', 'render', 'register'],
+      'a denied optional PWA API cannot suppress another observer or primary render')
+  }
 })

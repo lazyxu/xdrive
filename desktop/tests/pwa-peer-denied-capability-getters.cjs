@@ -41,6 +41,11 @@ function browser({ denied = null, supported = true } = {}) {
     addEventListener(name) { events.push(name) },
     setInterval() {},
   }
+  if (denied === 'secure-context') {
+    Object.defineProperty(win, 'isSecureContext', {
+      get() { throw new Error('SecurityError: secure-context getter denied') },
+    })
+  }
   const env = {
     exports, window: win,
     document: { addEventListener(name) { events.push(name) } },
@@ -102,4 +107,13 @@ test('PWA healthy browser preserves bounded anonymous peer update hints', () => 
       ['kind', 'sender', 'sequence', 'observed', 'busy'].includes(key)))
   }
   assert.doesNotMatch(JSON.stringify(app.outbound), /Authorization|cookie|token|path|node_id/)
+})
+test('PWA Safari denied secure-context getter cannot break pre-React peer startup', () => {
+  const app = browser({ denied: 'secure-context' })
+  assert.doesNotThrow(app.start)
+  assert.equal(app.snapshot().available, false,
+    'no anonymous peer-channel coverage is claimed without secure-context proof')
+  assert.equal(app.snapshot().knownPeerBusy, false)
+  assert.equal(app.outbound.length, 0)
+  assert.deepEqual(app.events, [])
 })

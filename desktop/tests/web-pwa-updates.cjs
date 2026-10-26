@@ -451,3 +451,24 @@ test('S3A Safari: denied navigator.onLine getter does not block pre-React update
   assert.equal(unsupported.mod.xDrivePwaUpdateSnapshot().phase, 'unsupported')
   assert.equal(unsupported.mod.xDrivePwaUpdateSnapshot().connectionHint, 'unknown')
 })
+
+test('S3A Safari: denied secure-context getter cannot block pre-React version observation or checks', async () => {
+  const h = harness({ waiting: true })
+  Object.defineProperty(h.win, 'isSecureContext', {
+    configurable: true,
+    get() { throw new Error('SecurityError: secure context unavailable') },
+  })
+  assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation())
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'unsupported')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().otherWindowReportedUpdate, false)
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().hasController, true,
+    'controller hint must not imply a secure context or authorization')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'unsupported')
+  assert.equal(h.checked, 0, 'no registration.update() without verified secure context')
+  assert.equal(h.events.size, 0, 'no optional lifecycle listeners on denied context')
+  Object.defineProperty(h.win, 'isSecureContext', {
+    configurable: true, writable: true, value: false,
+  })
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'unsupported')
+  assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(/)
+})

@@ -34,6 +34,12 @@ function accessibleController(): boolean {
   try { return Boolean(accessibleWorker()?.controller) } catch { return false }
 }
 
+/** A denied optional secure-context getter is never proof of HTTPS readiness. */
+function secureContextAvailable(): boolean {
+  try { return typeof window !== 'undefined' && window.isSecureContext === true }
+  catch { return false }
+}
+
 function connectionHint(): XDrivePwaConnectionHint {
   // Network status is only a browser hint. Safari may expose the optional
   // property but deny its getter: this runs BEFORE React's first render.
@@ -143,7 +149,7 @@ export function startXDrivePwaUpdateObservation(): void {
   if (started || typeof window === 'undefined') return
   started = true
   const worker = accessibleWorker()
-  if (!window.isSecureContext || !worker) {
+  if (!secureContextAvailable() || !worker) {
     publish(makeSnapshot('unsupported'))
     return
   }
@@ -253,8 +259,7 @@ export function checkXDrivePwaUpdate(
   options: { timeoutMs?: number } = {},
 ): Promise<XDrivePwaUpdatePhase> {
   if (updateCheckInFlight) return updateCheckInFlight
-  if (typeof window === 'undefined' || !window.isSecureContext ||
-    !accessibleWorker()) return Promise.resolve('unsupported')
+  if (!secureContextAvailable() || !accessibleWorker()) return Promise.resolve('unsupported')
   const pending = checkXDrivePwaUpdateOnce(options)
   updateCheckInFlight = pending
   const release = () => {

@@ -138,13 +138,15 @@ if (realGalleryFoldPerf) {
     console.error('__XDRIVE_FILE_EXPLORER_PERF_BOOT_ERROR__' + message)
   })
 } else {
-  startXDrivePwaInstallObservation()
-  startXDrivePwaUpdateObservation()
-  startXDrivePwaPeerActivityObservation()
+  // All three observers are optional PWA affordances, not prerequisites for
+  // mounting authenticated Web/Mobile UI. Isolate failures independently.
+  try { startXDrivePwaInstallObservation() } catch { /* optional browser API */ }
+  try { startXDrivePwaUpdateObservation() } catch { /* optional browser API */ }
+  try { startXDrivePwaPeerActivityObservation() } catch { /* optional browser API */ }
   root.render(
     <React.StrictMode>
       <Root />
     </React.StrictMode>,
   )
-  registerXDrivePwa()
+  try { registerXDrivePwa() } catch { /* optional Service Worker API */ }
 }
