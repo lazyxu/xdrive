@@ -28,7 +28,13 @@ test('Web and Desktop share one local storage workspace', () => {
 })
 
 test('Web browser cleanup is constrained to regenerable Cache Storage', () => {
-  assert.ok(webStorage.includes('navigator.storage?.estimate'))
+  // Optional Safari storage getters may throw: the capability probe now
+  // reads navigator.storage inside a guarded helper instead of optional chaining.
+  assert.ok(webStorage.includes('const storage = navigator.storage'))
+  assert.ok(webStorage.includes("typeof storage?.estimate !== 'function'"))
+  assert.ok(webStorage.includes('await storage.estimate()'))
+  assert.ok(webStorage.includes('try { return await cacheStorage.keys() } catch { return null }'))
+  assert.ok(webStorage.includes('clear_supported: cacheReadable'))
   assert.ok(webStorage.includes('cacheStorage.keys()'))
   assert.ok(webStorage.includes('cacheStorage.delete(name)'))
   assert.ok(webStorage.includes('浏览器 HTTP 缓存由浏览器自身管理'))

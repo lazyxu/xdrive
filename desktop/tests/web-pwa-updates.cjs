@@ -417,3 +417,37 @@ test('S3A Safari: denied Service Worker getter, controller listener or ready nev
     }
   }
 })
+
+test('S3A Safari: denied navigator.onLine getter does not block pre-React update observation', async () => {
+  const h = harness({ waiting: false })
+  Object.defineProperty(h.navigator, 'onLine', {
+    configurable: true,
+    get() { throw new Error('optional network status denied') },
+  })
+  assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation())
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().connectionHint, 'unknown',
+    'denied network status must not be misrepresented as offline or online')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked',
+    'manual version observation must remain available')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().connectionHint, 'unknown')
+
+  // Browser permissions may change without remounting the Web/Mobile app.
+  Object.defineProperty(h.navigator, 'onLine', {
+    configurable: true, writable: true, value: false,
+  })
+  h.events.get('offline')()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().connectionHint, 'offline')
+  h.navigator.onLine = true
+  h.events.get('online')()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().connectionHint, 'online')
+
+  const unsupported = harness({ supported: false, secure: false })
+  Object.defineProperty(unsupported.navigator, 'onLine', {
+    get() { throw new Error('denied even without Service Worker') },
+  })
+  assert.doesNotThrow(() => unsupported.mod.startXDrivePwaUpdateObservation())
+  assert.equal(unsupported.mod.xDrivePwaUpdateSnapshot().phase, 'unsupported')
+  assert.equal(unsupported.mod.xDrivePwaUpdateSnapshot().connectionHint, 'unknown')
+})
