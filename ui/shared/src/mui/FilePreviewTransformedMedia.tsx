@@ -152,6 +152,7 @@ export function XDriveTransformedImagePreview({
 
 export function XDriveTransformedVideoPreview({
   src,
+  poster,
   transform,
   onReady,
   onWaiting,
@@ -159,6 +160,7 @@ export function XDriveTransformedVideoPreview({
   onError,
 }: {
   src: string
+  poster?: string
   transform: XDriveFilePreviewMediaTransform
   onReady?: () => void
   onWaiting?: () => void
@@ -201,6 +203,7 @@ export function XDriveTransformedVideoPreview({
         component="video"
         ref={videoRef}
         src={src}
+        poster={poster}
         controls
         playsInline
         preload="metadata"

@@ -25,9 +25,14 @@ export function xDriveMediaByteProgressLabel(loadedBytes: number, totalBytes?: n
   const loaded = Number.isFinite(loadedBytes) ? Math.max(0, loadedBytes) : 0
   const total = totalBytes !== undefined && Number.isFinite(totalBytes) && totalBytes > 0
     ? totalBytes : undefined
-  const scale = Math.max(loaded, total ?? 0) >= 1_000_000 ? 1_000_000 : 1_000
-  const unit = scale === 1_000_000 ? 'MB' : 'KB'
-  const decimals = scale === 1_000_000 ? 1 : 0
+  // IEC units match xDrive's transfer center, with one unit for both values.
+  const magnitude = Math.max(loaded, total ?? 0)
+  const scale = magnitude >= 1024 ** 3 ? 1024 ** 3
+    : magnitude >= 1024 ** 2 ? 1024 ** 2
+      : magnitude >= 1024 ? 1024 : 1
+  const unit = scale === 1024 ** 3 ? 'GiB'
+    : scale === 1024 ** 2 ? 'MiB' : scale === 1024 ? 'KiB' : 'B'
+  const decimals = scale === 1024 ** 3 ? 2 : scale === 1 ? 0 : 1
   const numerator = byteAmount(loaded, scale, decimals)
   return total === undefined
     ? `${numerator} ${unit}`

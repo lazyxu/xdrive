@@ -19,7 +19,7 @@ function compile(relative) {
 }
 
 const { xDriveMediaResponseBlob } = compile('web/src/mediaBinaryProgress.ts')
-const { xDriveMediaBufferProgressLabel, xDriveMediaPiePercent, XDriveMediaLoadingProgress } =
+const { xDriveMediaByteProgressLabel, xDriveMediaBufferProgressLabel, xDriveMediaPiePercent, XDriveMediaLoadingProgress } =
   compile('ui/shared/src/mui/MediaLoadProgress.tsx')
 const React = require('react')
 const { create } = require('react-test-renderer')
@@ -374,4 +374,15 @@ test('Gallery contain mode aligns alpha mask with the thumbnail object-fit geome
   assert.ok(begin >= 0)
   assert.match(gallery.slice(begin, begin + 280), /maskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
   assert.match(gallery.slice(begin, begin + 280), /WebkitMaskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
+})
+
+test('shared Viewer transfer labels use accurate IEC B / KiB / MiB / GiB units', () => {
+  assert.equal(xDriveMediaByteProgressLabel(500, 800), '500 / 800 B')
+  assert.equal(xDriveMediaByteProgressLabel(1536, 2048), '1.5 / 2.0 KiB')
+  assert.equal(xDriveMediaByteProgressLabel(12.8 * 1024 ** 2, 35.6 * 1024 ** 2),
+    '12.8 / 35.6 MiB')
+  assert.equal(xDriveMediaByteProgressLabel(1024 ** 3, 2 * 1024 ** 3),
+    '1.00 / 2.00 GiB')
+  assert.equal(xDriveMediaByteProgressLabel(8192), '8.0 KiB',
+    'unknown totals show received bytes only, never a percentage')
 })
