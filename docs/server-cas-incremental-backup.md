@@ -125,6 +125,8 @@ a read-only Docker bind mount of the local repository:
 
 ```bash
 xdrive-server backup retention-plan --keep-last 7
+# Optional full CAS SHA-256 audit, manually only (may read many GiB):
+xdrive-server backup retention-plan --keep-last 7 --mode deep
 # For a different repository:
 xdrive-server backup retention-plan --repository-dir "/absolute/backup disk/incremental" --keep-last 3
 ```
@@ -133,6 +135,14 @@ Without `--repository-dir`, it uses the configured scheduled v2 repository when
 `XD_BACKUP_SCHEDULE_FORMAT=v2`, or otherwise `~/.xd/backups/incremental`.
 The repository must already exist. This is a manual diagnostic, **not** a
 change to `XD_BACKUP_RETENTION_DAYS`, scheduling, or automatic cleanup.
+Default `--mode fast` validates snapshot checksums and CAS existence/size;
+explicit `--mode deep` hashes each unique repository CAS object once, including
+unreferenced objects. The JSON `hashed_objects` and `hashed_bytes` fields
+record the actual full-content coverage (zero for fast). Deep requires an
+existing safe `.backup.lock` and holds the writer-compatible shared lock
+for the entire Docker run. It never creates/truncates the lock or writes to
+the repository; the container still receives a read-only bind mount.
+Standalone internal helper invocations do not acquire a host-side lock.
 
 The JSON report distinguishes:
 - `keep_snapshots`: latest N committed v2 generations, still protected;
@@ -151,9 +161,11 @@ or symlinked path, unexpected object, missing CAS reference, checksum failure,
 or unknown snapshot blocks the *entire* report. Running this scan hashes
 each snapshot's database.dump and legacy.tar, so it may be I/O-intensive.
 
-**Important:** this is only a point-in-time preview without a repository
-exclusive lock or full CAS content hashing. It cannot guarantee a future
-physical space saving, nor authorize deletion. Actual v2 snapshot deletion,
+**Important:** even a successful manual deep audit is a point-in-time
+read-only result, not a repository-exclusive prune authorization. Fast mode
+does not hash CAS content; deep mode may take substantial disk I/O and is
+never scheduled automatically. Neither mode guarantees physical savings or
+authorizes deletion. Actual v2 snapshot deletion,
 CAS GC, retention schedules, background pruning and pack/compaction remain
 disabled. A future destructive implementation requires exclusive locking
 shared with backup publication, re-reading all committed indexes under that

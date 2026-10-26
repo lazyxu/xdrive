@@ -44,6 +44,7 @@ func run(args []string) error {
 	ownerUID := f.Int("owner-uid", -1, "host owner UID of newly created repository entries")
 	ownerGID := f.Int("owner-gid", -1, "host owner GID of newly created repository entries")
 	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (preview only)")
+	casMode := f.String("mode", "fast", "retention-plan CAS audit: fast (size only) or deep (all SHA-256)")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -66,14 +67,14 @@ func run(args []string) error {
 	}
 	snap := filepath.Join(root, "snapshots", *snapshot)
 	if cmd != "retention-plan" {
-		keepLastPassed := false
+		retentionFlagPassed := false
 		f.Visit(func(flag *flag.Flag) {
-			if flag.Name == "keep-last" {
-				keepLastPassed = true
+			if flag.Name == "keep-last" || flag.Name == "mode" {
+				retentionFlagPassed = true
 			}
 		})
-		if keepLastPassed {
-			return errors.New("--keep-last only applies to retention-plan")
+		if retentionFlagPassed {
+			return errors.New("--keep-last and --mode only apply to retention-plan")
 		}
 	}
 	switch cmd {
@@ -89,9 +90,12 @@ func run(args []string) error {
 		return nil
 	case "retention-plan":
 		if *source != "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
-			return errors.New("retention-plan only accepts --repo and --keep-last")
+			return errors.New("retention-plan only accepts --repo, --keep-last and --mode")
 		}
-		result, err := planRetention(root, *keepLast)
+		if *casMode != "fast" && *casMode != "deep" {
+			return errors.New("retention-plan --mode must be fast or deep")
+		}
+		result, err := planRetentionWithMode(root, *keepLast, *casMode)
 		if err != nil {
 			return err
 		}
