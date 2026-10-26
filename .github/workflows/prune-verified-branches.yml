@@ -76,6 +76,10 @@ jobs:
                 decisionComment: 6385024974,
                 why: 'user-scoped Caddy MVP explicitly retired unused Collector systemd sandbox',
               }],
+              ['fix/places-ios27-shared-photo-map-pin-badge-20261026@48c0887371343704b76d9a47ead6bb6697fe4aaf', {
+                requiredMergedPulls: [2661],
+                why: 'closed #2711 superseded by accepted #2661; matching production badge and map UI regression on master',
+              }],
               ['codex/server-cpu-backup-diagnostic-2723@235f505fcb559cf371919f9335a417d6c72041ad', {
                 requiredMergedPulls: [2721, 2723],
                 why: 'temporary red CI reproduction superseded by merged verifier and CPU fixes',
