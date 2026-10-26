@@ -2,6 +2,8 @@ package com.tfluid.xdrive
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import android.util.LruCache
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -34,6 +36,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
+    // A decoded Gallery tile can paint the first Viewer frame immediately.
+    // Screen/Owner/session changes discard all cached private bitmaps.
+    val galleryThumbnails = remember(state.server, state.username,
+        state.screen == Screen.GALLERY) { LruCache<String, ImageBitmap>(48) }
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.server}:${state.username}"
@@ -141,10 +147,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
                     if (photo != null) {
-                        if (photo.mediaKind == "video") GalleryVideoPlayer(photo, controller)
-                        else GalleryPhotoViewer(photo, controller)
+                        key(photo.node.id, photo.node.revision) {
+                            if (photo.mediaKind == "video")
+                                GalleryVideoPlayer(photo, controller, galleryThumbnails)
+                            else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                        }
                     } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
-                        Gallery(state, controller)
+                        Gallery(state, controller, galleryThumbnails)
                     }
                 }
                 Screen.TRASH -> Trash(state, controller)

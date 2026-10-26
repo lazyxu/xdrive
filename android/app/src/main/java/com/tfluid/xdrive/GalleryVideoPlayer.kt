@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
 import androidx.annotation.OptIn
+import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -8,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -21,14 +25,50 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import com.tfluid.xdrive.core.GalleryAsset
 
 /** Real Owner video playback: no public media ticket or local loopback proxy.
  * Video decoding and playback/seek/buffering are delegated to Media3. */
 @OptIn(UnstableApi::class)
 @Composable
-internal fun GalleryVideoPlayer(video: GalleryAsset, controller: DriveController) {
+internal fun GalleryVideoPlayer(
+    video: GalleryAsset, controller: DriveController,
+    thumbnails: LruCache<String, ImageBitmap>,
+) {
     val context = LocalContext.current
+    val thumbKey = "${video.node.id}:${video.node.revision}"
+    var cover by remember(video.node.id, video.node.revision) {
+        mutableStateOf(thumbnails.get(thumbKey))
+    }
+    var firstFrame by remember(video.node.id, video.node.revision) {
+        mutableStateOf(false)
+    }
+    var bufferedMs by remember(video.node.id, video.node.revision) {
+        mutableLongStateOf(0L)
+    }
+    var durationMs by remember(video.node.id, video.node.revision) {
+        mutableLongStateOf(video.durationMs)
+    }
+    // A cached Gallery tile is the first frame. Otherwise use only the
+    // existing authenticated 4 MiB poster endpoint, never a second video GET.
+    LaunchedEffect(video.node.id, video.node.revision) {
+        if (cover != null || !video.hasThumbnail) return@LaunchedEffect
+        val bitmap = try {
+            val bytes = controller.galleryViewerThumbnail(video)
+            if (bytes == null) null else withContext(Dispatchers.Default) {
+                decodeGalleryThumbnail(bytes)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) { null }
+        if (bitmap != null && controller.state.value.galleryViewer == video) {
+            thumbnails.put(thumbKey, bitmap)
+            cover = bitmap
+        }
+    }
     val source = remember(controller, video.node.id, video.node.revision) {
         controller.openGalleryVideoPlayback(video)
     }
@@ -47,6 +87,17 @@ internal fun GalleryVideoPlayer(video: GalleryAsset, controller: DriveController
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 failed = true // Do not display raw URL, host, credentials or body.
+            }
+            override fun onRenderedFirstFrame() {
+                firstFrame = true // Never replace a visible frame with a late cover.
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (player == null) return
+                bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
+                val duration = player.duration
+                if (duration > 0 && duration != androidx.media3.common.C.TIME_UNSET) {
+                    durationMs = duration
+                }
             }
         }
         player?.addListener(listener)
@@ -88,10 +139,39 @@ internal fun GalleryVideoPlayer(video: GalleryAsset, controller: DriveController
                     update = { it.player = player },
                     modifier = Modifier.fillMaxSize().testTag("gallery-video-player"),
                 )
-                if (failed) Text("视频播放失败，请检查网络或文件格式。",
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    color = Color.White)
+                if (!firstFrame) {
+                    val still = cover
+                    if (still != null) {
+                        Image(
+                            bitmap = still, contentDescription = video.node.name,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                                .testTag("gallery-video-poster"),
+                        )
+                    } else if (!failed) CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center)
+                            .testTag("gallery-video-loading"),
+                        color = Color.White,
+                    )
+                }
+                if (failed) {
+                    Text("视频播放失败，请检查网络或文件格式。",
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                            .background(Color.Black.copy(alpha = 0.7f)),
+                        color = Color.White)
+                } else if (!firstFrame && bufferedMs > 0L) {
+                    val total = if (durationMs > 0L) " / ${formatBufferedTime(durationMs)}" else ""
+                    Text("已缓冲 ${formatBufferedTime(bufferedMs)}$total",
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                            .background(Color.Black.copy(alpha = 0.7f)),
+                        color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }
+}
+
+private fun formatBufferedTime(ms: Long): String {
+    val seconds = (ms.coerceAtLeast(0L) / 1000L)
+    return "%02d:%02d".format(seconds / 60L, seconds % 60L)
 }

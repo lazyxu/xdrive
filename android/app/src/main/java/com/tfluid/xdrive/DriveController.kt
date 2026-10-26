@@ -1195,7 +1195,8 @@ class DriveController(
         val epoch = galleryViewerEpoch
         val current = state.value
         if (current.screen != Screen.GALLERY || current.galleryViewer != item ||
-            current.galleryItems.none { it == item } || item.mediaKind != "image" ||
+            current.galleryItems.none { it == item } ||
+            item.mediaKind !in setOf("image", "video") ||
             item.node.type != "file" || item.node.revision <= 0 || !item.hasThumbnail) return null
         val bytes = galleryThumbnail(item) // Reuse 4 MiB bound, Owner Bearer and cancellation.
         if (galleryViewerEpoch != epoch || state.value.screen != Screen.GALLERY ||
