@@ -25,8 +25,8 @@ const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
   encryption_keyring_unavailable: 'Server 尚未配置凭据加密密钥环',
   trusted_https_origin_invalid: 'Server 的 HTTPS Origin 尚未配置正确',
   instance_signing_identity_unavailable: '自动托管的实例签名密钥尚未准备好',
-  child_resource_inventory_not_reviewed: '尚无完整、逐项审核的地图子资源白名单',
-  signed_release_not_installed: '尚未安装当前有效的 Server 受信签名发布',
+  child_resource_inventory_not_reviewed: '当前版本的地图子资源策略尚未就绪',
+  signed_release_not_installed: 'Server 自动签名运行状态尚未就绪',
 }
 const releaseBlockerHints: Record<ReleaseBlocker, string> = {
   browser_ak_not_configured: '在「配置与修改」保存独立的 Browser 类型 AK；不要填写 Server API 坐标转换 AK。',
@@ -34,8 +34,8 @@ const releaseBlockerHints: Record<ReleaseBlocker, string> = {
   encryption_keyring_unavailable: '检查 Server 凭据加密密钥环的部署状态和实例重启要求；不应在浏览器打印密钥。',
   trusted_https_origin_invalid: '检查 Server 当前可信 HTTPS Origin、Caddy Host 与实际站点入口是否一致。',
   instance_signing_identity_unavailable: '检查 Server 实例签名身份的配置与初始化状态。',
-  child_resource_inventory_not_reviewed: '完成固定百度 JSAPI4 子资源清单审查和白名单发布；不能放宽成任意代理。',
-  signed_release_not_installed: '检查当前 Server 的签名 Release 修订及激活状态；旧构建/错误修订不能强行开启运行态。',
+  child_resource_inventory_not_reviewed: '确认当前版本的 JSAPI4 受限资源策略完整；只允许代码指定的百度资源类型，不能改为任意 URL 代理。',
+  signed_release_not_installed: '由 Server 自动刷新当前构建、Origin 与 Browser AK 修订对应的签名运行状态；无需人工凭证审查。',
 }
 const releaseBlockerIDs = Object.keys(releaseBlockerLabels)
 
@@ -306,9 +306,9 @@ export function XDriveBaiduJSAPIDesiredPanel({
       setProbeResult(null)
       setProbeError('')
       setNotice(result.runtime_enabled
-        ? '当前 Server 已完成签名授权并启用动态地图。请打开图库的「地点 → 地图」验证平移、缩放、聚合及 Viewer；真实三端和资源安全仍需验收。'
+        ? '当前动态地图服务已就绪。可到图库「地点 → 地图」检查平移、缩放、聚合及 Viewer；实际地图瓦片与交互仍以运行结果为准。'
         : result.desired_enabled
-          ? '启用设置已保存，但当前 Server 尚未授权运行。请查看下方签名发布与检测状态中的阻断原因。'
+          ? '配置已保存，但动态地图尚未就绪。请查看下方 Server 自动运行状态与具体故障原因。'
           : 'JSAPI 4.0 已停用；地点列表和照片墙仍可使用。')
     } catch (err) {
       if (revision === generation.current)
@@ -350,11 +350,11 @@ export function XDriveBaiduJSAPIDesiredPanel({
       <Stack spacing={1.5}>
         <Typography variant="subtitle2" fontWeight={700}>
           {mode === 'all' ? 'Browser AK 配置与动态地图检测'
-            : mode === 'config' ? '百度 JSAPI 4.0 · Browser AK' : '动态地图 · Server 发布授权'}
+            : mode === 'config' ? '百度 JSAPI 4.0 · Browser AK' : '动态地图 · 服务状态'}
         </Typography>
         {mode !== 'verify' ? (
           <Typography variant="body2" color="text.secondary">
-            动态地图专用 AK。修改期望开关或密钥后由 Server 独立核验发布授权。
+            独立的动态地图 Browser AK。保存后由 Server 自动检查实际运行条件，不需要额外人工签名或生产账户凭证审核。
           </Typography>
         ) : (
           <Typography variant="caption" color="text.secondary">
@@ -371,7 +371,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
         ) : null}
         {mode !== 'verify' && config?.editable && (
           <>
-            <FormControlLabel label="启用 JSAPI 4.0（经 Server 签名授权后生效）"
+            <FormControlLabel label="启用 JSAPI 4.0（Server 自动检查并生效）"
               control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
                 disabled={busy || refreshing} />} />
             <XDriveSensitiveField label="Browser AK" value={newAK}
@@ -395,7 +395,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
           <Box id="dependency-baidu-map-verify-header"
             data-xdrive-baidu-jsapi4-flat-verify sx={{ scrollMarginTop: 72, mt: 1.5 }}>
             <Typography variant="subtitle2" fontWeight={700}>
-              Server 签名发布、运行状态与手动 Loader 检测
+              动态地图服务状态与按需 Loader 诊断
             </Typography>
           </Box>
         )}
@@ -403,7 +403,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
           <Typography variant="body2" role="status"
             color={verified ? 'success.main' : 'warning.main'}
             data-xdrive-baidu-jsapi4-release-state>
-            {verified ? 'Server 已签名授权动态地图' : '动态地图尚未获得 Server 签名放行'}
+            {verified ? '动态地图服务已就绪' : '动态地图服务尚未就绪'}
           </Typography>
         )}
         {mode !== 'config' && (
@@ -412,7 +412,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
               p: { xs: 1.25, sm: 1.5 }, minWidth: 0 }}>
             <Typography variant="subtitle2" fontWeight={700}>动态照片地图 · 具体故障诊断</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-              Server 发布原因以当前管理员只读状态为准；下方只显示本客户端最近 15 分钟的
+              Server 当前运行状态以管理员只读数据为准；下方只显示本客户端最近 15 分钟的
               匿名故障阶段。其他浏览器或 Desktop 独立 HTTPS 窗口不会共享记录。
             </Typography>
             {latestDiagnostic ? (
@@ -431,7 +431,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 <Typography variant="caption" color="text.secondary"
                   data-xdrive-baidu-runtime-evidence-boundary>
                   这是一条实际客户端运行阶段的匿名记录。Server API 坐标转换、
-                  Server 签名发布与固定 Loader 校验属于不同环节；
+                  Server 自动托管的签名运行状态与固定 Loader 校验属于不同环节；
                   即使前置检查通过，也不能证明独立动态地图的 SDK、瓦片和交互正常。
                 </Typography>
               </Stack>
@@ -497,12 +497,12 @@ export function XDriveBaiduJSAPIDesiredPanel({
                 ) : (
                   <Typography variant="body2" color="text.secondary"
                     data-xdrive-baidu-jsapi4-missing-blocker-evidence>
-                    Server 未返回详细阻断原因；请检查服务端版本和发布状态。
+                    Server 未返回详细错误原因；请检查服务端版本、当前配置和运行状态。
                     不需要再次填写已保存的 AK，也不能将缺少原因当作验证通过。
                   </Typography>
                 )}
                 <Typography variant="caption" color="text.secondary">
-                  这是 Server 结构性门禁；真实百度子资源、许可、AK 防泄漏和三端真机仍需独立验收。
+                  这里显示的是 Server 自动计算的运行条件，不是额外的生产账户人工凭证审批。实际 Owner、AK、HTTPS Origin、资源策略和配额检查仍必须生效。
                   未放行时不会试探加载脚本，更不会仅凭配置开启动态地图。
                 </Typography>
               </Box>

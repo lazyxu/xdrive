@@ -21,8 +21,8 @@ export function XDriveBaiduJSAPIConfigSnapshot({
   const rows = [
     { key: 'configured', value: String(config.configured), note: config.configured ? 'Browser AK 已加密保存' : '未配置独立 Browser AK' },
     { key: 'desired_enabled', value: String(config.desired_enabled), note: '已保存期望开关' },
-    { key: 'runtime_enabled', value: String(config.runtime_enabled), note: 'Server 当前签名放行结果' },
-    { key: 'activation_state', value: config.activation_state, note: 'Server 当前发布状态' },
+    { key: 'runtime_enabled', value: String(config.runtime_enabled), note: 'Server 自动运行条件检查结果' },
+    { key: 'activation_state', value: config.activation_state, note: 'Server 自动计算的兼容协议状态，并非人工许可审核' },
     { key: 'release_blockers', value: blockers === undefined ? '未返回' : JSON.stringify(blockers), note: '当前 Server 阻断代码' },
     { key: 'requires_restart', value: String(config.requires_restart), note: '当前配置的生效方式' },
   ]
@@ -80,7 +80,7 @@ export function XDriveBaiduJSAPIConfigSnapshot({
           ))}
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             六项为 Server 实际状态。仅 desired_enabled 和安全的 Browser AK 更新支持管理员修改；
-            不能通过覆盖运行字段或手动清除阻断原因伪造授权。
+            不能通过覆盖运行字段或手动清除错误原因伪造服务可用性。
           </Typography>
         </Box>
       )}
