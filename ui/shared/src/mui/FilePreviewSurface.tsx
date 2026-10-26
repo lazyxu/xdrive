@@ -165,6 +165,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [mediaReady, setMediaReady] = useState(false)
   const [mediaBuffering, setMediaBuffering] = useState(false)
   const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; bufferedStartSeconds?: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
+  const [videoPoster, setVideoPoster] = useState<{ identity: string; url: string } | null>(null)
+  const videoPosterLoaderRef = useRef(loadImagePreview)
+  videoPosterLoaderRef.current = loadImagePreview
+  const hasVideoPosterLoader = Boolean(loadImagePreview)
   const previewURLRef = useRef('')
   const videoStreamElementRef = useRef<HTMLVideoElement | null>(null)
   const audioStreamElementRef = useRef<HTMLAudioElement | null>(null)
@@ -184,6 +188,38 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const presentationCallbackRef = useRef(onPresentationStateChange)
   presentationCallbackRef.current = onPresentationStateChange
   const sourceIdentity = JSON.stringify([target?.id, target?.revision, previewKind])
+  // Video posters are current-Viewer resources, independent of video Range.
+  // A previously decoded Gallery/Explorer derivative is preferred; no video
+  // fetch or client-side transcoder is started just to obtain a poster.
+  useEffect(() => {
+    if (previewKind !== 'video' || !target || !hasVideoPosterLoader) {
+      setVideoPoster(null)
+      return
+    }
+    const loader = videoPosterLoaderRef.current
+    if (!loader) return
+    const controller = new AbortController()
+    const identity = sourceIdentity
+    let active = true
+    let acquiredURL = ''
+    setVideoPoster(null)
+    void loader(target, controller.signal).then((url) => {
+      if (!url) return
+      acquiredURL = url
+      if (!active || controller.signal.aborted) {
+        revokePreviewURL(url)
+        return
+      }
+      setVideoPoster({ identity, url })
+    }).catch(() => {
+      // Poster absence must never stop an otherwise valid video from playing.
+    })
+    return () => {
+      active = false
+      controller.abort()
+      if (acquiredURL) revokePreviewURL(acquiredURL)
+    }
+  }, [sourceIdentity, previewKind, hasVideoPosterLoader])
   if (retryOwnerRef.current.sourceIdentity !== sourceIdentity) {
     retryOwnerRef.current = { sourceIdentity }
   }
@@ -586,7 +622,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setMediaBuffering(false)
     setFailed(true)
   }, [isCurrentMedia])
-  const updateBuffered = useCallback((event: SyntheticEvent<HTMLVideoElement>) => {
+  const updateBuffered = useCallback((event: SyntheticEvent<HTMLMediaElement>) => {
     if (!isCurrentMedia()) return
     const video = event.currentTarget
     let bufferedSeconds = 0
@@ -634,12 +670,32 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         bgcolor: previewKind === 'audio' ? 'transparent' : 'rgba(0,0,0,.12)',
       }}
     >
-      {previewKind === 'video' ? (
+      {previewKind === 'video' || previewKind === 'audio' ? (
         <XDriveMediaLoadingProgress stage="buffering" {...bufferProgress} />
       ) : <CircularProgress size={26} aria-label="正在加载媒体" />}
     </Box>
   ) : null
 
+  // Native poster keeps playback controls interactive. Before the video URL
+  // exists (or if it fails), show the exact same poster behind the status UI.
+  // Do not expose a stale revision or late Owner's URL for a render.
+  const activeVideoPosterURL = videoPoster?.identity === sourceIdentity ? videoPoster.url : ''
+  const videoPlaceholder = (overlay: ReactNode) => {
+    if (previewKind !== 'video' || !activeVideoPosterURL) return overlay
+    return (
+      <Box data-xdrive-preview-video-poster sx={{
+        position: 'relative', width: '100%', height: '100%', minHeight: 96,
+        display: 'grid', placeItems: 'center', bgcolor: 'black',
+      }}>
+        <Box component="img" src={activeVideoPosterURL} alt="" aria-hidden
+          sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+        <Box sx={{ position: 'relative', zIndex: 1, display: 'grid', placeItems: 'center',
+          bgcolor: 'rgba(0,0,0,.35)', color: 'common.white', p: 1 }}>
+          {overlay}
+        </Box>
+      </Box>
+    )
+  }
   const body = (() => {
     if (target && previewKind === 'live_photo') {
       return (
@@ -779,21 +835,21 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     // A target change can render before its effect clears the previous URL.
     // Never mount old video/audio/PDF bytes under a newer Node/revision.
     if (loading || acquiredIdentityRef.current !== sourceIdentity) {
-      return (
+      return videoPlaceholder(
         <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
           <CircularProgress size={26} />
-        </Box>
+        </Box>,
       )
     }
     if (failed) {
-      return (
+      return videoPlaceholder(
         <Stack data-xdrive-preview-retry spacing={1} alignItems="center"
           justifyContent="center" sx={{ p: 2, minHeight: 96, minWidth: 0, textAlign: 'center' }}>
           {fallback}
           <Typography variant="caption" color="text.secondary">预览失败，可重新尝试加载。</Typography>
           <Button size="small" variant="outlined" aria-label="重试预览"
             onClick={retryPreview}>重试预览</Button>
-        </Stack>
+        </Stack>,
       )
     }
     if (previewKind === 'text' && textPreview) {
@@ -823,7 +879,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         </Stack>
       )
     }
-    if (!previewURL) return fallback
+    if (!previewURL) return videoPlaceholder(fallback)
     if (previewKind === 'video') {
       return (
         <Box data-xdrive-preview-media-state="video" sx={{
@@ -847,6 +903,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             <XDriveTransformedVideoPreview
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
               src={previewURL}
+              poster={mediaReady ? undefined : activeVideoPosterURL || undefined}
               transform={mediaTransform}
               onReady={markMediaReady}
               onWaiting={markMediaWaiting}
@@ -859,6 +916,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               component="video"
               ref={videoStreamElementRef}
               src={previewURL}
+              poster={mediaReady ? undefined : activeVideoPosterURL || undefined}
               controls
               playsInline
               preload="metadata"
@@ -891,6 +949,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             onCanPlay={markMediaReady}
             onPlaying={markMediaReady}
             onWaiting={markMediaWaiting}
+            onProgress={updateBuffered}
+            onTimeUpdate={updateBuffered}
             onError={markMediaFailed}
             sx={{ width: '100%' }}
           />

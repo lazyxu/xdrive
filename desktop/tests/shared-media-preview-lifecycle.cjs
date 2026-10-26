@@ -589,3 +589,138 @@ test('P0 stale retry callback from a former Node/session cannot fetch or display
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('Viewer video uses current-revision thumbnail as native poster without changing playback controls', async () => {
+  let renderer
+  const requests = []
+  const revoked = []
+  const originalRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  const target = revision => ({ id: 9007, revision, name: 'clip.mp4', kind: 'file' })
+  const thumbnail = (_node, signal) => new Promise(resolve => requests.push({ signal, resolve }))
+  const preview = async () => 'https://example.invalid/clip'
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: target(1), loadPreviewURL: preview, loadImagePreview: thumbnail,
+      }))
+    })
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].signal.aborted, false)
+    await act(async () => { requests[0].resolve('blob:video-poster-one'); await Promise.resolve() })
+    let video = renderer.root.findByType('video')
+    assert.equal(video.props.poster, 'blob:video-poster-one')
+    assert.equal(video.props.controls, true, 'native playback controls remain active')
+    await act(async () => video.props.onLoadedData())
+    video = renderer.root.findByType('video')
+    assert.equal(video.props.poster, undefined, 'a rendered first frame retires the static native poster')
+    await act(async () => {
+      renderer.update(React.createElement(XDriveFilePreviewSurface, {
+        target: target(2), loadPreviewURL: preview, loadImagePreview: thumbnail,
+      }))
+    })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].signal.aborted, true)
+    assert.ok(revoked.includes('blob:video-poster-one'),
+      'retiring the first revision releases its owned poster')
+    assert.notEqual(renderer.root.findByType('video').props.poster, 'blob:video-poster-one')
+    await act(async () => { requests[1].resolve('blob:video-poster-two'); await Promise.resolve() })
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:video-poster-two')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.ok(revoked.includes('blob:video-poster-two'))
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+})
+
+test('Video poster appears during pending ticket and remains behind failure/retry UI', async () => {
+  let renderer, resolveTicket, resolvePoster
+  const ticket = new Promise(resolve => { resolveTicket = resolve })
+  const poster = new Promise(resolve => { resolvePoster = resolve })
+  const target = { id: 9011, revision: 3, name: 'pending.mp4', kind: 'file' }
+  const revocations = []
+  const original = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revocations.push(url)
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target, loadPreviewURL: () => ticket, loadImagePreview: () => poster,
+        fallback: React.createElement('div', { role: 'alert' }, 'Unavailable'),
+      }))
+    })
+    await act(async () => { resolvePoster('blob:pending-poster'); await Promise.resolve() })
+    // MUI Box forwards the same prop through styled React wrappers. Count
+    // rendered DOM hosts, not wrapper instances, and verify the actual pixels.
+    const domNodesWith = attribute => renderer.root.findAll(node =>
+      typeof node.type === 'string' && node.props[attribute] === true)
+    const posters = () => domNodesWith('data-xdrive-preview-video-poster')
+    assert.equal(posters().length, 1, 'show one DOM poster before stream ticket completes')
+    assert.equal(posters()[0].findByType('img').props.src, 'blob:pending-poster',
+      'the visible image must contain this revision\'s authenticated thumbnail')
+    assert.equal(renderer.root.findAllByType('video').length, 0)
+    await act(async () => { resolveTicket(null); await Promise.resolve() })
+    assert.equal(posters().length, 1, 'failed video should not blank the last valid poster')
+    assert.equal(posters()[0].findByType('img').props.src, 'blob:pending-poster',
+      'the failure overlay must retain the same current-revision thumbnail')
+    assert.equal(domNodesWith('data-xdrive-preview-retry').length, 1,
+      'the failure overlay has exactly one actionable DOM retry region')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.ok(revocations.includes('blob:pending-poster'))
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = original
+  }
+})
+
+test('Old video thumbnail result is cancelled and revoked after Viewer source replacement', async () => {
+  let renderer
+  const requests = []
+  const revoked = []
+  const original = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  const target = revision => ({ id: 9015, revision, name: 'video.mp4', kind: 'file' })
+  const loadImagePreview = (_node, signal) => new Promise(resolve => requests.push({ signal, resolve }))
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: target(1), loadPreviewURL: async () => 'https://example.invalid/video', loadImagePreview,
+      }))
+    })
+    await act(async () => {
+      renderer.update(React.createElement(XDriveFilePreviewSurface, {
+        target: target(2), loadPreviewURL: async () => 'https://example.invalid/video', loadImagePreview,
+      }))
+    })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].signal.aborted, true)
+    await act(async () => { requests[0].resolve('blob:retired-poster'); await Promise.resolve() })
+    assert.ok(revoked.includes('blob:retired-poster'), 'aborted poster Blob is released')
+    assert.notEqual(renderer.root.findByType('video').props.poster, 'blob:retired-poster')
+    await act(async () => { requests[1].resolve('blob:current-poster'); await Promise.resolve() })
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:current-poster')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = original
+  }
+})
+
+test('Audio Viewer reports native buffered time, never synthetic byte completion', async () => {
+  const renderer = await mountMedia('track.mp3')
+  try {
+    const audio = renderer.root.findByType('audio')
+    assert.equal(audio.props.preload, 'metadata')
+    await act(async () => audio.props.onProgress({ currentTarget: {
+      buffered: { length: 1, start: () => 2, end: () => 9 },
+      currentTime: 5, duration: 30,
+    } }))
+    const progress = renderer.root.findAllByProps({ 'data-xdrive-media-loading-stage': 'buffering' })
+    assert.ok(progress.length >= 1)
+    assert.ok(progress.some(node => node.props['aria-label']?.includes('缓冲 00:02–00:09 / 00:30')))
+  } finally {
+    await act(async () => renderer.unmount())
+  }
+})
