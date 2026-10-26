@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent, ReactNode, WheelEvent } from 'react'
 import { Box, Chip, CircularProgress } from '@mui/material'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'
 import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
 import type { XDrivePreviewPoint, XDrivePreviewViewport, XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type {
@@ -240,6 +241,18 @@ export function XDriveLivePhotoSurface({
     setImageScale(1)
     setImageOffset({ x: 0, y: 0 })
   }, [gestureSession])
+  // Unlike a passive effect, this cleanup runs before React detaches the
+  // current video DOM node. Stop signed media Range on Viewer Close and
+  // Owner/source switch, even when no terminal codec error occurred.
+  useLayoutEffect(() => () => {
+    holdActiveRef.current = false
+    motionURLRef.current = ''
+    loadGenerationRef.current += 1
+    cancelPendingMotion()
+    cancelPendingVideoFrame()
+    xDriveAbortHTMLMediaElement(videoRef.current)
+  }, [cancelPendingMotion, cancelPendingVideoFrame, gestureSession])
+
   useLayoutEffect(() => {
     // A decoded still can become ready after the component first mounts.
     // Measure its actual contain-fit pixels then reclamp the existing zoom
@@ -289,6 +302,21 @@ export function XDriveLivePhotoSurface({
     setPlaying(false)
     setLoading(false)
   }, [cancelPendingVideoFrame])
+
+  // On terminal codec/media failure, revoke the private motion lease and
+  // synchronously stop its signed HTTP Range before the Viewer is closed.
+  // Gesture-denied/aborted play and ticket lookup failures remain retryable.
+  const failMotionPlayback = useCallback(() => {
+    holdActiveRef.current = false
+    stopPlayback()
+    const source = motionSourceRef.current
+    motionSourceRef.current = null
+    motionURLRef.current = ''
+    xDriveAbortHTMLMediaElement(videoRef.current)
+    if (source) disposeLivePhotoMotion(source)
+    setMotionURL('')
+    setFailed(true)
+  }, [stopPlayback])
 
   const playLoadedMotion = useCallback(() => {
     if (!motionURLRef.current || failed || !holdActiveRef.current) return
@@ -347,9 +375,9 @@ export function XDriveLivePhotoSurface({
       if (error && typeof error === 'object' && 'name' in error && (
         error.name === 'AbortError' || error.name === 'NotAllowedError'
       )) return
-      setFailed(true)
+      failMotionPlayback()
     })
-  }, [cancelPendingVideoFrame, failed])
+  }, [cancelPendingVideoFrame, failed, failMotionPlayback])
 
   const acceptFallbackVideoFrame = useCallback((video: HTMLVideoElement) => {
     if (typeof video.requestVideoFrameCallback === 'function' ||
@@ -463,10 +491,10 @@ export function XDriveLivePhotoSurface({
     if (motionURL && holdActiveRef.current && !failed) playLoadedMotion()
   }, [failed, motionURL, playLoadedMotion])
 
-  // A still decoder failure or a recycled Viewer source revokes permission
-  // to keep the associated motion playing. Do not leave audio/video active
-  // underneath the newly unavailable still or automatically resume later.
-  useEffect(() => {
+  // A still decoder failure revokes the motion lease before the old media
+  // frame is retired. Merely pausing leaves a signed HTTP Range alive.
+  // Layout cleanup also prevents the old decoder from painting another frame.
+  useLayoutEffect(() => {
     if (!stillReady) {
       clearHoldTimer()
       touchGestureRef.current = null
@@ -483,6 +511,15 @@ export function XDriveLivePhotoSurface({
       motionLoadAttemptRef.current += 1
       loadStartedRef.current = false
       retryableMotionLoadRef.current = false
+      // Decoder loss invalidates the still/Live pair, not just the gesture.
+      // Drop the one-shot proxy/Blob lease and detach the old signed native
+      // Range synchronously, even though the Viewer itself stays open.
+      const retiredMotion = motionSourceRef.current
+      motionSourceRef.current = null
+      motionURLRef.current = ''
+      xDriveAbortHTMLMediaElement(videoRef.current)
+      if (retiredMotion) disposeLivePhotoMotion(retiredMotion)
+      setMotionURL('')
       setLoading(false)
     }
   }, [applyImageViewport, cancelPendingMotion, clearHoldTimer, stillReady, stopPlayback])
@@ -871,9 +908,7 @@ export function XDriveLivePhotoSurface({
             // or turn an idle still into a permanent "motion unavailable" tile.
             if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL ||
               !holdActiveRef.current || !stillReady) return
-            stopPlayback()
-            setLoading(false)
-            setFailed(true)
+            failMotionPlayback()
           }}
           sx={{
             position: 'absolute',

@@ -453,3 +453,168 @@ test('P0 an old original-only retry callback cannot acquire a replaced image Nod
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('P0 failed original decode immediately releases its Blob while decoded thumbnail stays visible', async () => {
+  const previousRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = (url) => revoked.push(url)
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(790),
+        loadPreviewURL: async () => 'blob:bad-decoded-original',
+        loadImagePreview: async () => 'blob:valid-decoded-thumbnail',
+      }))
+    })
+    await decodeImage(renderer, 'blob:valid-decoded-thumbnail')
+    const still = imageWithURL(renderer, 'blob:valid-decoded-thumbnail')
+    await act(async () => imageWithURL(renderer, 'blob:bad-decoded-original').props.onError())
+    assert.deepEqual(revoked, ['blob:bad-decoded-original'],
+      'decode failure must free the unusable original immediately')
+    assert.equal(imageWithURL(renderer, 'blob:valid-decoded-thumbnail'), still)
+    assert.equal(still.props.style.visibility, 'visible',
+      'releasing failed original must not blank the decoded thumbnail')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.deepEqual(revoked, ['blob:bad-decoded-original', 'blob:valid-decoded-thumbnail'],
+      'each owned Blob is released once')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = previousRevoke
+  }
+})
+
+test('P0 same Blob shared by original and thumbnail is not revoked on one role failure', async () => {
+  const previousRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = (url) => revoked.push(url)
+  const shared = 'blob:shared-original-thumbnail'
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(791),
+        loadPreviewURL: async () => shared,
+        loadImagePreview: async () => shared,
+      }))
+    })
+    await decodeImage(renderer, shared)
+    const layers = previewImages(renderer).filter(node => node.props.src === shared)
+    assert.equal(layers.length, 2, 'the Preview Engine retains two independently decoded roles')
+    assert.equal(layers[0].props.style.visibility, 'visible')
+    await act(async () => layers[1].props.onError())
+    assert.deepEqual(revoked, [],
+      'failed original must not revoke the shared URL still used by the decoded thumbnail')
+    assert.equal(previewImages(renderer).filter(node => node.props.src === shared).length, 1)
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.deepEqual(revoked, [shared], 'shared Blob URL is revoked exactly once on final disposal')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = previousRevoke
+  }
+})
+
+test('P0 late cancelled original cannot revoke shared Blob now shown by a replacement thumbnail', async () => {
+  const previousRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  const stale = deferred()
+  const shared = 'blob:new-owner-visible-thumbnail'
+  const calls = []
+  const props = id => ({
+    target: photo(id), loadPreviewURL: node => {
+      calls.push(node.id)
+      return node.id === 792 ? stale.promise : Promise.resolve(null)
+    },
+    loadImagePreview: node => Promise.resolve(node.id === 792 ? null : shared),
+  })
+  let renderer
+  try {
+    await act(async () => { renderer = create(React.createElement(XDriveFilePreviewSurface, props(792))) })
+    assert.equal(previewImages(renderer).length, 0)
+    await act(async () => renderer.update(React.createElement(XDriveFilePreviewSurface, props(793))))
+    await decodeImage(renderer, shared)
+    const visible = imageWithURL(renderer, shared)
+    assert.equal(visible.props.style.visibility, 'visible')
+    await act(async () => { stale.resolve(shared); await Promise.resolve() })
+    assert.deepEqual(revoked, [], 'stale cancelled response must not revoke a live thumbnail')
+    assert.equal(imageWithURL(renderer, shared), visible)
+    assert.equal(visible.props.style.visibility, 'visible')
+    assert.deepEqual(calls, [792, 793])
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.deepEqual(revoked, [shared], 'the final Owner must release the shared Blob exactly once')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = previousRevoke
+  }
+})
+
+
+test('P0 pending thumbnail may adopt a Blob URL after original decode fails', async () => {
+  const priorRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  const shared = 'blob:original-first-thumbnail-later'
+  const pendingThumbnail = deferred()
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(794),
+        loadPreviewURL: async () => shared,
+        loadImagePreview: () => pendingThumbnail.promise,
+      }))
+    })
+    const original = imageWithURL(renderer, shared)
+    assert.ok(original, 'original resolves while thumbnail request remains outstanding')
+    await act(async () => original.props.onError())
+    assert.deepEqual(revoked, [],
+      'do not revoke a Blob that an in-flight thumbnail may still share')
+    await act(async () => {
+      pendingThumbnail.resolve(shared)
+      await Promise.resolve()
+    })
+    await decodeImage(renderer, shared)
+    assert.equal(imageWithURL(renderer, shared).props.style.visibility, 'visible')
+    assert.deepEqual(revoked, [], 'thumbnail must decode the original Blob without premature revocation')
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.deepEqual(revoked, [shared], 'final Viewer owner releases the shared Blob once')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = priorRevoke
+  }
+})
+
+test('P0 original failed Blob retires when pending thumbnail reports no usable resource', async () => {
+  const priorRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  const failed = 'blob:unusable-original-pending-thumbnail'
+  const pendingThumbnail = deferred()
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: photo(795),
+        loadPreviewURL: async () => failed,
+        loadImagePreview: () => pendingThumbnail.promise,
+      }))
+    })
+    await act(async () => imageWithURL(renderer, failed).props.onError())
+    assert.deepEqual(revoked, [], 'only the possible same-URL thumbnail delays release')
+    await act(async () => {
+      pendingThumbnail.resolve(null)
+      await Promise.resolve()
+    })
+    assert.deepEqual(revoked, [failed],
+      'failed original Blob must retire as soon as both candidate readers settle')
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.deepEqual(revoked, [failed], 'Close must not revoke an already retired Blob twice')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = priorRevoke
+  }
+})

@@ -419,6 +419,8 @@ test('P1 audio renderer failure reissues authenticated ticket and frees old blob
     const first = renderer.root.findByType('audio')
     assert.equal(first.props.src, 'blob:old-recording')
     await act(async () => first.props.onError())
+    assert.deepEqual(revoked, ['blob:old-recording'],
+      'a terminal decoder failure retires the failed audio Blob before Retry')
     const action = renderer.root.findAll(el => el.type === 'button' &&
       el.props['aria-label'] === '重试预览')
     assert.equal(action.length, 1)
@@ -432,6 +434,94 @@ test('P1 audio renderer failure reissues authenticated ticket and frees old blob
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     URL.revokeObjectURL = originalRevoke
+  }
+})
+
+test('P0 terminal video/audio error detaches native Range and retires Blob before manual Retry', async () => {
+  // react-test-renderer has no real DOM. A small host-only MUI Box
+  // adapter forwards refs into createNodeMock, so terminal Range teardown
+  // is checked against an actual mock media element instead of null.
+  // Keep the production Viewer and teardown implementation unchanged.
+  const NativeRefBox = React.forwardRef(function NativeRefBox({ component = 'div', sx: _sx, ...props }, ref) {
+    return React.createElement(component, { ...props, ref })
+  })
+  const { XDriveFilePreviewSurface: RefAwarePreview } = loadShared(
+    path.join(repo, 'ui/shared/src/mui/FilePreviewSurface.tsx'),
+    { '@mui/material': { ...require('@mui/material'), Box: NativeRefBox } },
+    new Map(),
+  )
+  const scenarios = [
+    { name: 'failure.mp4', kind: 'video' },
+    { name: 'failure.mp3', kind: 'audio' },
+    { name: 'failure-edit.mp4', kind: 'video', mediaTransform: { rotationDegrees: 90 } },
+  ]
+  for (const scenario of scenarios) {
+    const oldRevoke = URL.revokeObjectURL
+    const revoked = []
+    URL.revokeObjectURL = (url) => revoked.push(url)
+    const streams = []
+    const hostMocks = []
+    const requests = []
+    let renderer
+    try {
+      const broken = 'blob:broken-' + scenario.name
+      const replacement = 'blob:replacement-' + scenario.name
+      await act(async () => {
+        renderer = create(React.createElement(RefAwarePreview, {
+          target: { id: 1200, revision: 5, name: scenario.name, kind: 'file' },
+          mediaTransform: scenario.mediaTransform,
+          loadPreviewURL: (_node, kind, signal) => {
+            requests.push({ kind, signal })
+            return Promise.resolve(requests.length === 1 ? broken : replacement)
+          },
+          fallback: React.createElement('div', { role: 'alert' }, 'Preview unavailable'),
+        }), {
+          createNodeMock: (element) => {
+            hostMocks.push(String(element.type))
+            if (element.type !== scenario.kind) return null
+            const stream = {
+              pauseCalls: 0, detachCalls: 0, resetCalls: 0,
+              pause() { this.pauseCalls++ },
+              removeAttribute(attribute) {
+                assert.equal(attribute, 'src')
+                this.detachCalls++
+              },
+              load() { this.resetCalls++ },
+            }
+            streams.push(stream)
+            return stream
+          },
+        })
+      })
+      const first = renderer.root.findByType(scenario.kind)
+      assert.equal(first.props.src, broken)
+      assert.equal(requests[0].kind, scenario.kind)
+      assert.equal(streams.length, 1,
+        `${scenario.name}: expected native ${scenario.kind} ref, encountered ${hostMocks.join(',')}`)
+      await act(async () => first.props.onError())
+      assert.equal(renderer.root.findAllByType(scenario.kind).length, 0,
+        'a failed native player must not remain mounted')
+      assert.equal(streams[0].detachCalls, 1, 'stop failed signed Range at terminal error')
+      assert.equal(streams[0].resetCalls, 1, 'reset the native element before Blob disposal')
+      assert.ok(streams[0].pauseCalls >= 1)
+      assert.deepEqual(revoked, [broken],
+        'the failed Blob must be released before the user retries')
+      const retry = renderer.root.findAll(el => el.type === 'button' &&
+        el.props['aria-label'] === '重试预览')
+      assert.equal(retry.length, 1)
+      await act(async () => { retry[0].props.onClick(); await Promise.resolve() })
+      assert.equal(requests.length, 2)
+      assert.equal(requests[0].signal.aborted, true)
+      assert.equal(renderer.root.findByType(scenario.kind).props.src, replacement)
+      assert.deepEqual(revoked, [broken], 'retry must not double revoke old Blob')
+      await act(async () => { renderer.unmount(); renderer = null })
+      assert.deepEqual(revoked, [broken, replacement],
+        'Close frees only the active new Blob and does not revisit the retired source')
+      assert.equal(streams[1].detachCalls, 1, 'Close also detaches new signed Range')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+      URL.revokeObjectURL = oldRevoke
+    }
   }
 })
 

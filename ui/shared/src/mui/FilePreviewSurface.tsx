@@ -554,6 +554,18 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     return () => xDriveAbortHTMLMediaElement(media)
   }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
 
+  // A terminal native media error unmounts the player, but the signed Blob
+  // otherwise stays owned until Retry or Close. The layout cleanup above
+  // first detaches the old native HTTP Range. Retire only this failed
+  // session's URL after commit; never touch a replacement Owner/revision.
+  useEffect(() => {
+    if (!failed || !previewURL ||
+        (previewKind !== 'video' && previewKind !== 'audio') ||
+        acquiredIdentityRef.current !== sourceIdentity ||
+        previewURLRef.current !== previewURL) return
+    assignPreviewURL('')
+  }, [assignPreviewURL, failed, previewKind, previewURL, sourceIdentity])
+
   const mediaGeneration = previewGenerationRef.current
   const isCurrentMedia = useCallback(() => (
     acquiredIdentityRef.current === sourceIdentity &&
