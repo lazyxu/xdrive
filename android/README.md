@@ -327,6 +327,15 @@ Gallery or switching Owner removes the gallery and its ephemeral cache.
 There are no reusable public thumbnail URLs, disk token caches, WebViews or
 second proxy servers.
 
+Each visible Gallery tile now shows an indeterminate indicator while its
+revisioned authenticated thumbnail is loading. Missing or undecodable derived
+thumbnails remain placeholders with a failure-status badge and accessible
+**long-press retry** on the tile (no floating operation button);
+no automatic retry storm or fictional byte percentage is shown. Unmounting a
+tile, leaving Gallery or changing Owner still cancels the existing request.
+The retry reuses the same four-request concurrency and 4 MiB/48-image bounds.
+This is not per-byte transfer progress or complete iOS visual parity.
+
 Initial Gallery tiles provide real metadata and Live/video markers; this
 increment intentionally does not mislabel metadata details as a full Viewer.
 Albums, year/month/day time-scale chrome, full-resolution Viewer and playback,

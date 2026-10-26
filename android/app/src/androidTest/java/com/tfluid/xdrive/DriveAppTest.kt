@@ -33,6 +33,8 @@ class DriveAppTest {
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryAutoPagingFixture = false
     private val galleryOffsets = mutableListOf<Int>()
+    private var galleryThumbnailRetryFixture = false
+    private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
         DriveNode(40, 1, "相册照片.jpg", "file", size = 44, revision = 1), "image",
         capturedAt = "2026-10-24T00:00:00Z", hasThumbnail = true)
@@ -54,7 +56,19 @@ class DriveAppTest {
             }, 181, offset)
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
-            revision: Long) = byteArrayOf(1,2,3)
+            revision: Long): ByteArray {
+            if (!galleryThumbnailRetryFixture) return byteArrayOf(1, 2, 3)
+            if (galleryThumbnailCalls.incrementAndGet() == 1) return byteArrayOf(1, 2, 3)
+            val bitmap = android.graphics.Bitmap.createBitmap(
+                16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+            val output = java.io.ByteArrayOutputStream()
+            try {
+                check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output))
+                return output.toByteArray()
+            } finally {
+                bitmap.recycle()
+            }
+        }
         override suspend fun fileRecent(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
                 listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
@@ -204,6 +218,32 @@ class DriveAppTest {
             controller.state.value.screen == Screen.FILES
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun galleryThumbnailFailureRequiresUserRetryAndThenShowsImage() {
+        galleryThumbnailRetryFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-thumbnail-failed-40", useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+        // Invalid first thumbnail never automatically creates a request storm.
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, galleryThumbnailCalls.get()) }
+        // No operation icon on the tile: explicit long-press retries instead.
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true)
+            .performTouchInput { longClick() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-thumbnail-ready-40", useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-thumbnail-failed-40", useUnmergedTree = true)
+            .assertDoesNotExist()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithText("相册照片.jpg").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
     }
 
     @Test fun GalleryAutomaticallyFetchesOlderOwnerRangeAtScrolledTop() {
