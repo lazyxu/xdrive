@@ -93,11 +93,19 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     // to show item zero while the actual item-50 assertion ran (CI #40139739454).
     // Key the Lazy state by folder and view; seed it with the last observed
     // viewport index rather than scrolling asynchronously after the new UI mounts.
-    key(folderKey, viewMode) {
-        val firstItem = anchors.position(folderKey)
+    key(folderKey, viewMode, state.focusedBrowseEpoch) {
+        val targetIndex = state.focusedBrowseIndex.takeIf {
+            state.focusedBrowseNodeId != null &&
+                state.items.getOrNull(it)?.id == state.focusedBrowseNodeId
+        }
+        // Select the actual Node in the first frame, not only its parent folder.
+        val firstItem = targetIndex ?: anchors.position(folderKey)
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstItem)
         val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = firstItem)
-        LaunchedEffect(folderKey, viewMode) {
+        var olderEdgeArmed by remember(folderKey, viewMode, state.focusedBrowseEpoch) {
+            mutableStateOf(false)
+        }
+        LaunchedEffect(folderKey, viewMode, state.focusedBrowseEpoch) {
             snapshotFlow {
                 if (viewMode == FileViewMode.LIST) listState.firstVisibleItemIndex
                 else gridState.firstVisibleItemIndex
@@ -113,6 +121,25 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             }
         }
     }
+
+        // A located page may begin at offset 50k. Only prepend when the user
+        // scrolls away and back, avoiding a cold-load 100k fetch storm.
+        LaunchedEffect(folderKey, viewMode, state.browseWindowStart,
+            state.items.size, state.loading, state.error) {
+            if (state.hasPrevious && !state.loading && state.error == null) {
+                snapshotFlow {
+                    if (viewMode == FileViewMode.LIST)
+                        listState.firstVisibleItemIndex to listState.isScrollInProgress
+                    else gridState.firstVisibleItemIndex to gridState.isScrollInProgress
+                }.collect { (first, scrolling) ->
+                    if (first > 5) olderEdgeArmed = true
+                    else if (first <= 1 && (olderEdgeArmed || scrolling)) {
+                        olderEdgeArmed = false
+                        controller.loadPrevious()
+                    }
+                }
+            }
+        }
 
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -187,8 +214,15 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Column {
                         Box {
-                            Row(Modifier.fillMaxWidth().background(rowColor)
+                            Row(Modifier.fillMaxWidth()
+                                .background(if (!state.browseSelectionMode &&
+                                    node.id == state.focusedBrowseNodeId)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                    else rowColor)
                                 .testTag("files-item-${node.id}")
+                                .semantics { selected = if (state.browseSelectionMode)
+                                    node.id in state.browseSelectedIds
+                                    else node.id == state.focusedBrowseNodeId }
                                 .combinedClickable(onClick = {
                                     if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
                                     else controller.open(node)
@@ -242,7 +276,14 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Box {
                         Column(Modifier.fillMaxWidth()
+                            .background(if (!state.browseSelectionMode &&
+                                node.id == state.focusedBrowseNodeId)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                else rowColor)
                             .testTag("files-item-${node.id}")
+                            .semantics { selected = if (state.browseSelectionMode)
+                                node.id in state.browseSelectedIds
+                                else node.id == state.focusedBrowseNodeId }
                             .combinedClickable(onClick = {
                                     if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
                                     else controller.open(node)
