@@ -149,16 +149,21 @@ private fun GalleryTile(
     cache: LruCache<String, ImageBitmap>,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
-    // A new Owner Range/revision must not render a retired bitmap while the
-    // next thumbnail loads. UI state is scoped to the actual verified asset.
-    var bitmap by remember(key, item) { mutableStateOf(cache.get(key)) }
-    var retryAttempt by remember(key, item) { mutableIntStateOf(0) }
-    var loading by remember(key, item) {
+    // A new Owner Range/revision or thumbnail-availability change invalidates
+    // the bitmap. A refreshed metadata object for the SAME version must not
+    // reset failed/retry state or start a duplicate thumbnail GET. Gallery is
+    // unmounted on Owner/app changes, so its in-memory cache is Owner-scoped.
+    var bitmap by remember(key, item.hasThumbnail) { mutableStateOf(cache.get(key)) }
+    var retryAttempt by remember(key, item.hasThumbnail) { mutableIntStateOf(0) }
+    var loading by remember(key, item.hasThumbnail) {
         mutableStateOf(bitmap == null && item.hasThumbnail)
     }
-    var failed by remember(key, item) { mutableStateOf(false) }
+    var failed by remember(key, item.hasThumbnail) { mutableStateOf(false) }
 
-    LaunchedEffect(item, retryAttempt) {
+    // Never key the network effect on the entire GalleryAsset: pagination or
+    // metadata refresh may replace its instance without changing image bytes.
+    // Only a version/availability change or explicit long press retries.
+    LaunchedEffect(key, item.hasThumbnail, retryAttempt) {
         if (bitmap != null || !item.hasThumbnail) return@LaunchedEffect
         loading = true
         failed = false
