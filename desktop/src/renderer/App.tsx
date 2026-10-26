@@ -1724,6 +1724,36 @@ export default function App({
   const cloudFileActionLifecycleKey = status?.server && status?.username
     ? `xdrive.desktop.files.navigation_session.v1:${encodeURIComponent(status.server)}:${encodeURIComponent(status.username)}`
     : ''
+  const [cloudRevealTarget, setCloudRevealTarget] = useState<{
+    parentID: number; nodeID: number; requestID: string
+  } | null>(null)
+  const cloudRevealSequenceRef = useRef(0)
+  useEffect(() => {
+    if (view !== 'files') setCloudRevealTarget(null)
+  }, [view])
+  const revealCloudNodeInDirectory = async (
+    parentID: number, nodeID: number | undefined,
+    ancestry: AgentCloudCrumb[],
+  ) => {
+    const requestID = ++cloudRevealSequenceRef.current
+    setCloudRevealTarget(null)
+    setView('files')
+    try {
+      const accepted = await loadCloudDirectory(parentID, ancestry)
+      if (requestID !== cloudRevealSequenceRef.current || activeViewRef.current !== 'files' || accepted === false) return
+      if (nodeID && Number.isSafeInteger(nodeID) && nodeID > 0 &&
+        nodeID !== parentID) {
+        setCloudRevealTarget({
+          parentID, nodeID,
+          requestID: `desktop-external:${cloudFileActionLifecycleKey}:${requestID}`,
+        })
+      }
+    } catch (error) {
+      if (requestID === cloudRevealSequenceRef.current) {
+        setError(error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
 
   const requestCloudFileAction = useCallback((action: DesktopFileExplorerAction) => {
     cloudFileActionSequenceRef.current += 1
@@ -2736,8 +2766,10 @@ export default function App({
               : location.breadcrumbs.filter((crumb) => crumb.id !== location.node_id)
             ).map((crumb) => ({ id: crumb.id, name: crumb.name }))
             if (!ancestry.length || ancestry[ancestry.length - 1].id !== dir) return
-            setView('files')
-            void loadCloudDirectory(dir, ancestry)
+            const target = task.cloud_node_id
+            const nodeID = typeof target === 'number' && Number.isSafeInteger(target) &&
+              target > 0 ? target : undefined
+            void revealCloudNodeInDirectory(dir, nodeID, ancestry)
           }).catch((error) => setError(error instanceof Error ? error.message : String(error)))
         }}
         retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
@@ -2960,8 +2992,7 @@ export default function App({
                 .filter((crumb) => crumb.id !== location.node_id)
                 .map((crumb) => ({ id: crumb.id, name: crumb.name }))
               if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
-              setView('files')
-              void loadCloudDirectory(location.parent_id, ancestry)
+              void revealCloudNodeInDirectory(location.parent_id, location.node_id, ancestry)
             }}
             shareDialog={{
               adapter: desktopShareDialogAdapter,
@@ -3029,6 +3060,8 @@ export default function App({
               navigationState: cloudFileExplorerNavigationState,
               navigationSessionStorageKey: cloudFileActionLifecycleKey || undefined,
               onNavigationStateChange: rememberCloudFileExplorerNavigationState,
+              revealTarget: cloudFileActionLifecycleKey && cloudRevealTarget?.requestID.startsWith(`desktop-external:${cloudFileActionLifecycleKey}:`)
+                ? cloudRevealTarget : null,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,
               onOpenShares: openCloudShares,

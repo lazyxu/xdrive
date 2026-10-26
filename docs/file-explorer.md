@@ -686,6 +686,34 @@ Web 与 Desktop 的普通“打开”语义不同，但 FileExplorer 本体仍�
 M09 acceptance on 2026-10-09 records121 passing real shared Files checks,38 related/adapter tests and3 actual Agent JavaScript HTTP checks. Common still/video/Live rows match Gallery and the actual routed Web Viewer. Scope replacement, close, directory/account change and unmount reject old completions; reopening captures the new selected revision. These tests preserve the existing Files implementation and distinguish controlled renderer/HTTP boundaries from live Server indexing and physical-device acceptance. See [the source and result ledger](validation/mobile-shared-properties-2026-10-09.json).
 
 
+## Exact `显示所在文件夹` reveal (2026-10-26, PR #2750)
+
+The containing-folder action is a **file reveal**, not merely a parent-directory
+navigation. Gallery, Web Viewer, Search results, file Properties,
+Recents/Favorites and cloud Transfers should pass the canonical xDrive
+`node_id` along with the owner-authorized parent directory; external Source
+paths are not valid navigation targets. Web deep links may carry
+`#/app/files?dir=<parent-id>&select=<node-id>`.
+
+After a real first-Range directory navigation commit, the existing
+`cloud-child-position` contract returns the current Node's ordinal under the
+view's Server sort/grouping. A single bounded `collectRange(index,index)`
+must then confirm **the same ID and revision** before updating the UI. The
+shared Web/Desktop Details/Grid owner scrolls to that ordinal and selects one
+item; iOS PWA Mobile Files reuses that same authenticated transport and its
+own iOS-style row geometry. Expanded Mobile inline folders must be collapsed
+before interpreting a parent-relative index. Never scan all preceding pages,
+guess from names/loaded Search order, or select an arbitrary item when lookup,
+Range, revision, ACL, account or navigation intent has changed.
+
+Scope and cancellation must fence concurrent navigation and user selection;
+a stale asynchronous response cannot reselect or scroll a newer folder.
+Unverifiable targets leave the current selection intact and report a retryable
+failure. Source tests cover large (100k) sparse indices, invalid/mismatched
+positions, cancellation, route roundtrips and cross-platform wiring; this is
+not a claim of physical iOS/Android/Desktop acceptance. The change requires
+CI on its final PR head before merge.
+
 ## Node path and Gallery source location (G06 follow-up)
 
 A new on-demand owner-scoped Node location contract is being developed for

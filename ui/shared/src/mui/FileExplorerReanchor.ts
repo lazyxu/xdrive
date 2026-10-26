@@ -39,3 +39,41 @@ export async function xDriveFileExplorerVerifiedChildReanchor({
     Number(rows[0].revision) !== position.revision) return null
   return { index: position.index, item: rows[0] }
 }
+
+
+/** Reveal an exact child in a sparse directory, without materializing its
+ * siblings or trusting a Search ordinal. The authenticated position is only
+ * usable after a matching one-item Range proves the same Node + revision.
+ */
+export async function xDriveFileExplorerVerifiedChildReveal({
+  parentID, nodeID, itemCount, sort, grouping, signal, locate, collectRange,
+}: {
+  parentID: number
+  nodeID: number
+  itemCount: number
+  sort: XDriveFileExplorerSort
+  grouping: XDriveFileExplorerGrouping
+  signal: AbortSignal
+  locate: (
+    parentID: number, nodeID: number,
+    sort: XDriveFileExplorerSort, grouping: XDriveFileExplorerGrouping,
+    signal: AbortSignal,
+  ) => Promise<XDriveCloudFilesPosition>
+  collectRange: (
+    startIndex: number, endIndex: number, signal?: AbortSignal,
+  ) => Promise<readonly XDriveFileExplorerItem[] | null>
+}): Promise<{ index: number; item: XDriveFileExplorerItem } | null> {
+  signal.throwIfAborted()
+  if (![parentID, nodeID, itemCount].every(Number.isSafeInteger) ||
+    parentID <= 0 || nodeID <= 0 || itemCount <= 0) return null
+  const position = await locate(parentID, nodeID, sort, grouping, signal)
+  signal.throwIfAborted()
+  if (!xDriveCloudFilesPositionMatchesRequest(position, {
+    nodeID, sort: sort.key, order: sort.direction, grouping,
+  }) || position.index >= itemCount) return null
+  const rows = await collectRange(position.index, position.index, signal)
+  signal.throwIfAborted()
+  if (!rows || rows.length !== 1 || Number(rows[0].id) !== nodeID ||
+    Number(rows[0].revision) !== position.revision) return null
+  return { index: position.index, item: rows[0] }
+}

@@ -17,8 +17,11 @@ test('G06 media location flows through on-demand Web, Gallery, FileExplorer and 
   assert.match(read('ui/shared/src/mui/MediaGalleryAdapter.ts'), /getNodeLocation: port\.getNodeLocation/)
   assert.match(read('ui/shared/src/mui/FileExplorer.tsx'), /loadNodeLocation=\{showMediaProperties \? loadNodeLocation : undefined\}/)
   assert.match(read('web/src/WebFileViewerApps.tsx'), /loadNodeLocation=\{gallerySource\.getNodeLocation\}/)
-  assert.match(read('web/src/WebFileExplorer.tsx'), /navigateTo\(ancestry\)/)
-  assert.match(read('web/src/App.tsx'), /launchWebApp\(\{ app: 'files', params: \{ dir: location\.parent_id \} \}\)/)
+  assert.match(read('web/src/WebFileExplorer.tsx'), /await navigateTo\(chain, true, intent, value => \{ accepted = value \}\)/)
+  assert.match(read('web/src/WebFileExplorer.tsx'), /if \(!accepted \|\| !isNavigationIntentCurrent\(intent\)\) return false/)
+  assert.match(read('web/src/WebFileExplorer.tsx'), /requestReveal\(location\.parent_id, location\.node_id\)/)
+  assert.match(read('web/src/App.tsx'), /launchWebApp\(\{ app: 'files', params: \{\s*dir: location\.parent_id, select: location\.node_id,/)
+  assert.match(read('ui/shared/src/web-app.ts'), /select: dir \? positiveInteger\(query\.get\('select'\)\) : undefined/)
   assert.doesNotMatch(read('internal/api/node_location.go'), /MediaIndexer|Store\.Open|RefreshIndex/)
 })
 

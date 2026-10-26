@@ -38,7 +38,11 @@ test('G06 Desktop renderer aborts location requests through Main and Agent HTTP 
   assert.match(files, /loadNodeLocation=\{!trashActive && nodeLocationSupported/)
   assert.match(files, /onShowInFolder=\{trashActive \? undefined/)
   assert.match(app, /nodeLocationSupported: agent\.hello\?\.capabilities\.includes\('node-location'\)/)
-  assert.match(app, /loadCloudDirectory\(location\.parent_id, ancestry\)/)
+  assert.match(app, /revealCloudNodeInDirectory\(location\.parent_id, location\.node_id, ancestry\)/)
+  assert.match(app, /await loadCloudDirectory\(parentID, ancestry\)/)
+  assert.match(app, /accepted === false/)
+  assert.match(app, /setCloudRevealTarget\(\{/)
+  assert.match(app, /requestID !== cloudRevealSequenceRef\.current/)
   assert.doesNotMatch(read('ui/shared/src/mui/MediaGallery.tsx').slice(
     0, read('ui/shared/src/mui/MediaGallery.tsx').indexOf('export interface XDriveMediaGalleryProps'),
   ), /loadNodeLocation\(item\.node\.id/)

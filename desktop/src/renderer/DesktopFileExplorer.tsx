@@ -175,6 +175,7 @@ export default function DesktopFileExplorer({
   navigationState,
   navigationSessionStorageKey,
   onNavigationStateChange,
+  revealTarget: externalRevealTarget,
   onOpenTrash,
   trashActive,
   trashAdapter,
@@ -237,6 +238,7 @@ export default function DesktopFileExplorer({
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<AgentCloudCrumb>,
   ) => void
+  revealTarget?: { parentID: number; nodeID: number; requestID: string } | null
   onOpenTrash: () => void
   trashActive: boolean
   trashAdapter: XDriveTrashDialogAdapter
@@ -282,6 +284,13 @@ export default function DesktopFileExplorer({
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
   const [createOpen, setCreateOpen] = useState(false)
+  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
+  const revealSequenceRef = useRef(0)
+  const requestReveal = (parentID: number, nodeID: number) => {
+    revealSequenceRef.current += 1
+    setLocalRevealTarget({ parentID, nodeID,
+      requestID: `desktop-local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}` })
+  }
   const createFolderParentIDRef = useRef<number | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
@@ -1724,7 +1733,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
       kind: node.type,
       primaryDisabled: explorerActionBusy,
       onShowContainingFolder: searchState.results !== null
-        ? () => { void showItemInContainingFolder(item) }
+        ? () => { void showItemInContainingFolder(item).then(target => {
+            if (target) requestReveal(target.parentID, target.nodeID)
+          }).catch(error => onError(error instanceof Error ? error.message : String(error))) }
         : undefined,
       onOpen: node.type === 'file'
         ? () => { void openLocalNode(node) }
@@ -1999,6 +2010,28 @@ const desktopTransferLifecycleChildBatchSize = 1000
     onRefresh: refresh,
   })
 
+  const showNodeLocation = async (
+    location: Awaited<ReturnType<typeof loadNodeLocation>>,
+  ): Promise<void> => {
+    if (!location.parent_id) return
+    const ancestry = location.breadcrumbs
+      .filter(crumb => crumb.id !== location.node_id)
+      .map(crumb => ({ id: crumb.id, name: crumb.name }))
+    if (!ancestry.length || ancestry.at(-1)?.id !== location.parent_id) return
+    const intent = beginNavigationIntent()
+    try {
+      let accepted = false
+      await navigateTo(ancestry, true, intent, value => { accepted = value })
+      if (accepted && isNavigationIntentCurrent(intent)) {
+        requestReveal(location.parent_id, location.node_id)
+      }
+    } catch (error) {
+      if (isNavigationIntentCurrent(intent)) {
+        onError(error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
+
   return (
     <>
       <input
@@ -2036,6 +2069,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
 
       <XDriveFileExplorer
         interactionLifecycleKey={navigationSessionStorageKey ?? ''}
+        revealTarget={trashActive ? undefined : externalRevealTarget ?? localRevealTarget ?? undefined}
         presentation="workspace"
         keyboardProfile={keyboardProfile}
         items={trashActive ? trash.items : explorerItems}
@@ -2065,14 +2099,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}
         loadMediaItem={!trashActive && mediaPropertiesSupported ? loadMediaItem : undefined}
         loadNodeLocation={!trashActive && nodeLocationSupported ? loadNodeLocation : undefined}
-        onShowInFolder={trashActive ? undefined : (location) => {
-          if (!location.parent_id) return
-          const ancestry = location.breadcrumbs
-            .filter((crumb) => crumb.id !== location.node_id)
-            .map((crumb) => ({ id: crumb.id, name: crumb.name }))
-          if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
-          void navigateTo(ancestry)
-        }}
+        onShowInFolder={trashActive ? undefined : showNodeLocation}
         getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}

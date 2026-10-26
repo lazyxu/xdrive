@@ -1996,14 +1996,18 @@ function FileManager({
       }}
       onShowInCloud={(task) => {
         const parentID = task.cloud_parent_id
+        const nodeID = task.cloud_node_id
+        const targetNodeID = typeof nodeID === 'number' &&
+          Number.isSafeInteger(nodeID) && nodeID > 0 ? nodeID : undefined
         if (typeof parentID === 'number' && Number.isSafeInteger(parentID) && parentID > 0) {
-          launchWebApp({ app: 'files', params: { dir: parentID } })
+          launchWebApp({ app: 'files', params: { dir: parentID, select: targetNodeID } })
           return
         }
-        const nodeID = task.cloud_node_id
-        if (typeof nodeID === 'number' && Number.isSafeInteger(nodeID) && nodeID > 0) {
-          void api.nodeLocation(Number(nodeID)).then((location) => {
-            if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+        if (targetNodeID) {
+          void api.nodeLocation(targetNodeID).then((location) => {
+            if (location.parent_id) launchWebApp({ app: 'files', params: {
+              dir: location.parent_id, select: location.node_id,
+            } })
           }).catch(handleError)
         }
       }}
@@ -2195,6 +2199,7 @@ function FileManager({
                 loading={loading}
                 navigationSessionStorageKey={`xdrive.files.navigation_session.v1:${encodeURIComponent(username)}`}
                 initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}
+                initialRevealNodeID={route.app === 'files' ? route.params.select : undefined}
                 uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
                 onRefreshCurrentDirectoryIfIdle={refreshCurrentDirectoryIfIdle}
@@ -2320,7 +2325,9 @@ function FileManager({
             fileOperations={fileOperations}
             onFileOperationQueued={() => { void refreshFileOperations() }}
             onShowInFolder={(location) => {
-              if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+              if (location.parent_id) launchWebApp({ app: 'files', params: {
+              dir: location.parent_id, select: location.node_id,
+            } })
             }}
             preferenceScope={`web:${profile?.id ?? username}`}
             onOpenBaiduMapDiagnostics={profile?.role === 'admin' ? () =>
@@ -2490,7 +2497,9 @@ function FileManager({
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
           onShowInFolder={(location) => {
-            if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+            if (location.parent_id) launchWebApp({ app: 'files', params: {
+              dir: location.parent_id, select: location.node_id,
+            } })
           }}
           onClose={(node) => closeViewer({
             app: 'files',

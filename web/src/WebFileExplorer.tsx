@@ -66,11 +66,12 @@ import type {
   XDriveByteProgressHandler,
   XDriveFileExplorerMediaDetailsRef,
   XDriveWebAppBrowseContext,
+  NodeLocation,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
-import { xDriveFileExplorerVerifiedChildReanchor } from '../../ui/shared/src/mui/FileExplorerReanchor'
+import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -101,6 +102,7 @@ export default function WebFileExplorer({
   loading,
   navigationSessionStorageKey,
   initialDirectoryID,
+  initialRevealNodeID,
   uploadProgress,
   onLoadDirectory,
   onRefreshCurrentDirectoryIfIdle,
@@ -138,6 +140,7 @@ export default function WebFileExplorer({
   loading: boolean
   navigationSessionStorageKey?: string
   initialDirectoryID?: number
+  initialRevealNodeID?: number
   uploadProgress: number | null
   onLoadDirectory: (
     id: number,
@@ -215,6 +218,8 @@ export default function WebFileExplorer({
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
   const folderPickerLimitNoticeShownRef = useRef(false)
+  const revealSequenceRef = useRef(0)
+  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
   const renameLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   renameLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
 
@@ -1123,7 +1128,9 @@ export default function WebFileExplorer({
       kind: node.type,
       onOpen: () => { void openItem(item, (opened) => openWebNode(opened, item), inlineCrumbsForItem(item)) },
       onShowContainingFolder: searchState.results !== null
-        ? () => { void showItemInContainingFolder(item) }
+        ? () => { void showItemInContainingFolder(item).then(target => {
+            if (target) requestReveal(target.parentID, target.nodeID)
+          }).catch(onError) }
         : undefined,
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
@@ -1307,6 +1314,49 @@ export default function WebFileExplorer({
     }
   }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
 
+  const requestReveal = (parentID: number, nodeID: number) => {
+    revealSequenceRef.current += 1
+    setLocalRevealTarget({
+      parentID, nodeID,
+      requestID: `local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}`,
+    })
+  }
+  const routeRevealTarget = initialDirectoryID && initialRevealNodeID &&
+    Number.isSafeInteger(initialRevealNodeID) && initialRevealNodeID > 0
+    ? { parentID: initialDirectoryID, nodeID: initialRevealNodeID,
+        requestID: `route:${navigationSessionStorageKey ?? ''}:${initialDirectoryID}:${initialRevealNodeID}` }
+    : null
+  // A new external deep link supersedes an earlier in-app lookup.
+  const routeRevealKey = routeRevealTarget?.requestID ?? ''
+  const lastRouteRevealKeyRef = useRef(routeRevealKey)
+  if (lastRouteRevealKeyRef.current !== routeRevealKey) {
+    lastRouteRevealKeyRef.current = routeRevealKey
+    if (localRevealTarget) setLocalRevealTarget(null)
+  }
+  const revealTarget = localRevealTarget?.requestID.startsWith(
+    `local:${navigationSessionStorageKey ?? ''}:`,
+  ) ? localRevealTarget : routeRevealTarget
+
+  const showNodeLocation = async (location: NodeLocation): Promise<boolean> => {
+    if (!location.parent_id) return false
+    const chain = location.breadcrumbs
+      .filter(crumb => crumb.id !== location.node_id)
+      .map(crumb => ({ id: crumb.id, name: crumb.name }))
+    if (!chain.length || chain.at(-1)?.id !== location.parent_id) return false
+    const intent = beginNavigationIntent()
+    onCloseTrash()
+    try {
+      let accepted = false
+      await navigateTo(chain, true, intent, value => { accepted = value })
+      if (!accepted || !isNavigationIntentCurrent(intent)) return false
+      requestReveal(location.parent_id, location.node_id)
+      return true
+    } catch (error) {
+      if (isNavigationIntentCurrent(intent)) onError(error)
+      return false
+    }
+  }
+
   return (
     <Box ref={filesRootRef}
       sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -1350,11 +1400,23 @@ export default function WebFileExplorer({
 
       {compactMobile ? (
         <MobileFiles
+          revealTarget={revealTarget ?? undefined}
           key={navigationSessionStorageKey ?? ''}
           lifecycleKey={navigationSessionStorageKey ?? ''}
           requestedDirectoryID={initialDirectoryID}
           items={trashActive ? trash.items : explorerItems}
           virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+          locateVerifiedReveal={currentDirectoryReanchorRange
+            ? (parentID, nodeID, itemCount, targetSort, targetGrouping, signal) =>
+              xDriveFileExplorerVerifiedChildReveal({
+                parentID, nodeID, itemCount, sort: targetSort, grouping: targetGrouping,
+                signal,
+                locate: (parent, node, requestedSort, requestedGrouping, scopedSignal) =>
+                  api.childPosition(parent, node, requestedSort.key,
+                    requestedSort.direction, requestedGrouping, scopedSignal),
+                collectRange: currentDirectoryReanchorRange,
+              })
+            : undefined}
           locateVerifiedCurrentChild={currentDirectoryReanchorRange
             ? (parentID, nodeID, revision, itemCount, targetSort, targetGrouping, signal) =>
               xDriveFileExplorerVerifiedChildReanchor({
@@ -1573,18 +1635,7 @@ export default function WebFileExplorer({
           loadMediaItem={loadMediaItem}
           loadPropertiesStats={loadPropertiesStats}
           loadNodeLocation={loadNodeLocation}
-          onShowInFolder={location => {
-            if (!location.parent_id) return false
-            const chain = location.breadcrumbs
-              .filter(crumb => crumb.id !== location.node_id)
-              .map(crumb => ({ id: crumb.id, name: crumb.name }))
-            if (!chain.length || chain.at(-1)?.id !== location.parent_id) return false
-            onCloseTrash()
-            return navigateTo(chain).then(() => true).catch(error => {
-              onError(error)
-              return false
-            })
-          }}
+          onShowInFolder={showNodeLocation}
         />
       ) : (
       <XDriveFileExplorer
@@ -1596,6 +1647,7 @@ export default function WebFileExplorer({
         items={trashActive ? trash.items : explorerItems}
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+        revealTarget={trashActive ? undefined : revealTarget ?? undefined}
         locateCurrentChild={!trashActive && searchState.results === null
           ? (parentID, nodeID, targetSort, targetGrouping, signal) => api.childPosition(
               parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, signal,
@@ -1614,15 +1666,7 @@ export default function WebFileExplorer({
         loadMediaDetails={loadMediaDetails}
         loadMediaItem={trashActive ? undefined : loadMediaItem}
         loadNodeLocation={trashActive ? undefined : loadNodeLocation}
-        onShowInFolder={trashActive ? undefined : (location) => {
-          if (!location.parent_id) return
-          const ancestry = location.breadcrumbs
-            .filter((crumb) => crumb.id !== location.node_id)
-            .map((crumb) => ({ id: crumb.id, name: crumb.name }))
-          if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
-          onCloseTrash()
-          void navigateTo(ancestry).catch(onError)
-        }}
+        onShowInFolder={trashActive ? undefined : showNodeLocation}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => submitPath(path)}
         searchEnabled={!trashActive}

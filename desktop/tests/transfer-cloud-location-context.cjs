@@ -28,7 +28,8 @@ test('Web upload and single downloads use authoritative Node identity and shared
   assert.match(store, /cloud_parent_id: input\.cloudParentID/)
   assert.match(store, /cloud_node_id: input\.cloudNodeID/)
   assert.match(web, /onShowInCloud=\{\(task\) =>/)
-  assert.match(web, /launchWebApp\(\{ app: 'files', params: \{ dir: parentID \} \}\)/)
+  assert.match(web, /launchWebApp\(\{ app: 'files', params: \{ dir: parentID, select: targetNodeID \} \}\)/)
+  assert.match(web, /Number\.isSafeInteger\(nodeID\) && nodeID > 0 \? nodeID : undefined/)
 })
 
 test('Desktop Agent records cloud location IDs and Desktop resolves via authenticated getNodeLocation', () => {
@@ -40,5 +41,7 @@ test('Desktop Agent records cloud location IDs and Desktop resolves via authenti
   assert.match(agent, /agentCloudTransferLocation\{ParentID: parentID\}/)
   assert.match(agent, /agentCloudTransferLocation\{NodeID: id\}/)
   assert.match(desktop, /window\.xdriveDesktop\.agent\.getNodeLocation\(locatorID\)/)
-  assert.match(desktop, /loadCloudDirectory\(dir, ancestry\)/)
+  assert.match(desktop, /revealCloudNodeInDirectory\(dir, nodeID, ancestry\)/)
+  assert.match(desktop, /await loadCloudDirectory\(parentID, ancestry\)/)
+  assert.match(desktop, /setCloudRevealTarget\(\{/)
 })
