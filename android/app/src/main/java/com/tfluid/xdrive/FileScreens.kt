@@ -168,23 +168,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 Text("取消上传")
             }
         }
-        if (state.fileDownloadSaved && !state.fileDownloadActive) {
-            Text("已保存到设备", style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("files-download-success"))
-        }
-        if (state.fileDownloadActive) {
-            Text("正在保存到设备：${formatSize(state.fileDownloadBytes)} / ${formatSize(state.fileDownloadTotal)}",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("files-download-progress"))
-            LinearProgressIndicator(
-                progress = { if (state.fileDownloadTotal == 0L) 1f else
-                    (state.fileDownloadBytes.toDouble() / state.fileDownloadTotal).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth())
-            TextButton(onClick = controller::cancelFileDownload,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("files-download-cancel")) {
-                Text("取消下载")
-            }
-        }
+        DownloadToDeviceStatus(state, controller, "files")
         if (state.error != null) {
             if (state.loaded) Text("保留上次成功读取的目录。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = controller::retry, enabled = !state.loading,
@@ -648,5 +632,32 @@ private fun PageTail(state: DriveState) {
         if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         else Text("继续滚动加载", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Same bounded native SAF transfer chrome in Files and Gallery. No duplicate runner. */
+@Composable
+internal fun DownloadToDeviceStatus(state: DriveState, controller: DriveController, tag: String) {
+    if (state.fileDownloadSaved && !state.fileDownloadActive) {
+        Text("已保存到设备", style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("${tag}-download-success"))
+    }
+    if (state.fileDownloadError != null) {
+        Text(state.fileDownloadError, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag("${tag}-download-error"))
+    }
+    if (state.fileDownloadActive) {
+        Text("正在保存到设备：${formatSize(state.fileDownloadBytes)} / ${formatSize(state.fileDownloadTotal)}",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("${tag}-download-progress"))
+        LinearProgressIndicator(
+            progress = { if (state.fileDownloadTotal == 0L) 1f else
+                (state.fileDownloadBytes.toDouble() / state.fileDownloadTotal).toFloat().coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth())
+        TextButton(onClick = controller::cancelFileDownload,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("${tag}-download-cancel")) {
+            Text("取消下载")
+        }
     }
 }

@@ -632,6 +632,73 @@ class DriveControllerTest {
         assertNull(c.state.value.fileUploadPickerParent)
     }
 
+    @Test fun galleryExportsOnlySelectedVerifiedOwnerAssetViaExistingSafPipeline() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val asset = api.latestGallery
+        assertFalse(c.prepareFileExport(asset.node)) // Not selected.
+        c.showGalleryInfo(asset)
+        assertTrue(c.prepareFileExport(asset.node))
+        assertEquals(Screen.GALLERY, c.state.value.fileExportOrigin)
+        var discarded = 0
+        val output = ByteArrayOutputStream()
+        c.saveFileExport({ output }, { discarded++ }); runCurrent()
+        assertEquals(1, api.downloadReads)
+        assertEquals("hello", output.toString("UTF-8"))
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertNull(c.state.value.gallerySelected)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(0, discarded)
+
+        c.showGalleryInfo(asset)
+        assertTrue(c.prepareFileExport(asset.node))
+        c.openFilesApp(); runCurrent()
+        c.saveFileExport({ error("Stale picker must not open a document") }, { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(1, api.downloadReads)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertNull(c.state.value.fileExportOrigin)
+    }
+
+    @Test fun galleryExportCancelAndRefreshRemovePartialSafDocumentAndNoOldOwnerState() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val asset = api.latestGallery
+        c.openGallery(); runCurrent()
+        c.showGalleryInfo(asset)
+        assertTrue(c.prepareFileExport(asset.node))
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        c.refreshGallery(); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(1, api.downloadReads)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertTrue(c.state.value.galleryLoaded)
+        assertNull(c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportOrigin)
+    }
+
+    @Test fun galleryFailedExportDoesNotOfferMisleadingGalleryPageRetry() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.showGalleryInfo(api.latestGallery)
+        assertTrue(c.prepareFileExport(api.latestGallery.node))
+        api.downloadFailure = ApiException(503, "unavailable")
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertNotNull(c.state.value.fileDownloadError)
+        assertNull(c.state.value.error)
+        assertTrue(c.state.value.galleryLoaded)
+        assertFalse(c.state.value.fileDownloadSaved)
+    }
+
     @Test fun fileExportRejectsOldOwnerPickerAndExportsCurrentFileOnce() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()

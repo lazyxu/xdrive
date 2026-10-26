@@ -196,8 +196,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     Text("大小：${formatSize(photo.node.size)}")
                 }
             },
-            confirmButton = { TextButton(onClick = controller::dismissGalleryInfo,
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (onDownload != null && photo.node.revision > 0 &&
+                        !photo.node.isDirectory && photo.node.size >= 0) {
+                        TextButton(onClick = { onDownload(photo.node) },
+                            enabled = !state.loading && !state.fileDownloadActive &&
+                                !state.fileUploadActive && state.galleryItems.any { it == photo },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .testTag("gallery-download-action")) { Text("保存到设备") }
+                    }
+                    TextButton(onClick = controller::dismissGalleryInfo,
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") }
+                }
+            })
     }
     state.selected?.let { node ->
         AlertDialog(onDismissRequest = controller::dismissDetails, containerColor = MaterialTheme.colorScheme.surface,

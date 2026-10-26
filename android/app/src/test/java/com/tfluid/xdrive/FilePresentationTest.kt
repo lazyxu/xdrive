@@ -33,6 +33,25 @@ class FilePresentationTest {
         assertEquals(0, FilesViewportAnchors().position(root))
     }
 
+    @Test fun typedSafExportsRespectExtensionAndUnknownFallback() {
+        listOf(
+            "IMG_001.JPEG" to "image/jpeg",
+            "photo.heic" to "image/heic",
+            "photo.PNG" to "image/png",
+            "motion.MOV" to "video/quicktime",
+            "movie.mp4" to "video/mp4",
+            "paper.pdf" to "application/pdf",
+            "hello.txt" to "text/plain",
+            "archive.livp" to "application/octet-stream",
+            "not-media.JPG.exe" to "application/octet-stream",
+            ".nomedia" to "application/octet-stream",
+            "file." to "application/octet-stream",
+            "filename" to "application/octet-stream",
+        ).forEach { (name, expected) ->
+            assertEquals("MIME for $name", expected, exportMimeType(name))
+        }
+    }
+
     @Test fun canonicalFilenameKinds() {
         assertEquals("folder", fileKind("dir.jpg", true))
         listOf(

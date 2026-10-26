@@ -41,8 +41,10 @@ data class DriveState(
     val browseBatchWriteAttempted: Boolean = false,
     // Export URI and tokens are never put into state or preferences.
     val fileExportPending: DriveNode? = null,
+    val fileExportOrigin: Screen? = null, // Picker origin prevents Files/Gallery cross-surface replay.
     val fileDownloadActive: Boolean = false,
     val fileDownloadSaved: Boolean = false,
+    val fileDownloadError: String? = null,
     val fileDownloadBytes: Long = 0,
     val fileDownloadTotal: Long = 0,
     val fileUploadPickerParent: Long? = null,
@@ -362,18 +364,27 @@ class DriveController(
     /** SAF launches only after verifying the current authenticated Owner row.
      * A delayed picker return never authorizes an old node after navigation. */
     fun prepareFileExport(node: DriveNode): Boolean {
-        val current = editableBrowseState(node) ?: return false
-        if (node.isDirectory || current.fileExportPending != null ||
-            current.fileDownloadActive || node.size < 0) return false
+        val current = state.value
+        val visibleOwnerRow = when (current.screen) {
+            Screen.FILES -> editableBrowseState(node) != null
+            Screen.GALLERY -> current.galleryLoaded && !current.loading &&
+                current.gallerySelected?.node == node &&
+                current.galleryItems.any { it.node == node } && session != null
+            else -> false
+        }
+        if (!visibleOwnerRow || node.isDirectory || node.revision <= 0 || node.size < 0 ||
+            current.fileExportPending != null || current.fileDownloadActive ||
+            current.fileUploadActive || current.fileUploadPickerParent != null) return false
         mutableState.value = current.copy(
-            fileExportPending = node, fileDownloadBytes = 0,
-            fileDownloadTotal = node.size, fileDownloadSaved = false, error = null)
+            fileExportPending = node, fileExportOrigin = current.screen,
+            fileDownloadBytes = 0, fileDownloadTotal = node.size,
+            fileDownloadSaved = false, fileDownloadError = null, error = null)
         return true
     }
 
     fun cancelFileExport() {
         if (state.value.fileDownloadActive) return
-        mutableState.value = state.value.copy(fileExportPending = null)
+        mutableState.value = state.value.copy(fileExportPending = null, fileExportOrigin = null)
     }
 
     /** Caller owns the SAF URI; failure/cancellation must remove the partial document.
@@ -381,26 +392,38 @@ class DriveController(
     fun saveFileExport(openOutput: () -> OutputStream, discardOutput: () -> Unit) {
         val current = state.value
         val node = current.fileExportPending
-        val valid = node != null && current.screen == Screen.FILES &&
-            current.filesSection == FilesSection.BROWSE && current.loaded &&
+        // The OS picker may return after navigating to a different app, Range
+        // or folder. Require the exact original surface and current Owner row.
+        val verifiedSurface = when (current.fileExportOrigin) {
+            Screen.FILES -> current.screen == Screen.FILES &&
+                current.filesSection == FilesSection.BROWSE && current.loaded &&
+                current.path.isNotEmpty() && node?.parentId == current.path.last().id &&
+                current.items.any { it == node }
+            Screen.GALLERY -> current.screen == Screen.GALLERY && current.galleryLoaded &&
+                current.gallerySelected?.node == node &&
+                current.galleryItems.any { it.node == node }
+            else -> false
+        }
+        val valid = node != null && verifiedSurface &&
             !current.loading && !current.fileDownloadActive &&
-            current.destinationKind == null && current.path.isNotEmpty() &&
-            current.items.any { it == node } && node.parentId == current.path.last().id &&
-            !node.isDirectory && node.revision > 0 && session != null
+            !current.fileUploadActive && current.destinationKind == null &&
+            !node.isDirectory && node.revision > 0 && node.size >= 0 && session != null
         if (!valid) {
             discardOutput()
-            if (!current.fileDownloadActive) mutableState.value = current.copy(fileExportPending = null)
+            if (!current.fileDownloadActive) mutableState.value = current.copy(fileExportPending = null, fileExportOrigin = null)
             return
         }
         val service = api ?: run {
             discardOutput()
-            mutableState.value = current.copy(fileExportPending = null)
+            mutableState.value = current.copy(fileExportPending = null, fileExportOrigin = null)
             return
         }
         val owned = node!!
         mutableState.value = current.copy(
-            fileExportPending = null, fileDownloadActive = true,
-            fileDownloadSaved = false, fileDownloadBytes = 0, fileDownloadTotal = owned.size)
+            fileExportPending = null, fileExportOrigin = null, fileDownloadActive = true,
+            fileDownloadSaved = false, fileDownloadError = null,
+            gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
+            fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
             var complete = false
             try {
@@ -428,9 +451,10 @@ class DriveController(
         if (!state.value.fileDownloadActive) return
         invalidate() // Cancels the same OkHttp call; its finally removes partial SAF output.
         mutableState.value = state.value.copy(
-            loading = false, fileDownloadActive = false, fileExportPending = null,
-            fileDownloadSaved = false, fileDownloadBytes = 0, fileDownloadTotal = 0,
-            error = "下载已取消。")
+            loading = false, fileDownloadActive = false,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadSaved = false, fileDownloadError = "下载已取消。",
+            fileDownloadBytes = 0, fileDownloadTotal = 0, error = null)
     }
 
 
@@ -1054,7 +1078,8 @@ class DriveController(
         invalidate()
         mutableState.value = current.copy(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
-            fileExportPending = null, fileUploadPickerParent = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadSaved = false, fileDownloadError = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySelected = null, galleryViewer = null)
@@ -1067,6 +1092,9 @@ class DriveController(
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.copy(
             screen = Screen.FILES, loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false,
+            fileDownloadError = null, fileDownloadBytes = 0, fileDownloadTotal = 0,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
@@ -1076,6 +1104,8 @@ class DriveController(
         if (state.value.screen != Screen.GALLERY) return
         invalidate() // Stop prior Owner range before replacing its query intent.
         mutableState.value = state.value.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryViewer = null)
@@ -1278,7 +1308,8 @@ class DriveController(
     }
 
     fun dismissGalleryInfo() {
-        mutableState.value = state.value.copy(gallerySelected = null)
+        mutableState.value = state.value.copy(gallerySelected = null,
+            fileExportPending = null, fileExportOrigin = null)
     }
 
     /** Jump to an already-visited ancestor without trusting an unverified path. */
@@ -1436,9 +1467,9 @@ class DriveController(
         val prior = state.value
         mutableState.value = prior.copy(
             loading = true, error = null, selected = null,
-            fileExportPending = null,
+            fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
-            fileDownloadSaved = false,
+            fileDownloadSaved = false, fileDownloadError = null,
             fileDownloadBytes = if (isFileDownload) prior.fileDownloadBytes else 0,
             fileDownloadTotal = if (isFileDownload) prior.fileDownloadTotal else 0,
             fileUploadPickerParent = null,
@@ -1467,6 +1498,12 @@ class DriveController(
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
+                    } else if (isFileDownload) {
+                        // Gallery/Files export errors are not Gallery Range errors:
+                        // do not offer a misleading "retry older photos" action.
+                        mutableState.value = state.value.copy(
+                            fileDownloadActive = false, fileDownloadSaved = false,
+                            fileDownloadError = safeError(failure))
                     } else if (state.value.fileUploadActive) {
                         // Finalize or its ACK may have been lost. Unfreeze controls,
                         // but never imply that a new upload is safe to auto-retry.
