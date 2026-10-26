@@ -33,7 +33,7 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore [flags]")
+		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan [flags]")
 	}
 	cmd := args[0]
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -43,13 +43,15 @@ func run(args []string) error {
 	target := f.String("target", "", "empty restore destination")
 	ownerUID := f.Int("owner-uid", -1, "host owner UID of newly created repository entries")
 	ownerGID := f.Int("owner-gid", -1, "host owner GID of newly created repository entries")
+	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (preview only)")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
-	if f.NArg() != 0 || *repo == "" || (cmd != "estimate" && *snapshot == "") || (cmd == "estimate" && *snapshot != "") {
+	noSnapshot := cmd == "estimate" || cmd == "retention-plan"
+	if f.NArg() != 0 || *repo == "" || (!noSnapshot && *snapshot == "") || (noSnapshot && *snapshot != "") {
 		return fmt.Errorf("usage: %s --repo PATH --snapshot NAME [--source PATH|--target PATH]; estimate requires --repo and --source only", cmd)
 	}
-	if cmd != "estimate" {
+	if !noSnapshot {
 		nameOK := safeName(*snapshot)
 		if cmd == "capture" && strings.HasSuffix(*snapshot, ".partial") {
 			nameOK = safeName(strings.TrimSuffix(*snapshot, ".partial"))
@@ -63,6 +65,17 @@ func run(args []string) error {
 		return err
 	}
 	snap := filepath.Join(root, "snapshots", *snapshot)
+	if cmd != "retention-plan" {
+		keepLastPassed := false
+		f.Visit(func(flag *flag.Flag) {
+			if flag.Name == "keep-last" {
+				keepLastPassed = true
+			}
+		})
+		if keepLastPassed {
+			return errors.New("--keep-last only applies to retention-plan")
+		}
+	}
 	switch cmd {
 	case "estimate":
 		if *source == "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
@@ -74,6 +87,15 @@ func run(args []string) error {
 		}
 		fmt.Println(bytes)
 		return nil
+	case "retention-plan":
+		if *source != "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
+			return errors.New("retention-plan only accepts --repo and --keep-last")
+		}
+		result, err := planRetention(root, *keepLast)
+		if err != nil {
+			return err
+		}
+		return writeRetentionPlan(result)
 	case "capture":
 		if *source == "" || *target != "" {
 			return errors.New("capture requires --source only")

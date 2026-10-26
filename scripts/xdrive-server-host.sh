@@ -48,6 +48,7 @@ Usage:
   xdrive-server backup --incremental [--repository-dir /absolute/local/path]
   xdrive-server backup list   # includes an active custom scheduled v2 repository
   xdrive-server backup verify [BACKUP_DIR]  # latest also searches configured v2 repository
+  xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N]
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -1036,6 +1037,58 @@ backup_create_cmd() {
   return "$status"
 }
 
+# Offline, read-only v2 capacity preview. There is intentionally no prune or
+# delete mode. Running the helper through a read-only bind mount makes this
+# safe even if the native program acquires new features in the future.
+backup_retention_plan_cmd() {
+  local repository_dir="" keep_last="7" server_id="" server_image="" configured=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repository-dir)
+        [[ $# -ge 2 ]] || { echo "backup retention-plan: missing repository path" >&2; return 2; }
+        repository_dir="$2"
+        shift 2
+        ;;
+      --keep-last)
+        [[ $# -ge 2 ]] || { echo "backup retention-plan: missing keep count" >&2; return 2; }
+        keep_last="$2"
+        shift 2
+        ;;
+      *) echo "usage: xdrive-server backup retention-plan [--repository-dir PATH] [--keep-last N]" >&2; return 2 ;;
+    esac
+  done
+  [[ "$keep_last" =~ ^[1-9][0-9]*$ ]] || {
+    echo "backup retention-plan: keep-last must be a positive integer" >&2
+    return 2
+  }
+  if [[ -z "$repository_dir" && "$(env_value XD_BACKUP_SCHEDULE_FORMAT)" == "v2" ]]; then
+    configured="$(env_value XD_BACKUP_SCHEDULE_REPOSITORY_DIR)"
+    [[ -z "$configured" ]] || repository_dir="$configured"
+  fi
+  repository_dir="${repository_dir:-$BACKUP_DIR/incremental}"
+  [[ "$repository_dir" == /* && -d "$repository_dir" && ! -L "$repository_dir" ]] || {
+    echo "backup retention-plan: repository must be an existing absolute non-symlink directory" >&2
+    return 2
+  }
+  repository_dir="$(cd "$repository_dir" && pwd -P)" || return 1
+  command -v docker >/dev/null 2>&1 || { echo "backup retention-plan: Docker is required" >&2; return 1; }
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
+    server_id="$(compose ps -aq server | head -n1 || true)"
+  fi
+  if [[ -n "$server_id" ]]; then
+    server_image="$(docker inspect "$server_id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  [[ -n "$server_image" ]] || server_image="$(env_value XD_SERVER_IMAGE)"
+  [[ -n "$server_image" ]] || {
+    echo "backup retention-plan: Server image is not configured" >&2
+    return 1
+  }
+  docker run --rm --user 0:0 \
+    --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
+    --entrypoint /usr/local/bin/xdrive-backup-repo \
+    "$server_image" retention-plan --repo /repo --keep-last "$keep_last" </dev/null
+}
+
 backup_cmd() {
   local subcommand="${1:-}"
   case "$subcommand" in
@@ -1046,6 +1099,10 @@ backup_cmd() {
     verify)
       shift
       backup_verify_cmd "$@"
+      ;;
+    retention-plan)
+      shift
+      backup_retention_plan_cmd "$@"
       ;;
     sources)
       shift
