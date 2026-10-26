@@ -434,10 +434,10 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       {result === 'aggregated' && cellSummary ? (
         <Box data-xdrive-baidu-true-cell-aggregation sx={{mt: 1, px: 0.5}}>
           <Typography role="status" variant="caption" color="text.secondary">
-            当前范围共 {cellSummary.total_count.toLocaleString('zh-CN')} 张已授权照片，
+            当前范围共 {cellSummary.total_count.toLocaleString('zh-CN')} 张可查看的照片，
             按 {cellSummary.cells.length} 个区域显示真实计数。
             数字标记使用真实照片位置；
-            {onOpenCell ? '选择区域打开已授权照片墙；' : '选择多张区域将放大地图；'}
+            {onOpenCell ? '选择区域打开照片墙；' : '选择多张区域将放大地图；'}
             查看单张照片需经图库重新鉴权。
           </Typography>
           {coverPins.length > 0 ? (
@@ -468,7 +468,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       ) : null}
       {result === 'incomplete' ? (
         <Typography role="status" variant="caption" color="text.secondary">
-          当前地图范围内的已授权照片超过 100 张，请放大地图；不显示不完整的聚合结果。
+          当前地图范围内可查看的照片超过 100 张，请放大地图；不显示不完整的聚合结果。
         </Typography>
       ) : result && result !== 'rendered' && result !== 'aggregated' && result !== 'cancelled' ? (
         <Box data-xdrive-baidu-map-fallback sx={{ px: 0.5, mt: 0.5 }}>
