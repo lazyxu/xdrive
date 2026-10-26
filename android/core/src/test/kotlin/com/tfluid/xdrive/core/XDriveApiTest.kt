@@ -82,6 +82,44 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun exactChildPositionUsesOwnerAuthAndNativeDirectorySort() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{"node_id":321,"revision":7,"index":95237,
+                "sort":"name","order":"asc","group":"none","folders_first":true}"""))
+            val position = api.childPosition("owner-secret", 12, 321)
+            assertEquals(321L, position.nodeId)
+            assertEquals(7L, position.revision)
+            assertEquals(95237, position.index)
+            val sent = server.takeRequest()
+            assertEquals("GET", sent.method)
+            assertEquals("/api/v1/nodes/12/children/position", sent.requestUrl!!.encodedPath)
+            assertEquals("321", sent.requestUrl!!.queryParameter("node_id"))
+            assertEquals("name", sent.requestUrl!!.queryParameter("sort"))
+            assertEquals("asc", sent.requestUrl!!.queryParameter("order"))
+            assertEquals("none", sent.requestUrl!!.queryParameter("group"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("folders_first"))
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun exactChildPositionRejectsSpoofedIdentityRevisionOrOrdering() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val invalid = listOf(
+                """{"node_id":322,"revision":7,"index":95237,"sort":"name","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":321,"revision":0,"index":95237,"sort":"name","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":321,"revision":7,"index":-1,"sort":"name","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":321,"revision":7,"index":95237,"sort":"updated","order":"asc","group":"none","folders_first":true}""",
+                """{"node_id":321,"revision":7,"index":95237,"sort":"name","order":"asc","group":"none","folders_first":false}""",
+            )
+            for (payload in invalid) {
+                server.enqueue(MockResponse().setBody(payload))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.childPosition("owner-secret", 12, 321) }.reason)
+            }
+            assertEquals(invalid.size, server.requestCount)
+        } }
+    }
+
     private val auth = """{"access_token":"access-secret","refresh_token":"refresh-secret","username":"owner","must_change_password":true}"""
     private val directory = """{"id":1,"name":"root","type":"dir","revision":4,"size":0,"updated_at":"2026-10-23T00:00:00Z"}"""
     private fun page(items: String = "[]", total: Long = 0, offset: Int = 0, limit: Int = 100) =

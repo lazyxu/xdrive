@@ -93,10 +93,23 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     // to show item zero while the actual item-50 assertion ran (CI #40139739454).
     // Key the Lazy state by folder and view; seed it with the last observed
     // viewport index rather than scrolling asynchronously after the new UI mounts.
-    key(folderKey, viewMode) {
-        val firstItem = anchors.position(folderKey)
+    key(folderKey, viewMode, state.fileRevealGeneration) {
+        val targetId = state.fileRevealNodeId
+        val revealIndex = targetId?.let { id ->
+            state.items.indexOfFirst { it.id == id }.takeIf { it >= 0 }
+        }
+        // A verified deep ordinal brings only its 100-item page into memory.
+        // Seed the actual matching page row before the first Compose paint,
+        // rather than presenting item zero and scrolling afterwards.
+        val firstItem = revealIndex ?: anchors.position(folderKey)
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstItem)
         val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = firstItem)
+        LaunchedEffect(folderKey, state.fileRevealNodeId, state.fileRevealGeneration) {
+            if (targetId != null && revealIndex != null) {
+                anchors.record(folderKey, revealIndex)
+                controller.acknowledgeFileReveal(targetId, state.fileRevealGeneration)
+            }
+        }
         LaunchedEffect(folderKey, viewMode) {
             snapshotFlow {
                 if (viewMode == FileViewMode.LIST) listState.firstVisibleItemIndex
@@ -203,7 +216,9 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Column {
                         Box {
-                            Row(Modifier.fillMaxWidth().background(rowColor)
+                            Row(Modifier.fillMaxWidth()
+                                .background(if (node.id in state.browseSelectedIds)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else rowColor)
                                 .testTag("files-item-${node.id}")
                                 .combinedClickable(onClick = {
                                     if (state.browseSelectionMode) controller.toggleBrowseSelection(node)
@@ -258,6 +273,8 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Box {
                         Column(Modifier.fillMaxWidth()
+                            .background(if (node.id in state.browseSelectedIds)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else rowColor)
                             .testTag("files-item-${node.id}")
                             .combinedClickable(onClick = {
                                     if (state.browseSelectionMode) controller.toggleBrowseSelection(node)

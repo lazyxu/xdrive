@@ -408,3 +408,26 @@ or globally upgrade the Android toolchain solely for this playback increment. Th
 this anchor when the user leaves Gallery for Files/logout/server switching;
 a later Gallery visit (even for the same username) starts at newest again.
 An API35 Compose regression covers old-position -> Files -> Gallery.
+
+
+## Native Files · exact containing-file reveal (2026-10-26)
+
+Native Recent/Favorites/Search “显示所在位置” must resolve the *file*, not
+merely navigate to the containing directory. The existing Owner-authenticated
+`nodes/{parent}/children/position` response is bound to the **same**
+`name asc / group none / folders_first true` ordering as the native 100-item
+`children` Range. A located file at absolute index 95,237 fetches only the
+bounded Range beginning at offset 95,200; before publishing it, the Controller
+verifies the returned child ID, parent ID and revision at relative index 37.
+Rejected/mismatched/aborted responses cannot set any selection or viewport
+anchor, and a new navigation or logout invalidates old requests.
+
+On an accepted response, Compose List/Grid pre-seeds its actual first-visible
+index from that page and highlights the single file, without walking 952
+previous pages or inventing a second backend. The one-shot reveal marker is
+acknowledged after the first composition; subsequent user scrolling and view
+toggles own their normal session-only anchors. This does not yet make native
+Android's simple 100-item append list a general bidirectional sparse explorer.
+MockWebServer + Controller tests cover the position request, stale/mismatched
+reply and 95k+ position; physical Android performance and iOS PWA pixel parity
+remain separately unverified.

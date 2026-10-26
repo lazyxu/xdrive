@@ -38,6 +38,9 @@ data class DriveState(
     val searchReturnSection: FilesSection = FilesSection.BROWSE,
     val browseSelectionMode: Boolean = false,
     val browseSelectedIds: Set<Long> = emptySet(),
+    /** One verified file reveal seeds Compose's first frame, then is acknowledged. */
+    val fileRevealNodeId: Long? = null,
+    val fileRevealGeneration: Long = 0,
     val browseBatchWriteAttempted: Boolean = false,
     // Export URI and tokens are never put into state or preferences.
     val fileExportPending: DriveNode? = null,
@@ -512,7 +515,17 @@ class DriveController(
             current.browseBatchWriteAttempted || !current.loaded ||
             (enabled && current.error != null)) return
         mutableState.value = current.copy(
-            browseSelectionMode = enabled, browseSelectedIds = emptySet(), error = null)
+            browseSelectionMode = enabled, browseSelectedIds = emptySet(),
+            fileRevealNodeId = null, error = null)
+    }
+
+    fun acknowledgeFileReveal(nodeId: Long, revealGeneration: Long) {
+        val current = state.value
+        if (current.screen == Screen.FILES && current.filesSection == FilesSection.BROWSE &&
+            current.fileRevealNodeId == nodeId &&
+            current.fileRevealGeneration == revealGeneration) {
+            mutableState.value = current.copy(fileRevealNodeId = null)
+        }
     }
 
     fun toggleBrowseSelection(node: DriveNode) {
@@ -801,6 +814,7 @@ class DriveController(
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = "", searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
+            fileRevealNodeId = null,
             fileExportPending = null, fileDownloadSaved = false,
             fileUploadPickerParent = null, fileUploadCommitted = false,
             fileUploadActive = false)
@@ -824,6 +838,7 @@ class DriveController(
             loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = query, searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
+            fileRevealNodeId = null,
             fileExportPending = null, fileDownloadSaved = false,
             fileUploadPickerParent = null, fileUploadCommitted = false,
             fileUploadActive = false,
@@ -884,14 +899,13 @@ class DriveController(
         if (item.node.isDirectory) locateCollectionItem(item) else showDetails(item.node)
     }
 
-    /** Navigate using an authenticated Owner-scoped breadcrumb, recheck root
-     * and last directory with the same Server API. Never trust a display path. */
+    /** Navigate only via Owner breadcrumbs. File reveals locate the
+     * Server's exact child ordinal and verify the corresponding bounded page
+     * before publishing a selection; no full directory scan or filename guess. */
     fun locateCollectionItem(item: DriveCollectionItem) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
             current.collectionItems.none { it == item }) return
-        // Search files already carry directory-only breadcrumbs; recent and
-        // favorites include the file leaf. Reuse the actual parent in both.
         val crumbs = if (item.node.isDirectory || item.crumbs.lastOrNull()?.id != item.node.id)
             item.crumbs else item.crumbs.dropLast(1)
         if (crumbs.isEmpty() || crumbs.size > 512) return
@@ -903,13 +917,26 @@ class DriveController(
         invalidate()
         mutableState.value = current.copy(filesSection = FilesSection.BROWSE,
             collectionItems = emptyList(), collectionLoaded = false, error = null, loading = false,
-            selected = null, searchQuery = "", searchNextCursor = "")
+            selected = null, searchQuery = "", searchNextCursor = "",
+            fileRevealNodeId = null, browseSelectionMode = false, browseSelectedIds = emptySet())
         request { ticket ->
             val root = authenticated(service, ticket) { service.root(it) }
             checkCurrent(ticket)
             if (root.id != candidate.first().id)
                 throw ApiException(0, "Stale breadcrumb root", ApiFailureReason.INVALID_RESPONSE)
-            loadWithin(service, listOf(root) + candidate.drop(1), 0, ticket)
+            val verifiedPath = listOf(root) + candidate.drop(1)
+            if (item.node.isDirectory) {
+                loadWithin(service, verifiedPath, 0, ticket)
+            } else {
+                val position = authenticated(service, ticket) {
+                    service.childPosition(it, verifiedPath.last().id, item.node.id)
+                }
+                checkCurrent(ticket)
+                if (position.nodeId != item.node.id || position.revision <= 0 || position.index < 0)
+                    throw ApiException(0, "Stale child position", ApiFailureReason.INVALID_RESPONSE)
+                val pageStart = position.index / 100 * 100
+                loadWithin(service, verifiedPath, pageStart, ticket, reveal = position)
+            }
         }
     }
 
@@ -952,7 +979,7 @@ class DriveController(
         mutableState.value = current.copy(screen = Screen.TRASH, loading = false,
             error = null, selected = null, fileExportPending = null,
             fileUploadPickerParent = null, browseSelectionMode = false,
-            browseSelectedIds = emptySet(), trashItems = emptyList(),
+            browseSelectedIds = emptySet(), fileRevealNodeId = null, trashItems = emptyList(),
             trashTotal = 0, trashLoaded = false, trashRestoreAttempted = false)
         readTrash(0, append = false)
     }
@@ -1056,7 +1083,7 @@ class DriveController(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
             fileExportPending = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
-            galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+            fileRevealNodeId = null, galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
     }
@@ -1306,7 +1333,8 @@ class DriveController(
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
-                browseSelectionMode = false, browseSelectedIds = emptySet())
+                browseSelectionMode = false, browseSelectedIds = emptySet(),
+                fileRevealNodeId = null)
         }
         else if (current.selected != null) dismissDetails()
         else if (current.filesSection == FilesSection.SEARCH) changeFilesSection(current.searchReturnSection)
@@ -1350,7 +1378,8 @@ class DriveController(
         request { loadWithin(service, path, offset, it, append) }
     }
 
-    private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long, append: Boolean = false) {
+    private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int,
+        ticket: Long, append: Boolean = false, reveal: DriveChildPosition? = null) {
         retryPath = path.toList()
         retryOffset = offset
         retryAppend = append
@@ -1358,6 +1387,15 @@ class DriveController(
         checkCurrent(ticket)
         val page = authenticated(service, ticket) { service.children(it, resolved.last().id, offset) }
         checkCurrent(ticket)
+        if (reveal != null) {
+            val localIndex = reveal.index - page.offset
+            val child = page.items.getOrNull(localIndex)
+            if (page.offset != offset || page.totalCount <= reveal.index.toLong() ||
+                localIndex !in page.items.indices || child?.id != reveal.nodeId ||
+                child?.revision != reveal.revision || child?.parentId != resolved.last().id) {
+                throw ApiException(0, "Exact file position changed", ApiFailureReason.INVALID_RESPONSE)
+            }
+        }
         val previous = state.value
         if (append && (!previous.loaded || previous.path != resolved || page.offset != offset))
             throw ApiException(0, "Directory page changed", ApiFailureReason.INVALID_RESPONSE)
@@ -1371,8 +1409,11 @@ class DriveController(
         mutableState.value = previous.copy(
             path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
             loaded = true, selected = null, error = null,
-            browseSelectionMode = if (append) previous.browseSelectionMode else false,
-            browseSelectedIds = if (append) previous.browseSelectedIds else emptySet(),
+            browseSelectionMode = if (reveal != null) true else if (append) previous.browseSelectionMode else false,
+            browseSelectedIds = if (reveal != null) setOf(reveal.nodeId) else if (append) previous.browseSelectedIds else emptySet(),
+            fileRevealNodeId = reveal?.nodeId,
+            fileRevealGeneration = if (reveal != null) previous.fileRevealGeneration + 1
+                else previous.fileRevealGeneration,
             browseBatchWriteAttempted = if (append) previous.browseBatchWriteAttempted else false,
             fileExportPending = if (append) previous.fileExportPending else null,
             fileDownloadSaved = if (append) previous.fileDownloadSaved else false,

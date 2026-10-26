@@ -64,6 +64,9 @@ data class DriveNode(
 
 data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
 
+/** Exact owner-authorized child ordinal under native Files' fixed name/asc order. */
+data class DriveChildPosition(val nodeId: Long, val revision: Long, val index: Int)
+
 /** Only top-level deleted roots are recoverable; their descendants move with them. */
 data class TrashEntry(val node: DriveNode, val deletedAt: String)
 data class TrashPage(val items: List<TrashEntry>, val totalCount: Long, val offset: Int)
@@ -117,6 +120,8 @@ interface XDriveService {
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
+    suspend fun childPosition(accessToken: String, parentId: Long, nodeId: Long): DriveChildPosition =
+        throw ApiException(501, "Child-position API unavailable")
     // The safe defaults keep independent core/Compose fixtures explicit: a
     // missing collection capability is an error, never a fabricated empty list.
     suspend fun fileRecent(accessToken: String): List<DriveCollectionItem> =
@@ -212,6 +217,25 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (items.size.toLong() != minOf(100L, maxOf(0L, count - offset.toLong())) ||
             items.map { it.id }.toSet().size != items.size || items.any { it.parentId != parentId }) invalidPayload()
         return NodeRange(items, count, offset)
+    }
+
+    /** The sort/grouping MUST match native children(): name/asc, no grouping,
+     * folders first. Never expose an arbitrary search ordinal as a file position. */
+    override suspend fun childPosition(
+        accessToken: String, parentId: Long, nodeId: Long,
+    ): DriveChildPosition {
+        require(parentId > 0 && nodeId > 0 && nodeId != parentId) { "Invalid child locator" }
+        val result = request("nodes/$parentId/children/position", accessToken, query = mapOf(
+            "node_id" to "$nodeId", "sort" to "name", "order" to "asc",
+            "group" to "none", "folders_first" to "true"))
+        val returnedNode = result.long("node_id")
+        val revision = result.long("revision")
+        val ordinal = result.long("index")
+        if (returnedNode != nodeId || revision <= 0 || ordinal < 0 || ordinal > Int.MAX_VALUE ||
+            result.string("sort") != "name" || result.string("order") != "asc" ||
+            result.string("group") != "none" || result["folders_first"] != JsonPrimitive(true))
+            invalidPayload()
+        return DriveChildPosition(returnedNode, revision, ordinal.toInt())
     }
 
     /** Use the already-configured Owner-authenticated OkHttp request pipeline. */

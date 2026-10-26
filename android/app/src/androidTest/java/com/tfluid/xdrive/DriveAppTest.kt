@@ -24,6 +24,8 @@ class DriveAppTest {
     private var paging = false
     private var failOnSecondPage = false
     private var manyFiles = false
+    private var exactFileRevealFixture = false
+    private val exactFile = DriveNode(990037, 1, "deep-photo.jpg", "file", size = 128, revision = 9)
     private var favoriteDeletes = 0
     private var createCalls = 0
     private var renameCalls = 0
@@ -117,9 +119,16 @@ class DriveAppTest {
         override suspend fun fileRecent(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
                 listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
-        override suspend fun fileFavorites(accessToken: String) = listOf(
-            DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
+        override suspend fun fileFavorites(accessToken: String) = if (exactFileRevealFixture)
+            listOf(DriveCollectionItem(exactFile, "deep-photo.jpg",
+                listOf(DriveCrumb(1, ""), DriveCrumb(exactFile.id, exactFile.name))))
+        else listOf(DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
                 listOf(DriveCrumb(1, ""), DriveCrumb(7, "favorite.txt"))))
+        override suspend fun childPosition(accessToken: String, parentId: Long, nodeId: Long): DriveChildPosition {
+            if (!exactFileRevealFixture || parentId != 1L || nodeId != exactFile.id)
+                throw ApiException(404, "No authorized child")
+            return DriveChildPosition(exactFile.id, exactFile.revision, 95237)
+        }
         override suspend fun searchFiles(accessToken: String, query: String, cursor: String): FileSearchPage =
             FileSearchPage(listOf(
                 DriveCollectionItem(DriveNode(7, 1, "favorite.txt", "file", 120), "favorite.txt",
@@ -160,6 +169,20 @@ class DriveAppTest {
             return original.copy(parentId = parentId, revision = original.revision + 1)
         }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
+            if (exactFileRevealFixture && parentId == 1L) {
+                if (offset == 95200) {
+                    val page = (0 until 100).map { index ->
+                        if (index == 37) exactFile else
+                            DriveNode(990000L + index, 1, "row-$index.txt", "file", revision = 9)
+                    }
+                    return NodeRange(page, 100000, offset)
+                }
+                if (offset == 0) return NodeRange(
+                    mutableRootRows.toList() + (1..99).map { index ->
+                        DriveNode(880000L + index, 1, "root-$index.txt", "file", revision = 1)
+                    }, 100000, 0)
+                throw ApiException(404, "Unexpected sparse directory page")
+            }
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
             }
@@ -780,6 +803,26 @@ class DriveAppTest {
                 controller.state.value.collectionLoaded && !controller.state.value.loading
         }
         compose.onNodeWithTag("files-collection-item-7").assertExists()
+    }
+
+    @Test fun nativeExactFileRevealShowsDeepTargetAndCheckedRowWithoutScanning() {
+        exactFileRevealFixture = true
+        startAndLogin()
+        compose.onNodeWithTag("files-section-favorites").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesSection == FilesSection.FAVORITES &&
+                controller.state.value.collectionLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-collection-item-990037").performTouchInput { longClick() }
+        compose.onNodeWithText("显示所在位置").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val current = controller.state.value
+            current.filesSection == FilesSection.BROWSE && !current.loading &&
+                current.offset == 95200 && current.browseSelectedIds == setOf(exactFile.id)
+        }
+        compose.onNodeWithTag("files-item-990037").assertIsDisplayed()
+        compose.onNodeWithTag("files-select-990037", useUnmergedTree = true).assertIsSelected()
+        compose.onNodeWithText("1 项已选择（最多 200）").assertIsDisplayed()
     }
 
     @Test fun recentBrowseFavoritesAreRealOwnerLoadedSections() {

@@ -69,6 +69,16 @@ class DriveControllerTest {
             listOf(DriveCrumb(1, ""))) // Go /search emits directory-only crumbs for files.
         var recentRows = listOf(recentFolder)
         var favoriteRows = listOf(favoriteFile)
+        val positionCalls = mutableListOf<Pair<Long, Long>>()
+        var positionHandler: suspend (Long, Long) -> DriveChildPosition = { _, nodeId ->
+            DriveChildPosition(nodeId, 1, if (nodeId == file.id) 1 else 0)
+        }
+        override suspend fun childPosition(
+            accessToken: String, parentId: Long, nodeId: Long,
+        ): DriveChildPosition {
+            positionCalls += parentId to nodeId
+            return positionHandler(parentId, nodeId)
+        }
         var recentListing: suspend () -> List<DriveCollectionItem> = { recentRows }
         var favoriteListing: suspend () -> List<DriveCollectionItem> = { favoriteRows }
         var favoritePuts = 0
@@ -1110,6 +1120,90 @@ class DriveControllerTest {
         assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
         assertEquals(listOf(root), c.state.value.path)
         assertEquals(1L to 0, api.calls.last())
+    }
+
+    @Test fun exactFileRevealAt95kUsesOneVerifiedPageAndSingleSelection() = runTest {
+        val api = Service()
+        val target = DriveNode(990037, 1, "deep-photo.jpg", "file", size = 50, revision = 9)
+        val searchHit = DriveCollectionItem(target, "/deep-photo.jpg", listOf(DriveCrumb(1, "")))
+        val deepPage = (0 until 100).map { index ->
+            if (index == 37) target
+            else DriveNode(990000L + index, 1, "row-$index.txt", "file", revision = 9)
+        }
+        api.searchListing = { _, _ -> FileSearchPage(listOf(searchHit), "") }
+        api.positionHandler = { parent, id ->
+            assertEquals(1L, parent)
+            assertEquals(target.id, id)
+            DriveChildPosition(target.id, target.revision, 95237)
+        }
+        api.listing = { _, offset ->
+            if (offset == 95200) NodeRange(deepPage, 100000, offset)
+            else NodeRange(listOf(folder, file), 100000, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("deep"); runCurrent()
+        c.locateCollectionItem(searchHit); runCurrent()
+        val state = c.state.value
+        assertEquals(FilesSection.BROWSE, state.filesSection)
+        assertEquals(95200, state.offset)
+        assertEquals(100000L, state.totalCount)
+        assertEquals(target.id, state.items[37].id)
+        assertEquals(setOf(target.id), state.browseSelectedIds)
+        assertTrue(state.browseSelectionMode)
+        assertEquals(target.id, state.fileRevealNodeId)
+        assertEquals(listOf(1L to target.id), api.positionCalls)
+        assertEquals(1L to 95200, api.calls.last())
+        val generation = state.fileRevealGeneration
+        c.acknowledgeFileReveal(target.id, generation - 1)
+        assertEquals(target.id, c.state.value.fileRevealNodeId)
+        c.acknowledgeFileReveal(target.id, generation)
+        assertNull(c.state.value.fileRevealNodeId)
+        assertEquals(setOf(target.id), c.state.value.browseSelectedIds)
+    }
+
+    @Test fun exactFileRevealRejectsStalePositionAndWrongRangeWithoutSelection() = runTest {
+        val cases = listOf(
+            DriveChildPosition(file.id + 1, 1, 1),
+            DriveChildPosition(file.id, 0, 1),
+            DriveChildPosition(file.id, 1, -1),
+            DriveChildPosition(file.id, 999, 1),
+            DriveChildPosition(file.id, 1, 110),
+        )
+        for (bad in cases) {
+            val api = Service()
+            api.positionHandler = { _, _ -> bad }
+            val c = controller(this, api)
+            c.login("owner", "password"); runCurrent()
+            c.submitGlobalSearch("readme"); runCurrent()
+            c.locateCollectionItem(api.searchFile); runCurrent()
+            val state = c.state.value
+            assertEquals(FilesSection.BROWSE, state.filesSection)
+            assertTrue(state.browseSelectedIds.isEmpty())
+            assertFalse(state.browseSelectionMode)
+            assertNull(state.fileRevealNodeId)
+            assertNotNull(state.error)
+            if (bad.nodeId != file.id || bad.revision <= 0 || bad.index < 0) {
+                assertEquals(1, api.calls.size) // Only login's initial root page.
+            }
+        }
+    }
+
+    @Test fun logoutCancelsLateExactFilePositionEvenWhenTransportIgnoresCancellation() = runTest {
+        val api = Service()
+        val pending = CompletableDeferred<DriveChildPosition>()
+        api.positionHandler = { _, _ -> withContext(NonCancellable) { pending.await() } }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.submitGlobalSearch("readme"); runCurrent()
+        c.locateCollectionItem(api.searchFile); runCurrent()
+        assertTrue(c.state.value.loading)
+        c.logout(); runCurrent()
+        pending.complete(DriveChildPosition(file.id, 1, 1))
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertNull(c.state.value.fileRevealNodeId)
     }
 
     @Test fun staleGlobalSearchCannotOverwriteFreshQueryOrLogout() = runTest {
