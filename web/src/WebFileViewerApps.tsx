@@ -927,11 +927,11 @@ function WebPreviewApp({
           target={target}
           loadTextPreview={(currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal)}
           loadImagePreview={loadThumbnail}
-          loadPreviewURL={async (_target, kind, signal) => (
+          loadPreviewURL={async (_target, kind, signal, onProgress) => (
             kind === 'live_photo'
               ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
               : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name)
-                ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision)
+                ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
                 : api.filePreviewURL(viewer.node!.id, signal)
           )}
           loadLivePhotoMotion={(currentTarget, _progress, signal) =>
