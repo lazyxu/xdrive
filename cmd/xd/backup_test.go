@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,60 @@ func (f *fakeBackupOnceRunner) Start(_ context.Context, id uint64) (localbackupi
 func (f *fakeBackupOnceRunner) Status(_ context.Context, id uint64) (localbackupipc.Summary, error) {
 	f.polls++
 	return f.next, f.err
+}
+
+func TestBackupCLIOptionScopeRejectsExplicitDefaultValuedFlags(t *testing.T) {
+	tests := []struct {
+		action  string
+		option  string
+		allowed bool
+	}{
+		{"list", "", true},
+		{"list", "--source=0", false},
+		{"list", "--poll=2s", false},
+		{"once", "--poll=2s", true},
+		{"once", "--every=", false},
+		{"once", "--run-now=false", false},
+		{"auto", "--every=6h", true},
+		{"auto", "--run-now=false", true},
+		{"auto", "--poll=2s", false},
+		{"schedule", "--manual=false", true},
+		{"status", "--source=42", true},
+		{"status", "--poll=2s", false},
+		{"history", "--cron=", false},
+		{"cancel", "--every=", false},
+		{"init", "--run-now=false", true},
+		{"init", "--source=0", false},
+		{"bind", "--source=42", true},
+		{"bind", "--target-id=0", false},
+		{"drafts", "--name=", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.action+"/"+tc.option, func(t *testing.T) {
+			fs := flag.NewFlagSet("backup "+tc.action, flag.ContinueOnError)
+			fs.Uint64("source", 0, "")
+			fs.Duration("poll", backupPollDefault, "")
+			fs.String("every", "", "")
+			fs.String("cron", "", "")
+			fs.String("timezone", "", "")
+			fs.Bool("manual", false, "")
+			fs.Bool("run-now", false, "")
+			fs.String("name", "", "")
+			fs.String("path", "", "")
+			fs.Uint64("target-id", 0, "")
+			var args []string
+			if tc.option != "" {
+				args = []string{tc.option}
+			}
+			if err := fs.Parse(args); err != nil {
+				t.Fatal(err)
+			}
+			err := validateBackupCLIFlags(fs, tc.action)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("backup %s %q: allowed=%v error=%v", tc.action, tc.option, tc.allowed, err)
+			}
+		})
+	}
 }
 
 func TestBackupSourceSelectorRequiresScopeExceptForIndex(t *testing.T) {
