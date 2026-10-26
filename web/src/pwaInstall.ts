@@ -29,13 +29,28 @@ let snapshot: XDrivePwaInstallSnapshot | null = null
 const listeners = new Set<() => void>()
 
 function platformHint(): XDrivePwaPlatformHint {
-  if (typeof navigator === 'undefined') return 'other'
-  const userAgent = navigator.userAgent || ''
-  // UA is only a copywriting hint. Real installation depends on browser events.
-  if (/iPad|iPhone|iPod/i.test(userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios'
-  if (/Android/i.test(userAgent)) return 'android'
+  // Merely a display hint, never authentication, installation or OS proof.
+  // A managed WebKit context may deny optional Navigator property getters.
+  try {
+    if (typeof navigator === 'undefined') return 'other'
+    const userAgent = navigator.userAgent || ''
+    if (/iPad|iPhone|iPod/i.test(userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios'
+    if (/Android/i.test(userAgent)) return 'android'
+  } catch {
+    // The normal Web app must still render before any optional install advice.
+  }
   return 'other'
+}
+
+function secureContextHint(): boolean {
+  try { return typeof window !== 'undefined' && window.isSecureContext === true }
+  catch { return false }
+}
+
+function serviceWorkerSupportedHint(): boolean {
+  try { return typeof navigator !== 'undefined' && 'serviceWorker' in navigator }
+  catch { return false }
 }
 function displayMode(): XDrivePwaDisplayMode {
   if (typeof window === 'undefined') return 'browser'
@@ -60,8 +75,8 @@ function readSnapshot(): XDrivePwaInstallSnapshot {
   return {
     displayMode: displayMode(),
     platformHint: platformHint(),
-    secureContext: typeof window !== 'undefined' && window.isSecureContext,
-    serviceWorkerSupported: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+    secureContext: secureContextHint(),
+    serviceWorkerSupported: serviceWorkerSupportedHint(),
     promptAvailable: promptEvent !== null,
     installedEventObserved,
     lastPromptOutcome,
@@ -137,7 +152,7 @@ export async function checkXDrivePwaAssets(
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<XDrivePwaAssetCheck[]> {
   const checks: XDrivePwaAssetCheck[] = []
-  const secure = typeof window !== 'undefined' && window.isSecureContext
+  const secure = secureContextHint()
   checks.push({
     id: 'context', label: '安全上下文', state: secure ? 'pass' : 'fail',
     detail: secure ? '浏览器允许安全 Web API（不代表已验证公网 DNS 和证书部署）。'
