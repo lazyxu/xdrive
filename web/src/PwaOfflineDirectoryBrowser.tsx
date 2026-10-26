@@ -18,6 +18,18 @@ import type {
   XDrivePwaOfflineAlbumsRead,
 } from './pwaOfflineDirectory'
 
+/** Optional Safari connection hint, not proof of current Owner authorization.
+ * A denied getter must never crash the explicitly read-only history viewer.
+ * Unknown is treated as offline until a genuine browser online event.
+ */
+function xDrivePwaHistoricalOnlineHint(): boolean {
+  try {
+    return typeof navigator !== 'undefined' && navigator.onLine === true
+  } catch {
+    return false
+  }
+}
+
 /**
  * P1-B2: historical metadata viewer only. This is deliberately NOT the
  * authenticated Owner FileExplorer, a download surface or an ACL substitute.
@@ -36,7 +48,7 @@ export default function PwaOfflineDirectoryBrowser({
   const [albumSaved, setAlbumSaved] = useState<XDrivePwaOfflineAlbumsRead | null>(null)
   const [selectedID, setSelectedID] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [online, setOnline] = useState(() => navigator.onLine)
+  const [online, setOnline] = useState(xDrivePwaHistoricalOnlineHint)
   const [verification, setVerification] = useState<
     'unverified' | 'checking' | 'authorized' | 'unavailable' | 'purged' | 'purge-failed'
   >('unverified')
