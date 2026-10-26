@@ -1,0 +1,188 @@
+name: Prune verified integrated branches
+
+# Trusted default-branch code only. Never execute a PR's checkout or script.
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report safe candidates without deleting'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: xdrive-verified-branch-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Delete only merged or verified superseded branch tips
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const repository = owner + '/' + repo;
+            const defaultBranch = 'master';
+            const dryRun = context.eventName === 'workflow_dispatch' &&
+              String(context.payload.inputs?.dry_run) === 'true';
+
+            // Unique work: do not erase even if its old PR has been closed.
+            const preserved = new Set([
+              'feat/sync-run-outcome-telemetry-p0-p2-20261016',
+              'feat/caddy-collector-preflight-systemd-sandbox-20261024',
+              'codex/server-cpu-backup-diagnostic-2723',
+            ]);
+
+            // Closed unmerged source PR -> accepted consolidated PR.
+            // Only retire the source when the target is actually merged to master
+            // AND the current branch tip is still the source PR's exact head.
+            const supersededBy = new Map([
+              [2670, 2667], [2677, 2667],
+              [2669, 2682], [2679, 2682],
+              [2697, 2705], [2699, 2705], [2702, 2705],
+              [2707, 2661], [2711, 2661],
+              [2714, 2709], [2726, 2709],
+              [2692, 2728], [2696, 2728],
+              [2722, 2721],
+              [2729, 2721], [2730, 2721], [2731, 2721],
+            ]);
+
+            const [branches, openPulls] = await Promise.all([
+              github.paginate(github.rest.repos.listBranches,
+                {owner, repo, per_page: 100}),
+              github.paginate(github.rest.pulls.list,
+                {owner, repo, state: 'open', per_page: 100}),
+            ]);
+            // An open stacked PR may rely on another branch as its BASE.
+            // Protect both sides of every still-open same-repository PR.
+            const inOpenPR = new Set();
+            for (const pr of openPulls) {
+              if (pr.head?.repo?.full_name === repository) {
+                inOpenPR.add(pr.head.ref);
+              }
+              if (pr.base?.repo?.full_name === repository) {
+                inOpenPR.add(pr.base.ref);
+              }
+            }
+
+            // Also recover old merged PR branches the repository did not delete.
+            const mergedHeads = new Map();
+            for (let page = 1; page <= 4; page++) {
+              const {data} = await github.rest.pulls.list({
+                owner, repo, state: 'closed', sort: 'updated',
+                direction: 'desc', per_page: 100, page,
+              });
+              for (const pr of data) {
+                if (pr.merged_at && pr.base?.ref === defaultBranch &&
+                    pr.head?.repo?.full_name === repository) {
+                  mergedHeads.set(pr.head.ref + '@' + pr.head.sha, pr.number);
+                }
+              }
+              if (data.length < 100) break;
+            }
+
+            const snapshotNumbers = new Set([
+              ...supersededBy.keys(), ...supersededBy.values(),
+            ]);
+            const snapshots = new Map();
+            await Promise.all([...snapshotNumbers].map(async number => {
+              const {data} = await github.rest.pulls.get({
+                owner, repo, pull_number: number,
+              });
+              snapshots.set(number, data);
+            }));
+            const supersededTips = new Map();
+            for (const [sourceNumber, targetNumber] of supersededBy) {
+              const source = snapshots.get(sourceNumber);
+              const target = snapshots.get(targetNumber);
+              if (source?.state !== 'closed' || source.merged_at ||
+                  source.head?.repo?.full_name !== repository ||
+                  !target?.merged_at || target.base?.ref !== defaultBranch) {
+                continue;
+              }
+              supersededTips.set(
+                source.head.ref + '@' + source.head.sha,
+                {sourceNumber, targetNumber},
+              );
+            }
+
+            let removed = 0;
+            let skipped = 0;
+            const report = [['Branch', 'Decision', 'Evidence']];
+            for (const branch of branches) {
+              const name = branch.name;
+              if (name === defaultBranch || branch.protected ||
+                  preserved.has(name) || inOpenPR.has(name)) {
+                skipped++;
+                continue;
+              }
+
+              const tip = name + '@' + branch.commit.sha;
+              let evidence = '';
+              if (mergedHeads.has(tip)) {
+                evidence = 'Merged PR #' + mergedHeads.get(tip);
+              } else if (supersededTips.has(tip)) {
+                const {sourceNumber, targetNumber} = supersededTips.get(tip);
+                evidence = 'Closed PR #' + sourceNumber +
+                  ' superseded by merged PR #' + targetNumber;
+              } else {
+                // A branch with zero unique commits is fully integrated.
+                // Do not delete branch tips with any unmerged commits.
+                const {data: comparison} = await github.rest.repos.compareCommits({
+                  owner, repo, base: defaultBranch, head: name,
+                });
+                if (comparison.ahead_by === 0) {
+                  evidence = 'No commits ahead of master';
+                }
+              }
+
+              if (!evidence) {
+                skipped++;
+                continue;
+              }
+              // Re-read the actual ref immediately before a destructive call.
+              const {data: latest} = await github.rest.repos.getBranch({
+                owner, repo, branch: name,
+              });
+              if (latest.protected || latest.commit.sha !== branch.commit.sha) {
+                report.push([name, 'KEEP: head changed/protected', evidence]);
+                skipped++;
+                continue;
+              }
+              if (removed >= 50) {
+                report.push([name, 'KEEP: deletion budget reached', evidence]);
+                skipped++;
+                continue;
+              }
+              if (!dryRun) {
+                try {
+                  await github.rest.git.deleteRef({
+                    owner, repo, ref: 'heads/' + name,
+                  });
+                } catch (error) {
+                  report.push([name, 'KEEP: deletion rejected', String(error.status || error.message)]);
+                  skipped++;
+                  continue;
+                }
+              }
+              removed++;
+              report.push([name, dryRun ? 'WOULD DELETE' : 'DELETED', evidence]);
+            }
+            core.info('verified branch prune: deleted=' +
+              (dryRun ? 0 : removed) + ', eligible=' + removed +
+              ', kept=' + skipped);
+            await core.summary
+              .addHeading('Verified branch cleanup')
+              .addRaw('Exact HEAD and merge evidence required; open PRs, protected branches and preserved work are excluded.')
+              .addTable(report)
+              .write();
