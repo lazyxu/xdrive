@@ -184,7 +184,21 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 const REMEMBER_LOGIN_KEY = 'xdrive.remember_login'
 const LAST_USERNAME_KEY = 'xdrive.last_username'
+const COOKIE_MODE_KEY = 'xdrive.auth_cookie_mode'
+const COOKIE_LOGOUT_PENDING_KEY = 'xdrive.auth_cookie_logout_pending'
+const COOKIE_LOGOUT_OWNER_KEY = 'xdrive.auth_cookie_logout_owner'
+// Share one rotation across StrictMode effect replays on the same browser page.
+let browserCookieStartup: Promise<AuthResult> | null = null
+function broadcastXDriveAuthEvent(type: 'logout' | 'login', username = ''): void {
+  if (typeof BroadcastChannel === 'undefined') return
+  try {
+    const channel = new BroadcastChannel('xdrive.auth.events')
+    channel.postMessage({ type, username })
+    channel.close()
+  } catch { /* Restricted browser messaging must not break login or logout. */ }
+}
 const AUTH_STORAGE_KEYS = [ACCESS_KEY, LEGACY_TOKEN_KEY, REFRESH_KEY, EXPIRES_KEY, USER_KEY] as const
+const AUTH_TOKEN_KEYS = [ACCESS_KEY, LEGACY_TOKEN_KEY, REFRESH_KEY, EXPIRES_KEY] as const
 
 // Public share links belong to the current URL, including browser Back/Forward.
 // Do not persist the capability token outside its URL or keep a prior share's
@@ -221,7 +235,12 @@ function initialSession(): AuthSession {
   if (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) === 'false') {
     // A previous interrupted opt-out must not resurrect old durable credentials.
     xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+    xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
     return { accessToken: '', refreshToken: '', accessExpiresAt: 0 }
+  }
+  if (typeof window !== 'undefined' && window.location?.protocol === 'https:' &&
+      xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') {
+    return { accessToken: '', refreshToken: '', accessExpiresAt: 0, browserSession: true }
   }
   const legacy = xDriveBrowserStorageRead(LEGACY_TOKEN_KEY) ?? ''
   return {
@@ -328,7 +347,14 @@ function App({
   const [username, setUsername] = useState(() => xDriveBrowserStorageRead(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
+  const [logoutInProgress, setLogoutInProgress] = useState(false)
+  const [cookieBootPending, setCookieBootPending] = useState(() =>
+    typeof window !== 'undefined' && window.location.protocol === 'https:' &&
+    ((xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false' &&
+      xDriveBrowserStorageRead(COOKIE_MODE_KEY) === 'cookie') ||
+      (xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? '').startsWith('1')))
   const transferApiRef = useRef<XDriveApi | null>(null)
+  const authEpochRef = useRef(0)
   const transferLifetimeRef = useRef(0)
 
   const [publicShareToken, setPublicShareToken] = useState(
@@ -370,9 +396,27 @@ function App({
   const persistSession = useCallback((next: AuthSession, persist = rememberLogin) => {
     if (!persist) {
       xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+      xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
       setSession(next)
       return
     }
+    if (next.browserSession) {
+      // The only durable browser credential is HttpOnly; never serialize even
+      // short-lived Access JWTs alongside its mode marker.
+      const tokensCleared = xDriveBrowserStorageRemove(AUTH_TOKEN_KEYS)
+      const ownerSaved = next.username ? xDriveBrowserStorageWrite(USER_KEY, next.username) : false
+      if (tokensCleared && ownerSaved) {
+        xDriveBrowserStorageWrite(COOKIE_MODE_KEY, 'cookie')
+      } else {
+        // Never advertise restorable Cookie mode if legacy refresh secrets
+        // couldn't be removed or the expected Owner can't be persisted.
+        xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
+        setAuthNotice('浏览器未能安全保存登录状态，请清理此站点的旧登录记录。')
+      }
+      setSession(next)
+      return
+    }
+    xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
     // Storage can be denied (or fail partway through) without invalidating a
     // successful Server login/refresh in this live window. Remove partial
     // durable credentials so a later launch never revives a mixed session.
@@ -386,14 +430,21 @@ function App({
     setSession(next)
   }, [rememberLogin])
 
-  const clearSession = useCallback((notice = '') => {
+  const clearSession = useCallback((notice = '', clearSharedStorage = true) => {
+    // Any outstanding earlier refresh is no longer authorized to restore
+    // an Owner after logout, account switch or invalid session.
+    authEpochRef.current += 1
     xDriveClearBaiduConversionSession()
     transferApiRef.current?.disposeTransfers()
     // Fail closed across accounts and server instances. Never touch public SW App Shell.
     void xDrivePwaClearOfflineMetadata().catch(() => {
       setAuthNotice('无法确认本设备的离线摘要已清理，请在浏览器站点数据中手动清理。')
     })
-    const storageCleared = xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+    // Another tab's newly signed-in Owner may already have written a fresh
+    // Cookie-mode marker. Do not erase that tab's durable preference when
+    // only dismissing this tab's old in-memory Owner on account switch.
+    const storageCleared = clearSharedStorage ? xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS) : true
+    if (clearSharedStorage) xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
     setSession({ accessToken: '', refreshToken: '', accessExpiresAt: 0 })
     setUsername('')
     setAuthNotice(storageCleared ? notice : [notice,
@@ -401,15 +452,115 @@ function App({
     ].filter(Boolean).join(' '))
   }, [])
 
-  const api = useMemo(
-    () => new XDriveApi(session, persistSession),
-    [session.accessToken, session.refreshToken, session.accessExpiresAt, persistSession],
-  )
+  const api = useMemo(() => {
+    const boundEpoch = authEpochRef.current
+    return new XDriveApi(session, next => {
+      if (boundEpoch === authEpochRef.current) persistSession(next)
+    })
+  }, [session.accessToken, session.refreshToken, session.accessExpiresAt,
+    session.browserSession, session.username, persistSession])
 
   useEffect(() => {
     transferApiRef.current = api
     api.setTransferSessionKey(username ? `${window.location.origin}:${username}` : '')
   }, [api, username])
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    let channel: BroadcastChannel
+    try { channel = new BroadcastChannel('xdrive.auth.events') } catch { return }
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; username?: unknown } | null
+      if (!data || typeof data !== 'object') return
+      if (data.type === 'logout' && username &&
+          typeof data.username === 'string' && data.username === username) {
+        clearSession('另一窗口已退出登录。')
+      } else if (data.type === 'login' &&
+          typeof data.username === 'string' && username && data.username !== username) {
+        clearSession('另一窗口已切换登录账号，请重新登录。', false)
+      }
+    }
+    return () => channel.close()
+  }, [username, clearSession])
+
+  useEffect(() => {
+    if (!cookieBootPending) return
+    let active = true
+    // Owner changes in this tab, or a logout/account switch from another tab,
+    // must fence even an already-started Cookie bootstrap Promise.
+    const bootstrapEpoch = authEpochRef.current
+    const logoutMarker = xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) ?? ''
+    const logoutPending = logoutMarker.startsWith('1')
+    const logoutOwner = logoutPending ? xDriveBrowserStorageRead(COOKIE_LOGOUT_OWNER_KEY) : null
+    const bootstrap = new XDriveApi({
+      browserSession: true,
+      username: logoutPending
+        ? logoutOwner ?? undefined
+        : xDriveBrowserStorageRead(USER_KEY) ?? undefined,
+    })
+    const work: Promise<void> = logoutPending
+      ? (bootstrap.hasBrowserOwner()
+          ? bootstrap.logout().then(() => {
+              if (!active || bootstrapEpoch !== authEpochRef.current ||
+                  xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) !== logoutMarker ||
+                  xDriveBrowserStorageRead(COOKIE_LOGOUT_OWNER_KEY) !== logoutOwner) return
+              // Only this exact durable logout operation owns its tombstone.
+              // Another tab may have signed in and out since this POST began.
+              xDriveBrowserStorageRemove(COOKIE_LOGOUT_PENDING_KEY)
+              xDriveBrowserStorageRemove(COOKIE_LOGOUT_OWNER_KEY)
+              xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
+            })
+          : Promise.reject(new Error('Missing logout Owner: refusing unpinned Cookie revocation')))
+
+      : (() => {
+          if (!browserCookieStartup) {
+            const current = bootstrap.restoreBrowserSession()
+            browserCookieStartup = current
+            // Only coalesce StrictMode's initial effect replay, not a later
+            // remount with another Owner or another user-initiated sign-in.
+            void current.then(() => {
+              if (browserCookieStartup === current) browserCookieStartup = null
+            }, () => {
+              if (browserCookieStartup === current) browserCookieStartup = null
+            })
+          }
+          return browserCookieStartup
+        })().then(result => {
+          if (!active || bootstrapEpoch !== authEpochRef.current) return
+          const expected = xDriveBrowserStorageRead(USER_KEY)
+          if (!expected || result.username !== expected) {
+            // A different Owner signed in on another tab. Never mount their
+            // private FileManager using a previous Owner's local context.
+            // Do not destroy the newer tab's shared Cookie marker. Only
+            // reject this tab's mismatched restoration.
+            setAuthNotice('检测到服务器登录账号已变化，请重新登录。')
+            return
+          }
+          persistSession(sessionFromAuth(result), true)
+          setUsername(result.username)
+          xDriveBrowserStorageWrite(USER_KEY, result.username)
+        })
+    void work.catch((error: unknown) => {
+      if (!active || bootstrapEpoch !== authEpochRef.current) return
+      if (logoutPending) {
+        // Keep the tombstone until remote revocation actually succeeds.
+        setAuthNotice('离线退出尚未完成服务器会话撤销，当前不会自动登录。')
+      } else if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+        xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
+        setAuthNotice('已保存的登录会话已失效，请重新输入账号密码。')
+      } else {
+        // Temporary network/Server errors are NOT a session revocation.
+        // Keep the encrypted browser Cookie untouched and retry on next boot.
+        setAuthNotice('暂时无法自动恢复登录，请检查网络后重试。')
+      }
+    }).finally(() => {
+      if (active) setCookieBootPending(false)
+    })
+    return () => { active = false }
+    // Mount-only restoration. The shared promise fences StrictMode repeats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const lifetime = ++transferLifetimeRef.current
@@ -439,13 +590,34 @@ function App({
   }, [api])
 
   const signOut = () => {
-    // Local derived GPS coordinates are revoked at user intent, not after
-    // a possibly slow or failed remote logout acknowledgement.
+    const browser = session.browserSession === true
+    // Every logout has its own non-secret marker. An older request must not
+    // delete a newer tab's pending logout, even for the same Owner.
+    const logoutMarker = browser
+      ? `1:${Date.now()}:${Math.random().toString(36).slice(2)}` : ''
+    // Persist the local logout intent BEFORE network I/O, or an offline
+    // browser restart could silently restore the still-valid HttpOnly cookie.
+    if (browser) {
+      if (session.username) xDriveBrowserStorageWrite(COOKIE_LOGOUT_OWNER_KEY, session.username)
+      xDriveBrowserStorageWrite(COOKIE_LOGOUT_PENDING_KEY, logoutMarker)
+    }
     xDriveClearBaiduConversionSession()
     xDriveClearPrivateMapBrowseSessions()
-    // Failed remote logout (including a forbidden redirect) must never
-    // prevent local sign-out or leave an unhandled rejection.
-    void api.logout().catch(() => undefined).finally(() => clearSession())
+    setLogoutInProgress(true)
+    clearSession() // Owner UI is immediately hidden, even without a network.
+    broadcastXDriveAuthEvent('logout', username)
+    void api.logout().then(() => {
+      if (browser &&
+          xDriveBrowserStorageRead(COOKIE_LOGOUT_PENDING_KEY) === logoutMarker &&
+          xDriveBrowserStorageRead(COOKIE_LOGOUT_OWNER_KEY) === session.username) {
+        // The server acknowledged THIS attempt; never clear a newer logout
+        // written in another tab after a new login, even for the same Owner.
+        xDriveBrowserStorageRemove(COOKIE_LOGOUT_PENDING_KEY)
+        xDriveBrowserStorageRemove(COOKIE_LOGOUT_OWNER_KEY)
+      }
+    }).catch(() => {
+      if (browser) setAuthNotice('已在本设备退出，服务器暂不可达；将于下次启动重试撤销会话。')
+    }).finally(() => setLogoutInProgress(false))
   }
 
   if (publicShareToken) {
@@ -470,21 +642,46 @@ function App({
       }} />
   }
 
+  if (cookieBootPending) {
+    return (
+      <XDriveAuthShell viewport decorated spacing="compact">
+        <XDriveAuthPanel size="compact">
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="large" subtitle="正在验证已保存的登录会话…" />
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
+    )
+  }
+
   if (!session.accessToken) {
     return (
       <AuthView
         api={api}
         serverBuild={serverBuild}
         notice={authNotice}
+        logoutInProgress={logoutInProgress}
+        authEpoch={authEpochRef.current}
         rememberLogin={rememberLogin}
         onRememberLoginChange={(checked) => {
           // Opting out revokes durable browser restoration immediately.
-          if (!checked) xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+          if (!checked) {
+            xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+            xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
+          }
           setRememberLogin(checked)
           xDriveBrowserStorageWrite(REMEMBER_LOGIN_KEY, String(checked))
         }}
-        onAuthenticated={(result) => {
+        onAuthenticated={(result, attemptEpoch) => {
+          // An older login response must not resurrect an Owner after logout,
+          // tab account switching, or another explicit session invalidation.
+          if (authEpochRef.current !== attemptEpoch) return
           setAuthNotice('')
+          // Explicit successful reauthentication supersedes an earlier
+          // pending offline logout of the old browser-cookie identity.
+          authEpochRef.current += 1
+          if (result.browser_session) {
+            xDriveBrowserStorageRemove(COOKIE_LOGOUT_PENDING_KEY)
+            xDriveBrowserStorageRemove(COOKIE_LOGOUT_OWNER_KEY)
+          }
           persistSession(sessionFromAuth(result), rememberLogin)
           if (rememberLogin) xDriveBrowserStorageWrite(LAST_USERNAME_KEY, result.username)
           if (rememberLogin && !xDriveBrowserStorageWrite(USER_KEY, result.username)) {
@@ -492,6 +689,7 @@ function App({
             xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
           }
           setUsername(result.username)
+          broadcastXDriveAuthEvent('login', result.username)
         }}
       />
     )
@@ -514,6 +712,8 @@ function AuthView({
   api,
   serverBuild,
   notice,
+  logoutInProgress,
+  authEpoch,
   rememberLogin,
   onRememberLoginChange,
   onAuthenticated,
@@ -521,9 +721,11 @@ function AuthView({
   api: XDriveApi
   serverBuild: BuildInfo | null
   notice: string
+  logoutInProgress: boolean
+  authEpoch: number
   rememberLogin: boolean
   onRememberLoginChange: (checked: boolean) => void
-  onAuthenticated: (result: AuthResult) => void
+  onAuthenticated: (result: AuthResult, attemptEpoch: number) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -541,12 +743,13 @@ function AuthView({
     const nextPasswordError = xDrivePasswordValidationError(password)
     setUsernameError(nextUsernameError)
     setPasswordError(nextPasswordError)
-    if (nextUsernameError || nextPasswordError) return
+    if (nextUsernameError || nextPasswordError || logoutInProgress) return
 
+    const attemptEpoch = authEpoch
     setBusy(true)
     setError('')
     try {
-      onAuthenticated(await api.login(username, password))
+      onAuthenticated(await api.login(username, password, rememberLogin), attemptEpoch)
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败')
     } finally {
@@ -611,6 +814,7 @@ function AuthView({
               type="submit"
               fullWidth
               loading={busy}
+              disabled={logoutInProgress}
               loadingLabel="正在登录…"
             >
               登录
