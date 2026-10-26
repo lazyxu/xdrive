@@ -106,10 +106,10 @@ are never published.
 
 **No automatic v2 object GC in this MVP.** Existing seven-day tar retention
 does not apply to the shared CAS object repository. Deleting a snapshot
-directory alone does not reclaim shared objects; this is intentional so that
-a stale reference cannot cause accidental backup data loss. A future
-reference-aware prune must atomically protect committed snapshots and
-in-progress publication before deleting unreferenced objects.
+directory by hand does not reclaim shared objects and can invalidate backup
+references. The separate **explicit manual prune** operation described below
+uses an exclusive repository lock, independently verifies integrity and
+rechecks all surviving snapshot references before reclaiming objects.
 
 The future personal-cloud transport should copy the independently stored
 objects and committed snapshots, not refer to live files or rewrap everything
@@ -146,7 +146,7 @@ Standalone internal helper invocations do not acquire a host-side lock.
 
 The JSON report distinguishes:
 - `keep_snapshots`: latest N committed v2 generations, still protected;
-- `drop_candidates`: older generations that a *future* policy could consider;
+- `drop_candidates`: older generations that a separate manually confirmed prune may consider, after its own exclusive-locked revalidation;
 - `retained_objects`: unique CAS objects used by protected generations;
 - `drop_only_objects`: objects only referenced by candidate generations;
 - `unreferenced_objects`: repository objects absent from every committed index;
@@ -162,15 +162,54 @@ or unknown snapshot blocks the *entire* report. Running this scan hashes
 each snapshot's database.dump and legacy.tar, so it may be I/O-intensive.
 
 **Important:** even a successful manual deep audit is a point-in-time
-read-only result, not a repository-exclusive prune authorization. Fast mode
-does not hash CAS content; deep mode may take substantial disk I/O and is
-never scheduled automatically. Neither mode guarantees physical savings or
-authorizes deletion. Actual v2 snapshot deletion,
-CAS GC, retention schedules, background pruning and pack/compaction remain
-disabled. A future destructive implementation requires exclusive locking
-shared with backup publication, re-reading all committed indexes under that
-lock, deep integrity checks, atomic snapshot quarantine, crash recovery,
-and negative tests proving a referenced object can never be deleted.
+read-only result, not authorization to delete anything. Fast mode does not
+hash CAS content; deep mode may take substantial disk I/O and is never
+scheduled automatically. Neither mode guarantees physical savings.
+**Automatic** snapshot deletion, scheduled CAS GC, background pruning,
+compression and Pack remain disabled. The separate manually confirmed prune
+below performs its own exclusive-locked deep revalidation before deletion.
+
+## Manual v2 prune (opt-in, destructive, never scheduled)
+
+This action removes older v2 generations and unreferenced repository CAS data.
+It is separate from the ordinary backup command, the read-only retention
+preview, the installer and scheduled backups. First inspect the preview and
+retain a separate repository copy if you may need the older restore points.
+
+    xdrive-server backup retention-plan --keep-last 7 --mode deep
+    xdrive-server backup prune --keep-last 7 --yes
+
+    # Optional separate local repository (paths with spaces supported):
+    xdrive-server backup prune --repository-dir "/absolute/backup disk/incremental" --keep-last 7 --yes
+
+The Linux helper itself acquires an exclusive nonblocking lock on the
+**existing** regular .backup.lock file. Under this lock it revalidates all
+committed snapshot checksums, indexes and each unique physical repository
+CAS object with full SHA-256 before any mutation. It additionally validates
+retained legacy tar archives' safe entry structure; verifying a PostgreSQL
+dump's actual restorability still requires a full recovery drill. It atomically renames
+retired snapshots into .prune-retired/tx-*/ and recomputes every reference
+from the surviving committed snapshots. Only CAS objects absent from **all**
+surviving indexes can be unlinked; immutable objects shared with retained
+snapshots are never deliberately deleted. The command uses a single writable
+local repository bind mount in a network-disabled container. The host
+wrapper rejects a backup repository that overlaps configured live file storage
+or the running Server's actual /data mount, including nested paths and
+symlink aliases. It does not operate on PostgreSQL or legacy v1 snapshots.
+
+An interrupted prune leaves its retired transaction as a disk journal.
+A **new explicit** backup prune invocation revalidates the surviving
+repository under the exclusive lock and safely completes cleanup of retired
+files. It cannot automatically revive a deliberately retired generation:
+do not manually move quarantined directories back after a prune has begun.
+An interrupted cleanup may temporarily retain unused bytes; it does not
+require a background worker or silent startup recovery.
+
+No scheduled v2 pruning, automatic CAS GC, online CAS compaction,
+compression/Pack or consumer-cloud backup is enabled by this command.
+Returned byte counts are logical bytes, not guaranteed filesystem-block
+savings. Corrupt/missing CAS, unexpected files, incomplete .partial
+generations, suspicious symlinks or lock contention fail closed.
 
 ## Compression
 

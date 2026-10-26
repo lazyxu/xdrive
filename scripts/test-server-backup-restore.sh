@@ -505,4 +505,104 @@ restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
   exit 1
 }
 
+# Exercise the new MANUAL v2 prune against the real Server image and a real
+# PostgreSQL backup after the first generation has already been restored.
+# Merely building the Go helper does not prove the host Docker/mount/lock
+# contract or that a surviving snapshot still restores its database and CAS.
+backup_drill_stage="v2-manual-prune-and-retained-restore"
+
+# An active verifier or restore reader must block exclusive pruning without
+# touching live services or retiring any committed snapshot.
+exec 9<"$repo_root/.backup.lock"
+flock -s -n 9
+if XD_CONFIG_DIR="$XDRIVE_HOME" XD_FILES_DATA_DIR="$FILES_DIR" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup prune --keep-last 1 --yes >"$TMP/locked-prune.out" 2>"$TMP/locked-prune.err"; then
+  echo "manual prune ignored a shared repository reader lock" >&2
+  exit 1
+fi
+grep -Fq 'v2 repository is busy' "$TMP/locked-prune.err"
+flock -u 9
+exec 9<&-
+[[ -d "$incremental_backup_dir" && -d "$second_incremental_backup_dir" ]]
+assert_runtime_services
+
+# A physically present CAS object with the correct length but wrong bytes
+# must also abort BEFORE deleting the older restore point.
+cp "$cas_repo_object" "$TMP/prune-cas-original"
+printf '%s' 'canonical-content-v2' > "$cas_repo_object"
+if XD_CONFIG_DIR="$XDRIVE_HOME" XD_FILES_DATA_DIR="$FILES_DIR" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup prune --keep-last 1 --yes >"$TMP/corrupt-prune.out" 2>"$TMP/corrupt-prune.err"; then
+  echo "manual prune accepted same-size corrupt repository CAS" >&2
+  exit 1
+fi
+grep -Fq 'CAS content SHA-256 mismatch' "$TMP/corrupt-prune.err"
+[[ -d "$incremental_backup_dir" && -d "$second_incremental_backup_dir" ]]
+cp "$TMP/prune-cas-original" "$cas_repo_object"
+assert_runtime_services
+
+# Probe real, digest-valid, unreferenced backup CAS reclamation as well as
+# preservation of the CAS object shared by the two committed generations.
+prune_orphan_content='unreferenced-cas-for-manual-prune'
+prune_orphan_sha="$(printf '%s' "$prune_orphan_content" | sha256sum | awk '{print $1}')"
+prune_orphan_object="$repo_root/objects/sha256/${prune_orphan_sha:0:2}/$prune_orphan_sha"
+mkdir -p "$(dirname "$prune_orphan_object")"
+printf '%s' "$prune_orphan_content" > "$prune_orphan_object"
+[[ -f "$prune_orphan_object" ]] || {
+  echo "manual prune CAS orphan fixture was not created" >&2
+  exit 1
+}
+if grep -Fq "$prune_orphan_sha" "$incremental_backup_dir/objects.index" ||
+   grep -Fq "$prune_orphan_sha" "$second_incremental_backup_dir/objects.index"; then
+  echo "manual prune CAS orphan fixture is unexpectedly referenced" >&2
+  exit 1
+fi
+
+XD_CONFIG_DIR="$XDRIVE_HOME" XD_FILES_DATA_DIR="$FILES_DIR" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup prune --keep-last 1 --yes >"$TMP/manual-prune-report.json"
+python3 - "$TMP/manual-prune-report.json" "$(basename "$incremental_backup_dir")" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    result = json.load(source)
+assert result["mode"] == "manual_confirmed"
+assert result["automatic"] is False
+assert result["keep_last"] == 1
+assert result["retired_snapshots"] == [sys.argv[2]]
+assert result["deleted_cas_objects"] == 1, result
+assert result["deleted_snapshot_files"] == 6, result
+PY
+[[ ! -e "$incremental_backup_dir" && -d "$second_incremental_backup_dir" ]]
+[[ -f "$cas_repo_object" && ! -e "$prune_orphan_object" ]]
+assert_runtime_services
+
+# A second explicit prune must be safe to repeat without deleting anything.
+XD_CONFIG_DIR="$XDRIVE_HOME" XD_FILES_DATA_DIR="$FILES_DIR" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup prune --keep-last 1 --yes >"$TMP/repeat-prune-report.json"
+python3 - "$TMP/repeat-prune-report.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    result = json.load(source)
+assert result["retired_snapshots"] == [], result
+assert result["deleted_cas_objects"] == 0, result
+assert result["deleted_snapshot_files"] == 0, result
+PY
+
+# Prove the only remaining generation actually restores file bytes and the
+# PostgreSQL database, rather than only passing a read-only SHA preflight.
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c \
+  "printf broken > /data/$storage_key"
+bash "$ROOT/scripts/server-restore.sh" "$second_incremental_backup_dir" \
+  --config-dir "$XDRIVE_HOME" --yes --no-safety-backup >/dev/null
+assert_runtime_services
+"$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+prune_restored_legacy="$(docker run --rm -v "$FILES_DIR:/data:ro" \
+  --entrypoint cat postgres:17-alpine "/data/$storage_key")"
+prune_restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
+  --entrypoint cat postgres:17-alpine "/data/$cas_key")"
+[[ "$prune_restored_legacy" == "$content" && "$prune_restored_cas" == "$cas_content" ]] || {
+  echo "retained v2 generation failed real restore after manual prune" >&2
+  exit 1
+}
+
 echo "backup/restore integration test passed"

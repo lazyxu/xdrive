@@ -33,7 +33,7 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan [flags]")
+		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune [flags]")
 	}
 	cmd := args[0]
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -45,10 +45,11 @@ func run(args []string) error {
 	ownerGID := f.Int("owner-gid", -1, "host owner GID of newly created repository entries")
 	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (preview only)")
 	casMode := f.String("mode", "fast", "retention-plan CAS audit: fast (size only) or deep (all SHA-256)")
+	confirmed := f.Bool("yes", false, "explicitly confirm destructive manual prune")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
-	noSnapshot := cmd == "estimate" || cmd == "retention-plan"
+	noSnapshot := cmd == "estimate" || cmd == "retention-plan" || cmd == "prune"
 	if f.NArg() != 0 || *repo == "" || (!noSnapshot && *snapshot == "") || (noSnapshot && *snapshot != "") {
 		return fmt.Errorf("usage: %s --repo PATH --snapshot NAME [--source PATH|--target PATH]; estimate requires --repo and --source only", cmd)
 	}
@@ -66,16 +67,25 @@ func run(args []string) error {
 		return err
 	}
 	snap := filepath.Join(root, "snapshots", *snapshot)
-	if cmd != "retention-plan" {
-		retentionFlagPassed := false
-		f.Visit(func(flag *flag.Flag) {
-			if flag.Name == "keep-last" || flag.Name == "mode" {
-				retentionFlagPassed = true
-			}
-		})
-		if retentionFlagPassed {
-			return errors.New("--keep-last and --mode only apply to retention-plan")
+	keepLastPassed, modePassed, yesPassed := false, false, false
+	f.Visit(func(flag *flag.Flag) {
+		switch flag.Name {
+		case "keep-last":
+			keepLastPassed = true
+		case "mode":
+			modePassed = true
+		case "yes":
+			yesPassed = true
 		}
+	})
+	if cmd != "retention-plan" && cmd != "prune" && (keepLastPassed || modePassed || yesPassed) {
+		return errors.New("--keep-last, --mode and --yes require the matching retention/prune subcommand")
+	}
+	if cmd == "retention-plan" && yesPassed {
+		return errors.New("retention-plan does not support --yes")
+	}
+	if cmd == "prune" && (modePassed || !keepLastPassed || !*confirmed) {
+		return errors.New("prune requires explicit --keep-last N --yes, without --mode")
 	}
 	switch cmd {
 	case "estimate":
@@ -100,6 +110,15 @@ func run(args []string) error {
 			return err
 		}
 		return writeRetentionPlan(result)
+	case "prune":
+		if *source != "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
+			return errors.New("prune only accepts --repo, --keep-last and --yes")
+		}
+		result, err := pruneRepository(root, *keepLast)
+		if err != nil {
+			return err
+		}
+		return writePruneReport(result)
 	case "capture":
 		if *source == "" || *target != "" {
 			return errors.New("capture requires --source only")
