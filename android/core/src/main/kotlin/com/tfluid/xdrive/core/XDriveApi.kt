@@ -164,6 +164,15 @@ interface XDriveService {
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
     fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
         throw ApiException(501, "Native Owner video unavailable")
+    /** Signed revision-scoped .livp still, decoded by the caller, not the ZIP bytes. */
+    suspend fun galleryLivePhotoStill(accessToken: String, node: DriveNode,
+        onProgress: (Long, Long?) -> Unit = { _, _ -> }): ByteArray =
+        throw ApiException(501, "Live Photo still unavailable")
+    /** Only the current Owner's validated pair/embedded motion may be played. */
+    suspend fun galleryLivePhotoMotionPlayback(
+        accessToken: String, node: DriveNode,
+    ): OwnerVideoPlayback =
+        throw ApiException(501, "Live Photo motion unavailable")
 }
 
 class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHttpClient(), connectionIp: String? = null) : XDriveService, Closeable {
@@ -609,6 +618,116 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val url = address.url.toHttpUrlOrNull()!!.newBuilder()
             .addPathSegments("api/v1/files/" + node.id + "/content").build()
         return ownerVideoPlayback(http, url, accessToken, node)
+    }
+
+    /** Go binds this short-lived ticket to Owner session, Node revision and
+     * exact derived resource fingerprint; never use a guessed .MOV filename. */
+    private suspend fun signedLivePhotoTicket(
+        accessToken: String, node: DriveNode, role: String,
+    ): HttpUrl {
+        require(role in setOf("still", "motion") &&
+            node.type == "file" && node.id > 0 && node.revision > 0 &&
+            validToken(accessToken))
+        val ticket = request(
+            "media/items/${node.id}/live-photo-$role-ticket",
+            accessToken, values = emptyMap(),
+        )
+        val expectedKind = if (role == "still") "image" else "video"
+        if (ticket.string("kind") != expectedKind ||
+            !ticket.string("mime_type").lowercase(Locale.ROOT)
+                .startsWith("$expectedKind/")) invalidPayload()
+        val path = ticket.string("url")
+        val expectedPath = "/api/v1/media-live-photo-$role/${node.id}"
+        if (!path.startsWith("$expectedPath?") || path.startsWith("//"))
+            invalidPayload()
+        val base = address.url.toHttpUrlOrNull()!!
+        val url = base.resolve(path) ?: invalidPayload()
+        if (url.scheme != base.scheme || url.host != base.host ||
+            url.port != base.port || url.encodedPath != expectedPath ||
+            url.username.isNotEmpty() || url.password.isNotEmpty() ||
+            url.fragment != null || url.queryParameterNames != setOf("ticket") ||
+            url.queryParameterValues("ticket").size != 1 ||
+            url.queryParameter("ticket").isNullOrBlank())
+            invalidPayload()
+        return url
+    }
+
+    override suspend fun galleryLivePhotoMotionPlayback(
+        accessToken: String, node: DriveNode,
+    ): OwnerVideoPlayback {
+        val url = signedLivePhotoTicket(accessToken, node, "motion")
+        return ownerLivePhotoPlayback(http, url)
+    }
+
+    override suspend fun galleryLivePhotoStill(
+        accessToken: String, node: DriveNode,
+        onProgress: (Long, Long?) -> Unit,
+    ): ByteArray {
+        val url = signedLivePhotoTicket(accessToken, node, "still")
+        val request = Request.Builder().url(url)
+            .header("Accept-Encoding", "identity")
+            .header("Cache-Control", "no-store")
+            .get().build()
+        return suspendCancellableCoroutine { continuation ->
+            val call = http.newBuilder()
+                .callTimeout(0L, TimeUnit.MILLISECONDS).build()
+                .newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive)
+                        continuation.resumeWithException(transportFailure(error))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val bytes = response.use { reply ->
+                            if (reply.code != 200)
+                                throw ApiException(reply.code, "Live Photo still unavailable")
+                            val etag = reply.header("ETag").orEmpty()
+                            if (!etag.matches(Regex(
+                                    """^"live-photo-still-[a-f0-9]{64}-[0-9]+-[0-9]+"$"""
+                                ))) invalidPayload()
+                            val mime = reply.header("Content-Type").orEmpty()
+                                .substringBefore(';').trim().lowercase(Locale.ROOT)
+                            if (!mime.startsWith("image/")) invalidPayload()
+                            val body = reply.body ?: invalidPayload()
+                            val cap = 32L * 1024L * 1024L
+                            val size = body.contentLength()
+                            if (size > cap || size == 0L) invalidPayload()
+                            val total = size.takeIf { it > 0 }
+                            val buf = Buffer()
+                            val stream = body.source()
+                            var lastNotice = System.nanoTime()
+                            while (buf.size <= cap) {
+                                if (!continuation.isActive) throw IOException("Cancelled")
+                                val read = stream.read(buf, minOf(64 * 1024L, cap + 1 - buf.size))
+                                if (read == -1L) break
+                                val now = System.nanoTime()
+                                if (read > 0 && now - lastNotice >= 100_000_000L) {
+                                    lastNotice = now
+                                    try { onProgress(buf.size, total) } catch (_: Exception) { }
+                                }
+                            }
+                            if (buf.size == 0L || buf.size > cap ||
+                                (size > 0 && buf.size != size)) invalidPayload()
+                            try { onProgress(buf.size, total) } catch (_: Exception) { }
+                            buf.readByteArray()
+                        }
+                        if (continuation.isActive) continuation.resume(bytes)
+                    } catch (error: ApiException) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(error)
+                    } catch (error: IOException) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(transportFailure(error))
+                    } catch (_: Exception) {
+                        if (continuation.isActive)
+                            continuation.resumeWithException(ApiException(
+                                0, "Invalid Live Photo still", ApiFailureReason.INVALID_RESPONSE))
+                    }
+                }
+            })
+        }
     }
 
     /** No public media URLs, no credentials in query strings or disk cache.
