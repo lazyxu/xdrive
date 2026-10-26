@@ -255,6 +255,21 @@ async function testMode(browser,mode,port){
       ready:window.__mapProbe.ready}))
     record(mode+': actual mounted shared business state',
       first.mode===mode&&first.count===9&&first.ready===true)
+    // Measure the REAL common map container in the same Chromium fixture for
+    // both SDK Host modes, not a screenshot/DOM-free source assertion.
+    // A 640px desktop floor must not overflow a 390px iPhone landscape.
+    for(const [width,height] of [[375,667],[390,844],[844,390],[900,390]]){
+      await page.setViewportSize({width,height})
+      const geometry=await page.locator('[data-xdrive-places-cluster-overview]')
+        .evaluate(element=>{
+          const rect=element.getBoundingClientRect()
+          return {height:rect.height,bottom:rect.bottom,windowHeight:innerHeight}
+        })
+      record(mode+': map fits '+width+'x'+height+' portrait/landscape viewport',
+        geometry.height>=180 && geometry.height<=height-80 &&
+        geometry.bottom<=height-8 && geometry.windowHeight===height)
+    }
+    await page.setViewportSize({width:960,height:760})
     if(mode==='isolated'){
       record('isolated: actual independent HTTPS iframe mounted',
         await page.locator('[data-xdrive-baidu-isolated-frame]').count()===1)
@@ -286,6 +301,21 @@ async function testMode(browser,mode,port){
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     record(mode+': semantic shared photo sheet handle opens by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
+    await page.setViewportSize({width:844,height:390})
+    const sheetGeometry=await page.evaluate(()=>{
+      const map=document.querySelector('[data-xdrive-places-cluster-overview]')
+      const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
+      if(!map||!sheet)return null
+      const area=map.getBoundingClientRect(),dialog=sheet.getBoundingClientRect()
+      return {mapTop:area.top,mapBottom:area.bottom,top:dialog.top,
+        bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
+    })
+    record(mode+': expanded drawer fits inside 844x390 map and safe area',
+      sheetGeometry!==null&&sheetGeometry.height>=80&&
+      sheetGeometry.top>=sheetGeometry.mapTop+8 &&
+      sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
+      sheetGeometry.bottom<=sheetGeometry.screen-8)
+    await page.setViewportSize({width:960,height:760})
     await handle.press('Enter')
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')
