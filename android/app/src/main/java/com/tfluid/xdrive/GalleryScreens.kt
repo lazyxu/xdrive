@@ -3,6 +3,8 @@ package com.tfluid.xdrive
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -137,35 +139,84 @@ private fun decodeThumbnail(bytes: ByteArray): ImageBitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
-    val bitmap by produceState<ImageBitmap?>(initialValue = cache.get(key), key1 = key) {
-        if (value != null) return@produceState
-        val bytes = controller.galleryThumbnail(item) ?: return@produceState
-        val decoded = withContext(Dispatchers.Default) {
-            try { decodeThumbnail(bytes) } catch (_: Exception) { null }
+    // A new Owner Range/revision must not render a retired bitmap while the
+    // next thumbnail loads. UI state is scoped to the actual verified asset.
+    var bitmap by remember(key, item) { mutableStateOf(cache.get(key)) }
+    var retryAttempt by remember(key, item) { mutableIntStateOf(0) }
+    var loading by remember(key, item) {
+        mutableStateOf(bitmap == null && item.hasThumbnail)
+    }
+    var failed by remember(key, item) { mutableStateOf(false) }
+
+    LaunchedEffect(item, retryAttempt) {
+        if (bitmap != null || !item.hasThumbnail) return@LaunchedEffect
+        loading = true
+        failed = false
+        val bytes = controller.galleryThumbnail(item)
+        val decoded = bytes?.let {
+            withContext(Dispatchers.Default) {
+                try { decodeThumbnail(it) }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
         }
         if (decoded != null) {
             cache.put(key, decoded)
-            value = decoded
+            bitmap = decoded
+        } else {
+            // Optional derived media may be missing or invalid. Never spin or
+            // retry HTTP automatically; only the current Owner can retry.
+            failed = true
         }
+        loading = false
     }
+
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        .clickable(onClick = { controller.showGalleryInfo(item) })
+        // Short tap retains the iOS photo-opening behavior; long press on a
+        // failed tile is the only retry gesture. No action button overlays.
+        .combinedClickable(
+            onClick = { controller.showGalleryInfo(item) },
+            onLongClickLabel = if (failed) "重试缩略图" else null,
+            onLongClick = if (failed) ({ retryAttempt++ }) else null,
+        )
         .testTag("gallery-item-${item.node.id}")) {
-        if (bitmap != null) {
-            Image(bitmap = bitmap!!, contentDescription = item.node.name,
-                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        val ready = bitmap
+        if (ready != null) {
+            Image(bitmap = ready, contentDescription = item.node.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+                    .testTag("gallery-thumbnail-ready-${item.node.id}"))
         } else {
             Icon(painterResource(if (item.mediaKind == "video") R.drawable.xd_movie else R.drawable.xd_image),
                 contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.Center).size(30.dp))
+        }
+        if (loading && ready == null) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                    .size(20.dp).testTag("gallery-thumbnail-loading-${item.node.id}"),
+                strokeWidth = 2.dp,
+            )
+        } else if (failed && ready == null && item.hasThumbnail) {
+            // Status text, not a floating control. The tile itself exposes an
+            // accessible labelled long-click retry without changing short tap.
+            Text("失败·长按重试",
+                modifier = Modifier.align(Alignment.BottomStart)
+                    .padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.55f),
+                        androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .testTag("gallery-thumbnail-failed-${item.node.id}"),
+                color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
         if (item.livePhoto || item.mediaKind == "video") {
             Text(if (item.livePhoto) "实况" else "视频",
