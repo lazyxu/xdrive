@@ -1,6 +1,14 @@
 /** Optional PWA shell: no background transfers, update auto-reloads or private caches. */
 export function registerXDrivePwa(): void {
-  if (import.meta.env.DEV || !window.isSecureContext || !('serviceWorker' in navigator)) return
+  if (import.meta.env.DEV) return
+  try {
+    // Registration is optional. A restricted WebKit context may deny both
+    // the secure-context getter and even the Service Worker capability test.
+    // Unknown security status must never become permission to register.
+    if (!window.isSecureContext || !('serviceWorker' in navigator)) return
+  } catch {
+    return
+  }
   const register = () => {
     try {
       void navigator.serviceWorker.register('/sw.js', {

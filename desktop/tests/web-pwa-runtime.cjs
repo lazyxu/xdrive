@@ -183,3 +183,48 @@ test('PWA optional registration survives synchronous browser denial without bloc
   h.register()
   assert.equal(h.registered, 0, 'insecure origins never attempt SW registration')
 })
+
+
+test('Safari denied PWA registration capability getters cannot interrupt ordinary Web boot', () => {
+  // Execute the actual Vite production source after replacing its DEV
+  // compile-time constant; deliberately do not invent another registration
+  // path or grant registration when the secure-context hint is unknown.
+  const code = ts.transpileModule(runtime.replace('import.meta.env.DEV', 'false'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  function run(win, nav) {
+    const mod = {}
+    new Function('exports', 'window', 'navigator', 'document', 'Event', code)(
+      mod, win, nav, { readyState: 'complete' }, class { constructor(type) { this.type = type } })
+    mod.registerXDrivePwa()
+  }
+  let registrations = 0
+  const safeNavigator = {
+    serviceWorker: { register() { registrations++; return Promise.resolve({}) } },
+  }
+  const securedWindow = {
+    isSecureContext: true,
+    dispatchEvent() {},
+    addEventListener() {},
+  }
+  const deniedSecure = { ...securedWindow }
+  Object.defineProperty(deniedSecure, 'isSecureContext', {
+    get() { throw new Error('SecurityError: secure-context getter denied') },
+  })
+  assert.doesNotThrow(() => run(deniedSecure, safeNavigator))
+  assert.equal(registrations, 0, 'unknown security status cannot register SW')
+
+  const deniedCapability = new Proxy(safeNavigator, {
+    has(target, key) {
+      if (key === 'serviceWorker') throw new Error('SecurityError: capability has-trap denied')
+      return Reflect.has(target, key)
+    },
+  })
+  assert.doesNotThrow(() => run(securedWindow, deniedCapability))
+  assert.equal(registrations, 0, 'a denied capability test must not register SW')
+
+  assert.doesNotThrow(() => run({ ...securedWindow, isSecureContext: false }, safeNavigator))
+  assert.equal(registrations, 0, 'HTTP/nonsecure browser origin cannot register SW')
+  assert.match(main, /root\.render\([\s\S]*?registerXDrivePwa\(\)/,
+    'regular files/gallery first render still precedes optional registration')
+})
