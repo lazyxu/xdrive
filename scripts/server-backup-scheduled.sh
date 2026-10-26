@@ -33,7 +33,14 @@ mkdir -p "$STATE_DIR" "$BACKUP_DIR" "$LOG_DIR"
 
 lock_dir=""
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$STATE_DIR/scheduled-backup.lock"
+  # Opening with '>' would truncate the target of an unexpected symlink
+  # before flock can protect anything. Never follow a suspicious lock path.
+  scheduled_lock="$STATE_DIR/scheduled-backup.lock"
+  if [[ -L "$scheduled_lock" || ( -e "$scheduled_lock" && ! -f "$scheduled_lock" ) ]]; then
+    echo "scheduled backup refused: unsafe scheduled-backup.lock" >&2
+    exit 1
+  fi
+  exec 9>>"$scheduled_lock"
   if ! flock -n 9; then
     echo "scheduled backup skipped: another backup is already running"
     exit 0

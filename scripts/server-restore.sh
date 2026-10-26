@@ -60,6 +60,33 @@ elif ! grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$BACKUP_DIR/manife
   echo "unsupported backup format" >&2
   exit 1
 fi
+# Hold a SHARED lease on the same .backup.lock used by v2 snapshot capture.
+# A future reference-aware prune must acquire its EXCLUSIVE lease first.
+# Hold the lease from checksum preflight through the final physical restore:
+# otherwise a concurrent prune could remove a snapshot or shared CAS object
+# between integrity verification and the destructive PostgreSQL restore.
+# Open read-only, never truncate or recreate the repository lock.
+if [[ "$BACKUP_VERSION" == "2" ]]; then
+  [[ "$(basename "$(dirname "$BACKUP_DIR")")" == "snapshots" ]] || {
+    echo "restore: invalid CAS repository layout." >&2
+    exit 1
+  }
+  backup_repo_lock_dir="$(cd "$BACKUP_DIR/../.." && pwd -P)"
+  backup_repo_lock="$backup_repo_lock_dir/.backup.lock"
+  [[ -f "$backup_repo_lock" && ! -L "$backup_repo_lock" ]] || {
+    echo "restore: missing or unsafe v2 repository lock: $backup_repo_lock" >&2
+    exit 1
+  }
+  command -v flock >/dev/null 2>&1 || {
+    echo "restore: flock is required for v2 repository safety" >&2
+    exit 1
+  }
+  exec 7<"$backup_repo_lock"
+  flock -s -n 7 || {
+    echo "restore: v2 repository is busy with another operation" >&2
+    exit 75
+  }
+fi
 required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
 if [[ "$BACKUP_VERSION" == "2" ]]; then
   required_files+=(objects.index legacy.tar)

@@ -90,6 +90,12 @@ are never published.
 - Restore checks v2 checksums and fully hashes all required CAS objects
   *before* replacing the database and file data. Restore is destructive,
   and the existing pre-restore safety backup and storage verification apply.
+- v2 verify and restore take a **shared, nonblocking flock** on the repository's
+  existing `.backup.lock`; it is held across restore preflight and actual
+  database/file replacement. v2 capture already takes an exclusive flock.
+  Competing repository operations fail closed without stopping services.
+  The lock must be an existing real file; no reader creates or truncates it.
+  This is a prerequisite for future pruning, **not** an enabled CAS GC.
 - Do not move a v2 snapshot directory without also moving its sibling
   `objects/` repository; the entire repository is the portable backup unit.
 - The encrypted connector credentials in the database still require the
