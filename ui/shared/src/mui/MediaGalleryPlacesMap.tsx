@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Autocomplete, Box, Button, CircularProgress, ClickAwayListener, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Button, CircularProgress, ClickAwayListener, IconButton, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
@@ -24,7 +25,7 @@ export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
-  onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics,
+  onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
 }: {
@@ -54,6 +55,8 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   diagnosticScope?: string
   onOpenDiagnostics?: () => void
+  /** Close Places using existing authenticated Gallery navigation (Parent only). */
+  onCloseMap?: () => void
   activePlaceID?: string
   focusPlaceID?: string
   onOpenPlace?: (place: MediaPlaceFacet) => void
@@ -492,6 +495,14 @@ export function XDriveMediaGalleryPlacesMap({
             </Paper>
             </Box>
           </ClickAwayListener>
+          {onCloseMap && !desktopOnly ? (
+            <IconButton size="small" data-xdrive-places-map-close
+              aria-label="关闭地图" onClick={onCloseMap}
+              sx={{minWidth:44,minHeight:44,bgcolor:'action.hover',borderRadius:2,
+                '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
+              <CloseRoundedIcon fontSize="small"/>
+            </IconButton>
+          ) : null}
         </Stack>
       </Stack>
       {modeWarning ? <Typography data-xdrive-map-mode-scope-warning

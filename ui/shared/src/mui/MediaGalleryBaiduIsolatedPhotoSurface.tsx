@@ -541,15 +541,20 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                       </Box>}/>
                   ) : null}
                 </Box>
-                <Box component="span"
-                  sx={{position:'absolute',bottom:-6,right:-6,minWidth:27,
-                    maxWidth:100,px:0.75,display:'grid',placeItems:'center',
-                    borderRadius:'999px',bgcolor:'rgba(15,23,42,.94)',
-                    color:'#fff',boxShadow:1,fontSize:11,fontWeight:700,
-                    lineHeight:'21px',whiteSpace:'nowrap',overflow:'hidden',
-                    textOverflow:'ellipsis'}}>
-                  {pin.count.toLocaleString('zh-CN')}张
-                </Box>
+                {pin.count > 1 ? (
+                  <Box component="span" data-xdrive-places-photo-count-badge
+                    aria-hidden="true"
+                    sx={{position:'absolute',top:-8,right:-8,minWidth:24,
+                      height:24,maxWidth:100,px:0.75,display:'grid',placeItems:'center',
+                      border:'2px solid white',borderRadius:'999px',
+                      bgcolor:theme => theme.palette.mode === 'dark' ? '#0A84FF' : '#007AFF',
+                      color:'#fff',
+                      boxShadow:'0 2px 6px rgba(15,23,42,.25)',
+                      fontSize:11,fontWeight:700,lineHeight:1,
+                      whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                    {pin.count.toLocaleString('zh-CN')}
+                  </Box>
+                ) : null}
               </Box>
             ))}
           </Box>

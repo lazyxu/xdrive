@@ -847,6 +847,14 @@ export function XDriveMediaGalleryPage({
   const [currentCleanupReview, setCurrentCleanupReview] =
     useState<MediaCleanupReviewTarget | null>(null)
   const routeSectionAppliedRef = useRef<MediaGallerySection | null>(null)
+  // Track external route input independently of the current user-selected tab.
+  // A local Map Close must not replay the unchanged initialSection simply
+  // because loadFirstPage/selectSection changed identity after a render.
+  const incomingSectionRef = useRef<{
+    section: MediaGallerySection
+    source: MediaGalleryDataSource
+    owner: string
+  } | null>(null)
   const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
   const [mobileCollectionsOverview, setMobileCollectionsOverview] = useState(false)
   const [activeMediaType, setActiveMediaType] = useState('')
@@ -2966,10 +2974,22 @@ export function XDriveMediaGalleryPage({
       return
     }
     const mapReturn = mapGalleryEntryReturnRef.current
-    // Do not replay an ancient Album/scroll hint as a fresh navigation intent.
-    if (mapReturn && (!Number.isFinite(mapReturn.createdAt) ||
-        Date.now() < mapReturn.createdAt ||
-        Date.now() - mapReturn.createdAt >= 10 * 60 * 1000)) {
+    // The optional visual return anchor expires after ten minutes and is
+    // never media authority. Reject stale/foreign Owner references in Place
+    // before any ordinary Gallery Range or all-library fallback can run.
+    const mapReturnInvalid = Boolean(mapReturn && (
+      !Number.isFinite(mapReturn.createdAt) ||
+      Date.now() < mapReturn.createdAt ||
+      Date.now() - mapReturn.createdAt >= 10 * 60 * 1000 ||
+      mapReturn.owner !== preferenceScope || mapReturn.dataSource !== source))
+    if (mapReturnInvalid) {
+      if (section === 'places' && !currentAlbum && !currentFolderView &&
+          !query.place && !query.place_hierarchy && !query.nearby && !query.bbox) {
+        // Retain an invalid tombstone until explicit navigation; a repeated
+        // Close/Back must not switch this formerly restricted map to Library.
+        setError('地图返回范围已失效，请从原收藏或相册重新打开地图。')
+        return
+      }
       mapGalleryEntryReturnRef.current = null
     }
     if (section === 'places' && mapGalleryEntryReturnRef.current === mapReturn &&
@@ -3664,7 +3684,19 @@ export function XDriveMediaGalleryPage({
 
   useEffect(() => {
     const nextSection = initialSection ?? 'library'
-    if (routeSectionAppliedRef.current === nextSection) return
+    const incoming = incomingSectionRef.current
+    // Callback identity changes and responsive reflows are not new external
+    // routes. Without this guard, Places -> Close -> Library is undone by the
+    // unchanged initialSection prop, cancelling the fresh Owner photo Range.
+    if (incoming?.section === nextSection &&
+        incoming.source === source && incoming.owner === preferenceScope) return
+    incomingSectionRef.current = {
+      section: nextSection, source, owner: preferenceScope,
+    }
+    // Ignore an actual URL echo already applied internally. A source/Owner
+    // switch, however, must still recheck the new account's authorized Range.
+    if (routeSectionAppliedRef.current === nextSection &&
+        incoming?.source === source && incoming.owner === preferenceScope) return
     routeSectionAppliedRef.current = nextSection
     // External route changes also retain the accepted compact photo wall
     // until the target is genuinely available. The internal URL echo was
@@ -3874,10 +3906,10 @@ export function XDriveMediaGalleryPage({
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
         onShowMap={showMapFromCurrentGallery}
+        // Back/Close must route through leaveCollection even for an expired
+        // map entry; only that path can fail closed instead of opening Library.
         canReturnToMapEntry={Boolean(section === 'places' &&
-          mapGalleryEntryReturnRef.current &&
-          mapGalleryEntryReturnRef.current.owner === preferenceScope &&
-          mapGalleryEntryReturnRef.current.dataSource === source)}
+          mapGalleryEntryReturnRef.current)}
         onMobilePrimaryTabChange={(tab) => {
           if (tab === 'collections') {
             warmMobileCollectionsPreview()
@@ -8485,6 +8517,15 @@ export function XDriveMediaGallery({
             onOpenPlace={onOpenPlace}
             onOpenPrototypePlace={onOpenPrototypePlace}
             onOpenNearby={onOpenNearby}
+            onCloseMap={onBack && onSectionChange
+              ? () => {
+                  // A collection map must only restore its prior Owner Range
+                  // through the existing authenticated Gallery Back contract.
+                  // Root Places maps have no prior collection to restore.
+                  if (canReturnToMapEntry) onBack()
+                  else onSectionChange('library')
+                }
+              : undefined}
             onOpenViewportPhotos={onOpenViewportPhotos}
           />
           ) : null}
