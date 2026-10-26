@@ -11,8 +11,9 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
-// A3c13: a real, bounded Server Owner API for CURRENT consent-fenced BD-09
-// derived photo positions. This is NOT a generic Baidu resource proxy and
+// A3c13: a bounded Server Owner API for current source-fenced BD-09
+// photo positions with automatic GPS indexing, no per-photo consent. This
+// is NOT a generic Baidu resource proxy and
 // never performs coordinate conversion, AK access or provider egress.
 //
 // Do not reuse /media/places/viewport: that endpoint accepts original WGS84;
@@ -29,7 +30,7 @@ type baiduNativeMapViewportDTO struct {
 	HasMore         bool                 `json:"has_more"`
 }
 
-const baiduNativeMapIndexScope = "explicit_opt_in_only"
+const baiduNativeMapIndexScope = "owner_gps_auto_index"
 
 // A3c15: a viewport must be invalidated if its Owner identity, signed JWT
 // issued-at, database SessionVersion or map revocation epoch changed while

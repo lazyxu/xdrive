@@ -30,11 +30,9 @@ type baiduPhotoMapWriteCandidate struct {
 	DerivedLongitude float64
 }
 
-// baiduPhotoMapPrivacyCheck MUST independently verify the current owner and
-// per-photo location-export/indexing policy IN THE SAME transaction and lock
-// any durable policy rows on which that decision depends. No implementation
-// is wired to production in A3b3a3d2j, so a nil check always denies.
-// This callback is private Server code; never accept a browser boolean.
+// baiduPhotoMapPrivacyCheck is now a trusted Owner/session/queue-lease check,
+// not a per-photo opt-in. It must verify live Server state in the same
+// transaction; browser booleans are never accepted, and nil still denies.
 type baiduPhotoMapPrivacyCheck func(context.Context, *gorm.DB, uint64, uint64) error
 
 func validBaiduPhotoMapWriteCandidate(c baiduPhotoMapWriteCandidate) (string, bool) {
@@ -120,20 +118,9 @@ func upsertBaiduPhotoMapPosition(
 			node.ID != candidate.PrimaryNodeID || ctx.Err() != nil {
 			return denied
 		}
-		// The future real implementation must lock its persisted, revisioned
-		// privacy/consent state; tests can inject a trusted synthetic checker.
-		// A synthetic or future caller-provided callback is never sufficient:
-		// acquire the separately persisted per-photo opt-in under the SAME
-		// PostgreSQL transaction before storing any derived coordinates.
-		consentRevision, consentErr := verifyBaiduPhotoMapConsentTx(ctx, tx, owner.ID, asset.ID,
-			baiduPhotoMapConsentSource{
-				NodeID: node.ID, NodeRevision: node.Revision,
-				MediaUpdatedAt: media.UpdatedAt,
-				Latitude:       *media.Latitude, Longitude: *media.Longitude,
-			})
-		if consentErr != nil {
-			return denied
-		}
+		// No additional per-photo map consent exists. Live Owner/Asset/Node
+		// and exact source GPS are already locked above. The trusted callback
+		// checks the current queue lease and transaction before this write.
 		if err := verifyPrivacy(ctx, tx, owner.ID, asset.ID); err != nil ||
 			ctx.Err() != nil {
 			return denied
@@ -142,7 +129,7 @@ func upsertBaiduPhotoMapPosition(
 			AssetID: asset.ID, OwnerID: owner.ID,
 			PrimaryNodeID: node.ID, NodeRevision: node.Revision,
 			MediaUpdatedAt:    media.UpdatedAt,
-			ConsentRevision:   consentRevision,
+			ConsentRevision:   0, // legacy compatibility column, never a visibility gate
 			SourceLatitude:    candidate.SourceLatitude,
 			SourceLongitude:   candidate.SourceLongitude,
 			CoordinateSpace:   candidate.CoordinateSpace,

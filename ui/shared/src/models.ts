@@ -1100,15 +1100,16 @@ export interface MediaPlacesMapOverview {
   aggregated: boolean
 }
 
-/** Map viewport space is *derived* BD09LL, never source photo WGS84.
- * Only source-bound, currently opted-in and indexed PhotoAssets participate. */
+/** Map viewport uses real derived BD09LL, never original photo WGS84.
+ * Every active Owner-accessible PhotoAsset with current GPS qualifies by
+ * default; the map shows it when its derived position is available. */
 export interface MediaBaiduNativeViewportBounds extends MediaPlacesViewportBounds {
   coordinate_space: 'bd09ll'
 }
 
 export interface MediaBaiduNativeViewportPage {
   coordinate_space: 'bd09ll'
-  index_scope: 'explicit_opt_in_only'
+  index_scope: 'owner_gps_auto_index'
   items: Array<{
     asset_id: number
     node_id: number
@@ -1121,11 +1122,11 @@ export interface MediaBaiduNativeViewportPage {
   has_more: boolean
 }
 
-/** A3c20: Source/Owner/consent-revision validated BD09 8x8 summary.
+/** A3c20: Source/Owner/current GPS validated BD09 8x8 summary.
  * Each point belongs to a REAL representative PhotoAsset, never a grid center. */
 export interface MediaBaiduNativeCellsPage {
   coordinate_space: 'bd09ll'
-  index_scope: 'explicit_opt_in_only'
+  index_scope: 'owner_gps_auto_index'
   grid_columns: 8
   grid_rows: 8
   total_count: number
@@ -1143,7 +1144,7 @@ export interface MediaBaiduNativeCellsPage {
 }
 
 /** A3h-W2a: immutable claim from a current authorized BD09 8x8 /cells page.
- * This is NOT a token; the Server revalidates Owner, consent, revisions and count. */
+ * Not a token: the Server revalidates Owner, source revisions and count. */
 export interface MediaBaiduNativeCellSelection {
   bounds: MediaBaiduNativeViewportBounds
   cell_x: number

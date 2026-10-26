@@ -110,8 +110,9 @@ func TestBaiduGeoconvAccountProofRequiresTrustedExactCurrentScope(t *testing.T) 
 		sign(&p)
 		verify(context.Background(), p, public, baseScope, now, false)
 	}
-	// Even a cryptographically valid test-signed proof cannot open production.
-	if err := verifyPinnedBaiduGeoconvAccountEvidence(context.Background(), proof, baseScope, now); !errors.Is(err, errBaiduGeoconvDispatchUnavailable) {
-		t.Fatal("synthetic evidence unlocked production Geoconv")
+	// The optional historical signature primitive is not a production
+	// activation gate. A missing Server/Owner configuration still fails.
+	if err := (&Server{}).configuredBaiduGeoconvAccountPermit(context.Background(), baseScope.OwnerID); !errors.Is(err, errBaiduGeoconvDispatchUnavailable) {
+		t.Fatal("missing runtime Server configuration allowed Geoconv")
 	}
 }

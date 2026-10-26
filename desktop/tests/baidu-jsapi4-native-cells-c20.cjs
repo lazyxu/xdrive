@@ -25,7 +25,7 @@ const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:41}
 const original={cell_x:1,cell_y:1,photo_count:100000,asset_id:91,node_id:92,
   latitude:39.4,longitude:116.2}
 const page=list=>({
-  coordinate_space:'bd09ll',index_scope:'explicit_opt_in_only',grid_columns:8,
+  coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',grid_columns:8,
   grid_rows:8,total_count:list.reduce((v,c)=>v+c.photo_count,0),cells:list,
 })
 function nativeFixture() {

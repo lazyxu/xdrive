@@ -13,12 +13,12 @@ import (
 
 const baiduMapIndexOwnerDemandReadTimeout = time.Second
 
-// selectBaiduPhotoMapIndexDemand only reads the OWNER's existing explicit
-// one-photo intent rows. It has no Gallery media query, GPS, secret or network
-// capability, and never enumerates arbitrary PhotoAssets or all Owners.
-// Two indexed, one-row probes prioritize repair of an expired lease before
-// an eligible queued item. The actual executor MUST check the live Owner,
-// Node, exact source WGS84, opt-in consent, lease and account permissions again.
+// selectBaiduPhotoMapIndexDemand only reads the OWNER's durable one-photo
+// intent rows. It has no Gallery media query, GPS, secret or network capability,
+// and never enumerates arbitrary PhotoAssets or all Owners.
+// Indexed probes prioritize expired-lease repair before queued work.
+// The executor rechecks Owner, Node, WGS84 source and task lease; no extra
+// photo consent or operator/manual proof is required.
 func selectBaiduPhotoMapIndexDemand(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 ) (uint64, error) {
@@ -67,10 +67,10 @@ func selectBaiduPhotoMapIndexDemand(
 	return readyID, nil
 }
 
-// This is an internal ONE-SHOT, demand-driven dispatcher building block,
-// NOT a production scheduler. A future separately reviewed trusted Server
-// caller must supply live account entitlement and a CURRENT Server-only AK;
-// no such production caller exists. It never enables JSAPI4 or any URL route.
+// One-shot consumer of the existing durable Owner queue. The trusted Server
+// caller supplies current enabled Server AK and active Owner checks; separate
+// manual licence attestation or per-photo consent is never required.
+// No HTTP route or JSAPI4 runtime is enabled by this function.
 func executeOneBaiduPhotoMapIndexOwnerDemand(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 	accountPermit baiduGeoconvAccountPermit, serverAK baiduGeoconvPrivateServerAK,

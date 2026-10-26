@@ -26,7 +26,7 @@ const lib=loadTs('ui/shared/src/media-gallery-baidu-jsapi4-cell-range.ts',{
 const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:41}
 const p={cell_x:1,cell_y:1,asset_id:9,node_id:19,node_revision:3,
   photo_count:2,longitude:116.2,latitude:39.3}
-const page={coordinate_space:'bd09ll',index_scope:'explicit_opt_in_only',
+const page={coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
   grid_columns:8,grid_rows:8,total_count:2,cells:[p]}
 const sort={by:'captured',dir:'desc'}
 test('W2a freezes only actual Owner /cells identity and its BD09 bounds',()=>{

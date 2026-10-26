@@ -16,8 +16,8 @@ const validate=module_.exports.xDriveValidBaiduMapCoverageReasons
 const sameTotals=module_.exports.xDriveBaiduMapCoverageReasonTotalsMatch
 const good={scope:'indexed_ready_photoassets',valid_gps_assets:9,
   eligible_bd09_assets:2,not_eligible_bd09_assets:7,
-  consent_unavailable_assets:3,consent_source_changed_assets:1,
-  derived_missing_assets:2,derived_invalid_assets:1,
+  consent_unavailable_assets:0,consent_source_changed_assets:0,
+  derived_missing_assets:6,derived_invalid_assets:1,
   map_runtime_verified:false}
 test('reason counts are complete, exclusive, Owner-private and never guessed',()=>{
   assert.deepEqual(validate(good),good)
@@ -26,6 +26,8 @@ test('reason counts are complete, exclusive, Owner-private and never guessed',()
     {...good,derived_missing_assets:-1},{...good,derived_missing_assets:1.5},
     {...good,valid_gps_assets:0},{...good,eligible_bd09_assets:10},
     {...good,consent_source_changed_assets:undefined},
+    {...good,consent_unavailable_assets:1},
+    {...good,consent_source_changed_assets:1},
     {...good,owner_id:10},{...good,latitude:39.9},{...good,asset_id:3},
     {...good,map_runtime_verified:true},
   ]) assert.equal(validate(bad),null)
@@ -70,5 +72,11 @@ test('Web/Mobile/Agent/Electron carry the optional cancelable Owner-only breakdo
   assert.match(ui,/xDriveBaiduMapCoverageReasonTotalsMatch\(coverage, reasons\)/)
   assert.match(ui,/reasonPhase:!reasons \? 'unavailable' : sameTotals \? 'ready' : 'changed'/)
   assert.match(ui,/不代表这些分类都是 0 张/)
+  assert.doesNotMatch(ui,/授权未生效或已撤销|授权来源已改变/)
+  assert.doesNotMatch(ui,/不会自动向百度发送这些坐标/)
+  assert.match(ui,/会在后台自动向百度发送当前 GPS 坐标进行转换/)
+  assert.match(ui,/服务关闭或未配置时不会发送/)
+  assert.match(ui,/百度地图服务启用并配置 Server AK 后会自动处理，无需逐张授权/)
+  assert.match(ui,/xDriveBaiduMapCoverageReasonTotalsMatch\(coverage, reasons\)/)
   assert.doesNotMatch(read('deploy/baidu-isolated-child/child.js'),/consent_unavailable_assets/)
 })

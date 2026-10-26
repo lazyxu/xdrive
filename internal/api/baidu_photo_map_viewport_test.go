@@ -166,7 +166,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	bobNode, bobAsset, _ := create(bob.ID, "other.jpg", -1, -179.8, -1, -179.95, meta.BaiduPhotoMapSpaceBD09LL)
 
 	// GPS-bearing media is not automatically opted into the Baidu map.
-	// No per-asset consent: never count this photo, even if an orphaned derived index exists.
+	// An Owner-owned GPS asset with a valid derived position counts without extra consent.
 	gpsOnlyNode := meta.Node{OwnerID: alice.ID, Name: "gps-only.jpg", Type: meta.NodeTypeFile, Revision: 1}
 	if err := db.Create(&gpsOnlyNode).Error; err != nil {
 		t.Fatal(err)
@@ -180,9 +180,8 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	if err := db.Create(&gpsOnlyAsset).Error; err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a stale derived row left behind by an interrupted cleanup.
-	// Even a fully matching Owner/Node/GPS index must not pass without
-	// the separately required explicit consent row.
+	// This asset intentionally has no legacy consent row. Its current derived
+	// position is nevertheless a valid Owner map member.
 	if err := db.First(&gpsOnlyMedia, "node_id = ?", gpsOnlyNode.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -207,11 +206,11 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	if gpsBearingCount != 3 {
 		t.Fatalf("GPS fixture count invalid: got %d, want 3", gpsBearingCount)
 	}
-	// P0-01: GPS-bearing is not equivalent to explicit-consent BD09 map eligibility.
+	// A matching derived BD09 position is visible without photo-level authorization.
 	// These counts share one PostgreSQL read snapshot and expose no raw coordinate.
 	coverage, coverageErr := queryBaiduPhotoMapCoverage(context.Background(), db, alice.ID)
 	if coverageErr != nil || coverage.ValidGPSAssets != 3 ||
-		coverage.EligibleBD09Assets != 2 || coverage.OutsideSourceMapLatitudeAssets != 0 {
+		coverage.EligibleBD09Assets != 3 || coverage.OutsideSourceMapLatitudeAssets != 0 {
 		t.Fatalf("wrong Owner map coverage: %+v %v", coverage, coverageErr)
 	}
 	peerCoverage, peerCoverageErr := queryBaiduPhotoMapCoverage(context.Background(), db, bob.ID)
@@ -222,13 +221,13 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 
 	world := baiduPhotoMapBounds{West: -180, South: -90, East: 180, North: 90, CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL}
 	page, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 1, 0)
-	if err != nil || page.TotalCount != 2 || len(page.Items) != 1 || !page.HasMore || page.Items[0].AssetID != firstAsset.ID ||
+	if err != nil || page.TotalCount != 3 || len(page.Items) != 1 || !page.HasMore || page.Items[0].AssetID != firstAsset.ID ||
 		page.Items[0].NodeID != first.ID {
 		t.Fatalf("first owner page incorrect: %+v, %v", page, err)
 	}
 	next, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 1, 1)
 	if err != nil || len(next.Items) != 1 || next.Items[0].AssetID != secondAsset.ID || next.Items[0].NodeID != second.ID ||
-		next.HasMore {
+		!next.HasMore {
 		t.Fatalf("second page incorrect: %+v, %v", next, err)
 	}
 	peer, err := queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
@@ -238,9 +237,9 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	}
 
 	// The SERVER 8x8 view must count all eligible points once using the same
-	// source/consent/revision proof. Both samples are true paired BD09 photos.
+	// Owner/source/revision proof. One of three valid positions has no grant.
 	cells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
-	if err != nil || cells.TotalCount != 2 || len(cells.Items) != 2 ||
+	if err != nil || cells.TotalCount != 3 || len(cells.Items) != 3 ||
 		cells.GridColumns != 8 || cells.GridRows != 8 {
 		t.Fatalf("initial bounded Owner cell count incorrect: %+v %v", cells, err)
 	}
@@ -249,13 +248,13 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 			t.Fatalf("invalid exact representative cell: %+v", cell)
 		}
 	}
-	if cells.TotalCount == gpsBearingCount {
-		t.Fatalf("map count includes GPS-only unconsented photos: map=%d GPS=%d",
+	if cells.TotalCount != gpsBearingCount {
+		t.Fatalf("map count must include an Owner photo with valid derived GPS: map=%d GPS=%d",
 			cells.TotalCount, gpsBearingCount)
 	}
 	// A favorite-only signed Cells filter intersects the original Gallery
-	// Owner membership before aggregating. A forbidden/unconsented photo
-	// can never be counted or chosen as a representative.
+	// Owner Gallery membership before aggregation. Non-favorite items cannot
+	// appear in the favorite Cell representative or logical count.
 	if err := db.Model(&meta.PhotoMetadata{}).
 		Where("asset_id = ?", firstAsset.ID).
 		Update("favorite", true).Error; err != nil {
@@ -282,7 +281,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 	joined, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
-	if err != nil || joined.TotalCount != 2 || len(joined.Items) != 1 ||
+	if err != nil || joined.TotalCount != 3 || len(joined.Items) != 2 ||
 		joined.Items[0].PhotoCount != 2 || joined.Items[0].AssetID != firstAsset.ID ||
 		joined.Items[0].Latitude != 0.0065 || joined.Items[0].Longitude != 0.0065 {
 		t.Fatalf("aggregate count or real photo representative incorrect: %+v %v", joined, err)
@@ -300,41 +299,36 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatalf("antimeridian cluster query invalid: %+v %v", wrapCells, err)
 	}
 
-	// Rows with an absent source-bound opt-in must disappear from the real
-	// count, not merely be hidden by the renderer or a later GC task.
+	// Editing the legacy consent source binding cannot hide real Owner GPS.
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
 		Update("source_node_revision", 0).Error; err != nil {
 		t.Fatal(err)
 	}
 	missingSource, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 100, 0)
-	if err != nil || missingSource.TotalCount != 1 || missingSource.Items[0].AssetID != secondAsset.ID {
-		t.Fatalf("unbound consent leaked the original location: %+v %v", missingSource, err)
+	if err != nil || missingSource.TotalCount != 3 {
+		t.Fatalf("legacy grant unexpectedly suppressed original location: %+v %v", missingSource, err)
 	}
 	sourceCells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
-	if err != nil || sourceCells.TotalCount != 1 || len(sourceCells.Items) != 1 ||
-		sourceCells.Items[0].AssetID != secondAsset.ID {
-		t.Fatalf("source-mismatched consent remained in map Cell count: %+v %v", sourceCells, err)
+	if err != nil || sourceCells.TotalCount != 3 || len(sourceCells.Items) != 3 {
+		t.Fatalf("legacy grant unexpectedly changed Owner Cell count: %+v %v", sourceCells, err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
 		Update("source_node_revision", first.Revision).Error; err != nil {
 		t.Fatal(err)
 	}
-	// A direct revocation must invalidate retained derived rows on the very
-	// next read, without relying on asynchronous GC to delete the position.
+	// A legacy grant revocation must NOT hide a current owned derived position.
 	revokedAt := time.Now().UTC()
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
 		Update("revoked_at", revokedAt).Error; err != nil {
 		t.Fatal(err)
 	}
 	revokedLiveCells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
-	if err != nil || revokedLiveCells.TotalCount != 1 || len(revokedLiveCells.Items) != 1 ||
-		revokedLiveCells.Items[0].AssetID != secondAsset.ID {
-		t.Fatalf("direct revocation retained a stale authorized Cell: %+v %v", revokedLiveCells, err)
+	if err != nil || revokedLiveCells.TotalCount != 3 || len(revokedLiveCells.Items) != 3 {
+		t.Fatalf("legacy grant revocation hid valid Owner Cell: %+v %v", revokedLiveCells, err)
 	}
 	revokedLiveRange, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 100, 0)
-	if err != nil || revokedLiveRange.TotalCount != 1 || len(revokedLiveRange.Items) != 1 ||
-		revokedLiveRange.Items[0].AssetID != secondAsset.ID {
-		t.Fatalf("direct revocation leaked stale map member: %+v %v", revokedLiveRange, err)
+	if err != nil || revokedLiveRange.TotalCount != 3 || len(revokedLiveRange.Items) != 3 {
+		t.Fatalf("legacy grant revocation changed Owner map membership: %+v %v", revokedLiveRange, err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
 		Update("revoked_at", nil).Error; err != nil {
@@ -366,27 +360,26 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	// Consent expiry invalidates existing coordinates even without an index
-	// cleanup; extending expiry allows only the SAME revision to return.
+	// Legacy grant expiry and revision are never map eligibility gates.
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", bobAsset.ID).
 		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
-	if err != nil || peer.TotalCount != 0 {
-		t.Fatalf("expired grant remained visible: %+v %v", peer, err)
+	if err != nil || peer.TotalCount != 1 {
+		t.Fatalf("legacy expiry incorrectly hid current map position: %+v %v", peer, err)
 	}
 	expiredCells, err := queryBaiduPhotoMapCells(context.Background(), db, bob.ID, world)
-	if err != nil || expiredCells.TotalCount != 0 || len(expiredCells.Items) != 0 {
-		t.Fatalf("expired grant retained an indexed Cell: %+v %v", expiredCells, err)
+	if err != nil || expiredCells.TotalCount != 1 || len(expiredCells.Items) != 1 {
+		t.Fatalf("legacy grant expiry incorrectly hid valid Cell: %+v %v", expiredCells, err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", bobAsset.ID).
 		Updates(map[string]any{"expires_at": time.Now().UTC().Add(time.Hour), "revision": uint64(2)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
-	if err != nil || peer.TotalCount != 0 {
-		t.Fatalf("stale position reappeared after grant revision: %+v %v", peer, err)
+	if err != nil || peer.TotalCount != 1 {
+		t.Fatalf("legacy revision incorrectly hid current map position: %+v %v", peer, err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", bobAsset.ID).
 		Update("consent_revision", 2).Error; err != nil {
@@ -394,23 +387,24 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	}
 	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
 	if err != nil || peer.TotalCount != 1 {
-		t.Fatalf("current grant revision did not permit synthetic row: %+v %v", peer, err)
+		t.Fatalf("legacy version unexpectedly hid derived position: %+v %v", peer, err)
 	}
-	if err := revokeBaiduPhotoMapConsent(context.Background(), db, bob.ID, bobAsset.ID, 2); err != nil {
+	// Explicit index deletion is different from legacy authorization changes.
+	if err := purgeBaiduPhotoMapPosition(context.Background(), db, bob.ID, bobAsset.ID); err != nil {
 		t.Fatal(err)
 	}
 	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
 	if err != nil || peer.TotalCount != 0 {
-		t.Fatalf("revoked position remained visible: %+v %v", peer, err)
+		t.Fatalf("explicitly purged derived row remained visible: %+v %v", peer, err)
 	}
 	revokedCells, err := queryBaiduPhotoMapCells(context.Background(), db, bob.ID, world)
 	if err != nil || revokedCells.TotalCount != 0 || len(revokedCells.Items) != 0 {
-		t.Fatalf("revoked Owner still has counted map Cells: %+v %v", revokedCells, err)
+		t.Fatalf("purged Owner still has counted map Cells: %+v %v", revokedCells, err)
 	}
 	var deletedPositions int64
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", bobAsset.ID).
 		Count(&deletedPositions).Error; err != nil || deletedPositions != 0 {
-		t.Fatalf("revocation did not purge derived GPS: %d %v", deletedPositions, err)
+		t.Fatalf("explicit Owner purge did not delete derived position: %d %v", deletedPositions, err)
 	}
 
 	// Editing only the ORIGINAL GPS makes derived points invisible immediately.
@@ -418,7 +412,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 	page, err = queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 100, 0)
-	if err != nil || page.TotalCount != 1 || page.Items[0].AssetID != secondAsset.ID {
+	if err != nil || page.TotalCount != 2 {
 		t.Fatalf("stale GPS remained visible: %+v, %v", page, err)
 	}
 	// A changed node/metadata revision must fail even if original GPS is unchanged.
@@ -426,11 +420,11 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 	page, err = queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 100, 0)
-	if err != nil || page.TotalCount != 0 || len(page.Items) != 0 {
+	if err != nil || page.TotalCount != 1 || len(page.Items) != 1 {
 		t.Fatalf("stale node revision remained visible: %+v, %v", page, err)
 	}
 	staleCells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
-	if err != nil || staleCells.TotalCount != 0 || len(staleCells.Items) != 0 {
+	if err != nil || staleCells.TotalCount != 1 || len(staleCells.Items) != 1 {
 		t.Fatalf("GPS/source revision drift remained in map Cell count: %+v %v", staleCells, err)
 	}
 	// Disabled users cannot be read even by an internal query with their ID.

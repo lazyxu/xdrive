@@ -8,12 +8,12 @@ import (
 )
 
 const (
-	// These local ceilings only reduce risk; a genuine separately checked
-	// operator account entitlement must impose any LOWER Baidu account limit.
-	// No production Geoconv network caller is installed.
+	// A protected, enabled Server AK is the operational setting; no
+	// separate human entitlement proof or photo consent may gate the worker.
+	// Fleet capacity remains capped at 2 requests/second and 4,000/UTC day.
 	baiduGeoconvOwnerSecondRequests int64 = 2
 	baiduGeoconvFleetSecondRequests int64 = 2
-	baiduGeoconvOwnerDayRequests    int64 = 200
+	baiduGeoconvOwnerDayRequests    int64 = 4000
 	baiduGeoconvFleetDayRequests    int64 = 4000
 )
 

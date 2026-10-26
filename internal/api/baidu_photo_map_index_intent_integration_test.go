@@ -137,26 +137,16 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 		if err := db.Create(&asset).Error; err != nil {
 			t.Fatal(err)
 		}
-		sourceTime := media.UpdatedAt
-		grant := meta.BaiduPhotoMapConsent{
-			AssetID: asset.ID, OwnerID: alice.ID, Revision: 1,
-			AllowIndex: true, AllowBaiduConversion: true,
-			ExpiresAt:    time.Now().UTC().Add(time.Hour),
-			SourceNodeID: node.ID, SourceNodeRevision: node.Revision,
-			SourceMediaUpdatedAt: &sourceTime,
-			SourceLatitude:       &lat, SourceLongitude: &lng,
-		}
-		if err := db.Create(&grant).Error; err != nil {
-			t.Fatal(err)
-		}
+		// Do not create a per-photo map grant: live Owner GPS is sufficient.
 		return asset
 	}
 	first := addPhoto("original-zero-zero.jpg", 0, 0)
 	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), db, bob.ID, first.ID, 1); !errors.Is(err, errBaiduMapIndexIntentDenied) {
 		t.Fatal("different Owner can enqueue foreign photo")
 	}
-	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, first.ID, 2); !errors.Is(err, errBaiduMapIndexIntentDenied) {
-		t.Fatal("consent revision spoof accepted")
+	// The deprecated revision argument no longer participates in authorization.
+	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, first.ID, 0); err != nil {
+		t.Fatalf("Owner photo was denied without a consent revision: %v", err)
 	}
 	// Real concurrent admission on two independent connection pools must
 	// produce one persisted intent and must never read AK or export GPS.
@@ -184,7 +174,7 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 		t.Fatal(err)
 	}
 	if row.Status != baiduMapIndexQueued || row.Attempts != 0 ||
-		row.OwnerID != alice.ID || row.ConsentRevision != 1 || row.SessionVersion != 1 ||
+		row.OwnerID != alice.ID || row.ConsentRevision != 0 || row.SessionVersion != 1 ||
 		row.PrimaryNodeID != first.PrimaryNodeID || row.LeaseToken != "" {
 		t.Fatalf("invalid durable snapshot: %+v", row)
 	}
@@ -233,16 +223,18 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 		t.Fatal("cancelled work was re-claimed")
 	}
 	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, first.ID, 1); err == nil {
-		t.Fatal("cancelled job was re-enqueued without a newer explicit grant")
+		t.Fatal("cancelled job was replayed without a fresh source generation")
 	}
 	if err := cancelBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, first.ID); err != nil {
 		t.Fatal("idempotent cancel failed")
 	}
-	if err := revokeBaiduPhotoMapConsent(context.Background(), db, alice.ID, first.ID, 1); err != nil {
-		t.Fatalf("existing Owner consent revocation failed: %v", err)
+	// Cancellation durability is independent of any extra photo-map consent.
+	var grants int64
+	if err := peer.Model(&meta.BaiduPhotoMapConsent{}).Count(&grants).Error; err != nil || grants != 0 {
+		t.Fatalf("index queue implicitly created grants: %d %v", grants, err)
 	}
-	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, first.ID, 1); err == nil {
-		t.Fatal("revoked consent permitted new job")
+	if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, first.ID, 22); err == nil {
+		t.Fatal("legacy revision bypassed a cancelled job")
 	}
 	var cancelled meta.BaiduPhotoMapIndexIntent
 	if err := peer.Where("asset_id = ?", first.ID).Take(&cancelled).Error; err != nil ||
@@ -327,7 +319,7 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, second.ID); err == nil {
 		t.Fatal("terminal failed attempt re-dispatched")
 	}
-	// Session rotation invalidates even a previously valid consent-linked
+	// Session rotation invalidates even a previously valid Owner-linked
 	// claim. No raw GPS/AK or derived index is created by this test.
 	if err := db.Model(&meta.User{}).Where("id = ?", alice.ID).
 		Update("session_version", 2).Error; err != nil {

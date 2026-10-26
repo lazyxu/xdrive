@@ -15,8 +15,7 @@ import (
 
 // P0-01: mutually exclusive diagnostics only. No source coordinates, media
 // identities, permits or provider responses leave the Server in this result.
-// Eligible must use the original signed-map read predicate, not an optimistic
-// client approximation of a consent or a derived position.
+// Eligibility uses the same Owner/source-fenced predicate as signed map reads.
 type baiduPhotoMapCoverageReasons struct {
 	ValidGPSAssets             int64
 	EligibleBD09Assets         int64
@@ -29,6 +28,10 @@ type baiduPhotoMapCoverageReasons struct {
 func (r baiduPhotoMapCoverageReasons) valid() bool {
 	if r.ValidGPSAssets < 0 || r.EligibleBD09Assets < 0 ||
 		r.EligibleBD09Assets > r.ValidGPSAssets {
+		return false
+	}
+	// Compatibility-only fields may never revive per-photo authorization.
+	if r.ConsentUnavailableAssets != 0 || r.ConsentSourceChangedAssets != 0 {
 		return false
 	}
 	remaining := r.ValidGPSAssets - r.EligibleBD09Assets
@@ -80,34 +83,21 @@ func queryBaiduPhotoMapCoverageReasons(
 		eligible := baiduPhotoMapOwnerEligibleQuery(readCtx, tx, ownerID, world, projection).
 			Select("p.asset_id AS asset_id")
 
-		// Each PhotoAsset, consent and BD09 derived row is unique by asset_id.
-		// CASE order is authoritative: a no-consent row can never be counted
-		// as a missing-index candidate simply because it has no position.
+		// Lack of a map grant is never a reason to hide an Owner photo.
 		const reason = `CASE
 			WHEN eligible.asset_id IS NOT NULL THEN 'eligible'
-			WHEN c.asset_id IS NULL OR c.revision <= 0 OR
-				c.allow_index IS NOT TRUE OR c.allow_baidu_conversion IS NOT TRUE OR
-				c.revoked_at IS NOT NULL OR c.expires_at <= clock_timestamp()
-				THEN 'consent_unavailable'
-			WHEN c.source_node_id IS DISTINCT FROM src.node_id OR
-				c.source_node_revision IS DISTINCT FROM src.node_revision OR
-				c.source_media_updated_at IS DISTINCT FROM src.media_updated_at OR
-				c.source_latitude IS DISTINCT FROM src.source_latitude OR
-				c.source_longitude IS DISTINCT FROM src.source_longitude
-				THEN 'consent_source_changed'
 			WHEN p.asset_id IS NULL THEN 'derived_missing'
 			ELSE 'derived_invalid'
 		END AS reason`
 		candidates := tx.WithContext(readCtx).Table("(?) AS src", source).
 			Joins("LEFT JOIN (?) AS eligible ON eligible.asset_id = src.asset_id", eligible).
-			Joins("LEFT JOIN xd_baidu_photo_map_consents AS c ON c.asset_id = src.asset_id AND c.owner_id = src.owner_id").
 			Joins("LEFT JOIN xd_baidu_photo_map_positions AS p ON p.asset_id = src.asset_id AND p.owner_id = src.owner_id").
 			Select(reason)
 		return tx.WithContext(readCtx).Table("(?) AS classified", candidates).Select(`
 			COUNT(*) AS valid_gps_assets,
 			COUNT(*) FILTER (WHERE classified.reason = 'eligible') AS eligible_bd09_assets,
-			COUNT(*) FILTER (WHERE classified.reason = 'consent_unavailable') AS consent_unavailable_assets,
-			COUNT(*) FILTER (WHERE classified.reason = 'consent_source_changed') AS consent_source_changed_assets,
+			0::bigint AS consent_unavailable_assets,
+			0::bigint AS consent_source_changed_assets,
 			COUNT(*) FILTER (WHERE classified.reason = 'derived_missing') AS derived_missing_assets,
 			COUNT(*) FILTER (WHERE classified.reason = 'derived_invalid') AS derived_invalid_assets
 		`).Scan(&result).Error

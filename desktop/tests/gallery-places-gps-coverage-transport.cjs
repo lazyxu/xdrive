@@ -35,7 +35,7 @@ test('coverage accepts only coherent Owner aggregates, never coordinates or part
     {...counts,browser_ak:'public'},
   ]) assert.equal(validate(bad),null)
 })
-test('P0-01 coverage interpretation is separate from map release or provider consent',()=>{
+test('P0-01 coverage interpretation is separate from SDK release; Server conversion requires enabled AK',()=>{
   const state=mod.exports.xDriveBaiduMapCoverageState
   assert.equal(state(null),'unverified')
   assert.equal(state({...counts,map_runtime_verified:true}),'unverified')
@@ -49,7 +49,14 @@ test('P0-01 coverage interpretation is separate from map release or provider con
   const ui=read('ui/shared/src/mui/MediaGalleryMapGPSCoverage.tsx')
   assert.match(ui,/xDriveBaiduMapCoverageState\(current\.data\)/)
   assert.match(ui,/data-xdrive-map-gps-coverage-explanation/)
-  assert.match(ui,/不会自动向百度发送这些坐标/)
+  // Static coverage inspection itself never dispatches; the independent
+  // bounded Server worker DOES convert current GPS once Admin enables
+  // the service and configures a valid Server AK. Do not revive the old
+  // blanket claim that no automatic Baidu conversion ever occurs.
+  assert.doesNotMatch(ui,/不会自动向百度发送这些坐标/)
+  assert.match(ui,/管理员启用百度地图服务并配置有效 Server AK 后/)
+  assert.match(ui,/后台自动向百度发送当前 GPS 坐标进行转换/)
+  assert.match(ui,/服务关闭或未配置时不会发送/)
   assert.match(ui,/这不代表百度动态地图已运行成功/)
 })
 

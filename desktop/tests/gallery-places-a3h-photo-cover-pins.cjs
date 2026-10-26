@@ -28,7 +28,7 @@ const bridgeCode=loadTs('ui/shared/src/media-gallery-baidu-jsapi4-bd09-photo.ts'
 const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:41}
 const sample={cell_x:1,cell_y:1,photo_count:99999,
   asset_id:9,node_id:19,node_revision:7,latitude:39.4,longitude:116.2}
-const page=list=>({coordinate_space:'bd09ll',index_scope:'explicit_opt_in_only',
+const page=list=>({coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
   grid_columns:8,grid_rows:8,total_count:list.reduce((n,p)=>n+p.photo_count,0),cells:list})
 class Point {constructor(lng,lat){this.lng=lng;this.lat=lat}}
 const projection={
@@ -76,6 +76,9 @@ test('A3h only projects original Server-approved BD09 point; fixed CSS bounds an
     page([{...sample,node_revision:Number.MAX_SAFE_INTEGER+1}]),
     page([{...sample,latitude:Infinity}]),
     {...valid,coordinate_space:'wgs84'},
+    // Old per-photo Consent scope is not accepted as a current Owner GPS
+    // index; never silently confuse the two wire contracts.
+    {...valid,index_scope:'explicit_opt_in_only'},
   ]) assert.equal(cover.xDriveProjectBaiduPhotoCoverPins(bad,projection,{Point},640,480),null)
   assert.equal(cover.xDriveProjectBaiduPhotoCoverPins(valid,{}, {Point},640,480),null)
   assert.equal(cover.xDriveProjectBaiduPhotoCoverPins(valid,{pointToPixel(){return {x:NaN,y:7}}},{Point},640,480),null)

@@ -59,8 +59,9 @@ func finiteBaiduCellDimension(value float64) bool {
 }
 
 // queryBaiduPhotoMapCells uses ONE PostgreSQL statement and the EXACT SAME
-// Owner+PhotoAsset+Node+MediaMetadata+consent/revision predicate as the native
-// photo viewport. COUNT(*) OVER(...) is computed BEFORE one representative
+// Owner+PhotoAsset+Node+MediaMetadata current-source predicate as the
+// native photo viewport; no per-photo Consent is joined or required.
+// COUNT(*) OVER(...) is computed BEFORE one representative
 // per bin is selected. This prevents showing the first 100 items as if they
 // described a 100k library, without shipping 100k coordinates to a client.
 //
@@ -74,8 +75,8 @@ func queryBaiduPhotoMapCells(
 	return queryBaiduPhotoMapCellsScoped(ctx, db, ownerID, bounds, nil, mediaQueryOptions{})
 }
 
-// A filtered map is exactly the intersection of a current consented BD09
-// viewport and the Gallery's Owner/Album/Filter membership SQL. The filtered
+// A filtered map is the intersection of current derived BD09 Owner positions
+// and the Gallery's Owner/Album/Filter membership SQL. The filtered
 // subset is evaluated BEFORE the 8x8 counts and representative selection.
 func queryBaiduPhotoMapCellsScoped(
 	ctx context.Context, db *gorm.DB, ownerID uint64,

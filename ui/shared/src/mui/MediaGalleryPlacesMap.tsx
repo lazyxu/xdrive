@@ -439,7 +439,7 @@ export function XDriveMediaGalleryPlacesMap({
       {mapMode === 'prototype' && !desktopOnly ? (
         <Typography variant="caption" color="text.secondary"
           data-xdrive-places-prototype-safety sx={{ display: 'block', px: 1.5, pb: 1 }}>
-          同页地图与安全隔离版使用相同的已授权 BD-09 照片范围，但第三方百度脚本直接运行在图库主文档，不具备独立 Origin 隔离；切换安全版会重新加载页面。
+          同页地图与安全隔离版使用同一份当前 Owner 的 BD-09 派生位置，但第三方百度脚本直接运行在图库主文档，不具备独立 Origin 隔离；切换安全版会重新加载页面。
         </Typography>
       ) : null}
 
@@ -479,11 +479,11 @@ export function XDriveMediaGalleryPlacesMap({
           ) : null}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          两种模式只显示当前账户获授权且来源有效的 BD-09 照片；地图 Count、相册筛选、Cell/Camera 照片墙和 Viewer 均使用同一 Server Range。
+          两种模式只显示当前账户有权访问且已派生有效 BD-09 坐标的照片，无需逐张地图授权；地图 Count、相册筛选、Cell/Camera 照片墙和 Viewer 共用一个 Server Range。
         </Typography>
         {placeListScoped ? (
           <Typography variant="caption" color="text.secondary">
-            当前相册或筛选已生效：请从地图标记或「查看此地图的全部照片」进入已授权照片范围；普通地点和附近操作暂不可用。
+            当前相册或筛选已生效：请从地图标记或「查看此地图的全部照片」进入对应的 Owner 照片范围；普通地点和附近操作暂不可用。
           </Typography>
         ) : null}
       </Box>

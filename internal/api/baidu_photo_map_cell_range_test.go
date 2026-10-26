@@ -357,16 +357,24 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if authorized, err := baiduMapViewportPageMembersStillAuthorized(
-		context.Background(), db, alice.ID, bounds, viewportFirst); err != nil || authorized {
-		t.Fatalf("revoked map media survived an in-flight page: allowed=%t err=%v", authorized, err)
+		context.Background(), db, alice.ID, bounds, viewportFirst); err != nil || !authorized {
+		t.Fatalf("legacy consent edit incorrectly invalidated Owner map page: allowed=%t err=%v", authorized, err)
 	}
-	if next, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, bounds); err != nil || baiduPhotoMapCellSelectionCurrent(target, next) {
-		t.Fatalf("revoked cell proof remained current: %+v %v", next, err)
+	if next, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, bounds); err != nil || !baiduPhotoMapCellSelectionCurrent(target, next) {
+		t.Fatalf("legacy consent edit unexpectedly invalidated Owner cell: %+v %v", next, err)
 	}
 	revoked, err := ownerServer.queryMediaItemRange(context.Background(), alice.ID,
 		mediaQueryOptions{BaiduCell: &target}, "", 100, 0)
-	if err != nil || revoked.TotalCount != 1 || revoked.Items[0].Node.ID != n1.ID {
-		t.Fatalf("revoked photo still visible in Range: %+v %v", revoked, err)
+	if err != nil || revoked.TotalCount != 2 || len(revoked.Items) != 2 {
+		t.Fatalf("legacy consent edit unexpectedly changed Owner Cell Range: %+v %v", revoked, err)
+	}
+	// Gallery sorting is not an authorization predicate. Both originals
+	// must remain present regardless of list order, with no foreign Node.
+	afterLegacyConsent := map[uint64]bool{
+		revoked.Items[0].Node.ID: true, revoked.Items[1].Node.ID: true,
+	}
+	if len(afterLegacyConsent) != 2 || !afterLegacyConsent[n1.ID] || !afterLegacyConsent[n2.ID] {
+		t.Fatalf("legacy consent edit changed original Owner membership: %+v", revoked)
 	}
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", n1.ID).
 		Update("latitude", 2.1).Error; err != nil {
@@ -374,8 +382,9 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	}
 	invalid, err := ownerServer.queryMediaItemRange(context.Background(), alice.ID,
 		mediaQueryOptions{BaiduCell: &target}, "", 100, 0)
-	if err != nil || invalid.TotalCount != 0 {
-		t.Fatalf("changed original GPS leaked: %+v %v", invalid, err)
+	if err != nil || invalid.TotalCount != 1 || len(invalid.Items) != 1 ||
+		invalid.Items[0].Node.ID != n2.ID {
+		t.Fatalf("edited source was not excluded or untouched Owner media was lost: %+v %v", invalid, err)
 	}
 	// The SQL also supports real antimeridian choices without reverse coords.
 	wrap := baiduPhotoMapBounds{

@@ -8,9 +8,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// These callbacks can only be supplied by trusted in-process Server code.
-// They are NOT wired to a production resolver, Router or background worker.
-// In particular, a configured Server AK is NOT proof of legal Geoconv rights.
+// These callbacks are supplied only by trusted in-process Server code.
+// The bounded Owner queue consumer now uses the current enabled Web-Service
+// Server AK directly, without an independent human/operator proof switch.
+// No HTTP/IPC/browser caller can supply these callbacks.
 type baiduGeoconvPrivateServerAK func(context.Context, uint64) (string, error)
 type baiduGeoconvPrivateForwardSend func(
 	context.Context, string, []baidumapjsapi.WGS84Coordinate,
@@ -42,8 +43,8 @@ func finiteBaiduGeoconvResult(point baidumapjsapi.BD09Coordinate) bool {
 		point.Longitude >= -180 && point.Longitude <= 180
 }
 
-// The resulting converter is only used INSIDE the existing account-first,
-// capacity-fenced, source/consent/lease-checked single-photo Server executor.
+// The converter runs only INSIDE the existing active-Owner, bounded fleet
+// capacity, real source/lease-checked single-photo Server executor.
 // Recheck the real account entitlement a THIRD time immediately before
 // reading the encrypted Server AK. The AK is never kept in a durable task,
 // logged, passed via REST/Agent/IPC/JS, or returned in error text.
@@ -87,13 +88,11 @@ func baiduGeoconvPrivateForwardConverter(
 	}, nil
 }
 
-// ONE private, pre-admitted Server entry point. The trusted account permit,
-// source-bound consent, cross-replica flight, exact task lease, PostgreSQL
-// second/minute/day quota and 8-second Context are enforced by the existing
-// executor BEFORE the credential callback and official forward conversion.
-//
-// There is NO production caller, Server-AK resolver, scheduler or HTTP route;
-// nothing in Web/Mobile Web/PWA/Desktop can trigger this function.
+// Private Server entry point. The trusted enabled Server-AK + active Owner
+// check, cross-replica flight, exact source/lease, PostgreSQL second/minute/day
+// quota and eight-second Context are enforced before official conversion.
+// The existing bounded background consumer is its only production caller;
+// there is no per-photo consent, manual operator proof or public HTTP route.
 func executeBaiduPhotoMapIndexOfficialForward(
 	ctx context.Context, db *gorm.DB, ownerID, assetID uint64,
 	accountPermit baiduGeoconvAccountPermit, serverAK baiduGeoconvPrivateServerAK,

@@ -1743,7 +1743,7 @@ export class XDriveApi {
       { signal, cache: 'no-store' },
     ).then(page => {
       if (page.coordinate_space !== 'bd09ll' ||
-          page.index_scope !== 'explicit_opt_in_only' ||
+          page.index_scope !== 'owner_gps_auto_index' ||
           page.offset !== offset || page.limit !== limit ||
           !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
           !Array.isArray(page.items) || page.items.length > limit ||

@@ -7485,7 +7485,7 @@ export function XDriveMediaGallery({
                     ? mediaTypeLabel || '媒体类型'
                     : '图库')
   const gallerySubtitle = nativeCellWall
-    ? '当前地图已授权的照片与视频 · 精确范围和总数由 Server 返回'
+    ? '当前地图范围内的照片与视频 · 精确范围和总数由 Server 返回'
     : currentFolderView
     ? `${currentFolderView.source.source_name} · ${currentFolderView.current.path} · 当前目录 ${currentFolderView.current.direct_media_count.toLocaleString('zh-CN')} 个媒体 · ${currentFolderView.current.child_folder_count.toLocaleString('zh-CN')} 个子目录`
     : currentCleanupReview
@@ -7517,7 +7517,7 @@ export function XDriveMediaGallery({
             : section === 'people'
               ? '已确认人物、待审核建议与本地宠物类型集合'
               : section === 'places'
-                ? '全部有效 GPS 照片直接聚集，不需要逐张地图授权'
+                ? '有效 GPS 照片自动参与地图索引，无需逐张授权；可用派生位置按范围显示'
                 : section === 'favorites'
                   ? '你收藏的照片和视频'
                   : section === 'trash'
@@ -9291,7 +9291,7 @@ export function XDriveMediaGallery({
       ) : null}
       {showPlacesIndex && places.length === 0 && !loading && placesStatus === 'ready' ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
-          <Typography color="text.secondary">没有带地点信息的照片（当前地点索引）；上方地图仍可独立查询已授权照片</Typography>
+          <Typography color="text.secondary">没有带地点信息的照片（当前地点索引）；上方地图仍可查看当前账户的定位照片</Typography>
         </Paper>
       ) : null}
       {showPeopleIndex &&

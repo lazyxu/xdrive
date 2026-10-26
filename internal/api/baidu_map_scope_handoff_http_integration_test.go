@@ -391,16 +391,31 @@ func testPlacesRealGinBD09PhotoRanges(
 	if _, code := cellItems(foreignToken, all.Cells[0], ""); code == http.StatusOK {
 		t.Fatal("cross-Owner representative authorized by original Gin Cell Range")
 	}
-	// A revoked authorization must make a previously accepted Cell claim stale.
+	// A legacy photo-map Consent revoke no longer changes normal Owner media ACL
+	// or map membership. Older rows remain migration-only historical state.
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", first.ID).
 		Update("revoked_at", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
+	if page, code := cellItems(ownerToken, all.Cells[0], ""); code != http.StatusOK || page.TotalCount != 9 {
+		t.Fatalf("legacy Consent unexpectedly hid an Owner photo: code=%d count=%d", code, page.TotalCount)
+	}
+	unchanged, code := readCells(ownerToken, "")
+	if code != http.StatusOK || unchanged.TotalCount != 9 {
+		t.Fatalf("legacy Consent unexpectedly changed Owner Cells: code=%d count=%d", code, unchanged.TotalCount)
+	}
+	// Genuine source invalidation differs from photo Consent: changing the
+	// original Node revision must invalidate all stale BD-09 Cell claims.
+	if err := db.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ?", first.PrimaryNodeID, owner.ID).
+		Update("revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
 	if _, code := cellItems(ownerToken, all.Cells[0], ""); code == http.StatusOK {
-		t.Fatal("revoked Owner Consent allowed a stale Gin Cell Range")
+		t.Fatal("stale Node revision allowed an old Gin Cell Range")
 	}
 	remaining, code := readCells(ownerToken, "")
 	if code != http.StatusOK || remaining.TotalCount != 8 {
-		t.Fatalf("revoked photo still counted by Owner Cells, code=%d count=%d", code, remaining.TotalCount)
+		t.Fatalf("stale Node revision still counted by Owner Cells: code=%d count=%d", code, remaining.TotalCount)
 	}
 }

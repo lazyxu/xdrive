@@ -100,10 +100,8 @@ func queryBaiduPhotoMapViewport(
 	}, nil
 }
 
-// baiduPhotoMapOwnerEligibleQuery is the SINGLE Owner/consent/source-version
-// predicate shared by precise photo Range and bounded 100k-safe map grid cells.
-// Do not loosen any join here: stale or revoked index rows must disappear
-// before counts, grouping, or sampled geometry can be computed.
+// Shared Owner/source-version predicate for map photos and bounded Cells.
+// No extra per-photo map consent; preserve current Node/GPS/revision checks.
 func baiduPhotoMapOwnerEligibleQuery(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 	bounds baiduPhotoMapBounds, projection string,
@@ -112,7 +110,6 @@ func baiduPhotoMapOwnerEligibleQuery(
 		Table("xd_baidu_photo_map_positions AS p").
 		Joins("JOIN xd_users AS u ON u.id = p.owner_id AND u.disabled_at IS NULL AND u.must_change_password = FALSE").
 		Joins("JOIN xd_photo_assets AS pa ON pa.id = p.asset_id AND pa.owner_id = p.owner_id AND pa.primary_node_id = p.primary_node_id").
-		Joins("JOIN xd_baidu_photo_map_consents AS c ON c.asset_id = p.asset_id AND c.owner_id = p.owner_id AND c.revision = p.consent_revision AND c.revision > 0 AND c.allow_index = TRUE AND c.allow_baidu_conversion = TRUE AND c.revoked_at IS NULL AND c.expires_at > clock_timestamp() AND c.source_node_id = p.primary_node_id AND c.source_node_revision = p.node_revision AND c.source_media_updated_at = p.media_updated_at AND c.source_latitude = p.source_latitude AND c.source_longitude = p.source_longitude").
 		Joins("JOIN xd_nodes AS n ON n.id = p.primary_node_id AND n.owner_id = p.owner_id AND n.deleted_at IS NULL AND n.revision = p.node_revision AND n.type = ?", meta.NodeTypeFile).
 		Joins("JOIN xd_media_metadata AS m ON m.node_id = n.id AND m.owner_id = p.owner_id AND m.node_revision = n.revision AND m.updated_at = p.media_updated_at").
 		Where(

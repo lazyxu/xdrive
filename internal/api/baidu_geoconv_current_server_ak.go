@@ -11,16 +11,15 @@ import (
 
 const baiduGeoconvServerAKReadTimeout = 2 * time.Second
 
-// currentBaiduGeoconvServerAK is a PRIVATE credential callback for a future
-// independently licensed Geoconv dispatcher. It is not wired to any caller,
-// HTTP route, Agent IPC, JSAPI loader, scheduled worker or startup path.
-// Only the existing Server Static/Web-Service AK can satisfy this callback;
-// the separate encrypted JSAPI Browser AK must never be used for Geoconv.
+// currentBaiduGeoconvServerAK serves only the in-process, bounded Owner
+// index consumer. Admin enabled + valid current Static/Web-Service Server AK
+// is sufficient: no separately pinned/reviewed evidence or per-photo grant.
+// The encrypted JSAPI Browser AK is never accepted for Geoconv.
 //
-// An AK is not a Baidu account entitlement. The existing source/consent,
-// per-account permission, fleet/Owner lease and quota checks remain mandatory
-// before a trusted dispatcher could invoke this function. Nothing here permits
-// provider egress or changes JSAPI4 runtime_enabled=false.
+// Every use still checks active Owner/session, current saved configuration,
+// current source, cross-replica lease, quotas and cancellation. AK is never
+// surfaced to Web/Agent/Child or stored with a photo. This does not change
+// the independent JSAPI4 runtime state.
 func (s *Server) currentBaiduGeoconvServerAK(ctx context.Context, ownerID uint64) (string, error) {
 	denied := errBaiduGeoconvDispatchUnavailable
 	if s == nil || s.DB == nil || ctx == nil || ctx.Err() != nil ||

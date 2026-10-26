@@ -98,7 +98,7 @@ func TestBaiduNativeViewportNeverSerializesOriginalGPS(t *testing.T) {
 	text := string(out)
 	for _, field := range []string{
 		`"coordinate_space":"bd09ll"`,
-		`"index_scope":"explicit_opt_in_only"`,
+		`"index_scope":"owner_gps_auto_index"`,
 		`"asset_id":12`, `"node_id":34`,
 		`"total_count":200`, `"has_more":true`,
 	} {

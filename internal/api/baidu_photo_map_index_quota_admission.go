@@ -9,24 +9,21 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// This private predicate must eventually be backed by independently checked,
-// current Baidu account entitlement and permitted self-host/Electron/PWA usage.
-// It is NEVER a browser flag, stored AK-present bit, synthetic ReleaseGates
-// boolean, successful static-map request or administrative "enable" switch.
-//
-// No production implementation or caller exists in this phase; therefore no
-// external conversion can be triggered by queues, REST, Agent IPC or startup.
+// This private callback is implemented by the Server's live Owner and current
+// enabled Server/Web-Service AK check. There is no separately reviewed licence
+// file, pinned operator signer, per-photo opt-in or external manual gate.
+// A browser flag, raw client AK or synthetic test ReleaseGates cannot satisfy
+// this callback. The existing quotas, cancellation and source locks are always
+// enforced before provider egress.
 type baiduGeoconvAccountPermit func(context.Context, uint64) error
 
 var errBaiduGeoconvDispatchUnavailable = errors.New("baidu coordinate index dispatch unavailable")
 
-// executeBaiduPhotoMapIndexQuotaAdmitted is a PRIVATE, single-photo boundary
-// between a trusted provider-account permit, PostgreSQL-wide quota reservation,
-// the existing source/consent/lease-fenced executor, and a trusted converter.
-//
-// Do not add a background scan, HTTP/IPC route, Server AK accessor or real
-// provider callback until licence, account quota and operational release proof
-// exist. Synthetic account/converter callbacks in tests do not establish them.
+// executeBaiduPhotoMapIndexQuotaAdmitted composes the trusted active-Owner +
+// configured Server AK permit, PostgreSQL fleet+Owner flight/quota admission,
+// the existing source/lease-fenced executor and official HTTPS converter.
+// No independent manual licence/signature check or extra per-photo consent.
+// Synthetic callbacks remain offline test seams, never an HTTP/IPC switch.
 //
 // Two account checks are intentional. The first prevents claim/attempt changes
 // on a denied account; the second runs AFTER the exact source-bound DB claim,
@@ -82,7 +79,8 @@ func executeBaiduPhotoMapIndexQuotaAdmitted(
 			// coordinates, secrets or photo identities and serializes the
 			// fleet before this Owner across independent PostgreSQL pools.
 			if err := reserveBaiduGeoconvQuota(workCtx, privateDB, actualOwner, 1); err != nil {
-				return denied
+				// This capacity pause must not burn the photo's attempts.
+				return errBaiduGeoconvQuotaDenied
 			}
 			return nil
 		},

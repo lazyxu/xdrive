@@ -23,7 +23,7 @@ const {xDriveVerifiedMapPhotoProjections, xDriveCurrentMapPhotoCollections} = fi
 const bounds = () => ({coordinate_space:'bd09ll',west:118,south:30,east:122,north:33})
 const cell = () => ({cell_x:3,cell_y:4,asset_id:23,node_id:45,node_revision:7,photo_count:2})
 const selection = () => ({...cell(),bounds:bounds()})
-const page = () => ({coordinate_space:'bd09ll',index_scope:'explicit_opt_in_only',
+const page = () => ({coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
   grid_columns:8,grid_rows:8,total_count:2,cells:[cell()]})
 const projected = () => ({width:390,height:700,cells:[
   {selection:selection(),count:2,x:194,y:270},
@@ -63,6 +63,10 @@ test('untrusted SDK cannot spoof count, Owner identity, bounds or pixel geometry
       'malformed SDK projection must produce no Parent photo cover')
   }
   assert.deepEqual(xDriveVerifiedMapPhotoProjections(page(),valid,[]),[])
+  // Both SDK Hosts reject stale consent-era scopes instead of producing
+  // misleading cover counts or dropping current Owner photos silently.
+  assert.deepEqual(xDriveVerifiedMapPhotoProjections(
+    {...page(),index_scope:'explicit_opt_in_only'},valid,authorized),[])
   assert.deepEqual(xDriveVerifiedMapPhotoProjections(
     {...page(),total_count:3},valid,authorized),[])
   assert.deepEqual(xDriveVerifiedMapPhotoProjections(
