@@ -186,10 +186,12 @@ test('legacy Baidu deep links expose signed release evidence instead of remounti
   assert.match(page, /mode="all"/)
   assert.match(compact, /mode="all"/)
   assert.match(jsapi, /id="dependency-baidu-map-verify-header"/)
-  assert.match(jsapi, /Server 签名发布、运行状态与手动 Loader 检测/)
+  assert.match(jsapi, /动态地图服务状态与按需 Loader 诊断/)
+  assert.doesNotMatch(jsapi, /Server 签名发布、运行状态与手动 Loader 检测/)
   assert.match(jsapi, /config && mode !== 'verify'/)
   assert.match(jsapi, /mode !== 'config' &&/)
-  assert.match(jsapi, /请查看下方签名发布与检测状态中的阻断原因/)
+  assert.match(jsapi, /请查看下方 Server 自动运行状态与具体故障原因/)
+  assert.doesNotMatch(jsapi, /请查看下方签名发布与检测状态中的阻断原因/)
 })
 
 test('GeoNames and Photo Auto do not duplicate runtime summaries into config/history', () => {
