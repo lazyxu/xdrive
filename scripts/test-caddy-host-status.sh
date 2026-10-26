@@ -409,8 +409,14 @@ test "$(json_value "$status" state)" = unknown
 # the old runner (which could be performing a server update).
 mkdir -p "$scratch/bin"
 cp "$ROOT/scripts/server-control.sh" "$scratch/bin/server-control.sh"
-chmod 0700 "$scratch/bin/server-control.sh"
+# The installed observer also requires the restricted, read-only .env parser.
+# A current runtime snapshot without this parser cannot reestablish Host env
+# authority after an old Host Control runner survives an upgrade.
+cp "$ROOT/scripts/caddy-env-config.py" "$scratch/bin/caddy-env-config.py"
+chmod 0700 "$scratch/bin/server-control.sh" "$scratch/bin/caddy-env-config.py"
 printf 'XD_DOMAIN=\n' > "$scratch/config/.env"
+# Read-only Host parser must observe a private, 0600 .env; retain its strict mode check.
+chmod 0600 "$scratch/config/.env"
 printf 'true|healthy\n' > "$XD_CADDY_TEST_FIXTURE"
 printf '%s\n' "$BASHPID" > "$dir/runner.pid"
 rm -f -- "$dir/caddy-runner-source.sha" "$status"
@@ -424,6 +430,11 @@ done
 [[ -s "$status" ]] || { echo "legacy Host Control kept heartbeat but no new Caddy snapshot" >&2; exit 1; }
 test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" tls_check_supported)" = true
+# The recovered runtime and sanitized Host .env are independent witnesses.
+# Keep the real parser in the fixture; do not stub env freshness to green.
+host_env="$dir/caddy-env-observed.json"
+[[ -s "$host_env" ]] || { echo "observer did not recover sanitized Host env" >&2; exit 1; }
+test "$(json_value "$host_env" protocol)" = xdrive.caddy.host-env.v1
 test "$(sha256sum "$dir/active.json" | awk '{print $1}')" = "$original_active_sha"
 test -f "$dir/caddy-observer.pid"
 # A cooperative observer stop is NOT a Caddy or Host Control stop.

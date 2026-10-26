@@ -1528,6 +1528,19 @@ caddy_host_snapshot_fresh() {
   (( modified >= now - 45 && modified <= now + 15 ))
 }
 
+# Host .env authority requires its OWN fresh fixed-name observation. A live
+# gateway snapshot is not evidence that the desired HTTPS/AliDNS configuration
+# is available to the Server after an older Host Runner survived an upgrade.
+caddy_host_env_snapshot_fresh() {
+  local dir="$1" snapshot modified now
+  snapshot="$dir/caddy-env-observed.json"
+  [[ -f "$snapshot" && ! -L "$snapshot" ]] || return 1
+  modified="$(stat -c %Y -- "$snapshot" 2>/dev/null)" || return 1
+  now="$(date +%s)" || return 1
+  [[ "$modified" =~ ^[0-9]{1,12}$ && "$now" =~ ^[0-9]{1,12}$ ]] || return 1
+  (( modified >= now - 45 && modified <= now + 15 ))
+}
+
 # The main runner, not the compatibility observer, writes this source-bound
 # pulse ONLY after its own fixed Caddy snapshot sampler has returned.
 # No pulse authorizes gateway actions or marks an admin revision applied.
@@ -1998,8 +2011,16 @@ caddy_compat_observe_cmd() {
     pid="$(cat "$dir/runner.pid" 2>/dev/null || true)"
     if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null &&
         caddy_host_control_main_sample_since "$dir" "$pid" "$main_pulse_at_entry" &&
-        caddy_host_snapshot_fresh "$dir"; then
+        caddy_host_snapshot_fresh "$dir" &&
+        caddy_host_env_snapshot_fresh "$dir"; then
       return 0
+    fi
+    # A pre-upgrade long-lived Bash runner may still publish the gateway's
+    # heartbeat/runtime snapshot but not the newly required Host .env snapshot.
+    # Read only the fixed four-key Host state through the restricted parser.
+    # Its output is sanitized; neither the whole .env nor keys reach the bridge.
+    if ! caddy_env_refresh; then
+      echo "xDrive Caddy host .env read-only observation unavailable" >&2
     fi
     if ! caddy_host_refresh; then
       # The original snapshot reader will remain fail-closed. Do not emit
@@ -2480,7 +2501,8 @@ start_cmd() {
     # Even a current-source Runner needs a read-only repair when the fixed
     # Caddy snapshot is absent or stale; its code marker is not health proof.
     if ! caddy_host_control_current_runner "$dir" "$pid" ||
-        ! caddy_host_snapshot_fresh "$dir"; then
+        ! caddy_host_snapshot_fresh "$dir" ||
+        ! caddy_host_env_snapshot_fresh "$dir"; then
       start_caddy_compat_observer "$dir" || true
     fi
     echo "Host control already running (pid $pid)."

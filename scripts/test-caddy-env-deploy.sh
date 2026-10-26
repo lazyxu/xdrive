@@ -698,4 +698,46 @@ value=json.load(open(sys.argv[1]))
 assert value["state"] == "deployed" and value["request_id"] == "757575757575757575757575"
 PY_RESTART
 
+
+# Regression: a long-lived pre-upgrade Host Control process may still publish
+# heartbeat + the gateway witness, but cannot publish the new Host .env read.
+# Starting the newly installed script MUST launch the read-only compatibility
+# observer on that condition, without terminating the old runner or Docker.
+cp "$ROOT/scripts/server-control.sh" "$XD_CONFIG_DIR/bin/server-control.sh"
+dir="$(prepare_dir)"
+printf '%s\n' "$$" > "$dir/runner.pid"
+rm -f -- "$dir/caddy-env-observed.json"
+# The source-matched, live gateway/main pulse is intentionally present here.
+# This is exactly the false-success condition in the old observer.
+caddy_host_control_current_runner() { return 0; }
+caddy_host_control_main_sample_since() { return 0; }
+caddy_host_snapshot_fresh() { return 0; }
+caddy_host_refresh() { return 0; }
+probe="$TMP/caddy-env-observer-started"
+start_caddy_compat_observer() { printf 'started\n' > "$probe"; }
+start_cmd >/dev/null
+[[ -f "$probe" ]] || { echo 'missing Host .env did not launch compatibility observer' >&2; exit 1; }
+# One-shot executes the real sanitized Host .env snapshot writer, but the
+# Caddy runtime sampler is mocked to avoid touching any external service.
+(
+  export XD_CADDY_OBSERVER_ONCE=1
+  caddy_compat_observe_cmd
+)
+python3 - "$dir/caddy-env-observed.json" <<'PY_ENV_COMPAT'
+import json, pathlib, sys
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+state = json.loads(raw)
+assert state["protocol"] == "xdrive.caddy.host-env.v1"
+assert len(state["sha256"]) == 64
+assert state["alidns_configured"] is True
+for forbidden in (b"ALIYUN_ACCESS_KEY", b"examplekeysecret", b"POSTGRES_PASSWORD"):
+    assert forbidden not in raw
+PY_ENV_COMPAT
+rm -f -- "$probe"
+start_cmd >/dev/null
+[[ ! -e "$probe" ]] || { echo 'fresh Host .env started an unnecessary observer' >&2; exit 1; }
+touch -d '2 minutes ago' -- "$dir/caddy-env-observed.json"
+start_cmd >/dev/null
+[[ -f "$probe" ]] || { echo 'stale Host .env did not launch compatibility observer' >&2; exit 1; }
+
 echo "Caddy-only Host deploy and rollback fixtures: OK"
