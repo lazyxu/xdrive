@@ -18,16 +18,20 @@
 - TLS 身份/证书变化必须停止认证，不向未经验证的新地址发送密码或 Token。
 - Logout 先清理本地会话/私有缓存，再尽力请求 Server 撤销；网络不可用时不宣称远端撤销已经成功。
 
-## 首发验证与后续安全优化
+## 已合入范围与剩余验收（2026-10-27）
 
-本轮实现以已有 Go Token API 为兼容基线；Web/PWA 仍有历史的 localStorage token 存储路径，**未宣称已切换 HttpOnly Refresh Cookie**。该迁移需要同源 Origin/CSRF 校验、多标签刷新协调和离线登出语义整体实现、测试与安全复核，不能直接增加 Cookie 后保留原 JSON Refresh Token 双写。
+- [#2736](https://github.com/lazyxu/xdrive/pull/2736) 已将浏览器专用 HTTPS 同源 Cookie 登录、轮换、退出与浏览器修改密码端点合入 `master`。
+- [#2741](https://github.com/lazyxu/xdrive/pull/2741) 已将 Web/PWA 客户端切换代码合入 `master@07503074`。**部署到包含对应服务端与客户端代码的 HTTPS 同源环境**、勾选「保持登录」且服务端支持浏览器端点时，使用 HttpOnly Refresh Cookie，Access Token 只留在 JS 内存。与此不同，旧服务端 404 / HTTP 开发环境仍可回退兼容 JSON Token API，不能笼统声称所有 Web 登录都已停用 localStorage Token。
+- 取消「保持登录」时仅保留页面内存会话，刷新页面需要重新登录；先前保存的 JSON 会话在升级时不会被强制抹去，而是在重新登录或安全清理时按新模式切换。Desktop、Android、xd 仍使用既有原生 JSON/Bearer 协议，不因浏览器迁移修改凭据格式。
+- 浏览器 Cookie 路径包含严格 Origin/Host 与 Fetch Metadata 校验、Owner 绑定、旧刷新凭据重放拒绝、多标签可用时 Web Locks 串行轮换、登出立即清理本地私有视图并保留待远端撤销标记。无 Web Locks（含 Safari 受限能力）仅为安全降级，**不承诺跨标签互斥**；超时不代表远端撤销已经成功。
+- Web/PWA 的手动公网/局域网入口和离线历史继续保持原状；不新增公开注册，也不绕过 HTTPS 身份验证。
 
-需要补充实际 Android Keystore/进程杀死重启验收、桌面新旧局域网环境实测、Safari/PWA 真实站点存储限制测试。未完成的人工实机验收如按项目约定暂时跳过，必须准确标注，不应阻止其他合规代码和构建检查的推进。
+**验证状态须分开记录：** #2741 合入前同一功能 HEAD 的 Web lint/构建、Desktop、Go API、服务器备份和相关打包检查已通过；Android 先前因 Viewer 缓存复用后的旧测试断言失败，已由 [#2760](https://github.com/lazyxu/xdrive/pull/2760) 的准确提交通过 API35 仪器测试并修复合入。合并后的 `master@07503074` CI / Snapshot 产物仍需看实际结果，不把合并成功冒充发布成功。真实 Chrome 双标签 Cookie 竞争、Safari 受限存储/ Web Locks、旧 Session 迁移及 401/403、密码变更/管理员撤销的端到端浏览器验证尚未完整取得证据；这些未验收项在 [#2725](https://github.com/lazyxu/xdrive/issues/2725) 继续跟踪。实际 Android Keystore/进程杀死重启、Desktop 局域网/证书变化、安装态 iOS PWA 测试均按项目约定标记「跳过（未验收）」，不替代源码安全测试。
 
-## 2026-10-26 · Browser Cookie 端点（服务端第一阶段）
+## 2026-10-26 · Browser Cookie 端点（服务端已合入）
 
 服务端新增专用 `POST /api/v1/auth/browser/login|refresh|logout` 三个端点：仅接受严格匹配请求 Host 的 HTTPS `Origin`（如提供 `Sec-Fetch-Site` 则必须为 `same-origin`），刷新及退出只读取固定 `__Host-xdrive_refresh` Cookie，拒绝混入 JSON Refresh Bearer。Cookie 使用 Secure、HttpOnly、SameSite=Strict、Path=/、Host-only；每次刷新按原有服务端数据库事务更换 Token，旧 Cookie 立即失效。浏览器响应仍返回短期 Access Token，但不会以 JSON 返回真实 Refresh Token。原有三个 `/auth/*` JSON 接口一字不换，支持现有 Desktop/Android/xd 和旧 Web。
 
-**当前阶段仅增加兼容服务端能力，没有切换 Web/PWA 调用链。** Web/PWA 的 `localStorage` Token 仍沿用旧实现。后续集成必须一并处理：浏览器登录切换和旧 Token 迁移、初次启动静默恢复、取消保持登录的内存会话、修改密码后的 Cookie 轮换、跨标签一次性 Refresh 的互斥/竞争、离线主动退出本地阻止恢复、真实 Safari/Chrome 测试。未验证这些项目之前不应声称长期凭证迁移完成。
+**当前服务端和 Web/PWA 客户端两阶段均已合入 `master`。** #2741 已实现 Cookie 模式登录与冷启动恢复、修改密码后 Cookie 轮换、支持时的 Web Locks 串行、跨标签 Owner/epoch 防护、离线登出标记和有界超时。旧 JSON API 继续服务原生客户端与兼容环境；各项真实浏览器端到端证据的状态见上节，不将代码合入视为实机验收通过。
 
 此外，已认证的 `POST /api/v1/me/change-password/browser` 复用现有 Owner 密码变更的事务、会话撤销和审计；其浏览器 HTTPS Origin 必须同源，响应仅返回新 Access Token，替代 Refresh Token 必须通过新的 HttpOnly Cookie 返回。原来的 `/api/v1/me/change-password` JSON API 保持兼容原生客户端。浏览器请求仍需 Bearer Access Token，因此长期 Refresh Cookie 并不能直接访问其他 Owner API。
