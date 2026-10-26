@@ -40,8 +40,8 @@ XD_RELEASE_CHANNEL=master
 XD_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
 XD_UPDATE_SOURCE=github
 XD_DOCKER_MODE=rootful
-XD_SERVER_UID=65532
-XD_SERVER_GID=65532
+XD_SERVER_UID=2234
+XD_SERVER_GID=3345
 XD_FILES_DATA_DIR=$FILES_DIR
 XD_POSTGRES_DATA_DIR=$POSTGRES_DIR
 EOF
@@ -113,7 +113,7 @@ docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "m
 
 # Regenerable thumbnails must be omitted from both snapshot formats.
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -ec \
-  'mkdir -p /data/.xdrive-media/thumbnails/2026 && printf cached > /data/.xdrive-media/thumbnails/2026/unreferenced.jpg && chown -R 65532:65532 /data/.xdrive-media'
+  'mkdir -p /data/.xdrive-media/thumbnails/2026 && printf cached > /data/.xdrive-media/thumbnails/2026/unreferenced.jpg && chown -R 2234:3345 /data/.xdrive-media'
 
 
 compose up -d server worker >/dev/null

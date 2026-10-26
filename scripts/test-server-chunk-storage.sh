@@ -74,7 +74,20 @@ docker run --rm \
   -v "$FILES_DIR:/data" \
   --entrypoint sh \
   postgres:17-alpine \
-  -c 'chown 65532:65532 /data && chmod 0750 /data && mkdir -p /data/.xdrive-uploads && chown 0:0 /data/.xdrive-uploads && chmod 0700 /data/.xdrive-uploads'
+  -ec '
+    chown 65532:65532 /data
+    chmod 0750 /data
+    mkdir -p /data/.xdrive-uploads /data/.xdrive-media/thumbnails/ab /data/.xdrive-localpush-stage-locks
+    printf "65532:65532\n" > /data/.xdrive-uploads/.ownership-v1
+    printf "legacy-cache-bytes" > /data/.xdrive-media/thumbnails/ab/legacy
+    touch /data/.xdrive-temp-lifecycle.lock /data/.xdrive-localpush-stage-locks/ab.lock
+    chown -R 1000:1000 /data/.xdrive-media /data/.xdrive-localpush-stage-locks
+    chown 1000:1000 /data/.xdrive-temp-lifecycle.lock
+    chmod 0600 /data/.xdrive-temp-lifecycle.lock /data/.xdrive-localpush-stage-locks/ab.lock /data/.xdrive-media/thumbnails/ab/legacy
+    chown 0:0 /data/.xdrive-uploads
+    chmod 0700 /data/.xdrive-uploads
+    stat -c "%i:%s" /data/.xdrive-temp-lifecycle.lock /data/.xdrive-localpush-stage-locks/ab.lock
+  ' > "$TMP/legacy-lock-inodes.before"
 compose rm -sf server >/dev/null
 
 compose up -d postgres server test-client >/dev/null
@@ -107,6 +120,20 @@ case "$staging_stat" in
     exit 1
     ;;
 esac
+
+docker run --rm --network none --read-only --cap-drop ALL --user 65532:65532 \
+  -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -ec '
+    test "$(cat /data/.xdrive-uploads/.ownership-v2)" = "65532:65532"
+    test "$(cat /data/.xdrive-media/thumbnails/ab/legacy)" = "legacy-cache-bytes"
+    for lock in /data/.xdrive-temp-lifecycle.lock /data/.xdrive-localpush-stage-locks/ab.lock; do
+      test -r "$lock" && test -w "$lock"
+      test "$(stat -c "%u:%g:%a" "$lock")" = "65532:65532:600"
+      exec 8<>"$lock"
+      exec 8>&-
+    done
+    stat -c "%i:%s" /data/.xdrive-temp-lifecycle.lock /data/.xdrive-localpush-stage-locks/ab.lock
+  ' > "$TMP/legacy-lock-inodes.after"
+cmp "$TMP/legacy-lock-inodes.before" "$TMP/legacy-lock-inodes.after"
 
 printf 'chunk-admin-password-123\n' |
   compose exec -T server xdrive-server admin create \
@@ -243,7 +270,7 @@ pg_image="$(docker inspect xdrive-postgres --format '{{.Image}}')"
 [[ "$pg_image" =~ ^sha256:[a-f0-9]{64}$ ]]
 docker run --rm --pull never --network none --user 0:0 \
   --mount "type=bind,src=$FILES_DIR,dst=/data" --entrypoint sh "$pg_image" -ec '
-    test "$(cat /data/.xdrive-uploads/.ownership-v1)" = "65532:65532"
+    test "$(cat /data/.xdrive-uploads/.ownership-v2)" = "65532:65532"
     for dir in /data/.xdrive-blobs /data/.xdrive-blobs/sha256 /data/.xdrive-blobs/sha256/"$1"; do
       chown 0:0 "$dir"
       chmod 0700 "$dir"

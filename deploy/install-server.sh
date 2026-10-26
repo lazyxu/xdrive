@@ -2132,8 +2132,8 @@ fi
 # storage-init trusts a staging-only marker; the offline backup verifier
 # fails traversing these directories even while the Server is healthy.
 #
-# This pre-backup repair is limited to fixed CAS parents plus the 256
-# persistent, zero-byte shard lock files (without replacing their inodes);
+# This pre-backup repair is limited to fixed CAS parents and all persistent,
+# zero-byte lifecycle lock families (without replacing their inodes);
 # it never touches immutable blob data, DB mounts or generic user trees. Use only the active canonical bind mount with a
 # matching root-to-user migration marker and a local pinned PostgreSQL image.
 repair_migrated_cas_parents_before_backup() {
@@ -2147,7 +2147,11 @@ repair_migrated_cas_parents_before_backup() {
   # directory still belongs to root after a root-to-user migration.
   [[ -e "$data_dir/.xdrive-blobs" || -L "$data_dir/.xdrive-blobs" ||
      -e "$data_dir/.xdrive-cas-lifecycle-locks" ||
-     -L "$data_dir/.xdrive-cas-lifecycle-locks" ]] || return 0
+     -L "$data_dir/.xdrive-cas-lifecycle-locks" ||
+     -e "$data_dir/.xdrive-localpush-stage-locks" ||
+     -L "$data_dir/.xdrive-localpush-stage-locks" ||
+     -e "$data_dir/.xdrive-temp-lifecycle.lock" ||
+     -L "$data_dir/.xdrive-temp-lifecycle.lock" ]] || return 0
 
   # Never attach a root helper to an arbitrary path inferred from .env.
   # The actual running Server must already mount the same canonical data.
@@ -2170,45 +2174,79 @@ repair_migrated_cas_parents_before_backup() {
   echo "[xDrive] validating migrated CAS directory permissions (no blob contents will change)..."
   docker run --rm --pull never --network none --user 0:0 \
     --mount "type=bind,src=$data_dir,dst=/data" \
+    --read-only --cap-drop ALL --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE \
+    --security-opt no-new-privileges \
     --entrypoint sh "$helper_image" -ec '
       uid="$1"; gid="$2"; checked=0; changed=0; lock_count=0
+      export LC_ALL=C
+      device="$(stat -c "%d" /data)" || exit 1
       for dir in /data/.xdrive-blobs /data/.xdrive-blobs/sha256 \
                  /data/.xdrive-blobs/sha256/[0-9a-f][0-9a-f] \
-                 /data/.xdrive-cas-lifecycle-locks; do
+                 /data/.xdrive-cas-lifecycle-locks /data/.xdrive-localpush-stage-locks; do
         if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then continue; fi
         if [ -L "$dir" ] || [ ! -d "$dir" ]; then
           echo "xDrive: symlink/non-directory CAS or lock parent; refusing repair." >&2
           exit 1
         fi
+        [ "$(stat -c "%d" "$dir")" = "$device" ] || {
+          echo "xDrive: nested filesystem in storage; refusing repair." >&2; exit 1;
+        }
+        identity="$(stat -c "%d:%i" "$dir")" || exit 1
+        exec 9<"$dir" || exit 1
+        pinned=/proc/self/fd/9
+        [ -d "$pinned" ] && [ "$(stat -Lc "%d:%i" "$pinned")" = "$identity" ] &&
+          [ "$(stat -Lc "%d" "$pinned")" = "$device" ] || {
+          echo "xDrive: CAS/lock parent changed before repair." >&2; exit 1;
+        }
         checked=$((checked + 1))
-        current="$(stat -c "%u:%g" "$dir")" || exit 1
+        current="$(stat -Lc "%u:%g" "$pinned")" || exit 1
         if [ "$current" != "$uid:$gid" ]; then
-          chown "$uid:$gid" "$dir" || exit 1
+          chown "$uid:$gid" "$pinned" || exit 1
           changed=$((changed + 1))
         fi
-        chmod u+rwx "$dir" || exit 1
+        chmod u+rwx "$pinned" || exit 1
+        [ "$(stat -c "%d:%i" "$dir")" = "$identity" ] || {
+          echo "xDrive: CAS/lock parent changed during repair." >&2; exit 1;
+        }
+        exec 9<&-
       done
 
       # Preserve the SAME bounded flock inodes. Never remove, truncate,
-      # recreate, or rename a CAS lifecycle lock during owner repair.
-      for lock in /data/.xdrive-cas-lifecycle-locks/[0-9a-f][0-9a-f].lock; do
+      # recreate, or rename a lifecycle lock during owner repair.
+      for lock in /data/.xdrive-temp-lifecycle.lock \
+                  /data/.xdrive-cas-lifecycle-locks/[0-9a-f][0-9a-f].lock \
+                  /data/.xdrive-localpush-stage-locks/[0-9a-f][0-9a-f].lock; do
         if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then continue; fi
         if [ -L "$lock" ] || [ ! -f "$lock" ]; then
-          echo "xDrive: unexpected CAS lifecycle lock inode; refusing repair." >&2
+          echo "xDrive: unexpected lifecycle lock inode; refusing repair." >&2
           exit 1
         fi
-        size="$(stat -c "%s" "$lock")" || exit 1
+        identity="$(stat -c "%d:%i" "$lock")" || exit 1
+        exec 9<"$lock" || exit 1
+        pinned=/proc/self/fd/9
+        [ -f "$pinned" ] && [ "$(stat -Lc "%d:%i" "$pinned")" = "$identity" ] || {
+          echo "xDrive: lifecycle lock changed before repair." >&2; exit 1;
+        }
+        size="$(stat -Lc "%s" "$pinned")" || exit 1
         if [ "$size" != 0 ]; then
-          echo "xDrive: nonempty CAS lifecycle lock; refusing repair." >&2
+          echo "xDrive: nonempty lifecycle lock; refusing repair." >&2
+          exit 1
+        fi
+        if [ "$(stat -Lc "%h" "$pinned")" != 1 ] || [ "$(stat -Lc "%d" "$pinned")" != "$device" ]; then
+          echo "xDrive: hardlinked or foreign-device lifecycle lock; refusing repair." >&2
           exit 1
         fi
         lock_count=$((lock_count + 1))
-        current="$(stat -c "%u:%g" "$lock")" || exit 1
+        current="$(stat -Lc "%u:%g" "$pinned")" || exit 1
         if [ "$current" != "$uid:$gid" ]; then
-          chown "$uid:$gid" "$lock" || exit 1
+          chown "$uid:$gid" "$pinned" || exit 1
           changed=$((changed + 1))
         fi
-        chmod 0600 "$lock" || exit 1
+        chmod 0600 "$pinned" || exit 1
+        [ "$(stat -c "%d:%i" "$lock")" = "$identity" ] || {
+          echo "xDrive: lifecycle lock changed during repair." >&2; exit 1;
+        }
+        exec 9<&-
       done
       printf "[xDrive] checked %s CAS parent directories and %s lifecycle lock files; owner corrections %s.\n" "$checked" "$lock_count" "$changed"
     ' xdrive-cas-parent-repair "$SERVER_UID" "$SERVER_GID" </dev/null

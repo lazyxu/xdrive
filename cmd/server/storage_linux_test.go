@@ -83,7 +83,7 @@ func TestPrepareStorageRootRepairsCASParentsWithCurrentMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	uid, gid := os.Geteuid(), os.Getegid()
-	if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+	if err := os.WriteFile(filepath.Join(staging, storageOwnershipMarker),
 		[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestPrepareStorageRootRefusesSymlinkedCASParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	uid, gid := os.Geteuid(), os.Getegid()
-	if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+	if err := os.WriteFile(filepath.Join(staging, storageOwnershipMarker),
 		[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestPrepareStorageRootRepairsCASLifecycleLockInodesWithCurrentMarker(t *tes
 		t.Fatal(err)
 	}
 	uid, gid := os.Geteuid(), os.Getegid()
-	if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+	if err := os.WriteFile(filepath.Join(staging, storageOwnershipMarker),
 		[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestPrepareStorageRootRejectsUnsafeCASLifecycleLocks(t *testing.T) {
 				t.Fatal(err)
 			}
 			uid, gid := os.Geteuid(), os.Getegid()
-			if err := os.WriteFile(filepath.Join(staging, ".ownership-v1"),
+			if err := os.WriteFile(filepath.Join(staging, storageOwnershipMarker),
 				[]byte(strconv.Itoa(uid)+":"+strconv.Itoa(gid)+"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}

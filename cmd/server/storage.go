@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,6 +20,10 @@ import (
 )
 
 const defaultStorageOwnerID = 65532
+
+// v1 could remain current while cache files and independent lifecycle locks
+// retained the host account's ownership after a migration.
+const storageOwnershipMarker = ".ownership-v2"
 
 func runStorageCommand(args []string) error {
 	if len(args) == 0 {
@@ -252,20 +257,35 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 	if err := os.MkdirAll(abs, 0o750); err != nil {
 		return "", fmt.Errorf("create storage root: %w", err)
 	}
-	info, err := os.Stat(abs)
+	info, err := os.Lstat(abs)
 	if err != nil {
 		return "", fmt.Errorf("stat storage root: %w", err)
 	}
-	if !info.IsDir() {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", fmt.Errorf("storage root is not a directory")
 	}
 
 	staging := filepath.Join(abs, storage.UploadStagingDir)
+	if existing, err := os.Lstat(staging); err == nil && (!existing.IsDir() || existing.Mode()&os.ModeSymlink != 0) {
+		return "", fmt.Errorf("upload staging must be a real directory")
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 	if err := os.MkdirAll(staging, 0o750); err != nil {
 		return "", fmt.Errorf("create upload staging directory: %w", err)
 	}
-	marker := filepath.Join(staging, ".ownership-v1")
+	marker := filepath.Join(staging, storageOwnershipMarker)
 	target := strconv.Itoa(uid) + ":" + strconv.Itoa(gid)
+	if existing, err := os.Lstat(marker); err == nil {
+		if !existing.Mode().IsRegular() {
+			return "", fmt.Errorf("storage ownership marker must be a regular file")
+		}
+		if err := validateStorageSingleLink(existing); err != nil {
+			return "", fmt.Errorf("storage ownership marker: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
 
 	fullRepair := force
 	if !fullRepair {
@@ -274,14 +294,14 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 	}
 
 	if fullRepair {
-		if err := repairStorageTree(abs, uid, gid); err != nil {
+		if err := repairStorageTree(abs, abs, uid, gid); err != nil {
 			return "", err
 		}
 	} else {
-		if err := repairStorageEntry(abs, uid, gid); err != nil {
+		if err := repairStorageEntry(abs, abs, uid, gid); err != nil {
 			return "", err
 		}
-		if err := repairStorageTree(staging, uid, gid); err != nil {
+		if err := repairStorageTree(abs, staging, uid, gid); err != nil {
 			return "", err
 		}
 	}
@@ -294,11 +314,9 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 	if err := repairCanonicalCASParents(abs, uid, gid); err != nil {
 		return "", err
 	}
-	// CAS shard lock inodes also survive upgrades. A current upload marker
-	// proves nothing about the separate lock directory or its 00..ff.lock
-	// files; the offline verifier must traverse it and live writers must open
-	// the *same* existing inodes after a root-to-user migration.
-	if err := repairCanonicalCASLifecycleLocks(abs, uid, gid); err != nil {
+	// All lifecycle lock inodes survive upgrades independently of the marker.
+	// Live writers must open the same existing inodes after migration.
+	if err := repairStorageLifecycleLocks(abs, uid, gid); err != nil {
 		return "", err
 	}
 	// The upload ownership marker does not attest the separate, regenerable
@@ -309,14 +327,8 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 		return "", err
 	}
 
-	if err := os.WriteFile(marker, []byte(target+"\n"), 0o640); err != nil {
-		return "", fmt.Errorf("write storage ownership marker: %w", err)
-	}
-	if err := os.Lchown(marker, uid, gid); err != nil {
-		return "", fmt.Errorf("set storage ownership marker owner: %w", err)
-	}
-	if err := os.Chmod(marker, 0o640); err != nil {
-		return "", fmt.Errorf("set storage ownership marker mode: %w", err)
+	if err := writeStorageOwnershipMarker(abs, target, uid, gid); err != nil {
+		return "", err
 	}
 	return abs, nil
 }
@@ -326,13 +338,13 @@ func prepareStorageRoot(root string, uid, gid int, force bool) (string, error) {
 // deliberately untouched. Lstat prevents a symlink from escaping this root.
 func repairCanonicalCASParents(root string, uid, gid int) error {
 	casRoot := filepath.Join(root, storage.ContentBlobDir)
-	found, err := repairCASParentIfPresent(casRoot, uid, gid)
+	found, err := repairCASParentIfPresent(root, casRoot, uid, gid)
 	if err != nil || !found {
 		return err
 	}
 
 	shaRoot := filepath.Join(casRoot, "sha256")
-	found, err = repairCASParentIfPresent(shaRoot, uid, gid)
+	found, err = repairCASParentIfPresent(root, shaRoot, uid, gid)
 	if err != nil || !found {
 		return err
 	}
@@ -341,14 +353,14 @@ func repairCanonicalCASParents(root string, uid, gid int) error {
 	// only these 256 possible parents is independent of library size.
 	for shard := 0; shard < 256; shard++ {
 		path := filepath.Join(shaRoot, fmt.Sprintf("%02x", shard))
-		if _, err := repairCASParentIfPresent(path, uid, gid); err != nil {
+		if _, err := repairCASParentIfPresent(root, path, uid, gid); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func repairCASParentIfPresent(path string, uid, gid int) (bool, error) {
+func repairCASParentIfPresent(root, path string, uid, gid int) (bool, error) {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -359,41 +371,55 @@ func repairCASParentIfPresent(path string, uid, gid int) (bool, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return false, fmt.Errorf("canonical CAS parent %s must be a real directory", path)
 	}
-	if err := repairStorageEntryWithInfo(path, info, uid, gid); err != nil {
+	if err := repairStorageEntryWithInfo(root, path, info, uid, gid); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// repairCanonicalCASLifecycleLocks repairs at most one fixed lock directory
-// and 256 fixed zero-byte lock inodes, regardless of CAS object count.
+// repairStorageLifecycleLocks covers the temporary-write singleton plus both
+// fixed shard directories, regardless of stored blob or cache-file count.
 // No inode is removed, replaced, truncated, opened with O_TRUNC, or recreated:
 // flock-based readers/writers must continue coordinating on the same inode.
 // Unexpected/symlink/nonempty lock files are rejected, not silently blessed.
-func repairCanonicalCASLifecycleLocks(root string, uid, gid int) error {
-	lockRoot := filepath.Join(root, storage.CASLifecycleLockDir)
-	found, err := repairCASParentIfPresent(lockRoot, uid, gid)
-	if err != nil || !found {
-		return err
-	}
-
-	for shard := 0; shard < 256; shard++ {
-		path := filepath.Join(lockRoot, fmt.Sprintf("%02x.lock", shard))
-		info, err := os.Lstat(path)
-		if os.IsNotExist(err) {
-			continue
+func repairStorageLifecycleLocks(root string, uid, gid int) error {
+	for _, family := range storage.LifecycleLockFamilies() {
+		lockRoot := filepath.Join(root, family.Directory)
+		if family.Directory != "" {
+			found, err := repairCASParentIfPresent(root, lockRoot, uid, gid)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
 		}
-		if err != nil {
-			return fmt.Errorf("stat canonical CAS lifecycle lock %s: %w", path, err)
-		}
-		if !info.Mode().IsRegular() || info.Size() != 0 {
-			return fmt.Errorf("canonical CAS lifecycle lock %s must be an empty regular file", path)
-		}
-		if err := os.Lchown(path, uid, gid); err != nil {
-			return fmt.Errorf("set CAS lifecycle lock owner %s: %w", path, err)
-		}
-		if err := os.Chmod(path, 0o600); err != nil {
-			return fmt.Errorf("set CAS lifecycle lock mode %s: %w", path, err)
+		for _, name := range family.Names {
+			path := filepath.Join(lockRoot, name)
+			info, err := os.Lstat(path)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("stat lifecycle lock %s: %w", path, err)
+			}
+			if !info.Mode().IsRegular() || info.Size() != 0 {
+				return fmt.Errorf("lifecycle lock %s must be an empty regular file", path)
+			}
+			if err := validateStorageSingleLink(info); err != nil {
+				return fmt.Errorf("lifecycle lock %s: %w", path, err)
+			}
+			if err := withPinnedStorageEntry(root, path, info, func(file *os.File, actual os.FileInfo) error {
+				if err := validateStorageSingleLink(actual); err != nil {
+					return err
+				}
+				if err := setStorageFileOwner(file, uid, gid); err != nil {
+					return err
+				}
+				return setStorageFileMode(file, 0o600)
+			}); err != nil {
+				return fmt.Errorf("repair lifecycle lock %s: %w", path, err)
+			}
 		}
 	}
 	return nil
@@ -406,25 +432,25 @@ func repairCanonicalCASLifecycleLocks(root string, uid, gid int) error {
 // created lazily by Local.Put; cached files and unrelated paths are untouched.
 func repairMediaCacheParents(root string, uid, gid int) error {
 	cacheRoot := filepath.Join(root, ".xdrive-media")
-	found, err := repairMediaCacheParentIfPresent(cacheRoot, uid, gid)
+	found, err := repairMediaCacheParentIfPresent(root, cacheRoot, uid, gid)
 	if err != nil || !found {
 		return err
 	}
 	for _, category := range []string{"thumbnails", "posters"} {
 		categoryRoot := filepath.Join(cacheRoot, category)
-		found, err := repairMediaCacheParentIfPresent(categoryRoot, uid, gid)
+		found, err := repairMediaCacheParentIfPresent(root, categoryRoot, uid, gid)
 		if err != nil {
 			return err
 		}
 		if !found {
 			continue
 		}
-		if _, err := repairMediaCacheParentIfPresent(filepath.Join(categoryRoot, "node"), uid, gid); err != nil {
+		if _, err := repairMediaCacheParentIfPresent(root, filepath.Join(categoryRoot, "node"), uid, gid); err != nil {
 			return err
 		}
 		for shard := 0; shard < 256; shard++ {
 			if _, err := repairMediaCacheParentIfPresent(
-				filepath.Join(categoryRoot, fmt.Sprintf("%02x", shard)), uid, gid,
+				root, filepath.Join(categoryRoot, fmt.Sprintf("%02x", shard)), uid, gid,
 			); err != nil {
 				return err
 			}
@@ -435,7 +461,7 @@ func repairMediaCacheParents(root string, uid, gid int) error {
 
 // Reject symlinks and non-directories rather than following cache paths into
 // arbitrary host locations. Only existing directory metadata is changed.
-func repairMediaCacheParentIfPresent(path string, uid, gid int) (bool, error) {
+func repairMediaCacheParentIfPresent(root, path string, uid, gid int) (bool, error) {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -446,37 +472,148 @@ func repairMediaCacheParentIfPresent(path string, uid, gid int) (bool, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return false, fmt.Errorf("media cache parent %s must be a real directory", path)
 	}
-	if err := repairStorageEntryWithInfo(path, info, uid, gid); err != nil {
+	if err := repairStorageEntryWithInfo(root, path, info, uid, gid); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func repairStorageTree(root string, uid, gid int) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+func repairStorageTree(root, tree string, uid, gid int) error {
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	links, err := validateStorageTreeLinks(root, tree, rootInfo)
+	if err != nil {
+		return err
+	}
+	return filepath.Walk(tree, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		return repairStorageEntryWithInfo(path, info, uid, gid)
+		if err := validateStorageSameDevice(rootInfo, info); err != nil {
+			return fmt.Errorf("storage entry %s: %w", path, err)
+		}
+		if info.Mode().IsRegular() {
+			identity, count, err := storageFileLinks(info)
+			if err != nil {
+				return err
+			}
+			if links[identity] != count {
+				return fmt.Errorf("storage links changed after preflight")
+			}
+		}
+		required := os.FileMode(0o400)
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if filepath.Base(root) == storage.UploadStagingDir || relative == storage.UploadStagingDir ||
+			strings.HasPrefix(relative, storage.UploadStagingDir+string(filepath.Separator)) {
+			required = 0o600
+		}
+		return repairStorageEntryAccess(root, path, info, uid, gid, required)
 	})
 }
 
-func repairStorageEntry(path string, uid, gid int) error {
+func repairStorageEntry(root, path string, uid, gid int) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	return repairStorageEntryWithInfo(path, info, uid, gid)
+	return repairStorageEntryWithInfo(root, path, info, uid, gid)
 }
 
-func repairStorageEntryWithInfo(path string, info os.FileInfo, uid, gid int) error {
-	if err := os.Lchown(path, uid, gid); err != nil {
-		return fmt.Errorf("set owner for %s: %w", path, err)
-	}
-	if info.IsDir() && info.Mode().Perm()&0o700 != 0o700 {
-		if err := os.Chmod(path, info.Mode()|0o700); err != nil {
-			return fmt.Errorf("make directory writable %s: %w", path, err)
+func repairStorageEntryWithInfo(root, path string, info os.FileInfo, uid, gid int) error {
+	if info.Mode().IsRegular() {
+		if err := validateStorageSingleLink(info); err != nil {
+			return err
 		}
 	}
-	return nil
+	return repairStorageEntryAccess(root, path, info, uid, gid, 0o400)
+}
+
+func repairStorageEntryAccess(root, path string, info os.FileInfo, uid, gid int, required os.FileMode) error {
+	if !info.IsDir() && !info.Mode().IsRegular() {
+		return fmt.Errorf("storage entry %s must be a real directory or regular file", path)
+	}
+	if info.IsDir() {
+		required = 0o700
+	}
+	return withPinnedStorageEntry(root, path, info, func(file *os.File, actual os.FileInfo) error {
+		if err := setStorageFileOwner(file, uid, gid); err != nil {
+			return fmt.Errorf("set owner for %s: %w", path, err)
+		}
+		if actual.Mode().Perm()&required != required {
+			if err := setStorageFileMode(file, actual.Mode()|required); err != nil {
+				return fmt.Errorf("restore owner access for %s: %w", path, err)
+			}
+		}
+		return nil
+	})
+}
+
+func writeStorageOwnershipMarker(storageRoot, target string, uid, gid int) error {
+	base, err := os.OpenRoot(storageRoot)
+	if err != nil {
+		return err
+	}
+	defer base.Close()
+	expected, err := base.Lstat(storage.UploadStagingDir)
+	if err != nil {
+		return err
+	}
+	if !expected.IsDir() || expected.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("upload staging must be a real directory")
+	}
+	root, err := base.OpenRoot(storage.UploadStagingDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	actual, err := root.Stat(".")
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(expected, actual) {
+		return fmt.Errorf("upload staging changed before marker write")
+	}
+	baseInfo, err := base.Stat(".")
+	if err != nil {
+		return err
+	}
+	if err := validateStorageSameDevice(baseInfo, actual); err != nil {
+		return err
+	}
+	var suffix [16]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	name := fmt.Sprintf("%s.%x.tmp", storageOwnershipMarker, suffix)
+	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(name)
+	defer file.Close()
+	if err := file.Chown(uid, gid); err != nil {
+		return err
+	}
+	if err := file.Chmod(0o640); err != nil {
+		return err
+	}
+	if _, err := file.WriteString(target + "\n"); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	current, err := base.Lstat(storage.UploadStagingDir)
+	if err != nil || !os.SameFile(actual, current) {
+		return fmt.Errorf("upload staging changed during marker write")
+	}
+	return root.Rename(name, storageOwnershipMarker)
 }

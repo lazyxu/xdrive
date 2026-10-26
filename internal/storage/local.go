@@ -250,7 +250,7 @@ func (l *Local) Ready(ctx context.Context) error {
 	if err := probeWritableDirectory(ctx, staging); err != nil {
 		return fmt.Errorf("upload staging directory: %w", err)
 	}
-	return nil
+	return l.checkLifecycleLockAccess(ctx)
 }
 
 func probeWritableDirectory(ctx context.Context, dir string) error {
