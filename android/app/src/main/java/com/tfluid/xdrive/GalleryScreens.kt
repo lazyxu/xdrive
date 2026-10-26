@@ -8,6 +8,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,37 +27,169 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
+import com.tfluid.xdrive.core.GalleryTimelineGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Initial native Gallery wall: real Owner chronological Range, latest at
- * bottom, native thumbnails and bounded cancellation. No faux Viewer/Albums. */
+/** Match the shared Mobile Gallery KFS column-first contract for All photos:
+ * reference width 144dp, three baseline columns, preference range 2..10.
+ * The preference shifts the responsive count without changing Owner rows. */
+internal fun galleryVisibleColumns(widthDp: Float, preference: Int): Int {
+    val available = if (widthDp.isFinite()) widthDp.coerceAtLeast(0f) else 0f
+    val baseline = maxOf(3, (available / 144f).toInt())
+    return (baseline + preference.coerceIn(2, 10) - 3).coerceIn(2, 10)
+}
+
+internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = when {
+    group.key == "unknown" -> "未记录日期"
+    group.key.length == 4 -> group.key + "年"
+    group.key.length == 7 -> group.key.substring(0, 4) + "年" +
+        group.key.substring(5, 7) + "月"
+    else -> group.key.substring(0, 4) + "年" +
+        group.key.substring(5, 7) + "月" + group.key.substring(8, 10) + "日"
+}
+
+/** Native Owner Gallery with same Server range for wall and search, never a local
+ * filter of the few visible thumbnails. Full Collections controls follow later. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ColumnScope.Gallery(
     state: DriveState, controller: DriveController,
     bitmaps: LruCache<String, ImageBitmap>,
 ) {
     val gridState = rememberLazyGridState()
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchDraft by remember(state.gallerySearchQuery) { mutableStateOf(state.gallerySearchQuery) }
+    // Display preferences are only local UI state and survive Viewer returns.
+    var preferredColumns by rememberSaveable { mutableIntStateOf(3) }
+    var containTiles by rememberSaveable { mutableStateOf(false) }
+    var displayMenuOpen by remember { mutableStateOf(false) }
+    var kindMenuOpen by remember { mutableStateOf(false) }
+    var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind) {
+        mutableStateOf("all")
+    }
+    var timePickerOpen by remember { mutableStateOf(false) }
     // Preserve the visible photo anchor while the Viewer is open.
-    var positioned by rememberSaveable { mutableStateOf(false) }
+    var positioned by rememberSaveable(
+        state.gallerySearchQuery, state.galleryMediaKind, state.galleryJumpEpoch
+    ) {
+        mutableStateOf(false)
+    }
     // A single entrance to the oldest visible edge permits only one fetch.
     // Re-arm after scrolling away: do not recursively traverse a 100k library
     // while Compose is still remeasuring newly prepended rows.
-    var olderEdgeArmed by remember { mutableStateOf(true) }
+    var olderEdgeArmed by remember(
+        state.gallerySearchQuery, state.galleryMediaKind, state.galleryJumpEpoch
+    ) { mutableStateOf(state.galleryJumpIndex == null) }
+    var newerEdgeArmed by remember(state.galleryJumpEpoch) { mutableStateOf(true) }
     val nearOlderEdge by remember(gridState) {
         derivedStateOf { gridState.firstVisibleItemIndex <= 3 }
+    }
+    val nearNewerEdge by remember(gridState, state.galleryItems.size) {
+        derivedStateOf {
+            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            state.galleryItems.isNotEmpty() && last >= state.galleryItems.lastIndex - 3
+        }
     }
 
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text("图库", modifier = Modifier.weight(1f),
+        Text(if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            IconButton(
+                onClick = { kindMenuOpen = true },
+                modifier = Modifier.size(48.dp)
+                    .semantics {
+                        stateDescription = when (state.galleryMediaKind) {
+                            "image" -> "仅照片"
+                            "video" -> "仅视频"
+                            else -> "全部媒体"
+                        }
+                    }
+                    .testTag("gallery-kind-filter"),
+            ) {
+                Icon(painterResource(R.drawable.xd_more_vert), "图库媒体筛选")
+            }
+            DropdownMenu(expanded = kindMenuOpen,
+                onDismissRequest = { kindMenuOpen = false },
+                containerColor = MaterialTheme.colorScheme.surface) {
+                for ((value, label) in listOf(
+                    "" to "全部媒体", "image" to "仅照片", "video" to "仅视频"
+                )) {
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (state.galleryMediaKind == value)
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.testTag("gallery-kind-" +
+                            if (value.isEmpty()) "all" else value),
+                        onClick = {
+                            kindMenuOpen = false
+                            controller.filterGalleryKind(value)
+                        },
+                    )
+                }
+            }
+        }
+        Box {
+            IconButton(
+                onClick = { displayMenuOpen = true },
+                modifier = Modifier.size(48.dp)
+                    .semantics {
+                        stateDescription = "缩略图密度 ${preferredColumns} 档，" +
+                            if (containTiles) "完整比例" else "方形裁切"
+                    }
+                    .testTag("gallery-view-options"),
+            ) {
+                Icon(painterResource(R.drawable.xd_more_vert), "图库显示选项")
+            }
+            DropdownMenu(expanded = displayMenuOpen,
+                onDismissRequest = { displayMenuOpen = false },
+                containerColor = MaterialTheme.colorScheme.surface) {
+                DropdownMenuItem(
+                    text = { Text("放大缩略图") },
+                    enabled = preferredColumns > 2,
+                    modifier = Modifier.testTag("gallery-zoom-in"),
+                    onClick = {
+                        preferredColumns = (preferredColumns - 1).coerceAtLeast(2)
+                        displayMenuOpen = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("缩小缩略图") },
+                    enabled = preferredColumns < 10,
+                    modifier = Modifier.testTag("gallery-zoom-out"),
+                    onClick = {
+                        preferredColumns = (preferredColumns + 1).coerceAtMost(10)
+                        displayMenuOpen = false
+                    },
+                )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("方形裁切") },
+                    trailingIcon = { if (!containTiles) Text("✓", color = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.testTag("gallery-aspect-crop"),
+                    onClick = { containTiles = false; displayMenuOpen = false },
+                )
+                DropdownMenuItem(
+                    text = { Text("完整比例（方形网格）") },
+                    trailingIcon = { if (containTiles) Text("✓", color = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.testTag("gallery-aspect-contain"),
+                    onClick = { containTiles = true; displayMenuOpen = false },
+                )
+            }
+        }
     }
     DownloadToDeviceStatus(state, controller, "gallery")
     if (state.error != null) {
@@ -63,28 +197,38 @@ internal fun ColumnScope.Gallery(
         TextButton(onClick = controller::retryGallery,
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp)
                 .testTag("gallery-retry-page")) {
-            Text(if (state.galleryLoaded) "重试加载更早的照片" else "重新加载照片")
+            Text(when {
+                !state.galleryLoaded && state.galleryJumpIndex != null -> "重试日期跳转"
+                state.galleryPageIntent == "newer" -> "重试加载较新的照片"
+                state.galleryLoaded -> "重试加载更早的照片"
+                else -> "重新加载照片"
+            })
         }
     }
 
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().testTag("gallery-wall")) {
-        val columns = maxOf(1, (maxWidth / 112.dp).toInt())
-        val cellWidth = (maxWidth - (columns - 1).dp) / columns
+        val columns = galleryVisibleColumns(maxWidth.value, preferredColumns)
+        val tileGap = 4.dp // Shared PWA Gallery grid gap.
+        val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
         val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
-            (maxHeight - (cellWidth + 1.dp) * rows - 8.dp).coerceAtLeast(0.dp)
+            (maxHeight - (cellWidth + tileGap) * rows - 8.dp).coerceAtLeast(0.dp)
         } else 0.dp
 
         // Initial tail is sparse: prefetch one earlier Range before first positioning.
         // Never reposition after a prepend; stable item keys retain the photo anchor.
         LaunchedEffect(state.galleryLoaded, state.galleryOffset, state.galleryItems.size,
-            state.loading, state.error) {
+            state.galleryJumpEpoch, state.loading, state.error) {
             if (!state.galleryLoaded) {
                 positioned = false // An explicit refresh must position latest again.
                 return@LaunchedEffect
             }
             if (state.loading || state.error != null || positioned) return@LaunchedEffect
-            if (state.galleryOffset > 0 && state.galleryItems.size < 24) {
+            if (state.galleryJumpIndex != null) {
+                // A Server-indexed time jump starts at its actual first item.
+                gridState.scrollToItem(if (blankTop > 0.dp) 1 else 0)
+                positioned = true
+            } else if (state.galleryOffset > 0 && state.galleryItems.size < 24) {
                 controller.galleryLoadOlder()
             } else {
                 val last = state.galleryItems.lastIndex
@@ -110,25 +254,153 @@ internal fun ColumnScope.Gallery(
             }
         }
 
+        LaunchedEffect(positioned, nearNewerEdge, state.galleryItems.size,
+            state.galleryTotal, state.loading, state.error) {
+            if (!positioned || !state.galleryLoaded) return@LaunchedEffect
+            val hasNewer = state.galleryOffset.toLong() + state.galleryItems.size <
+                state.galleryTotal
+            if (!nearNewerEdge) {
+                newerEdgeArmed = true
+            } else if (hasNewer && newerEdgeArmed && !state.loading &&
+                state.error == null) {
+                newerEdgeArmed = false
+                controller.galleryLoadNewer()
+            }
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = gridState,
             modifier = Modifier.fillMaxSize().testTag("gallery-grid"),
             contentPadding = PaddingValues(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            horizontalArrangement = Arrangement.spacedBy(tileGap),
+            verticalArrangement = Arrangement.spacedBy(tileGap),
         ) {
             if (state.galleryLoaded && state.galleryItems.isEmpty() &&
                 !state.loading && state.error == null) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text("暂无照片或视频", Modifier.padding(24.dp))
+                    Text(when {
+                        state.gallerySearchQuery.isNotEmpty() -> "没有匹配的照片或视频"
+                        state.galleryMediaKind == "image" -> "暂无照片"
+                        state.galleryMediaKind == "video" -> "暂无视频"
+                        else -> "暂无照片或视频"
+                    }, Modifier.padding(24.dp))
                 }
             }
             if (blankTop > 0.dp) item(key = "tail-spacer", span = { GridItemSpan(maxLineSpan) }) {
                 Spacer(Modifier.fillMaxWidth().height(blankTop))
             }
             items(state.galleryItems, key = { it.node.id }) { item ->
-                GalleryTile(item, controller, bitmaps)
+                GalleryTile(item, controller, bitmaps, containTiles)
+            }
+        }
+    }
+    val timeSets = state.galleryTimelineSets
+    if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
+        // The index belongs to the authenticated Server Range, never the
+        // handful of thumbnails currently loaded in LazyVerticalGrid.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically) {
+            for ((scale, label) in listOf(
+                "year" to "年", "month" to "月", "day" to "日", "all" to "全部"
+            )) {
+                val enabled = scale == "all" || timeSets.forScale(scale).isNotEmpty()
+                TextButton(
+                    onClick = {
+                        timeScale = scale
+                        if (scale == "all") {
+                            timePickerOpen = false
+                            if (state.galleryJumpIndex != null) controller.refreshGallery()
+                        } else timePickerOpen = true
+                    },
+                    enabled = enabled && !state.loading,
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                        .testTag("gallery-time-scale-" + scale),
+                ) {
+                    Text(label, color = if (timeScale == scale)
+                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+        if (timeScale != "all" && timeSets.forScale(timeScale).isNotEmpty()) {
+            TextButton(
+                onClick = { timePickerOpen = true },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    .testTag("gallery-time-jump-open"),
+            ) {
+                Text("按" + when (timeScale) {
+                    "year" -> "年份"
+                    "month" -> "月份"
+                    else -> "日期"
+                } + "跳转（真实图库索引）")
+            }
+        }
+    }
+
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        if (state.gallerySearchQuery.isNotEmpty()) {
+            TextButton(onClick = { controller.searchGallery("") },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-clear")) {
+                Text("清除筛选")
+            }
+        }
+        FilledTonalButton(onClick = {
+            searchDraft = state.gallerySearchQuery
+            searchOpen = true
+        }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-button")) {
+            Text("搜索")
+        }
+    }
+    if (timePickerOpen && timeSets != null && timeScale != "all" &&
+        state.gallerySearchQuery.isEmpty()) {
+        val groups = timeSets.forScale(timeScale)
+        ModalBottomSheet(onDismissRequest = { timePickerOpen = false },
+            containerColor = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)) {
+                Text("跳转到" + when (timeScale) {
+                    "year" -> "年份"
+                    "month" -> "月份"
+                    else -> "日期"
+                }, style = MaterialTheme.typography.titleMedium)
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)
+                    .testTag("gallery-time-groups")) {
+                    listItems(groups, key = { it.key }) { group ->
+                        TextButton(
+                            onClick = {
+                                timePickerOpen = false
+                                controller.jumpGalleryToGroup(timeScale, group.key)
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("gallery-time-group-" + group.key),
+                        ) {
+                            Text(galleryTimelineGroupLabel(group) + " · " +
+                                group.itemCount + " 项")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (searchOpen) ModalBottomSheet(onDismissRequest = { searchOpen = false },
+        containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("搜索全部照片与视频", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(value = searchDraft, onValueChange = { if (it.length <= 200) searchDraft = it },
+                label = { Text("搜索图库") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    .testTag("gallery-search-input"))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { searchOpen = false },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+                Button(onClick = {
+                    searchOpen = false
+                    controller.searchGallery(searchDraft)
+                }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-apply")) {
+                    Text("搜索")
+                }
             }
         }
     }
@@ -149,6 +421,7 @@ internal fun decodeGalleryThumbnail(bytes: ByteArray): ImageBitmap? {
 private fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
+    containTiles: Boolean,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
@@ -206,7 +479,7 @@ private fun GalleryTile(
         val ready = bitmap
         if (ready != null) {
             Image(bitmap = ready, contentDescription = item.node.name,
-                contentScale = ContentScale.Crop,
+                contentScale = if (containTiles) ContentScale.Fit else ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
                     .testTag("gallery-thumbnail-ready-${item.node.id}"))
         } else {

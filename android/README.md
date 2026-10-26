@@ -435,6 +435,42 @@ logic. A chooser result with a non-`content:` URI is refused; no broad filesyste
 permission or duplicate transfer implementation is added. This does not claim
 that Android MediaStore automatically indexes SAF documents in every provider.
 
+## Native Gallery Owner search (stacked follow-up)
+
+The Gallery bottom-right Search entry queries the existing authenticated Go
+`GET /api/v1/media/items?range=true&q=...` contract, never only the currently
+loaded 60 thumbnails. It preserves chronological tail, verified absolute Range
+pagination and the current Owner/TLS/route-pinned client. Changing or clearing
+the query cancels its predecessor and invalidates the Viewer/thumbnail scope;
+returning to Files or logging out discards the search terms. No full iOS 27
+Collections, time-scale groups or generalized filters are claimed here.
+
+## Android Gallery indexed Year / Month / Day navigation (dependent increment)
+
+The native Gallery reads the existing Owner-authenticated Go `/media/items?range=true`
+`timeline_group_sets` on the initial page: exact Year / Month / Day keys, counts
+and absolute start indexes. The controller refuses malformed or incomplete index
+partitions; it never computes a misleading 100k timeline from the 60 loaded rows.
+The bottom 年 / 月 / 日 / 全部 controls open a bounded, lazy indexed-date chooser.
+Selecting an actual group requests its exact absolute Offset through the same
+Owner JWT, pinned TLS/SNI and existing 60-item Range endpoint. Returning to 全部
+starts again at Server latest. Original Gallery query and media-kind filters
+remain authoritative and never mix another Owner's index.
+
+A jump starts near a selected date rather than pretending to load an entire
+year/month; reaching the bottom fetches newer pages, reaching the top fetches
+older ones. The top page at offset below 60 is allowed to overlap loaded rows,
+but only after checking every overlapping node/revision. Failed jumps retry the
+same absolute offset, never silently substitute newer photos or fabricate an
+empty timeline. Leaving Gallery clears index state. No new Server endpoint,
+SQLite photo index, background scan, persistent Owner cache or WebView is added.
+
+This is **real indexed time navigation**, not yet full iOS 27 year/month/day
+timeline rendering, a physical-device screenshot gate, Collections, Live Photo
+held-motion playback or a complete transfer center. MockWebServer / Controller
+JVM / API35 Compose regression source has been submitted; new HEAD CI must pass
+before merging or calling the feature accepted.
+
 ## Files: exact "Show in Folder" with scroll-to-file and selection
 
 Recent, Favorites and Search now locate the **specific current Owner Node**, not merely

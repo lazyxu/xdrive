@@ -93,11 +93,25 @@ data class GalleryAsset(
     val livePhoto: Boolean = false,
     val hasThumbnail: Boolean = false,
 )
+data class GalleryTimelineGroup(val key: String, val itemCount: Long, val startIndex: Int)
+data class GalleryTimelineSets(
+    val year: List<GalleryTimelineGroup>,
+    val month: List<GalleryTimelineGroup>,
+    val day: List<GalleryTimelineGroup>,
+) {
+    fun forScale(scale: String): List<GalleryTimelineGroup> = when (scale) {
+        "year" -> year
+        "month" -> month
+        "day" -> day
+        else -> emptyList()
+    }
+}
 data class GalleryPage(
     val items: List<GalleryAsset>,
     val totalCount: Long,
     val offset: Int,
     val limit: Int = 60,
+    val timeline: GalleryTimelineSets? = null,
 )
 
 /** Match the Server's Windows-compatible filename subset before sending a
@@ -172,6 +186,14 @@ interface XDriveService {
     suspend fun galleryPage(accessToken: String, offset: Int = 0,
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
+    /** Search uses the same bounded Owner range; no local visible-page filtering. */
+    suspend fun gallerySearchPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner search unavailable")
+    /** Combined media kind + optional search, authoritative Owner Server Range. */
+    suspend fun galleryKindPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner kind filter unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
@@ -624,7 +646,24 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
-    override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage {
+    override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage =
+        ownerGalleryPage(accessToken, offset, initialLatest, "")
+
+    override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String): GalleryPage {
+        require(search.isNotBlank() && search == search.trim() && search.length <= 200)
+        return ownerGalleryPage(accessToken, offset, initialLatest, search)
+    }
+
+    override suspend fun galleryKindPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String): GalleryPage {
+        require(kind == "image" || kind == "video")
+        require(search.length <= 200 && search == search.trim())
+        return ownerGalleryPage(accessToken, offset, initialLatest, search, kind)
+    }
+
+    private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, mediaKind: String = ""): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
@@ -632,6 +671,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             "unknown_first" to "true", "fold_duplicates" to "true",
         )
         if (initialLatest) query["initial_position"] = "latest"
+        if (search.isNotEmpty()) query["q"] = search
+        if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
         val result = request("media/items", accessToken, query = query)
         val raw = result["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 60) invalidPayload()
@@ -647,7 +688,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             val metadata = entry["metadata"] as? JsonObject ?: invalidPayload()
             val kind = metadata.string("media_kind")
             if (itemNode.type != "file" || itemNode.id <= 0 || itemNode.revision <= 0 ||
-                kind !in listOf("image", "video")) invalidPayload()
+                kind !in listOf("image", "video") ||
+                (mediaKind.isNotEmpty() && mediaKind != kind)) invalidPayload()
             val captured = metadata.optionalString("captured_at") ?: ""
             if (captured.length > 64) invalidPayload()
             val duration = when (metadata["duration_ms"]) {
@@ -669,7 +711,39 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
-        return GalleryPage(items, total, returnedOffset.toInt(), 60)
+        return GalleryPage(items, total, returnedOffset.toInt(), 60,
+            parseGalleryTimelineSets(result["timeline_group_sets"], total))
+    }
+
+    /** Authoritative 100k-safe index metadata; never generate time groups
+     * from sparse, already-loaded thumbnails. Require exact partition counts.
+     * Missing sets are allowed for relevance searches and older Server builds. */
+    private fun parseGalleryTimelineSets(raw: JsonElement?, total: Long): GalleryTimelineSets? {
+        if (raw == null || raw == JsonNull) return null
+        val source = raw as? JsonObject ?: invalidPayload()
+        fun groups(scale: String): List<GalleryTimelineGroup> {
+            val entries = source[scale] as? JsonArray ?: invalidPayload()
+            if (entries.size > 40_000) invalidPayload()
+            var nextIndex = 0L
+            val groups = entries.map { element ->
+                val entry = element as? JsonObject ?: invalidPayload()
+                val key = entry.string("key")
+                val validKey = key == "unknown" || when (scale) {
+                    "year" -> Regex("""\d{4}""").matches(key)
+                    "month" -> Regex("""\d{4}-\d{2}""").matches(key)
+                    else -> Regex("""\d{4}-\d{2}-\d{2}""").matches(key)
+                }
+                val count = entry.long("item_count")
+                val start = entry.long("start_index")
+                if (!validKey || count <= 0 || start != nextIndex ||
+                    start > Int.MAX_VALUE || count > total - nextIndex) invalidPayload()
+                nextIndex += count
+                GalleryTimelineGroup(key, count, start.toInt())
+            }
+            if (nextIndex != total) invalidPayload()
+            return groups
+        }
+        return GalleryTimelineSets(groups("year"), groups("month"), groups("day"))
     }
 
     /** Existing versioned Owner content endpoint supports HTTP Range. */

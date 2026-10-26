@@ -12,6 +12,17 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun galleryVisibleColumnsKeepsResponsiveBaselineAndBounds() {
+        assertEquals(3, galleryVisibleColumns(390f, 3))
+        assertEquals(2, galleryVisibleColumns(390f, 2))
+        assertEquals(4, galleryVisibleColumns(390f, 4))
+        assertEquals(2, galleryVisibleColumns(180f, 2))
+        assertEquals(5, galleryVisibleColumns(768f, 3))
+        assertEquals(10, galleryVisibleColumns(1500f, 10))
+        assertEquals(2, galleryVisibleColumns(Float.NaN, 2))
+        assertEquals(4, galleryVisibleColumns(576f, 3))
+    }
+
     private val root = DriveNode(1, name = "", type = "dir")
     private val folder = DriveNode(2, 1, "照片", "dir", revision = 1)
     private val file = DriveNode(3, 1, "readme.txt", "file", 42, revision = 1)
@@ -27,6 +38,27 @@ class DriveControllerTest {
             DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
+        var provideGalleryTimeline = false
+        val gallerySearchRequests = mutableListOf<String>()
+        val galleryKindRequests = mutableListOf<Pair<String, String>>()
+        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String): GalleryPage {
+            galleryKindRequests += search to kind
+            galleryGate?.await()
+            val media = if (kind == "video") "video" else "image"
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(if (kind == "video") 992L else 993L, 1,
+                    if (kind == "video") "filtered.mp4" else "filtered.jpg",
+                    "file", size = 100, revision = 1), media, hasThumbnail = true)), 1, 0)
+        }
+        override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String): GalleryPage {
+            gallerySearchRequests += search
+            galleryGate?.await()
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(991L, 1, "found.jpg", "file", size = 5, revision = 1),
+                "image", "2026-10-25T01:00:00Z", hasThumbnail = true)), 1, 0)
+        }
         var videoSessionsOpened = 0
         var videoSessionsClosed = 0
         override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
@@ -43,7 +75,20 @@ class DriveControllerTest {
         ): GalleryPage {
             galleryRequests += offset to initialLatest
             galleryGate?.await()
-            if (initialLatest) return GalleryPage(listOf(latestGallery), 121, 120)
+            if (initialLatest) return GalleryPage(listOf(latestGallery), 121, 120,
+                timeline = if (provideGalleryTimeline) GalleryTimelineSets(
+                    year = listOf(
+                        GalleryTimelineGroup("2025", 60, 0),
+                        GalleryTimelineGroup("2026", 61, 60)),
+                    month = listOf(
+                        GalleryTimelineGroup("2025-12", 60, 0),
+                        GalleryTimelineGroup("2026-10", 61, 60)),
+                    day = listOf(
+                        GalleryTimelineGroup("unknown", 60, 0),
+                        GalleryTimelineGroup("2026-10-25", 61, 60))
+                ) else null)
+            if (provideGalleryTimeline && offset == 120)
+                return GalleryPage(listOf(latestGallery), 121, 120)
             if (galleryFailOlderOnce) {
                 galleryFailOlderOnce = false
                 throw ApiException(503, "temporary gallery failure")
@@ -378,6 +423,108 @@ class DriveControllerTest {
         assertEquals(listOf(folder), c.state.value.items)
     }
 
+    @Test fun GalleryKindFiltersEntireOwnerRangeAndKeepsSearchScope() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.filterGalleryKind("audio"); runCurrent()
+        assertEquals("", c.state.value.galleryMediaKind)
+        c.filterGalleryKind("video"); runCurrent()
+        assertEquals("video", c.state.value.galleryMediaKind)
+        assertEquals(listOf("" to "video"), api.galleryKindRequests)
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("sunset"); runCurrent()
+        assertEquals(listOf("" to "video", "sunset" to "video"), api.galleryKindRequests)
+        assertEquals(992L, c.state.value.galleryItems.single().node.id)
+        c.filterGalleryKind("image"); runCurrent()
+        assertEquals(993L, c.state.value.galleryItems.single().node.id)
+        c.filterGalleryKind(""); runCurrent()
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
+        c.openFilesApp(); runCurrent()
+        assertEquals("", c.state.value.galleryMediaKind)
+        c.close()
+    }
+
+    @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("  sunset  "); runCurrent()
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        assertEquals(listOf("sunset"), api.gallerySearchRequests)
+        assertEquals(991L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery(""); runCurrent()
+        assertTrue(c.state.value.gallerySearchQuery.isEmpty())
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.searchGallery("sunset"); runCurrent()
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertTrue(c.state.value.gallerySearchQuery.isEmpty())
+    }
+
+    @Test fun GalleryTimelineJumpUsesTrueGlobalOffsetAndPagesBothDirections() = runTest {
+        val api = Service().apply { provideGalleryTimeline = true }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals(2, c.state.value.galleryTimelineSets!!.year.size)
+        val originalEpoch = c.state.value.galleryJumpEpoch
+        c.jumpGalleryToGroup("year", "not-a-server-group"); runCurrent()
+        assertEquals(1, api.galleryRequests.size)
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
+        assertEquals(60, c.state.value.galleryJumpIndex)
+        assertTrue(c.state.value.galleryJumpEpoch > originalEpoch)
+        assertEquals(60, c.state.value.galleryOffset)
+        assertEquals(60, c.state.value.galleryItems.size)
+        assertEquals(2060L, c.state.value.galleryItems.first().node.id)
+        assertEquals(listOf(0 to true, 60 to false), api.galleryRequests)
+
+        c.galleryLoadNewer(); runCurrent()
+        assertEquals(61, c.state.value.galleryItems.size)
+        assertEquals(990L, c.state.value.galleryItems.last().node.id)
+        assertEquals(60, c.state.value.galleryOffset)
+        c.galleryLoadOlder(); runCurrent()
+        assertEquals(0, c.state.value.galleryOffset)
+        assertEquals(121, c.state.value.galleryItems.size)
+        assertEquals(2000L, c.state.value.galleryItems.first().node.id)
+        assertEquals(listOf(0 to true, 60 to false, 120 to false, 0 to false),
+            api.galleryRequests)
+        c.searchGallery("sunset"); runCurrent()
+        assertNull(c.state.value.galleryTimelineSets)
+        assertNull(c.state.value.galleryJumpIndex)
+        val afterSearchEpoch = c.state.value.galleryJumpEpoch
+        c.openFilesApp(); runCurrent()
+        c.openGallery(); runCurrent()
+        assertTrue(c.state.value.galleryJumpEpoch > afterSearchEpoch)
+        assertEquals(120, c.state.value.galleryOffset)
+        assertNotNull(c.state.value.galleryTimelineSets)
+        c.close()
+    }
+
+    @Test fun GalleryTimelinePartialOlderRangeMustMatchAlreadyLoadedOwnerRows() = runTest {
+        val api = object : Service() {
+            private val rows = (0 until 41).map { i ->
+                GalleryAsset(DriveNode(4000L + i, 1, "photo-$i.jpg",
+                    "file", size = 9, revision = 1), "image", hasThumbnail = true)
+            }
+            override suspend fun galleryPage(accessToken: String, offset: Int,
+                initialLatest: Boolean): GalleryPage {
+                return if (initialLatest) GalleryPage(listOf(rows.last()), 41, 40)
+                else GalleryPage(rows, 41, 0)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.galleryLoadOlder(); runCurrent()
+        assertNull(c.state.value.error)
+        assertEquals(0, c.state.value.galleryOffset)
+        assertEquals(41, c.state.value.galleryItems.size)
+        assertEquals(4040L, c.state.value.galleryItems.last().node.id)
+        c.close()
+    }
+
     @Test fun GalleryLoadsRealChronologicalTailAndPagesOlderWithoutLosingFilesOwner() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -699,6 +846,76 @@ class DriveControllerTest {
         assertTrue(c.state.value.galleryLoaded)
         assertNull(c.state.value.fileExportPending)
         assertNull(c.state.value.fileExportOrigin)
+    }
+
+    @Test fun gallerySearchAndKindScopeRetireDelayedSafPickerBeforeAnyDownload() = runTest {
+        val api = Service().apply { provideGalleryTimeline = true }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val latest = c.state.value.galleryItems.single()
+        c.showGalleryInfo(latest)
+        assertTrue(c.prepareFileExport(latest.node))
+        assertEquals(Screen.GALLERY, c.state.value.fileExportOrigin)
+
+        // The SAF picker can return after Owner search changes the visible rows.
+        c.searchGallery("sunset"); runCurrent()
+        assertEquals("sunset", c.state.value.gallerySearchQuery)
+        assertNull(c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportOrigin)
+        var discarded = 0
+        c.saveFileExport({ error("stale search picker must not open output") }, { discarded++ })
+        runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(0, api.downloadReads)
+
+        // Changing media kind also invalidates a picker from the prior Range.
+        val searched = c.state.value.galleryItems.single()
+        c.showGalleryInfo(searched)
+        assertTrue(c.prepareFileExport(searched.node))
+        c.filterGalleryKind("video"); runCurrent()
+        assertEquals("video", c.state.value.galleryMediaKind)
+        assertNull(c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportOrigin)
+        c.saveFileExport({ error("stale kind picker must not open output") }, { discarded++ })
+        runCurrent()
+        assertEquals(2, discarded)
+        assertEquals(0, api.downloadReads)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertFalse(c.state.value.fileDownloadSaved)
+        c.close()
+    }
+
+    @Test fun galleryIndexedJumpCancelsActiveSafDownloadAndDiscardsPartialOutput() = runTest {
+        val api = Service().apply {
+            provideGalleryTimeline = true
+            downloadGate = CompletableDeferred()
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertNotNull(c.state.value.galleryTimelineSets)
+        val original = c.state.value.galleryItems.single()
+        c.showGalleryInfo(original)
+        assertTrue(c.prepareFileExport(original.node))
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+
+        // A real Server-indexed jump retires the prior media/SAF Owner work.
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
+        assertEquals(1, api.downloadReads)
+        assertEquals(1, discarded)
+        assertEquals(60, c.state.value.galleryJumpIndex)
+        assertTrue(c.state.value.galleryLoaded)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertEquals(0L, c.state.value.fileDownloadBytes)
+        assertNull(c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportOrigin)
+        assertNull(c.state.value.fileDownloadError)
+        assertNull(c.state.value.error)
+        c.close()
     }
 
     @Test fun galleryFailedExportDoesNotOfferMisleadingGalleryPageRetry() = runTest {
