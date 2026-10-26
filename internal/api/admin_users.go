@@ -540,6 +540,10 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 }
 
 func (s *Server) changePassword(c *gin.Context) {
+	browser := browserAuthRoute(c)
+	if browser && !requireBrowserAuthOrigin(c) {
+		return
+	}
 	var req struct {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
@@ -593,6 +597,11 @@ func (s *Server) changePassword(c *gin.Context) {
 		} else {
 			fail(c, http.StatusInternalServerError, "change password failed")
 		}
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	if browser {
+		s.replyBrowserAuthSession(c, session)
 		return
 	}
 	c.JSON(http.StatusOK, session)

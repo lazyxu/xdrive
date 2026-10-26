@@ -27,6 +27,7 @@ import (
 
 var (
 	errInvalidRefreshToken = errors.New("invalid refresh token")
+	errBrowserOwnerChanged = errors.New("browser session owner changed")
 	errAccountDisabled     = errors.New("account disabled")
 	errRevisionConflict    = errors.New("revision conflict")
 	errRootMutation        = errors.New("root mutation")
@@ -52,6 +53,7 @@ type authResponse struct {
 	Username           string `json:"username"`
 	Role               string `json:"role"`
 	MustChangePassword bool   `json:"must_change_password"`
+	BrowserSession     bool   `json:"browser_session,omitempty"`
 }
 
 type nodeDTO struct {
@@ -77,6 +79,10 @@ func toNodeDTO(n meta.Node) nodeDTO {
 }
 
 func (s *Server) login(c *gin.Context) {
+	browser := browserAuthRoute(c)
+	if browser && !requireBrowserAuthOrigin(c) {
+		return
+	}
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -132,15 +138,38 @@ func (s *Server) login(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "login failed")
 		return
 	}
+	c.Header("Cache-Control", "no-store")
+	if browser {
+		s.replyBrowserAuthSession(c, session)
+		return
+	}
 	c.JSON(http.StatusOK, session)
 }
 
 func (s *Server) refresh(c *gin.Context) {
+	browser := browserAuthRoute(c)
+	if browser && !requireBrowserAuthOrigin(c) {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	var req refreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
+	if browser {
+		// Browser routes cannot accept JSON bearer credentials by mistake.
+		if c.Request.ContentLength != 0 {
+			fail(c, http.StatusBadRequest, "browser refresh must have an empty body")
+			return
+		}
+		var ok bool
+		req.RefreshToken, ok = browserRefreshCookie(c)
+		if !ok {
+			fail(c, http.StatusUnauthorized, "missing browser session")
+			return
+		}
+	} else if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
 		fail(c, http.StatusBadRequest, "refresh_token is required")
 		return
 	}
+	expectedBrowserOwner := strings.TrimSpace(c.GetHeader("X-XDrive-Browser-Owner"))
 	hash := auth.HashRefreshToken(req.RefreshToken)
 	var out authResponse
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -158,6 +187,10 @@ func (s *Server) refresh(c *gin.Context) {
 		var user meta.User
 		if err := tx.First(&user, current.UserID).Error; err != nil {
 			return errInvalidRefreshToken
+		}
+		if browser && expectedBrowserOwner != "" && user.Username != expectedBrowserOwner {
+			// Do not rotate another tab's newly signed-in Owner's Cookie.
+			return errBrowserOwnerChanged
 		}
 		if user.DisabledAt != nil {
 			_ = tx.Model(&current).Update("revoked_at", now).Error
@@ -186,19 +219,43 @@ func (s *Server) refresh(c *gin.Context) {
 			fail(c, http.StatusUnauthorized, "invalid or expired refresh token")
 		case errors.Is(err, errAccountDisabled):
 			fail(c, http.StatusForbidden, "account_disabled")
+		case errors.Is(err, errBrowserOwnerChanged):
+			fail(c, http.StatusConflict, "browser session owner changed")
 		default:
 			fail(c, http.StatusInternalServerError, "refresh failed")
 		}
+		return
+	}
+	if browser {
+		s.replyBrowserAuthSession(c, out)
 		return
 	}
 	c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) logout(c *gin.Context) {
+	browser := browserAuthRoute(c)
+	if browser && !requireBrowserAuthOrigin(c) {
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	var req refreshRequest
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
+	if browser {
+		if c.Request.ContentLength != 0 {
+			fail(c, http.StatusBadRequest, "browser logout must have an empty body")
+			return
+		}
+		req.RefreshToken, _ = browserRefreshCookie(c)
+	} else {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			req.RefreshToken = ""
+		}
+	}
+	if strings.TrimSpace(req.RefreshToken) == "" {
+		if browser {
+			clearBrowserRefreshCookie(c)
+		}
 		http.SetCookie(c.Writer, baidumapjsapi.MapSessionRevocationCookie())
 		c.Status(http.StatusNoContent)
 		return
@@ -207,6 +264,7 @@ func (s *Server) logout(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "logout is unavailable")
 		return
 	}
+	expectedBrowserOwner := strings.TrimSpace(c.GetHeader("X-XDrive-Browser-Owner"))
 	now := time.Now().UTC()
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// A refresh token is the authority for this particular logout. Lock it
@@ -227,6 +285,10 @@ func (s *Server) logout(c *gin.Context) {
 		if err := tx.Where("id = ?", refresh.UserID).Take(&owner).Error; err != nil {
 			return err
 		}
+		if browser && expectedBrowserOwner != "" && owner.Username != expectedBrowserOwner {
+			// A stale tab must not log out a different Owner's ambient Cookie.
+			return errBrowserOwnerChanged
+		}
 		update := tx.Model(&meta.RefreshToken{}).
 			Where("id = ? AND revoked_at IS NULL", refresh.ID).
 			Update("revoked_at", now)
@@ -246,8 +308,15 @@ func (s *Server) logout(c *gin.Context) {
 			map[string]any{"epoch": epoch.Epoch, "scope": "map-only"}))
 	})
 	if err != nil {
-		fail(c, http.StatusServiceUnavailable, "logout is unavailable")
+		if errors.Is(err, errBrowserOwnerChanged) {
+			fail(c, http.StatusConflict, "browser session owner changed")
+		} else {
+			fail(c, http.StatusServiceUnavailable, "logout is unavailable")
+		}
 		return
+	}
+	if browser {
+		clearBrowserRefreshCookie(c)
 	}
 	http.SetCookie(c.Writer, baidumapjsapi.MapSessionRevocationCookie())
 	c.Status(http.StatusNoContent)

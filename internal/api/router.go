@@ -143,6 +143,11 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/auth/login", s.login)
 	v1.POST("/auth/refresh", s.refresh)
 	v1.POST("/auth/logout", s.logout)
+	// Cookie mode is opt-in. The legacy JSON Token API remains unchanged
+	// for Android, Desktop Agent, xd, and older Web deployments.
+	v1.POST("/auth/browser/login", s.login)
+	v1.POST("/auth/browser/refresh", s.refresh)
+	v1.POST("/auth/browser/logout", s.logout)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/download", s.publicShareDownload)
@@ -180,6 +185,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
 	authed.POST("/me/change-password", s.changePassword)
+	// Authenticated browser password rotation gets a new HttpOnly cookie,
+	// without exposing the new durable refresh token in JSON.
+	authed.POST("/me/change-password/browser", s.changePassword)
 	authed.GET("/search", s.searchNodes)
 	authed.GET("/changes", s.listNodeChanges)
 	authed.GET("/nodes/root", s.root)
@@ -661,7 +669,7 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			return
 		}
 		path := c.Request.URL.Path
-		if user.MustChangePassword && path != "/api/v1/me" && path != "/api/v1/me/change-password" {
+		if user.MustChangePassword && path != "/api/v1/me" && path != "/api/v1/me/change-password" && path != "/api/v1/me/change-password/browser" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
 			return
 		}
