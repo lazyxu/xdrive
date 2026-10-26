@@ -18,7 +18,9 @@ import {
   AppBar,
   Box,
   Button,
+  Checkbox,
   Chip,
+  FormControlLabel,
   ListItemIcon,
   ListItemText,
   MenuItem,
@@ -180,6 +182,8 @@ const REFRESH_KEY = 'xdrive.refresh_token'
 const EXPIRES_KEY = 'xdrive.access_expires_at'
 const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
+const REMEMBER_LOGIN_KEY = 'xdrive.remember_login'
+const LAST_USERNAME_KEY = 'xdrive.last_username'
 const AUTH_STORAGE_KEYS = [ACCESS_KEY, LEGACY_TOKEN_KEY, REFRESH_KEY, EXPIRES_KEY, USER_KEY] as const
 
 // Public share links belong to the current URL, including browser Back/Forward.
@@ -214,6 +218,11 @@ type AppView = XDriveWorkspaceViewKey<
 >
 
 function initialSession(): AuthSession {
+  if (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) === 'false') {
+    // A previous interrupted opt-out must not resurrect old durable credentials.
+    xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+    return { accessToken: '', refreshToken: '', accessExpiresAt: 0 }
+  }
   const legacy = xDriveBrowserStorageRead(LEGACY_TOKEN_KEY) ?? ''
   return {
     accessToken: xDriveBrowserStorageRead(ACCESS_KEY) ?? legacy,
@@ -315,6 +324,7 @@ function App({
   onAppearanceChange: (appearance: XDriveAppearance) => void
 }) {
   const [session, setSession] = useState<AuthSession>(initialSession)
+  const [rememberLogin, setRememberLogin] = useState(() => xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) !== 'false')
   const [username, setUsername] = useState(() => xDriveBrowserStorageRead(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
@@ -357,7 +367,12 @@ function App({
     }
   }, [])
 
-  const persistSession = useCallback((next: AuthSession) => {
+  const persistSession = useCallback((next: AuthSession, persist = rememberLogin) => {
+    if (!persist) {
+      xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+      setSession(next)
+      return
+    }
     // Storage can be denied (or fail partway through) without invalidating a
     // successful Server login/refresh in this live window. Remove partial
     // durable credentials so a later launch never revives a mixed session.
@@ -369,7 +384,7 @@ function App({
     ].every(Boolean)
     if (!saved) xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
     setSession(next)
-  }, [])
+  }, [rememberLogin])
 
   const clearSession = useCallback((notice = '') => {
     xDriveClearBaiduConversionSession()
@@ -461,10 +476,18 @@ function App({
         api={api}
         serverBuild={serverBuild}
         notice={authNotice}
+        rememberLogin={rememberLogin}
+        onRememberLoginChange={(checked) => {
+          // Opting out revokes durable browser restoration immediately.
+          if (!checked) xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+          setRememberLogin(checked)
+          xDriveBrowserStorageWrite(REMEMBER_LOGIN_KEY, String(checked))
+        }}
         onAuthenticated={(result) => {
           setAuthNotice('')
-          persistSession(sessionFromAuth(result))
-          if (!xDriveBrowserStorageWrite(USER_KEY, result.username)) {
+          persistSession(sessionFromAuth(result), rememberLogin)
+          if (rememberLogin) xDriveBrowserStorageWrite(LAST_USERNAME_KEY, result.username)
+          if (rememberLogin && !xDriveBrowserStorageWrite(USER_KEY, result.username)) {
             // Do not leave persisted tokens without their matching username.
             xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
           }
@@ -491,16 +514,20 @@ function AuthView({
   api,
   serverBuild,
   notice,
+  rememberLogin,
+  onRememberLoginChange,
   onAuthenticated,
 }: {
   api: XDriveApi
   serverBuild: BuildInfo | null
   notice: string
+  rememberLogin: boolean
+  onRememberLoginChange: (checked: boolean) => void
   onAuthenticated: (result: AuthResult) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [loginUsername, setLoginUsername] = useState('')
+  const [loginUsername, setLoginUsername] = useState(() => xDriveBrowserStorageRead(LAST_USERNAME_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -571,6 +598,12 @@ function AuthView({
               setPassword(value)
               if (passwordError) setPasswordError('')
             }}
+          />
+          <FormControlLabel
+            control={<Checkbox size="small" checked={rememberLogin}
+              onChange={(_event, checked) => onRememberLoginChange(checked)} />}
+            label="保持登录"
+            sx={{ color: 'text.secondary', '& .MuiFormControlLabel-label': { fontSize: 13 } }}
           />
           <XDriveAuthSubmitRow fullWidth>
             <XDriveActionButton

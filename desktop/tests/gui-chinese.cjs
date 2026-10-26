@@ -380,7 +380,7 @@ test('desktop page-level status alerts use the shared alert surface', () => {
   assert.equal(renderer.includes('<Snackbar'), false, 'desktop should not render raw MUI Snackbar after shared feedback migration')
   assert.ok(renderer.includes('variant="filled"'), 'transient Snackbar alert should remain the filled special case')
   assert.ok(renderer.includes('密码由操作系统安全凭据存储加密，不会以明文写入配置文件。'), 'login security note should remain a lightweight non-alert note')
-  assert.ok(renderer.includes('自动登录未成功，已暂时关闭自动登录'), 'auto-login failures need an inline warning')
+  assert.ok(renderer.includes('自动恢复登录未成功'), 'auto-login failures need an inline warning')
   assert.ok(renderer.includes('window.xdriveDesktop.onLoginHistory'), 'auto-login failures must be pushed to the renderer instead of silently falling back')
   assert.ok(renderer.includes('{error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}'), 'login errors need a stable inline error surface')
   for (const text of [

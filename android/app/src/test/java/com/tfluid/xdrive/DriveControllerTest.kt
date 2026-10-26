@@ -1176,6 +1176,69 @@ class DriveControllerTest {
         assertEquals(listOf(root), c.state.value.path)
     }
 
+    private class TestVault : DriveSessionPersistence {
+        var value: SavedDriveSession? = null
+        var cleared = 0
+        override fun load() = value
+        override fun save(server: String, session: AuthSession) {
+            value = SavedDriveSession(server, session.username, session.refreshToken)
+        }
+        override fun clear() { value = null; cleared++ }
+    }
+
+    @Test fun unifiedLoginPersistsRefreshAndColdStartRestoresWithoutPassword() = runTest {
+        val vault = TestVault()
+        val service = Service()
+        val first = DriveController(this, { service }, sessionPersistence = vault)
+        first.connectAndLogin("https://drive.example", false, "", "owner", "secret-password", true)
+        runCurrent()
+        assertEquals(Screen.FILES, first.state.value.screen)
+        assertEquals("refresh", vault.value?.refreshToken)
+        first.close() // Process exit must NOT log out.
+        val second = DriveController(this, { service }, sessionPersistence = vault)
+        second.restoreSession()
+        runCurrent()
+        assertEquals(1, service.refreshed)
+        assertEquals(Screen.FILES, second.state.value.screen)
+        assertEquals("rotated", vault.value?.refreshToken)
+        second.logout()
+        runCurrent()
+        assertNull(vault.value)
+        assertEquals(Screen.LOGIN, second.state.value.screen)
+        second.close()
+    }
+
+    @Test fun offlineRestoreKeepsVaultButRevokedRefreshReturnsToLogin() = runTest {
+        val vault = TestVault().apply {
+            value = SavedDriveSession("https://drive.example/", "owner", "saved-refresh")
+        }
+        val offline = Service().apply { refreshFailure = ApiException(503, "network unavailable") }
+        val first = DriveController(this, { offline }, sessionPersistence = vault)
+        first.restoreSession()
+        runCurrent()
+        assertEquals(Screen.CONNECT, first.state.value.screen)
+        assertEquals("saved-refresh", vault.value?.refreshToken)
+        first.close()
+        val expired = Service().apply { refreshFailure = ApiException(401, "invalid") }
+        val second = DriveController(this, { expired }, sessionPersistence = vault)
+        second.restoreSession()
+        runCurrent()
+        assertEquals(Screen.LOGIN, second.state.value.screen)
+        assertNull(vault.value)
+        second.close()
+    }
+
+    @Test fun optOutOfKeepingLoginDoesNotPersistCredential() = runTest {
+        val vault = TestVault()
+        val service = Service()
+        val c = DriveController(this, { service }, sessionPersistence = vault)
+        c.connectAndLogin("https://drive.example", false, "", "owner", "secret", false)
+        runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertNull(vault.value)
+        c.close()
+    }
+
     @Test fun oldLoginResponseCannotSignInAfterChangingServer() = runTest {
         val late = CompletableDeferred<AuthSession>()
         val api = object : Service() {

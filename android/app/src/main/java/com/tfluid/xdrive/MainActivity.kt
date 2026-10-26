@@ -134,6 +134,8 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
             putString("route.lan:$origin", route.lanIp)
             putString("route.public:$origin", route.publicIp)
         } },
+        sessionPersistence = AndroidSessionStore(application),
     )
+    init { controller.restoreSession() }
     override fun onCleared() { updates.close(); controller.close() }
 }

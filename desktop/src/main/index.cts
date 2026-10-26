@@ -2399,6 +2399,11 @@ async function runAgentAction<T>(operation: () => Promise<T>, refresh = true): P
 }
 
 async function attemptAutomaticLogin() {
+  // Keep this decision in the auto-login owner, so fixture execution of the
+  // standalone entrypoint exercises exactly the same failure semantics.
+  const credentialsMustBeReentered = (code: string, status?: number): boolean =>
+    status === 401 || status === 403 ||
+    /password|credential|unauthorized|forbidden|revoked|disabled|tls|pin|trust/i.test(code)
   const profile = automaticLoginProfile(loginHistory)
   if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
   if (!agentState.connected || agentState.status?.configured) return
@@ -2415,7 +2420,8 @@ async function attemptAutomaticLogin() {
     if (requiresApprovedLANPin(profile.server) && !trustedLAN) {
       throw new Error('局域网服务器证书与已批准的身份不匹配；已拒绝自动登录。')
     }
-    const route = parseConnectionRoute(profile.connection_route)
+    const previousRoute = parseConnectionRoute(profile.connection_route)
+    const route: ConnectionRoute = { mode: 'auto', lan_ip: previousRoute.lan_ip, public_ip: '' }
     const selected = hasConnectionRoute(route) ? await selectConnectionRoute(profile.server, route, attempt.signal) : null
     if (loginHistory !== attemptedLoginHistory || !attempt.current()) return
     const password = decryptLoginPassword(profile.encrypted_password)
@@ -2432,8 +2438,10 @@ async function attemptAutomaticLogin() {
       // An obsolete failure must not disable a more recently accepted login.
       if (loginHistory !== attemptedLoginHistory) return
       lastAutoLoginError = result.error.message || '自动登录失败，请手动登录。'
-      loginHistory = disableAutomaticLogin(loginHistory)
-      await persistLoginHistoryBestEffort()
+      if (credentialsMustBeReentered(result.error.code, result.error.status)) {
+        loginHistory = disableAutomaticLogin(loginHistory)
+        await persistLoginHistoryBestEffort()
+      }
       lifecycleLog?.record('auto_login_failed', { code: result.error.code, status: result.error.status })
       return
     }
@@ -2441,8 +2449,10 @@ async function attemptAutomaticLogin() {
   } catch (error) {
     if (loginHistory !== attemptedLoginHistory || !attempt.current()) return
     lastAutoLoginError = formatLifecycleError(error)
-    loginHistory = disableAutomaticLogin(loginHistory)
-    await persistLoginHistoryBestEffort()
+    if (/证书|信任|身份|certificate|trust|pin|decrypt|credential/i.test(lastAutoLoginError)) {
+      loginHistory = disableAutomaticLogin(loginHistory)
+      await persistLoginHistoryBestEffort()
+    }
     lifecycleLog?.record('auto_login_failed', { error: lastAutoLoginError })
   } finally {
     endLANAuthentication()

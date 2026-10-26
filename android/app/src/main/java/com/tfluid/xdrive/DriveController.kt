@@ -88,6 +88,7 @@ class DriveController(
     private val routedServiceFactory: (ServerAddress, String) -> XDriveService = { address, ip -> XDriveApi(address, connectionIp = ip) },
     private val saveRoute: (String, ConnectionRoute) -> Unit = { _, _ -> },
     private val loadRoute: (String) -> ConnectionRoute = { ConnectionRoute() },
+    private val sessionPersistence: DriveSessionPersistence? = null,
 ) : Closeable {
     private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
@@ -95,6 +96,7 @@ class DriveController(
     private var address: ServerAddress? = null
     private var api: XDriveService? = null
     private var session: AuthSession? = null // Never part of UI state or saved state.
+    private var keepLogin = false
     private var generation = 0L
     private var active: Job? = null
     private val galleryThumbnailLimit = Semaphore(4)
@@ -135,7 +137,138 @@ class DriveController(
         mutableState.value = DriveState(screen = Screen.LOGIN, server = next.url, allowHttp = allowHttp, route = route, connectionIp = ip)
     }
 
-    fun login(username: String, password: String) {
+    private fun persistRefreshSession() {
+        val stored = sessionPersistence ?: return
+        val current = session ?: return
+        try {
+            if (keepLogin && state.value.server.startsWith("https://")) stored.save(state.value.server, current)
+            else stored.clear()
+        } catch (_: Exception) {
+            // Never continue claiming a durable login when refresh rotation could not be committed.
+            runCatching { stored.clear() }
+        }
+    }
+
+    /**
+     * On cold start, authenticate the same saved Server and Owner with one refresh.
+     * Connectivity failure keeps the encrypted credential for a later retry.
+     * Invalid/revoked credentials are discarded and return to manual login.
+     */
+    fun restoreSession() {
+        val vault = sessionPersistence ?: return
+        if (state.value.screen != Screen.CONNECT || state.value.loading) return
+        request { ticket ->
+            val saved = try { vault.load() } catch (_: Exception) { null } ?: return@request
+            checkCurrent(ticket)
+            val server = try { ServerAddress.parse(saved.server) } catch (_: Exception) {
+                runCatching { vault.clear() }
+                return@request
+            }
+            val originalRoute = loadRoute(server.url)
+            val route = ConnectionRoute(lanIp = originalRoute.lanIp)
+            var candidate: XDriveService? = null
+            try {
+                route.validate(server)
+                val ip = if (route.enabled) routeSelector(server, route) else null
+                checkCurrent(ticket)
+                val restoredApi = if (ip == null) serviceFactory(server) else routedServiceFactory(server, ip)
+                candidate = restoredApi
+                val restored = restoredApi.refresh(saved.refreshToken)
+                checkCurrent(ticket)
+                if (restored.username != saved.username) throw ApiException(401, "Owner mismatch")
+                api = restoredApi
+                address = server
+                session = restored
+                keepLogin = true
+                mutableState.value = DriveState(
+                    screen = if (restored.mustChangePassword) Screen.PASSWORD else Screen.FILES,
+                    server = server.url, route = route, connectionIp = ip, username = restored.username,
+                )
+                persistRefreshSession()
+                // A valid refreshed session survives a later transient directory read error.
+                // Let request() report it without turning a network outage into logout.
+                if (!restored.mustChangePassword) {
+                    try { loadWithin(restoredApi, emptyList(), 0, ticket) }
+                    catch (failure: Exception) {
+                        if (failure is ApiException && failure.statusCode == 401) throw failure
+                        if (failure is CancellationException) throw failure
+                        mutableState.value = state.value.copy(error = safeError(failure))
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                if (candidate !== api) (candidate as? Closeable)?.close()
+                throw cancelled
+            } catch (failure: Exception) {
+                if (candidate === api) {
+                    session = null
+                    api = null
+                }
+                (candidate as? Closeable)?.close()
+                if (failure is ApiException && failure.statusCode in listOf(401, 403)) {
+                    runCatching { vault.clear() }
+                    mutableState.value = DriveState(screen = Screen.LOGIN, server = server.url,
+                        route = route, username = saved.username,
+                        error = "登录已失效，请重新输入密码。")
+                } else {
+                    // Network outage is NOT logout; preserve the refresh token on disk.
+                    mutableState.value = DriveState(screen = Screen.CONNECT, server = server.url,
+                        route = route, username = saved.username,
+                        error = "无法自动恢复登录，请检查网络或直接登录。")
+                }
+            }
+        }
+    }
+
+    /** One-page native login. Never persist or route credentials until HTTPS identity checks finish. */
+    fun connectAndLogin(
+        serverInput: String, allowHttp: Boolean, lanIp: String,
+        username: String, password: String, rememberSession: Boolean,
+    ) {
+        if (state.value.screen !in listOf(Screen.CONNECT, Screen.LOGIN) || state.value.loading) return
+        if (username.isBlank() || password.isEmpty()) {
+            mutableState.value = state.value.copy(error = "请输入用户名和密码。")
+            return
+        }
+        val next = try { ServerAddress.parse(serverInput, allowHttp) } catch (_: IllegalArgumentException) {
+            mutableState.value = state.value.copy(error = "请输入完整有效的 HTTPS 服务器地址。")
+            return
+        }
+        val route = ConnectionRoute(lanIp = lanIp.trim())
+        try { route.validate(next) } catch (_: IllegalArgumentException) {
+            mutableState.value = state.value.copy(error = "内网 IP 无效，或服务器已直接使用 IP 地址。")
+            return
+        }
+        request { ticket ->
+            val ip = if (route.enabled) routeSelector(next, route) else null
+            checkCurrent(ticket)
+            val candidate = if (ip == null) serviceFactory(next) else routedServiceFactory(next, ip)
+            try {
+                val result = candidate.login(username.trim(), password)
+                checkCurrent(ticket)
+                val oldApi = api
+                api = candidate
+                address = next
+                session = result
+                keepLogin = rememberSession && next.url.startsWith("https://")
+                saveConnection(next.url, allowHttp)
+                saveRoute(next.url, route)
+                mutableState.value = DriveState(
+                    screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES,
+                    server = next.url, allowHttp = allowHttp, route = route, connectionIp = ip,
+                    username = result.username,
+                )
+                persistRefreshSession()
+                if (oldApi !== candidate) (oldApi as? Closeable)?.close()
+                if (!result.mustChangePassword) loadWithin(candidate, emptyList(), 0, ticket)
+            } finally {
+                if (api !== candidate) (candidate as? Closeable)?.close()
+            }
+        }
+    }
+
+    fun login(username: String, password: String) = loginWithPreference(username, password, true)
+
+    fun loginWithPreference(username: String, password: String, rememberSession: Boolean) {
         if (state.value.screen != Screen.LOGIN || state.value.loading) return
         if (username.isBlank() || password.isEmpty()) {
             mutableState.value = state.value.copy(error = "请输入用户名和密码。")
@@ -153,10 +286,12 @@ class DriveController(
             val result = service.login(username.trim(), password)
             checkCurrent(it)
             session = result
+            keepLogin = rememberSession && state.value.server.startsWith("https://")
             mutableState.value = state.value.copy(
                 screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES,
                 username = result.username,
             )
+            persistRefreshSession()
             if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, it)
         }
     }
@@ -174,6 +309,7 @@ class DriveController(
             }
             checkCurrent(ticket)
             session = result
+            persistRefreshSession()
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
             if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, ticket)
         }
@@ -1034,6 +1170,7 @@ class DriveController(
         }
         checkCurrent(ticket)
         session = refreshed
+        persistRefreshSession()
         if (refreshed.mustChangePassword && !allowPasswordChange) {
             // A token refresh may require password rotation while the
             // destination picker is open. Clear its Owner-private folder rows
@@ -1084,6 +1221,8 @@ class DriveController(
                     if (failure is ApiException && failure.statusCode == 401 &&
                         failure.reason != ApiFailureReason.CURRENT_PASSWORD_INCORRECT && session != null) {
                         session = null
+                        keepLogin = false
+                        runCatching { sessionPersistence?.clear() }
                         retryPath = null
                         retryAppend = false
                         if (state.value.route.enabled) { (api as? Closeable)?.close(); api = null }
@@ -1131,6 +1270,8 @@ class DriveController(
         val oldSession = session
         invalidate()
         session = null
+        keepLogin = false
+        runCatching { sessionPersistence?.clear() }
         retryPath = null
         retryOffset = 0
         retryAppend = false

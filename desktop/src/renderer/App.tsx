@@ -336,11 +336,6 @@ export default function App({
     code?: string
   }>({ key: 'idle' })
   const [serverProbeRetry, setServerProbeRetry] = useState(0)
-  const [lanTrust, setLANTrust] = useState<{
-    status: 'none' | 'trusted' | 'blocked'
-    sha256?: string
-    source?: 'user-approved-lan' | 'verified-domain'
-  }>({ status: 'none' })
   const [loginDiagnosticsOpen, setLoginDiagnosticsOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -1302,25 +1297,8 @@ export default function App({
     if (routeOriginRef.current === key) return
     routeOriginRef.current = key
     const saved = loginHistory.profiles.find(profile => profile.server.trim().replace(/\/$/, '') === key)
-    setConnectionRoute(saved?.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
+    setConnectionRoute({ mode: 'auto', lan_ip: saved?.connection_route?.lan_ip || '', public_ip: '' })
   }, [server, loginHistory.profiles])
-
-  useEffect(() => {
-    const candidate = server.trim()
-    if (configured || !candidate) {
-      setLANTrust({ status: 'none' })
-      return
-    }
-    let active = true
-    // Read only the current origin's status and SHA-256. Never obtain the
-    // private CA PEM, Agent token, or another account's login history.
-    void window.xdriveDesktop.getLANTrust(candidate).then(result => {
-      if (active) setLANTrust(result.ok ? result.data : { status: 'none' })
-    }).catch(() => {
-      if (active) setLANTrust({ status: 'none' })
-    })
-    return () => { active = false }
-  }, [configured, server, serverProbeRetry])
 
   useEffect(() => {
     if (configured) {
@@ -1525,7 +1503,7 @@ export default function App({
   const applyLoginProfile = (profile?: DesktopLoginProfile) => {
     if (!profile) return
     setLoginMount(profile.mount_path || '')
-    setConnectionRoute(profile.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
+    setConnectionRoute({ mode: 'auto', lan_ip: profile.connection_route?.lan_ip || '', public_ip: '' })
     setRememberPassword(loginHistory.secure_password_storage && profile.remember_password)
     setAutoLogin(loginHistory.secure_password_storage && profile.auto_login)
     setPassword('')
@@ -1585,7 +1563,7 @@ export default function App({
       remember_password: remember,
       auto_login: remember && autoLogin,
       use_saved_password: savedPasswordAvailable,
-      connection_route: connectionRoute,
+      connection_route: { mode: 'auto', lan_ip: connectionRoute.lan_ip, public_ip: '' },
     }))
     if (result) {
       setPassword('')
@@ -2332,7 +2310,7 @@ export default function App({
           <Stack spacing={1.75} sx={{ mt: 2.75 }}>
             {loginHistory.auto_login_error ? (
               <XDriveStatusAlert tone="warning">
-                自动登录未成功，已暂时关闭自动登录：{loginHistory.auto_login_error}
+                自动恢复登录未成功：{loginHistory.auto_login_error}。如果只是网络不可用，下次启动仍会重试。
               </XDriveStatusAlert>
             ) : null}
             {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
@@ -2386,89 +2364,27 @@ export default function App({
               />
             </XDriveAuthField>
 
-            <TextField select fullWidth size="small" label="连接模式" value={connectionRoute.mode} disabled={!!busy}
-              onChange={event => setConnectionRoute(current => ({ ...current, mode: event.target.value as DesktopConnectionRoute['mode'] }))}>
-              <MenuItem value="auto">自动</MenuItem><MenuItem value="lan">仅内网</MenuItem><MenuItem value="public">仅公网</MenuItem>
-            </TextField>
             <TextField fullWidth size="small" label="内网 IP（可选）" placeholder="192.168.2.4"
-              value={connectionRoute.lan_ip} disabled={!!busy || connectionRoute.mode === 'public'}
-              onChange={event => setConnectionRoute(current => ({ ...current, lan_ip: event.target.value }))} />
-            <TextField fullWidth size="small" label="公网 IP（可选，留空使用 DNS）" value={connectionRoute.public_ip}
-              disabled={!!busy || connectionRoute.mode === 'lan'}
-              onChange={event => setConnectionRoute(current => ({ ...current, public_ip: event.target.value }))} />
-            <Typography variant="caption" color="text.secondary">
-              填写内网 IP 后，自动模式优先内网，不可达时尝试公网；公网 DNS 不使用本机 hosts。
-              保留原域名的 HTTPS 校验，证书错误不回退。网络变化后请重新连接，不自动重发登录或上传。
-            </Typography>
-
-            {lanTrust.status === 'trusted' ? (
-              <XDriveStatusAlert tone="warning">
-                <Stack spacing={0.75}>
-                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                    已信任此局域网服务器的 HTTPS 根 CA。
-                    此信任仅限当前 IP 和端口，不会修改 Windows 系统根证书。
-                    {lanTrust.sha256 ? ' 根证书 SHA-256：' + lanTrust.sha256.toUpperCase() : ''}
-                  </Typography>
-                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                    <XDriveActionButton
-                      compact
-                      disabled={!!busy || !agent.connected}
-                      onClick={() => {
-                        const selected = server.trim()
-                        void run('revoke-lan', () => window.xdriveDesktop.revokeLANTrust(selected))
-                          .then(result => {
-                            if (result?.revoked && server.trim() === selected) {
-                              setServerProbeRetry(current => current + 1)
-                              setNotice('已撤销此服务器的信任并清除保存的登录密码。')
-                            }
-                          })
-                      }}
-                    >
-                      撤销此服务器信任
-                    </XDriveActionButton>
-                  </Stack>
-                </Stack>
-              </XDriveStatusAlert>
-            ) : null}
+              value={connectionRoute.lan_ip} disabled={!!busy}
+              onChange={event => setConnectionRoute({ mode: 'auto', lan_ip: event.target.value.trim(), public_ip: '' })}
+              helperText="自动优先尝试此内网地址；网络不可达时使用服务器域名 DNS。不会跳过 HTTPS 身份校验。"
+            />
 
             {serverProbe.key === 'error' && (serverProbe.code === 'server_tls_trust' ||
-              serverProbe.code === 'server_tls_pin_changed') ? (
+              serverProbe.code === 'server_tls_pin_changed') &&
+              /^https:\/\/(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.)/.test(server.trim()) ? (
               <XDriveStatusAlert tone="warning">
-                <Stack spacing={0.75}>
-                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                    {serverProbe.code === 'server_tls_pin_changed'
-                      ? '之前的局域网信任已被撤销，或原证书无法验证；需重新明确确认服务器身份。'
-                      : '当前设备尚未信任此局域网服务器的 HTTPS 证书。'}
-                    如果这是你自己部署的 xDrive，可以点击「信任此局域网服务器」；
-                    Desktop 会先检查证书链、有效期和 IP SAN，再显示证书指纹供你确认。
-                    仅对这个 IP 和端口保存信任，不会修改 Windows 系统根证书库。
-                    首次信任存在局域网服务器被冒充的风险，确认前不会发送账号密码。
-                  </Typography>
-                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                    <XDriveActionButton
-                      compact
-                      disabled={!!busy}
-                      onClick={() => {
-                        const selected = server.trim()
-                        void run('trust-lan', () => window.xdriveDesktop.trustLANServer(selected))
-                          .then((result) => {
-                            if (result?.trusted && server.trim() === selected) {
-                              setServerProbeRetry((current) => current + 1)
-                            }
-                          })
-                      }}
-                    >
-                      信任此局域网服务器
-                    </XDriveActionButton>
-                    <XDriveActionButton
-                      compact
-                      disabled={!!busy}
-                      onClick={() => setServerProbeRetry((current) => current + 1)}
-                    >
-                      重新检查 HTTPS
-                    </XDriveActionButton>
-                  </Stack>
-                </Stack>
+                首次连接此内网服务器需要验证身份。
+                <XDriveActionButton compact disabled={!!busy}
+                  onClick={() => {
+                    const selected = server.trim()
+                    void run('trust-lan', () => window.xdriveDesktop.trustLANServer(selected))
+                      .then(result => { if (result?.trusted && server.trim() === selected) {
+                        setServerProbeRetry(current => current + 1)
+                      } })
+                  }}>
+                  验证此服务器
+                </XDriveActionButton>
               </XDriveStatusAlert>
             ) : null}
 
