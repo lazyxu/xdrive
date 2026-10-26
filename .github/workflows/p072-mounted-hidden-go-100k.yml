@@ -1,6 +1,11 @@
 name: P072 Real Mounted Hidden 100k Share to Go Cancel
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/sh-p072-mounted-hidden-go-source.cjs'
+      - 'desktop/tests/sh-p018-public-cached-thumbnail-source.cjs'
+      - 'desktop/tests/sh-p021-unified-explorer.cjs'
 permissions:
   contents: read
 

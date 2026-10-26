@@ -3,6 +3,11 @@ name: PWA P0-B2b2b2 Real 17 MiB Go SIGKILL Resume
 on:
   pull_request:
     branches: [master, test/pwa-go-hot-session-b2b2b1-20261021]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/pwa-real-go-hot-upload-b2b2b2.cjs'
+      - 'desktop/scripts/pwa-real-go-hot-upload-b2b2b2.cjs'
+      - 'scripts/pwa-real-go-hot-upload-b2b2b2.sh'
   workflow_dispatch:
 
 permissions:

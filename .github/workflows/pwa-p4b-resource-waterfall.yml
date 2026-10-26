@@ -2,6 +2,11 @@ name: PWA P4B Native Owner 100k Resource Timing Stage Attribution
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-p4b-resource-waterfall.cjs'
+      - 'desktop/scripts/pwa-p4b-resource-waterfall.cjs'
+      - 'desktop/tests/pwa-p2a-before-contract.cjs'
 permissions:
   contents: read
 jobs:

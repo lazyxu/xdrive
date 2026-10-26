@@ -26,6 +26,21 @@ const cases = [
     "artifact": "p071-gallery-web-h264-100k-n3"
   }
 ]
+function eventPaths(yaml, file) {
+  const block = yaml.match(/^    paths:\n((?:      - '[^']+'\n)+)/m)
+  assert(block, file + ' must have a narrow event-level PR path scope')
+  return [...block[1].matchAll(/^      - '([^']+)'$/gm)].map(match => match[1])
+}
+
+// P071 freezes the actual PostgreSQL/CAS fixture, run budget and evidence
+// contract. Event-level PR scoping is intentionally independent of that
+// immutable runtime: different clients can need additional narrow paths.
+function withoutPrPathScope(yaml, file) {
+  const prefix = /^    # Limit branch-specific evidence to its dedicated source\/fixture paths\.\n    paths:\n(?:      - '[^']+'\n)+/m
+  assert(prefix.test(yaml), file + ' is missing its audited path-only trigger')
+  return yaml.replace(prefix, '')
+}
+
 for (const item of cases) {
   test('P071 immutable native 100k benchmark parity: ' + item.name, () => {
     const old = read(item.source)
@@ -34,7 +49,13 @@ for (const item of cases) {
     let expected = old.replace(/^name:.*$/m, 'name: ' + item.name)
     expected = expected.replace(/^    if:.*$/m, '    if: github.head_ref == \'' + branch + '\'')
     expected = expected.replace(outputName[0], '          name: ' + item.artifact)
-    assert.equal(read(item.target), expected, 'Real PostgreSQL/CAS fixture, n3, physical SHA, budgets, sample gates and source checkout must remain exact')
+    const target = read(item.target)
+    const targetPaths = eventPaths(target, item.target)
+    for (const required of eventPaths(old, item.source)) {
+      assert(targetPaths.includes(required), item.target + ' must keep related native source trigger: ' + required)
+    }
+    assert.equal(withoutPrPathScope(target, item.target), withoutPrPathScope(expected, item.source),
+      'Real PostgreSQL/CAS fixture, n3, physical SHA, budgets, sample gates and source checkout must remain exact outside PR path scope')
     for (const must of [
       'ref: $' + '{{ github.event.pull_request.head.sha }}',
       'image: postgres:17-alpine',

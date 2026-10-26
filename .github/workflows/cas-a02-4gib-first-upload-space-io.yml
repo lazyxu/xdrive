@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'desktop/tests/cas-a02-upload-space-io-4gib-source.cjs'
+      - 'desktop/tests/real-web-incompressible-cas-4gib-source.cjs'
+      - 'internal/api/real_web_cas_transfer_fixture_performance_integration_test.go'
 permissions:
   contents: read
 

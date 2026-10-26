@@ -2,6 +2,9 @@ name: CAS-A03 Actual 4GiB High-Entropy Local CAS Small Edit Version Cost
 on:
   pull_request:
     branches: [master]
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'internal/storage/cas_a03_real_4gib_version_performance_linux_test.go'
 permissions:
   contents: read
 jobs:

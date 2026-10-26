@@ -5,6 +5,9 @@ on:
     branches:
       - master
       - feat/places-ios27-mobile-map-list-20261023
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/gallery-places-ios27-camera-filmstrip.cjs'
 
 permissions:
   contents: read

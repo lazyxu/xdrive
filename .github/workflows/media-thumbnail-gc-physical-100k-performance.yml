@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/media-thumbnail-gc-physical-100k-source.cjs'
+      - 'internal/maintenance/media_thumbnail_gc_physical_100k_performance_test.go'
 permissions:
   contents: read
 

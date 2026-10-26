@@ -4,6 +4,9 @@ on:
     branches: [test/pwa-p4d-owner-sql-candidates-20261023]
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/pwa_p4d_owner_sql_candidates_integration_test.go'
 permissions:
   contents: read
 jobs:

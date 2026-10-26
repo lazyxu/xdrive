@@ -2,6 +2,11 @@ name: PWA P1 Genuine Owner 100k H264 Presented Motion
 on:
   pull_request:
     branches: [master, test/pwa-p1-100k-owner-viewer-back-20261025]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/pwa-p1-h264-presented-motion-source.cjs'
+      - 'desktop/tests/pwa-p1-owner-100k-viewer-back-source.cjs'
+      - 'desktop/tests/pwa-p0c2b2-real-spa-go-source.cjs'
   workflow_dispatch:
 
 permissions:

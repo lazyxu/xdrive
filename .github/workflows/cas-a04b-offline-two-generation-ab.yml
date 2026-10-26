@@ -2,6 +2,10 @@ name: CAS-A04b Real 400MiB Two-Generation Offline Blob Snapshot vs Full Tar
 on:
   pull_request:
     branches: [master]
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'scripts/bench-cas-a04b-offline-incremental-ab.py'
+      - 'scripts/bench-cas-a04-backup-generations.py'
 permissions:
   contents: read
 jobs:

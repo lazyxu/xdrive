@@ -1,7 +1,11 @@
 name: SH-P020 Owner Mobile Web 100k/115k Mixed Media Capability Regression
 on:
   # Branch-scoped guard below allows stacked or master-targeted specialty runs.
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/file-explorer-mobile-mixed-p049-source.cjs'
+      - 'internal/api/gallery_real_web_cold_performance_integration_test.go'
 permissions:
   contents: read
 jobs:

@@ -2,6 +2,11 @@ name: PWA P1D Genuine Owner 100k ABBA Order Attribution
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-p1d-owner-100k-abba-contract.cjs'
+      - 'desktop/scripts/pwa-p1d-summarize-abba.cjs'
+      - 'internal/api/gallery_real_web_cold_performance_integration_test.go'
 permissions:
   contents: read
 jobs:

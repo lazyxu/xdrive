@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/gallery-physical-mixed-100k-source.cjs'
+      - 'internal/api/gallery_physical_mixed_first_visible_100k_performance_test.go'
+      - 'internal/api/media_gallery_first_visible_performance_integration_test.go'
 permissions:
   contents: read
 

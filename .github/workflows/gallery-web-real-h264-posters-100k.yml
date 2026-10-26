@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/gallery-web-real-h264-posters-100k-source.cjs'
+      - 'desktop/scripts/gallery-web-real-h264-posters-100k.cjs'
 permissions:
   contents: read
 

@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/physical-cas-original-finalize-100k-source.cjs'
+      - 'internal/api/physical_cas_original_finalize_100k_performance_test.go'
 permissions:
   contents: read
 

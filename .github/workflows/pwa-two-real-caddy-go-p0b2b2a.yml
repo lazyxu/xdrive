@@ -3,6 +3,11 @@ name: PWA P0-B2b2a Real Caddy and Two Go Versions
 on:
   pull_request:
     branches: [master, feat/pwa-two-release-web-p0b2b1-20261021]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/pwa-two-real-caddy-go-p0b2b2a.cjs'
+      - 'desktop/scripts/pwa-two-real-caddy-go-p0b2b2a.cjs'
+      - 'scripts/pwa-two-real-caddy-go-p0b2b2a.sh'
   workflow_dispatch:
 
 permissions:

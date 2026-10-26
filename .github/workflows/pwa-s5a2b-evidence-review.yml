@@ -3,6 +3,10 @@ name: PWA S5A2b Physical Evidence Offline NO-GO Contract
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s5b-physical-evidence-review.cjs'
+      - 'desktop/scripts/pwa-s5b-physical-evidence-review.cjs'
   workflow_dispatch:
 
 permissions:

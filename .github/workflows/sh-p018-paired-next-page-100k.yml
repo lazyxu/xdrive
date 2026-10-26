@@ -2,6 +2,11 @@ name: SH-P018 Matched Real 100k Share Next-Page Go Cancel
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/sh-p018-public-cached-thumbnail-source.cjs'
+      - 'desktop/tests/sh-p018-paired-next-page.cjs'
+      - 'desktop/scripts/sh-p018-paired-summary.cjs'
 permissions:
   contents: read
 jobs:

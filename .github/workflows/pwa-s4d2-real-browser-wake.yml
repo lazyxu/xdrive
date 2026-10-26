@@ -3,6 +3,11 @@ name: PWA S4D2 Real Chrome Foreground Server Task Reconciliation
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s4d2-real-wake-contract.cjs'
+      - 'internal/api/pwa_s4d2_wake_fixture_test.go'
+      - 'desktop/scripts/pwa-s4d2-real-wake-browser.cjs'
   workflow_dispatch:
 
 permissions:

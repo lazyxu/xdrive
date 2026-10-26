@@ -1,7 +1,10 @@
 name: P068 Exact HEAD Real 100k Sync Change Feed Go Client
 
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'internal/api/node_changes_real_client_100k_performance_integration_test.go'
 
 permissions:
   contents: read

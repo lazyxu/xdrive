@@ -3,6 +3,10 @@ name: PWA S5A Trusted HTTPS Origin Audit Contract
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s5a-live-https-audit.cjs'
+      - 'desktop/scripts/pwa-s5a-live-https-audit.cjs'
   workflow_dispatch:
 
 permissions:

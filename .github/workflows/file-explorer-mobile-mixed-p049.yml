@@ -2,6 +2,11 @@ name: Mobile Web FileExplorer Mixed Physical 100k P049
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/file-explorer-mobile-mixed-p049-source.cjs'
+      - 'internal/api/gallery_real_web_cold_performance_integration_test.go'
+      - 'desktop/scripts/file-explorer-real-physical-100k-main.cjs'
 permissions:
   contents: read
 jobs:

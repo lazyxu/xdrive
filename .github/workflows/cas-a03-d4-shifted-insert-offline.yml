@@ -2,6 +2,9 @@ name: CAS-A03-d4 4GiB Shifted Insert Offline Fixed versus Anchored Chunks
 on:
   pull_request:
     branches: [master]
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'scripts/bench-cas-a03-d4-shifted-insert.py'
 permissions:
   contents: read
 jobs:

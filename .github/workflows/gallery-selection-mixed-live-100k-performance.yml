@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: ["master"]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/media_selection_jobs_performance_integration_test.go'
+      - 'scripts/ci/parse-gallery-selection-enqueue-n3.py'
 permissions:
   contents: read
 

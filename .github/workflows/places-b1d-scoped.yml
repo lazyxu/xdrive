@@ -7,7 +7,11 @@ on:
   pull_request:
     branches: [master]
     paths:
-      - .github/workflows/places-b1d-scoped.yml
+      - '.github/workflows/places-b1d-scoped.yml'
+      - 'cmd/xdrive-agent/desktop_ipc_media_places_hierarchy.go'
+      - 'cmd/xdrive-agent/desktop_ipc_media_places_hierarchy_test.go'
+      - 'desktop/tests/media-gallery-places-b1d-contract.cjs'
+      - 'internal/client/media.go'
   workflow_dispatch:
 
 permissions:

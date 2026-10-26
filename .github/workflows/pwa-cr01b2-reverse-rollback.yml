@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-cr01b2-reverse-rollback.cjs'
+      - 'desktop/scripts/pwa-cr01b2-reverse-rollback.cjs'
+      - 'scripts/pwa-cr01b2-reverse-rollback.sh'
 permissions:
   contents: read
 

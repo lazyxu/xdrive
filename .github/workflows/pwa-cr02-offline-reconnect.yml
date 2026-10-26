@@ -2,6 +2,11 @@ name: PWA CR02 Real Chrome Public SW Offline P1 Reconnect Revocation
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-cr02-offline-reconnect-contract.cjs'
+      - 'desktop/scripts/pwa-cr02-real-offline-reconnect.cjs'
+      - 'web/scripts/test-pwa-offline-albums.cjs'
 permissions:
   contents: read
 jobs:

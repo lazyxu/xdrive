@@ -2,6 +2,9 @@ name: CAS-A04a Real Two-Generation CAS File-Data Tar Baseline
 on:
   pull_request:
     branches: [master]
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'scripts/bench-cas-a04-backup-generations.py'
 permissions:
   contents: read
 jobs:

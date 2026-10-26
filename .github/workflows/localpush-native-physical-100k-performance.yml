@@ -2,6 +2,9 @@ name: LP-P001 Native 100k Physical Files Inventory Journal Delta Performance
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/localpush/inventory_physical_100k_performance_linux_test.go'
 permissions:
   contents: read
 jobs:

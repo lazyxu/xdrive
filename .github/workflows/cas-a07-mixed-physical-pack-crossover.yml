@@ -2,6 +2,10 @@ name: CAS-A07 Real 100k Mixed-Size Local CAS vs Offline Pack Threshold A/B
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/storage/cas_a07_mixed_100k_pack_crossover_linux_test.go'
+      - 'internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go'
 permissions:
   contents: read
 jobs:

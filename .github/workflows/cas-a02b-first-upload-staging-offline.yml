@@ -2,6 +2,9 @@ name: CAS-A02b Physical 4GiB First Upload Staging vs Offline Direct Chunk Promot
 on:
   pull_request:
     branches: [master]
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'scripts/bench-cas-a02b-offline-first-upload-chunks.py'
 permissions:
   contents: read
 jobs:

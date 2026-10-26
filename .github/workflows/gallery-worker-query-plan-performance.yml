@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ["master", "perf/gallery-worker-select-profile-100k"]
 
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'internal/api/gallery_worker_query_plan_performance_integration_test.go'
+      - 'scripts/ci/parse-gallery-worker-query-plans-n3.py'
 permissions:
   contents: read
 

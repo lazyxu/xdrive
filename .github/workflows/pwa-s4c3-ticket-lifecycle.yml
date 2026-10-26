@@ -3,6 +3,9 @@ name: PWA S4C3-B2c2 Real Signed Ticket Expiry and Revocation
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/pwa_s4c3_signed_ticket_lifecycle_integration_test.go'
   workflow_dispatch:
 
 permissions:

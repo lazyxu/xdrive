@@ -2,6 +2,11 @@ name: OBS-P003 Original HTTP vs Fixed 9x25 Quantile Histogram Hot-Path A/B
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/obs-p003-histogram-source.cjs'
+      - 'desktop/tests/global-storage-performance-obs-p001.cjs'
+      - 'desktop/tests/global-storage-performance-obs-p002.cjs'
 permissions:
   contents: read
 jobs:

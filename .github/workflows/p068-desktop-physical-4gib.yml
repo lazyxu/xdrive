@@ -1,7 +1,12 @@
 name: P068 Desktop Exact HEAD Real 4 GiB High Entropy Agent Upload Download
 
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/real-desktop-incompressible-cas-4gib-source.cjs'
+      - 'internal/api/real_web_cas_transfer_fixture_performance_integration_test.go'
+      - 'desktop/scripts/real-desktop-cas-electron-main.cjs'
 
 permissions:
   contents: read

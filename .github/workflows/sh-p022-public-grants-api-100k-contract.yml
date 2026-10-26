@@ -1,6 +1,11 @@
 name: SH-P022 Source-Exact Go Public Share Seven Grants and Readonly FileExplorer
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/file-explorer-capabilities-p020.cjs'
+      - 'desktop/tests/sh-p021-unified-explorer.cjs'
+      - 'desktop/tests/web-public-share-form.cjs'
 permissions:
   contents: read
 

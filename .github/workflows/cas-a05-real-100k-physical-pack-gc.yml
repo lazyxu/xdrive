@@ -2,6 +2,9 @@ name: CAS-A05 Real 100k Physical Distinct Local CAS vs Offline Pack and GC
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go'
 permissions:
   contents: read
 jobs:

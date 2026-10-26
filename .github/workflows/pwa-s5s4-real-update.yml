@@ -2,6 +2,10 @@ name: PWA S5-04 Real Chromium Waiting Update Safety
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s5s4-real-update-contract.cjs'
+      - 'desktop/scripts/pwa-s5s4-real-update.cjs'
   workflow_dispatch:
 
 permissions:

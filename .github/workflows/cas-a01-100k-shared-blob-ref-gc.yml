@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'desktop/tests/cas-a01-shared-blob-100k-ref-gc-source.cjs'
+      - 'internal/api/cas_a01_shared_blob_100k_http_performance_integration_test.go'
 permissions:
   contents: read
 

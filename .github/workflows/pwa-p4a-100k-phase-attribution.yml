@@ -2,6 +2,11 @@ name: PWA P4A Genuine 100k Chrome CPU Network Decode Tail BEFORE
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-p4a-phase-attribution-contract.cjs'
+      - 'desktop/scripts/pwa-p4a-100k-phase-attribution.cjs'
+      - 'desktop/tests/pwa-p2a-before-contract.cjs'
 permissions:
   contents: read
 jobs:

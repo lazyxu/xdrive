@@ -2,6 +2,11 @@ name: PWA P1F Real Owner 100k Resolved Route Paired
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-p1f-resolved-route.cjs'
+      - 'desktop/scripts/pwa-p1f-owner-paired.cjs'
+      - 'desktop/tests/pwa-p1b-shared-lazy-route-contract.cjs'
 permissions:
   contents: read
 jobs:

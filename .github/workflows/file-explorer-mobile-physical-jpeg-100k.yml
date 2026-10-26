@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/file-explorer-mobile-physical-100k-source.cjs'
+      - 'internal/api/file_explorer_real_physical_jpeg_100k_performance_test.go'
+      - 'internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go'
 permissions:
   contents: read
 

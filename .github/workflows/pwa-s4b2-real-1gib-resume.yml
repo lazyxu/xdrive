@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s4b2-1gib-resume-contract.cjs'
+      - 'desktop/tests/pwa-s4b2-real-upload-resume-contract.cjs'
+      - 'internal/api/pwa_s2b3_real_gin_auth_integration_test.go'
 permissions:
   contents: read
 

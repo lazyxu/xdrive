@@ -2,6 +2,11 @@ name: P055 Real 100k Physical CAS Authenticated Trash Restore
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/p055_real_physical_cas_restore_100k_performance_linux_test.go'
+      - 'internal/api/physical_cas_original_finalize_100k_performance_test.go'
+      - 'internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go'
 permissions:
   contents: read
 jobs:
