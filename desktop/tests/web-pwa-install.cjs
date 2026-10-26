@@ -342,3 +342,38 @@ test('S2 Safari: denied navigator.standalone getter never blocks PWA boot or nat
   assert.equal(prompted, 1, 'browser capability must still work when WebKit display hints are denied')
   assert.equal(h.queries.length, 0, 'install observation must not issue private or public network requests')
 })
+
+test('S2 Safari: denied optional Navigator platform getters never prevent first paint', () => {
+  for (const denied of ['userAgent', 'platform', 'maxTouchPoints']) {
+    const h = harness({ userAgent: 'Mac Touch Safari', mode: 'browser' })
+    Object.defineProperty(h.nav, denied, {
+      get() { throw new Error('restricted Navigator.' + denied) },
+    })
+    assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation(), denied)
+    const snapshot = h.mod.xDrivePwaInstallSnapshot()
+    assert.equal(snapshot.platformHint, 'other', 'denied UA is not OS proof')
+    assert.equal(snapshot.displayMode, 'browser')
+    assert.equal(snapshot.secureContext, true)
+    assert.equal(h.events.has('pageshow'), true)
+    assert.equal(h.queries.length, 0, 'optional install probing is network-free')
+  }
+  const normal = harness({ userAgent: 'iPhone Safari', mode: 'browser' })
+  normal.mod.startXDrivePwaInstallObservation()
+  assert.equal(normal.mod.xDrivePwaInstallSnapshot().platformHint, 'ios')
+})
+
+test('S2 Safari: restricted secure context getter fails closed without preventing installed UX', async () => {
+  const h = harness({ userAgent: 'iPhone Safari' })
+  Object.defineProperty(h.win, 'isSecureContext', {
+    get() { throw new Error('denied window.isSecureContext') },
+  })
+  assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation())
+  assert.equal(h.mod.xDrivePwaInstallSnapshot().secureContext, false)
+  const result = await h.mod.checkXDrivePwaAssets()
+  assert.equal(result[0].id, 'context')
+  assert.equal(result[0].state, 'fail', 'unknown security context cannot be marked secure')
+  assert.equal(result[1].state, 'fail', 'HTTPS URL alone is not a verified secure context')
+  assert.equal(h.queries.length, 5, 'public HEAD diagnostics remain bounded')
+  assert.ok(h.queries.every(([url, options]) =>
+    url.startsWith('/') && options.credentials === 'omit' && options.redirect === 'error'))
+})
