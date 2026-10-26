@@ -133,7 +133,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             <Typography variant="caption" color="text.secondary">
               {phase==='ready'
                 ? `${total.toLocaleString('zh-CN')} 张照片和视频`
-                : phase==='loading' ? '正在加载已授权照片…' : '照片范围已变化'}
+                : phase==='loading' ? '正在加载该地点的照片…' : '照片范围已变化'}
             </Typography>
           </Box>
           <IconButton size="small" aria-label={expanded ? '收起照片抽屉' : '展开照片抽屉'}

@@ -35,7 +35,7 @@ type Bounds = XDriveBaiduIsolatedBounds
 
 /**
  * Third-party Baidu code and map DOM live only under the separate HTTPS Child.
- * The trusted Parent performs every Owner/Consent/revision-gated /cells query,
+ * The trusted Parent performs every Owner/PhotoScope/source-revision-fenced /cells query,
  * and an activation only opens the original authorized /cell-items Range.
  * Neither JWT, image URLs, blobs, PhotoAsset IDs nor original WGS84 coordinates
  * enter the iframe. All navigation/unmount/query cancellations abort requests.
@@ -320,7 +320,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       onReady:() => {
         const world: Bounds = {coordinate_space:'bd09ll',west:-180,south:-85,east:180,north:85}
         // An initial viewport request must not race away the worldwide
-        // anonymous Owner/Consent summary before the SDK can fit to it.
+        // anonymous Owner-scoped derived-position summary before the SDK can fit to it.
         void queryCells(world).then(ok => {
           if (lifetime.signal.aborted || failed) return
           if (!ok) { failure(); return }
@@ -624,7 +624,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             sx={{bgcolor:'background.paper',px:1,py:0.75,borderRadius:2,boxShadow:2}}>
             {trustedSummary.total_count > 0
               ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
-              : '当前没有可显示的定位照片，可在照片详情中查看地图权限。'}
+              : '当前地图暂无可显示的定位照片；有 GPS 的照片将在位置派生完成后出现。'}
           </Typography>
           {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
