@@ -376,32 +376,39 @@ class DriveAppTest {
     @Test fun cleartextRequiresExplicitOptIn() {
         compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
-        compose.onNodeWithTag("server").assertTextEquals("http://drive.example:1080")
+        compose.onNodeWithTag("username").performTextInput("owner")
+        compose.onNodeWithTag("password").performTextInput("fixture-password")
+        // The unified form never stores a cleartext HTTP refresh credential.
+        compose.onNodeWithTag("keep-login").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        // Adopt merged API35 fixture fix: wait for real Controller error, then
-        // scroll under the IME before checking that HTTP requires opt-in.
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("connection-advanced").performScrollTo().performClick()
         compose.onNodeWithTag("allow-http").performScrollTo().performClick()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
-        compose.runOnIdle { org.junit.Assert.assertEquals(Screen.LOGIN, controller.state.value.screen) }
-        compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
-    @Test fun routeControlsValidateLanAndClearStaleOriginSettings() {
+    @Test fun unifiedLoginValidatesLanAndClearsStaleOriginSettings() {
         compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
-        compose.onNodeWithTag("route-lan").performScrollTo().performClick()
+        compose.onNodeWithTag("username").performTextInput("owner")
+        compose.onNodeWithTag("password").performTextInput("fixture-password")
+        compose.onNodeWithTag("lan-ip").performScrollTo().performTextInput("192.168.2.999")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("lan-ip").performScrollTo().performTextInput("192.168.2.4")
+        compose.onNodeWithTag("lan-ip").performScrollTo().performTextReplacement("192.168.2.4")
         compose.onNodeWithTag("server").performScrollTo().performTextReplacement("https://other.example")
         compose.onNodeWithTag("lan-ip").performScrollTo()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
-        compose.onNodeWithTag("route-auto").assertIsSelected()
-        compose.onNodeWithTag("route-public").performScrollTo().performClick()
-        compose.onNodeWithTag("public-ip").performScrollTo().assertExists()
+        // Routing is now automatic; the old three-mode/public IP UI must stay removed.
+        compose.onNodeWithTag("route-auto").assertDoesNotExist()
+        compose.onNodeWithTag("route-lan").assertDoesNotExist()
+        compose.onNodeWithTag("route-public").assertDoesNotExist()
+        compose.onNodeWithTag("public-ip").assertDoesNotExist()
     }
 
     @Test fun continuousScrollFailureKeepsFirstPageAndRetryAppends() {
