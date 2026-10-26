@@ -27,8 +27,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// Keep machine-readable command output (notably storage verify --json) on
+// stdout. The long-running API still emits structured logs to stdout for
+// Docker collectors; one-shot commands and workers log to stderr instead.
+func serverLogOutput(args []string) *os.File {
+	if len(args) > 1 {
+		return os.Stderr
+	}
+	return os.Stdout
+}
+
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(serverLogOutput(os.Args), nil)))
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "caddy-host":
@@ -43,7 +53,8 @@ func main() {
 			return
 		case "storage":
 			if err := runStorageCommand(os.Args[2:]); err != nil {
-				log.Fatal(err)
+				// Never append command failure logs to machine-readable storage JSON.
+				log.New(os.Stderr, "", log.LstdFlags).Fatal(err)
 			}
 			return
 		case "audit":

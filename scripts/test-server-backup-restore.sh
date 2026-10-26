@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Keep the true failing assertion visible even when the Docker/restore drill
+# intentionally suppresses command output. Never print credentials or commands.
+backup_drill_stage="setup"
+trap 'rc=$?; printf "server-backup-restore: stage=%s line=%s exit=%s\n" "$backup_drill_stage" "$LINENO" "$rc" >&2' ERR
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This integration suite executes the packaged host verifier directly. Fail
+# before Docker startup if Git loses its executable bit.
+if [[ ! -x "$ROOT/scripts/server-verify.sh" ]]; then
+  echo "scripts/server-verify.sh must be executable (Git mode 100755)" >&2
+  exit 1
+fi
 TMP="$(mktemp -d)"
 XDRIVE_HOME="$TMP/xdrive-home"
 CONFIG_DIR="$XDRIVE_HOME/config"
@@ -113,6 +123,7 @@ assert_runtime_services
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
 BACKUP_PROGRESS_FILE="$TMP/backup-progress.env"
 BACKUP_LOG="$TMP/backup.log"
+backup_drill_stage="full-v1-backup"
 backup_dir="$(
   XD_BACKUP_PROGRESS_FILE="$BACKUP_PROGRESS_FILE" \
   XD_BACKUP_PROGRESS_STAGE_CURRENT=5 \
@@ -161,6 +172,7 @@ grep -Eq '^bytes_total=[1-9][0-9]*$' "$BACKUP_PROGRESS_FILE"
   sha256sum -c SHA256SUMS.txt >/dev/null
 )
 
+backup_drill_stage="metadata-only-backup"
 metadata_backup_dir="$(
   bash "$ROOT/scripts/server-backup.sh" \
     --config-dir "$XDRIVE_HOME" \
@@ -180,6 +192,7 @@ fi
   sha256sum -c SHA256SUMS.txt >/dev/null
 )
 
+backup_drill_stage="corruption-and-rejection"
 # Deliberately corrupt both directions: a referenced blob disappears and an
 # unreferenced blob appears. Verification must reject the state.
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"
@@ -199,7 +212,34 @@ failed_backup_status=$?
 set -e
 [[ "$failed_backup_status" -ne 0 ]]
 grep -q 'xDrive consistency verification failed; backup aborted.' "$TMP/failed-backup.err"
-grep -q 'actionable issue counts:' "$TMP/failed-backup.err"
+if ! grep -q 'actionable issue counts:' "$TMP/failed-backup.err"; then
+  echo "server-backup-restore: corrupt snapshot failed without bounded issue counts" >&2
+  if grep -Fq 'verifier returned no JSON report' "$TMP/failed-backup.err"; then
+    echo "server-backup-restore: verifier emitted no structured report" >&2
+  elif grep -Fq 'verification report could not be summarized' "$TMP/failed-backup.err"; then
+    echo "server-backup-restore: verifier emitted invalid structured JSON" >&2
+  elif grep -Fq 'python3 unavailable' "$TMP/failed-backup.err"; then
+    echo "server-backup-restore: Python summary unavailable" >&2
+  else
+    echo "server-backup-restore: issue-summary failure category is unknown" >&2
+  fi
+  if [[ -s "$XDRIVE_HOME/logs/storage-verify-last-failed.json" ]]; then
+    python3 - "$XDRIVE_HOME/logs/storage-verify-last-failed.json" <<'PY' >&2 || true
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        r = json.load(f)
+    keys = ("missing", "size_mismatches", "orphans", "hash_mismatches")
+    print("[xDrive] private verification JSON parsed; issue counts:",
+          ", ".join(f"{key}={len(r.get(key) or [])}" for key in keys))
+except (OSError, ValueError, AttributeError):
+    print("[xDrive] private verification JSON cannot be parsed")
+PY
+  else
+    echo "server-backup-restore: private verification JSON was not retained" >&2
+  fi
+  exit 1
+fi
 grep -q 'missing=' "$TMP/failed-backup.err"
 grep -q 'orphans=' "$TMP/failed-backup.err"
 [[ "$(wc -l < "$TMP/failed-backup.err")" -lt 120 ]]
@@ -209,6 +249,7 @@ grep -q '"orphans"' "$XDRIVE_HOME/logs/storage-verify-last-failed.json"
 test "$(stat -c '%a' "$XDRIVE_HOME/logs/storage-verify-last-failed.json")" = 600
 assert_runtime_services
 
+backup_drill_stage="v1-restore"
 bash "$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$XDRIVE_HOME"   --yes   --no-safety-backup >/dev/null
 wait_server
 assert_runtime_services
@@ -241,6 +282,7 @@ docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c \
   "mkdir -p /data/.xdrive-blobs/sha256/${cas_sha:0:2} && printf '%s' '$cas_content' > /data/$cas_key"
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
 
+backup_drill_stage="v2-incremental-roundtrip"
 # Incremental CAS+Manifest snapshot round trip, including legacy storage.
 # This is intentionally opt-in: scheduled backups and the original v1 test
 # retain their existing contracts.
