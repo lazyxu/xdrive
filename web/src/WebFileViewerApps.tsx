@@ -51,7 +51,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   xDriveClassifyFilePreview,
-  xDriveFileUsesRawCompatibilityPreview,
+  xDriveFileNeedsBrowserCompatibleImagePreview,
   xDriveMediaCaptureTimeLabel,
   xDriveWebAppHash,
 } from '../../ui/shared/src'
@@ -930,7 +930,7 @@ function WebPreviewApp({
           loadPreviewURL={async (_target, kind, signal) => (
             kind === 'live_photo'
               ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
-              : kind === 'image' && xDriveFileUsesRawCompatibilityPreview(_target.name)
+              : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name)
                 ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision)
                 : api.filePreviewURL(viewer.node!.id, signal)
           )}

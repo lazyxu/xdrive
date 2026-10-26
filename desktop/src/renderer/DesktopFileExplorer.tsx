@@ -30,7 +30,7 @@ import {
   xDriveFileExplorerSavedSearchRuleLabels,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
-  xDriveFileUsesRawCompatibilityPreview,
+  xDriveFileNeedsBrowserCompatibleImagePreview,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -1006,7 +1006,7 @@ export default function DesktopFileExplorer({
     onProgress?: XDriveByteProgressHandler,
   ) => {
     if (!previewStreamSupported || item.kind !== 'file') return null
-    if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
+    if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
       try {
         const result = await xDriveDesktopViewportRequest(
           signal,

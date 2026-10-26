@@ -2,7 +2,7 @@ import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
 } from '@xdrive/ui/mui'
-import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '../../ui/shared/src'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 import type { MediaAlbum } from '../../ui/shared/src'
 
@@ -141,7 +141,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     loadLivePhotoMotion: (nodeID, _onProgress, signal) => api.mediaLivePhotoMotionURL(nodeID, signal),
     loadPreviewURL: (nodeID, kind, signal, fileName, revision, onProgress) => kind === 'live_photo'
       ? api.mediaLivePhotoStillURL(nodeID, signal)
-      : kind === 'image' && xDriveFileUsesRawCompatibilityPreview(fileName ?? '')
+      : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? '')
         ? api.mediaAnalysisPreviewURL(nodeID, signal, revision, onProgress)
         : api.filePreviewURL(nodeID, signal),
     setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),

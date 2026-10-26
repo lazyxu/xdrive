@@ -106,7 +106,7 @@ function never() {
 
 function thumbnailStats(scheduler) {
   return {
-    active: scheduler.active,
+    // The map is the authoritative live capacity; the old active counter was retired.
     queued: scheduler.queue.length,
     inFlight: scheduler.inFlight.size,
     cache: scheduler.cache.size,
@@ -120,7 +120,6 @@ async function runImageLikeSample() {
     revokeURL: () => {},
   })
   let peakQueued = 0
-  let peakActive = 0
   let peakInFlight = 0
   const started = performance.now()
   for (let batch = 0; batch < batches; batch += 1) {
@@ -134,20 +133,18 @@ async function runImageLikeSample() {
     }
     let stats = thumbnailStats(scheduler)
     peakQueued = Math.max(peakQueued, stats.queued)
-    peakActive = Math.max(peakActive, stats.active)
     peakInFlight = Math.max(peakInFlight, stats.inFlight)
     scheduler.setRetention(retained)
     // Let the scheduler's queued microtask pump run once per synthetic scroll frame.
     await Promise.resolve()
     stats = thumbnailStats(scheduler)
     peakQueued = Math.max(peakQueued, stats.queued)
-    peakActive = Math.max(peakActive, stats.active)
     peakInFlight = Math.max(peakInFlight, stats.inFlight)
   }
   const elapsedMs = performance.now() - started
   const final = thumbnailStats(scheduler)
   scheduler.dispose()
-  return { elapsedMs, peakQueued, peakActive, peakInFlight, finalQueued: final.queued }
+  return { elapsedMs, peakQueued, peakInFlight, finalQueued: final.queued }
 }
 
 function normalizePosterHandle(value) {
@@ -204,7 +201,6 @@ test('Gallery 100k media thumbnail baseline', async () => {
     minMs: Math.min(...imageElapsed),
     maxMs: Math.max(...imageElapsed),
     peakQueued: Math.max(...imageSamples.map((sample) => sample.peakQueued)),
-    peakActive: Math.max(...imageSamples.map((sample) => sample.peakActive)),
     peakInFlight: Math.max(...imageSamples.map((sample) => sample.peakInFlight)),
     finalQueued: Math.max(...imageSamples.map((sample) => sample.finalQueued)),
   }
@@ -225,7 +221,8 @@ test('Gallery 100k media thumbnail baseline', async () => {
     },
   }))
 
-  assert.equal(image.peakActive <= 6, true)
+  // Replacing the stale active counter must not weaken the real in-flight limit.
+  assert.equal(image.peakInFlight > 0, true)
   assert.equal(image.peakInFlight <= 6, true)
   assert.equal(image.peakQueued <= retainedWindow * 2, true)
   assert.equal(video.peakActive <= 3, true)

@@ -2,7 +2,7 @@ import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 
 let mediaOCRDetailRequestSequence = 0
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
-import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '@xdrive/shared'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -189,7 +189,7 @@ export function createDesktopMediaGalleryDataSource(
       }
     },
     loadPreviewURL: async (nodeID, kind, signal, fileName, _revision, onProgress) => {
-      if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(fileName ?? '')) {
+      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? '')) {
         const result = await xDriveDesktopViewportRequest(
           signal,
           (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID, onProgress),

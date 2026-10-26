@@ -102,6 +102,41 @@ test('Gallery thumbnail scheduler cancels stale retention work and discards stal
   assert.ok(revoked.includes('blob:retained'), 'scheduler must own cached blob cleanup')
 })
 
+test('8009-item cold Gallery does not starve new visible tiles behind six aborted requests that never settle', async () => {
+  const calls = []
+  const pending = new Map()
+  const signals = new Map()
+  const revoked = []
+  const scheduler = new XDriveMediaThumbnailScheduler((nodeID, signal) => {
+    calls.push(nodeID)
+    signals.set(nodeID, signal)
+    const work = deferred()
+    pending.set(nodeID, work)
+    return work.promise
+  }, { concurrency: 6, revokeURL: url => revoked.push(url) })
+
+  const oldIDs = [1, 2, 3, 4, 5, 6]
+  const newIDs = [8004, 8005, 8006, 8007, 8008, 8009]
+  const old = oldIDs.map(id => scheduler.load(id, 0, 1))
+  await flush()
+  assert.deepEqual(calls, oldIDs, 'six cold requests occupy the first viewport')
+  const next = newIDs.map(id => scheduler.load(id, 0, 1))
+  // The cancelled transport intentionally ignores its AbortSignal.
+  scheduler.setRetention(newIDs)
+  await flush()
+  assert.ok(oldIDs.every(id => signals.get(id)?.aborted))
+  assert.deepEqual(await Promise.all(old), Array(6).fill(null))
+  assert.deepEqual(calls, [...oldIDs, ...newIDs],
+    'new visible work starts before abandoned network promises resolve')
+
+  for (const id of oldIDs) pending.get(id).resolve('blob:late-' + id)
+  await flush()
+  assert.equal(revoked.length, 6, 'late, aborted image URLs are discarded')
+  for (const id of newIDs) pending.get(id).resolve('blob:visible-' + id)
+  assert.deepEqual(await Promise.all(next), newIDs.map(id => 'blob:visible-' + id))
+  scheduler.dispose()
+})
+
 test('Gallery thumbnail scheduler reuses cached URLs and evicts least-recently-used entries', async () => {
   const calls = new Map()
   const revoked = []
