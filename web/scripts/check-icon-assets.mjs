@@ -126,7 +126,7 @@ assert(
   appSource.includes("import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'"),
   'Web brand lockups must import the approved master SVG directly',
 )
-assert((appSource.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length === 3, 'Web must pass the shared master icon to all three brand lockups')
+assert((appSource.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length === 4, 'Web login, session recovery and both titlebars must use the shared master icon')
 assert(!appSource.includes('src="/xdrive-icon-master.svg"'), 'Web must not reference a stale public master-icon path')
 
 const caddyDockerfile = fs.readFileSync(path.join(repo, 'deploy', 'Caddy.Dockerfile'), 'utf8')

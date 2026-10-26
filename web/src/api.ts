@@ -164,6 +164,7 @@ export interface AuthResult {
   token_type: string
   expires_in: number
   refresh_expires_in: number
+  browser_session?: boolean
   username: string
   role: 'user' | 'admin'
   must_change_password: boolean
@@ -173,6 +174,8 @@ export interface AuthSession {
   accessToken: string
   refreshToken: string
   accessExpiresAt: number
+  browserSession?: boolean
+  username?: string
 }
 
 export interface SearchBreadcrumb {
@@ -423,10 +426,57 @@ function appendMediaGalleryQuery(
 }
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
-  return {
+  const base = {
     accessToken: result.access_token || result.token,
-    refreshToken: result.refresh_token,
+    refreshToken: result.browser_session ? '' : result.refresh_token,
     accessExpiresAt: Date.now() + Math.max(0, result.expires_in) * 1000,
+  }
+  // Keep the historical JSON structure byte-for-byte for native/legacy
+  // fixtures; cookie mode carries only a short-lived in-memory Access token.
+  return result.browser_session
+    ? { ...base, browserSession: true, username: result.username }
+    : base
+}
+
+/** Serializes rotation across same-origin tabs where Web Locks is available.
+ * A restricted Safari optional getter is no proof that a lock exists; use the
+ * pre-existing unsupported-API fallback. Server tokens still rotate once and
+ * reject replays, rather than pretending this fallback is cross-tab locking.
+ */
+async function xDriveBrowserCookieExclusive<T>(
+  task: () => Promise<T>, signal?: AbortSignal,
+): Promise<T> {
+  let request: LockManager['request'] | undefined
+  try {
+    if (typeof navigator !== 'undefined') {
+      const locks = navigator.locks
+      const candidate = locks?.request
+      if (typeof candidate === 'function') request = candidate.bind(locks) as LockManager['request']
+    }
+  } catch {
+    // Optional Web Locks may throw from either capability getter.
+  }
+  if (signal?.aborted) throw new ApiError(408, 'Browser auth request cancelled')
+  if (!request) return task()
+  let taskStarted = false
+  try {
+    return await request('xdrive-refresh-cookie', {
+      mode: 'exclusive', ...(signal ? { signal } : {}),
+    }, () => {
+      taskStarted = true
+      if (signal?.aborted) throw new ApiError(408, 'Browser auth request cancelled')
+      return task()
+    })
+  } catch (error) {
+    // Safari may expose Web Locks but deny request() itself. Only fall back
+    // BEFORE the callback starts: retrying a started request could replay an
+    // already-rotated Cookie or overwrite a newer Owner's credential.
+    const denied = typeof error === 'object' && error !== null &&
+      'name' in error &&
+      ['SecurityError', 'NotSupportedError', 'NotAllowedError'].includes(String(error.name))
+    if (taskStarted || signal?.aborted || !denied) throw error
+    // Without Web Locks, this is a best-effort mode, not cross-tab exclusion.
+    return task()
   }
 }
 
@@ -480,6 +530,7 @@ export class XDriveApi {
       accessToken: session?.accessToken ?? '',
       refreshToken: session?.refreshToken ?? '',
       accessExpiresAt: session?.accessExpiresAt ?? 0,
+      ...(session?.browserSession ? { browserSession: true, username: session.username } : {}),
     }
     this.onSession = onSession
   }
@@ -668,26 +719,45 @@ export class XDriveApi {
     })
   }
 
+  hasBrowserOwner(): boolean {
+    return this.session.browserSession === true && Boolean(this.session.username)
+  }
+
   private setSession(session: AuthSession) {
     this.session = session
     this.onSession?.(session)
   }
 
   private async refresh(force = false, signal?: AbortSignal | null) {
-    if (!this.session.refreshToken) throw new ApiError(401, 'Session expired')
+    if (!this.session.refreshToken && !this.session.browserSession) throw new ApiError(401, 'Session expired')
     if (!force && this.session.accessExpiresAt > Date.now() + 120_000) return
     if (this.refreshPromise) return this.refreshPromise
 
     const sessionController = this.transferSessionController
     const sessionEpoch = this.transferSessionEpoch
     this.refreshPromise = (async () => {
-      const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-        method: 'POST',
-        redirect: 'error',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this.session.refreshToken }),
-        signal,
-      })
+      const cookieMode = this.session.browserSession === true
+      // A missing local Owner must never rotate another tab's ambient Cookie.
+      if (cookieMode && !this.session.username) {
+        throw new ApiError(401, 'Browser refresh requires an Owner identity')
+      }
+      const response = cookieMode
+        ? await xDriveBrowserCookieExclusive(async () => fetch(`${API_BASE}/api/v1/auth/browser/refresh`, {
+            // A cancelled viewer/list may not abort cookie rotation: the Server
+            // can already have consumed the previous one-time credential.
+            // Complete Set-Cookie first, then fence the obsolete UI caller.
+            method: 'POST', redirect: 'error', credentials: 'same-origin',
+            ...(this.session.username ? {
+              headers: { 'X-XDrive-Browser-Owner': this.session.username },
+            } : {}),
+          }))
+        : await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+            method: 'POST',
+            redirect: 'error',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: this.session.refreshToken }),
+            signal,
+          })
       if (!response.ok) {
         let message = 'Session expired'
         try {
@@ -699,6 +769,10 @@ export class XDriveApi {
         throw new ApiError(response.status, message)
       }
       const result = (await response.json()) as AuthResult
+      if (cookieMode && (!result.browser_session ||
+        (this.session.username && result.username !== this.session.username))) {
+        throw new ApiError(401, 'Browser session Owner changed; please sign in again')
+      }
       // A child effect can start this refresh before App registers its session.
       // Check the later registration too; a re-bound API must not revive work
       // from the lifecycle it disposed, even when the account name is unchanged.
@@ -719,7 +793,8 @@ export class XDriveApi {
 
   private async ensureFresh(signal?: AbortSignal | null) {
     if (signal?.aborted) throw xDriveTransferAbortError()
-    if (this.session.refreshToken && this.session.accessExpiresAt > 0 && this.session.accessExpiresAt <= Date.now() + 120_000) {
+    if ((this.session.refreshToken || this.session.browserSession) &&
+      this.session.accessExpiresAt > 0 && this.session.accessExpiresAt <= Date.now() + 120_000) {
       await this.refresh(false, signal)
     }
   }
@@ -733,7 +808,7 @@ export class XDriveApi {
       headers.set('Content-Type', 'application/json')
     }
     let response = await xDriveFetchPwaSafeRead(`${API_BASE}${path}`, path, { ...init, headers })
-    if (response.status === 401 && retry && this.session.refreshToken) {
+    if (response.status === 401 && retry && (this.session.refreshToken || this.session.browserSession)) {
       await this.refresh(true, init.signal)
       if (init.signal?.aborted) throw xDriveTransferAbortError()
       const retryHeaders = new Headers(init.headers)
@@ -767,20 +842,147 @@ export class XDriveApi {
     return response.json() as Promise<BuildInfo>
   }
 
-  login(username: string, password: string) {
-    return this.request<AuthResult>('/api/v1/auth/login', {
-      method: 'POST', redirect: 'error', body: JSON.stringify({ username, password }),
-    }, false)
+  async login(username: string, password: string, rememberLogin = false): Promise<AuthResult> {
+    // A never-settling browser/network request must not disable Login forever.
+    // Bound both Cookie login and the legacy JSON fallback with a single
+    // deadline. Abort the old request and reject a late Web Lock grant before
+    // it can issue a stale credential-changing POST.
+    const controller = new AbortController()
+    let deadline: ReturnType<typeof setTimeout> | null = null
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => {
+        controller.abort()
+        reject(new ApiError(408, 'Login network request timed out'))
+      }, 15_000)
+    })
+    const performLogin = async (): Promise<AuthResult> => {
+      // Cookie mode is the default only on deployed HTTPS. Old Servers may not
+      // have /auth/browser yet; HTTP/dev and older deployments stay compatible.
+      if (rememberLogin && typeof window !== 'undefined' && window.location.protocol === 'https:') {
+        // Sign-in must share the rotation lock with refresh/logout: otherwise
+        // a delayed Set-Cookie from an old logout can erase a new Owner's login.
+        const response = await xDriveBrowserCookieExclusive(async () => {
+          if (controller.signal.aborted) throw new ApiError(408, 'Login request cancelled')
+          return fetch(`${API_BASE}/api/v1/auth/browser/login`, {
+            method: 'POST', redirect: 'error', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+            signal: controller.signal,
+          })
+        }, controller.signal)
+        if (response.ok) {
+          const result = await response.json() as AuthResult
+          if (!result.browser_session || result.refresh_token) {
+            throw new ApiError(500, 'Insecure browser authentication response')
+          }
+          return result
+        }
+        if (response.status !== 404) throw new ApiError(response.status, 'Browser login failed')
+      }
+      if (controller.signal.aborted) throw new ApiError(408, 'Login request cancelled')
+      return this.request<AuthResult>('/api/v1/auth/login', {
+        method: 'POST', redirect: 'error', body: JSON.stringify({ username, password }),
+        signal: controller.signal,
+      }, false)
+    }
+    try {
+      return await Promise.race([performLogin(), timedOut])
+    } finally {
+      if (deadline !== null) clearTimeout(deadline)
+    }
+  }
+
+  /** Restore a durable HTTPS cookie without exposing its refresh credential to JS. */
+  async restoreBrowserSession(): Promise<AuthResult> {
+    if (typeof window === 'undefined' || window.location.protocol !== 'https:') {
+      throw new ApiError(401, 'Browser sessions require HTTPS')
+    }
+    // An ambient Cookie is not an Owner identity. Never issue a rotating
+    // refresh request until the local saved Owner can be checked against it.
+    if (!this.session.browserSession || !this.session.username) {
+      throw new ApiError(401, 'Saved browser Owner is required for restoration')
+    }
+    // A stalled Safari/offline Fetch must not leave the login screen in a
+    // permanent "restoring session" state or hold the cross-tab lock forever.
+    // Abort the old request on timeout; never issue a POST after a late grant.
+    const controller = new AbortController()
+    let deadline: ReturnType<typeof setTimeout> | null = null
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => {
+        controller.abort()
+        reject(new ApiError(408, 'Browser session restore timed out'))
+      }, 15_000)
+    })
+    try {
+      return await Promise.race([
+        xDriveBrowserCookieExclusive(async () => {
+          if (controller.signal.aborted) throw new ApiError(408, 'Browser session restore cancelled')
+          const response = await fetch(`${API_BASE}/api/v1/auth/browser/refresh`, {
+            method: 'POST', redirect: 'error', credentials: 'same-origin',
+            signal: controller.signal,
+            ...(this.session.username ? {
+              headers: { 'X-XDrive-Browser-Owner': this.session.username },
+            } : {}),
+          })
+          if (!response.ok) throw new ApiError(response.status, 'Browser session could not be restored')
+          const result = await response.json() as AuthResult
+          if (!result.browser_session || result.refresh_token) {
+            throw new ApiError(401, 'Invalid browser session response')
+          }
+          return result
+        }, controller.signal),
+        timedOut,
+      ])
+    } finally {
+      if (deadline !== null) clearTimeout(deadline)
+    }
   }
 
   async logout() {
-    if (!this.session.refreshToken) return
-    await fetch(`${API_BASE}/api/v1/auth/logout`, {
-      method: 'POST',
-      redirect: 'error',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: this.session.refreshToken }),
+    // Keep the Login form usable after a dropped offline POST, while preserving
+    // the former Owner's local sign-out and pending cookie-revocation marker.
+    // Aborted Fetch responses may never overwrite a freshly signed-in cookie.
+    const controller = new AbortController()
+    let deadline: ReturnType<typeof setTimeout> | null = null
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => {
+        controller.abort()
+        reject(new ApiError(408, 'Sign-out network request timed out'))
+      }, 8_000)
     })
+    const revoke = async (): Promise<void> => {
+      if (this.session.browserSession) {
+        // Reject Owner-less Cookie revocation before any HTTP POST. A missing
+        // local owner must never clear another tab's newer ambient session.
+        if (!this.session.username) throw new ApiError(401, 'Browser logout requires an Owner')
+        const response = await xDriveBrowserCookieExclusive(async () => {
+          // A late Web Lock grant after timeout must not issue a second POST.
+          if (controller.signal.aborted) throw new ApiError(408, 'Sign-out timed out')
+          return fetch(`${API_BASE}/api/v1/auth/browser/logout`, {
+            method: 'POST', redirect: 'error', credentials: 'same-origin',
+            signal: controller.signal,
+            ...(this.session.username ? {
+              headers: { 'X-XDrive-Browser-Owner': this.session.username },
+            } : {}),
+          })
+        }, controller.signal)
+        if (!response.ok) throw new ApiError(response.status, 'Browser logout unavailable')
+        return
+      }
+      if (!this.session.refreshToken) return
+      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+        method: 'POST',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: this.session.refreshToken }),
+        signal: controller.signal,
+      })
+    }
+    try {
+      await Promise.race([revoke(), timedOut])
+    } finally {
+      if (deadline !== null) clearTimeout(deadline)
+    }
   }
 
   me(signal?: AbortSignal) {
@@ -1178,7 +1380,8 @@ export class XDriveApi {
   }
 
   async changePassword(currentPassword: string, newPassword: string) {
-    const result = await this.request<AuthResult>('/api/v1/me/change-password', {
+    const result = await this.request<AuthResult>(
+      this.session.browserSession ? '/api/v1/me/change-password/browser' : '/api/v1/me/change-password', {
       method: 'POST',
       redirect: 'error',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),

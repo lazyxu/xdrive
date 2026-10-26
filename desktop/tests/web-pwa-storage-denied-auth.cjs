@@ -59,7 +59,9 @@ function createHarness(storage, denyGetter = false) {
   }
   const vars = {
     ...keys, AUTH_STORAGE_KEYS: Object.values(keys),
+    AUTH_TOKEN_KEYS: Object.values(keys).filter(key => key !== 'xdrive.username'),
     REMEMBER_LOGIN_KEY: 'xdrive.remember_login',
+    COOKIE_MODE_KEY: 'xdrive.auth_cookie_mode',
     // This harness evaluates extracted useCallback expressions outside React.
     // Match the real default-on preference without hiding opt-out coverage.
     rememberLogin: true,
@@ -68,6 +70,7 @@ function createHarness(storage, denyGetter = false) {
     setUsername(next) { username = next },
     setAuthNotice(next) { notice = next },
     transferApiRef: { current: { disposeTransfers() { disposeCalls++ } } },
+    authEpochRef: { current: 0 },
     xDriveClearBaiduConversionSession() {},
     async xDrivePwaClearOfflineMetadata() {},
   }
@@ -105,6 +108,31 @@ test('PWA stored login/refresh and logout keep existing browser semantics', () =
   assert.equal(h.notice, '会话已失效。')
   assert.equal(h.disposeCalls, 1)
   for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+})
+
+test('HTTPS Cookie mode serializes NO access or refresh secret to localStorage', () => {
+  const values = new Map([
+    ['xdrive.access_token', 'legacy-access'],
+    ['xdrive.refresh_token', 'legacy-refresh'],
+  ])
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  }
+  const h = createHarness(storage)
+  const session = { accessToken: 'short-only', refreshToken: '',
+    accessExpiresAt: Date.now() + 900000, browserSession: true, username: 'owner' }
+  h.app.persistSession(session, true)
+  assert.strictEqual(h.session, session)
+  assert.equal(values.get('xdrive.auth_cookie_mode'), 'cookie')
+  assert.equal(values.get('xdrive.username'), 'owner',
+    'Cookie renewal must preserve a durable Owner hint for next cold restore')
+  for (const key of Object.values(h.keys).filter(key => key !== 'xdrive.username')) {
+    assert.equal(values.has(key), false, key)
+  }
+  h.app.clearSession()
+  assert.equal(values.has('xdrive.auth_cookie_mode'), false)
 })
 
 test('PWA opt-out deletes durable tokens and never revives the previous Owner', () => {
@@ -162,7 +190,7 @@ test('PWA partial storage writes attempt all cleanup keys and never revive parti
   const next = { accessToken: 'new-token', refreshToken: 'new-refresh', accessExpiresAt: 43 }
   h.app.persistSession(next)
   assert.strictEqual(h.session, next)
-  assert.deepEqual(removed, Object.values(h.keys))
+  assert.deepEqual(removed, ['xdrive.auth_cookie_mode', ...Object.values(h.keys)])
   for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
 })
 
@@ -177,7 +205,7 @@ test('PWA logout still clears memory and tries remaining keys after removeItem t
   }
   const h = createHarness(storage)
   h.app.clearSession('请重新登录。')
-  assert.deepEqual(removed, Object.values(h.keys))
+  assert.deepEqual(removed, [...Object.values(h.keys), 'xdrive.auth_cookie_mode'])
   assert.equal(h.session.accessToken, '')
   assert.equal(h.username, '')
   assert.match(h.notice, /请重新登录/)

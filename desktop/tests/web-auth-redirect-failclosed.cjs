@@ -15,7 +15,7 @@ function section(start, end) {
 }
 
 test('Web/Mobile/PWA login sends no password to HTTP redirect destinations', () => {
-  const login = section('  login(username: string, password: string)', '  async logout()')
+  const login = section('  async login(username: string, password: string, rememberLogin = false)', '  async logout()')
   assert.match(login, /redirect:\s*'error'/)
   assert.match(login, /return this\.request<AuthResult>\('\/api\/v1\/auth\/login'/)
 })
@@ -39,7 +39,10 @@ test('Web sensitive authentication requests do not enable PWA read retry or redi
 
 test('Web sign-out settles locally even if remote logout is rejected by redirect policy', () => {
   const app = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
-  assert.match(app, /void api\.logout\(\)\.catch\(\(\) => undefined\)\.finally\(\(\) => clearSession\(\)\)/)
+  assert.match(app, /clearSession\(\) \/\/ Owner UI is immediately hidden/)
+  assert.match(app, /void api\.logout\(\)\.then\(\(\) => \{/)
+  assert.match(app, /\.catch\(\(\) => \{/)
+  assert.match(app, /\.finally\(\(\) => setLogoutInProgress\(false\)\)/)
 })
 
 test('Web/Mobile/PWA password change also blocks redirects of old and new passwords', () => {
