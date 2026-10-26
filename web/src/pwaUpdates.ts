@@ -35,8 +35,15 @@ function accessibleController(): boolean {
 }
 
 function connectionHint(): XDrivePwaConnectionHint {
-  if (typeof navigator === 'undefined' || typeof navigator.onLine !== 'boolean') return 'unknown'
-  return navigator.onLine ? 'online' : 'offline'
+  // Network status is only a browser hint. Safari may expose the optional
+  // property but deny its getter: this runs BEFORE React's first render.
+  try {
+    if (typeof navigator === 'undefined') return 'unknown'
+    const online = navigator.onLine
+    return typeof online === 'boolean' ? (online ? 'online' : 'offline') : 'unknown'
+  } catch {
+    return 'unknown'
+  }
 }
 function makeSnapshot(phase: XDrivePwaUpdatePhase, error: string | null = null): XDrivePwaUpdateSnapshot {
   return {
