@@ -37,9 +37,19 @@ test('Web sensitive authentication requests do not enable PWA read retry or redi
   assert.match(request, /fetch\(\x60\$\{API_BASE\}\$\{path\}\x60, \{ \.\.\.init, headers: retryHeaders \}\)/)
 })
 
-test('Web sign-out settles locally even if remote logout is rejected by redirect policy', () => {
+test('Web sign-out settles locally BEFORE remote logout, including redirect denial', () => {
   const app = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
-  assert.match(app, /void api\.logout\(\)\.catch\(\(\) => undefined\)\.finally\(\(\) => clearSession\(\)\)/)
+  const start = app.indexOf('  const signOut = () => {')
+  const end = app.indexOf('  if (publicShareToken)', start)
+  assert.ok(start >= 0 && end > start, 'must retain the actual Web sign-out handler')
+  const handler = app.slice(start, end)
+  assert.match(handler, /const revokedApi = api/)
+  assert.match(handler, /clearSession\(\)/)
+  assert.match(handler, /Promise\.resolve\(\)\.then\(\(\) => revokedApi\.logout\(\)\)\.catch\(\(\) => undefined\)/)
+  assert.ok(handler.indexOf('clearSession()') < handler.indexOf('revokedApi.logout()'),
+    'local Owner must be cleared before any best-effort remote logout')
+  assert.doesNotMatch(handler, /\.finally\([^\n]*clearSession\(/,
+    'a late failed remote revocation must not clear a new Owner session')
 })
 
 test('Web/Mobile/PWA password change also blocks redirects of old and new passwords', () => {

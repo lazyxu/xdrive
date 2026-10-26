@@ -439,13 +439,18 @@ function App({
   }, [api])
 
   const signOut = () => {
-    // Local derived GPS coordinates are revoked at user intent, not after
-    // a possibly slow or failed remote logout acknowledgement.
+    // An offline/slow Server must never keep the previous Owner mounted.
+    // Capture the original API for best-effort server-side token revocation:
+    // clearSession disposes transfers and removes durable browser credentials
+    // immediately, but must not replace which Owner's refresh token is revoked.
+    const revokedApi = api
     xDriveClearBaiduConversionSession()
     xDriveClearPrivateMapBrowseSessions()
-    // Failed remote logout (including a forbidden redirect) must never
-    // prevent local sign-out or leave an unhandled rejection.
-    void api.logout().catch(() => undefined).finally(() => clearSession())
+    clearSession()
+    // Start after local cleanup, without an awaited network round trip.
+    // A denied fetch or late rejection cannot roll back sign-out or erase
+    // credentials from a new session that started meanwhile.
+    void Promise.resolve().then(() => revokedApi.logout()).catch(() => undefined)
   }
 
   if (publicShareToken) {
