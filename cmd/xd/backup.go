@@ -50,6 +50,41 @@ func backupUsage(w io.Writer) {
 	fmt.Fprintln(w, "Stopping xd during an upload only stops observing, not the Agent worker.")
 }
 
+// Validate explicit flags by *name*, not value: a default-valued flag
+// passed to the wrong command must never be silently ignored.
+func validateBackupCLIFlags(fs *flag.FlagSet, action string) error {
+	var allowed []string
+	switch action {
+	case "list", "drafts":
+	case "once":
+		allowed = []string{"source", "poll"}
+	case "auto", "schedule":
+		allowed = []string{"source", "every", "cron", "timezone", "manual", "run-now"}
+	case "status", "history", "pause", "cancel":
+		allowed = []string{"source"}
+	case "init":
+		allowed = []string{"name", "path", "target-id", "every", "cron", "timezone", "run-now"}
+	case "bind":
+		allowed = []string{"source", "path"}
+	default:
+		return fmt.Errorf("unsupported backup action %q", action)
+	}
+	permitted := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		permitted[name] = true
+	}
+	var invalid string
+	fs.Visit(func(f *flag.Flag) {
+		if !permitted[f.Name] && invalid == "" {
+			invalid = f.Name
+		}
+	})
+	if invalid != "" {
+		return fmt.Errorf("%s does not accept --%s", fs.Name(), invalid)
+	}
+	return nil
+}
+
 // Only the read-only Source index is unscoped. Every Source operation
 // must carry an explicit positive owning Source ID, not a pathname/target.
 func validBackupSourceSelector(action string, id uint64, provided bool) bool {
@@ -100,6 +135,9 @@ func backupCmd(args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+	if err := validateBackupCLIFlags(fs, action); err != nil {
+		return err
+	}
 	sourceProvided := false
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "source" {
@@ -108,13 +146,6 @@ func backupCmd(args []string) error {
 	})
 	if fs.NArg() != 0 || !validBackupSourceSelector(action, *id, sourceProvided) {
 		return errors.New("backup list takes no --source; other actions require a positive --source ID, and no positional paths/targets are accepted")
-	}
-	if action != "auto" && action != "schedule" &&
-		(*every != "" || *cron != "" || *zone != "" || *manual || *runNow) {
-		return errors.New("schedule options are valid only for backup auto/schedule")
-	}
-	if action != "once" && *poll != backupPollDefault {
-		return errors.New("--poll is available only for backup once")
 	}
 	if *poll < 250*time.Millisecond || *poll > time.Minute {
 		return errors.New("--poll must be between 250ms and 1m")

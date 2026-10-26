@@ -134,23 +134,20 @@ func backupBootstrapCmd(args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+	if err := validateBackupCLIFlags(fs, action); err != nil {
+		return err
+	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected positional argument")
 	}
 	switch action {
 	case "init":
-		if !localbackupipc.ValidSourceID(*target) || *source != 0 {
+		if !localbackupipc.ValidSourceID(*target) {
 			return errors.New("init requires --target-id and does not accept --source")
 		}
 	case "bind":
-		if !localbackupipc.ValidSourceID(*source) || *target != 0 ||
-			*name != "" || *every != "" || *cron != "" || *zone != "" || *runNow {
+		if !localbackupipc.ValidSourceID(*source) {
 			return errors.New("bind requires --source and --path only")
-		}
-	case "drafts":
-		if *source != 0 || *target != 0 || *name != "" || *localPath != "" ||
-			*every != "" || *cron != "" || *zone != "" || *runNow {
-			return errors.New("drafts accepts no Source, path or schedule options")
 		}
 	}
 	var path string
