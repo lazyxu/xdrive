@@ -358,16 +358,20 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithText("相册照片.jpg").assertIsDisplayed()
         // The synthetic original is not decodable. The real native Viewer
-        // deliberately falls back to one new authenticated revisioned JPEG,
-        // without starting a background retry loop.
+        // reuses the currently decoded Owner/revision JPEG from the Gallery
+        // bitmap cache: fallback must not issue a third thumbnail HTTP request
+        // or start any background retry loop.
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithTag("gallery-photo-fallback", useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("gallery-photo-fallback").assertIsDisplayed()
-        compose.runOnIdle { org.junit.Assert.assertEquals(3, galleryThumbnailCalls.get()) }
+        // One failed tile + one user-triggered tile retry; the Viewer shares
+        // the decoded JPEG and never repeats its authenticated thumbnail GET.
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-thumbnail-ready-40", useUnmergedTree = true).assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
     }
 
     @Test fun GalleryAutomaticallyFetchesOlderOwnerRangeAtScrolledTop() {
