@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/real-http-original-cas-permanent-100k-p047-source.cjs'
+      - 'internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go'
 permissions:
   contents: read
 

@@ -2,6 +2,11 @@ name: PWA P1-C1 Bounded Authorized Album Metadata
 on:
   pull_request:
     branches: [master, feat/pwa-p1b2-offline-readonly-history-20261022]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/scripts/pwa-p1c1-real-album-idb.cjs'
+      - 'web/scripts/test-pwa-offline-albums.cjs'
+      - 'web/scripts/test-pwa-offline-directory.cjs'
   workflow_dispatch:
 permissions:
   contents: read

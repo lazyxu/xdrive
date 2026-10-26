@@ -3,6 +3,11 @@ name: PWA P0-B2b2b1 Real Go Shared JWT Caddy Switch
 on:
   pull_request:
     branches: [master, test/pwa-real-caddy-go-b2b2a-20261021]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/pwa-go-hot-session-b2b2b1.cjs'
+      - 'desktop/scripts/pwa-go-hot-session-b2b2b1.cjs'
+      - 'scripts/pwa-go-hot-session-b2b2b1.sh'
   workflow_dispatch:
 
 permissions:

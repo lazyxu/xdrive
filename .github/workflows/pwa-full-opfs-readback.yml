@@ -3,6 +3,10 @@ name: PWA Real OPFS Full-Byte Readback
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/web-pwa-full-readback.cjs'
+      - 'desktop/scripts/real-web-cas-transfer-runner.cjs'
   workflow_dispatch:
     inputs:
       size_gib:

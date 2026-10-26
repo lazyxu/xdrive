@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-cr02b3-real-go-owner-source.cjs'
+      - 'desktop/scripts/pwa-cr02b3-real-go-owner-acl.cjs'
 permissions:
   contents: read
 

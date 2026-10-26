@@ -2,6 +2,10 @@ name: SH-P002 Public Share metadata GET cancellation
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/web-public-share-form.cjs'
+      - 'internal/api/public_share_metadata_cancel_shp002_test.go'
 permissions:
   contents: read
 jobs:

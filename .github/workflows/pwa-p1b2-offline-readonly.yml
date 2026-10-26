@@ -2,6 +2,11 @@ name: PWA P1-B2 Persistent Offline Readonly History
 on:
   pull_request:
     branches: [master, feat/pwa-p1b1-optin-directory-capture-20261021]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/scripts/pwa-p1b2-persistent-directory.cjs'
+      - 'desktop/scripts/pwa-p1b2-real-offline-shell.cjs'
+      - 'web/scripts/test-pwa-offline-directory.cjs'
   workflow_dispatch:
 permissions:
   contents: read

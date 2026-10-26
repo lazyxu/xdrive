@@ -2,6 +2,9 @@ name: LP-P002 Native Agent Loopback IPC 100k Real Physical Files Performance
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/localpush/inventory_delta.go'
 permissions:
   contents: read
 jobs:

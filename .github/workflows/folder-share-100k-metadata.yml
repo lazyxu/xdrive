@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/folder_shares_integration_test.go'
+      - 'internal/api/folder_shares.go'
 permissions:
   contents: read
 

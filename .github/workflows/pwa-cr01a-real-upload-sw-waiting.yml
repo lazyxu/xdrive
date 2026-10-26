@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-cr01a-real-upload-sw-waiting.cjs'
+      - 'desktop/scripts/pwa-cr01a-real-upload-sw-waiting.cjs'
+      - 'scripts/pwa-cr01a-real-upload-sw-waiting.sh'
 permissions:
   contents: read
 

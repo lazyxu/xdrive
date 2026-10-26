@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: ["master", "perf/gallery-100k-enqueue-array-unnest"]
 
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'internal/api/media_selection_jobs_performance_integration_test.go'
+      - 'scripts/ci/parse-gallery-worker-select-n3.py'
+      - 'internal/api/gallery_selection_worker_sql_detail_test.go'
 permissions:
   contents: read
 

@@ -2,6 +2,9 @@ name: P066 Original 100k Copy-Undo-Trash second Owner HTTP enqueue
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go'
 permissions:
   contents: read
 jobs:

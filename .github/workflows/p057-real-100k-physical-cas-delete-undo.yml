@@ -2,6 +2,11 @@ name: P057 Real 100k Physical CAS Authenticated Queue DELETE and Undo
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/p057-real-100k-physical-cas-delete-undo-source.cjs'
+      - 'internal/api/p057_real_physical_cas_delete_undo_100k_performance_linux_test.go'
+      - 'internal/api/file_operation_queued_delete_100k_performance_integration_test.go'
 permissions:
   contents: read
 jobs:

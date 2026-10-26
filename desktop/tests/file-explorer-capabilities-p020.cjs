@@ -125,7 +125,11 @@ test('SH-P020 real 100k workflows accept stacked-parent and master PR without un
     '.github/workflows/sh-p020-owner-wide-mixed-100k.yml',
   ]) {
     const workflow = read(file)
-    assert(workflow.includes('pull_request: {}'), file + ' should accept stacked base')
+    const prEvent = workflow.match(/^  pull_request:\n((?:    [^\n]*\n|      [^\n]*\n)*)/m)
+    assert(prEvent, file + ' must accept pull requests')
+    assert(!/^    branches:/m.test(prEvent[1]), file + ' must accept stacked and master bases')
+    assert(/^    paths:\n(?:      - '[^']+'\n)+/m.test(prEvent[1]),
+      file + ' must scope the heavyweight workflow to related fixture changes')
     assert(workflow.includes("github.head_ref == 'refactor/file-explorer-shared-capabilities-p020-20261021'"), file + ' must keep branch-only real workload gate')
   }
 })

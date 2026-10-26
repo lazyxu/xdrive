@@ -2,6 +2,11 @@ name: OBS-P002 5-Minute Anonymous HTTP Operation Deltas (bounded RAM)
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/global-storage-performance-obs-p002.cjs'
+      - 'desktop/tests/global-storage-performance-obs-p001.cjs'
+      - 'internal/api/storage_performance_window_test.go'
 permissions:
   contents: read
 jobs:

@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [master]
 
+    # Only the dedicated benchmark/evidence sources should trigger this PR workflow.
+    paths:
+      - 'internal/api/cas_a02c_real_http_owner_reuse_4gib_performance_linux_test.go'
 permissions:
   contents: read
 

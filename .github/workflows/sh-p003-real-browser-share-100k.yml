@@ -2,6 +2,10 @@ name: SH-P003 Live Browser 100k Public Share Navigate Cancel
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/sh_p003_real_browser_share_100k_performance_test.go'
+      - 'desktop/scripts/sh-p003-real-browser-share-100k.cjs'
 permissions:
   contents: read
 jobs:

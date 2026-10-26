@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: ["master"]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/real_web_cas_transfer_fixture_performance_integration_test.go'
+      - 'desktop/scripts/large-transfer-real-web-cas-main.cjs'
+      - 'desktop/scripts/real-web-cas-transfer-runner.cjs'
 permissions:
   contents: read
 

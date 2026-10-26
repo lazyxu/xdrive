@@ -1,7 +1,12 @@
 name: SH-P020 Unified FileExplorer Capabilities Physical Share 100k
 on:
   # Branch-scoped guard below allows stacked or master-targeted specialty runs.
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/file-explorer-capabilities-p020.cjs'
+      - 'desktop/tests/public-share-outer-surface-shp019.cjs'
+      - 'desktop/tests/shared-file-explorer.cjs'
 permissions:
   contents: read
 jobs:

@@ -2,6 +2,10 @@ name: P065 Original 100k Copy HTTP admission diagnosis
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/p065_original_admission_trace_linux_test.go'
+      - 'internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go'
 permissions:
   contents: read
 

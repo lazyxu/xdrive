@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/scripts/gallery-desktop-real-go-cancel-electron-main.cjs'
+      - 'desktop/scripts/gallery-desktop-real-go-cancel-runner.cjs'
 permissions:
   contents: read
 

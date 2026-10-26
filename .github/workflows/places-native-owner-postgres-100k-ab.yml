@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/media_places_map_overview_100k_performance_test.go'
 permissions:
   contents: read
 

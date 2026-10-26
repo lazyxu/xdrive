@@ -1,6 +1,11 @@
 name: SH-P021 Unified FileExplorer 100k Share Cached JPEG Go Cancel
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/sh-p021-unified-explorer.cjs'
+      - 'desktop/tests/sh-p018-public-cached-thumbnail-source.cjs'
+      - 'internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go'
 permissions:
   contents: read
 

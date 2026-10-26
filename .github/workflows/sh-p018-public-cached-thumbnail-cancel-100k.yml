@@ -2,6 +2,10 @@ name: SH-P018 Real Chromium 100k Share Cached JPEG Go Cancel
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/sh-p018-public-cached-thumbnail-source.cjs'
+      - 'internal/api/sh_p005_browser_physical_jpeg_share_100k_linux_test.go'
 permissions:
   contents: read
 

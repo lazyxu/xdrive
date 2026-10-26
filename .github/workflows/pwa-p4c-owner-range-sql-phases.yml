@@ -4,6 +4,9 @@ on:
     branches: [test/pwa-p4c-owner-range-sql-phases-20261023]
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/pwa_p4c_owner_range_sql_phases_performance_integration_test.go'
 permissions:
   contents: read
 jobs:

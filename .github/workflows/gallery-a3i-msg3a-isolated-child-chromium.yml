@@ -3,6 +3,10 @@ name: Places A3i Msg3a Independent HTTPS Child Synthetic Chromium
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/gallery-baidu-isolated-child-config.cjs'
+      - 'desktop/tests/gallery-baidu-isolated-child-runtime.cjs'
   workflow_dispatch:
 
 permissions:

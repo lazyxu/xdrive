@@ -3,6 +3,10 @@ name: PWA P0-B2a Actual Chromium Old Lazy Upgrade
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-old-lazy-upgrade-p0b2a.cjs'
+      - 'desktop/scripts/pwa-old-lazy-upgrade-p0b2a.cjs'
   workflow_dispatch:
 
 permissions:

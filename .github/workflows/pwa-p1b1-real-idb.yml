@@ -2,6 +2,10 @@ name: PWA P1-B1 Real Chromium IndexedDB Isolation
 on:
   pull_request:
     branches: [master, feat/pwa-p1b0-durable-instance-scope-20261021]
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/scripts/pwa-p1b1-real-idb.cjs'
+      - 'web/scripts/test-pwa-offline-directory.cjs'
   workflow_dispatch:
 permissions:
   contents: read

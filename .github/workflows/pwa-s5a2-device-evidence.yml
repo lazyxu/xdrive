@@ -3,6 +3,10 @@ name: PWA S5A2 Actual Browser Evidence NO-GO Contract
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-s5a2-device-evidence.cjs'
+      - 'desktop/scripts/pwa-browser-install-offline.cjs'
   workflow_dispatch:
 
 permissions:

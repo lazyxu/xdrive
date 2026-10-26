@@ -2,6 +2,11 @@ name: PWA CR03d Actual Linux IndexedDB POSIX Permission Denial
 on:
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/tests/pwa-cr03d-posix-native-idb-contract.cjs'
+      - 'desktop/scripts/pwa-cr03d-posix-native-idb-failure.cjs'
+      - 'web/scripts/test-pwa-offline-directory.cjs'
 permissions:
   contents: read
 jobs:

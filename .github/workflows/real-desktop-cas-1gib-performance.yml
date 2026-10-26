@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [master]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'desktop/scripts/real-desktop-cas-electron-main.cjs'
+      - 'desktop/scripts/real-desktop-cas-runner.cjs'
 permissions:
   contents: read
 

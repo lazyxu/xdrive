@@ -4,6 +4,9 @@ on:
     branches: [perf/pwa-p4e-narrow-gallery-page-20261023]
   pull_request:
     branches: [master]
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/pwa_p4e_owner_narrow_page_100k_integration_test.go'
 permissions:
   contents: read
 jobs:

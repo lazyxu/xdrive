@@ -1,7 +1,10 @@
 name: P070 Matched Real HTTP Background Thumbnail Request Cancel
 
 on:
-  pull_request: {}
+  pull_request:
+    # Only feature-specific evidence files should wake this heavyweight workflow.
+    paths:
+      - 'desktop/tests/file-explorer-thumbnail-background-abort-p070.cjs'
 
 permissions:
   contents: read

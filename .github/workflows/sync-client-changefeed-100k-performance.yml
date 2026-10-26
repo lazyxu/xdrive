@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: ["master"]
 
+    # Limit branch-specific evidence to its dedicated source/fixture paths.
+    paths:
+      - 'internal/api/node_changes_real_client_100k_performance_integration_test.go'
 permissions:
   contents: read
 
