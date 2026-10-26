@@ -813,7 +813,18 @@ chmod 600 "$TARGET_ENV"
 # before the Server can access CAS. The preparer owns the UID/GID/marker
 # contract; do not chown the entire host data tree to TARGET_USER.
 echo "[xDrive] preparing copied file storage for Server container ownership..."
-if ! target_compose run -T --rm --no-deps storage-init; then
+server_storage_uid="$(env_value "$TARGET_ENV" XD_SERVER_UID | tr -d '\r')"
+server_storage_gid="$(env_value "$TARGET_ENV" XD_SERVER_GID | tr -d '\r')"
+server_storage_uid="${server_storage_uid:-65532}"
+server_storage_gid="${server_storage_gid:-65532}"
+if [[ ! "$server_storage_uid" =~ ^[0-9]+$ || ! "$server_storage_gid" =~ ^[0-9]+$ ]]; then
+  echo "xDrive migration: invalid Server storage UID/GID; refusing to start the new Server." >&2
+  exit 1
+fi
+# Copied markers are not evidence of the copied tree's current ownership.
+# Rootless mapping and staged host-user copies can change every cached file.
+if ! target_compose run -T --rm --no-deps storage-init storage prepare --force \
+    --uid "$server_storage_uid" --gid "$server_storage_gid"; then
   echo "xDrive migration: target file storage initialization failed; refusing to start the new Server and restoring the original deployment." >&2
   exit 1
 fi

@@ -412,6 +412,10 @@ if [[ "$1" == "run" && -n "${TEST_CAS_MOUNT_DIR:-}" ]]; then
   [[ "$args" == *".xdrive-cas-lifecycle-locks/[0-9a-f][0-9a-f].lock"* ]] || exit 95
   [[ "$args" == *"chmod 0600"* ]] || exit 96
   [[ "$args" != *"rm -f "* && "$args" != *"truncate "* ]] || exit 97
+  [[ "$args" == *"/data/.xdrive-temp-lifecycle.lock"* &&
+     "$args" == *"/data/.xdrive-localpush-stage-locks/[0-9a-f][0-9a-f].lock"* ]] || exit 98
+  [[ "$args" == *'stat -Lc "%h"'* ]] || exit 99
+  [[ "$args" == *'pinned=/proc/self/fd/9'* && "$args" == *'exec 9<'* ]] || exit 100
   # The real image helper repairs only bounded directories and existing
   # 256 fixed zero-byte CAS shard lock inodes. This mock verifies the scope.
   echo "[xDrive] checked 4 CAS parent directories and 1 lifecycle lock files; owner corrections 2."

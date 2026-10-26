@@ -53,6 +53,17 @@ ENV_PATH="$CONFIG_DIR/.env"
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 
+# Resolve the runtime owner before any destructive restore step. Never assume
+# the default UID when this deployment explicitly runs the Server as another.
+storage_uid="$(grep '^XD_SERVER_UID=' "$ENV_PATH" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)"
+storage_gid="$(grep '^XD_SERVER_GID=' "$ENV_PATH" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)"
+storage_uid="${storage_uid:-65532}"
+storage_gid="${storage_gid:-65532}"
+if [[ ! "$storage_uid" =~ ^[0-9]+$ || ! "$storage_gid" =~ ^[0-9]+$ ]]; then
+  echo "restore: invalid Server storage UID/GID." >&2
+  exit 1
+fi
+
 BACKUP_VERSION=1
 if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$BACKUP_DIR/manifest.json"; then
   BACKUP_VERSION=2
@@ -282,7 +293,8 @@ else
 fi
 
 echo "Repairing restored storage ownership..."
-compose run -T --rm --no-deps --user 0:0 server storage prepare --force </dev/null
+compose run -T --rm --no-deps --user 0:0 server storage prepare --force \
+  --uid "$storage_uid" --gid "$storage_gid" </dev/null
 
 echo "Verifying restored metadata and blobs..."
 # Restore is a high-stakes integrity operation. Deep is mandatory even though

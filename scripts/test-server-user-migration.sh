@@ -259,6 +259,9 @@ EOF
   printf '#!/usr/bin/env bash\nexit 0\n' > "$base/source/bin/server-backup-scheduled.sh"
   chmod +x "$base/source/bin/xdrive-server" "$base/source/bin/server-backup-scheduled.sh"
   printf 'payload\n' > "$base/source/data/files/file.bin"
+  if [[ "$name" == custom-storage-owner ]]; then
+    printf 'XD_SERVER_UID=2234\nXD_SERVER_GID=3345\n' >> "$base/source/config/.env"
+  fi
 
   cat > "$base/state/crontab-root" <<EOF
 17 3 * * * XD_CONFIG_DIR=$base/source $base/source/bin/server-backup-scheduled.sh # xdrive-managed-backup
@@ -349,7 +352,9 @@ run_case() {
 
   grep -q -- "--env-file $base/source/config/.env -f $base/source/config/docker-compose.yml down --remove-orphans" "$base/state/docker-calls"
   grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml up -d --remove-orphans" "$base/state/docker-calls"
-  grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml run -T --rm --no-deps storage-init" "$base/state/docker-calls"
+  local storage_uid=65532 storage_gid=65532
+  if [[ "$name" == custom-storage-owner ]]; then storage_uid=2234; storage_gid=3345; fi
+  grep -Fq -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml run -T --rm --no-deps storage-init storage prepare --force --uid $storage_uid --gid $storage_gid" "$base/state/docker-calls"
   grep -q -- "--env-file $base/target/config/.env -f $base/target/config/docker-compose.yml exec -T server xdrive-server healthcheck" "$base/state/docker-calls"
   # Storage initialization must use target-user Docker and the *copied*
   # config/mount, and must finish before a target Server can start.
@@ -444,6 +449,7 @@ run_failing_case() {
 
 run_case rootful rootful
 run_case rootless rootless
+run_case custom-storage-owner rootful
 run_case rootful-opt-in rootful --grant-docker-group
 run_case rootless-opt-in rootless --grant-docker-group
 
