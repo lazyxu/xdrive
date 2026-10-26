@@ -71,7 +71,12 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         border:'1px solid',borderColor:'divider',borderRadius:3,
         boxShadow:'0 12px 42px rgba(15,23,42,.36)',overflow:'hidden',
         height:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 'auto',
-        maxHeight:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 250,
+        // Landscape photo sheets must fit INSIDE the actual map viewport,
+        // not merely within the device viewport (which also has App chrome).
+        maxHeight:expanded
+          ? {xs:'min(75dvh,580px,calc(100% - 16px))',
+             sm:'min(76dvh,640px,calc(100% - 32px))'}
+          : 'min(250px, calc(100% - 16px))',
         display:'flex',flexDirection:'column'}}>
       <Box sx={{flexShrink:0}}>
         <Box component="button" type="button"

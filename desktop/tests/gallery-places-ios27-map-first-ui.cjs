@@ -99,6 +99,10 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   assert.ok(mapStart > 0 && mapStart < summary && summary < wall && wall < mapEnd)
   assert.match(source, /xs:'max\(520px, calc\(100dvh - 148px\)\)'/)
   assert.match(source, /sm:'max\(640px, calc\(100dvh - 165px\)\)'/)
+  // Apple Photos must not inherit the desktop minimum when the iPhone is
+  // rotated to 844×390 or 900×390. Real Chromium verifies actual geometry.
+  assert.match(source, /@media \(orientation: landscape\) and \(max-height: 600px\)/)
+  assert.match(source, /height:'max\(200px, calc\(100dvh - 165px\)\)'/)
   assert.match(source, /data-xdrive-places-trusted-photo-cover-pins/)
   assert.match(source, /revision=\{pin.selection.node_revision\}/)
   assert.match(source, /onClick=\{\(\) => openVerifiedCell\(pin.selection\)\}/)

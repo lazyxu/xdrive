@@ -505,6 +505,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         sx={{position:'relative',width:'100%',height:{
           xs:'max(520px, calc(100dvh - 148px))',
           sm:'max(640px, calc(100dvh - 165px))'},
+          // On 375–390px-tall iPhone landscape, the normal 640px desktop
+          // minimum hides map pins, the photo strip and sheet below the fold.
+          // Both SDK Hosts use this same trusted map viewport and Camera.
+          '@media (orientation: landscape) and (max-height: 600px)':{
+            height:'max(200px, calc(100dvh - 165px))',
+          },
           maxHeight:1400,borderRadius:edgeToEdge ? 0 : 1.5,
           overflow:'hidden',backgroundColor:'background.default'}}>
         <Box ref={mount} sx={{position:'absolute',inset:0,
