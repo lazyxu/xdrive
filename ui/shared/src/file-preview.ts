@@ -99,6 +99,14 @@ export function xDriveFileUsesRawCompatibilityPreview(name: string): boolean {
   return xDriveEmbeddedRawPreviewExtensions.has(xDrivePreviewExtension(name))
 }
 
+// Browser decoders cannot reliably display HEIC/HEIF. Reuse the existing
+// Owner-scoped JPEG derivative for these formats and RAW originals.
+const xDriveBrowserIncompatibleImagePreviewExtensions = new Set(['heic', 'heif'])
+export function xDriveFileNeedsBrowserCompatibleImagePreview(name: string): boolean {
+  return xDriveFileUsesRawCompatibilityPreview(name) ||
+    xDriveBrowserIncompatibleImagePreviewExtensions.has(xDrivePreviewExtension(name))
+}
+
 const xDriveVideoPreviewExtensions = new Set([
   'avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm',
 ])

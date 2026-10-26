@@ -45,7 +45,6 @@ export class XDriveMediaThumbnailScheduler {
   private readonly concurrency: number
   private readonly maxCacheEntries: number
   private readonly revokeURL: (url: string) => void
-  private active = 0
   private sequence = 0
   private disposed = false
   private pumpScheduled = false
@@ -283,11 +282,12 @@ export class XDriveMediaThumbnailScheduler {
   private pump() {
     if (this.disposed) return
     this.compactQueue()
-    while (this.active < this.concurrency && this.queue.length > 0) {
+    // Only retained requests occupy a slot. A cancelled HTTP promise can
+    // ignore AbortSignal forever, and must not starve the new viewport.
+    while (this.inFlight.size < this.concurrency && this.queue.length > 0) {
       const task = this.queue.shift()!
       this.queued.delete(task.key)
       if (task.cancelled) continue
-      this.active += 1
       this.inFlight.set(task.key, task)
       task.bypassHTTPCache = this.decodeRecovery.get(task.key) === 'pending'
       if (task.bypassHTTPCache) this.rememberDecodeRecovery(task.key, 'attempted')
@@ -326,7 +326,6 @@ export class XDriveMediaThumbnailScheduler {
           if (this.inFlight.get(task.key) === task) {
             this.inFlight.delete(task.key)
           }
-          this.active = Math.max(0, this.active - 1)
           this.schedulePump()
         })
     }
