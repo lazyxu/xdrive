@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,7 +37,8 @@ import kotlinx.coroutines.withContext
 internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController) {
     val gridState = rememberLazyGridState()
     val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
-    var positioned by remember { mutableStateOf(false) }
+    // Preserve the visible photo anchor while the Viewer is open.
+    var positioned by rememberSaveable { mutableStateOf(false) }
     // A single entrance to the oldest visible edge permits only one fetch.
     // Re-arm after scrolling away: do not recursively traverse a 100k library
     // while Compose is still remeasuring newly prepended rows.
@@ -184,7 +186,11 @@ private fun GalleryTile(
         // Short tap retains the iOS photo-opening behavior; long press on a
         // failed tile is the only retry gesture. No action button overlays.
         .combinedClickable(
-            onClick = { controller.showGalleryInfo(item) },
+            onClick = {
+                if (item.mediaKind == "image" || item.mediaKind == "video")
+                    controller.openGalleryViewer(item)
+                else controller.showGalleryInfo(item)
+            },
             onLongClickLabel = if (failed) "重试缩略图" else null,
             onLongClick = if (failed) ({ retryAttempt++ }) else null,
         )

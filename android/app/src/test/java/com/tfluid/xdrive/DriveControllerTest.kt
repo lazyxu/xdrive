@@ -24,9 +24,18 @@ class DriveControllerTest {
         var refreshFailure: Exception? = null
         var loggedOut = false
         val latestGallery = GalleryAsset(
-            DriveNode(990L, 1, "today.jpg", "file", size = 32, revision = 1),
+            DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
         val galleryRequests = mutableListOf<Pair<Int, Boolean>>()
+        var videoSessionsOpened = 0
+        var videoSessionsClosed = 0
+        override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+            videoSessionsOpened++
+            return OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/files/" + node.id + "/content",
+                okhttp3.OkHttpClient(), node.size,
+            ) { videoSessionsClosed++ }
+        }
         var galleryGate: CompletableDeferred<Unit>? = null
         var galleryFailOlderOnce = false
         override suspend fun galleryPage(
@@ -381,6 +390,136 @@ class DriveControllerTest {
         assertEquals(61, c.state.value.galleryItems.size)
         assertEquals(listOf(0 to true, 60 to false, 60 to false), api.galleryRequests)
         assertEquals(990L, c.state.value.galleryItems.last().node.id)
+    }
+
+    @Test fun galleryImageViewerUsesRevisionedOwnerDownloadAndBackReturnsToWall() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        assertEquals(photo, c.state.value.galleryViewer)
+        assertArrayEquals("hello".toByteArray(), c.galleryImageBytes(photo))
+        assertEquals(1, api.downloadReads)
+        c.back()
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        // Media metadata is not a fake image Viewer for a video tile.
+        c.openGalleryViewer(photo.copy(mediaKind = "video"))
+        assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun galleryViewerNavigationOnlyMovesToImmediateVerifiedPhotos() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.galleryLoadOlder(); runCurrent()
+        val latest = c.state.value.galleryItems.last()
+        c.openGalleryViewer(latest)
+        assertNull(c.galleryViewerNeighbor(1)) // The next Owner Range is not loaded.
+        assertEquals(2119L, c.galleryViewerNeighbor(-1)?.node?.id)
+        c.shiftGalleryViewer(-1)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        c.shiftGalleryViewer(1)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.shiftGalleryViewer(2)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.showGalleryInfo(latest)
+        c.shiftGalleryViewer(-1)
+        assertEquals(latest, c.state.value.galleryViewer)
+        c.dismissGalleryInfo()
+        c.openFilesApp()
+        c.shiftGalleryViewer(-1)
+        assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun galleryViewerSwipeDiscardsOldOriginalAfterAdjacentImageChange() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.galleryLoadOlder(); runCurrent()
+        val latest = c.state.value.galleryItems.last()
+        c.openGalleryViewer(latest)
+        val previousRead = async { c.galleryImageBytes(latest) }
+        runCurrent()
+        assertEquals(1, api.downloadReads)
+        c.shiftGalleryViewer(-1)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(previousRead.isCancelled)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+    }
+
+    @Test fun galleryViewerDoesNotSkipUnimplementedVideoItem() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage = GalleryPage(listOf(
+                GalleryAsset(DriveNode(301, 1, "a.jpg", "file", 5, revision = 1), "image"),
+                GalleryAsset(DriveNode(302, 1, "b.mp4", "file", 5, revision = 1), "video"),
+                GalleryAsset(DriveNode(303, 1, "c.jpg", "file", 5, revision = 1), "image"),
+            ), 3, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryViewer(c.state.value.galleryItems[0])
+        assertNull(c.galleryViewerNeighbor(1))
+        c.shiftGalleryViewer(1)
+        assertEquals(301L, c.state.value.galleryViewer?.node?.id)
+        assertNull(c.galleryViewerNeighbor(-1))
+    }
+
+    @Test fun galleryVideoUsesOwnerOnlyAndClosesStreamOnBackAndLogout() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(accessToken: String, offset: Int,
+                initialLatest: Boolean): GalleryPage = GalleryPage(listOf(
+                GalleryAsset(DriveNode(301, 1, "clip.mp4", "file", 7, revision = 2),
+                    "video", durationMs = 12_000L)
+            ), 1, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val video = c.state.value.galleryItems.single()
+        c.openGalleryViewer(video)
+        assertEquals(video, c.state.value.galleryViewer)
+        val source = c.openGalleryVideoPlayback(video)
+        assertNotNull(source)
+        assertEquals(1, api.videoSessionsOpened)
+        c.back()
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(1, api.videoSessionsClosed)
+        c.openGalleryViewer(video)
+        assertNotNull(c.openGalleryVideoPlayback(video))
+        c.logout(); runCurrent()
+        assertEquals(2, api.videoSessionsClosed)
+        assertNull(c.openGalleryVideoPlayback(video))
+        assertTrue(c.state.value.galleryItems.isEmpty())
+    }
+
+    @Test fun galleryViewerOldBytesAreDiscardedAfterCloseAndReopen() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        val pending = async { c.galleryImageBytes(photo) }
+        runCurrent()
+        assertEquals(1, api.downloadReads)
+        c.dismissGalleryViewer()
+        c.openGalleryViewer(photo)
+        api.downloadGate?.complete(Unit)
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        assertEquals(photo, c.state.value.galleryViewer)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.galleryViewer)
+        assertTrue(c.state.value.galleryItems.isEmpty())
     }
 
     @Test fun GalleryOldOwnerRangeCannotReturnAfterLeavingApp() = runTest {

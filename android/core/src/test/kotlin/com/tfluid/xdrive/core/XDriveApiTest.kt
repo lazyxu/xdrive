@@ -17,6 +17,71 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class XDriveApiTest {
+    @Test fun videoUsesExactPinnedOwnerRangeAndNoTokenInUrl() {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val video = DriveNode(71, 1, "clip.mp4", "file", size = 7, revision = 9)
+            server.enqueue(MockResponse().setResponseCode(206)
+                .setHeader("ETag", "\"9\"")
+                .setHeader("Content-Range", "bytes 3-6/7")
+                .setBody("defg"))
+            val source = api.galleryVideoPlayback("owner-secret", video)
+            try {
+                assertFalse(source.url.contains("owner-secret"))
+                val request = Request.Builder().url(source.url)
+                    .header("Range", "bytes=3-").build()
+                source.client.newCall(request).execute().use {
+                    assertEquals(206, it.code)
+                    assertEquals("defg", it.body!!.string())
+                }
+                val sent = server.takeRequest()
+                assertEquals("/api/v1/files/71/content", sent.path)
+                assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+                assertEquals("\"9\"", sent.getHeader("If-Match"))
+                assertEquals("bytes=3-", sent.getHeader("Range"))
+                assertEquals("identity", sent.getHeader("Accept-Encoding"))
+            } finally { source.close() }
+        } }
+    }
+
+    @Test fun videoRejectsRevisionMismatchRangeDowngradeAndForeignHost() {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val video = DriveNode(72, 1, "clip.mp4", "file", size = 7, revision = 3)
+            val source = api.galleryVideoPlayback("owner-secret", video)
+            try {
+                val invalid = listOf(
+                    MockResponse().setResponseCode(206)
+                        .setHeader("ETag", "\"4\"")
+                        .setHeader("Content-Range", "bytes 3-6/7").setBody("defg"),
+                    MockResponse().setResponseCode(200)
+                        .setHeader("ETag", "\"3\"").setBody("abcdefg"),
+                    MockResponse().setResponseCode(206)
+                        .setHeader("ETag", "\"3\"")
+                        .setHeader("Content-Range", "bytes 2-5/7").setBody("cdef"),
+                )
+                for (response in invalid) {
+                    server.enqueue(response)
+                    try {
+                        source.client.newCall(Request.Builder().url(source.url)
+                            .header("Range", "bytes=3-").build()).execute().close()
+                        fail("Unsafe video response accepted")
+                    } catch (_: java.io.IOException) { }
+                }
+                assertEquals(3, server.requestCount)
+                try {
+                    source.client.newCall(Request.Builder().url(source.url)
+                        .header("Range", "bytes=999-").build()).execute().close()
+                    fail("Out-of-bounds Range accepted")
+                } catch (_: java.io.IOException) { }
+                try {
+                    source.client.newCall(Request.Builder()
+                        .url("https://unexpected.example/video.mp4").build()).execute().close()
+                    fail("Cross-origin credentials must be refused")
+                } catch (_: java.io.IOException) { }
+                assertEquals(3, server.requestCount)
+            } finally { source.close() }
+        } }
+    }
+
     private val auth = """{"access_token":"access-secret","refresh_token":"refresh-secret","username":"owner","must_change_password":true}"""
     private val directory = """{"id":1,"name":"root","type":"dir","revision":4,"size":0,"updated_at":"2026-10-23T00:00:00Z"}"""
     private fun page(items: String = "[]", total: Long = 0, offset: Int = 0, limit: Int = 100) =

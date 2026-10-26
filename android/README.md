@@ -336,9 +336,75 @@ tile, leaving Gallery or changing Owner still cancels the existing request.
 The retry reuses the same four-request concurrency and 4 MiB/48-image bounds.
 This is not per-byte transfer progress or complete iOS visual parity.
 
-Initial Gallery tiles provide real metadata and Live/video markers; this
-increment intentionally does not mislabel metadata details as a full Viewer.
-Albums, year/month/day time-scale chrome, full-resolution Viewer and playback,
-map, editing, selection, upload/download from Gallery and final iOS 27 screenshot
-parity remain separate P0/P1 work. The new code is not production-complete
-until its exact Android Native JVM/lint/APK/API35 Compose CI passes.
+Gallery tiles display real media markers. Image short-taps now open the
+bounded original Viewer, and video short-taps open native Media3 playback.
+Failed tile thumbnails still support long-press retry without a floating
+operation control. Albums, indexed time-scale chrome, Live motion pairing,
+over-32 MiB original image tiling, maps, editing, bulk selection, Gallery
+transfer and final iOS 27 screenshot parity remain separate P0/P1 work.
+The merged native behavior still requires exact Android CI validation.
+
+## Gallery original image Viewer — native P0 increment
+
+Image tiles now open a real full-screen native photo Viewer rather than the
+metadata dialog. The Viewer reuses the existing authenticated, route-pinned
+`GET /api/v1/files/:id/content` streaming code with its Node revision/ETag,
+size and available SHA-256 verification. The compressed source stays in bounded
+RAM (32 MiB maximum), is sampled to at most 2048 pixels on the long edge,
+and is never written to a public URL, preferences or a persistent image cache.
+Closing the Viewer cancels its scoped request; a separate viewer epoch discards
+late bytes even when the same item is reopened. Native Back returns to the same
+Gallery Range; double-tap zoom, pinch and pan are supported. Info remains a real
+metadata dialog. No WebView or second Server endpoint is introduced.
+
+This is only the *image* slice of P0 Viewer. Originals exceeding 32 MiB,
+image tiling, adjacent-item swipe/filmstrip, actual video/Live playback, PDF,
+full transfer center and pixel-for-pixel iOS 27 screenshot comparisons remain
+open. Tests require the exact incremental PR SHA; no physical device
+verification is claimed.
+
+### Gallery → photo Viewer → exact scroll anchor
+
+The Gallery's LazyGrid saveable viewport position and initial-latest positioning latch
+now live in an Owner-keyed `SaveableStateProvider` on the same root App while the
+Viewer replaces the Gallery. Returning to the wall restores its previous
+visible position instead of jumping to the newest photo. Loading an entirely
+new Gallery Range clears the positioning latch; Owner/session and private
+thumbnail data remain non-persistent. A Compose API35 fixture scrolls to an
+older photo, opens it, returns, and asserts that specific photo is still
+visible (not merely that Gallery reopened).
+
+### Gallery image Viewer adjacent navigation
+
+Single-finger horizontal swipes at 1x zoom advance to the immediate verified
+Owner photo in the current chronological Range. The Viewer does not silently
+skip video tiles or fabricate an unloaded neighbor. A new selection invalidates
+inflight original streams by Viewer epoch, and Compose cancels the old scoped
+request; zoomed-in gestures remain for image pan. TalkBack has real previous/next
+custom actions without floating buttons. JVM and API35 Compose fixtures cover
+bounds, cancellation, swipe and return to the original Gallery scroll anchor.
+
+## Android Gallery Media3 native Video MVP
+
+Video tiles now open a real ExoPlayer/PlayerView with play/pause, buffering and
+seek. The per-Viewer OkHttp client inherits the current Owner authenticated
+XDriveApi DNS/TLS/SNI/Auto-LAN-Public route. Its scoped interceptor forwards
+Bearer only to the *exact* versioned Go file content URL, sends If-Match, and
+validates ETag plus exact Range offset/total size for every seek. No credential
+in a URL, WebView, localhost proxy, disk cache, redirect or silent route retry.
+Back, logout and server change cancel the private video Dispatcher immediately.
+
+The native player reports unsupported codecs and revoked access as playback
+failure, not success. Live Photo video pairing and iOS 27 pixel visual parity
+remain later work. CI includes MockWebServer Range, stale ETag, 200 downgrade and
+foreign-origin rejection, Controller Owner lifecycle, and API35 Compose opening/
+closing a real native PlayerView.
+
+Media3 is pinned to **1.7.1** while Android uses `compileSdk = 35`. The
+previous 1.11.1 choice requires compileSdk 36 and failed the actual Android
+Native `checkDebugAarMetadata` check (9 AAR metadata errors). Version 1.7.1
+contains the same stable library code as 1.6.1; do not raise `targetSdk`
+or globally upgrade the Android toolchain solely for this playback increment. The SaveableStateHolder now drops
+this anchor when the user leaves Gallery for Files/logout/server switching;
+a later Gallery visit (even for the same username) starts at newest again.
+An API35 Compose regression covers old-position -> Files -> Gallery.
