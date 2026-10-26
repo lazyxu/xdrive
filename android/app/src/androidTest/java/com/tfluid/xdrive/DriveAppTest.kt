@@ -41,7 +41,7 @@ class DriveAppTest {
     private var galleryManyPhotos = false
     private var galleryVideoFixture = false
     private var galleryOversizeFixture = false
-    private var galleryFailNextThumbnail = false
+    private var galleryThumbnailFailuresRemaining = 0
     private var galleryThumbnailReads = 0
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
@@ -60,7 +60,7 @@ class DriveAppTest {
             initialLatest: Boolean): GalleryPage {
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
-                "video", durationMs = 10_000L)), 1, 0)
+                "video", durationMs = 10_000L, hasThumbnail = true)), 1, 0)
             if (galleryOversizeFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(46, 1, "large.jpg", "file",
                     size = 32L * 1024 * 1024 + 1, revision = 2),
@@ -85,11 +85,11 @@ class DriveAppTest {
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long): ByteArray {
             galleryThumbnailReads++
-            if (galleryFailNextThumbnail) {
-                galleryFailNextThumbnail = false
+            if (galleryThumbnailFailuresRemaining > 0) {
+                galleryThumbnailFailuresRemaining--
                 throw ApiException(503, "Fixture one-shot unavailable thumbnail")
             }
-            if (galleryOversizeFixture) {
+            if (galleryOversizeFixture || galleryVideoFixture) {
                 val small = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
                 return try {
                     val output = ByteArrayOutputStream()
@@ -360,10 +360,18 @@ class DriveAppTest {
             controller.state.value.screen == Screen.GALLERY &&
                 controller.state.value.galleryLoaded
         }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-thumbnail-ready-46",
+                useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        val readsBeforeViewer = galleryThumbnailReads
         compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithTag("gallery-photo-fallback").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(readsBeforeViewer, galleryThumbnailReads)
         }
         compose.onNodeWithTag("gallery-photo-image").assertExists()
         compose.onNodeWithTag("gallery-photo-fallback").assertIsDisplayed()
@@ -376,16 +384,19 @@ class DriveAppTest {
 
     @Test fun failedNativePhotoRequiresExplicitRetryAndRecoversSameOwnerThumbnail() {
         galleryOversizeFixture = true
+        galleryThumbnailFailuresRemaining = 2
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithTag("switch-to-gallery").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.GALLERY &&
-                controller.state.value.galleryLoaded && galleryThumbnailReads > 0
+                controller.state.value.galleryLoaded && galleryThumbnailReads > 0 &&
+                compose.onAllNodesWithTag("gallery-thumbnail-failed-46",
+                    useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        // The visible tile already finished its own request. Fail exactly
-        // the first authenticated Viewer fallback, not the Gallery wall.
-        compose.runOnIdle { galleryFailNextThumbnail = true }
+        // A missing Gallery tile and then the Viewer fallback fail once each.
+        // No cached success exists in this fixture; manual Retry is the third
+        // authenticated request and may never start on its own.
         compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithTag("gallery-photo-retry").fetchSemanticsNodes().isNotEmpty()
@@ -499,9 +510,18 @@ class DriveAppTest {
             controller.state.value.screen == Screen.GALLERY &&
                 controller.state.value.galleryLoaded
         }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-thumbnail-ready-45",
+                useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        val readsBeforeViewer = galleryThumbnailReads
         compose.onNodeWithTag("gallery-item-45", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("gallery-video-viewer").assertExists()
         compose.onNodeWithTag("gallery-video-player").assertExists()
+        compose.onNodeWithTag("gallery-video-poster").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(readsBeforeViewer, galleryThumbnailReads)
+        }
         compose.onNodeWithTag("gallery-video-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
         compose.runOnIdle {

@@ -34,9 +34,11 @@ import kotlinx.coroutines.withContext
 /** Initial native Gallery wall: real Owner chronological Range, latest at
  * bottom, native thumbnails and bounded cancellation. No faux Viewer/Albums. */
 @Composable
-internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController) {
+internal fun ColumnScope.Gallery(
+    state: DriveState, controller: DriveController,
+    bitmaps: LruCache<String, ImageBitmap>,
+) {
     val gridState = rememberLazyGridState()
-    val bitmaps = remember { LruCache<String, ImageBitmap>(48) }
     // Preserve the visible photo anchor while the Viewer is open.
     var positioned by rememberSaveable { mutableStateOf(false) }
     // A single entrance to the oldest visible edge permits only one fetch.
