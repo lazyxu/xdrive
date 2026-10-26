@@ -531,7 +531,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",
@@ -1073,6 +1073,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(gitlabRelease), &gitlabReleaseYAML); err != nil {
 		t.Fatalf("parse GitLab release CI: %v", err)
 	}
+	// Both providers must consume the original xd/Agent core before advertising an SPK.
+	// Do not relax either publisher to a post-build or best-effort dependency.
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-release", []string{"build-client-core", "package-linux-client", "package-windows-client", "release-assets", "promote-server-images"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})

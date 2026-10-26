@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The only allowed top-level Release archives are the two Backup-only CLI packages.
+# Allow only two Backup CLI archives and the verified armada38x SPK.
 set -euo pipefail
 
 release_dir="${1:-release}"
@@ -19,9 +19,9 @@ done
 # Include hidden names and links; GH Release must never silently publish
 # another archive or substitute a symlink for one of the two exact packages.
 shopt -s nullglob dotglob
-for file in "$release_dir"/*.zip "$release_dir"/*.tar.gz "$release_dir"/*.tgz; do
+for file in "$release_dir"/*.zip "$release_dir"/*.tar.gz "$release_dir"/*.tgz "$release_dir"/*.spk; do
   case "${file##*/}" in
-    xdrive-backup-linux-amd64.tar.gz|xdrive-backup-windows-amd64.zip)
+    xdrive-backup-linux-amd64.tar.gz|xdrive-backup-windows-amd64.zip|xdrivenas-armada38x-*.spk)
       [[ -f "$file" && -s "$file" && ! -L "$file" ]] || {
         echo "release archive verification: invalid Backup CLI artifact: $file" >&2
         exit 1
@@ -34,4 +34,4 @@ for file in "$release_dir"/*.zip "$release_dir"/*.tar.gz "$release_dir"/*.tgz; d
   esac
 done
 
-echo "Release archive contract passed: exactly two Backup CLI archives allowed."
+echo "Release archive contract passed: only the two Backup CLI archives and armada38x SPK are allowed."

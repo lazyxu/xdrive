@@ -598,6 +598,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
@@ -614,6 +616,28 @@ jobs:
         run: |
           bash scripts/package-backup-cli.sh release/core release/backup-cli
           bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
+      - name: Build and validate DSM armada38x SPK from the original client
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          bash scripts/ci/test-synology-spk-version.sh
+          bash scripts/ci/test-synology-release.sh
+          source scripts/ci/synology-spk-version.sh
+          source scripts/ci/build-metadata.sh
+          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology
+          python3 scripts/ci/test-synology-spk.py \
+            "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+            release/synology/core "$XDRIVE_SPK_VERSION"
+          bash scripts/ci/verify-synology-spk-release.sh release/synology
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrivenas-spk
+          path: |
+            release/synology/*.spk
+            release/synology/*.spk.sha256
+          if-no-files-found: error
+          retention-days: 2
       - uses: actions/upload-artifact@v4
         with:
           name: xdrive-backup-cli
@@ -4301,6 +4325,7 @@ jobs:
   publish-master:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
+      - build-client-core
       - build-source-agent
       - package-linux-client
       - package-windows-client

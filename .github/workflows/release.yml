@@ -19,6 +19,7 @@ jobs:
   verify-client-artifacts:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Download exact Linux installer produced by CI
         uses: actions/download-artifact@v4
         with:
@@ -39,6 +40,11 @@ jobs:
         with:
           name: xdrive-backup-cli
           path: backup-cli
+      - name: Download exact ARMv7 Synology SPK built by CI
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrivenas-spk
+          path: synology
       - name: Verify exact client artifact contract
         shell: bash
         run: |
@@ -55,6 +61,7 @@ jobs:
           test -f source-agent/xdrive-source-agent-linux-arm64
           test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
           test -s backup-cli/xdrive-backup-windows-amd64.zip
+          bash scripts/ci/verify-synology-spk-release.sh synology
           cli_count="$(find backup-cli -maxdepth 1 -type f | wc -l)"
           [[ "$cli_count" == "2" ]] || {
             echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
@@ -240,6 +247,11 @@ jobs:
         with:
           name: xdrive-backup-cli
           path: release
+      - name: Download exact ARMv7 Synology SPK
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrivenas-spk
+          path: release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
@@ -255,6 +267,7 @@ jobs:
           test -f release/xdrive-source-agent-linux-arm64
           test -s release/xdrive-backup-linux-amd64.tar.gz
           test -s release/xdrive-backup-windows-amd64.zip
+          bash scripts/ci/verify-synology-spk-release.sh release
           bash scripts/ci/verify-release-archive-allowlist.sh release
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
@@ -272,6 +285,8 @@ jobs:
             xdrive-source-agent-linux-arm64 \
             xdrive-backup-linux-amd64.tar.gz \
             xdrive-backup-windows-amd64.zip \
+            xdrivenas-armada38x-*.spk \
+            xdrivenas-armada38x-*.spk.sha256 \
             xdrive-server-install.sh \
             server-backup.sh \
             server-backup-scheduled.sh \

@@ -14,12 +14,16 @@ set -- \
   xdrive-server-install.sh server-backup.sh server-backup-scheduled.sh \
   server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh \
   xdrive-server docker-compose.yml xdrive.env.example
+bash scripts/ci/verify-synology-spk-release.sh release
+for file in release/xdrivenas-armada38x-*.spk; do
+  set -- "$@" "${file#release/}" "${file#release/}.sha256"
+done
 for name in "$@"; do
   [ -s "release/$name" ] || { echo "missing release asset: $name" >&2; exit 1; }
 done
 ( cd release; sha256sum "$@" > SHA256SUMS.txt )
 set -- "$@" SHA256SUMS.txt
-# Only the two source-exact, byte-verified Backup-only archives are allowed.
+# Only the two verified Backup-only archives and single checked DSM SPK are allowed.
 # Reject unrelated archives rather than disabling the release-asset whitelist.
 for archive in release/*.zip release/*.tar.gz release/*.tgz; do
   [ -e "$archive" ] || continue
@@ -133,7 +137,7 @@ for attempt in 1 2 3 4 5; do
   [ "$attempt" = 5 ] || sleep 2
 done
 [ "$verified" = 1 ] || { echo "GitLab remote package verification incomplete; snapshot unchanged" >&2; exit 1; }
-echo "[xDrive] all 17 GitLab package files SHA-256 verified"
+echo "[xDrive] all $# GitLab package files SHA-256 verified"
 
 # Create the initial floating Release only after complete package verification.
 # Subsequent runs keep the old Release and update each existing asset link.

@@ -1,0 +1,67 @@
+name: Synology SPK Release Contract
+
+on:
+  pull_request:
+    branches: [master, feat/synology-armada38x-backup-spk]
+    paths:
+      - '.github/workflows/synology-release-contract.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
+      - '.gitlab-ci.yml'
+      - 'infra/ci/gitlab-release.yml'
+      - 'scripts/ci/*synology*'
+      - 'scripts/ci/gitlab-publish-release.sh'
+      - 'scripts/ci/verify-release-archive-allowlist.sh'
+      - 'scripts/build-synology-spk.sh'
+      - 'packaging/synology/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify numeric DSM version and publish tamper rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/test-synology-spk-version.sh
+          bash scripts/ci/test-synology-release.sh
+          bash -n scripts/ci/synology-spk-version.sh scripts/ci/verify-synology-spk-release.sh
+          sh -n scripts/ci/gitlab-publish-release.sh
+      - name: Build exact original ARMv7 code and test full package
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GITHUB_SHA="$(git rev-parse HEAD)"
+          source scripts/ci/client-artifact-version.sh
+          source scripts/ci/synology-spk-version.sh
+          source scripts/ci/build-metadata.sh
+          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology
+          python3 scripts/ci/test-synology-spk.py \
+            "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+            release/synology/core "$XDRIVE_SPK_VERSION"
+          bash scripts/ci/verify-synology-spk-release.sh release/synology
+          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/repeated release/synology/core
+          cmp "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+              "release/repeated/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk"
+      - name: Preserve exact candidate SPK for review (not a published release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: synology-release-contract-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            release/synology/*.spk
+            release/synology/*.spk.sha256
+          if-no-files-found: error
+          retention-days: 7
