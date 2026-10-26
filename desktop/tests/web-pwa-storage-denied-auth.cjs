@@ -59,6 +59,10 @@ function createHarness(storage, denyGetter = false) {
   }
   const vars = {
     ...keys, AUTH_STORAGE_KEYS: Object.values(keys),
+    REMEMBER_LOGIN_KEY: 'xdrive.remember_login',
+    // This harness evaluates extracted useCallback expressions outside React.
+    // Match the real default-on preference without hiding opt-out coverage.
+    rememberLogin: true,
     ...safe, useCallback: fn => fn,
     setSession(next) { liveSession = next },
     setUsername(next) { username = next },
@@ -101,6 +105,28 @@ test('PWA stored login/refresh and logout keep existing browser semantics', () =
   assert.equal(h.notice, '会话已失效。')
   assert.equal(h.disposeCalls, 1)
   for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+})
+
+test('PWA opt-out deletes durable tokens and never revives the previous Owner', () => {
+  const values = new Map([
+    ['xdrive.remember_login', 'false'],
+    ['xdrive.access_token', 'stale-access'],
+    ['xdrive.refresh_token', 'stale-refresh'],
+    ['xdrive.access_expires_at', '123'],
+    ['xdrive.username', 'stale-owner'],
+  ])
+  const h = createHarness({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  })
+  assert.deepEqual(h.app.initialSession(), { accessToken: '', refreshToken: '', accessExpiresAt: 0 })
+  for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+  const active = { accessToken: 'current', refreshToken: 'current-refresh', accessExpiresAt: 999 }
+  h.app.persistSession(active, false)
+  assert.strictEqual(h.session, active, 'opt-out keeps current authenticated memory')
+  for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
+  assert.equal(values.get('xdrive.remember_login'), 'false')
 })
 
 test('PWA denied localStorage getter cannot crash first paint, login or logout', () => {
@@ -189,7 +215,7 @@ test('PWA boot/auth entry points use guarded storage; Owner and Service Worker a
   assert.match(mainSource, /xDriveBrowserStorageRead\(APPEARANCE_KEY\)/)
   assert.match(mainSource, /xDriveBrowserStorageWrite\(APPEARANCE_KEY, next\)/)
   assert.match(appSource, /useState\(\(\) => xDriveBrowserStorageRead\(USER_KEY\) \?\? ''\)/)
-  assert.match(appSource, /persistSession\(sessionFromAuth\(result\)\)/)
+  assert.match(appSource, /persistSession\(sessionFromAuth\(result\), rememberLogin\)/)
   assert.match(appSource, /xDriveBrowserStorageWrite\(USER_KEY, result\.username\)/)
   assert.match(appSource, /xDriveBrowserStorageRemove\(AUTH_STORAGE_KEYS\)/)
   for (const source of [mainSource, appSource]) {

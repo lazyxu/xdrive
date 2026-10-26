@@ -1,24 +1,31 @@
 # xDrive Android — native client, first increment
 
-Kotlin / Jetpack Compose, Android 10 (API 29) and later. This is a separate native
-client of the existing xDrive Go Server, not a WebView wrapper. The Server and
-Web/Desktop implementations are unchanged.
+Kotlin / Jetpack Compose, Android 10 (API 29) and later. This is a native
+client of the existing xDrive Go Server, not a WebView wrapper.
 
 ## Scope
 
-First increment: Server configuration, login, mandatory password change, root and
-nested folder browsing, Server-ordered 100-item pages, refresh/retry, file metadata
-and logout. Tokens are memory-only; a process restart requires login. Only the
-Server address, per-origin connection preferences, explicit HTTP preference and selected update source are saved. HTTPS uses platform trust
-and hostname validation. HTTP sends credentials and content without encryption;
-it requires explicit opt-in and should only be used on a trusted network.
+The native login card shares Desktop's compact structure: Server URL, optional
+LAN IP, username, password reveal, and a default-on "保持登录" switch. The
+client performs HTTPS route selection before sending credentials. Login and
+mandatory password change use the existing Go Server endpoints.
 
-The connection screen offers 自动 / 仅内网 / 仅公网. Optional LAN and public
-addresses must be literal IPs; LAN accepts RFC1918 IPv4 or ULA IPv6, while public
-addresses must be globally routable. LAN-only requires an address. Android uses
-the device's own DNS when no public address is supplied; Windows hosts entries
-do not configure an emulator's resolver. Public-only filters private, loopback,
-link-local, reserved and documentation ranges from DNS results.
+By default HTTPS logins retain **only the refresh credential**, encrypted with
+Android Keystore AES-GCM in private app preferences (excluded from Android backup).
+Access tokens and raw passwords are never written to storage. On process restart,
+the app performs one refresh against the saved Server/Owner; a rejected refresh
+clears the credential, while a network outage keeps it for a later attempt.
+Token rotation and password changes replace the encrypted credential. Explicit
+logout removes it before the best-effort remote revocation. Unchecking "保持登录"
+keeps the session in memory only, and HTTP never persists credentials.
+
+The login UI defaults to automatic LAN-first selection when an optional private
+IP is supplied, otherwise normal Server DNS. The older three-mode route transport
+remains supported for existing saved settings and fixture compatibility but is not
+part of the compact login UI. HTTPS preserves the original Host/SNI/hostname
+verification, and certificate or identity errors never fall back to an untrusted
+endpoint. The old manual HTTP connection remains opt-in in advanced settings;
+it sends credentials in cleartext and must only be used on a trusted network.
 
 With explicit route settings, an anonymous bounded HTTPS `/api/v1/version`
 request selects the socket before credentials are sent. Auto tries the configured

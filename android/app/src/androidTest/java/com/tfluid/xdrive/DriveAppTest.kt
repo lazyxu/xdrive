@@ -129,18 +129,6 @@ class DriveAppTest {
         } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
-        // Real IME Done closes the soft keyboard; no credential replay.
-        compose.onNodeWithTag("server").performImeAction()
-        // Do not dispatch the CONNECT click while Compose is still applying
-        // keyboard-focus and scroll changes. A single interaction must be
-        // visibly enabled and placed before sending it; never retry blindly.
-        compose.waitForIdle()
-        compose.onNodeWithTag("auth-submit").performScrollTo()
-        compose.waitForIdle()
-        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
-        // Controller.connect() advances the Main coroutine separately from the
-        // current Compose frame. Waiting only for idleness races on CI.
-        compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()

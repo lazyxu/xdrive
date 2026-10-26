@@ -229,7 +229,10 @@ test('LAN trust status IPC exposes fingerprint only and native revoke remains op
   assert.match(main, /privateLANAuthentications.has\(target.origin\)/)
   assert.match(preload, /getLANTrust: \(server: string\)/)
   assert.match(preload, /revokeLANTrust: \(server: string\)/)
-  assert.match(renderer, /撤销此服务器信任/)
+  assert.doesNotMatch(renderer, /撤销此服务器信任/)
+  assert.match(renderer, /验证此服务器/)
+  // Only the first-use native verification remains on the compact login screen.
+  assert.match(renderer, /window\.xdriveDesktop\.trustLANServer\(selected\)/)
   assert.match(types, /revokeLANTrust: \(server: string\)/)
   const start = main.indexOf('function privateLANTrustSummary(')
   const end = main.indexOf('\nasync function ensurePrivateLANRoot', start)

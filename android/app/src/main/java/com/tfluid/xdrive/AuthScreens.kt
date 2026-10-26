@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -17,6 +18,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,9 +28,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.selected
-import com.tfluid.xdrive.core.ConnectionRoute
-import com.tfluid.xdrive.core.RouteMode
-import com.tfluid.xdrive.core.ServerAddress
 
 @Composable
 private fun AuthCard(title: String, subtitle: String, actions: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
@@ -88,7 +87,14 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
         OutlinedTextField(value, onValueChange, enabled = enabled, singleLine = true,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag).semantics { contentDescription = label }
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag).semantics {
+                    contentDescription = label
+                    when (tag) {
+                        "username" -> contentType = ContentType.Username
+                        "password", "current-password" -> contentType = ContentType.Password
+                        "new-password", "confirm-password" -> contentType = ContentType.NewPassword
+                    }
+                }
                 // Keep reveal state while the trailing icon owns focus inside this field.
                 // Blur outside the whole field must still reset it immediately.
                 .onFocusChanged { if (!it.hasFocus) visible = false },
@@ -118,58 +124,63 @@ private fun Submit(label: String, loading: Boolean, onClick: () -> Unit) {
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) { Text(label) }
 }
 
+/**
+ * The native counterpart of Desktop's compact login panel.
+ * Server + optional LAN IP are the only connection inputs; transport chooses
+ * LAN first and public DNS only on connectivity failures.
+ */
 @Composable
-internal fun ConnectionForm(state: DriveState, connect: (String, Boolean, ConnectionRoute) -> Unit,
-    savedRoute: (String, Boolean) -> ConnectionRoute = { _, _ -> ConnectionRoute() }, actions: @Composable () -> Unit = {}) {
-    var server by remember { mutableStateOf(state.server) }
-    var allow by remember { mutableStateOf(state.allowHttp) }
-    var route by remember { mutableStateOf(state.route) }
-    fun origin(input: String) = try { ServerAddress.parse(input, true).url } catch (_: IllegalArgumentException) { null }
-    AuthCard("连接你的 xDrive", "连接到你的 xDrive 服务器。", actions) {
-        AuthField("服务器地址", server, {
-            if (origin(it) != origin(server)) route = savedRoute(it, allow)
-            server = it
-        }, "server", !state.loading, keyboardType = KeyboardType.Uri, placeholder = "https://drive.example")
-        Text("连接方式", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(RouteMode.AUTO to "自动", RouteMode.LAN to "仅内网", RouteMode.PUBLIC to "仅公网").forEach { (mode, label) ->
-                FilterChip(selected = route.mode == mode, enabled = !state.loading,
-                    onClick = { route = route.copy(mode = mode) }, label = { Text(label) },
-                    modifier = Modifier.testTag("route-${mode.name.lowercase()}").semantics { selected = route.mode == mode })
-            }
-        }
-        AuthField("内网 IP（仅内网必填）", route.lanIp, { route = route.copy(lanIp = it) }, "lan-ip", !state.loading,
-            keyboardType = KeyboardType.Uri, placeholder = "192.168.x.x")
-        AuthField("公网 IP（可选）", route.publicIp, { route = route.copy(publicIp = it) }, "public-ip", !state.loading,
-            keyboardType = KeyboardType.Uri)
-        if (route.mode == RouteMode.INVALID) ErrorNotice("已保存的连接方式无效，请重新选择。")
-        Text("连接方式设置需要 HTTPS 域名地址。自动优先使用填写的内网 IP，不可达时再尝试公网。公网留空使用本设备 DNS。始终保留域名和证书验证；证书错误停止连接。",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(allow, { allow = it }, modifier = Modifier.testTag("allow-http"), colors = CheckboxDefaults.colors(
-                checkedColor = MaterialTheme.colorScheme.primary, checkmarkColor = MaterialTheme.colorScheme.onPrimary, uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant))
-            Text("允许不安全的 HTTP 连接", style = MaterialTheme.typography.bodyMedium)
-        }
-        if (allow) Text("HTTP 不加密密码和文件信息，仅在可信网络中使用。", color = MaterialTheme.colorScheme.error)
-        ErrorNotice(state.error)
-        Submit("连接服务器", state.loading) { connect(server, allow, route) }
-    }
-}
-
-@Composable
-internal fun LoginForm(state: DriveState, login: (String, String) -> Unit, actions: @Composable () -> Unit) {
-    var username by remember { mutableStateOf("") }
-    // Credentials deliberately never enter saved instance state.
+internal fun UnifiedLoginForm(
+    state: DriveState,
+    login: (String, Boolean, String, String, String, Boolean) -> Unit,
+    actions: @Composable () -> Unit,
+) {
+    var server by remember(state.server) { mutableStateOf(state.server) }
+    var lanIp by remember(state.server) { mutableStateOf(state.route.lanIp) }
+    var username by remember(state.username) { mutableStateOf(state.username) }
     var password by remember { mutableStateOf("") }
-    AuthCard("欢迎回来", state.server, actions) {
-        if (state.server.startsWith("http:")) Text("此连接未加密", color = MaterialTheme.colorScheme.error)
-        if (state.connectionIp != null) Text("已选择连接 IP：${state.connectionIp}", style = MaterialTheme.typography.bodySmall)
+    var keepLogin by remember { mutableStateOf(true) }
+    var allowHttp by remember(state.server) { mutableStateOf(state.allowHttp) }
+    var advanced by remember { mutableStateOf(false) }
+    AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
+        AuthField("服务器", server, { server = it }, "server", !state.loading,
+            keyboardType = KeyboardType.Uri, placeholder = "https://drive.example.com:8443")
+        AuthField("内网 IP（可选）", lanIp, { lanIp = it }, "lan-ip", !state.loading,
+            keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")
+        Text("自动优先连接内网，网络不可达时通过服务器域名连接公网；始终验证 HTTPS 身份。",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         AuthField("用户名", username, { username = it }, "username", !state.loading)
         AuthField("密码", password, { password = it }, "password", !state.loading, secret = true)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = keepLogin && !server.startsWith("http:"), onCheckedChange = { keepLogin = it },
+                enabled = !state.loading && !server.startsWith("http:"),
+                modifier = Modifier.testTag("keep-login"))
+            Text("保持登录", style = MaterialTheme.typography.bodyMedium)
+        }
+        if (server.startsWith("http:")) {
+            Text("明文 HTTP 连接不能保持登录，请尽量使用 HTTPS。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        TextButton(onClick = { advanced = !advanced }, enabled = !state.loading,
+            modifier = Modifier.testTag("connection-advanced")) {
+            Text(if (advanced) "收起连接设置" else "高级连接设置")
+        }
+        if (advanced) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(allowHttp, { allowHttp = it }, modifier = Modifier.testTag("allow-http"))
+                Text("允许不安全的 HTTP 连接", style = MaterialTheme.typography.bodySmall)
+            }
+            if (allowHttp) Text("HTTP 不加密密码或文件，仅限明确可信的本地网络。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
         ErrorNotice(state.error)
-        Submit("登录", state.loading) { val supplied = password; password = ""; login(username, supplied) }
-        Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("此版本仅在内存保留登录状态，应用进程重启后需要重新登录。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Submit("登录", state.loading) {
+            val supplied = password
+            password = ""
+            login(server, allowHttp, lanIp, username, supplied, keepLogin)
+        }
+        Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

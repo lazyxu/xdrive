@@ -105,9 +105,9 @@ test('times out stalled probe without leaving it running', async () => {
 test('Desktop shows safe CA enrollment guidance and lets user retry Chromium TLS after trust changes', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/renderer/App.tsx'), 'utf8')
   assert.match(app, /serverProbe\.code === 'server_tls_trust'/)
-  assert.match(app, /信任此局域网服务器/)
+  assert.match(app, /验证此服务器/)
   assert.match(app, /window\.xdriveDesktop\.trustLANServer\(selected\)/)
-  assert.match(app, /setServerProbeRetry\(\(current\) => current \+ 1\)/)
+  assert.match(app, /setServerProbeRetry\(current => current \+ 1\)/)
   assert.match(app, /\[configured, server, username, serverProbeRetry, connectionRoute\]/)
   assert.match(app, /code: result\.error\.code/)
   assert.doesNotMatch(app, /setCertificateVerifyProc|ignoreCertificateErrors/)

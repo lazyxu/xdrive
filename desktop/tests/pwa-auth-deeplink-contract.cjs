@@ -23,7 +23,7 @@ test('S2B2: genuine login is performed in real Chrome, not a pre-seeded access t
     "'fixture-browser-only-token'", 'observed.authFileReads',
   ]) assert.ok(script.includes(token), token)
   assert.ok(script.includes('observed.authLogin, 2'))
-  assert.ok(app.includes('persistSession(sessionFromAuth(result))'))
+  assert.ok(app.includes('persistSession(sessionFromAuth(result), rememberLogin)'))
   assert.ok(runtime.includes('window.location.hash'))
 })
 
