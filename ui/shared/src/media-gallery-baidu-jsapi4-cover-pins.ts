@@ -28,7 +28,7 @@ export function xDriveProjectBaiduPhotoCoverPins(
 ): XDriveBaiduPhotoCoverPin[] | null {
   const native = namespace as Partial<NativeNamespace> | null
   if (!page || page.coordinate_space !== 'bd09ll' ||
-      page.index_scope !== 'explicit_opt_in_only' ||
+      page.index_scope !== 'owner_gps_auto_index' ||
       !Array.isArray(page.cells) || page.cells.length > 64 ||
       !Number.isFinite(width) || !Number.isFinite(height) ||
       width < 120 || height < 120 ||

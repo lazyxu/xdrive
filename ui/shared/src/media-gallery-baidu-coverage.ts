@@ -44,7 +44,7 @@ const reasonFields = new Set(['scope','valid_gps_assets','eligible_bd09_assets',
   'consent_source_changed_assets','derived_missing_assets','derived_invalid_assets',
   'map_runtime_verified'])
 
-/** Keep four mutually-exclusive causes consistent with exact eligible count. */
+/** Legacy consent counters must remain zero; real gaps are derived state. */
 export function xDriveValidBaiduMapCoverageReasons(value: unknown): MediaBaiduMapCoverageReasons | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
@@ -58,7 +58,8 @@ export function xDriveValidBaiduMapCoverageReasons(value: unknown): MediaBaiduMa
   const total = v.valid_gps_assets as number
   const eligible = v.eligible_bd09_assets as number
   const missing = v.not_eligible_bd09_assets as number
-  if (eligible > total || missing !== total - eligible) return null
+  if (eligible > total || missing !== total - eligible ||
+      v.consent_unavailable_assets !== 0 || v.consent_source_changed_assets !== 0) return null
   let remainder = missing
   for (const key of keys.slice(3)) {
     const count = v[key] as number

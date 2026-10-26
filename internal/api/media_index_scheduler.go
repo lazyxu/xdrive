@@ -47,6 +47,11 @@ func (s *Server) StartMediaIndexer(ctx context.Context) {
 	s.scheduleStaleMediaOwners(ctx)
 
 	go s.runMediaIndexEventLoop(ctx)
+	// Photo-map planning and conversion use the same Owner durable queue,
+	// but independent bounded loops: a slow 100k backfill must not starve
+	// current conversions, and provider egress never runs in MediaIndexer.
+	go s.runBaiduPhotoMapAutoPlanner(ctx)
+	go s.runBaiduPhotoMapAutoConsumer(ctx)
 }
 
 func (s *Server) runMediaIndexEventLoop(ctx context.Context) {
@@ -246,6 +251,16 @@ func (s *Server) submitMediaIndexOwnerTask(
 				}
 			}
 			if !cancelled && indexed > 0 {
+				// Newly indexed GPS participates in the map without a photo
+				// authorization step. This enqueues durable work only; it never
+				// calls the Baidu provider or blocks the normal media index.
+				if runErr == nil && taskCtx.Err() == nil {
+					if _, planErr := planBaiduPhotoMapOwnerBackfillBatch(
+						taskCtx, s.DB, ownerID, 0, mediaIndexOwnerBatchSize,
+					); planErr != nil && taskCtx.Err() == nil {
+						slog.Warn("media_index_map_auto_plan_unavailable", "owner_id", ownerID)
+					}
+				}
 				s.requestPhotoIntelligenceForMedia(ownerID)
 			}
 			s.finishMediaIndexOwner(

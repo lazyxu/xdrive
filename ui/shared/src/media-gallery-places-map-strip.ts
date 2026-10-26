@@ -15,7 +15,7 @@ export function xDriveVerifiedMapPhotoProjections(
   approved: readonly MediaBaiduNativeCellSelection[],
 ): ReadonlyArray<Readonly<{selection:MediaBaiduNativeCellSelection;count:number;x:number;y:number}>> {
   if (!page || !projected || page.coordinate_space !== 'bd09ll' ||
-      page.index_scope !== 'explicit_opt_in_only' ||
+      page.index_scope !== 'owner_gps_auto_index' ||
       page.grid_columns !== 8 || page.grid_rows !== 8 ||
       !Array.isArray(page.cells) || page.cells.length > 64 ||
       !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||

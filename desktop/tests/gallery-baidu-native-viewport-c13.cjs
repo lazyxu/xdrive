@@ -16,7 +16,9 @@ test('A3c13 new map viewport is fixed BD09 and never reuses original GPS endpoin
   assert.match(handler, /meta\.BaiduPhotoMapSpaceBD09LL/)
   assert.match(handler, /queryBaiduPhotoMapViewport/)
   assert.doesNotMatch(handler, /mediaPlacesWithinViewport|StaticStepCenter|\bWGS84Coordinate\s*\{/)
-  assert.match(query, /c\.revision = p\.consent_revision/)
+  assert.doesNotMatch(query, /JOIN xd_baidu_photo_map_consents/)
+  assert.match(query, /pa.owner_id = p.owner_id/)
+  assert.match(query, /m.node_revision = n.revision/)
   assert.match(query, /p\.source_latitude = m\.latitude AND p\.source_longitude = m\.longitude/)
   assert.match(query, /p\.primary_node_id AS node_id/)
   assert.match(read('internal/api/router_contract_test.go'), /baidu-jsapi\/viewport/)
@@ -54,7 +56,7 @@ test('A3c13 release remains NO-GO without signed reviewed Baidu resources', () =
   assert.match(read('internal/baidumapjsapi/release_attestation.go'),
     /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.match(read('ui/shared/src/models.ts'), /coordinate_space: 'bd09ll'/)
-  assert.match(read('ui/shared/src/models.ts'), /index_scope: 'explicit_opt_in_only'/)
+  assert.match(read('ui/shared/src/models.ts'), /index_scope: 'owner_gps_auto_index'/)
   assert.doesNotMatch(read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),
     /listBaiduNativeViewport=/)
 })

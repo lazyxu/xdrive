@@ -19,10 +19,10 @@ const (
 
 var errBaiduMapIndexExecutionDenied = errors.New("baidu photo map index execution unavailable")
 
-// These callbacks are ONLY available to trusted in-process Go code.
-// No production caller, licensed-release gate, AK accessor or enabled
-// external provider is installed in this phase. In particular, a test
-// callback is NOT authorization to use the production Baidu service.
+// Only trusted in-process Server callbacks can trigger the executor.
+// Real runtime callers require live Owner/session and an enabled, current
+// Server AK, with genuine quota/lease/cancellation checks; a callback from
+// an offline fixture is never an HTTP/browser authority.
 type baiduMapIndexDispatchPermit func(context.Context, uint64) error
 type baiduMapIndexConverter func(
 	context.Context, baidumapjsapi.WGS84Coordinate,
@@ -30,8 +30,8 @@ type baiduMapIndexConverter func(
 
 // completeBaiduPhotoMapIndexIntent atomically commits a verified BD-09 point
 // and a terminal job receipt, or rolls both back. The existing photo-map sink
-// independently locks current Owner, Asset, Node, Ready Media and explicit
-// source-bound consent; this outer transaction additionally fences the exact
+// independently locks current Owner, Asset, Node and Ready Media source;
+// this outer transaction additionally fences the exact
 // lease token/attempt/DB-clock expiry, so cancellation cannot resurrect GPS.
 func completeBaiduPhotoMapIndexIntent(
 	ctx context.Context, db *gorm.DB,
@@ -59,8 +59,8 @@ func completeBaiduPhotoMapIndexIntent(
 		if err := validateBaiduPhotoMapIndexLease(ctx, tx, lease); err != nil {
 			return denied
 		}
-		// The private sink requires a second, independent source/consent
-		// proof. This callback also checks that the same lease is live in
+		// The private sink requires a second independent current-source and
+		// task-lease proof. This callback checks that the lease is live in
 		// the transaction performing the actual index upsert.
 		privacy := func(proofCtx context.Context, locked *gorm.DB, ownerID, assetID uint64) error {
 			if proofCtx == nil || proofCtx.Err() != nil || locked == nil ||
@@ -103,15 +103,14 @@ func completeBaiduPhotoMapIndexIntent(
 	return nil
 }
 
-// executeBaiduPhotoMapIndexIntent is a single explicitly requested,
-// permission-gated Server execution; it DOES NOT start a background scanner
-// or enable network access. Future production wiring must first supply a
-// separately audited licence/account/quota permit and a trusted Server-only
-// converter using the configured Server AK. A nil callback always denies.
+// executeBaiduPhotoMapIndexIntent is a single source-fenced Server execution
+// used by the existing Owner background consumer. The caller requires an
+// enabled, current Server AK and active Owner; no extra photo grant or
+// separately audited manual licence/proof switch exists. Nil callbacks deny.
 //
-// A bounded Go Context is passed directly to the converter (and eventually
-// to the HTTP request). A short cross-replica lease/consent poll cancels it
-// when another Server revokes the job or its original GPS becomes stale.
+// A bounded Go Context is passed directly to the official HTTPS converter.
+// Short cross-replica lease/source polls cancel it if the task is cancelled
+// or the original GPS becomes stale.
 // Completion rechecks everything in one transaction; a callback that ignores
 // cancellation can never commit an obsolete derived coordinate.
 func executeBaiduPhotoMapIndexIntent(
@@ -146,6 +145,7 @@ func executeBaiduPhotoMapIndexIntent(
 		}
 	}()
 	completed := false
+	quotaDeferred := false
 	defer func() {
 		cancel()
 		<-done
@@ -157,6 +157,9 @@ func executeBaiduPhotoMapIndexIntent(
 		// a replaced lease, or an already completed photo index.
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cleanupCancel()
+		if quotaDeferred && deferBaiduPhotoMapIndexQuotaAttempt(cleanupCtx, db, lease) == nil {
+			return
+		}
 		_ = settleFailedBaiduPhotoMapIndexAttempt(cleanupCtx, db, lease)
 	}()
 
@@ -164,6 +167,7 @@ func executeBaiduPhotoMapIndexIntent(
 		return denied
 	}
 	if err := permit(workCtx, ownerID); err != nil || workCtx.Err() != nil {
+		quotaDeferred = workCtx.Err() == nil && errors.Is(err, errBaiduGeoconvQuotaDenied)
 		return denied
 	}
 	// Quota or account admission alone does not authorize an egress.

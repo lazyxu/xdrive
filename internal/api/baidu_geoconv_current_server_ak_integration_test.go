@@ -94,6 +94,9 @@ func TestCurrentBaiduGeoconvServerAKCurrentEncryptedServerOnlyAcrossReplicas(t *
 		if got != want || err != nil {
 			t.Fatal("current private Server credential mismatch or unexpected denial")
 		}
+		if err := server.configuredBaiduGeoconvAccountPermit(ctx, owner.ID); err != nil {
+			t.Fatal("enabled configured Server AK still required artificial manual proof")
+		}
 	}
 	denied := func() {
 		t.Helper()
@@ -101,6 +104,9 @@ func TestCurrentBaiduGeoconvServerAKCurrentEncryptedServerOnlyAcrossReplicas(t *
 		if value != "" || !errors.Is(err, errBaiduGeoconvDispatchUnavailable) ||
 			strings.Contains(err.Error(), "synthetic") {
 			t.Fatal("private credential should be withheld without raw error or secret")
+		}
+		if err := server.configuredBaiduGeoconvAccountPermit(ctx, owner.ID); !errors.Is(err, errBaiduGeoconvDispatchUnavailable) {
+			t.Fatal("invalid or disabled Server/Owner configuration incorrectly admitted GPS")
 		}
 	}
 	// Server deployment fallback is allowed ONLY before a saved Server row.

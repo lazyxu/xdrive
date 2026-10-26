@@ -34,8 +34,7 @@ func TestBaiduMapCoverageReasonsNoAuthorityAndConservation(t *testing.T) {
 	}
 	good := baiduPhotoMapCoverageReasons{
 		ValidGPSAssets: 8, EligibleBD09Assets: 1,
-		ConsentUnavailableAssets: 3, ConsentSourceChangedAssets: 1,
-		DerivedMissingAssets: 1, DerivedInvalidAssets: 2,
+		DerivedMissingAssets: 5, DerivedInvalidAssets: 2,
 	}
 	if !good.valid() {
 		t.Fatal("consistent exclusive partition rejected")
@@ -193,8 +192,7 @@ func TestBaiduMapCoverageReasonsReadOnlyOwnerAndRevisionPostgres(t *testing.T) {
 	}
 	want := baiduPhotoMapCoverageReasons{
 		ValidGPSAssets: 8, EligibleBD09Assets: 1,
-		ConsentUnavailableAssets: 3, ConsentSourceChangedAssets: 1,
-		DerivedMissingAssets: 1, DerivedInvalidAssets: 2,
+		DerivedMissingAssets: 5, DerivedInvalidAssets: 2,
 	}
 	if got != want {
 		t.Fatalf("exclusive causes do not match current Owner/BD09 eligibility: got %+v want %+v", got, want)
@@ -207,16 +205,16 @@ func TestBaiduMapCoverageReasonsReadOnlyOwnerAndRevisionPostgres(t *testing.T) {
 		coverage.OutsideSourceMapLatitudeAssets != 1 {
 		t.Fatalf("reason and primary coverage disagree: %+v, err=%v", coverage, err)
 	}
-	// Revocation of the sole displayed asset makes it unavailable immediately.
+	// Legacy consent-row mutations cannot hide a valid current Owner location.
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).
 		Where("owner_id = ? AND asset_id = ?", owner.ID, fresh.asset.ID).
 		Update("revoked_at", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	after, err := queryBaiduPhotoMapCoverageReasons(ctx, db, owner.ID)
-	if err != nil || after.EligibleBD09Assets != 0 ||
-		after.ConsentUnavailableAssets != 4 || !after.valid() {
-		t.Fatalf("revoked position remained visible or partition invalid: %+v err=%v", after, err)
+	if err != nil || after.EligibleBD09Assets != 1 ||
+		after.DerivedMissingAssets != 5 || !after.valid() {
+		t.Fatalf("legacy consent edit changed map membership or partition: %+v err=%v", after, err)
 	}
 	// Invalid users never appear in this Owner's numbers.
 	foreign, err := queryBaiduPhotoMapCoverageReasons(ctx, db, other.ID)

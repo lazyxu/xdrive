@@ -47,11 +47,9 @@ func baiduMapIndexClockTx(tx *gorm.DB) (time.Time, error) {
 	return now, nil
 }
 
-// All index queue operations use the same lock order as the existing private
-// index writer: Owner -> PhotoAsset -> Node -> MediaMetadata -> consent ->
-// intent. This helper MUST be called inside the caller's transaction.
-// Consent revocation, account/session changes and source edits fail closed.
-// This private path does not enqueue or send GPS automatically.
+// Index queue lock order: Owner -> PhotoAsset -> Node -> MediaMetadata -> intent.
+// Account/session changes, source edits and cancellation still fail closed.
+// An additional per-photo map consent is never required.
 func lockBaiduMapIndexSourceTx(
 	ctx context.Context, tx *gorm.DB, ownerID, assetID uint64,
 ) (baiduMapIndexSource, error) {
@@ -68,8 +66,16 @@ func lockBaiduMapIndexSourceTx(
 	var asset meta.PhotoAsset
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND owner_id = ?", assetID, owner.ID).
-		Take(&asset).Error; err != nil ||
-		(asset.Kind != meta.PhotoAssetKindImage && asset.Kind != meta.PhotoAssetKindVideo) {
+		Take(&asset).Error; err != nil {
+		return none, errBaiduMapIndexIntentDenied
+	}
+	// A Live Photo, RAW pair or burst has one logical Owner PhotoAsset and
+	// one primary indexed image/video location. Do not require a plain
+	// image kind or issue a second map authorization for grouped media.
+	switch asset.Kind {
+	case meta.PhotoAssetKindImage, meta.PhotoAssetKindVideo,
+		meta.PhotoAssetKindLivePhoto, meta.PhotoAssetKindRAWPair, meta.PhotoAssetKindBurst:
+	default:
 		return none, errBaiduMapIndexIntentDenied
 	}
 	var node meta.Node
@@ -94,17 +100,11 @@ func lockBaiduMapIndexSourceTx(
 		ctx.Err() != nil {
 		return none, errBaiduMapIndexIntentDenied
 	}
-	rev, err := verifyBaiduPhotoMapConsentTx(ctx, tx, owner.ID, asset.ID, baiduPhotoMapConsentSource{
-		NodeID: node.ID, NodeRevision: node.Revision,
-		MediaUpdatedAt: media.UpdatedAt, Latitude: lat, Longitude: lng,
-	})
-	if err != nil || rev == 0 || ctx.Err() != nil {
-		return none, errBaiduMapIndexIntentDenied
-	}
+	// The Owner's current indexed GPS is sufficient. No per-photo grant.
 	return baiduMapIndexSource{
 		ownerID: owner.ID, assetID: asset.ID, nodeID: node.ID,
 		nodeRevision: node.Revision, sessionVersion: owner.SessionVersion,
-		mediaUpdatedAt: media.UpdatedAt, consentRevision: rev,
+		mediaUpdatedAt: media.UpdatedAt, consentRevision: 0,
 		latitude: lat, longitude: lng,
 	}, nil
 }
@@ -128,21 +128,40 @@ func baiduMapIndexIntentMatches(row meta.BaiduPhotoMapIndexIntent, source baiduM
 		row.SessionVersion == source.sessionVersion
 }
 
-// enqueueBaiduPhotoMapIndexIntent is a PRIVATE, explicit decision-driven
-// entry point. No API, automatic media backfill, scheduler or network caller is
-// wired to it. Only a real, current Server opt-in matching expectedRevision
-// can persist a bounded one-photo intent. No original GPS or AK is persisted.
+// A historical per-photo consent revision is no longer authorization, but an
+// explicit terminal cancellation still belongs to its original Owner/source
+// generation. Do not resurrect it merely because the obsolete consent_revision
+// differs from today's zero value.
+func baiduMapIndexSameOwnerSourceGeneration(row meta.BaiduPhotoMapIndexIntent, source baiduMapIndexSource) bool {
+	return row.AssetID == source.assetID && row.OwnerID == source.ownerID &&
+		row.PrimaryNodeID == source.nodeID && row.NodeRevision == source.nodeRevision &&
+		row.MediaUpdatedAt.Equal(source.mediaUpdatedAt) &&
+		row.SessionVersion == source.sessionVersion
+}
+
+// PostgreSQL-clock cooldown: no manual photo authorization or repeated
+// provider requests during the 24h failure window. A future retry_after
+// remains authoritative even after that window.
+func baiduPhotoMapFailedRetryDue(now, updated time.Time, retryAfter *time.Time) bool {
+	return !now.IsZero() && !updated.IsZero() &&
+		!updated.Add(baiduPhotoMapAutoFailedRetryCooldown).After(now) &&
+		(retryAfter == nil || !retryAfter.After(now))
+}
+
+// enqueueBaiduPhotoMapIndexIntent persists bounded Owner/source-fenced work.
+// expectedRevision is a deprecated compatibility parameter, ignored. No
+// per-photo opt-in is needed, and this method never sends raw GPS or AK.
 func enqueueBaiduPhotoMapIndexIntent(
 	ctx context.Context, db *gorm.DB, ownerID, assetID, expectedRevision uint64,
 ) error {
 	denied := errBaiduMapIndexIntentDenied
 	if ctx == nil || ctx.Err() != nil || db == nil ||
-		ownerID == 0 || assetID == 0 || expectedRevision == 0 {
+		ownerID == 0 || assetID == 0 {
 		return denied
 	}
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		source, err := lockBaiduMapIndexSourceTx(ctx, tx, ownerID, assetID)
-		if err != nil || source.consentRevision != expectedRevision {
+		if err != nil {
 			return denied
 		}
 		var old meta.BaiduPhotoMapIndexIntent
@@ -159,15 +178,61 @@ func enqueueBaiduPhotoMapIndexIntent(
 		if err != nil || old.OwnerID != ownerID {
 			return denied
 		}
+		if baiduMapIndexSameOwnerSourceGeneration(old, source) {
+			// A cancelled migration-era intent is not a revoked photo grant.
+			// Retain the Owner's explicit cancellation for the same original.
+			if old.Status == baiduMapIndexCancelled {
+				return denied
+			}
+			// Legacy consent revisions are not a cooldown bypass either.
+			if old.Status == baiduMapIndexFailed &&
+				old.ConsentRevision != source.consentRevision {
+				now, clockErr := baiduMapIndexClockTx(tx)
+				if clockErr != nil || !baiduPhotoMapFailedRetryDue(now, old.UpdatedAt, old.RetryAfter) {
+					return denied
+				}
+			}
+		}
 		if baiduMapIndexIntentMatches(old, source) {
 			if old.Status == baiduMapIndexQueued || old.Status == baiduMapIndexLeased {
 				return nil // idempotent: never create a second claimable job
 			}
-			return denied // explicit cancellation cannot be undone by replay
+			if old.Status == baiduMapIndexFailed {
+				// Exhaustion is not permanent now that the photo-specific retry
+				// endpoint has been retired. Only the DB clock can release it.
+				now, clockErr := baiduMapIndexClockTx(tx)
+				if clockErr != nil || !baiduPhotoMapFailedRetryDue(now, old.UpdatedAt, old.RetryAfter) {
+					return denied
+				}
+			} else if old.Status != baiduMapIndexCompleted {
+				return denied // cancelled Owner work remains cancelled
+			}
+			// A completed receipt whose derived row has disappeared can be
+			// planned again. Verify absence under the same Owner/source locks,
+			// so an existing valid BD09 point is never unnecessarily replaced.
+			var existing int64
+			if err := tx.Model(&meta.BaiduPhotoMapPosition{}).
+				Where("asset_id = ? AND owner_id = ? AND primary_node_id = ? AND node_revision = ? AND media_updated_at = ?",
+					source.assetID, source.ownerID, source.nodeID, source.nodeRevision, source.mediaUpdatedAt).
+				Where("source_latitude = ? AND source_longitude = ? AND coordinate_space = ? AND projection_version = ?",
+					source.latitude, source.longitude, meta.BaiduPhotoMapSpaceBD09LL,
+					meta.BaiduPhotoMapProjectionGeoconvV2).
+				Where("latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180").
+				Count(&existing).Error; err != nil {
+				return denied
+			}
+			if existing != 0 {
+				return nil // concurrent completion already restored the point
+			}
 		}
-		if source.consentRevision <= old.ConsentRevision ||
-			old.Status == baiduMapIndexLeased {
-			return denied // requires a fresh grant and old lease cancellation
+		if old.Status == baiduMapIndexLeased {
+			// During migration an old consent-bound job may still have an
+			// in-flight lease. Never steal it. Only a PostgreSQL-expired lease
+			// can be replaced by the new current Owner/source generation.
+			now, err := baiduMapIndexClockTx(tx)
+			if err != nil || old.LeaseUntil == nil || old.LeaseUntil.After(now) {
+				return denied
+			}
 		}
 		result := tx.Model(&meta.BaiduPhotoMapIndexIntent{}).
 			Where("asset_id = ? AND owner_id = ?", assetID, ownerID).
@@ -190,7 +255,7 @@ func enqueueBaiduPhotoMapIndexIntent(
 }
 
 // claimBaiduPhotoMapIndexIntent is an INTERNAL one-item cross-replica lease.
-// A valid consent, original GPS, session and source revision are all read
+// A valid original GPS, live Owner/session and source revision are read
 // again from locked Server state. This is NOT a licence, quota reservation,
 // egress authorization, or an actual running conversion task.
 func claimBaiduPhotoMapIndexIntent(

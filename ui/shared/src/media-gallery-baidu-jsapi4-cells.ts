@@ -40,7 +40,7 @@ export function xDriveValidBaiduNativeCellsPage(
   const p = value as Partial<MediaBaiduNativeCellsPage>
   const keys = ['coordinate_space','index_scope','grid_columns','grid_rows','total_count','cells']
   if (Object.keys(p).length !== keys.length || Object.keys(p).some(k => !keys.includes(k)) ||
-      p.coordinate_space !== 'bd09ll' || p.index_scope !== 'explicit_opt_in_only' ||
+      p.coordinate_space !== 'bd09ll' || p.index_scope !== 'owner_gps_auto_index' ||
       p.grid_columns !== 8 || p.grid_rows !== 8 || !safeInt(p.total_count) ||
       p.total_count < 0 || !Array.isArray(p.cells) || p.cells.length > 64) return false
   const width = bounds.east > bounds.west ? bounds.east - bounds.west :

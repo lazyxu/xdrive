@@ -19,7 +19,7 @@ const bounds={coordinate_space:'bd09ll',west:116,south:39,east:117,north:40}
 const cell=(x,y,count=1)=>({cell_x:x,cell_y:y,asset_id:100+x+8*y,
   node_id:200+x+8*y,node_revision:6,photo_count:count,
   latitude:39+0.1*y,longitude:116+0.1*x})
-const page=(cells)=>({coordinate_space:'bd09ll',index_scope:'explicit_opt_in_only',
+const page=(cells)=>({coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
   grid_columns:8,grid_rows:8,total_count:cells.reduce((sum,x)=>sum+x.photo_count,0),cells})
 const frame=(cells)=>({width:640,height:480,cells:cells.map((c,i)=>({
   selection:{bounds,cell_x:c.cell_x,cell_y:c.cell_y,asset_id:c.asset_id,
@@ -46,6 +46,7 @@ test('map photo collections show only paired current authenticated Owner reps',(
   assert.equal(select({...page(cells),total_count:1},frame(cells)).length,0)
   assert.equal(select({...page(cells),coordinate_space:'wgs84'},frame(cells)).length,0)
   assert.equal(select({...page(cells),index_scope:'all-users'},frame(cells)).length,0)
+  assert.equal(select({...page(cells),index_scope:'explicit_opt_in_only'},frame(cells)).length,0)
   assert.equal(select(page(cells.map(c=>({...c,node_revision:undefined}))),frame(cells)).length,0)
 })
 

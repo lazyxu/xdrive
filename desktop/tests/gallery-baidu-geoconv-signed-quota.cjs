@@ -15,8 +15,26 @@ test('signed account reservation reuses the one c6 atomic lower-cap transaction'
   assert.match(candidate, /SELECT clock_timestamp\(\)/)
   assert.match(old, /func reserveBaiduGeoconvQuotaWithLowerAccountCaps\(/)
   assert.match(old, /reserveBaiduGeoconvCadenceTxWithCaps\(/)
-  assert.match(verifier, /baiduGeoconvPinnedOperatorPublicKey = ""/)
-  assert.match(verifier, /func verifyPinnedBaiduGeoconvAccountEvidence\(/)
+  // Optional signature syntax remains testable but is no longer an
+  // artificially disabled, pinned human-review production gate.
+  assert.match(verifier, /verifyBaiduGeoconvAccountEvidence\(/)
+  assert.doesNotMatch(verifier, /baiduGeoconvPinnedOperatorPublicKey = ""/)
+  assert.doesNotMatch(verifier, /func verifyPinnedBaiduGeoconvAccountEvidence\(/)
+  const auto = read('internal/api/baidu_photo_map_auto_consume.go')
+  const scheduler = read('internal/api/baidu_photo_map_auto_scheduler.go')
+  assert.match(auto, /configuredBaiduGeoconvAccountPermit/)
+  assert.match(auto, /currentBaiduGeoconvServerAK/)
+  assert.match(auto, /ForwardWGS84ToBD09/)
+  assert.match(auto, /executeBaiduPhotoMapIndexWithTrustedForward\(/)
+  assert.match(scheduler, /s\.consumeBaiduPhotoMapAutoOwnersOnce\(/)
+  const mediaScheduler = read('internal/api/media_index_scheduler.go')
+  assert.match(mediaScheduler, /go s\.runBaiduPhotoMapAutoPlanner\(ctx\)/)
+  assert.match(mediaScheduler, /go s\.runBaiduPhotoMapAutoConsumer\(ctx\)/)
+  assert.match(scheduler, /baiduPhotoMapAutoConsumeInterval\s*=\s*time\.Second/)
+  assert.match(scheduler, /baiduPhotoMapAutoConsumeFailureBackoff\s*=\s*30 \* time\.Second/)
+  assert.match(scheduler, /pause = baiduPhotoMapAutoConsumeFailureBackoff/)
+  assert.match(scheduler, /case <-ctx\.Done\(\):/)
+  assert.match(scheduler, /afterOwner := uint64\(0\)/)
   // A second independent fleet/Owner SQL writer is the exact scope rejected in #1980.
   for (const forbidden of [
     'INSERT INTO xd_baidu_geoconv_quota_buckets',
@@ -42,8 +60,8 @@ test('signed Geoconv remains private when JSAPI4 has real but unapproved HTTP en
   assert.match(router, /authed\.POST\("\/media\/places\/baidu-jsapi\/session", s\.baiduJSAPI4SessionHTTP\)/)
   assert.match(live, /currentBaiduJSAPI4OperatorRelease\(/)
   assert.match(live, /baiduJSAPI4SignedLiveLoader\(/)
-  // Unlike Geoconv, JSAPI is still default NO-GO: no pinned release signer
-  // or complete reviewed JS, tile, font, WASM child inventory.
+  // The JSAPI4 runtime retains separate Origin, signed session and bounded
+  // Baidu resource-family enforcement; this is not a manual Geoconv gate.
   assert.match(resources, /reviewedJSAPI4ChildResourceCount = 1/)
   assert.match(release, /VerifyManagedJSAPI4ProductionRelease\(/)
   assert.equal(bootstrap.includes('RuntimeAuthorized:     true'), false)

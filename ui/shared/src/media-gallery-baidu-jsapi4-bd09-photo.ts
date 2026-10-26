@@ -7,7 +7,7 @@ import type {
   XDriveBaiduJSAPI4MapPort,
 } from './media-gallery-baidu-jsapi4-layer'
 
-/** This only accepts CURRENT opt-in photo positions already derived as BD09LL.
+/** Accept only current Owner photo positions already genuinely derived as BD09LL.
  * The official coordinate converter MUST NOT run a second time. It is not
  * authority to load any SDK, call an upstream or display private photos. */
 export const XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX = 100
@@ -45,7 +45,7 @@ export function xDrivePrepareBaiduNativePhotoWindow(
 ): XDriveBaiduNativePhotoWindowResult {
   if (signal?.aborted) return { kind: 'cancelled' }
   if (!page || page.coordinate_space !== 'bd09ll' ||
-      page.index_scope !== 'explicit_opt_in_only' || !Array.isArray(page.items) ||
+      page.index_scope !== 'owner_gps_auto_index' || !Array.isArray(page.items) ||
       !nonnegative(page.total_count) || !nonnegative(page.offset) ||
       !nonnegative(page.limit) || page.limit < 1 ||
       page.limit > XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX ||

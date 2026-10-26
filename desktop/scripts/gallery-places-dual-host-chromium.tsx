@@ -56,7 +56,7 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
   const count = favorite ? 3 : 9
-  return {coordinate_space:'bd09ll' as const,index_scope:'explicit_opt_in_only' as const,
+  return {coordinate_space:'bd09ll' as const,index_scope:'owner_gps_auto_index' as const,
     grid_columns:8,grid_rows:8,total_count:count,
     cells:[{cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
       node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude}]}

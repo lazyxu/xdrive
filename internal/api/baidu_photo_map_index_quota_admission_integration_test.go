@@ -371,12 +371,36 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		index.Latitude != 0.006 || index.Longitude != 0.006 {
 		t.Fatalf("zero GPS pair was discarded or swapped: %+v %v", index, err)
 	}
+	// Saturate the fixture's Owner counter: no need for sixty real
+	// Provider calls to reproduce a transactional quota rejection.
+	if err := db.Model(&meta.BaiduGeoconvQuotaBucket{}).
+		Where("scope_id = ?", int64(owner.ID)).
+		Update("requests", baiduGeoconvOwnerRequestsPerMinute).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := executeBaiduPhotoMapIndexWithTrustedForward(context.Background(), db,
 		owner.ID, third.ID, licence, serverAK, offlineForward); err == nil {
-		t.Fatal("third same-minute Owner quota overrun was accepted")
+		t.Fatal("saturated same-minute Owner quota overrun was accepted")
 	}
 	if secretReads.Load() != 1 || forwardCalls.Load() != 1 {
 		t.Fatal("quota denial must not read Server AK or send exact source GPS")
+	}
+	var quotaDeferred meta.BaiduPhotoMapIndexIntent
+	if err := db.Where("asset_id = ?", third.ID).Take(&quotaDeferred).Error; err != nil ||
+		quotaDeferred.Status != baiduMapIndexQueued || quotaDeferred.Attempts != 0 ||
+		quotaDeferred.RetryAfter == nil || quotaDeferred.LeaseToken != "" ||
+		quotaDeferred.LeaseUntil != nil {
+		t.Fatalf("quota denial burned a photo attempt: %+v err=%v", quotaDeferred, err)
+	}
+	var capped meta.BaiduGeoconvQuotaBucket
+	if err := db.Where("scope_id = ?", int64(owner.ID)).Take(&capped).Error; err != nil ||
+		capped.Requests != baiduGeoconvOwnerRequestsPerMinute || capped.Points != 2 {
+		t.Fatalf("quota denial mutated prefilled budget: %+v err=%v", capped, err)
+	}
+	// Restore synthetic budget; later Owner/source/lease assertions stay real.
+	if err := db.Model(&meta.BaiduGeoconvQuotaBucket{}).
+		Where("scope_id = ?", int64(owner.ID)).Update("requests", 2).Error; err != nil {
+		t.Fatal(err)
 	}
 	countQuota(2)
 	if sent.Load() != 2 {

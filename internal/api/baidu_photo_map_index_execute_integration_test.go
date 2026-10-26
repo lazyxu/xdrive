@@ -123,18 +123,7 @@ func TestBaiduMapExecutorRealPostgresCompletionCancellationAndPrivacy(t *testing
 		if err := db.Create(&asset).Error; err != nil {
 			t.Fatal(err)
 		}
-		mediaTime := media.UpdatedAt
-		consent := meta.BaiduPhotoMapConsent{
-			OwnerID: owner.ID, AssetID: asset.ID, Revision: 1,
-			AllowIndex: true, AllowBaiduConversion: true,
-			ExpiresAt:    time.Now().UTC().Add(time.Hour),
-			SourceNodeID: node.ID, SourceNodeRevision: 1,
-			SourceMediaUpdatedAt: &mediaTime,
-			SourceLatitude:       &lat, SourceLongitude: &lng,
-		}
-		if err := db.Create(&consent).Error; err != nil {
-			t.Fatal(err)
-		}
+		// A real Owner photo is indexable without a separate map grant.
 		if err := enqueueBaiduPhotoMapIndexIntent(context.Background(), db, owner.ID, asset.ID, 1); err != nil {
 			t.Fatal(err)
 		}
@@ -240,8 +229,8 @@ func TestBaiduMapExecutorRealPostgresCompletionCancellationAndPrivacy(t *testing
 		t.Fatalf("cancelled worker resurrected coordinates, count=%d, err=%v", count, err)
 	}
 
-	// Owner revocation (rather than job cancel) must also terminate a
-	// blocked conversion and prevent any stale index reappearance.
+	// Cross-replica Owner cancellation of an already-running job must abort
+	// the conversion and prevent any stale derived coordinate commit.
 	third := addPhoto("revoke-in-flight.jpg", 26.1, 121.3)
 	revokeStarted := make(chan struct{})
 	revokeResult := make(chan error, 1)
@@ -256,21 +245,21 @@ func TestBaiduMapExecutorRealPostgresCompletionCancellationAndPrivacy(t *testing
 	select {
 	case <-revokeStarted:
 	case <-time.After(4 * time.Second):
-		t.Fatal("revocation fixture failed to enter provider")
+		t.Fatal("cancellation fixture failed to enter provider")
 	}
-	if err := revokeBaiduPhotoMapConsent(context.Background(), peer, owner.ID, third.ID, 1); err != nil {
+	if err := cancelBaiduPhotoMapIndexIntent(context.Background(), peer, owner.ID, third.ID); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-revokeResult:
 		if err == nil {
-			t.Fatal("revoked consent did not terminate provider")
+			t.Fatal("cancelled intent did not terminate provider")
 		}
 	case <-time.After(4 * time.Second):
-		t.Fatal("revocation did not cancel the provider context")
+		t.Fatal("intent cancellation did not reach converter")
 	}
 	if err := peer.Model(&meta.BaiduPhotoMapPosition{}).Count(&count).Error; err != nil || count != 1 {
-		t.Fatal("revocation let unapproved derived coordinates persist")
+		t.Fatal("cancelled intent committed stale derived coordinates")
 	}
 
 	// An uncooperative converter returning after cancellation still cannot

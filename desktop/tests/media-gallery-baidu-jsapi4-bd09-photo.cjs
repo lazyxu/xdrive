@@ -31,7 +31,7 @@ const { xDrivePrepareBaiduNativePhotoWindow: prepare,
   XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX: maxPhotos } = mod.exports
 
 function page(n, total = n) {
-  return { coordinate_space: 'bd09ll', index_scope: 'explicit_opt_in_only',
+  return { coordinate_space: 'bd09ll', index_scope: 'owner_gps_auto_index',
     total_count: total, limit: 100, offset: 0, has_more: total > n,
     items: Array.from({ length: n }, (_, i) => ({
       asset_id: i + 1, node_id: 101 + i, latitude: i / 100, longitude: i / 100,

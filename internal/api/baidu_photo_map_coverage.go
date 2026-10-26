@@ -15,8 +15,8 @@ import (
 // A privacy-preserving, read-only comparison. Values are logical PhotoAssets,
 // not Places grid-cell counts or the 64 representative covers of one viewport.
 // The source set is current, indexed-ready, genuinely valid WGS84 provenance;
-// BD09 eligibility additionally requires the SAME live Owner/source/consent
-// revision fences used by the signed map cells and complete photo Range.
+// BD09 eligibility requires live Owner/source revision fences used by signed
+// map Cells and Gallery Range; never per-photo map grants.
 type baiduPhotoMapCoverage struct {
 	ValidGPSAssets                 int64
 	EligibleBD09Assets             int64

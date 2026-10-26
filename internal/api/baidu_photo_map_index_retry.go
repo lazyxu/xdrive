@@ -11,8 +11,9 @@ import (
 )
 
 // A durable bounded retry clock is only evaluated by PostgreSQL.
-// The first failure cools for 15 seconds, the second for 60 seconds;
-// the third exhausts this explicit photo+consent generation permanently.
+// The first real conversion failure cools for 15 seconds, the second for
+// 60 seconds; the third exhausts that source generation. Quota denial is
+// capacity wait, not a conversion failure and must not consume attempts.
 func baiduMapIndexNextRetry(attempt uint32, now time.Time) (string, *time.Time) {
 	if attempt >= baiduMapIndexMaxClaims || attempt == 0 {
 		return baiduMapIndexFailed, nil
@@ -32,6 +33,20 @@ func baiduMapIndexNextRetry(attempt uint32, now time.Time) (string, *time.Time) 
 // error, AK, raw GPS, URL or file name is persisted or returned.
 func settleFailedBaiduPhotoMapIndexAttempt(
 	ctx context.Context, db *gorm.DB, lease baiduMapIndexLease,
+) error {
+	return settleBaiduPhotoMapIndexAttempt(ctx, db, lease, false)
+}
+
+// Temporary quota exhaustion keeps the existing Owner/source intent queued;
+// it never burns the finite budget for genuine conversion failures.
+func deferBaiduPhotoMapIndexQuotaAttempt(
+	ctx context.Context, db *gorm.DB, lease baiduMapIndexLease,
+) error {
+	return settleBaiduPhotoMapIndexAttempt(ctx, db, lease, true)
+}
+
+func settleBaiduPhotoMapIndexAttempt(
+	ctx context.Context, db *gorm.DB, lease baiduMapIndexLease, quotaDenied bool,
 ) error {
 	denied := errBaiduMapIndexIntentDenied
 	if ctx == nil || ctx.Err() != nil || db == nil ||
@@ -62,13 +77,20 @@ func settleFailedBaiduPhotoMapIndexAttempt(
 			return denied // expired claims require separate safe repair
 		}
 		status, retryAfter := baiduMapIndexNextRetry(row.Attempts, now)
+		updates := map[string]any{
+			"status": status, "retry_after": retryAfter,
+			"lease_token": "", "lease_until": nil,
+		}
+		if quotaDenied {
+			after := now.Add(5 * time.Minute)
+			updates["status"] = baiduMapIndexQueued
+			updates["retry_after"] = &after
+			updates["attempts"] = row.Attempts - 1
+		}
 		updated := tx.Model(&meta.BaiduPhotoMapIndexIntent{}).
 			Where("owner_id = ? AND asset_id = ? AND status = ? AND lease_token = ? AND attempts = ?",
 				source.ownerID, source.assetID, baiduMapIndexLeased, lease.token, lease.attempt).
-			Updates(map[string]any{
-				"status": status, "retry_after": retryAfter,
-				"lease_token": "", "lease_until": nil,
-			})
+			Updates(updates)
 		if updated.Error != nil || updated.RowsAffected != 1 {
 			return denied
 		}

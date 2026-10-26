@@ -11,11 +11,12 @@ import (
 var errBaiduGeoconvQuotaDenied = errors.New("baidu coordinate conversion quota unavailable")
 
 const (
-	// Conservative engineering ceilings; operator/provider account licensing
-	// must independently verify that production limits are no less strict.
-	baiduGeoconvOwnerRequestsPerMinute int64 = 2
-	baiduGeoconvFleetRequestsPerMinute int64 = 20
-	baiduGeoconvOwnerPointsPerMinute   int64 = 20
+	// At most one normal Server conversion/tick, 60 requests/minute
+	// across all replicas. Database-second and UTC-day limits stay in force;
+	// genuine Provider errors never become an artificial manual review gate.
+	baiduGeoconvOwnerRequestsPerMinute int64 = 60
+	baiduGeoconvFleetRequestsPerMinute int64 = 60
+	baiduGeoconvOwnerPointsPerMinute   int64 = 60
 	baiduGeoconvFleetPointsPerMinute   int64 = 200
 	baiduGeoconvBatchMaxPoints               = 20
 	baiduGeoconvQuotaMaxOwnerID              = uint64(1<<63 - 1)
@@ -28,11 +29,10 @@ type baiduGeoconvQuotaLimits struct {
 	FleetPoints   int64
 }
 
-// PRIVATE prerequisite for a future trusted, cancellable Server indexer:
-// no API route, no production caller and no outgoing Baidu network traffic.
-// The future caller MUST re-check Owner, PhotoAsset, source WGS84 pair and
-// current explicit, unexpired consent generation before making any request.
-// A successful quota reservation is not authorization to transmit GPS.
+// Private capacity check used by the current bounded Server-only photo map
+// consumer. It does not require a photo grant, operator review or pinned
+// signer; the caller must recheck active Owner, current source WGS84 and
+// configured Server AK before outbound HTTPS. Quota alone is not authority.
 func reserveBaiduGeoconvQuota(
 	ctx context.Context, db *gorm.DB, ownerID uint64, pointCount int,
 ) error {
@@ -45,12 +45,10 @@ func reserveBaiduGeoconvQuota(
 		}, baiduGeoconvDefaultCadenceCaps)
 }
 
-// A PRIVATE quota primitive for future independently verified, signed LOWER
-// Baidu account limits. No current production caller passes account-specific
-// caps; the existing default reservation always uses local conservative caps.
-// Caller MUST separately verify the live Owner/session/AK revision, licensed
-// evidence and consent before any GPS egress. A successful reservation alone
-// never authorizes a network call, and this function does not call Baidu.
+// Optional legacy lower-cap quota primitive; production auto-consumption
+// uses the built-in conservative fleet/Owner quotas. No additional manual
+// licence evidence or photo consent is required for active Owner + enabled AK
+// dispatch. Quota alone never authorizes network egress, and does not call Baidu.
 //
 // Minute requests/points and second/UTC-day requests share ONE outer
 // PostgreSQL transaction; rejection in any dimension rolls back ALL fleet

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -177,110 +176,66 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 		t.Fatal("missing durable privacy authorization accepted")
 	}
 	assertVisible(0, 0)
-	// A trusted callback alone cannot authorize absent persisted consent.
-	if err := upsertBaiduPhotoMapPosition(context.Background(), db, candidate, approved); err == nil {
-		t.Fatal("test callback bypassed missing durable grant")
-	}
-	assertVisible(0, 0)
-	// Synthetic explicit Owner decision, test-only. In production the future
-	// authenticated route must re-verify the actor inside this same TX.
-	grant := baiduPhotoMapGrantCandidate{
-		OwnerID: alice.ID, AssetID: asset.ID, PrimaryNodeID: node.ID,
-		NodeRevision: node.Revision, MediaUpdatedAt: media.UpdatedAt,
-		SourceLatitude: lat, SourceLongitude: lng,
-		ExpectedConsentRevision: 0, ExpiresAt: time.Now().UTC().Add(time.Hour),
-	}
-	decision := func(ctx context.Context, tx *gorm.DB, ownerID, assetID uint64) (auditpkg.Event, error) {
-		if ctx.Err() != nil || tx == nil || ownerID != alice.ID || assetID != asset.ID {
-			return auditpkg.Event{}, errors.New("unverified consent actor")
-		}
-		return auditpkg.Event{ActorUserID: &alice.ID}, nil
-	}
-	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, nil); err == nil {
-		t.Fatal("missing explicit owner decision granted location sharing")
-	}
-	invalidActor := func(context.Context, *gorm.DB, uint64, uint64) (auditpkg.Event, error) {
-		return auditpkg.Event{ActorUserID: &bob.ID}, nil
-	}
-	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, invalidActor); err == nil {
-		t.Fatal("another owner's decision granted location sharing")
-	}
-	longGrant := grant
-	longGrant.ExpiresAt = time.Now().UTC().Add(31 * 24 * time.Hour)
-	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, longGrant, decision); err == nil {
-		t.Fatal("overlong location consent retention accepted")
-	}
-	consent, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, decision)
-	if err != nil || consent.Revision != 1 || !consent.AllowIndex || !consent.AllowBaiduConversion {
-		t.Fatalf("valid private grant did not atomically persist: %+v %v", consent, err)
-	}
-
-	reject := func(context.Context, *gorm.DB, uint64, uint64) error {
-		return errors.New("test private album GPS not permitted")
-	}
-	if err := upsertBaiduPhotoMapPosition(context.Background(), db, candidate, reject); !errors.Is(err, errBaiduPhotoMapWriteDenied) {
-		t.Fatal("privacy denial did not roll back")
-	}
-	assertVisible(0, 0)
-
+	// Owner, current media source and trusted in-transaction queue proof are
+	// sufficient. No BaiduPhotoMapConsent row is created or required.
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, candidate, approved); err != nil {
-		t.Fatalf("verified test-only privacy checker could not write: %v", err)
+		t.Fatalf("valid Owner GPS could not be indexed without photo consent: %v", err)
 	}
 	assertVisible(1, candidate.DerivedLongitude)
 	var row meta.BaiduPhotoMapPosition
 	if err := db.First(&row, "asset_id = ?", asset.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.ProjectionVersion != meta.BaiduPhotoMapProjectionGeoconvV2 ||
-		row.OwnerID != alice.ID || row.SourceLongitude != lng ||
-		row.ConsentRevision != 1 || row.MediaUpdatedAt.IsZero() {
-		t.Fatalf("lost source provenance: %+v", row)
+	if row.OwnerID != alice.ID || row.SourceLongitude != lng ||
+		row.ConsentRevision != 0 || row.MediaUpdatedAt.IsZero() ||
+		row.ProjectionVersion != meta.BaiduPhotoMapProjectionGeoconvV2 {
+		t.Fatalf("lost original Owner and source provenance: %+v", row)
 	}
 
-	// Write on the same source revision updates instead of duplicating.
+	// Current source overwrites the single disposable derivative, without
+	// creating a duplicate row or needing a new photo-map grant.
 	revised := candidate
 	revised.DerivedLongitude = 121.482
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, revised, approved); err != nil {
 		t.Fatal(err)
 	}
 	assertVisible(1, revised.DerivedLongitude)
-	// A rejected privacy re-check cannot partially replace a valid row.
 	revised.DerivedLongitude = 121.483
-	if err := upsertBaiduPhotoMapPosition(context.Background(), db, revised, reject); err == nil {
-		t.Fatal("updated index without current consent")
+	if err := upsertBaiduPhotoMapPosition(context.Background(), db, revised, func(
+		context.Context, *gorm.DB, uint64, uint64,
+	) error {
+		return errors.New("lease is no longer valid")
+	}); err == nil {
+		t.Fatal("lost trusted transaction proof overwrote derived location")
 	}
 	assertVisible(1, 121.482)
-	if allowedChecks != 2 {
-		t.Fatalf("expected two trusted policy checks, got %d", allowedChecks)
-	}
 
-	// The Owner cannot impersonate another owner or asset revision.
 	crossOwner := candidate
 	crossOwner.OwnerID = bob.ID
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, crossOwner, approved); err == nil {
-		t.Fatal("cross-owner upsert admitted")
+		t.Fatal("foreign Owner inserted a map point")
 	}
 	crossNode := candidate
 	crossNode.PrimaryNodeID++
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, crossNode, approved); err == nil {
-		t.Fatal("mismatched primary node admitted")
+		t.Fatal("different primary Node was accepted")
 	}
 	stale := candidate
 	stale.NodeRevision++
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, stale, approved); err == nil {
-		t.Fatal("stale Node revision admitted")
+		t.Fatal("stale Node revision was accepted")
 	}
 
-	// GPS editing invalidates the position BEFORE any cleanup job runs.
+	// Original GPS edits immediately hide old positions and reject stale writes.
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", node.ID).
 		Update("latitude", 31.5001).Error; err != nil {
 		t.Fatal(err)
 	}
 	assertVisible(0, 0)
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, candidate, approved); err == nil {
-		t.Fatal("stale original GPS repopulated index")
+		t.Fatal("old original GPS resurrected its derived position")
 	}
-	newMedia := meta.MediaMetadata{}
+	var newMedia meta.MediaMetadata
 	if err := db.Where("node_id = ?", node.ID).Take(&newMedia).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -288,30 +243,15 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	fresh.SourceLatitude = *newMedia.Latitude
 	fresh.MediaUpdatedAt = newMedia.UpdatedAt
 	fresh.DerivedLatitude = 31.506
-	if err := upsertBaiduPhotoMapPosition(context.Background(), db, fresh, approved); err == nil {
-		t.Fatal("edited GPS reused an old location export consent")
-	}
-	assertVisible(0, 0)
-	// Only a newly confirmed current source fingerprint can re-authorize
-	// forwarding/indexing the edited photo. The old revision is never enough.
-	grant.SourceLatitude = fresh.SourceLatitude
-	grant.SourceLongitude = fresh.SourceLongitude
-	grant.MediaUpdatedAt = fresh.MediaUpdatedAt
-	grant.ExpectedConsentRevision = 1
-	consent, err = grantBaiduPhotoMapConsent(context.Background(), db, grant, decision)
-	if err != nil || consent.Revision != 2 || consent.SourceLatitude == nil ||
-		*consent.SourceLatitude != fresh.SourceLatitude ||
-		consent.SourceMediaUpdatedAt == nil ||
-		!consent.SourceMediaUpdatedAt.Equal(fresh.MediaUpdatedAt) {
-		t.Fatalf("edited GPS could not receive a fresh consent: %+v %v", consent, err)
-	}
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, fresh, approved); err != nil {
-		t.Fatalf("fresh location consent did not unlock its source: %v", err)
+		t.Fatalf("current GPS needed a second photo-map authorization: %v", err)
 	}
-	assertVisible(1, candidate.DerivedLongitude)
+	assertVisible(1, fresh.DerivedLongitude)
+	if allowedChecks != 3 {
+		t.Fatalf("expected current source check each trusted write, got %d", allowedChecks)
+	}
 
-	// A disabled Owner cannot add map data; an internal purge must still
-	// work for that Owner after disable/delete/privacy revocation.
+	// A disabled Owner is invisible; only that Owner's cleanup can purge rows.
 	when := time.Now().UTC()
 	if err := db.Model(&meta.User{}).Where("id = ?", alice.ID).
 		Update("disabled_at", when).Error; err != nil {
@@ -319,7 +259,7 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	}
 	assertVisible(0, 0)
 	if err := upsertBaiduPhotoMapPosition(context.Background(), db, fresh, approved); err == nil {
-		t.Fatal("disabled account wrote a derived location")
+		t.Fatal("disabled account wrote a location")
 	}
 	if err := purgeBaiduPhotoMapPosition(context.Background(), db, bob.ID, asset.ID); err != nil {
 		t.Fatal(err)
@@ -327,74 +267,17 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	var count int64
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", asset.ID).
 		Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("other Owner deleted location: %d, %v", count, err)
+		t.Fatalf("another Owner purged private location: %d %v", count, err)
 	}
 	if err := purgeBaiduPhotoMapPosition(context.Background(), db, alice.ID, asset.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", asset.ID).
 		Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("privacy cleanup did not remove location: %d, %v", count, err)
+		t.Fatalf("Owner cleanup did not remove derivative: %d %v", count, err)
 	}
-	// Revocation must be allowed even when the Owner has been disabled.
-	if err := revokeBaiduPhotoMapConsent(context.Background(), db, alice.ID, asset.ID, 2); err != nil {
-		t.Fatalf("disabled Owner could not revoke a map grant: %v", err)
+	var grants int64
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Count(&grants).Error; err != nil || grants != 0 {
+		t.Fatalf("new index path unexpectedly generated map consent: %d %v", grants, err)
 	}
-	if err := revokeBaiduPhotoMapConsent(context.Background(), db, alice.ID, asset.ID, 2); err == nil {
-		t.Fatal("stale revision repeated the revocation")
-	}
-	if err := db.First(&consent, "asset_id = ?", asset.ID).Error; err != nil ||
-		consent.Revision != 3 || consent.AllowIndex || consent.AllowBaiduConversion ||
-		consent.RevokedAt == nil {
-		t.Fatalf("revocation failed to persist: %+v %v", consent, err)
-	}
-
-	// Renewing consent requires an independently confirmed Owner decision,
-	// current source GPS and exact post-revocation revision.
-	if err := db.Model(&meta.User{}).Where("id = ?", alice.ID).
-		Update("disabled_at", nil).Error; err != nil {
-		t.Fatal(err)
-	}
-	reGrant := grant
-	reGrant.MediaUpdatedAt = fresh.MediaUpdatedAt
-	reGrant.SourceLatitude = fresh.SourceLatitude
-	reGrant.SourceLongitude = fresh.SourceLongitude
-	reGrant.ExpectedConsentRevision = 2
-	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision); err == nil {
-		t.Fatal("stale pre-revocation consent revision allowed regrant")
-	}
-	reGrant.ExpectedConsentRevision = 3
-	consent, err = grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision)
-	if err != nil || consent.Revision != 4 || consent.RevokedAt != nil ||
-		!consent.AllowIndex || !consent.AllowBaiduConversion {
-		t.Fatalf("fresh opted-in regrant unavailable: %+v %v", consent, err)
-	}
-	assertVisible(0, 0)
-	var audits []meta.AuditEvent
-	if err := db.Where("action = ?", "media.photo_map.consent.grant").
-		Order("id ASC").Find(&audits).Error; err != nil || len(audits) != 3 ||
-		strings.Contains(audits[0].Metadata, "31.2304") ||
-		strings.Contains(audits[1].Metadata, "31.5001") ||
-		strings.Contains(audits[2].Metadata, "31.5001") {
-		t.Fatalf("location consent audit missing or leaked source GPS: %+v %v", audits, err)
-	}
-
-	// A missing audit sink MUST roll back the next policy revision AND any
-	// premature deletion of the current derived position in that transaction.
-	if err := upsertBaiduPhotoMapPosition(context.Background(), db, fresh, approved); err != nil {
-		t.Fatal(err)
-	}
-	assertVisible(1, fresh.DerivedLongitude)
-	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
-		t.Fatal(err)
-	}
-	reGrant.ExpectedConsentRevision = 4
-	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision); err == nil {
-		t.Fatal("audit-write failure committed a location consent")
-	}
-	if err := db.Where("asset_id = ?", asset.ID).Take(&consent).Error; err != nil ||
-		consent.Revision != 4 {
-		t.Fatalf("audit failure changed live consent: %+v %v", consent, err)
-	}
-	assertVisible(1, fresh.DerivedLongitude)
 }

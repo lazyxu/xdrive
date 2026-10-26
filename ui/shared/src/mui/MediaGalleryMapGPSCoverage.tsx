@@ -114,14 +114,14 @@ export function XDriveMediaGalleryMapGPSCoverage({
           {coverageState === 'no-valid-gps'
             ? '当前已完成索引的照片没有有效原始 GPS；不代表磁盘上其他照片没有定位信息。'
             : coverageState === 'none-displayable'
-              ? '已有有效原始 GPS，但目前没有符合授权、来源修订和 BD-09 派生索引要求的可显示照片。不会自动向百度发送这些坐标。'
+              ? '已有有效原始 GPS，但尚无可用的 BD-09 派生位置。管理员启用百度地图服务并配置有效 Server AK 后，会在后台自动向百度发送当前 GPS 坐标进行转换；服务关闭或未配置时不会发送。'
               : coverageState === 'partial'
-                ? '只有部分有效 GPS 照片可在 BD-09 地图显示；差额可能来自授权、来源更新或派生索引状态，不能直接认定为 GPS 错误。'
+                ? '部分有效 GPS 照片尚未完成位置派生或源数据已更新；百度地图服务启用并配置 Server AK 后会自动处理，无需逐张授权。'
                 : '在本次已完成索引的统计范围内，全部有效 GPS 均具备 BD-09 显示资格；这不代表百度动态地图已运行成功。'}
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:0.5}}>
           来源纬度超出当前地图范围：{current.data.source_outside_camera_latitude_assets.toLocaleString('zh-CN')} 张。
-          差额可能来自授权、来源修订或派生索引；不等于 GPS 错误，也不证明动态地图已启用。
+          差额可能来自来源修订或派生索引；不等于 GPS 错误，也不证明动态地图已启用。
         </Typography>
       </Box> : null}
       {current.phase === 'ready' && current.data &&
@@ -137,18 +137,16 @@ export function XDriveMediaGalleryMapGPSCoverage({
                 当前不可显示原因（互斥统计）
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:0.5}}>
-                两次独立查询的数量已匹配；若期间有照片或授权变更，请重新核对。
+                两次独立查询的数量已匹配；若期间有照片或位置数据变更，请重新核对。
               </Typography>
               <Stack direction="row" gap={1} flexWrap="wrap" sx={{mt:0.5}}>
-                <Typography variant="caption">授权未生效或已撤销：{current.reasons.consent_unavailable_assets.toLocaleString('zh-CN')} 张</Typography>
-                <Typography variant="caption">授权来源已改变：{current.reasons.consent_source_changed_assets.toLocaleString('zh-CN')} 张</Typography>
                 <Typography variant="caption">尚无派生位置：{current.reasons.derived_missing_assets.toLocaleString('zh-CN')} 张</Typography>
                 <Typography variant="caption">派生位置不可用：{current.reasons.derived_invalid_assets.toLocaleString('zh-CN')} 张</Typography>
               </Stack>
             </>
           ) : current.reasonPhase === 'changed' ? (
             <Typography role="status" variant="caption" color="text.secondary">
-              查询期间照片或授权数量已变化，请重新核对；不会混合两个快照显示原因。
+              查询期间照片或位置数据已变化，请重新核对；不会混合两个快照显示原因。
             </Typography>
           ) : (
             <Typography role="status" variant="caption" color="text.secondary">

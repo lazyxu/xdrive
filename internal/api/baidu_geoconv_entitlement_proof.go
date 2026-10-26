@@ -12,9 +12,6 @@ const (
 	baiduGeoconvEvidenceFormat byte = 1
 	baiduGeoconvEvidenceDomain      = "xdrive/baidu-geoconv/account-entitlement/v1\x00"
 	baiduGeoconvEvidenceMaxAge      = 5 * time.Minute
-	// No independently reviewed production signing authority is installed.
-	// A test-generated key or administrative toggle MUST NOT unlock Geoconv.
-	baiduGeoconvPinnedOperatorPublicKey = ""
 )
 
 // This PRIVATE envelope binds a proposed reviewed account entitlement to a
@@ -116,16 +113,7 @@ func verifyBaiduGeoconvAccountEvidence(
 	return nil
 }
 
-// This is the ONLY production-facing evidence gate. It is intentionally hard
-// closed: no pinned, independently reviewed operator signing key, provider
-// terms or live authoritative evidence source has been installed. Admin AK
-// saving, a fixture signature, or a caller-provided public key cannot open it.
-func verifyPinnedBaiduGeoconvAccountEvidence(
-	_ context.Context, _ baiduGeoconvAccountEvidenceProof,
-	_ baiduGeoconvAccountEvidenceScope, _ time.Time,
-) error {
-	if baiduGeoconvPinnedOperatorPublicKey == "" {
-		return errBaiduGeoconvDispatchUnavailable
-	}
-	return errBaiduGeoconvDispatchUnavailable
-}
+// The optional signed-proof utility above is retained for historical
+// integrity tests only. Production index admission now uses an enabled,
+// configured Server AK and a live Owner, not a manually pinned operator
+// proof, artificial NO-GO toggle or an extra per-photo authorization.
