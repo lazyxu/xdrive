@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-enum class Screen { CONNECT, LOGIN, PASSWORD, FILES, GALLERY }
+enum class Screen { CONNECT, LOGIN, PASSWORD, FILES, GALLERY, TRASH }
 enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 enum class FilesTransferKind { COPY, MOVE }
 
@@ -49,6 +49,11 @@ data class DriveState(
     val fileUploadCommitted: Boolean = false,
     val fileUploadBytes: Long = 0,
     val fileUploadTotal: Long = 0,
+    val trashItems: List<TrashEntry> = emptyList(),
+    val trashTotal: Long = 0,
+    val trashLoaded: Boolean = false,
+    /** Lost restore ACK freezes further writes until a successful authenticated GET. */
+    val trashRestoreAttempted: Boolean = false,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -933,6 +938,103 @@ class DriveController(
     }
 
 
+    /** Owner-scoped deleted roots. This is a separate Files subview, not Gallery. */
+    fun openTrash() {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.loading || session == null ||
+            current.fileUploadActive || current.fileDownloadActive ||
+            current.destinationKind != null || current.browseBatchWriteAttempted) return
+        invalidate()
+        mutableState.value = current.copy(screen = Screen.TRASH, loading = false,
+            error = null, selected = null, fileExportPending = null,
+            fileUploadPickerParent = null, browseSelectionMode = false,
+            browseSelectedIds = emptySet(), trashItems = emptyList(),
+            trashTotal = 0, trashLoaded = false, trashRestoreAttempted = false)
+        readTrash(0, append = false)
+    }
+
+    fun closeTrash() {
+        val current = state.value
+        if (current.screen != Screen.TRASH) return
+        invalidate()
+        mutableState.value = current.copy(screen = Screen.FILES, loading = false,
+            error = null, trashItems = emptyList(), trashTotal = 0,
+            trashLoaded = false, trashRestoreAttempted = false,
+            items = emptyList(), loaded = false)
+        // The restored item may now exist in the previous Owner directory.
+        load(state.value.path, 0)
+    }
+
+    fun refreshTrash() {
+        if (state.value.screen != Screen.TRASH || state.value.loading) return
+        readTrash(0, append = false)
+    }
+
+    fun loadMoreTrash() {
+        val current = state.value
+        if (current.screen != Screen.TRASH || !current.trashLoaded ||
+            current.loading || current.error != null || current.trashRestoreAttempted ||
+            current.trashItems.size.toLong() >= current.trashTotal ||
+            current.trashItems.size > Int.MAX_VALUE - 100) return
+        readTrash(current.trashItems.size, append = true)
+    }
+
+    private fun readTrash(offset: Int, append: Boolean) {
+        val current = state.value
+        if (current.screen != Screen.TRASH || current.loading || session == null) return
+        val service = api ?: return
+        request { ticket ->
+            val page = authenticated(service, ticket) { service.trashPage(it, offset) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.TRASH) throw CancellationException()
+            if (append && (!latest.trashLoaded || page.offset != latest.trashItems.size ||
+                page.totalCount != latest.trashTotal ||
+                page.items.any { row -> latest.trashItems.any { it.node.id == row.node.id } }))
+                throw ApiException(0, "Trash changed while paging", ApiFailureReason.INVALID_RESPONSE)
+            val rows = if (append) latest.trashItems + page.items else page.items
+            mutableState.value = latest.copy(trashItems = rows,
+                trashTotal = page.totalCount, trashLoaded = true,
+                trashRestoreAttempted = false, error = null)
+        }
+    }
+
+    fun restoreTrashItem(item: TrashEntry) {
+        val current = state.value
+        if (current.screen != Screen.TRASH || current.loading ||
+            !current.trashLoaded || current.trashRestoreAttempted ||
+            current.trashItems.none { it == item }) return
+        val service = api ?: return
+        if (session == null) return
+        // A POST may have committed despite losing its response: no auto retry.
+        mutableState.value = current.copy(trashRestoreAttempted = true)
+        request { ticket ->
+            authenticatedMutation(ticket) { service.restoreTrash(it, item.node) }
+            checkCurrent(ticket)
+            val acknowledged = state.value
+            mutableState.value = acknowledged.copy(
+                trashItems = acknowledged.trashItems.filterNot { it.node.id == item.node.id },
+                trashTotal = (acknowledged.trashTotal - 1).coerceAtLeast(0),
+                trashLoaded = false, trashRestoreAttempted = false, error = null)
+            try {
+                val page = authenticated(service, ticket) { service.trashPage(it, 0) }
+                checkCurrent(ticket)
+                val latest = state.value
+                if (latest.screen != Screen.TRASH) throw CancellationException()
+                mutableState.value = latest.copy(
+                    trashItems = page.items, trashTotal = page.totalCount,
+                    trashLoaded = true, error = null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                checkCurrent(ticket)
+                if (failure is ApiException && failure.statusCode == 401) throw failure
+                mutableState.value = state.value.copy(trashLoaded = false,
+                    error = "已恢复到原文件夹，但回收站刷新失败。请刷新确认最新列表。")
+            }
+        }
+    }
+
     /** Native Gallery is a second app surface, not another Files section.
      * Files' verified Owner path remains in memory for a return to browsing. */
     fun openGallery() {
@@ -1065,6 +1167,10 @@ class DriveController(
 
     fun back() {
         val current = state.value
+        if (current.screen == Screen.TRASH) {
+            closeTrash()
+            return
+        }
         if (current.screen == Screen.GALLERY) {
             if (current.gallerySelected != null) dismissGalleryInfo() else openFilesApp()
             return
@@ -1182,7 +1288,9 @@ class DriveController(
                 fileDownloadSaved = false, fileUploadPickerParent = null,
                 fileUploadActive = false, fileUploadCommitted = false,
                 galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-                galleryLoaded = false, gallerySelected = null)
+                galleryLoaded = false, gallerySelected = null,
+                trashItems = emptyList(), trashTotal = 0,
+                trashLoaded = false, trashRestoreAttempted = false)
             throw CancellationException()
         }
         return block(refreshed.accessToken)
@@ -1241,6 +1349,9 @@ class DriveController(
                                 "上传目标名称冲突，请刷新目录后决定如何处理。"
                             else "上传结果未确认，请刷新目录检查；不要自动重复上传。",
                         )
+                    } else if (state.value.trashRestoreAttempted) {
+                        mutableState.value = state.value.copy(trashLoaded = false,
+                            error = "恢复结果未确认，请刷新回收站核对，勿重复提交。")
                     } else if (state.value.browseBatchWriteAttempted) {
                         // The Server may have committed an atomic batch before
                         // its ACK was lost. Do not leave the stale selection

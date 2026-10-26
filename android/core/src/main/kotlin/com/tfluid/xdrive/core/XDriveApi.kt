@@ -64,6 +64,11 @@ data class DriveNode(
 
 data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
 
+/** Only top-level deleted roots are recoverable; their descendants move with them. */
+data class TrashEntry(val node: DriveNode, val deletedAt: String)
+data class TrashPage(val items: List<TrashEntry>, val totalCount: Long, val offset: Int)
+
+
 /** Owner-checked location emitted by the existing Go recent/favorite API. */
 data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
@@ -132,6 +137,10 @@ interface XDriveService {
     suspend fun trashNode(accessToken: String, original: DriveNode) {
         throw ApiException(501, "Trash API unavailable")
     }
+    suspend fun trashPage(accessToken: String, offset: Int): TrashPage =
+        throw ApiException(501, "Trash Range API unavailable")
+    suspend fun restoreTrash(accessToken: String, original: DriveNode): DriveNode =
+        throw ApiException(501, "Trash Restore API unavailable")
     suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
         throw ApiException(501, "Copy API unavailable")
     suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
@@ -227,6 +236,46 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         request("nodes/${original.id}", accessToken, method = "DELETE",
             ifMatch = original.revision, emptyResponse = true)
+    }
+
+    /** Owner-only paginated deleted roots. Reject non-deleted and duplicated rows
+     * before any entry can be used as the target of a restore mutation. */
+    override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
+        require(offset >= 0 && offset <= Int.MAX_VALUE - 100) { "Invalid trash offset" }
+        val response = request("trash", accessToken, query = mapOf(
+            "range" to "true", "offset" to "$offset", "limit" to "100",
+            "sort" to "updated", "order" to "desc", "include_count" to "true"))
+        val count = response.long("total_count")
+        if (count < 0 || response.long("offset") != offset.toLong() ||
+            response.long("limit") != 100L ||
+            response["total_count_included"] != JsonPrimitive(true) ||
+            response.string("sort") != "updated" || response.string("order") != "desc")
+            invalidPayload()
+        val array = response["items"] as? JsonArray ?: invalidPayload()
+        val entries = array.map { raw ->
+            val item = raw as? JsonObject ?: invalidPayload()
+            val parsed = node(item)
+            val deletedAt = (item["deleted_at"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() } ?: invalidPayload()
+            if (parsed.parentId == null || parsed.revision <= 0) invalidPayload()
+            TrashEntry(parsed, deletedAt)
+        }
+        if (entries.size.toLong() != minOf(100L, (count - offset).coerceAtLeast(0L)) ||
+            entries.map { it.node.id }.toSet().size != entries.size) invalidPayload()
+        return TrashPage(entries, count, offset)
+    }
+
+    /** One non-retried mutation, fenced by the exact deleted revision. */
+    override suspend fun restoreTrash(accessToken: String, original: DriveNode): DriveNode {
+        require(original.id > 0 && original.parentId != null && original.revision > 0) {
+            "Invalid trash restore"
+        }
+        val restored = node(request("trash/${original.id}/restore", accessToken,
+            values = emptyMap(), ifMatch = original.revision))
+        if (restored.id != original.id || restored.parentId != original.parentId ||
+            restored.name != original.name || restored.type != original.type ||
+            restored.revision <= original.revision) invalidPayload()
+        return restored
     }
 
     /** Go copy and move share a numeric JSON parent_id, never a string.

@@ -135,3 +135,11 @@ node scripts/shared-ui.mjs --check
 - 首次 sparse latest 末页若少于 24 项，仅预取一页后定位最新照片，绝不在首次进入就把 100k 全库扫描完；真正靠近顶部才继续分页。LazyVerticalGrid 稳定 item key 维持已可见照片锚点，不因 prepend 回跳到底部。
 - 错误明确提供“重试加载更早的照片”，不清除已显示 Range，不重新读取 last page；Owner/total/offset/ID 一致性继续由 Controller 验证。自动加载在错误状态停止，避免循环请求。
 - 核心 Controller JVM 覆盖失败 Range 的原 offset 重试和保留已读图片，Compose API35 fixture 覆盖首次 bounded prefetch、滚到顶部续页与旧尾部照片不丢失。准确提交 CI 未通过前不标记完成，生产环境安全验收仍按用户决定跳过（未验收）。
+
+## Android P0 · 原生回收站列表及恢复（2026-10-26 增量）
+
+- Files 更多菜单中的回收站复用 Go 的 Owner 范围接口。GET `/api/v1/trash?range=true&offset=N&limit=100&sort=updated&order=desc&include_count=true`，强校验已删除时间、版本、分页位置、总数与行去重，避免全量加载。
+- 恢复先确认，再对单个删除根执行 POST `/api/v1/trash/:id/restore`，`If-Match` 使用已查询的删除版本，不重复提交未知结果。丢失 ACK 后冻结旧列表，必须显式再 GET 服务器状态。
+- 已确认恢复后重新获取列表；返回 Files 后重新读原 Owner 目录。切换账号、Server 或取消请求不会泄漏旧私有列表。
+- 此轮不提供永久删除、批量恢复、离线恢复或转移到新路径；不存在的父文件夹、名称冲突交给 Go Server 拒绝。
+- 最小可用还需准确 HEAD Android Native 编译、单测、静态检查和真机/模拟器运行；未执行不得标记验收通过。

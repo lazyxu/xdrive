@@ -38,7 +38,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.screen, state.filesSection, state.path.map { it.id },
     ) { mutableStateOf(false) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.screen == Screen.GALLERY ||
+    BackHandler(state.screen == Screen.GALLERY || state.screen == Screen.TRASH ||
         shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
@@ -46,16 +46,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else controller.back()
     }
     Scaffold(modifier = Modifier.imePadding(),
-        containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
+        containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
-        if (state.screen == Screen.FILES || state.screen == Screen.GALLERY)
+        if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (state.screen == Screen.GALLERY)
-                    IconButton(onClick = controller::openFilesApp) {
+                if (state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
+                    IconButton(onClick = {
+                        if (state.screen == Screen.TRASH) controller.closeTrash()
+                        else controller.openFilesApp()
+                    }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), "返回文件")
                     }
                 else if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
@@ -67,7 +70,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     var pathMenuOpen by remember(state.filesSection, state.path.map { it.id }) {
                         mutableStateOf(false)
                     }
-                    val title = if (state.screen == Screen.GALLERY) "照片"
+                    val title = if (state.screen == Screen.TRASH) "回收站"
+                        else if (state.screen == Screen.GALLERY) "照片"
                         else when (state.filesSection) {
                             FilesSection.RECENT -> "最近"
                             FilesSection.FAVORITES -> "收藏"
@@ -121,6 +125,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
                     onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
                 Screen.GALLERY -> Gallery(state, controller)
+                Screen.TRASH -> Trash(state, controller)
             }
         }
     }
@@ -201,13 +206,15 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 if (state.username.isNotEmpty()) Text(state.username, style = MaterialTheme.typography.titleSmall)
                 Text(state.server, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (state.screen == Screen.FILES || state.screen == Screen.GALLERY) {
+            if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+                state.screen == Screen.TRASH) {
                 DropdownMenuItem(text = { Text("刷新") },
                     leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) },
                     enabled = !state.loading,
                     onClick = {
                         expanded = false
                         if (state.screen == Screen.GALLERY) controller.refreshGallery()
+                        else if (state.screen == Screen.TRASH) controller.refreshTrash()
                         else controller.refresh()
                     })
                 HorizontalDivider()
@@ -217,6 +224,11 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 modifier = Modifier.testTag("switch-to-gallery"),
                 enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
                 onClick = { expanded = false; controller.openGallery() })
+            if (state.screen == Screen.FILES) DropdownMenuItem(
+                text = { Text("回收站") },
+                modifier = Modifier.testTag("open-trash"),
+                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                onClick = { expanded = false; controller.openTrash() })
             if (state.screen == Screen.GALLERY) DropdownMenuItem(
                 text = { Text("文件") },
                 modifier = Modifier.testTag("switch-to-files"),
@@ -245,6 +257,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (checkUpdates != null) DropdownMenuItem(text = { Text("检查更新") },
                 leadingIcon = { Icon(painterResource(R.drawable.xd_refresh), null) }, onClick = { expanded = false; checkUpdates() })
             if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+                state.screen == Screen.TRASH ||
                 state.screen == Screen.PASSWORD) DropdownMenuItem(text = { Text("退出登录") },
                 leadingIcon = { Icon(painterResource(R.drawable.xd_logout), null) }, onClick = { expanded = false; controller.logout() })
             if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
