@@ -357,15 +357,16 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-item-40").performClick()
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithText("相册照片.jpg").assertIsDisplayed()
-        // The synthetic original is not decodable. The real native Viewer
-        // deliberately falls back to one new authenticated revisioned JPEG,
-        // without starting a background retry loop.
+        // The synthetic original is not decodable. Viewer reuses the
+        // already-decoded, Owner/revision-scoped Gallery tile bitmap without
+        // a third authenticated JPEG request or an automatic retry loop.
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithTag("gallery-photo-fallback", useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("gallery-photo-fallback").assertIsDisplayed()
-        compose.runOnIdle { org.junit.Assert.assertEquals(3, galleryThumbnailCalls.get()) }
+        compose.onNodeWithTag("gallery-photo-image").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailCalls.get()) }
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-thumbnail-ready-40", useUnmergedTree = true).assertExists()
     }
