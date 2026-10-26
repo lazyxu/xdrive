@@ -107,7 +107,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: ${XD_SERVER_MEMORY_LIMIT:-1g}
-    cpus: ${XD_SERVER_CPU_LIMIT:-1.0}
+    cpus: ${XD_SERVER_CPU_LIMIT:-0}
     pids_limit: ${XD_SERVER_PIDS_LIMIT:-256}
 
   worker:
