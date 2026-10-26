@@ -755,4 +755,51 @@ class XDriveApiTest {
             } finally { client.dispatcher.executorService.shutdownNow(); client.connectionPool.evictAll() }
         }
     }
+    @Test fun `Trash uses Owner Bearer, a strict 100-row range and If-Match restore`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val row = """{"id":42,"parent_id":1,"name":"deleted.jpg","type":"file",
+                "size":9,"revision":6,"deleted_at":"2026-10-26T00:00:00Z"}"""
+            server.enqueue(MockResponse().setBody(
+                """{"items":[$row],"total_count":1,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"updated","order":"desc"}"""))
+            server.enqueue(MockResponse().setBody(
+                """{"id":42,"parent_id":1,"name":"deleted.jpg","type":"file",
+                "size":9,"revision":7}"""))
+            val page = api.trashPage("owner-secret", 0)
+            assertEquals(1L, page.totalCount)
+            assertEquals(42L, page.items.single().node.id)
+            assertEquals("2026-10-26T00:00:00Z", page.items.single().deletedAt)
+            val list = server.takeRequest()
+            assertEquals("GET", list.method)
+            assertEquals("/api/v1/trash?range=true&offset=0&limit=100&sort=updated&order=desc&include_count=true", list.path)
+            assertEquals("Bearer owner-secret", list.getHeader("Authorization"))
+            val restored = api.restoreTrash("owner-secret", page.items.single().node)
+            assertEquals(7L, restored.revision)
+            val mutation = server.takeRequest()
+            assertEquals("POST", mutation.method)
+            assertEquals("/api/v1/trash/42/restore", mutation.path)
+            assertEquals(34.toChar().toString() + "6" + 34.toChar(), mutation.getHeader("If-Match"))
+            assertEquals("Bearer owner-secret", mutation.getHeader("Authorization"))
+            assertEquals("{}", mutation.body.readUtf8())
+        } }
+    }
+
+    @Test fun `Trash rejects active row and never retries failed restore`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody(
+                """{"items":[{"id":7,"parent_id":1,"name":"active","type":"file",
+                "revision":3}],"total_count":1,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"updated","order":"desc"}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.trashPage("owner-secret", 0) }.reason)
+            server.enqueue(MockResponse().setResponseCode(412).setBody("{}"))
+            val original = DriveNode(42, 1, "deleted.jpg", "file", revision = 6)
+            assertEquals(412, failure { api.restoreTrash("owner-secret", original) }.statusCode)
+            assertEquals(2, server.requestCount)
+            server.takeRequest()
+            assertEquals(34.toChar().toString() + "6" + 34.toChar(),
+                server.takeRequest().getHeader("If-Match"))
+        } }
+    }
+
 }
