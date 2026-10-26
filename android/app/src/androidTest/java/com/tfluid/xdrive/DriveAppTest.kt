@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import com.tfluid.xdrive.core.*
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +36,9 @@ class DriveAppTest {
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
     private var galleryVideoFixture = false
+    private var galleryOversizeFixture = false
+    private var galleryFailNextThumbnail = false
+    private var galleryThumbnailReads = 0
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
     private var galleryThumbnailRetryFixture = false
@@ -52,6 +57,10 @@ class DriveAppTest {
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
                 "video", durationMs = 10_000L)), 1, 0)
+            if (galleryOversizeFixture) return GalleryPage(listOf(GalleryAsset(
+                DriveNode(46, 1, "large.jpg", "file",
+                    size = 32L * 1024 * 1024 + 1, revision = 2),
+                "image", hasThumbnail = true)), 1, 0)
             if (galleryManyPhotos) {
             val originals = (0 until 60).map { index ->
                 GalleryAsset(DriveNode(1000L + index, 1L,
@@ -71,6 +80,21 @@ class DriveAppTest {
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long): ByteArray {
+            galleryThumbnailReads++
+            if (galleryFailNextThumbnail) {
+                galleryFailNextThumbnail = false
+                throw ApiException(503, "Fixture one-shot unavailable thumbnail")
+            }
+            if (galleryOversizeFixture) {
+                val small = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+                return try {
+                    val output = ByteArrayOutputStream()
+                    check(small.compress(Bitmap.CompressFormat.JPEG, 75, output))
+                    output.toByteArray()
+                } finally {
+                    small.recycle()
+                }
+            }
             if (!galleryThumbnailRetryFixture) return byteArrayOf(1, 2, 3)
             if (galleryThumbnailCalls.incrementAndGet() == 1) return byteArrayOf(1, 2, 3)
             val bitmap = android.graphics.Bitmap.createBitmap(
@@ -311,6 +335,61 @@ class DriveAppTest {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
         }
+    }
+
+    @Test fun oversizedNativePhotoUsesBoundedOwnerThumbnailAndLabelsDegradedPreview() {
+        galleryOversizeFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-fallback").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-image").assertExists()
+        compose.onNodeWithTag("gallery-photo-fallback").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryViewer)
+        }
+    }
+
+    @Test fun failedNativePhotoRequiresExplicitRetryAndRecoversSameOwnerThumbnail() {
+        galleryOversizeFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded && galleryThumbnailReads > 0
+        }
+        // The visible tile already finished its own request. Fail exactly
+        // the first authenticated Viewer fallback, not the Gallery wall.
+        compose.runOnIdle { galleryFailNextThumbnail = true }
+        compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-retry").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-image").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-photo-retry").assertIsDisplayed()
+        val failureReads = galleryThumbnailReads
+        compose.waitForIdle()
+        org.junit.Assert.assertEquals(failureReads, galleryThumbnailReads)
+        compose.onNodeWithTag("gallery-photo-retry").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-fallback").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-image").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-photo-retry").assertDoesNotExist()
+        org.junit.Assert.assertEquals(failureReads + 1, galleryThumbnailReads)
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
     }
 
     @Test fun photoViewerBackRestoresActualGalleryScrollAnchor() {

@@ -131,7 +131,7 @@ internal fun ColumnScope.Gallery(state: DriveState, controller: DriveController)
     }
 }
 
-private fun decodeThumbnail(bytes: ByteArray): ImageBitmap? {
+internal fun decodeGalleryThumbnail(bytes: ByteArray): ImageBitmap? {
     if (bytes.isEmpty() || bytes.size > 4 * 1024 * 1024) return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -164,7 +164,7 @@ private fun GalleryTile(
         val bytes = controller.galleryThumbnail(item)
         val decoded = bytes?.let {
             withContext(Dispatchers.Default) {
-                try { decodeThumbnail(it) }
+                try { decodeGalleryThumbnail(it) }
                 catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                 catch (_: Exception) { null }
             }

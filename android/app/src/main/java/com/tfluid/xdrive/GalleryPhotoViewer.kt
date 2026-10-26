@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
 
 private sealed interface ImageStage {
     data object Loading : ImageStage
-    data class Ready(val image: ImageBitmap) : ImageStage
+    data class Ready(val image: ImageBitmap, val thumbnailOnly: Boolean = false) : ImageStage
     data object Failed : ImageStage
 }
 
@@ -51,27 +51,49 @@ private fun decodeGalleryOriginal(bytes: ByteArray): ImageBitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampled)?.asImageBitmap()
 }
 
-/** First real Android photo Viewer: Owner-revisioned source, no public URL,
- * native back/info and bounded zoom/pan. Videos and Live require separate
- * real playback work; they are never displayed as a pretend full Viewer. */
+/** Native Owner photo Viewer with bounded original decode and explicit
+ * authenticated-thumbnail fallback; the fallback is not full-resolution.
+ * Video and Live motion use their separate verified playback contracts. */
 @Composable
 internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController) {
     // Persist no private media bytes; zoom and pan only live for one image.
     var zoom by remember(photo.node.id, photo.node.revision) { mutableFloatStateOf(1f) }
     var pan by remember(photo.node.id, photo.node.revision) { mutableStateOf(Offset.Zero) }
+    // Only an explicit user action retries both existing authenticated readers.
+    // Never poll a failed or revoked private media request in the background.
+    var retryNonce by remember(photo.node.id, photo.node.revision) { mutableIntStateOf(0) }
     val currentZoom by rememberUpdatedState(zoom)
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val older = controller.galleryViewerNeighbor(-1)
     val newer = controller.galleryViewerNeighbor(1)
-    val stage by produceState<ImageStage>(ImageStage.Loading, photo.node.id, photo.node.revision) {
-        value = try {
-            val original = controller.galleryImageBytes(photo)
-            val bitmap = withContext(Dispatchers.Default) { decodeGalleryOriginal(original) }
-            if (bitmap == null) ImageStage.Failed else ImageStage.Ready(bitmap)
+    val stage by produceState<ImageStage>(
+        ImageStage.Loading, photo.node.id, photo.node.revision, retryNonce
+    ) {
+        // Do not request a known-oversized original just to display an error.
+        // Normal-sized originals still use the same fully verified Owner bytes.
+        val original = if (photo.node.size in 1L..(32L * 1024 * 1024)) {
+            try {
+                val bytes = controller.galleryImageBytes(photo)
+                withContext(Dispatchers.Default) { decodeGalleryOriginal(bytes) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null // The existing thumbnail may be the only decodable still.
+            }
+        } else null
+        value = if (original != null) ImageStage.Ready(original) else try {
+            // Same revisioned, 4 MiB-bounded Owner thumbnail as Gallery tiles.
+            // A distinct Viewer epoch fences A -> B -> A after transport returns.
+            val bytes = controller.galleryViewerThumbnail(photo)
+            val thumbnail = if (bytes == null) null else withContext(Dispatchers.Default) {
+                decodeGalleryThumbnail(bytes)
+            }
+            if (thumbnail == null) ImageStage.Failed
+            else ImageStage.Ready(thumbnail, thumbnailOnly = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            ImageStage.Failed // Never render Server response bodies or token/URI.
+            ImageStage.Failed // Never surface private URLs/tokens/response bodies.
         }
     }
     Column(Modifier.fillMaxSize().background(Color.Black).testTag("gallery-photo-viewer")) {
@@ -134,8 +156,17 @@ internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController
                     color = Color.White, modifier = Modifier.testTag("gallery-photo-loading"))
                 ImageStage.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("原图无法预览", color = Color.White)
-                    Text("请检查连接；超过 32 MiB 的原图需要后续分块预览。",
+                    Text("请检查连接或图片格式；大于 32 MiB 的原图尚不支持分块预览。",
                         color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                    TextButton(
+                        onClick = {
+                            if (controller.state.value.galleryViewer == photo) retryNonce++
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-photo-retry"),
+                    ) {
+                        Text("重试预览", color = Color.White)
+                    }
                 }
                 is ImageStage.Ready -> {
                     val maxX = constraints.maxWidth.toFloat()
@@ -167,6 +198,20 @@ internal fun GalleryPhotoViewer(photo: GalleryAsset, controller: DriveController
                                 })
                             }
                             .testTag("gallery-photo-image"))
+                    if (current.thumbnailOnly) {
+                        Text(
+                            if (photo.node.size > 32L * 1024 * 1024)
+                                "仅显示缩略图 · 原图超过 32 MiB"
+                            else "仅显示缩略图 · 原图暂不可预览",
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                                .padding(bottom = 16.dp)
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                                .testTag("gallery-photo-fallback"),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
                 }
             }
         }
