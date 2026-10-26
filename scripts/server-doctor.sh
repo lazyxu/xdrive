@@ -352,6 +352,7 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   [[ -n "$caddy_host_dir" ]] || caddy_host_dir="$STATE_DIR/control"
   caddy_host_heartbeat_state="$(caddy_host_meta_state "$caddy_host_dir" heartbeat)"
   caddy_host_snapshot_state="$(caddy_host_meta_state "$caddy_host_dir" caddy-runtime-status.json)"
+  caddy_host_env_state="$(caddy_host_meta_state "$caddy_host_dir" caddy-env-observed.json)"
   caddy_mount_state="$(caddy_bridge_mount_state "$caddy_host_dir")"
   if [[ "$caddy_mount_state" == matched-metadata-only ]]; then
     record PASS "Caddy Server mount" "fixed host bridge bind matches running Server (metadata only)"
@@ -374,6 +375,12 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
     record PASS "Caddy Host producer" "host heartbeat=fresh snapshot=fresh (metadata only; Server and TLS separately checked)"
   else
     record WARN "Caddy Host producer" "host heartbeat=$caddy_host_heartbeat_state snapshot=$caddy_host_snapshot_state (metadata only)"
+  fi
+
+  if [[ "$caddy_host_env_state" == fresh ]]; then
+    record PASS "Caddy config snapshot" "host .env observed=fresh (metadata only; Server JSON validation is separate)"
+  else
+    record WARN "Caddy config snapshot" "host .env observed=$caddy_host_env_state; missing/stale snapshot makes HTTPS and AliDNS admin reads return HTTP 503"
   fi
 
   # Same actual Server mount and reader as the Admin UI; never infer
