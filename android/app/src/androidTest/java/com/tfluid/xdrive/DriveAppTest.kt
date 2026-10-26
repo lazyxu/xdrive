@@ -42,12 +42,17 @@ class DriveAppTest {
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
+    private var galleryTimelineFixture = false
     private var galleryVideoFixture = false
     private var galleryOversizeFixture = false
     private var galleryThumbnailFailuresRemaining = 0
     private var galleryThumbnailReads = 0
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
+    private var galleryRangeReads = 0
+    private val galleryTimelineRequests = mutableListOf<Pair<Int, Boolean>>()
+    private val gallerySearchQueries = mutableListOf<String>()
+    private val galleryKindQueries = mutableListOf<Pair<String, String>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -61,6 +66,26 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
+            galleryRangeReads++
+            if (galleryTimelineFixture) {
+                galleryTimelineRequests += offset to initialLatest
+                val groups = GalleryTimelineSets(
+                    year = listOf(GalleryTimelineGroup("2025", 60, 0),
+                        GalleryTimelineGroup("2026", 61, 60)),
+                    month = listOf(GalleryTimelineGroup("2025-12", 60, 0),
+                        GalleryTimelineGroup("2026-10", 61, 60)),
+                    day = listOf(GalleryTimelineGroup("unknown", 60, 0),
+                        GalleryTimelineGroup("2026-10-25", 61, 60)),
+                )
+                if (initialLatest)
+                    return GalleryPage(listOf(galleryFixture), 121, 120, timeline = groups)
+                return GalleryPage((offset until minOf(offset + 60, 121)).map { index ->
+                    if (index == 120) galleryFixture else GalleryAsset(
+                        DriveNode(1000L + index, 1L, "photo-$index.jpg",
+                            "file", size = 44, revision = 1),
+                        "image", hasThumbnail = true)
+                }, 121, offset)
+            }
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
                 "video", durationMs = 10_000L, hasThumbnail = true)), 1, 0)
@@ -84,6 +109,22 @@ class DriveAppTest {
                     DriveNode(1000L + index, 1L, "相片-${index}.jpg", "file",
                         size = 44, revision = 1), "image", hasThumbnail = true)
             }, 181, offset)
+        }
+        override suspend fun gallerySearchPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String): GalleryPage {
+            gallerySearchQueries += search
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
+                "image", hasThumbnail = true)), 1, 0)
+        }
+        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String): GalleryPage {
+            galleryKindQueries += search to kind
+            return GalleryPage(listOf(GalleryAsset(
+                DriveNode(if (kind == "video") 47L else 48L, 1,
+                    if (kind == "video") "filtered.mp4" else "filtered.jpg",
+                    "file", size = 64, revision = 1),
+                kind, hasThumbnail = true)), 1, 0)
         }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long): ByteArray {
@@ -311,6 +352,151 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertEquals(2, locateRangeReads) }
     }
 
+    @Test fun nativeGallerySearchUsesRealOwnerRangeAndClearsWithoutCrossOwnerRows() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-search-button").performClick()
+        compose.onNodeWithTag("gallery-search-input").performTextInput("sunset")
+        compose.onNodeWithTag("gallery-search-apply").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery == "sunset" &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf("sunset"), gallerySearchQueries) }
+        compose.onNodeWithTag("gallery-search-clear").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery.isEmpty() &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
+        }
+    }
+
+    @Test fun nativeGalleryKindFilterUsesServerAndResetsPositionOnChangedScope() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-kind-filter").performClick()
+        compose.onNodeWithTag("gallery-kind-video").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMediaKind == "video" &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 47L
+        }
+        compose.onNodeWithTag("gallery-kind-filter")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "仅视频"))
+        compose.onNodeWithTag("gallery-search-button").performClick()
+        compose.onNodeWithTag("gallery-search-input").performTextInput("sunset")
+        compose.onNodeWithTag("gallery-search-apply").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySearchQuery == "sunset" &&
+                controller.state.value.galleryMediaKind == "video"
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("" to "video", "sunset" to "video"),
+                galleryKindQueries)
+        }
+        compose.onNodeWithTag("gallery-kind-filter").performClick()
+        compose.onNodeWithTag("gallery-kind-all").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMediaKind.isEmpty() &&
+                controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+    }
+
+    @Test fun nativeGalleryTimeScaleUsesOwnerIndexedJumpAndResetsToLatest() {
+        galleryTimelineFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        // The latest tail is intentionally sparse (one row at index 120).
+        // The existing Gallery lifecycle is allowed exactly one real
+        // earlier Range prefetch before the user's first date jump.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val state = controller.state.value
+            state.galleryLoaded && !state.loading &&
+                state.galleryTimelineSets != null &&
+                state.galleryItems.size == 61 && state.galleryOffset == 60
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                listOf(0 to true, 60 to false), galleryTimelineRequests)
+            org.junit.Assert.assertEquals(121L, controller.state.value.galleryTotal)
+        }
+        val beforeJump = galleryTimelineRequests.size
+        compose.onNodeWithTag("gallery-time-scale-year").performClick()
+        compose.onNodeWithTag("gallery-time-groups").assertExists()
+        compose.onNodeWithTag("gallery-time-group-2026").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val state = controller.state.value
+            state.galleryLoaded && !state.loading &&
+                state.galleryJumpIndex == 60 &&
+                state.galleryItems.firstOrNull()?.node?.id == 1060L
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(121L, controller.state.value.galleryTotal)
+            org.junit.Assert.assertEquals(60, controller.state.value.galleryOffset)
+            org.junit.Assert.assertEquals(60, controller.state.value.galleryItems.size)
+            // The actual date click must issue exactly one indexed Owner GET.
+            // Do not count the legitimate sparse-tail prefetch as a duplicate.
+            org.junit.Assert.assertEquals(
+                listOf(60 to false), galleryTimelineRequests.drop(beforeJump))
+        }
+        val beforeAll = galleryTimelineRequests.size
+        compose.onNodeWithTag("gallery-time-scale-all").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val state = controller.state.value
+            state.galleryLoaded && !state.loading &&
+                state.galleryJumpIndex == null &&
+                state.galleryTimelineSets != null &&
+                state.galleryItems.lastOrNull()?.node?.id == 40L
+        }
+        compose.runOnIdle {
+            val requests = galleryTimelineRequests.drop(beforeAll)
+            org.junit.Assert.assertTrue("All must reload real latest",
+                requests.isNotEmpty())
+            org.junit.Assert.assertEquals(0 to true, requests.first())
+            // An optional follow-up 60-row prefetch is a separate read.
+            org.junit.Assert.assertTrue("No redundant latest or older scans",
+                requests.size <= 2 && requests.drop(1).all { it == (60 to false) })
+            org.junit.Assert.assertTrue(controller.state.value.galleryOffset in
+                listOf(60, 120))
+            org.junit.Assert.assertEquals(40L,
+                controller.state.value.galleryItems.last().node.id)
+        }
+    }
+
+    @Test fun nativeGalleryDisplayOptionsAdjustRealGridWithoutReloadingOwnerPhotos() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        var readsBefore = 0
+        compose.runOnIdle { readsBefore = galleryRangeReads }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-zoom-out").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，方形裁切"))
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-aspect-contain").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，完整比例"))
+        // Display changes cannot trigger a second Owner Range or invalidate a tile.
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(readsBefore, galleryRangeReads)
+            org.junit.Assert.assertEquals(40L, controller.state.value.galleryItems.single().node.id)
+        }
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-view-options")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription, "缩略图密度 4 档，完整比例"))
+    }
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()

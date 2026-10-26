@@ -197,6 +197,114 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `Gallery search is remote Owner query with the same sparse latest Range`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":78,"parent_id":1,"name":"sunset.jpg","type":"file",
+                    "size":128,"revision":6},"metadata":{"media_kind":"image",
+                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.gallerySearchPage("owner-secret", 0, true, "sunset")
+            assertEquals(listOf(78L), page.items.map { it.node.id })
+            val sent = server.takeRequest()
+            assertEquals("sunset", sent.requestUrl!!.queryParameter("q"))
+            assertEquals("latest", sent.requestUrl!!.queryParameter("initial_position"))
+            assertEquals("true", sent.requestUrl!!.queryParameter("range"))
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+            assertFalse(sent.path!!.contains("owner-secret"))
+            try {
+                api.gallerySearchPage("owner-secret", 0, true, " ")
+                fail("Blank search accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(1, server.requestCount)
+        } }
+    }
+
+    @Test fun `Gallery media kind filters full Owner range and rejects wrong kind`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":80,"parent_id":1,"name":"movie.mp4",
+                    "type":"file","size":256,"revision":7},
+                    "metadata":{"media_kind":"video","duration_ms":1000,"has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.galleryKindPage("owner-secret", 0, true, "holiday", "video")
+            assertEquals(listOf(80L), page.items.map { it.node.id })
+            val request = server.takeRequest()
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals("video", request.requestUrl!!.queryParameter("kind"))
+            assertEquals("holiday", request.requestUrl!!.queryParameter("q"))
+            assertEquals("true", request.requestUrl!!.queryParameter("range"))
+            assertEquals("latest", request.requestUrl!!.queryParameter("initial_position"))
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":81,"parent_id":1,"name":"wrong.jpg",
+                    "type":"file","size":100,"revision":3},
+                    "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryKindPage("owner-secret", 0, true, "", "video") }.reason)
+            try {
+                api.galleryKindPage("owner-secret", 0, true, "", "audio")
+                fail("Unsupported media kind accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
+    @Test fun `Gallery consumes real Server timeline indexes without scanning loaded rows`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":121,"parent_id":1,"name":"last.jpg",
+                    "type":"file","size":120,"revision":5},
+                    "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                "total_count":121,"offset":120,"limit":60,
+                "timeline_group_sets":{
+                  "year":[{"key":"2025","item_count":60,"start_index":0},
+                          {"key":"2026","item_count":61,"start_index":60}],
+                  "month":[{"key":"2025-12","item_count":60,"start_index":0},
+                           {"key":"2026-10","item_count":61,"start_index":60}],
+                  "day":[{"key":"unknown","item_count":60,"start_index":0},
+                         {"key":"2026-10-25","item_count":61,"start_index":60}]
+                }
+            }"""))
+            val page = api.galleryPage("owner-secret", initialLatest = true)
+            assertEquals(120, page.offset)
+            assertEquals(121L, page.totalCount)
+            assertEquals(60, page.timeline!!.year[1].startIndex)
+            assertEquals("2026-10", page.timeline!!.month.last().key)
+            assertEquals("unknown", page.timeline!!.day.first().key)
+            assertEquals(1, page.items.size) // Not a local 121-photo scan.
+            val sent = server.takeRequest()
+            assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
+            assertEquals("latest", sent.requestUrl!!.queryParameter("initial_position"))
+        } }
+    }
+
+    @Test fun `Gallery rejects forged timeline starts and incomplete counts`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (group in listOf(
+                """{"key":"2026","item_count":1,"start_index":2}""",
+                """{"key":"2026","item_count":2,"start_index":0}""",
+                """{"key":"malformed","item_count":1,"start_index":0}"""
+            )) {
+                val body = """{"items":[{"node":{"id":9,"parent_id":1,
+                    "name":"photo.jpg","type":"file","size":12,"revision":2},
+                    "metadata":{"media_kind":"image","has_thumbnail":true}}],
+                    "total_count":1,"offset":0,"limit":60,
+                    "timeline_group_sets":{"year":[$group],"month":[
+                    {"key":"2026-10","item_count":1,"start_index":0}],
+                    "day":[{"key":"2026-10-25","item_count":1,"start_index":0}]}}
+                """
+                server.enqueue(MockResponse().setBody(body))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.galleryPage("owner-secret", initialLatest = true) }.reason)
+                server.takeRequest()
+            }
+        } }
+    }
+
     @Test fun `Gallery rejects malformed or cross-range pages rather than publishing private items`() = runBlocking {
         val cases = listOf(
             """{"items":[],"total_count":4,"offset":0,"limit":60}""",

@@ -67,6 +67,12 @@ data class DriveState(
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
     val galleryLoaded: Boolean = false,
+    val gallerySearchQuery: String = "",
+    val galleryMediaKind: String = "",
+    val galleryTimelineSets: GalleryTimelineSets? = null,
+    val galleryJumpIndex: Int? = null,
+    val galleryJumpEpoch: Long = 0,
+    val galleryPageIntent: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
     val destinationKind: FilesTransferKind? = null,
@@ -1159,7 +1165,10 @@ class DriveController(
             fileDownloadSaved = false, fileDownloadError = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
+            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
+            gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
     }
 
@@ -1173,7 +1182,10 @@ class DriveController(
             fileDownloadActive = false, fileDownloadSaved = false,
             fileDownloadError = null, fileDownloadBytes = 0, fileDownloadTotal = 0,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySelected = null, galleryViewer = null)
+            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
+            gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
     }
 
@@ -1185,19 +1197,65 @@ class DriveController(
             fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
-            galleryViewer = null)
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = state.value.galleryJumpEpoch + 1,
+            galleryPageIntent = "", galleryViewer = null)
         loadGallery(initialLatest = true)
     }
 
-    /** Retry the failed original Range without resetting existing Owner rows. */
+    /** A new Owner-wide query replaces the entire Gallery Range intent. */
+    fun searchGallery(input: String) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || session == null || api == null) return
+        val query = input.trim()
+        if (query.length > 200 || query == current.gallerySearchQuery) return
+        invalidate() // Cancel the previous query and prevent A→B→A stale replies.
+        mutableState.value = current.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            gallerySearchQuery = query, galleryItems = emptyList(), galleryOffset = 0,
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1,
+            galleryPageIntent = "", galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    /** Scope the entire Owner photo wall, including pagination and search,
+     * to one Server-validated media kind. Never filter just the loaded tiles. */
+    fun filterGalleryKind(kind: String) {
+        if (kind != "" && kind != "image" && kind != "video") return
+        val current = state.value
+        if (current.screen != Screen.GALLERY || session == null || api == null ||
+            kind == current.galleryMediaKind) return
+        invalidate() // Cancels prior Range/thumbnail/Viewer and fences stale replies.
+        mutableState.value = current.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            galleryMediaKind = kind, galleryItems = emptyList(), galleryOffset = 0,
+            galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1,
+            galleryPageIntent = "", galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    /** Retry only the failed Owner GET; failed jumps retain their exact index. */
     fun retryGallery() {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.loading) return
         if (!current.galleryLoaded) {
-            refreshGallery()
-        } else if (current.error != null && current.galleryOffset > 0) {
-            mutableState.value = current.copy(error = null)
-            loadGallery(initialLatest = false)
+            if (current.galleryJumpIndex != null) loadGalleryJump(current.galleryJumpIndex)
+            else refreshGallery()
+            return
+        }
+        if (current.error == null) return
+        mutableState.value = current.copy(error = null)
+        when (current.galleryPageIntent) {
+            "newer" -> galleryLoadNewer()
+            "older" -> galleryLoadOlder()
         }
     }
 
@@ -1205,7 +1263,91 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
             current.loading || current.error != null || current.galleryOffset <= 0) return
+        mutableState.value = current.copy(galleryPageIntent = "older")
         loadGallery(initialLatest = false)
+    }
+
+    /** A timeline jump starts at an exact Owner offset; append subsequent
+     * verified pages instead of showing only its initial 60 photos. */
+    fun galleryLoadNewer() {
+        val current = state.value
+        val nextOffset = current.galleryOffset.toLong() + current.galleryItems.size
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            current.loading || current.error != null ||
+            nextOffset >= current.galleryTotal || nextOffset > Int.MAX_VALUE) return
+        val offset = nextOffset.toInt()
+        val service = api ?: return
+        val search = current.gallerySearchQuery
+        val kind = current.galleryMediaKind
+        mutableState.value = current.copy(galleryPageIntent = "newer")
+        request { ticket ->
+            val page = fetchGalleryPage(service, ticket, offset, false, search, kind)
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search ||
+                latest.galleryMediaKind != kind) throw CancellationException()
+            if (!latest.galleryLoaded || page.totalCount != latest.galleryTotal ||
+                page.offset != offset || page.items.isEmpty() ||
+                latest.galleryOffset.toLong() + latest.galleryItems.size != offset.toLong() ||
+                page.items.any { item -> latest.galleryItems.any { it.node.id == item.node.id } })
+                throw ApiException(0, "Gallery newer range changed", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(galleryItems = latest.galleryItems + page.items,
+                error = null, galleryPageIntent = "")
+        }
+    }
+
+    /** Jump ONLY by a Server-indexed Owner time group. */
+    fun jumpGalleryToGroup(scale: String, key: String) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            current.gallerySearchQuery.isNotEmpty() || session == null || api == null) return
+        val group = current.galleryTimelineSets?.forScale(scale)
+            ?.firstOrNull { it.key == key && it.itemCount > 0 } ?: return
+        if (group.startIndex.toLong() >= current.galleryTotal) return
+        invalidate()
+        mutableState.value = current.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            galleryItems = emptyList(), galleryOffset = group.startIndex,
+            galleryLoaded = false, gallerySelected = null, galleryViewer = null,
+            galleryJumpIndex = group.startIndex,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "jump")
+        loadGalleryJump(group.startIndex)
+    }
+
+    private fun loadGalleryJump(offset: Int) {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY || current.loading ||
+            current.galleryJumpIndex != offset || session == null) return
+        val total = current.galleryTotal
+        val search = current.gallerySearchQuery
+        val kind = current.galleryMediaKind
+        request { ticket ->
+            val page = fetchGalleryPage(service, ticket, offset, false, search, kind)
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || latest.galleryJumpIndex != offset ||
+                latest.gallerySearchQuery != search || latest.galleryMediaKind != kind)
+                throw CancellationException()
+            if (page.offset != offset || page.totalCount != total || page.items.isEmpty() ||
+                offset.toLong() + page.items.size > total)
+                throw ApiException(0, "Gallery timeline range changed", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(galleryItems = page.items, galleryLoaded = true,
+                galleryOffset = page.offset, galleryPageIntent = "", error = null)
+        }
+    }
+
+    private suspend fun fetchGalleryPage(
+        service: XDriveService, ticket: Long, offset: Int, initialLatest: Boolean,
+        search: String, kind: String,
+    ): GalleryPage = authenticated(service, ticket) {
+        when {
+            kind.isNotEmpty() -> service.galleryKindPage(it, offset, initialLatest, search, kind)
+            search.isNotEmpty() -> service.gallerySearchPage(it, offset, initialLatest, search)
+            else -> service.galleryPage(it, offset, initialLatest)
+        }
     }
 
     private fun loadGallery(initialLatest: Boolean) {
@@ -1213,27 +1355,39 @@ class DriveController(
         if (current.screen != Screen.GALLERY || current.loading || session == null) return
         val service = api ?: return
         val requestedOffset = if (initialLatest) 0 else (current.galleryOffset - 60).coerceAtLeast(0)
+        val search = current.gallerySearchQuery
+        val kind = current.galleryMediaKind
         request { ticket ->
-            val page = authenticated(service, ticket) {
-                service.galleryPage(it, requestedOffset, initialLatest)
-            }
+            val page = fetchGalleryPage(service, ticket, requestedOffset, initialLatest, search, kind)
             checkCurrent(ticket)
             val latest = state.value
-            if (latest.screen != Screen.GALLERY) throw CancellationException()
+            if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search ||
+                latest.galleryMediaKind != kind) throw CancellationException()
             if (initialLatest) {
                 mutableState.value = latest.copy(
                     galleryItems = page.items, galleryOffset = page.offset,
-                    galleryTotal = page.totalCount, galleryLoaded = true, error = null)
+                    galleryTotal = page.totalCount, galleryLoaded = true, error = null,
+                    galleryTimelineSets = page.timeline, galleryJumpIndex = null,
+                    galleryPageIntent = "")
             } else {
-                if (!latest.galleryLoaded || page.totalCount != latest.galleryTotal ||
-                    page.offset != requestedOffset ||
-                    page.offset + page.items.size != latest.galleryOffset ||
-                    page.items.any { item ->
-                        latest.galleryItems.any { it.node.id == item.node.id }
-                    }) throw ApiException(0, "Gallery range changed", ApiFailureReason.INVALID_RESPONSE)
+                // Offset < 60 requires a fixed-size page overlapping the existing
+                // first rows. Validate exact IDs and revisions before prepending.
+                val prefix = latest.galleryOffset - requestedOffset
+                if (!latest.galleryLoaded || prefix <= 0 ||
+                    page.totalCount != latest.galleryTotal || page.offset != requestedOffset ||
+                    page.items.size < prefix) throw ApiException(
+                    0, "Gallery range changed", ApiFailureReason.INVALID_RESPONSE)
+                val overlap = page.items.drop(prefix)
+                if (overlap.size > latest.galleryItems.size ||
+                    overlap != latest.galleryItems.take(overlap.size))
+                    throw ApiException(0, "Gallery overlapping range changed", ApiFailureReason.INVALID_RESPONSE)
+                val incoming = page.items.take(prefix)
+                if (incoming.any { item -> latest.galleryItems.any { it.node.id == item.node.id } })
+                    throw ApiException(0, "Gallery duplicate Owner node", ApiFailureReason.INVALID_RESPONSE)
                 mutableState.value = latest.copy(
-                    galleryItems = page.items + latest.galleryItems,
-                    galleryOffset = page.offset, galleryLoaded = true, error = null)
+                    galleryItems = incoming + latest.galleryItems,
+                    galleryOffset = page.offset, galleryLoaded = true,
+                    error = null, galleryPageIntent = "")
             }
         }
     }

@@ -162,6 +162,39 @@ node scripts/shared-ui.mjs --check
 - 错误明确提供“重试加载更早的照片”，不清除已显示 Range，不重新读取 last page；Owner/total/offset/ID 一致性继续由 Controller 验证。自动加载在错误状态停止，避免循环请求。
 - 核心 Controller JVM 覆盖失败 Range 的原 offset 重试和保留已读图片，Compose API35 fixture 覆盖首次 bounded prefetch、滚到顶部续页与旧尾部照片不丢失。准确提交 CI 未通过前不标记完成，生产环境安全验收仍按用户决定跳过（未验收）。
 
+## Android Gallery P0 · Native Owner-wide search
+
+- Bottom-right Search opens an actual search sheet; applying a keyword makes the
+  existing pinned Owner Gallery Range call with `q`, not an in-memory filter of
+  the loaded photos. The displayed total and sparse tail come from Server.
+- Query changes and clear cancel old requests, reset the Viewer and visible
+  Range, and never re-use another Owner's private rows. Leaving the Gallery
+  clears the query. This is the first functional bottom control, not a claim
+  that Year/Month/Day/All, Collections, sort and batch actions are done.
+
+## Android P0 · Server-indexed Gallery Year/Month/Day navigation
+
+- Native Compose 年/月/日/全部 uses `timeline_group_sets` returned by the
+  existing authenticated Go Owner media range; each group has validated
+  `start_index`/`item_count` and the day/month/year partitions must match the
+  exact total. Relevance searches / older Servers without the index do not show
+  fake group choices. UI is a lazy date chooser, not an in-memory album scanner.
+- A user-selected date jumps with the same revision-fenced, route-pinned
+  `media/items?range=true&offset=N` API, retaining Owner sort and filters,
+  and pages in both older/newer directions. A fixed 60-item page overlapping
+  the existing first partial range is compared by full Owner item identity
+  before any merge; retries do not substitute another group or unknown scope.
+- The grouped chooser preserves Gallery UI state through Viewer/back; it
+  invalidates outstanding requests on Owner/query/kind/date changes. Switching
+  to 全部 reloads the authoritative newest Owner Range. No new backend writer,
+  permanent media cache, WebView or speculative deep-link index.
+- This PR is the **indexed timeline navigation increment** only. A complete
+  iOS 27 Timeline grouped visual layout, day histogram zoom, Collections,
+  Live motion, transfer center and 1:1 screenshots remain separate.
+  Android Core MockWebServer, Controller JVM and API35 Compose tests require
+  new exact-SHA CI; unaccessible production-only acceptance remains
+  按用户决定跳过（未验收）, never an excuse to skip code security testing.
+
 ## P0-08 增量：Gallery 原生单项下载（2026-10-26）
 
 - Gallery 已验证 Owner 媒体的 Info 对话框提供真实「保存到设备」，直接复用 Files SAF CreateDocument、原有认证 `/api/v1/files/:id/content`、revision 与校验管线；没有第二套传输器、媒体公网 URL 或广泛存储权限。
@@ -178,3 +211,18 @@ node scripts/shared-ui.mjs --check
 - 已确认恢复后重新获取列表；返回 Files 后重新读原 Owner 目录。切换账号、Server 或取消请求不会泄漏旧私有列表。
 - 此轮不提供永久删除、批量恢复、离线恢复或转移到新路径；不存在的父文件夹、名称冲突交给 Go Server 拒绝。
 - 最小可用还需准确 HEAD Android Native 编译、单测、静态检查和真机/模拟器运行；未执行不得标记验收通过。
+
+## 2026-10-26 · Android Gallery P0 accepted-master handoff
+
+- [#2713](https://github.com/lazyxu/xdrive/pull/2713) Gallery SAF 保存到设备
+  已合入 `master`（`3857552258c464aff8545007c0e6bb2b6fb782f3`）；
+  准确提交的 Android 原生编译、Lint 与 API35 Compose 54/54 项成功，
+  其他未完成作业不视为已验收。
+- 本增量只增加 **真实全库 Owner Search、照片/视频过滤、显示密度与比例、
+  Server 索引年月日/全部及双向分页**。与已合入 SAF/Media3/原图缩略图回退
+  共用一个 Controller、认证传输和媒体身份，不增加新的后端 Runner。
+- 新范围发生变更时，取消旧媒体请求与 SAF 选择器，版本或分页重叠不一致则
+  保留错误而不合并。不存在索引时不伪造日期组，不根据少量已加载图片推断全库。
+- 该增量仍须在**独立 master 基线、准确 HEAD**上通过 Android JVM/Lint/APK、
+  API35 Compose 与适用 GitHub 保护检查后才能合入。
+  Live Motion、Collection、媒体地图、批量导出、传输中心及像素级 1:1 尚未完成。
