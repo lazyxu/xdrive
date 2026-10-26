@@ -867,4 +867,131 @@ class XDriveApiTest {
         } }
     }
 
+
+    @Test fun livePhotoMotionUsesSignedOwnerResourceAndPinsFirstETagAcrossSeeks() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val still = DriveNode(7, 1, "photo.livp", "file", size = 10_000, revision = 4)
+            val etag = "\"live-photo-motion-" + "a".repeat(64) + "\""
+            server.enqueue(MockResponse().setBody("""
+                {"url":"/api/v1/media-live-photo-motion/7?ticket=short-lived",
+                 "expires_at":"2026-10-26T09:00:00Z","kind":"video","mime_type":"video/quicktime"}
+            """.trimIndent()))
+            server.enqueue(MockResponse().setResponseCode(206)
+                .setHeader("ETag", etag)
+                .setHeader("Content-Range", "bytes 3-6/7").setBody("defg"))
+            server.enqueue(MockResponse().setResponseCode(206)
+                .setHeader("ETag", etag)
+                .setHeader("Content-Range", "bytes 1-2/7").setBody("bc"))
+            val player = api.galleryLivePhotoMotionPlayback("owner-secret", still)
+            try {
+                assertFalse(player.url.contains("owner-secret"))
+                assertTrue(player.url.contains("ticket=short-lived"))
+                player.client.newCall(Request.Builder().url(player.url)
+                    .header("Range", "bytes=3-").build()).execute().use {
+                    assertEquals(206, it.code)
+                    assertEquals("defg", it.body!!.string())
+                }
+                player.client.newCall(Request.Builder().url(player.url)
+                    .header("Range", "bytes=1-2").build()).execute().use {
+                    assertEquals(206, it.code)
+                    assertEquals("bc", it.body!!.string())
+                }
+                val issue = server.takeRequest()
+                assertEquals("POST", issue.method)
+                assertEquals("/api/v1/media/items/7/live-photo-motion-ticket", issue.path)
+                assertEquals("Bearer owner-secret", issue.getHeader("Authorization"))
+                val first = server.takeRequest()
+                assertEquals("/api/v1/media-live-photo-motion/7?ticket=short-lived", first.path)
+                assertNull(first.getHeader("Authorization"))
+                assertNull(first.getHeader("If-Match"))
+                assertEquals("identity", first.getHeader("Accept-Encoding"))
+                val second = server.takeRequest()
+                assertEquals(etag, second.getHeader("If-Match"))
+                assertEquals("bytes=1-2", second.getHeader("Range"))
+            } finally { player.close() }
+        } }
+    }
+
+    @Test fun livePhotoMotionRejectsETagSwapRangeDowngradeAndForeignURL() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val still = DriveNode(8, 1, "photo.livp", "file", size = 1000, revision = 3)
+            val firstETag = "\"live-photo-motion-" + "a".repeat(64) + "\""
+            val otherETag = "\"live-photo-motion-" + "b".repeat(64) + "\""
+            server.enqueue(MockResponse().setBody("""
+                {"url":"/api/v1/media-live-photo-motion/8?ticket=one",
+                 "kind":"video","mime_type":"video/quicktime"}
+            """.trimIndent()))
+            server.enqueue(MockResponse().setResponseCode(206).setHeader("ETag", firstETag)
+                .setHeader("Content-Range", "bytes 0-2/7").setBody("abc"))
+            val source = api.galleryLivePhotoMotionPlayback("owner-secret", still)
+            try {
+                source.client.newCall(Request.Builder().url(source.url)
+                    .header("Range", "bytes=0-").build()).execute().close()
+                for (response in listOf(
+                    MockResponse().setResponseCode(206).setHeader("ETag", otherETag)
+                        .setHeader("Content-Range", "bytes 3-6/7").setBody("defg"),
+                    MockResponse().setResponseCode(200).setHeader("ETag", firstETag)
+                        .setBody("abcdefg"),
+                )) {
+                    server.enqueue(response)
+                    try {
+                        source.client.newCall(Request.Builder().url(source.url)
+                            .header("Range", "bytes=3-").build()).execute().close()
+                        fail("Unverified Live Photo seek must fail closed")
+                    } catch (_: java.io.IOException) { }
+                }
+                try {
+                    source.client.newCall(Request.Builder()
+                        .url("https://unexpected.invalid/motion.mov").build()).execute().close()
+                    fail("Foreign Live Photo origin must be rejected before network")
+                } catch (_: java.io.IOException) { }
+                assertEquals("Only ticket plus three local requests", 4, server.requestCount)
+            } finally { source.close() }
+        } }
+    }
+
+    @Test fun livePhotoStillUsesRevisionBoundTicketAndBoundedSameOriginGET() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val still = DriveNode(9, 1, "photo.livp", "file", size = 5000, revision = 5)
+            val etag = "\"live-photo-still-" + "c".repeat(64) + "-100-4\""
+            server.enqueue(MockResponse().setBody("""
+                {"url":"/api/v1/media-live-photo-still/9?ticket=one",
+                 "kind":"image","mime_type":"image/jpeg"}
+            """.trimIndent()))
+            server.enqueue(MockResponse().setHeader("ETag", etag)
+                .setHeader("Content-Type", "image/jpeg").setBody("jpeg"))
+            val progress = mutableListOf<Pair<Long, Long?>>()
+            assertArrayEquals("jpeg".toByteArray(), api.galleryLivePhotoStill(
+                "owner-secret", still, { done, total -> progress += done to total }))
+            assertEquals(listOf(4L to 4L), progress)
+            val ticket = server.takeRequest()
+            assertEquals("POST", ticket.method)
+            assertEquals("Bearer owner-secret", ticket.getHeader("Authorization"))
+            assertEquals("/api/v1/media/items/9/live-photo-still-ticket", ticket.path)
+            val stream = server.takeRequest()
+            assertNull(stream.getHeader("Authorization"))
+            assertEquals("/api/v1/media-live-photo-still/9?ticket=one", stream.path)
+            assertEquals("identity", stream.getHeader("Accept-Encoding"))
+        } }
+    }
+
+    @Test fun livePhotoTicketsRejectForeignOriginAndUnrelatedSignedPaths() = runBlocking {
+        for (bad in listOf(
+            "https://attacker.invalid/media-live-photo-motion/7?ticket=foo",
+            "//attacker.invalid/api/v1/media-live-photo-motion/7?ticket=foo",
+            "/api/v1/media-live-photo-still/7?ticket=foo",
+            "/api/v1/media-live-photo-motion/99?ticket=foo",
+            "/api/v1/media-live-photo-motion/7?ticket=one&other=secret",
+        )) {
+            MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+                server.enqueue(MockResponse().setBody(
+                    """{"url":""" + JsonPrimitive(bad).toString() +
+                        ""","kind":"video","mime_type":"video/quicktime"}"""))
+                val node = DriveNode(7, 1, "private.livp", "file", size = 1000, revision = 4)
+                failure { api.galleryLivePhotoMotionPlayback("owner-secret", node) }
+                assertEquals("Only the trusted ticket POST is allowed", 1, server.requestCount)
+            } }
+        }
+    }
+
 }
