@@ -184,11 +184,26 @@ func TestBaiduGeoconvSignedLowerCapsAtomicTwoPostgresPools(t *testing.T) {
 	if success.Load() != 2 || deniedCount.Load() != 10 {
 		t.Fatalf("signed quota parallel admitted=%d denied=%d", success.Load(), deniedCount.Load())
 	}
-	if fleet, a, b := read(0), read(71), read(72); fleet.Requests != 2 ||
-		fleet.Points != 2 || fleet.DayRequests != 2 ||
-		a.Requests != 1 || a.DayRequests != 1 ||
-		b.Requests != 1 || b.DayRequests != 1 {
-		t.Fatal("cross-replica signed lower limits were not enforced atomically")
+	// The 12 concurrent reservations can straddle a PostgreSQL UTC minute
+	// boundary. Fleet minute counters then reset on the newer minute, but
+	// the UTC-day fleet cap still permits exactly two total admissions.
+	// Derive the exact expected current-minute count from the two durable
+	// Owner window IDs instead of treating minute usage as a day total.
+	fleet, a, b := read(0), read(71), read(72)
+	if a.WindowMinute <= 0 || b.WindowMinute <= 0 ||
+		fleet.WindowMinute < a.WindowMinute || fleet.WindowMinute < b.WindowMinute {
+		t.Fatalf("cross-replica signed quota window order is invalid: fleet=%+v first=%+v second=%+v", fleet, a, b)
+	}
+	fleetMinuteRequests := int64(1)
+	if a.WindowMinute == b.WindowMinute {
+		fleetMinuteRequests = 2
+	}
+	if fleet.Requests != fleetMinuteRequests ||
+		fleet.Points != fleetMinuteRequests || fleet.DayRequests != 2 ||
+		a.Requests != 1 || a.Points != 1 || a.DayRequests != 1 ||
+		b.Requests != 1 || b.Points != 1 || b.DayRequests != 1 ||
+		fleet.WindowDay != a.WindowDay || fleet.WindowDay != b.WindowDay {
+		t.Fatalf("cross-replica signed lower limits were not enforced atomically: fleet=%+v first=%+v second=%+v", fleet, a, b)
 	}
 
 	// A full daily bucket rejects one new, otherwise minute-eligible Owner.
