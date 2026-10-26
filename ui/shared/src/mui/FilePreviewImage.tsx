@@ -19,6 +19,24 @@ type ImageSource = {
 
 const pendingImage = (attempt = 0): ImageSource => ({ url: '', status: 'loading', attempt })
 
+// FilePreviewSurface keys its image children by Node/Owner revision. A
+// cancelled loader from the detached child may finish after a *different*
+// child's thumbnail has acquired the same Blob URL. Track active leases
+// across these short-lived children, not just within one React component.
+// Only active URL references are stored; no media bytes or long-lived cache.
+const liveBlobImageLeases = new Map<string, number>()
+const acquireBlobLease = (url: string) => {
+  if (url.startsWith('blob:')) {
+    liveBlobImageLeases.set(url, (liveBlobImageLeases.get(url) || 0) + 1)
+  }
+}
+const retireBlobLease = (url: string) => {
+  const count = liveBlobImageLeases.get(url)
+  if (!count) return
+  if (count === 1) liveBlobImageLeases.delete(url)
+  else liveBlobImageLeases.set(url, count - 1)
+}
+
 /** Two bounded image layers; the very element we decode becomes the visible frame. */
 export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   target,
@@ -69,6 +87,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const attemptsRef = useRef<Record<ImageRole, number>>({ original: 0, thumbnail: 0 })
   const retriedOriginalAttemptRef = useRef(-1)
   const retryOriginalRef = useRef<(() => void) | null>(null)
+  const releaseFailedRoleRef = useRef<((role: ImageRole, url: string, attempt: number) => void) | null>(null)
   const decodingRef = useRef(new Set<string>())
   const acquireSourcesRef = useRef<(() => void) | null>(null)
   const loadersRef = useRef({ target, loadPreviewURL, loadImagePreview })
@@ -90,6 +109,11 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     const ownedURLs = new Set<string>()
     const releasedURLs = new Set<string>()
     const startedRoles = new Set<ImageRole>()
+    // A failed original and thumbnail can return the same Blob URL at
+    // different times. Do not revoke it while the other role's request could
+    // still adopt it; neither layer waits for the other to render.
+    const pendingRoleAttempts = new Map<ImageRole, number>()
+    const deferredFailedURLs = new Set<string>()
     const loaders = loadersRef.current
     decodingRef.current.clear()
     setProgress({ loadedBytes: 0 })
@@ -99,10 +123,32 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     })
 
     const release = (url: string) => {
-      if (!url.startsWith('blob:') || releasedURLs.has(url)) return
+      if (!url.startsWith('blob:') || releasedURLs.has(url) ||
+          liveBlobImageLeases.has(url)) return
       releasedURLs.add(url)
       URL.revokeObjectURL(url)
     }
+    // A broken decoded original can be large. Release its owned Blob as soon
+    // as decoding fails, not only on Retry/Close. Another role may use the
+    // same URL, so never revoke while the live thumbnail/original owns it.
+    const releaseDeferredFailedURLs = () => {
+      if (pendingRoleAttempts.size > 0) return
+      for (const url of deferredFailedURLs) {
+        deferredFailedURLs.delete(url)
+        release(url)
+      }
+    }
+    const releaseFailedRole = (role: ImageRole, url: string, attempt: number) => {
+      if (generationRef.current !== generation ||
+          attemptsRef.current[role] !== attempt || activeURLs.get(role) !== url) return
+      activeURLs.delete(role)
+      retireBlobLease(url)
+      if (![...activeURLs.values()].includes(url)) {
+        if (pendingRoleAttempts.size > 0) deferredFailedURLs.add(url)
+        else release(url)
+      }
+    }
+    releaseFailedRoleRef.current = releaseFailedRole
     const load = async (
       role: ImageRole,
       loader: () => Promise<string | null | undefined>,
@@ -115,19 +161,25 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       } catch {
         // An unavailable original must not displace the decoded thumbnail.
       }
+      if (pendingRoleAttempts.get(role) === attempt) pendingRoleAttempts.delete(role)
       if (generationRef.current !== generation ||
           attemptsRef.current[role] !== attempt || signal.aborted) {
+        // Previous Viewer children may be fully unmounted by the time their
+        // requests settle. Never revoke a Blob held by another current child.
         if (url) release(url)
+        releaseDeferredFailedURLs()
         return
       }
       if (url) {
         ownedURLs.add(url)
         activeURLs.set(role, url)
+        acquireBlobLease(url)
       }
       setSources((current) => ({
         ...current,
         [role]: { url, status: url ? 'loading' : 'failed', attempt },
       }))
+      releaseDeferredFailedURLs()
     }
 
     const start = (
@@ -140,6 +192,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         controllers.get(role)?.abort()
         const previousURL = activeURLs.get(role)
         activeURLs.delete(role)
+        if (previousURL) retireBlobLease(previousURL)
         // Do not revoke a URL still owned by the visible thumbnail.
         if (previousURL && ![...activeURLs.values()].includes(previousURL)) release(previousURL)
         for (const key of decodingRef.current) {
@@ -148,6 +201,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       }
       startedRoles.add(role)
       const attempt = ++attemptsRef.current[role]
+      pendingRoleAttempts.set(role, attempt)
       const controller = new AbortController()
       controllers.set(role, controller)
       if (role === 'original') setProgress({ loadedBytes: 0 })
@@ -186,8 +240,14 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     return () => {
       generationRef.current += 1
       for (const controller of controllers.values()) controller.abort()
+      pendingRoleAttempts.clear()
       if (acquireSourcesRef.current === acquireAvailableSources) acquireSourcesRef.current = null
+      if (releaseFailedRoleRef.current === releaseFailedRole) releaseFailedRoleRef.current = null
       retryOriginalRef.current = null
+      for (const url of activeURLs.values()) retireBlobLease(url)
+      activeURLs.clear()
+      for (const url of deferredFailedURLs) release(url)
+      deferredFailedURLs.clear()
       for (const url of ownedURLs) release(url)
     }
   }, [kind, target.id, target.revision, retryNonce])
@@ -202,6 +262,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     // Retired renderer events must not affect a new attempt, even if both
     // attempts happened to receive the same ticket URL.
     if (generationRef.current !== generation || attemptsRef.current[role] !== attempt) return
+    releaseFailedRoleRef.current?.(role, url, attempt)
     setSources((current) => current[role].url === url && current[role].attempt === attempt ? {
       ...current, [role]: { url, status: 'failed', attempt },
     } : current)
