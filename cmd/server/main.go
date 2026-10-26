@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -535,6 +537,31 @@ func migrate(db *gorm.DB) error {
 	return fileoperationwake.InstallPostgreSQLTrigger(db)
 }
 
+// healthReadinessDetail only exposes known readiness states, never the raw
+// response body. In particular a 503 should distinguish DB authentication from
+// file-storage readiness without copying secrets from arbitrary upstreams.
+func healthReadinessDetail(resp *http.Response) string {
+	if resp.StatusCode != http.StatusServiceUnavailable ||
+		resp.Request == nil || resp.Request.URL == nil ||
+		resp.Request.URL.Path != "/api/v1/readyz" {
+		return ""
+	}
+	var body struct {
+		Database string `json:"database"`
+		Storage  string `json:"storage"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&body); err != nil {
+		return ""
+	}
+	validState := func(value string) bool {
+		return value == "ok" || value == "unavailable"
+	}
+	if !validState(body.Database) || !validState(body.Storage) {
+		return ""
+	}
+	return fmt.Sprintf(" (database=%s, storage=%s)", body.Database, body.Storage)
+}
+
 func runHealthcheck(args []string) error {
 	if len(args) > 1 {
 		return fmt.Errorf("usage: xdrive-server healthcheck [URL]")
@@ -558,7 +585,7 @@ func runHealthcheck(args []string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("health endpoint returned HTTP %d", resp.StatusCode)
+		return fmt.Errorf("health endpoint returned HTTP %d%s", resp.StatusCode, healthReadinessDetail(resp))
 	}
 	return nil
 }

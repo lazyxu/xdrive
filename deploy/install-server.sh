@@ -1321,15 +1321,53 @@ wait_existing_postgres() {
   return 1
 }
 
+# Use the *running application's* network namespace, not PostgreSQL's own
+# address. PostgreSQL pg_hba.conf can authorize these two TCP source addresses
+# differently; a self-probe is not evidence of app-to-DB authentication.
+# Run the PostgreSQL container's exact LOCAL image without volumes or pulling,
+# so no second PostgreSQL instance can open the production data directory.
+postgres_network_client() {
+  local postgres_id="$1" server_id="$2" mode="$3" password="${4:-}" image_id
+  [[ -n "$server_id" ]] || return 1
+  image_id="$(docker inspect "$postgres_id" --format '{{.Image}}' </dev/null 2>/dev/null || true)"
+  [[ "$image_id" =~ ^sha256:[[:xdigit:]]{64}$ ]] || return 1
+  case "$mode" in
+    auth)
+      [[ -n "$password" ]] || return 1
+      # Pass credentials through the Docker client's environment, never in
+      # argv (which can be exposed through process listings and logs).
+      PGPASSWORD="$password" docker run --rm --pull never --network "container:$server_id" \
+        --entrypoint psql -e PGPASSWORD -e PGCONNECT_TIMEOUT=5 "$image_id" \
+        -h postgres -U xdrive -d xdrive -Atqc 'SELECT 1' </dev/null >/dev/null 2>&1
+      ;;
+    ready)
+      docker run --rm --pull never --network "container:$server_id" \
+        --entrypoint pg_isready "$image_id" -h postgres -U xdrive -d xdrive \
+        </dev/null >/dev/null 2>&1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+postgres_server_is_running() {
+  local server_id="${1:-}"
+  [[ -n "$server_id" ]] &&
+    [[ "$(docker inspect "$server_id" --format '{{.State.Running}}' </dev/null 2>/dev/null || true)" == "true" ]]
+}
+
 postgres_password_works() {
-  local container_id="$1" password="$2"
+  local container_id="$1" password="$2" server_id="${3:-}"
   [[ -n "$password" ]] || return 1
 
-  # Do not probe 127.0.0.1 here: an old pg_hba.conf can trust loopback while
-  # still requiring SCRAM on the Docker bridge, which would make a bad password
-  # look valid. Connect to the container's bridge address instead, matching the
-  # authentication path used by the xDrive server container.
-  docker exec -e "PGPASSWORD=$password" "$container_id" sh -ec '
+  if postgres_server_is_running "$server_id"; then
+    postgres_network_client "$container_id" "$server_id" auth "$password"
+    return $?
+  fi
+
+  # Legacy installations without a running Server have no application network
+  # namespace to join. The old bridge self-probe remains a compatibility
+  # fallback, not proof of authentication through the Server's network.
+  PGPASSWORD="$password" docker exec -e PGPASSWORD "$container_id" sh -ec '
     set -- $(hostname -i)
     [ "$#" -gt 0 ]
     exec psql -h "$1" -U xdrive -d xdrive -Atqc "SELECT 1"
@@ -1377,9 +1415,9 @@ recover_existing_runtime_secrets() {
     configured_pg="$(env_value POSTGRES_PASSWORD)"
     runtime_pg="$(container_env_value "$postgres_id" POSTGRES_PASSWORD)"
 
-    if postgres_password_works "$postgres_id" "$configured_pg"; then
+    if postgres_password_works "$postgres_id" "$configured_pg" "$server_id"; then
       :
-    elif postgres_password_works "$postgres_id" "$runtime_pg"; then
+    elif postgres_password_works "$postgres_id" "$runtime_pg" "$server_id"; then
       set_env POSTGRES_PASSWORD "$runtime_pg"
       echo "Recovered PostgreSQL password from the existing xDrive container and verified Docker-network authentication."
     elif postgres_password_works_via_running_server "$server_id" "$configured_pg"; then
@@ -1394,8 +1432,17 @@ recover_existing_runtime_secrets() {
         candidate="$(random_hex 24)"
       fi
 
+      # Refuse to mutate a persistent database role when the Server's real
+      # network cannot even reach PostgreSQL. A password change cannot fix a
+      # Docker DNS/bridge failure and could break a previously valid login.
+      if postgres_server_is_running "$server_id" &&
+          ! postgres_network_client "$postgres_id" "$server_id" ready; then
+        echo "xDrive server installer: PostgreSQL is not reachable from the running Server network; refusing role password changes. Check Docker network connectivity before retrying." >&2
+        return 1
+      fi
+
       if repair_postgres_password_via_local_socket "$postgres_id" "$candidate" \
-          && postgres_password_works "$postgres_id" "$candidate"; then
+          && postgres_password_works "$postgres_id" "$candidate" "$server_id"; then
         set_env POSTGRES_PASSWORD "$candidate"
         echo "Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication."
       else

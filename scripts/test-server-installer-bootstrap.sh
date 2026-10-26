@@ -375,6 +375,14 @@ if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".State.Ru
   echo "true"
   exit 0
 fi
+if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Image"* ]]; then
+  printf 'sha256:%064d\n' 0
+  exit 0
+fi
+if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".State.Running"* ]]; then
+  echo "${TEST_SERVER_RUNNING:-false}"
+  exit 0
+fi
 if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Config.Env"* ]]; then
   echo "POSTGRES_PASSWORD=stale-db-password"
   exit 0
@@ -421,6 +429,26 @@ if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Config.Env
   exit 0
 fi
 
+# PostgreSQL password authentication must use the actual xDrive Server
+# network namespace, regardless of application HTTP readiness.
+if [[ "$1" == "run" && "$args" == *"--entrypoint psql"* ]]; then
+  [[ "$args" == *"--pull never"* && "$args" == *"--network container:xdrive-server-1"* ]] || exit 9
+  [[ "$args" == *"-e PGPASSWORD"* && "$args" == *"-e PGCONNECT_TIMEOUT=5"* ]] || exit 9
+  [[ "${PGPASSWORD:-}" == "stale-db-password" ]] || exit 2
+  [[ "$args" != *"PGPASSWORD=stale-db-password"* ]] || exit 11
+  case "${TEST_SERVER_NETWORK_AUTH_MODE:-}" in
+    valid) exit 0 ;;
+    needs-repair) [[ -f "$TEST_STATE/password-repaired" ]]; exit $? ;;
+    network-down) exit 1 ;;
+    *) echo "unexpected auth probe mode" >&2; exit 9 ;;
+  esac
+fi
+if [[ "$1" == "run" && "$args" == *"--entrypoint pg_isready"* ]]; then
+  [[ "$args" == *"--pull never"* && "$args" == *"--network container:xdrive-server-1"* ]] || exit 9
+  [[ "${TEST_SERVER_NETWORK_AUTH_MODE:-}" != "network-down" ]]
+  exit $?
+fi
+
 if [[ "$1" == "exec" && "$args" == *"pg_isready"* ]]; then
   exit 0
 fi
@@ -434,7 +462,9 @@ fi
 
 # Bridge-address authentication fails with the stale password until the local
 # socket repair has changed the database role.
-if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=stale-db-password"* && "$args" == *"hostname -i"* ]]; then
+if [[ "$1" == "exec" && "$args" == *"-e PGPASSWORD"* && "$args" == *"hostname -i"* ]]; then
+  [[ "${PGPASSWORD:-}" == "stale-db-password" ]] || exit 2
+  [[ "$args" != *"PGPASSWORD=stale-db-password"* ]] || exit 11
   if [[ -f "$TEST_STATE/password-repaired" ]]; then
     exit 0
   fi
@@ -494,6 +524,9 @@ mv "$TMP/config-migrated/docker-compose.yml" "$TMP/config-migrated/config/docker
 mv "$TMP/config-migrated/server-backup.sh" "$TMP/config-migrated/bin/server-backup.sh"
 printf 'XD_DOCKER_MODE=rootful\n' >> "$TMP/config-migrated/config/.env"
 cp -a "$TMP/config-migrated" "$TMP/config-mismatched-dsn"
+cp -a "$TMP/config-migrated" "$TMP/config-live-auth-503"
+cp -a "$TMP/config-migrated" "$TMP/config-live-needs-repair"
+cp -a "$TMP/config-migrated" "$TMP/config-live-network-down"
 
 rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
 if ! TEST_STATE="$TMP/state" \
@@ -567,6 +600,57 @@ if ! TEST_MIGRATED_DB_READY=1 TEST_MIGRATED_DSN_MISMATCH=1 TEST_STATE="$TMP/stat
 fi
 test -f "$TMP/state/password-repaired"
 grep -Fq 'Repaired the managed PostgreSQL role password' "$TMP/mismatched-dsn.out"
+# Live Server can return HTTP 503 because of storage or DB readiness while
+# the actual password is valid from its network. The installer must not reset
+# that role merely because the DB container's self-IP probe fails.
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+if ! TEST_SERVER_RUNNING=true TEST_SERVER_NETWORK_AUTH_MODE=valid TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin-upgrade:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/config-live-auth-503" \
+  XD_SHELL_RC_PATH="$TMP/config-live-auth-503.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" >"$TMP/live-auth-503.out" 2>"$TMP/live-auth-503.err"; then
+  echo "server-network password probe should succeed despite HTTP 503" >&2
+  cat "$TMP/live-auth-503.out" "$TMP/live-auth-503.err" >&2
+  exit 1
+fi
+test ! -e "$TMP/state/password-repaired"
+grep -Fq 'run --rm --pull never --network container:xdrive-server-1 --entrypoint psql' "$TMP/state/docker-calls"
+if grep -Fq 'hostname -i' "$TMP/state/docker-calls"; then
+  echo "postgres self-IP probe was used despite a running Server" >&2
+  exit 1
+fi
+
+# True stale password: the Server is unhealthy, live network is reachable,
+# and only a successful trusted local role repair allows the new password.
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+if ! TEST_SERVER_RUNNING=true TEST_SERVER_NETWORK_AUTH_MODE=needs-repair TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin-upgrade:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/config-live-needs-repair" \
+  XD_SHELL_RC_PATH="$TMP/config-live-needs-repair.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" >"$TMP/live-needs-repair.out" 2>"$TMP/live-needs-repair.err"; then
+  echo "server-network credential repair did not recover stale role" >&2
+  cat "$TMP/live-needs-repair.out" "$TMP/live-needs-repair.err" >&2
+  exit 1
+fi
+test -f "$TMP/state/password-repaired"
+grep -Fq 'run --rm --pull never --network container:xdrive-server-1 --entrypoint pg_isready' "$TMP/state/docker-calls"
+grep -Fq 'Repaired the managed PostgreSQL role password' "$TMP/live-needs-repair.out"
+
+# Network is unreachable: never ALTER ROLE because changing a password does
+# not repair DNS/bridge reachability. Database data must remain untouched.
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
+set +e
+TEST_SERVER_RUNNING=true TEST_SERVER_NETWORK_AUTH_MODE=network-down TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin-upgrade:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/config-live-network-down" \
+  XD_SHELL_RC_PATH="$TMP/config-live-network-down.bashrc" \
+  XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" >"$TMP/live-network-down.out" 2>"$TMP/live-network-down.err"
+network_down_status=$?
+set -e
+[[ "$network_down_status" -ne 0 ]]
+test ! -e "$TMP/state/password-repaired"
+grep -Fq 'PostgreSQL is not reachable from the running Server network; refusing role password changes' "$TMP/live-network-down.err"
+
 
 # A previously successful root-to-user migration may have been made with an
 # older migrator that rewrote only four paths. Four persisted host directories
