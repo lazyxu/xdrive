@@ -143,7 +143,10 @@ internal fun UnifiedLoginForm(
     var allowHttp by remember(state.server) { mutableStateOf(state.allowHttp) }
     var advanced by remember { mutableStateOf(false) }
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
-        AuthField("服务器", server, { server = it }, "server", !state.loading,
+        AuthField("服务器", server, { value ->
+            if (value != server) lanIp = ""
+            server = value
+        }, "server", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "https://drive.example.com:8443")
         AuthField("内网 IP（可选）", lanIp, { lanIp = it }, "lan-ip", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")

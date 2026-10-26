@@ -382,6 +382,9 @@ class DriveAppTest {
         // scroll under the IME before checking that HTTP requires opt-in.
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
+        // HTTPS-only persistence stays unavailable on explicit cleartext routes.
+        compose.onNodeWithTag("keep-login").assertIsNotEnabled()
+        compose.onNodeWithTag("connection-advanced").performScrollTo().performClick()
         compose.onNodeWithTag("allow-http").performScrollTo().performClick()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         compose.awaitFixtureConnectLogin(controller) { connectFactoryCalls.get() }
@@ -389,19 +392,20 @@ class DriveAppTest {
         compose.onNodeWithTag("username").performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun routeControlsValidateLanAndClearStaleOriginSettings() {
+    @Test fun autoLanInputIsServerScopedWithNoObsoleteManualRouteControls() {
         compose.setContent { XDriveTheme { DriveApp(controller) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
-        compose.onNodeWithTag("route-lan").performScrollTo().performClick()
-        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("lan-ip").performScrollTo().performTextInput("192.168.2.4")
-        compose.onNodeWithTag("server").performScrollTo().performTextReplacement("https://other.example")
+        // Desktop-style automatic routing has no manual LAN/public selector.
+        compose.onNodeWithTag("route-lan").assertDoesNotExist()
+        compose.onNodeWithTag("route-public").assertDoesNotExist()
+        compose.onNodeWithTag("public-ip").assertDoesNotExist()
+        // An IP saved for the former server must never be reused for a different origin.
+        compose.onNodeWithTag("server").performScrollTo()
+            .performTextReplacement("https://other.example")
         compose.onNodeWithTag("lan-ip").performScrollTo()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
-        compose.onNodeWithTag("route-auto").assertIsSelected()
-        compose.onNodeWithTag("route-public").performScrollTo().performClick()
-        compose.onNodeWithTag("public-ip").performScrollTo().assertExists()
+        compose.onNodeWithTag("auth-submit").assertExists()
     }
 
     @Test fun continuousScrollFailureKeepsFirstPageAndRetryAppends() {
