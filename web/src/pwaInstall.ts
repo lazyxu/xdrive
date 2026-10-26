@@ -47,7 +47,13 @@ function displayMode(): XDrivePwaDisplayMode {
       // optional install detection must never prevent the regular app boot.
     }
   }
-  if ((navigator as Navigator & { standalone?: boolean }).standalone === true) return 'standalone'
+  try {
+    if (typeof navigator !== 'undefined' &&
+        (navigator as Navigator & { standalone?: boolean }).standalone === true) return 'standalone'
+  } catch {
+    // WebKit may deny this optional installed-mode getter. A missing hint
+    // must not prevent the normal authenticated Web app from starting.
+  }
   return 'browser'
 }
 function readSnapshot(): XDrivePwaInstallSnapshot {

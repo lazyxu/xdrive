@@ -118,9 +118,12 @@ function acceptMessage(data: unknown) {
 export function startXDrivePwaPeerActivityObservation(): void {
   if (started || typeof window === 'undefined') return
   started = true
-  if (!window.isSecureContext || typeof BroadcastChannel === 'undefined' ||
-      typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') return
+  if (!window.isSecureContext) return
   try {
+    // A restricted WebKit context can throw from optional API getters, not
+    // just constructors. Peer hints cannot be a prerequisite for first paint.
+    if (typeof BroadcastChannel === 'undefined' || typeof crypto === 'undefined' ||
+        typeof crypto.randomUUID !== 'function') return
     sender = crypto.randomUUID()
     channel = new BroadcastChannel(channelName)
     channel.addEventListener('message', (event: MessageEvent) => { acceptMessage(event.data) })

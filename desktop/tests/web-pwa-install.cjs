@@ -10,7 +10,7 @@ const logicSource = read('web/src/pwaInstall.ts')
 
 function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true,
   protocol = 'https:', hostname = 'drive.example', fetchReply,
-  matchMediaFailure = null, navigatorStandalone = false } = {}) {
+  matchMediaFailure = null, navigatorStandalone = false, navigatorStandaloneFailure = false } = {}) {
   const events = new Map()
   const mediaEvents = new Map()
   const queries = []
@@ -41,6 +41,11 @@ function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true
     maxTouchPoints: userAgent.includes('Touch') ? 5 : 0,
     ...(navigatorStandalone ? { standalone: true } : {}),
     ...(sw ? { serviceWorker: {} } : {}),
+  }
+  if (navigatorStandaloneFailure) {
+    Object.defineProperty(nav, 'standalone', {
+      get() { throw new Error('restricted WebKit navigator.standalone getter') },
+    })
   }
   const answers = fetchReply ?? (url => ({ status: 200, headers: { get(name) {
     if (name === 'Content-Type') {
@@ -317,4 +322,23 @@ test('S2 Safari: denied display-mode media query never blocks Web boot or user i
   assert.equal(normal.mod.xDrivePwaInstallSnapshot().displayMode, 'standalone',
     'healthy browsers still observe the same display-mode event contract')
   assert.equal(normal.mediaEvents.size, 4)
+})
+
+test('S2 Safari: denied navigator.standalone getter never blocks PWA boot or native install prompts', async () => {
+  const h = harness({
+    userAgent: 'iPhone Safari', mode: 'browser',
+    matchMediaFailure: 'getter', navigatorStandaloneFailure: true,
+  })
+  assert.doesNotThrow(() => h.mod.startXDrivePwaInstallObservation())
+  assert.equal(h.mod.xDrivePwaInstallSnapshot().displayMode, 'browser')
+  assert.equal(h.mod.xDrivePwaInstallSnapshot().platformHint, 'ios')
+  assert.doesNotThrow(() => h.events.get('pageshow')())
+  let prompted = 0
+  h.events.get('beforeinstallprompt')({
+    preventDefault() {},
+    prompt() { prompted++; return Promise.resolve({ outcome: 'dismissed' }) },
+  })
+  assert.equal(await h.mod.requestXDrivePwaInstall(), 'dismissed')
+  assert.equal(prompted, 1, 'browser capability must still work when WebKit display hints are denied')
+  assert.equal(h.queries.length, 0, 'install observation must not issue private or public network requests')
 })

@@ -584,20 +584,34 @@ export async function xDrivePwaClearOfflineMetadata(): Promise<void> {
 function xDrivePwaBroadcastOfflinePurge(): void {
   // A peer must discard a rendered snapshot after logout or consent removal.
   // Broadcast contains no credentials, Owner identifiers, or file names.
-  if (typeof BroadcastChannel === 'undefined') return
-  const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
-  channel.postMessage({ kind: 'xdrive-pwa-offline-purge' })
-  channel.close()
+  // Optional channels can be denied even when the API exists. Never let that
+  // denial hide a failed IndexedDB purge or block local sign-out.
+  let channel: BroadcastChannel | null = null
+  try {
+    if (typeof BroadcastChannel !== 'function') return
+    channel = new BroadcastChannel('xdrive-pwa-offline-purge')
+    channel.postMessage({ kind: 'xdrive-pwa-offline-purge' })
+  } catch {
+    // Cross-window notification is best-effort, not evidence of safe deletion.
+  } finally {
+    try { channel?.close() } catch { /* The local purge outcome takes precedence. */ }
+  }
 }
 
 export function xDrivePwaObserveOfflinePurge(listener: () => void): () => void {
-  if (typeof BroadcastChannel === 'undefined') return () => {}
-  const channel = new BroadcastChannel('xdrive-pwa-offline-purge')
-  channel.onmessage = event => {
-    if (event.data?.kind === 'xdrive-pwa-offline-purge') {
-      offlinePurgeEpoch += 1
-      listener()
+  let channel: BroadcastChannel | null = null
+  try {
+    if (typeof BroadcastChannel !== 'function') return () => {}
+    channel = new BroadcastChannel('xdrive-pwa-offline-purge')
+    channel.onmessage = event => {
+      if (event.data?.kind === 'xdrive-pwa-offline-purge') {
+        offlinePurgeEpoch += 1
+        listener()
+      }
     }
+  } catch {
+    try { channel?.close() } catch { /* Optional observer cleanup. */ }
+    return () => {}
   }
-  return () => channel.close()
+  return () => { try { channel?.close() } catch { /* Optional observer cleanup. */ } }
 }

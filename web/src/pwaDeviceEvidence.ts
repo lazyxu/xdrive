@@ -60,10 +60,17 @@ export async function collectXDrivePwaS5DeviceEvidence(
   existingPublicChecks: readonly XDrivePwaAssetCheck[] | null = null,
 ): Promise<XDrivePwaDeviceEvidence> {
   const snapshot = xDrivePwaInstallSnapshot()
-  const sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker
+  // Optional WebKit APIs may be denied by restricted browsing contexts. Keep
+  // the evidence readable, without claiming a controller or public script.
+  let sw: ServiceWorkerContainer | undefined
+  try { sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker }
+  catch { sw = undefined }
+  let controller: ServiceWorker | null = null
+  try { controller = sw?.controller ?? null }
+  catch { controller = null }
   let publicScript = false
   try {
-    const rawScript = sw?.controller?.scriptURL
+    const rawScript = controller?.scriptURL
     if (rawScript) {
       const url = new URL(rawScript, window.location.origin)
       publicScript = url.origin === window.location.origin && url.pathname === '/sw.js' &&
@@ -74,8 +81,12 @@ export async function collectXDrivePwaS5DeviceEvidence(
   }
   const mode = snapshot.displayMode
   const protocol = typeof window !== 'undefined' ? window.location.protocol : ''
-  const standalone = typeof navigator === 'undefined' ? null :
-    (navigator as Navigator & { standalone?: boolean }).standalone
+  let standalone: boolean | null = null
+  try {
+    const observed = typeof navigator === 'undefined' ? undefined :
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    if (typeof observed === 'boolean') standalone = observed
+  } catch { /* An unavailable install hint is not proof of installation. */ }
   const width = typeof window === 'undefined' ? 0 : window.innerWidth
   const height = typeof window === 'undefined' ? 0 : window.innerHeight
   const report: XDrivePwaDeviceEvidence = {
@@ -90,7 +101,7 @@ export async function collectXDrivePwaS5DeviceEvidence(
     transport_observed: protocol === 'https:' ? 'https' : protocol === 'http:' ? 'http' : 'other',
     secure_context_observed: snapshot.secureContext,
     service_worker_api_supported: snapshot.serviceWorkerSupported,
-    service_worker_controller_observed: Boolean(sw?.controller),
+    service_worker_controller_observed: Boolean(controller),
     service_worker_matches_public_script: publicScript,
     viewport_css_px: {
       width: Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0,
