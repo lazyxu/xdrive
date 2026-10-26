@@ -95,6 +95,13 @@ type MobileFilesArrangeTicket = {
   }
 
 type Props = {
+  revealTarget?: { parentID: number; nodeID: number; requestID: string }
+  /** Resolve Server child position and verify a one-item current Range. */
+  locateVerifiedReveal?: (
+    parentID: number, nodeID: number, itemCount: number,
+    sort: XDriveFileExplorerSort, grouping: XDriveFileExplorerGrouping,
+    signal: AbortSignal,
+  ) => Promise<{ index: number; item: XDriveFileExplorerItem } | null>
   lifecycleKey: string
   requestedDirectoryID?: number
   items: XDriveFileExplorerItem[]
@@ -558,6 +565,9 @@ export default function MobileFiles(props: Props) {
   arrangeSignatureRef.current = arrangeSignature
   const verifiedLocatorRef = useRef(props.locateVerifiedCurrentChild)
   verifiedLocatorRef.current = props.locateVerifiedCurrentChild
+  const revealLocatorRef = useRef(props.locateVerifiedReveal)
+  revealLocatorRef.current = props.locateVerifiedReveal
+  const seenRevealRequestRef = useRef<string | null>(null)
   const pendingGlobalSearchPresentation = Boolean(pendingGlobalSearchRef.current &&
     pendingGlobalSearchRef.current.intent === navigationIntentRef.current &&
     pendingGlobalSearchRef.current.lifecycleKey === props.lifecycleKey)
@@ -567,6 +577,10 @@ export default function MobileFiles(props: Props) {
     selectionScopeKey, props.sort.key, props.sort.direction,
     props.grouping?.groupBy ?? 'none', props.grouping?.foldersFirst ?? true,
   ].join(':')
+  const revealRenderedScopeRef = useRef(viewPositionScope)
+  revealRenderedScopeRef.current = viewPositionScope
+  const revealRenderedRequestRef = useRef(props.revealTarget?.requestID)
+  revealRenderedRequestRef.current = props.revealTarget?.requestID
   const selectionActive = selectionMode && showDirectory
   const effectiveGrid = viewPreference === 'grid'
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
@@ -1257,6 +1271,84 @@ export default function MobileFiles(props: Props) {
     arrangeTicketRef.current?.controller?.abort()
     arrangeTicketRef.current = null
   }, [])
+
+  // A deep link / recent / Gallery "显示所在文件夹" is a one-shot exact
+  // selection, not a directory-scroll restore or a full 100k-item scan.
+  useEffect(() => {
+    const target = props.revealTarget
+    if (!target || seenRevealRequestRef.current === target.requestID ||
+      !ready || !showDirectory || browseHome || props.trashActive ||
+      props.searchActive || props.loading || directoryID !== target.parentID ||
+      !Number.isSafeInteger(target.nodeID) || target.nodeID <= 0 ||
+      !totalCount || !props.grouping || !revealLocatorRef.current) return
+    // Expanded inline branches alter visible ordinals. Collapse before using
+    // the Server parent-directory position; never scroll to a wrong sibling.
+    if (inlineLayout && inlineLayout.itemCount !== totalCount) {
+      props.onClearInline?.()
+      return
+    }
+    if (props.grouping.groupBy !== 'none' && !groupedLayout) return
+    seenRevealRequestRef.current = target.requestID
+    const controller = new AbortController()
+    let finished = false
+    const scope = selectionScopeKey
+    const positionScope = viewPositionScope
+    const selectionGeneration = ++selectionIntentRef.current
+    selectionAbortRef.current?.abort()
+    const current = () => !controller.signal.aborted &&
+      selectionScopeRef.current === scope &&
+      revealRenderedScopeRef.current === positionScope &&
+      revealRenderedRequestRef.current === target.requestID &&
+      selectionIntentRef.current === selectionGeneration &&
+      directoryID === target.parentID
+
+    void revealLocatorRef.current(
+      target.parentID, target.nodeID, totalCount, props.sort, props.grouping,
+      controller.signal,
+    ).then(result => {
+      if (!current()) return
+      if (!result || result.index < 0 || result.index >= totalCount ||
+        Number(result.item.id) !== target.nodeID ||
+        (props.grouping?.groupBy !== 'none' && !groupedLayout?.groups.some(group =>
+          result.index >= group.startIndex &&
+          result.index < group.startIndex + group.itemCount))) {
+        setSelectionFeedback('无法精确定位目标文件，请刷新文件夹后重试。')
+        return
+      }
+      const host = scrollHostRef.current
+      if (!host) return
+      const top = Math.max(0, mobileFilesViewportTop({
+        index: result.index, fraction: 0,
+      }, rowHeight, effectiveGrid ? columns : 1, groupedLayout) -
+        Math.max(0, (host.clientHeight - rowHeight) / 2))
+      host.scrollTop = top
+      setScrollTop(host.scrollTop)
+      browseScrollRef.current = host.scrollTop
+      if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+      scrollSaveRef.current = null
+      pendingScrollRef.current = null
+      persist({ folderID: target.parentID, scrollTop: host.scrollTop })
+      setSelected(new Map([[String(result.item.id), result.item]]))
+      setSelectionMode(true)
+      setSelectionFeedback('')
+      host.focus({ preventScroll: true })
+    }).catch(() => {
+      if (current()) setSelectionFeedback('无法精确定位目标文件，请刷新文件夹后重试。')
+    }).finally(() => { finished = true })
+    return () => {
+      controller.abort()
+      if (!finished && seenRevealRequestRef.current === target.requestID) {
+        seenRevealRequestRef.current = null
+      }
+    }
+  }, [
+    props.revealTarget?.requestID, props.revealTarget?.parentID,
+    props.revealTarget?.nodeID, ready, showDirectory, browseHome,
+    props.trashActive, props.searchActive, props.loading, directoryID,
+    totalCount, selectionScopeKey, props.sort.key, props.sort.direction,
+    props.grouping?.groupBy, props.grouping?.foldersFirst,
+    Boolean(groupedLayout), inlineLayout?.itemCount, rowHeight, effectiveGrid, columns, persist,
+  ])
 
   // Notify the same Web workspace of selected sparse Nodes before their pages
   // can be evicted by scrolling. The callback retains IDs/revisions only;

@@ -422,12 +422,21 @@ export function useXDriveFileExplorerWorkspace<
 
   const showItemInContainingFolder = async (item: XDriveFileExplorerItem) => {
     const result = projection.searchByID.get(Number(item.id))
-    if (!result || !searchCrumbsForResult) return
+    if (!result || !searchCrumbsForResult) return null
     const parentCrumbs = xDriveFileExplorerContainingFolderCrumbs(
       result.node,
       searchCrumbsForResult(result),
     )
-    if (parentCrumbs) await navigation.navigateTo(parentCrumbs)
+    const parentID = parentCrumbs?.at(-1)?.id
+    if (!parentCrumbs || !parentID) return null
+    // A Search result has no current-directory ordinal. Only the *accepted*
+    // destination first Range permits the caller to reveal the exact Node.
+    const intent = navigation.beginNavigationIntent()
+    let accepted = false
+    await navigation.navigateTo(parentCrumbs, true, intent, (value) => { accepted = value })
+    return accepted && navigation.isNavigationIntentCurrent(intent)
+      ? { parentID, nodeID: Number(item.id) }
+      : null
   }
 
 

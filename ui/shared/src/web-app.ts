@@ -95,7 +95,7 @@ export type XDriveWebAppBrowseContext =
 
 export interface XDriveWebAppLaunchMap {
   overview: Record<string, never>
-  files: { dir?: number }
+  files: { dir?: number; select?: number }
   gallery: { section?: XDriveWebGallerySection }
   'sync-folders': { source?: number }
   'device-backup': { source?: number }
@@ -152,8 +152,13 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
   const app = match[1]
   const query = new URLSearchParams(match[2] || '')
   switch (app) {
-    case 'files':
-      return { app, params: { dir: positiveInteger(query.get('dir')) } }
+    case 'files': {
+      const dir = positiveInteger(query.get('dir'))
+      return { app, params: {
+        dir,
+        select: dir ? positiveInteger(query.get('select')) : undefined,
+      } }
+    }
     case 'gallery': {
       const sectionValue = query.get('section') || ''
       const section = xDriveWebGallerySectionSet.has(sectionValue as XDriveWebGallerySection)

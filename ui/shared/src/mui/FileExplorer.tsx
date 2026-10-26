@@ -80,7 +80,7 @@ import {
 import type { ButtonProps } from '@mui/material'
 import type { MediaItem, NodeLocation } from '../models'
 import type { XDriveCloudFilesPosition } from '../cloud-files'
-import { xDriveFileExplorerVerifiedChildReanchor } from './FileExplorerReanchor'
+import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from './FileExplorerReanchor'
 import { formatBytes } from '../format'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
 import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
@@ -862,6 +862,7 @@ export function XDriveFileExplorer({
   grouping: controlledGrouping,
   onGroupingChange,
   locateCurrentChild,
+  revealTarget,
   groupingEnabled = true,
   commandBarStart,
   commandBarEnd,
@@ -977,6 +978,8 @@ export function XDriveFileExplorer({
     parentID: number, nodeID: number, sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping, signal: AbortSignal,
   ) => Promise<XDriveCloudFilesPosition>
+  /** A one-shot, parent-scoped navigation intent from Search/Gallery/Viewer. */
+  revealTarget?: { parentID: number; nodeID: number; requestID: string }
   groupingEnabled?: boolean
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
@@ -1151,6 +1154,9 @@ export function XDriveFileExplorer({
   } | null>(null)
   const locateCurrentChildRef = useRef(locateCurrentChild)
   locateCurrentChildRef.current = locateCurrentChild
+  const revealRequestSeenRef = useRef<string | null>(null)
+  const revealCollectionRef = useRef(virtualCollection)
+  revealCollectionRef.current = virtualCollection
   useEffect(() => () => {
     reanchorGenerationRef.current += 1
     pendingReanchorRef.current?.controller?.abort()
@@ -1263,6 +1269,12 @@ export function XDriveFileExplorer({
     interactionLifecycleKey,
     virtualCollection?.interactionKey ?? derivedPath,
   ].join('\n')
+  // These render-time refs fence replies even before old passive-effect
+  // cleanups execute after a folder, account or target transition.
+  const revealRenderedScopeRef = useRef(interactionScopeKey)
+  revealRenderedScopeRef.current = interactionScopeKey
+  const revealRenderedRequestRef = useRef(revealTarget?.requestID)
+  revealRenderedRequestRef.current = revealTarget?.requestID
   const returnStateKey = viewState
     ? JSON.stringify([viewState.stateKey, viewState.contentSignature])
     : null
@@ -5184,6 +5196,94 @@ export function XDriveFileExplorer({
   // navigation's top reset. Sort, grouping and directory changes keep their
   // established Server-authoritative reset semantics.
   }, [derivedPath, groupingSignature, sort.key, sort.direction])
+
+  // An external "显示所在文件夹" must select the *file*, not just its parent.
+  // The Server knows the ordinal under the current sort/grouping; a matching
+  // one-item Range confirms identity/revision before any selection or scroll.
+  useEffect(() => {
+    const target = revealTarget
+    if (!target || loading || searchSummary || !viewState?.ready ||
+      Number(crumbs.at(-1)?.id) !== target.parentID ||
+      !Number.isSafeInteger(target.nodeID) || target.nodeID <= 0 ||
+      !Number.isSafeInteger(target.parentID) || target.parentID <= 0 ||
+      viewportHeight <= 0) return
+    if (viewMode === 'columns') {
+      setViewMode('details')
+      return
+    }
+    if (grouping.groupBy !== 'none' &&
+      !(viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout)) return
+    if (revealRequestSeenRef.current === target.requestID) return
+    revealRequestSeenRef.current = target.requestID
+    const controller = new AbortController()
+    let finished = false
+    const scope = interactionScopeKey
+    cancelPendingViewRestore()
+    const intent = beginSelectionIntent()
+    const current = () => !controller.signal.aborted &&
+      revealRenderedScopeRef.current === scope &&
+      revealRenderedRequestRef.current === target.requestID &&
+      interactionScopeKeyRef.current === scope &&
+      selectionIntentRef.current === intent &&
+      Number(crumbs.at(-1)?.id) === target.parentID
+
+    void (async () => {
+      let result: { index: number; item: XDriveFileExplorerItem } | null = null
+      const collection = revealCollectionRef.current
+      const locate = locateCurrentChildRef.current
+      if (collection?.collectRange && locate) {
+        result = await xDriveFileExplorerVerifiedChildReveal({
+          parentID: target.parentID, nodeID: target.nodeID,
+          itemCount: logicalItemCount, sort, grouping, signal: controller.signal,
+          locate, collectRange: collection.collectRange,
+        })
+      } else if (!collection && logicalItemCount > 0) {
+        // Small, fully-loaded nonvirtual directories already have an exact index.
+        const index = logicalIndexOf(target.nodeID)
+        const item = index == null ? undefined : logicalItemAt(index)
+        if (index != null && item && Number(item.id) === target.nodeID) {
+          result = { index, item }
+        }
+      }
+      if (!current()) return
+      const layout = restoreLayoutRef.current
+      const host = scrollHostRef.current
+      const groupLayout = viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout
+      if (!result || !layout || !host || layout.mode === 'columns' ||
+        (grouping.groupBy !== 'none' && !groupLayout?.groups.some(group =>
+          result!.index >= group.startIndex &&
+          result!.index < group.startIndex + group.itemCount))) {
+        setViewRestoreFeedback('无法精确定位目标文件；请刷新文件夹后重试。')
+        return
+      }
+      const rowHeight = viewMode === 'details' ? detailsRowHeight : gridMetrics.estimatedRowHeight
+      const top = Math.max(0, layout.itemTop(result.index) -
+        Math.max(0, (host.clientHeight - rowHeight) / 2))
+      host.scrollTop = top
+      pendingScrollTopRef.current = host.scrollTop
+      setScrollTop(host.scrollTop)
+      applySelection([result.item.id], [result.item])
+      setSelectionAnchorID(result.item.id)
+      setSelectionAnchorIndex(result.index)
+      setActiveItemID(result.item.id)
+      setActiveLogicalIndex(result.index)
+      setViewRestoreFeedback('')
+      host.focus({ preventScroll: true })
+    })().catch(() => {
+      if (current()) setViewRestoreFeedback('无法精确定位目标文件；请刷新文件夹后重试。')
+    }).finally(() => { finished = true })
+    return () => {
+      controller.abort()
+      if (!finished && revealRequestSeenRef.current === target.requestID) {
+        revealRequestSeenRef.current = null
+      }
+    }
+  }, [
+    revealTarget?.requestID, revealTarget?.nodeID, revealTarget?.parentID,
+    loading, interactionScopeKey, viewState?.ready, searchSummary !== undefined,
+    viewMode, viewportHeight, logicalItemCount, sort.key, sort.direction,
+    groupingSignature, Boolean(groupedDetailsLayout), Boolean(groupedGridLayout),
+  ])
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (pendingViewModeAnchorRef.current?.scope === interactionScopeKey &&

@@ -60,7 +60,7 @@ test('Hash routes are typed and browsing context stays out of the URL', () => {
     "'text-viewer': { node: number; line?: number; column?: number }",
     "'pdf-viewer': { node: number; page?: number }",
     "'audio-player': { node: number }",
-    "files: { dir?: number }",
+    "files: { dir?: number; select?: number }",
   ]) {
     assert.ok(contract.includes(token), 'route contract missing: ' + token)
   }
