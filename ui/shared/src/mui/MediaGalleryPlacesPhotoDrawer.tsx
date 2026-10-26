@@ -98,8 +98,19 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             suppressDragClick.current = true
             onExpand(dy<0)
           }}
-          onPointerCancel={() => { dragStart.current = null }}
-          onLostPointerCapture={() => { dragStart.current = null }}
+          onPointerCancel={event => {
+            if (dragStart.current?.pointerId !== event.pointerId) return
+            // A cancelled touch must not turn into an accidental click.
+            // The next valid primary pointerdown resets this guard.
+            suppressDragClick.current = true
+            dragStart.current = null
+          }}
+          onLostPointerCapture={event => {
+            if (dragStart.current?.pointerId !== event.pointerId) return
+            // Capture loss without pointerup is also a cancelled drag.
+            suppressDragClick.current = true
+            dragStart.current = null
+          }}
           onClick={event => {
             // A synthesized touch click must not undo the successful swipe.
             if (event.detail > 0 && suppressDragClick.current) {
@@ -109,7 +120,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             }
             onExpand(!expanded)
           }}
-          sx={{width:'100%',minHeight:36,display:'grid',placeItems:'center',
+          sx={{width:'100%',minHeight:44,display:'grid',placeItems:'center',
             border:0,p:0,bgcolor:'transparent',color:'text.primary',
             cursor:'grab',touchAction:'none',
             '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main',

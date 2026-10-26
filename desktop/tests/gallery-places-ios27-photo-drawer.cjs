@@ -160,6 +160,29 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   const host=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(sheet,/data-xdrive-places-photo-drawer-grip/)
+  // The map sheet lives in one trusted Parent and is rendered identically
+  // for inline and isolated SDK Hosts. Its draggable button must be a full
+  // touch-sized target, not only a visible 36px pill.
+  const grip=sheet.slice(sheet.indexOf('data-xdrive-places-photo-drawer-grip'),
+    sheet.indexOf('data-xdrive-places-photo-drawer-expand'))
+  assert.match(grip,/width:'100%',minHeight:44/)
+  assert.match(grip,/aria-expanded=\{expanded\}/)
+  assert.match(grip,/touchAction:'none'/)
+  // A cancelled captured touch/pen must never synthesize an expand action;
+  // unrelated pointer IDs must not cancel the active drag. Keyboard
+  // activation (detail === 0) remains available after cancellation.
+  const cancel=grip.slice(grip.indexOf('onPointerCancel='),
+    grip.indexOf('onLostPointerCapture='))
+  const lost=grip.slice(grip.indexOf('onLostPointerCapture='),
+    grip.indexOf('onClick='))
+  for (const handler of [cancel,lost]) {
+    assert.match(handler,/dragStart\.current\?\.pointerId !== event\.pointerId/)
+    assert.match(handler,/suppressDragClick\.current = true/)
+    assert.match(handler,/dragStart\.current = null/)
+  }
+  const click=grip.slice(grip.indexOf('onClick='),grip.indexOf('sx={{'))
+  assert.match(click,/event\.detail > 0 && suppressDragClick\.current/)
+  assert.match(click,/onExpand\(!expanded\)/)
   assert.match(sheet,/onPointerDown=/)
   assert.match(sheet,/setPointerCapture\(event\.pointerId\)/)
   assert.match(sheet,/onPointerUp=/)
