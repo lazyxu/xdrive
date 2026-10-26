@@ -282,6 +282,8 @@ desktop-windows:
       - desktop/release/win-unpacked/
 
 build-client-core:
+  variables:
+    GIT_DEPTH: "0"
   # Preserve only master snapshot publication prerequisites across frequent pushes.
   # Other tests remain interruptible; MR and stable behavior is unchanged.
   rules:
@@ -307,6 +309,15 @@ build-client-core:
       fi
       bash scripts/package-backup-cli.sh release/core release/backup-cli
       bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
+      bash scripts/ci/test-synology-spk-version.sh
+      bash scripts/ci/test-synology-release.sh
+      source scripts/ci/synology-spk-version.sh
+      source scripts/ci/build-metadata.sh
+      bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology
+      python3 scripts/ci/test-synology-spk.py \
+        "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+        release/synology/core "$XDRIVE_SPK_VERSION"
+      bash scripts/ci/verify-synology-spk-release.sh release/synology
   artifacts:
     name: "xdrive-client-core-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
@@ -314,6 +325,8 @@ build-client-core:
     paths:
       - release/core/
       - release/backup-cli/
+      - release/synology/*.spk
+      - release/synology/*.spk.sha256
 
 go-linux:
   # GitHub CI is the required master test gate. Keep GitLab failures visible

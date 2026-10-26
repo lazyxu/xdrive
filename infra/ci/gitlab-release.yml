@@ -157,9 +157,16 @@ publish-release:
       # Preserve the exact binary archives already verified and built by CI.
       cp release/backup-cli/xdrive-backup-linux-amd64.tar.gz release/
       cp release/backup-cli/xdrive-backup-windows-amd64.zip release/
+      # Publish the exact CI-built ARMv7 package; never recompile inside the publisher.
+      set -- release/synology/xdrivenas-armada38x-*.spk
+      [ "$#" = 1 ] && [ -s "$1" ] && [ -s "$1.sha256" ] || {
+        echo "missing or ambiguous CI-built Synology SPK" >&2; exit 1;
+      }
+      cp "$1" "$1.sha256" release/
+      bash scripts/ci/verify-synology-spk-release.sh release
       # Stable glab release create expands release/*; never pass build/core
       # directories as Release assets or upload them by mistake.
-      rm -rf release/core release/backup-cli
+      rm -rf release/core release/backup-cli release/synology
       sh scripts/ci/gitlab-publish-release.sh
   artifacts:
     name: "xdrive-release-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"

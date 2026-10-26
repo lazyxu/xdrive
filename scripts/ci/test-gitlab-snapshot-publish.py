@@ -2,6 +2,9 @@
 """Offline runtime regression for GitLab snapshot stage/verify/promote semantics."""
 import copy
 import hashlib
+import io
+import shutil
+import tarfile
 import json
 import os
 from pathlib import Path
@@ -11,12 +14,14 @@ import textwrap
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLISHER = ROOT / 'scripts/ci/gitlab-publish-release.sh'
+SPK_NAME = 'xdrivenas-armada38x-0.1.0-123.spk'
 A = 'a' * 40
 B = 'b' * 40
 FILES = (
     'xdrive-linux-amd64.deb', 'xDriveSetup-amd64.exe',
     'xdrive-source-agent-linux-amd64', 'xdrive-source-agent-linux-arm64',
     'xdrive-backup-linux-amd64.tar.gz', 'xdrive-backup-windows-amd64.zip',
+    SPK_NAME, SPK_NAME + '.sha256',
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
     'server-migrate-user.sh', 'xdrive-server', 'docker-compose.yml',
@@ -206,9 +211,23 @@ def unchanged(before,after):
 with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     tmp=Path(temp)
     (tmp/'release').mkdir()
+    # The publisher runs from the isolated fixture working directory, not
+    # the checkout. Stage its exact verifier and a valid synthetic DSM SPK.
+    (tmp/'scripts/ci').mkdir(parents=True)
+    shutil.copyfile(ROOT/'scripts/ci/verify-synology-spk-release.sh',
+                    tmp/'scripts/ci/verify-synology-spk-release.sh')
     for name in FILES:
-        if name!='SHA256SUMS.txt':
+        if name not in ('SHA256SUMS.txt', SPK_NAME, SPK_NAME + '.sha256'):
             (tmp/'release'/name).write_bytes(('asset: '+name+'\n').encode())
+    spk_path = tmp/'release'/SPK_NAME
+    spk_info = (b'package="xdrivenas"\nversion="0.1.0-123"\n'
+                b'arch="armada38x"\nos_min_ver="7.0-40759"\n')
+    with tarfile.open(spk_path, 'w') as archive:
+        member = tarfile.TarInfo('./INFO')
+        member.size = len(spk_info)
+        archive.addfile(member, io.BytesIO(spk_info))
+    (tmp/'release'/(SPK_NAME + '.sha256')).write_text(
+        f'{hashlib.sha256(spk_path.read_bytes()).hexdigest()}  {SPK_NAME}\n')
     (tmp/'bin').mkdir()
     for name,content in [('glab',MOCK_GLAB),('git',MOCK_GIT)]:
         binary=tmp/'bin'/name
@@ -224,6 +243,16 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
     assert new['events'][-1]=='promote-marker'
     assert len(new['packages']['sha-'+A]) == len(FILES)
     assert len([e for e in new['events'] if e=='promote-marker']) == 1
+
+    # Corrupting the DSM package must fail before uploading or promoting
+    # a newer snapshot. Restore the known-good bytes for later fixtures.
+    original_spk = spk_path.read_bytes()
+    spk_path.write_bytes(original_spk + b'tampered')
+    invalid_spk, after = run(tmp, B)
+    assert invalid_spk.returncode != 0
+    unchanged(new, after)
+    assert len(after['events']) == len(new['events'])
+    spk_path.write_bytes(original_spk)
 
     # Replaying exact commit reuses bytes and links; no extra package uploads.
     replay,same=run(tmp,A)
