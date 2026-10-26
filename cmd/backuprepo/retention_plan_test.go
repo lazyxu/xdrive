@@ -179,3 +179,76 @@ func TestRetentionPlanZeroObjectsAndNoDeletions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRetentionPlanDeepAuditsOnceAndRejectsSameSizeCorruption(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	repo := filepath.Join(root, "repo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	content := "same-size-check-with-shared-CAS"
+	hash := testCAS(t, source, content)
+	first := retentionFixtureSnapshot(t, repo, source, "xdrive-backup-20261024T010000Z")
+	second := retentionFixtureSnapshot(t, repo, source, "xdrive-backup-20261025T010000Z")
+	orphanContent := "orphan-unreferenced-CAS"
+	orphanSum := sha256.Sum256([]byte(orphanContent))
+	orphanHash := fmt.Sprintf("%x", orphanSum)
+	writeTestFile(t, objectPath(repo, orphanHash), []byte(orphanContent))
+
+	full, err := planRetentionWithMode(repo, 1, "deep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.DeleteEnabled || full.Validation != "snapshot_sha256_and_full_cas_sha256" ||
+		full.HashedObjects != 2 || full.HashedBytes != int64(len(content)+len(orphanContent)) {
+		t.Fatalf("deep should audit unique referenced and orphan objects once: %+v", full)
+	}
+	fast, err := planRetention(repo, 1)
+	if err != nil || fast.HashedObjects != 0 || fast.HashedBytes != 0 {
+		t.Fatalf("default must not hash CAS content: %+v %v", fast, err)
+	}
+
+	for _, tc := range []struct {
+		name, hash, original string
+	}{
+		{"referenced", hash, content},
+		{"unreferenced", orphanHash, orphanContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := objectPath(repo, tc.hash)
+			writeTestFile(t, path, []byte(strings.Repeat("x", len(tc.original))))
+			if _, err := planRetention(repo, 1); err != nil {
+				t.Fatalf("fast scan should not imply same-size content validation: %v", err)
+			}
+			if invalid, err := planRetentionWithMode(repo, 1, "deep"); err == nil {
+				t.Fatalf("deep scan accepted same-size corrupt CAS: %+v", invalid)
+			}
+			writeTestFile(t, path, []byte(tc.original))
+			if _, err := planRetentionWithMode(repo, 1, "deep"); err != nil {
+				t.Fatalf("deep scan failed after restoring valid object: %v", err)
+			}
+		})
+	}
+	for _, path := range []string{first, second, objectPath(repo, hash), objectPath(repo, orphanHash)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("read-only deep audit altered %s: %v", path, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(repo, ".backup.lock")); !os.IsNotExist(err) {
+		t.Fatalf("Go helper must not create a repository lock: %v", err)
+	}
+
+	if err := run([]string{"retention-plan", "--repo", repo, "--keep-last", "1", "--mode", "deep"}); err != nil {
+		t.Fatalf("explicit deep CLI: %v", err)
+	}
+	for _, args := range [][]string{
+		{"retention-plan", "--repo", repo, "--mode", "invalid"},
+		{"estimate", "--repo", repo, "--source", source, "--mode", "deep"},
+		{"verify", "--repo", repo, "--snapshot", filepath.Base(first), "--mode", "deep"},
+	} {
+		if err := run(args); err == nil {
+			t.Fatalf("accepted invalid retention mode argument: %v", args)
+		}
+	}
+}

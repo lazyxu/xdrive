@@ -1082,7 +1082,7 @@ backup_create_cmd() {
 # delete mode. Running the helper through a read-only bind mount makes this
 # safe even if the native program acquires new features in the future.
 backup_retention_plan_cmd() {
-  local repository_dir="" keep_last="7" server_id="" server_image="" configured=""
+  local repository_dir="" keep_last="7" server_id="" server_image="" configured="" cas_mode="fast"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --repository-dir)
@@ -1095,11 +1095,20 @@ backup_retention_plan_cmd() {
         keep_last="$2"
         shift 2
         ;;
-      *) echo "usage: xdrive-server backup retention-plan [--repository-dir PATH] [--keep-last N]" >&2; return 2 ;;
+      --mode)
+        [[ $# -ge 2 ]] || { echo "backup retention-plan: missing mode" >&2; return 2; }
+        cas_mode="$2"
+        shift 2
+        ;;
+      *) echo "usage: xdrive-server backup retention-plan [--repository-dir PATH] [--keep-last N] [--mode fast|deep]" >&2; return 2 ;;
     esac
   done
   [[ "$keep_last" =~ ^[1-9][0-9]*$ ]] || {
     echo "backup retention-plan: keep-last must be a positive integer" >&2
+    return 2
+  }
+  [[ "$cas_mode" == "fast" || "$cas_mode" == "deep" ]] || {
+    echo "backup retention-plan: --mode must be fast or deep" >&2
     return 2
   }
   if [[ -z "$repository_dir" && "$(env_value XD_BACKUP_SCHEDULE_FORMAT)" == "v2" ]]; then
@@ -1124,10 +1133,28 @@ backup_retention_plan_cmd() {
     echo "backup retention-plan: Server image is not configured" >&2
     return 1
   }
+  if [[ "$cas_mode" == "deep" ]]; then
+    # A long-running deep content audit must not race a cooperating writer.
+    # Reuse the writer's lock inode; never create or truncate it.
+    local repository_lock="$repository_dir/.backup.lock"
+    [[ -f "$repository_lock" && ! -L "$repository_lock" ]] || {
+      echo "backup retention-plan: deep audit requires an existing safe v2 repository lock" >&2
+      return 1
+    }
+    command -v flock >/dev/null 2>&1 || {
+      echo "backup retention-plan: flock is required for deep audit" >&2
+      return 1
+    }
+    exec 7<"$repository_lock"
+    flock -s -n 7 || {
+      echo "backup retention-plan: v2 repository is busy with another operation" >&2
+      return 75
+    }
+  fi
   docker run --rm --user 0:0 \
     --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
     --entrypoint /usr/local/bin/xdrive-backup-repo \
-    "$server_image" retention-plan --repo /repo --keep-last "$keep_last" </dev/null
+    "$server_image" retention-plan --repo /repo --keep-last "$keep_last" --mode "$cas_mode" </dev/null
 }
 
 backup_cmd() {

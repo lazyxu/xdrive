@@ -47,6 +47,7 @@ assert_readonly_mount() {
 run_plan
 assert_readonly_mount "$default_repo"
 grep -Fxq 7 "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq fast "$BACKUP_PLAN_TEST_LOG"
 run_plan --keep-last 2
 assert_readonly_mount "$default_repo"
 grep -Fxq 2 "$BACKUP_PLAN_TEST_LOG"
@@ -55,6 +56,24 @@ printf 'XD_SERVER_IMAGE=xdrive/server:backup-plan-test\nXD_BACKUP_SCHEDULE_FORMA
 run_plan --keep-last 3
 assert_readonly_mount "$custom_repo"
 grep -Fxq 3 "$BACKUP_PLAN_TEST_LOG"
+
+# Explicit full-content audit only: hold the pre-existing writer's lock
+# during the read-only Docker invocation. A competing exclusive lease blocks
+# it before Docker starts, without affecting the default fast preview.
+: > "$custom_repo/.backup.lock"
+run_plan --keep-last 3 --mode deep
+assert_readonly_mount "$custom_repo"
+grep -Fxq deep "$BACKUP_PLAN_TEST_LOG"
+exec 8<"$custom_repo/.backup.lock"
+flock -x -n 8
+: > "$BACKUP_PLAN_TEST_LOG"
+if PATH="$TMP/bin:$PATH" bash "$host" backup retention-plan --mode deep >"$TMP/busy.out" 2>"$TMP/busy.err"; then
+  echo 'deep audit ignored exclusive repository lock' >&2; exit 1
+fi
+grep -Fq 'v2 repository is busy' "$TMP/busy.err"
+[[ ! -s "$BACKUP_PLAN_TEST_LOG" ]]
+flock -u 8
+exec 8<&-
 
 run_plan --repository-dir "$default_repo" --keep-last 5
 assert_readonly_mount "$default_repo"
@@ -70,6 +89,8 @@ reject() {
 }
 reject --keep-last 0
 reject --keep-last invalid
+reject --mode invalid
+reject --mode
 reject --repository-dir relative/path
 reject --repository-dir "$TMP/nonexistent"
 reject --delete
@@ -79,5 +100,5 @@ reject --repository-dir "$TMP/symlink-repo"
 
 [[ "$(cat "$default_repo/snapshots/preserve")" == 'immutable object fixture' ]]
 [[ "$(cat "$custom_repo/snapshots/preserve")" == 'also preserve' ]]
-[[ ! -e "$default_repo/.backup.lock" && ! -e "$custom_repo/.backup.lock" ]]
+[[ ! -e "$default_repo/.backup.lock" && -f "$custom_repo/.backup.lock" ]]
 echo "retention-plan host read-only Docker mount and safety tests passed"

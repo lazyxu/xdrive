@@ -14,9 +14,10 @@ import (
 )
 
 // retentionPlan is an offline, read-only capacity estimate, NOT an
-// authorization to prune anything. Snapshot files are SHA-checked, while CAS
-// objects are checked for existence/size rather than rehashed. An eventual
-// mutating prune must revalidate hashes under the repository's exclusive lock.
+// authorization to prune anything. Snapshot files are always SHA-checked.
+// The default fast mode only checks CAS existence/size. Explicit deep mode
+// hashes each unique CAS object, including unreferenced repository objects.
+// A future mutating prune must revalidate under an exclusive repository lock.
 type retentionPlan struct {
 	Mode                  string   `json:"mode"`
 	Validation            string   `json:"validation"`
@@ -33,6 +34,8 @@ type retentionPlan struct {
 	PotentialLogicalBytes int64    `json:"potential_logical_bytes"`
 	DeleteEnabled         bool     `json:"delete_enabled"`
 	Warning               string   `json:"warning"`
+	HashedObjects         int      `json:"hashed_objects"`
+	HashedBytes           int64    `json:"hashed_bytes"`
 }
 
 var committedV2Files = []string{
@@ -127,11 +130,22 @@ func validateCommittedSnapshot(dir string) (int64, error) {
 // In-flight .partial generations fail closed rather than allowing a stale
 // reference map to masquerade as an actionable deletion list.
 func planRetention(repo string, keepLast int) (retentionPlan, error) {
+	return planRetentionWithMode(repo, keepLast, "fast")
+}
+
+func planRetentionWithMode(repo string, keepLast int, casMode string) (retentionPlan, error) {
 	plan := retentionPlan{
 		Mode: "read_only", Validation: "snapshot_sha256_and_cas_size",
 		KeepLast: keepLast, KeepSnapshots: []string{}, DropCandidates: []string{},
 		DeleteEnabled: false,
 		Warning:       "Estimate only. No CAS content hashing, filesystem allocation measurement, exclusive lock or deletion. A later prune must revalidate all refs and CAS hashes under lock.",
+	}
+	if casMode != "fast" && casMode != "deep" {
+		return plan, errors.New("retention-plan --mode must be fast or deep")
+	}
+	if casMode == "deep" {
+		plan.Validation = "snapshot_sha256_and_full_cas_sha256"
+		plan.Warning = "Deep CAS SHA-256 audit complete at scan time only. Read-only: no exclusive lock, physical allocation measurement or deletion. Future prune must revalidate under its own exclusive lease."
 	}
 	if keepLast < 1 {
 		return plan, errors.New("keep-last must be >= 1")
@@ -224,6 +238,31 @@ func planRetention(repo string, keepLast int) (retentionPlan, error) {
 			st, err := regularFile(filepath.Join(dir, hash))
 			if err != nil {
 				return plan, err
+			}
+			// Deep mode inspects the whole physical repository once, not once
+			// per snapshot. Check even currently unreferenced/orphan objects;
+			// a same-size corrupt CAS file is invisible to fast size checks.
+			if casMode == "deep" {
+				file, err := os.Open(filepath.Join(dir, hash))
+				if err != nil {
+					return plan, err
+				}
+				digest := sha256.New()
+				readBytes, readErr := io.Copy(digest, file)
+				closeErr := file.Close()
+				if readErr != nil {
+					return plan, readErr
+				}
+				if closeErr != nil {
+					return plan, closeErr
+				}
+				if readBytes != st.Size() || fmt.Sprintf("%x", digest.Sum(nil)) != hash {
+					return plan, fmt.Errorf("CAS content SHA-256 mismatch in repository: %s", hash)
+				}
+				plan.HashedObjects++
+				if err := addPlanBytes(&plan.HashedBytes, readBytes); err != nil {
+					return plan, err
+				}
 			}
 			seen[hash] = true
 			if size, referenced := all[hash]; referenced {
