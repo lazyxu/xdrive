@@ -118,8 +118,10 @@ function acceptMessage(data: unknown) {
 export function startXDrivePwaPeerActivityObservation(): void {
   if (started || typeof window === 'undefined') return
   started = true
-  if (!window.isSecureContext) return
   try {
+    // The optional secure-context getter may be blocked before React mounts;
+    // unknown is not a secure origin and cannot enable peer observers.
+    if (!window.isSecureContext) return
     // A restricted WebKit context can throw from optional API getters, not
     // just constructors. Peer hints cannot be a prerequisite for first paint.
     if (typeof BroadcastChannel === 'undefined' || typeof crypto === 'undefined' ||

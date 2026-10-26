@@ -111,9 +111,12 @@ export function startXDrivePwaInstallObservation(): void {
     promptEvent = null
     broadcast()
   }
-  window.addEventListener('beforeinstallprompt', onPrompt)
-  window.addEventListener('appinstalled', onInstalled)
-  window.addEventListener('pageshow', broadcast)
+  // Optional install signals must never prevent the shared Web/PWA app from
+  // rendering. A restricted browser host may deny one event independently;
+  // retain every other supported listener and the initial capability snapshot.
+  try { window.addEventListener('beforeinstallprompt', onPrompt) } catch { /* optional */ }
+  try { window.addEventListener('appinstalled', onInstalled) } catch { /* optional */ }
+  try { window.addEventListener('pageshow', broadcast) } catch { /* optional */ }
   for (const mode of ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']) {
     try {
       window.matchMedia?.('(display-mode: ' + mode + ')')?.addEventListener?.('change', broadcast)
