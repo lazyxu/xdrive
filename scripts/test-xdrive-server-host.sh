@@ -54,6 +54,14 @@ if [[ "$url" == "http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive" ]]; the
   case "${TEST_LOCAL_GITLAB_PROJECT:-unavailable}" in
     valid) printf '{"path_with_namespace":"xuliang/xdrive"}\n'; exit 0 ;;
     wrong) printf '{"path_with_namespace":"another/xdrive"}\n'; exit 0 ;;
+    second)
+      count="$(grep -c '^http://127.0.0.1:1080/api/v4/projects/xuliang%2Fxdrive$' "$TEST_STATE/curl-urls" || true)"
+      if (( count > 1 )); then
+        printf '{"path_with_namespace":"xuliang/xdrive"}\n'
+        exit 0
+      fi
+      exit 7 ;;
+    nested) printf '{"project":{"path_with_namespace":"xuliang/xdrive"},"path_with_namespace":"another/xdrive"}\n'; exit 0 ;;
     *) exit 7 ;;
   esac
 fi
@@ -587,7 +595,7 @@ if grep -q '/api/v4/projects/xuliang%2Fxdrive$' "$TMP/state/curl-urls"; then
   exit 1
 fi
 rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
-TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
+TEST_LOCAL_GITLAB_PROJECT=second TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
@@ -596,7 +604,7 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-fallba
 grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
 grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
 grep -q '^http://127.0.0.1:1080$' "$TMP/state/installer-gitlab-base"
-grep -q 'retrying via local fallback http://127.0.0.1:1080' "$TMP/update-gitlab-fallback.err"
+grep -q 'retrying via verified local GitLab http://127.0.0.1:1080' "$TMP/update-gitlab-fallback.err"
 
 rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
 set +e
@@ -613,6 +621,24 @@ if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/' "$TMP/state/curl-urls"
   echo "GitLab HTTP errors must not fall back to localhost installer" >&2
   exit 1
 fi
+
+# Local impersonators cannot supply an installer, even on public timeout.
+for local_case in wrong nested; do
+  rm -f "$TMP/state/curl-urls" "$TMP/state/installer-args"
+  set +e
+  TEST_LOCAL_GITLAB_PROJECT="$local_case" TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
+    TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+    bash "$HOST" update --source gitlab --channel master >"$TMP/rejected-$local_case.out" 2>"$TMP/rejected-$local_case.err"
+  rejected_status=$?
+  set -e
+  [[ "$rejected_status" -eq 28 ]]
+  test ! -e "$TMP/state/installer-args"
+  if grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/' "$TMP/state/curl-urls"; then
+    echo "unverified local GitLab supplied code" >&2
+    exit 1
+  fi
+  grep -q 'local fallback project identity unverified' "$TMP/rejected-$local_case.err"
+done
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

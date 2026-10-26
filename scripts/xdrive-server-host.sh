@@ -187,13 +187,23 @@ prefer_local_gitlab() {
   local candidate="${GITLAB_LOCAL_FALLBACK_URL%/}"
   [[ "$candidate" =~ ^http://(127[.]0[.]0[.]1|localhost):[0-9]{1,5}$ ]] || return 0
   command -v curl >/dev/null 2>&1 || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
 
   local project="${GITLAB_PROJECT#/}" key metadata actual
   key="${project//\//%2F}"
   metadata="$(curl -fsS --noproxy '*' --connect-timeout 1 --max-time 3 \
     "$candidate/api/v4/projects/$key" 2>/dev/null)" || return 0
-  actual="$(printf '%s' "$metadata" | grep -oE '"path_with_namespace"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | cut -d'"' -f4 || true)"
-  [[ "$actual" == "$project" ]] || return 0
+  # Only a parsed top-level project object may authorize a local installer.
+  if ! printf '%s' "$metadata" | python3 -c '
+import json,sys
+try:
+    obj=json.load(sys.stdin)
+except (ValueError,TypeError):
+    sys.exit(1)
+sys.exit(0 if isinstance(obj,dict) and obj.get("path_with_namespace")==sys.argv[1] else 1)
+' "$project"; then
+    return 0
+  fi
 
   GITLAB_BASE_URL="$candidate"
   export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
@@ -352,7 +362,7 @@ verify_github_release_installer() {
 }
 
 download_installer() {
-  local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url attempt
+  local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url attempt previous_gitlab_base
   local policy="${XD_GITHUB_ATTESTATION_POLICY:-}"
   [[ -n "$policy" ]] || policy="$(env_value XD_GITHUB_ATTESTATION_POLICY)"
   policy="${policy:-off}"
@@ -403,7 +413,7 @@ download_installer() {
   fi
 
   if [[ "$source" != "gitlab" || -n "$INSTALLER_URL_OVERRIDE" ||
-        -z "$GITLAB_LOCAL_FALLBACK_URL" ||
+        -n "${XD_GITLAB_BASE_URL+x}" || -z "$GITLAB_LOCAL_FALLBACK_URL" ||
         "${GITLAB_BASE_URL%/}" == "${GITLAB_LOCAL_FALLBACK_URL%/}" ]]; then
     return "$status"
   fi
@@ -411,10 +421,16 @@ download_installer() {
     return "$status"
   fi
 
+  # Retry the same bounded identity probe: localhost may just have started.
+  # Never select unverified loopback after a public connection timeout.
+  previous_gitlab_base="${GITLAB_BASE_URL%/}"
+  prefer_local_gitlab
   fallback_url="${GITLAB_LOCAL_FALLBACK_URL%/}"
-  echo "[xDrive] GitLab ${GITLAB_BASE_URL%/} is unreachable; retrying via local fallback $fallback_url..." >&2
-  GITLAB_BASE_URL="$fallback_url"
-  export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
+  if [[ "${GITLAB_BASE_URL%/}" != "$fallback_url" ]]; then
+    echo "[xDrive] remote GitLab unreachable; local fallback project identity unverified." >&2
+    return "$status"
+  fi
+  echo "[xDrive] GitLab $previous_gitlab_base is unreachable; retrying via verified local GitLab $fallback_url..." >&2
   prepare_local_gitlab_proxy
   installer_url="$(installer_url_for_source "$source" "$channel")"
   download_installer_url "$installer_url" "$destination"
