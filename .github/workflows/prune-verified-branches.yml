@@ -220,9 +220,20 @@ jobs:
               } else {
                 // A branch with zero unique commits is fully integrated.
                 // Do not delete branch tips with any unmerged commits.
-                const {data: comparison} = await github.rest.repos.compareCommits({
-                  owner, repo, base: defaultBranch, head: name,
-                });
+                let comparison;
+                try {
+                  const response = await github.rest.repos.compareCommits({
+                    owner, repo, base: defaultBranch, head: name,
+                  });
+                  comparison = response.data;
+                } catch (error) {
+                  // Another trusted master job may delete this exact ref
+                  // between listBranches and compareCommits.
+                  if (error.status !== 404) throw error;
+                  report.push([name, 'GONE: concurrently removed', 'compare returned 404']);
+                  skipped++;
+                  continue;
+                }
                 if (comparison.ahead_by === 0) {
                   evidence = 'No commits ahead of master';
                 }
@@ -233,9 +244,20 @@ jobs:
                 continue;
               }
               // Re-read the actual ref immediately before a destructive call.
-              const {data: latest} = await github.rest.repos.getBranch({
-                owner, repo, branch: name,
-              });
+              let latest;
+              try {
+                const response = await github.rest.repos.getBranch({
+                  owner, repo, branch: name,
+                });
+                latest = response.data;
+              } catch (error) {
+                // A concurrently deleted branch is already at the desired
+                // result. Other errors (e.g. 403) still abort the run.
+                if (error.status !== 404) throw error;
+                report.push([name, 'GONE: concurrently removed', 'head check returned 404']);
+                skipped++;
+                continue;
+              }
               if (latest.protected || latest.commit.sha !== branch.commit.sha) {
                 report.push([name, 'KEEP: head changed/protected', evidence]);
                 skipped++;
@@ -252,7 +274,11 @@ jobs:
                     owner, repo, ref: 'heads/' + name,
                   });
                 } catch (error) {
-                  report.push([name, 'KEEP: deletion rejected', String(error.status || error.message)]);
+                  if (error.status === 404) {
+                    report.push([name, 'GONE: concurrently removed', evidence]);
+                  } else {
+                    report.push([name, 'KEEP: deletion rejected', String(error.status || error.message)]);
+                  }
                   skipped++;
                   continue;
                 }
