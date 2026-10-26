@@ -17,6 +17,7 @@ const start = original.indexOf('function livePhotoMotionURL(')
 assert.ok(start > 0, 'the production Live Photo helpers and component must exist')
 const source = [
   "import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'",
+  "import { xDriveAbortHTMLMediaElement } from './teardown'",
   "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress, xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
@@ -42,9 +43,16 @@ const viewportJS = ts.transpileModule(read('ui/shared/src/file-preview-viewport.
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 new Function('exports', 'module', viewportJS)(viewportModule.exports, viewportModule)
+const teardownModule = { exports: {} }
+const teardownJS = ts.transpileModule(read('ui/shared/src/mui/mediaPreviewStreamTeardown.ts'), {
+  fileName: 'mediaPreviewStreamTeardown.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+new Function('exports', 'module', teardownJS)(teardownModule.exports, teardownModule)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
+  './teardown': teardownModule.exports,
   './fixture': {
     Box: 'mounted-live-box',
     Chip: 'mounted-live-chip',
@@ -75,10 +83,14 @@ const deferred = () => {
 const makePlayer = play => ({
   play,
   pauseCalls: 0,
+  removedSource: 0,
+  resetLoads: 0,
   currentTime: 0,
   volume: 0,
   readyState: 3,
   pause() { this.pauseCalls++ },
+  removeAttribute(name) { assert.equal(name, 'src'); this.removedSource++ },
+  load() { this.resetLoads++ },
 })
 const mount = (player, loadMotion, sourceKey = 'node:1', extra = {}) =>
   renderer.create(React.createElement(Live, {
@@ -206,7 +218,7 @@ test('P0-L6 old play rejection cannot corrupt a newer hold; current decode failu
   })
   await act(async () => { press(failedTree); await flush() })
   assert.equal(label(failedTree), '实况不可用')
-  assert.equal(video(failedTree).props.sx.opacity, 0)
+  assert.equal(video(failedTree), undefined, 'terminal codec failure detaches the stale motion element')
   assert.equal(failedTree.root.findAll(x => x.type === 'mounted-live-still').length, 1)
   await act(async () => { failedTree.unmount() })
 })
@@ -308,44 +320,66 @@ test('P0-L7 late video error from released or previous still does not poison cur
   assert.equal(video(tree).props.sx.opacity, 1)
   await act(async () => { video(tree).props.onError({ currentTarget: player }); await flush() })
   assert.equal(label(tree), '实况不可用', 'real error for current held video remains terminal')
-  assert.equal(video(tree).props.sx.opacity, 0, 'static still remains visible')
+  assert.equal(video(tree), undefined, 'terminal stream error detaches the motion element')
   await act(async () => { tree.unmount() })
 })
 
-test('P0-L7 still readiness loss immediately hides motion and stops playback without auto-restart', async () => {
+test('P0-L7 lost still immediately detaches signed motion, releases its lease and needs a fresh hold', async () => {
   let plays = 0
+  let loads = 0
+  let released = 0
   const player = makePlayer(() => { plays++; return Promise.resolve() })
-  const loader = async () => 'https://example.invalid/live.mov'
+  const loader = async () => ({
+    url: `https://example.invalid/private-live-${++loads}.mov`,
+    dispose() { released++ },
+  })
   const element = stillReady => React.createElement(Live, {
     still: React.createElement('mounted-live-still'), stillReady,
     sourceKey: 'still:90', loadMotion: loader,
   })
   let tree
-  await act(async () => {
-    tree = renderer.create(element(true), {
-      createNodeMock: entry =>
-        entry.type === 'mounted-live-box' && entry.props.component === 'video'
-          ? player : null,
+  try {
+    await act(async () => {
+      tree = renderer.create(element(true), {
+        createNodeMock: entry =>
+          entry.type === 'mounted-live-box' && entry.props.component === 'video'
+            ? player : null,
+      })
+      await flush()
     })
-    await flush()
-  })
-  await act(async () => { press(tree); await flush() })
-  assert.equal(video(tree).props.sx.opacity, 1)
-  const pauseBefore = player.pauseCalls
-  await act(async () => { tree.update(element(false)); await flush() })
-  assert.equal(video(tree).props.sx.opacity, 0, 'a gray/failed still must not keep showing motion')
-  assert.equal(video(tree).props.preload, 'none')
-  assert.equal(surface(tree).props['aria-disabled'], true)
-  assert.ok(player.pauseCalls > pauseBefore, 'losing still must stop video and audio')
-  const previousPlays = plays
-  await act(async () => { press(tree); await flush() })
-  assert.equal(plays, previousPlays, 'disabled still does not load motion')
-  await act(async () => { tree.update(element(true)); await flush() })
-  assert.equal(video(tree).props.sx.opacity, 0, 'still recovery must not autoplay')
-  assert.equal(plays, previousPlays)
-  await act(async () => { press(tree); await flush() })
-  assert.equal(plays, previousPlays + 1, 'new intentional hold resumes cached motion')
-  await act(async () => { release(tree); tree.unmount() })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(loads, 1)
+    assert.equal(plays, 1)
+    assert.equal(video(tree).props.sx.opacity, 1)
+    const oldError = video(tree).props.onError
+
+    await act(async () => { tree.update(element(false)); await flush() })
+    assert.equal(video(tree), undefined, 'failed still cannot retain the signed native motion source')
+    assert.equal(player.removedSource, 1, 'lost still detaches HTTP Range immediately')
+    assert.equal(player.resetLoads, 1)
+    assert.equal(released, 1, 'retired one-shot signed proxy lease is disposed once')
+    assert.equal(surface(tree).props['aria-disabled'], true)
+    await act(async () => { press(tree); await flush() })
+    assert.equal(loads, 1, 'disabled still cannot reissue a signed ticket')
+
+    await act(async () => { tree.update(element(true)); await flush() })
+    assert.equal(video(tree), undefined, 'still recovery must not mount or autoplay obsolete motion')
+    assert.equal(plays, 1)
+    await act(async () => { oldError({ currentTarget: player }); await flush() })
+    assert.equal(label(tree), '实况', 'late old media error cannot poison the recovered still')
+    await act(async () => { press(tree); await flush() })
+    assert.equal(loads, 2, 'a new explicit hold must acquire a fresh signed motion source')
+    assert.equal(plays, 2)
+    assert.equal(video(tree).props.src, 'https://example.invalid/private-live-2.mov')
+    assert.equal(video(tree).props.sx.opacity, 1)
+
+    await act(async () => { release(tree); tree.unmount(); tree = null })
+    assert.equal(player.removedSource, 2, 'final Close detaches only the new Range')
+    assert.equal(player.resetLoads, 2)
+    assert.equal(released, 2, 'new proxy released, old proxy not double disposed')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+  }
 })
 
 
@@ -429,7 +463,10 @@ test('P0-L8 a true current video decoding failure still does not reissue a motio
   await act(async () => { release(tree); press(tree); await flush() })
   assert.equal(loads, 1, 'media decode error is not mistaken for a transient ticket failure')
   assert.equal(plays, 1, 'unsupported video is not replayed without replacing the source')
-  assert.equal(video(tree).props.sx.opacity, 0)
+  assert.equal(video(tree), undefined,
+    'terminal codec failure must detach its video and preserve the still')
+  assert.equal(player.removedSource, 1, 'a failed native Range must be stopped once')
+  assert.equal(player.resetLoads, 1)
   await act(async () => { release(tree); tree.unmount() })
 })
 
@@ -1071,4 +1108,123 @@ test('P1 Live decoding ready later refreshes actual portrait pan bounds', async 
       'decoded portrait contain-fit clamp prevents phantom horizontal pan')
     assert.equal(loads, 0, 'reclamping decoded still must not reload motion')
   } finally { if (tree) await act(async () => tree.unmount()) }
+})
+
+
+test('P0 terminal Live decoder rejection releases failed Blob immediately and only once', async () => {
+  const originalRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = (url) => revoked.push(url)
+  const player = makePlayer(() => Promise.reject(new Error('unsupported codec')))
+  let loads = 0
+  let tree
+  try {
+    await act(async () => {
+      tree = mount(player, async () => { loads++; return 'blob:terminal-live-broken' }, 'terminal:codec')
+      await flush()
+    })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(loads, 1)
+    assert.equal(label(tree), '实况不可用')
+    assert.equal(video(tree), undefined, 'failed video must not retain its src')
+    assert.equal(player.removedSource, 1, 'detach failed native Range synchronously')
+    assert.equal(player.resetLoads, 1)
+    assert.deepEqual(revoked, ['blob:terminal-live-broken'])
+    assert.equal(tree.root.findAll(x => x.type === 'mounted-live-still').length, 1,
+      'still stays visible after terminal motion failure')
+    await act(async () => { press(tree); await flush() })
+    assert.equal(loads, 1, 'terminal codec failure is not retried without a fresh source')
+    await act(async () => tree.unmount())
+    tree = null
+    assert.deepEqual(revoked, ['blob:terminal-live-broken'],
+      'unmount cannot revoke an already-disposed motion source twice')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+})
+
+test('P0 terminal held Live HTTP media error tears down source once; stale error cannot poison replacement', async () => {
+  const player = makePlayer(() => Promise.resolve())
+  let disposed = 0
+  const oldMotion = async () => ({ url: 'https://example.invalid/private-owner-motion.mov',
+    dispose: () => { disposed++ } })
+  const nextMotion = async () => 'https://example.invalid/next-owner-motion.mov'
+  const element = (key, loadMotion) => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'), stillReady: true,
+    sourceKey: key, loadMotion,
+  })
+  let tree
+  try {
+    await act(async () => {
+      tree = mount(player, oldMotion, 'terminal:old')
+      await flush()
+    })
+    await act(async () => { press(tree); await flush() })
+    const oldError = video(tree).props.onError
+    await act(async () => { oldError({ currentTarget: player }); await flush() })
+    assert.equal(disposed, 1)
+    assert.equal(player.removedSource, 1)
+    assert.equal(player.resetLoads, 1)
+    assert.equal(video(tree), undefined, 'private failed video stream is detached')
+    assert.equal(label(tree), '实况不可用')
+    assert.equal(tree.root.findAll(x => x.type === 'mounted-live-still').length, 1)
+    await act(async () => { tree.update(element('terminal:next', nextMotion)); await flush() })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(video(tree).props.src, 'https://example.invalid/next-owner-motion.mov')
+    await act(async () => { oldError({ currentTarget: player }); await flush() })
+    assert.equal(video(tree).props.src, 'https://example.invalid/next-owner-motion.mov',
+      'prior Owner failure must not tear down new motion')
+    await act(async () => tree.unmount())
+    tree = null
+    assert.equal(disposed, 1, 'source change and unmount cannot dispose failed motion twice')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+  }
+})
+
+
+test('P0 Live Viewer source switch and Close detach signed Range before disposing motion', async () => {
+  const player = makePlayer(() => Promise.resolve())
+  let oldDisposed = 0
+  let nextDisposed = 0
+  const oldMotion = async () => ({
+    url: 'https://example.invalid/current-owner-motion.mov',
+    dispose: () => { oldDisposed++ },
+  })
+  const newMotion = async () => ({
+    url: 'https://example.invalid/next-owner-motion.mov',
+    dispose: () => { nextDisposed++ },
+  })
+  const element = (key, loader) => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'), stillReady: true,
+    sourceKey: key, loadMotion: loader,
+  })
+  let tree
+  try {
+    await act(async () => {
+      tree = mount(player, oldMotion, 'source-owner:1')
+      await flush()
+    })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(video(tree).props.src, 'https://example.invalid/current-owner-motion.mov')
+    assert.equal(player.removedSource, 0)
+    await act(async () => { tree.update(element('source-owner:2', newMotion)); await flush() })
+    assert.equal(player.removedSource, 1,
+      'source replacement must synchronously detach the old video Range')
+    assert.equal(player.resetLoads, 1)
+    assert.equal(oldDisposed, 1, 'previous source must release its one-shot proxy lease')
+    assert.equal(video(tree), undefined, 'new source must wait for explicit next hold')
+    await act(async () => { press(tree); await flush() })
+    assert.equal(video(tree).props.src, 'https://example.invalid/next-owner-motion.mov')
+    await act(async () => tree.unmount())
+    tree = null
+    assert.equal(player.removedSource, 2,
+      'Viewer close must detach the next video without retaining a Range')
+    assert.equal(player.resetLoads, 2)
+    assert.equal(oldDisposed, 1)
+    assert.equal(nextDisposed, 1)
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+  }
 })
