@@ -10,7 +10,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
   /** Side channel only after original Owner /media/albums succeeded. */
   onAuthorizedAlbums?: (albums: MediaAlbum[]) => void
 }) {
-  return createXDriveMediaGalleryDataSource({
+  const source = createXDriveMediaGalleryDataSource({
     loadMusicRoot: () => api.root(),
     listMusicChildren: (parentID) => api.list(parentID),
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
@@ -186,5 +186,18 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
       api.addMediaAlbumItems(albumID, revision, nodeIDs),
     removeFromAlbum: (albumID, revision, nodeID) =>
       api.removeMediaAlbumItem(albumID, revision, nodeID),
+  })
+  // The normal Gallery data source stays authoritative. Only the routed Web
+  // Viewer's one-item download may borrow the exact Task Center receipt. Do
+  // not replace downloadItems: Album/bulk/other hosts use its original API.
+  return Object.assign(source, {
+    downloadItemsWithReceipt: (
+      items: Parameters<NonNullable<typeof source.downloadItems>>[0],
+      onTransferCreated: (transferID: string) => void,
+    ) => items.length === 1
+      ? api.download(items[0].node, { onTransferCreated }).then(() => undefined)
+      : source.downloadItems
+        ? source.downloadItems(items)
+        : Promise.resolve(),
   })
 }

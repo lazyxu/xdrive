@@ -1,4 +1,5 @@
 import { Box, CircularProgress, Typography } from '@mui/material'
+import type { XDriveTransferTask } from '../transfers'
 
 export type XDriveMediaLoadStage =
   | 'transfer'
@@ -50,6 +51,33 @@ function clock(seconds: number) {
   const s = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
   const minutes = Math.floor(s / 60)
   return `${String(minutes).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** A Viewer may show only the exact download's Task Center receipt.
+ * Native browser handoff is NOT proof the file was saved to disk. */
+export function xDriveViewerDownloadTransferLabel(
+  task: Pick<XDriveTransferTask, 'state' | 'bytes_done' | 'bytes_total' | 'speed_source'>,
+): string {
+  const done = Number.isFinite(task.bytes_done) ? Math.max(0, task.bytes_done) : 0
+  const total = Number.isFinite(task.bytes_total) && task.bytes_total > 0
+    ? task.bytes_total : undefined
+  const bytes = done > 0 || total !== undefined
+    ? xDriveMediaByteProgressLabel(done, total) : ''
+
+  if (task.state === 'handed_off') return '已交给浏览器处理，请在浏览器下载记录中确认保存结果'
+  if (task.state === 'failed') return '下载失败，请在任务中心查看或重新下载'
+  if (task.state === 'cancelled') return '下载已取消'
+  if (task.state === 'completed') {
+    return task.speed_source === 'server'
+      ? `服务端传输完成${bytes ? ` · ${bytes}` : ''}（不代表文件已保存）`
+      : `下载已保存${bytes ? ` · ${bytes}` : ''}`
+  }
+  if (task.state === 'cancelling') return `正在取消下载${bytes ? ` · ${bytes}` : '…'}`
+  if (task.state === 'queued') return '正在准备下载…'
+  if (task.state === 'running' || task.state === 'retrying') {
+    return bytes ? `下载中 · ${bytes}` : '正在连接下载…'
+  }
+  return ''
 }
 
 /** Native media exposes buffered time intervals, not trustworthy whole-file bytes. */

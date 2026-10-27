@@ -69,7 +69,8 @@ test('archive prepare/progress routes are optional and legacy archive downloads 
   assert.ok(router.includes('GET("/download/archive/progress/:id", s.getArchiveDownloadProgress)'), 'archive progress route missing')
   assert.ok(router.includes('POST("/download/archive", s.downloadArchive)'), 'legacy archive route missing')
   assert.ok(server.includes('TransferID string   `json:"transfer_id,omitempty"`'), 'archive transfer ticket must remain optional')
-  assert.ok(api.includes('async download(node: Node)'), 'single-file Web download compatibility was removed')
+  assert.match(api, /async download\(\s*node: Node,\s*options: \{ onTransferCreated\?/,
+    'single-file Web download remains compatible, with only an optional receipt callback')
   assert.ok(api.includes('xDriveOpenWebDownloadSink(node.name)'), 'single-file download must select the direct-to-disk sink before transport')
 })
 
