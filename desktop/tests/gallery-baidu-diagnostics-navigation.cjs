@@ -116,10 +116,10 @@ test('Gallery remains a short fallback with admin-only route to the shared diagn
   assert.match(gallery, /onOpenBaiduMapDiagnostics=\{onOpenBaiduMapDiagnostics\}/)
   assert.match(gallery, /onOpenBaiduMapDiagnostics\?: \(\) => void/g)
   const desktopGallery = desktop.slice(
-    desktop.indexOf("{view === 'gallery' && ("),
-    desktop.indexOf("{view === 'device-backup' && ("),
+    desktop.indexOf('galleryPage: {'),
+    desktop.indexOf('deviceBackupPage: {'),
   )
-  assert.equal((desktopGallery.match(/preferenceScope=/g) ?? []).length, 1,
+  assert.equal((desktopGallery.match(/preferenceScope:/g) ?? []).length, 1,
     'Desktop Gallery must not send the same JSX prop twice')
   assert.match(places, /result\.activation_state === 'authorized_signed_release'/)
   assert.match(places, /xDriveClassifyBaiduMapRequestFailure\('status', error\)/)

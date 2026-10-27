@@ -27,7 +27,7 @@ test('Only this Owner current authorized facets success can confirm Album/People
   assert.ok(accept>source.indexOf('setPersonIdentities(nextPeople)'))
   assert.ok(source.lastIndexOf('request !== requestID.current',accept)>0)
   assert.ok(source.includes('setAlbums(nextAlbums)'))
-  assert.ok(web.includes('XDriveMediaGalleryPage')&&desktop.includes('XDriveMediaGalleryPage'),
+  assert.ok(web.includes('XDriveMediaGalleryPage')&&desktop.includes('galleryPage: {') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveMediaGalleryPage'),
     'both platforms keep the same controller and Server/Agent transport')
 })
 

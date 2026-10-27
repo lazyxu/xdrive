@@ -33,7 +33,7 @@ test('Only the owning Agent may expose paused local backup drafts for recovery',
   assert.match(ipc, /desktopIPCLocalDraftReader/)
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-drafts'\)/)
   assert.match(preload, /getDeviceBackupLocalDrafts:/)
-  assert.match(app, /localDrafts=\{localBackupDraftReader\}/)
+  assert.match(app, /localDrafts:\s*localBackupDraftReader/)
   assert.match(page, /source && verifiedLocalDeviceID && localCreate && localDrafts/)
   assert.match(panel, /actions\.authorize\(draft\.source_id\)/)
   assert.match(panel, /actions\.discard\(draft\.source_id, draft\.revision\)/)

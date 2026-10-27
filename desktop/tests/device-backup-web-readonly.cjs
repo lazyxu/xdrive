@@ -46,7 +46,7 @@ test('Push backup presenter has only B-scope read models, no cross-device mutati
   assert.ok(view.includes('if (prev.source !== source) return prev'), 'late history must not publish across accounts')
   assert.ok(view.includes('NAS 备份 · 待支持'))
   assert.ok(view.includes('连接状态未知'))
-  assert.match(desktop, /<XDriveDeviceBackupPage[\s\S]*?source=\{deviceBackupSource\}/, 'Desktop reads the owner-scoped projection through Agent IPC')
+  assert.match(desktop, /deviceBackupPage:\s*\{[\s\S]*?source:\s*deviceBackupSource/, 'Desktop uses Owner-scoped read projection via typed shared Host port')
   assert.ok(desktop.includes("agent.hello?.capabilities.includes('device-backup-read')"), 'Desktop must require the dedicated Agent read capability')
   assert.equal(desktop.includes('deviceBackupSource: sourceManagerAdapter'), false, 'Desktop must not fall back to generic writable Source APIs')
 })

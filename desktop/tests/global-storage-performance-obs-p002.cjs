@@ -41,6 +41,7 @@ test('OBS-P002 recent rates and actual coverage are admin-only and shared on Web
   assert.match(ui, /requests_per_second\.toFixed\(2\)/)
   assert.match(ui, /尚在积累/)
   assert.match(web, /@xdrive\/ui\/mui/)
-  assert.match(desktop, /XDriveGlobalStorageStatsPage/)
+  assert.match(desktop, /adminStoragePage:\s*status\?\.role === 'admin'/)
+  assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveGlobalStorageStatsPage/)
   assert.doesNotMatch(ui, /setInterval\(|new Worker\(/)
 })

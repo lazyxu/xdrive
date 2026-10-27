@@ -95,10 +95,11 @@ test('Desktop delegates shared Task Center composition while retaining native tr
     'conflictResolutionEnabled: fileOperationConflictResolveSupported',
     'transferBadge: taskCenter.badge,',
     'taskCenter.activeTransferCount',
-    '{...taskCenter.pageProps}',
-    "transferRetryingID={busy.startsWith('retry-transfer-')",
-    'transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}',
-    'onRetryTransfer={(id) => { void retryTransfer(id) }}',
+    'taskCenterPage: {',
+    '...taskCenter.pageProps,',
+    "transferRetryingID: busy.startsWith('retry-transfer-')",
+    'transferRetryDisabled: Boolean(busy) || fileOperationActions.clearHistoryLoading',
+    'onRetryTransfer: (id) => { void retryTransfer(id) }',
   ]) {
     assert.ok(desktop.includes(token), `Desktop Task Center wiring missing: ${token}`)
   }

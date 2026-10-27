@@ -13,6 +13,8 @@ const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
+const sharedHostOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+const sharedHostSections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
 
 test('shared core navigation owns common destinations and capability-gates local storage rendering', () => {
   assert.ok(sharedRoute.includes('export const XDRIVE_CORE_WORKSPACE_KEYS = ['), 'shared route model must own core workspace keys')
@@ -116,15 +118,28 @@ test('Web and Desktop consume the same shared WorkspaceSidebar', () => {
   }
 })
 
-test('Desktop extension destinations all flow through section models', () => {
-  assert.ok(desktop.includes('const desktopSidebarSections: XDriveSidebarSectionModel[] = ['))
-  assert.ok(desktop.includes("key: 'overview',\n      placement: 'before-core'"), 'Home should inject before the shared core')
-  assert.ok(desktop.includes("label: '主页'"), 'Desktop overview route should present as 主页')
-  assert.ok(desktop.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Conflicts should inject after the shared core')
-  assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Diagnostics should inject into the bottom extension slot')
-  assert.equal(desktop.includes('leadingItems='), false, 'Desktop should not use a parallel leading-items contract')
-  assert.equal(desktop.includes('trailingItems='), false, 'Desktop should not use a parallel trailing-items contract')
-  assert.ok(desktop.includes('sections: desktopSidebarSections,') && sharedApp.includes('{...sidebar}'), 'Desktop must pass extension sections through the common app to the shared sidebar')
+test('Desktop and DSM derive extension routes from one shared Host sections factory', () => {
+  assert.ok(desktop.includes('const desktopSidebarSections: XDriveSidebarSectionModel[] = xDriveWorkspaceHostSections({'))
+  assert.ok(desktop.includes("adminRoleVerified: status?.role === 'admin'"))
+  assert.ok(desktop.includes('conflictCount: status?.conflict_count'))
+  assert.ok(desktop.includes("diagnosticsAriaLabel: '桌面版辅助功能'"))
+  assert.ok(desktop.includes('sections: desktopSidebarSections,') && sharedApp.includes('{...sidebar}'))
+  for (const [key, label] of [
+    ['overview', '主页'], ['conflicts', '冲突'], ['admin-users', '用户管理'],
+    ['admin-audit', '审计日志'], ['admin-storage', '全局存储'],
+    ['admin-services', '系统依赖'], ['admin-maintenance', '备份与系统维护'],
+  ]) {
+    assert.ok(sharedHostSections.includes("key: '" + key + "'") &&
+      sharedHostSections.includes("label: '" + label + "'"), key)
+  }
+  assert.ok(sharedHostSections.includes('badge: conflictCount'))
+  assert.ok(sharedHostSections.includes('items: [xDriveDiagnosticsSidebarDestination()]'))
+  assert.ok(sharedHostSections.includes("key: 'settings'") &&
+    sharedHostSections.includes('items: [xDriveSettingsSidebarDestination()]'))
+  assert.ok(desktop.includes("if (destination === 'settings')") &&
+    desktop.includes('setSettingsOpen(true)'), 'Desktop must open actual Settings dialog')
+  assert.equal(desktop.includes('leadingItems='), false)
+  assert.equal(desktop.includes('trailingItems='), false)
 })
 
 test('Web Home and admin destinations use the same section model contract', () => {
@@ -138,38 +153,32 @@ test('Web Home and admin destinations use the same section model contract', () =
   }
 })
 
-test('Backup and maintenance navigation is identical across Web/Desktop', () => {
+test('Backup and maintenance navigation stays identical across Web/Desktop/DSM', () => {
   assert.ok(web.includes("key: 'admin-maintenance'"))
   assert.ok(web.includes("label: '备份与系统维护'"))
-  assert.ok(desktop.includes("key: 'admin-maintenance'"))
-  assert.ok(desktop.includes("label: '备份与系统维护'"))
+  assert.ok(sharedHostSections.includes("key: 'admin-maintenance'"))
+  assert.ok(sharedHostSections.includes("label: '备份与系统维护'"))
+  assert.ok(desktop.includes('xDriveWorkspaceHostSections({'))
 })
 
-test('user/owner and admin destinations remain separated in full Web/Desktop Sidebar', () => {
+test('Host-specific admin links only render after actual Server administrator verification', () => {
   assert.equal(sharedModel.includes("key: 'global-tasks'"), false)
   assert.equal(sharedNav.includes('showGlobalTasks'), false)
   assert.equal(sharedSidebar.includes('showGlobalTasks'), false)
-  for (const [source, sectionName, roleGuard] of [
-    [web, 'webSidebarSections', "profile?.role === 'admin'"],
-    [desktop, 'desktopSidebarSections', "status?.role === 'admin'"],
-  ]) {
-    const start = source.indexOf('const ' + sectionName + ': XDriveSidebarSectionModel[]')
-    const end = source.indexOf('\n  ]', start)
-    assert.ok(start >= 0 && end > start, 'Sidebar section array must be present')
-    const sections = source.slice(start, end)
-    assert.ok(sections.includes(roleGuard), 'admin section must be role-gated')
-    assert.equal((sections.match(/key: 'global-tasks'/g) || []).length, 1)
-    const admin = sections.indexOf("key: 'admin',")
-    const globalIndex = sections.indexOf("key: 'global-tasks'", admin)
-    assert.ok(admin > 0 && globalIndex > admin)
-    assert.ok(sections.slice(globalIndex, globalIndex + 195).includes("label: '全局后台任务'"),
-      'global task list must be labeled as administrator background tasks')
-    if (source === desktop) {
-      const diagnostics = sections.indexOf("key: 'diagnostics',")
-      assert.ok(diagnostics > 0 && diagnostics < admin, 'local diagnostics belong before 管理')
-      assert.ok(sections.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"))
-    }
-  }
+  const begin = web.indexOf('const webSidebarSections: XDriveSidebarSectionModel[]')
+  const end = web.indexOf(String.fromCharCode(10) + '  ]', begin)
+  assert.ok(begin >= 0 && end > begin)
+  const webSections = web.slice(begin, end)
+  assert.ok(webSections.includes("profile?.role === 'admin'"))
+  assert.equal((webSections.match(/key: 'global-tasks'/g) || []).length, 1)
+  const adminIndex = sharedHostSections.indexOf("key: 'admin'")
+  const globalIndex = sharedHostSections.indexOf("key: 'global-tasks'", adminIndex)
+  const diagIndex = sharedHostSections.indexOf("key: 'diagnostics'")
+  assert.ok(diagIndex >= 0 && adminIndex > diagIndex && globalIndex > adminIndex)
+  assert.ok(sharedHostSections.includes('...(adminRoleVerified ? ['))
+  assert.equal((sharedHostSections.match(/key: 'global-tasks'/g) || []).length, 1)
+  assert.ok(sharedHostSections.includes("ariaLabel: '管理员功能'"))
+  assert.ok(desktop.includes("adminRoleVerified: status?.role === 'admin'"))
 })
 
 test('local storage is shared across Web and Desktop while platform adapters remain local', () => {
@@ -178,9 +187,13 @@ test('local storage is shared across Web and Desktop while platform adapters rem
   assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
   assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
   assert.ok(web.includes('showLocalStorage'), 'Web must expose the shared local-storage destination')
-  assert.ok(desktop.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render shared Local Storage')
+  assert.ok(desktop.includes('localStorage: localStorageSource') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage'),
+    'Desktop Host must delegate real Local Storage data to common outlet')
   assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared Local Storage')
-  assert.ok(desktop.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render shared Cloud Storage')
+  assert.ok(desktop.includes('cloudStorage: cloudStorageSource') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'Desktop Host must delegate real Cloud Storage data to common outlet')
   assert.ok(web.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared Cloud Storage')
 })
 

@@ -92,13 +92,14 @@ const sourceB: XDriveServiceDependenciesPort = {
     })
   },
 }
-const theme = createTheme({ palette: { mode: 'light' } })
+const fixtureTheme = new URLSearchParams(window.location.search).get('theme') === 'dark' ? 'dark' : 'light'
+const theme = createTheme({ palette: { mode: fixtureTheme } })
 function Fixture() {
   const [server, setServer] = useState<'A' | 'B'>('A')
   useEffect(() => { probe.swapServer = () => setServer('B') }, [])
   return <ThemeProvider theme={theme}>
     <CssBaseline />
-    <main data-xdrive-real-admin-fixture style={{
+    <main data-xdrive-real-admin-fixture data-xdrive-fixture-theme={fixtureTheme} style={{
       boxSizing: 'border-box', maxWidth: 1380, width: '100%', minWidth: 0,
       margin: '0 auto', padding: '12px',
     }}>

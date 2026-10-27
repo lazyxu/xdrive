@@ -15,6 +15,7 @@ const workspaceNavigation = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigat
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
+const sharedHostOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')
@@ -93,7 +94,11 @@ test('Web and Desktop both render the shared task center workspace', () => {
   assert.ok(taskCenter.includes('清空历史'), 'shared task center must own the unified clear-history action')
   assert.ok(taskCenter.includes('loading={clearHistory.loading}'), 'shared task center clear-history action must expose loading state')
   assert.ok(taskCenter.includes('loadingLabel="正在清空…"'), 'shared task center clear-history action must expose loading feedback')
-  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render the shared task center directly')
+  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 0,
+    'Desktop must not keep local TaskCenter page JSX')
+  assert.ok(desktop.includes('taskCenterPage: {') &&
+    sharedHostOutlet.includes('<XDriveTaskCenterPage'),
+    'shared Host outlet must render Desktop and DSM TaskCenter')
   assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')), false, 'Desktop must not keep a pass-through Task Center wrapper')
   assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render the shared task center')
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')

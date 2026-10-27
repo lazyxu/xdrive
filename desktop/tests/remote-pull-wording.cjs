@@ -37,10 +37,11 @@ test('Web, Mobile Web and Desktop use the same Pull-only surface and preserve tr
   const manager = read('ui/shared/src/mui/SourceManager.tsx')
   const web = read('web/src/App.tsx')
   const desktop = read('desktop/src/renderer/App.tsx')
-  for (const page of [web, desktop]) {
-    assert.match(page, /<XDriveSourceManager/)
-    assert.match(page, /directionFilter="pull"/)
-  }
+  assert.match(web, /<XDriveSourceManager/)
+  assert.match(web, /directionFilter="pull"/)
+  assert.match(desktop, /remotePullPage:/)
+  assert.match(desktop, /directionFilter:\s*"pull"/)
+  assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveSourceManager \{\.\.\.services\.remotePullPage\} \/>/)
   assert.match(manager, /directionFilter !== 'pull' \|\| item\.source\.direction === 'pull'/)
   assert.match(manager, /direction: option\.direction/)
   assert.match(manager, /adapter\.sourceOverview\(\)/)

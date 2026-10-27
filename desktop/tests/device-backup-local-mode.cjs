@@ -32,7 +32,7 @@ test('Own Desktop backup mode is capability/Root/revision fenced; Web and other 
   assert.match(handler, /decodeDesktopIPCJSON\(w, r, &input\)/)
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-mode'\)/)
   assert.match(preload, /setDeviceBackupLocalMode:/)
-  assert.match(app, /localMode=\{localBackupMode\}/)
+  assert.match(app, /localMode:\s*localBackupMode/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /mode !== 'mirror' \|\| mirrorConfirmed/)
   assert.match(dialog, /actions\.setMode\(sourceID, settings\.revision, mode\)/)

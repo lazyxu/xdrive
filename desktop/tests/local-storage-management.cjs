@@ -24,7 +24,7 @@ test('Web and Desktop share one local storage workspace', () => {
   assert.ok(shared.includes('释放可回收 Desktop 缓存'))
   assert.ok(shared.includes('不会清除 Cookie、登录状态、token、主题或布局偏好'))
   assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
-  assert.ok(desktop.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.ok(desktop.includes('localStorage: localStorageSource') && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes('<XDriveLocalStoragePage'))
 })
 
 test('Web browser cleanup is constrained to regenerable Cache Storage', () => {

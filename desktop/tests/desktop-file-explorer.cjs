@@ -116,7 +116,7 @@ test('Desktop Cloud Storage stays current-account scoped and excludes global CAS
   assert.equal(cloudStoragePage.includes('CAS 全局物理对象'), false, 'shared Cloud Storage must not expose global CAS intelligence')
   assert.equal(cloudStoragePage.includes('宿主机绝对路径'), false, 'shared Cloud Storage must not expose global host paths')
   assert.equal(cloudStoragePage.includes('cleanupCache'), false, 'shared Cloud Storage must not expose global cache cleanup')
-  assert.ok(app.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render the shared Cloud Storage workspace')
+  assert.ok(app.includes('cloudStorage: cloudStorageSource') && fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8').includes('<XDriveCloudStoragePage'), 'Desktop must render the shared Cloud Storage workspace')
 })
 
 test('Desktop Cloud Storage adapter owns cloud quota and account file-distribution refresh', () => {

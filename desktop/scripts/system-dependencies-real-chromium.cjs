@@ -48,6 +48,103 @@ const screenshot = async (page, name) => {
     animations: 'disabled',
   })
 }
+
+const dependencyIDs = [
+  'database', 'storage', 'background-worker', 'caddy', 'media-worker',
+  'photo-face', 'photo-smart', 'photo-semantic', 'photo-creative',
+  'baidu-map', 'geonames',
+]
+
+// Inspect the actually mounted shared MUI page, not separate mock cards.
+// All services use the same detail content width at phone, nav-breakpoint,
+// desktop and screenshot-sized viewport widths. Only the main document may
+// scroll vertically; nested cards must not overflow or center independently.
+async function auditAllDependencyWidths(page, width) {
+  record(width + ': fixture lists all detail categories',
+    await page.locator('[data-xdrive-system-dependency-overview-card]').count() === dependencyIDs.length)
+  for (const id of dependencyIDs) {
+    await page.locator('[data-xdrive-system-dependency-overview-card="' + id + '"]').click()
+    await page.locator('[data-xdrive-system-dependency-detail]').waitFor()
+    const geometry = await page.evaluate((serviceID) => {
+      const owner = document.querySelector('[data-xdrive-system-dependency-detail]')
+      if (!owner) return { aligned: false, baiduGaps: false, caddyGaps: false }
+      const root = owner.getBoundingClientRect()
+      const topLevel = serviceID === 'caddy'
+        ? '[data-xdrive-caddy-v1-detail]'
+        : ['database', 'storage', 'background-worker'].includes(serviceID)
+          ? '[data-xdrive-core-dependency-flat]'
+          : serviceID === 'baidu-map'
+            ? '[data-xdrive-baidu-server-flat], [data-xdrive-baidu-jsapi-separate]'
+            : '[data-xdrive-flat-dependency-section]'
+      const panels = Array.from(owner.querySelectorAll(topLevel))
+      const aligned = root.width > 0 && panels.length > 0 && panels.every((panel) => {
+        const box = panel.getBoundingClientRect()
+        return box.width > 0 && Math.abs(box.left - root.left) <= 2 &&
+          Math.abs(box.right - root.right) <= 2 &&
+          panel.scrollWidth <= panel.clientWidth + 2
+      })
+      if (serviceID === 'caddy') {
+        const caddyCards = [
+          '#caddy-v1-overview > .MuiPaper-root',
+          '[data-xdrive-admin-caddy-https-desired]',
+          '[data-xdrive-admin-caddy-alidns]',
+          '[data-xdrive-caddy-v11-atomic-save]',
+        ].map((selector) => owner.querySelector(selector))
+        if (caddyCards.some((card) => !card)) {
+          return { aligned: false, baiduGaps: true, caddyGaps: false }
+        }
+        const boxes = caddyCards.map((card) => card.getBoundingClientRect())
+        const cardEdges = boxes.every((box) => Math.abs(box.left - root.left) <= 2 &&
+          Math.abs(box.right - root.right) <= 2)
+        const gaps = boxes.slice(1).map((box, index) => box.top - boxes[index].bottom)
+        return { aligned: aligned && cardEdges, baiduGaps: true,
+          caddyGaps: gaps.every((gap) => gap >= 8 && gap <= 24 &&
+            Math.abs(gap - gaps[0]) <= 2) }
+      }
+      if (serviceID !== 'baidu-map') return { aligned, baiduGaps: true, caddyGaps: true }
+      const status = owner.querySelector('#dependency-baidu-map-status-header')
+      const config = owner.querySelector('#dependency-baidu-map-config-header')
+      const browser = owner.querySelector('[data-xdrive-baidu-jsapi4-admin]')
+      if (!status || !config || !browser) return { aligned: false, baiduGaps: false }
+      const cards = [status, config, browser].map((element) => element.getBoundingClientRect())
+      const widthAligned = cards.every((box) => Math.abs(box.left - root.left) <= 2 &&
+        Math.abs(box.right - root.right) <= 2)
+      const upperGap = cards[1].top - cards[0].bottom
+      const lowerGap = cards[2].top - cards[1].bottom
+      return { aligned: aligned && widthAligned,
+        baiduGaps: upperGap >= 8 && upperGap <= 24 &&
+          Math.abs(upperGap - lowerGap) <= 2 }
+    }, id)
+    record(width + ': ' + id + ' uses identical full-width detail edges', geometry.aligned)
+    if (id === 'caddy') {
+      record(width + ': Caddy Status/HTTPS/AliDNS/Save use equal vertical gaps', geometry.caddyGaps)
+    }
+    if (id === 'baidu-map') {
+      record(width + ': Baidu Server/Browser sections have equal vertical gaps', geometry.baiduGaps)
+      await screenshot(page, 'baidu-map-' + width)
+    }
+    record(width + ': ' + id + ' has no horizontal viewport overflow', await noOverflow(page))
+    await page.getByRole('button', { name: '返回总览' }).click()
+    await page.locator('[data-xdrive-system-dependencies-overview]').waitFor()
+  }
+  await page.getByRole('button', { name: /全局分析策略（独立管理/ }).click()
+  await page.locator('[data-xdrive-system-dependency-detail]').waitFor()
+  const policyAligned = await page.evaluate(() => {
+    const owner = document.querySelector('[data-xdrive-system-dependency-detail]')
+    if (!owner) return false
+    const root = owner.getBoundingClientRect()
+    const panels = [...owner.querySelectorAll('[data-xdrive-flat-dependency-section]')]
+    return panels.length > 0 && panels.every((panel) => {
+      const box = panel.getBoundingClientRect()
+      return Math.abs(box.left - root.left) <= 2 && Math.abs(box.right - root.right) <= 2
+    })
+  })
+  record(width + ': global photo policy shares the same detail edges', policyAligned)
+  record(width + ': global photo policy has no horizontal overflow', await noOverflow(page))
+  await page.getByRole('button', { name: '返回总览' }).click()
+  await page.locator('[data-xdrive-system-dependencies-overview]').waitFor()
+}
+
 async function checkWidth(width, port) {
   const mobile = width <= 390
   const context = await browser.newContext({
@@ -69,7 +166,7 @@ async function checkWidth(width, port) {
     return route.continue()
   })
   try {
-    await page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+    await page.goto(origin + (width === 1740 ? '/?theme=dark' : '/'), { waitUntil: 'domcontentloaded' })
     await page.locator('[data-xdrive-system-dependencies-overview]').waitFor()
     await page.locator('[data-xdrive-system-dependency-overview-card="photo-smart"]').waitFor()
     record(width + ': genuine shared overview renders all 11 fixed services',
@@ -78,6 +175,21 @@ async function checkWidth(width, port) {
       await page.locator('[data-xdrive-system-dependencies-filter]').count() === 5)
     record(width + ': overview has no document horizontal overflow', await noOverflow(page))
     await screenshot(page, 'overview-' + width)
+    if (width === 1740) {
+      record('1740: real shared MUI uses screenshot dark-mode theme',
+        await page.locator('[data-xdrive-real-admin-fixture]')
+          .getAttribute('data-xdrive-fixture-theme') === 'dark')
+    }
+    await auditAllDependencyWidths(page, width)
+    if (width === 899 || width === 900) {
+      await page.locator('[data-xdrive-system-dependency-overview-card="baidu-map"]').click()
+      const localNavigation = page.locator('nav[aria-label="系统依赖页内导航"]')
+      record(width + ': navigation switches at the 900px MUI boundary',
+        width === 899
+          ? await page.getByLabel('选择系统依赖').isVisible()
+          : await localNavigation.isVisible())
+      await page.getByRole('button', { name: '返回总览' }).click()
+    }
     if (width === 320) {
       const capabilityDisclosure = page.locator('[data-xdrive-system-dependencies-capability-matrix]')
       record('320: optional capability matrix stays compact and collapsed',
@@ -160,7 +272,7 @@ async function checkWidth(width, port) {
       await pendingDialog.getByRole('button', { name: '放弃修改并切换' }).click()
       await page.locator('[data-xdrive-system-dependencies-overview]').waitFor()
       record('390: explicit discard returns to overview', await noOverflow(page))
-    } else {
+    } else if (width === 1280) {
       await page.locator('[data-xdrive-system-dependency-overview-card="database"]').click()
       await page.locator('[data-xdrive-system-dependency-detail]').waitFor()
       record('desktop: local service navigation is visible',
@@ -210,7 +322,7 @@ async function main() {
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--no-proxy-server'] })
   summary.realChromium = true
   summary.browserVersion = browser.version()
-  for (const width of [320, 390, 1280]) {
+  for (const width of [320, 390, 899, 900, 1280, 1740]) {
     await checkWidth(width, server.address().port)
   }
   record('all browser requests are limited to the loopback fixture', summary.externalRequests === 0)

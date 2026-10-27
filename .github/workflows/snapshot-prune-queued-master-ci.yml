@@ -1,13 +1,12 @@
 name: Prune queued CI superseded by published Snapshot
 
-# Deliberately NOT push-triggered: no extra job for each master commit.
-# Only a post-verification Release edit is used. Initial `published` fires
-# before remote asset integrity checks complete and must not prune CI.
-# The edited Snapshot is promoted with a scoped publisher App, not with
-# GITHUB_TOKEN, so this event can start an independent cleanup workflow.
+# Never subscribe to release.edited: each asset replacement can fan out
+# multiple events and redundant Actions jobs. The trusted publisher sends
+# one explicit repository_dispatch only AFTER verifying the full Snapshot.
+# No per-master-push workflow; manual dry-run and scoped PR tests remain.
 on:
-  release:
-    types: [edited]
+  repository_dispatch:
+    types: [xdrive_snapshot_published]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -48,15 +47,15 @@ jobs:
           node --check scripts/ci/prune-queued-master-ci.cjs
           node --test scripts/ci/prune-queued-master-ci.test.cjs
 
-  # Never run PR-supplied code with Actions write. Only release/manual events
-  # enter this guarded job, and checkout always selects trusted master.
+  # Never run PR-supplied code with Actions write. Only post-publish dispatches
+  # or explicit manual runs execute checkout from trusted master.
   prune-queued:
     permissions:
       contents: read
       actions: write
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'release' && github.event.release.tag_name == 'snapshot')
+      (github.event_name == 'repository_dispatch' && github.event.action == 'xdrive_snapshot_published')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -8,6 +8,7 @@ const page = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'Diag
 const alias = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
 assert.match(alias, /XDriveDiagnosticsPage as DesktopDiagnosticsPage/, 'Desktop must import exact shared diagnostics MUI')
 const app = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+const commonOutlet = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Desktop diagnostics defaults to a Chinese user summary and hides healthy technical checks', () => {
@@ -39,9 +40,11 @@ test('Desktop diagnostics defaults to a Chinese user summary and hides healthy t
     assert.ok(page.includes(token), `Desktop diagnostics presentation missing: ${token}`)
   }
 
-  assert.ok(app.includes("onOpenStorage={() => setView('local-storage')}"), 'disk-space warning must navigate to local storage')
-  assert.ok(app.includes('onOpenSettings={() => setSettingsOpen(true)}'), 'server configuration issues must open settings')
-  assert.ok(app.includes('onOpenUpdateSettings={() => {'), 'update notices must open update settings')
+  assert.ok(app.includes("onOpenStorage: () => setView('local-storage')"), 'disk-space warning must navigate to local storage')
+  assert.ok(app.includes('onOpenSettings: () => setSettingsOpen(true)'), 'server configuration issues must open settings')
+  assert.ok(app.includes('onOpenUpdateSettings: () => {'), 'update notices must open update settings')
+  assert.ok(app.includes('diagnosticsPage: {') && commonOutlet.includes('<XDriveDiagnosticsPage'),
+    'Desktop diagnostics must use common JSX and host-scoped Agent actions')
   assert.equal(page.includes('内部检查项：{check.name}'), false, 'technical details must not expose internal English check names')
   assert.equal(page.includes('技术信息：{check.detail}'), false, 'technical details must not expose raw English errors by default')
   assert.equal(page.includes('<XDriveMetricGrid>'), false, 'diagnostics must not lead with pass/warn/fail metric cards')
