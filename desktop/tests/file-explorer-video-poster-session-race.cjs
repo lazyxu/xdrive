@@ -114,8 +114,7 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
 
   const actionGenerationRef = { current: 1 }
   const loadThumbnail = compileCallback(filename, callback, {
-    ownerAgent: agentA,
-    hostPort: { requestViewport: (_signal, invoke) => invoke() },
+    hostPort: { media: agentA, requestViewport: (_signal, invoke) => invoke() },
     Blob: class Blob {},
     URL: {
       createObjectURL: () => 'blob:poster-' + (++objectURLCount),

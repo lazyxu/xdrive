@@ -180,7 +180,7 @@ test('Files Quick Look integrates exact Agent download with same original storag
   assert.match(desktopExplorer, /viewerDownloadReceipt=\{trashActive \? undefined : viewerDownloadReceipt\}/)
   assert.match(desktopExplorer, /const node = xDriveFileExplorerNodeForItem\(item, nodeByID\)/)
   assert.match(desktopExplorer, /return downloadNode\(node, clientRequestID\)/)
-  assert.match(desktopExplorer, /agent\.cloudDownload\(\s*node\.id, node\.name, clientRequestID/)
+  assert.match(desktopExplorer, /hostPort\.write\.cloudDownload\(\s*node\.id,\s*node\.name,\s*clientRequestID/)
   assert.match(desktopApp, /viewerDownloadReceipt: mediaGallerySource\.viewerDownloadReceipt/)
   assert.match(quickLook, /if \(action\.id === 'download'\)/)
   assert.match(quickLook, /if \(!isCurrentChromeOwner\(\)\) \{/)
