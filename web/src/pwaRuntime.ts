@@ -26,6 +26,11 @@ export function registerXDrivePwa(): void {
     }
   }
   // Do not compete with the first interactive Files/Gallery paint.
-  if (document.readyState === 'complete') register()
-  else window.addEventListener('load', register, { once: true })
+  try {
+    if (document.readyState === 'complete') register()
+    else window.addEventListener('load', register, { once: true })
+  } catch {
+    // Some restricted WebKit hosts deny document readiness getters or load
+    // listeners. Optional SW registration must never interrupt Web boot.
+  }
 }
