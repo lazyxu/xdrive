@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import type { MediaBaiduMapCoverage, MediaBaiduMapCoverageReasons } from '../models'
-import { xDriveBaiduMapCoverageState, xDriveValidBaiduMapCoverage, xDriveValidBaiduMapCoverageReasons, xDriveBaiduMapCoverageReasonTotalsMatch } from '../media-gallery-baidu-coverage'
+import {
+  xDriveBaiduMapCoverageState, xDriveValidBaiduMapCoverage,
+  xDriveValidBaiduMapCoverageReasons, xDriveBaiduMapCoverageReasonTotalsMatch,
+  xDriveBaiduMapHasLegacyConsentReasons,
+} from '../media-gallery-baidu-coverage'
 
 /** No automatic SDK requests, bulk consent, raw GPS or cross-account count cache. */
 export function XDriveMediaGalleryMapGPSCoverage({
@@ -11,7 +15,7 @@ export function XDriveMediaGalleryMapGPSCoverage({
   getReasons?: (signal: AbortSignal) => Promise<MediaBaiduMapCoverageReasons>
   ownerScope?: string
 }) {
-  type ReasonPhase = 'idle' | 'loading' | 'ready' | 'unavailable' | 'changed'
+  type ReasonPhase = 'idle' | 'loading' | 'ready' | 'unavailable' | 'changed' | 'legacy-server'
   type View = {
     owner:string
     phase:'idle'|'loading'|'ready'|'error'
@@ -66,13 +70,19 @@ export function XDriveMediaGalleryMapGPSCoverage({
         }))
         if (!needReasons || !getReasons) return
         try {
-          const reasons = xDriveValidBaiduMapCoverageReasons(await getReasons(controller.signal))
+          // Keep the raw response ONLY for recognizing a complete,
+          // count-matched legacy Server schema. Strict current eligibility
+          // validation must still reject every retired consent counter.
+          const rawReasons = await getReasons(controller.signal)
+          const reasons = xDriveValidBaiduMapCoverageReasons(rawReasons)
           // Two independent SQL snapshots can differ. Reject count drift;
           // matching counts alone do not establish identical member IDs.
           const sameTotals = xDriveBaiduMapCoverageReasonTotalsMatch(coverage, reasons)
+          const legacy = xDriveBaiduMapHasLegacyConsentReasons(coverage, rawReasons)
           apply(previous => ({
             ...previous, reasons:sameTotals ? reasons : null,
-            reasonPhase:!reasons ? 'unavailable' : sameTotals ? 'ready' : 'changed',
+            reasonPhase: legacy ? 'legacy-server' :
+              !reasons ? 'unavailable' : sameTotals ? 'ready' : 'changed',
           }))
         } catch {
           apply(previous => ({...previous,reasons:null,reasonPhase:'unavailable'}))
@@ -144,6 +154,12 @@ export function XDriveMediaGalleryMapGPSCoverage({
                 <Typography variant="caption">派生位置不可用：{current.reasons.derived_invalid_assets.toLocaleString('zh-CN')} 张</Typography>
               </Stack>
             </>
+          ) : current.reasonPhase === 'legacy-server' ? (
+            <Typography role="alert" variant="caption" color="text.secondary"
+              data-xdrive-map-legacy-server-warning>
+              服务端仍使用已废弃的逐照片地图授权统计，请同步更新 xDrive Server/Worker 与 Web/PWA。
+              新版会自动索引当前账户的有效 GPS 照片，无需逐张授权；转换完成后再查看 BD-09 可显示数量。
+            </Typography>
           ) : current.reasonPhase === 'changed' ? (
             <Typography role="status" variant="caption" color="text.secondary">
               查询期间照片或位置数据已变化，请重新核对；不会混合两个快照显示原因。

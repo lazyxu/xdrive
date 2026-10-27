@@ -16,7 +16,10 @@ const baiduMapIndexOwnerDemandReadTimeout = time.Second
 // selectBaiduPhotoMapIndexDemand only reads the OWNER's durable one-photo
 // intent rows. It has no Gallery media query, GPS, secret or network capability,
 // and never enumerates arbitrary PhotoAssets or all Owners.
-// Indexed probes prioritize expired-lease repair before queued work.
+// Indexed probes prioritize CURRENT zero-revision expired leases before
+// current queued work. Legacy nonzero-consent tasks belong to the existing
+// source-fenced automatic planner, not to this consumer: their old lease
+// cannot be claimed and must never starve valid current photo work.
 // The executor rechecks Owner, Node, WGS84 source and task lease; no extra
 // photo consent or operator/manual proof is required.
 func selectBaiduPhotoMapIndexDemand(
@@ -36,7 +39,7 @@ func selectBaiduPhotoMapIndexDemand(
 	var expiredID uint64
 	err := privateDB.Raw(
 		"SELECT asset_id FROM xd_baidu_photo_map_index_intents "+
-			"WHERE owner_id = ? AND status = ? AND attempts BETWEEN 1 AND ? "+
+			"WHERE owner_id = ? AND status = ? AND consent_revision = 0 AND attempts BETWEEN 1 AND ? "+
 			"AND lease_until <= clock_timestamp() "+
 			"ORDER BY asset_id LIMIT 1",
 		ownerID, baiduMapIndexLeased, baiduMapIndexMaxClaims,
@@ -56,11 +59,17 @@ func selectBaiduPhotoMapIndexDemand(
 	var readyID uint64
 	err = privateDB.Raw(
 		"SELECT asset_id FROM xd_baidu_photo_map_index_intents "+
-			"WHERE owner_id = ? AND status = ? AND attempts < ? "+
+			"WHERE owner_id = ? AND status = ? AND consent_revision = 0 AND attempts < ? "+
 			"AND (retry_after IS NULL OR retry_after <= clock_timestamp()) "+
 			"ORDER BY asset_id LIMIT 1",
 		ownerID, baiduMapIndexQueued, baiduMapIndexMaxClaims,
 	).Row().Scan(&readyID)
+	// An Owner with no ready work is normal. Returning an error would force a
+	// fleet-wide 30-second backoff instead of advancing to the next Owner.
+	// Real DB errors and timeouts still fail closed.
+	if errors.Is(err, sql.ErrNoRows) && readCtx.Err() == nil {
+		return 0, nil
+	}
 	if err != nil || readyID == 0 || readCtx.Err() != nil {
 		return 0, denied
 	}

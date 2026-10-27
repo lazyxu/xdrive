@@ -29,13 +29,12 @@ type baiduPhotoMapAutoPlan struct {
 // per-photo permission nor forwards WGS84 to Baidu. Both SDK Hosts already
 // consume the same Owner/source-fenced derived position predicate.
 //
-// A current derived point (regardless of legacy consent_revision) or an
-// active, cancelled (including historical grants), or not-yet-cooled failed job is excluded. An exhausted
-// provider attempt can recover after one day without a separate photo grant.
-// Completed jobs are reconsidered only when the current derivative is gone.
-// Outdated sources are reconsidered, but live queued/leased jobs are not
-// duplicated. Even a legacy nonzero-consent leased job stays excluded until
-// its PostgreSQL-clock lease expires. A cursor and hard limit bound scans.
+// Current derived points, actively queued/leased work, current-generation
+// cancelled tasks and failures still in cooldown are excluded. Legacy
+// nonzero-consent cancelled jobs are NOT a current photo-map opt-out: replan
+// their still-Owner-valid GPS without new consent. Active leases, source
+// revision checks, DB-clock retry and modern zero-revision cancellations
+// remain binding. A cursor and hard limit bound scans.
 func queryBaiduPhotoMapAutoCandidates(
 	ctx context.Context, db *gorm.DB, ownerID, afterAssetID uint64, limit int,
 ) ([]uint64, bool, error) {
@@ -73,14 +72,13 @@ func queryBaiduPhotoMapAutoCandidates(
 					i.updated_at + INTERVAL '24 hours' > clock_timestamp() OR
 					(i.retry_after IS NOT NULL AND i.retry_after > clock_timestamp())
 				)) OR
-				(i.status = ? AND i.consent_revision <> 0) OR
 				(i.status = ? AND i.consent_revision <> 0 AND (
 					i.updated_at + INTERVAL '24 hours' > clock_timestamp() OR
 					(i.retry_after IS NOT NULL AND i.retry_after > clock_timestamp())
 				)) OR
 				(i.status = ? AND i.lease_until > clock_timestamp())
 			)`, baiduMapIndexCompleted, baiduMapIndexFailed,
-			baiduMapIndexCancelled, baiduMapIndexFailed, baiduMapIndexLeased).
+			baiduMapIndexFailed, baiduMapIndexLeased).
 		Where("n.owner_id = ? AND n.type = ? AND n.revision > 0 AND xd_media_metadata.node_revision = n.revision",
 			ownerID, meta.NodeTypeFile).
 		Where("pa.kind IN ?", []string{

@@ -179,9 +179,11 @@ func enqueueBaiduPhotoMapIndexIntent(
 			return denied
 		}
 		if baiduMapIndexSameOwnerSourceGeneration(old, source) {
-			// A cancelled migration-era intent is not a revoked photo grant.
-			// Retain the Owner's explicit cancellation for the same original.
-			if old.Status == baiduMapIndexCancelled {
+			// Only a current zero-revision task cancellation persists. A
+			// cancelled consent-era generation is a retired authorization
+			// decision; it cannot block today's otherwise valid Owner GPS.
+			if old.Status == baiduMapIndexCancelled &&
+				old.ConsentRevision == source.consentRevision {
 				return denied
 			}
 			// Legacy consent revisions are not a cooldown bypass either.

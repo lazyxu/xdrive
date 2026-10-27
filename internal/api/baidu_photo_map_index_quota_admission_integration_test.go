@@ -295,9 +295,9 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		id != first.ID {
 		t.Fatalf("first explicit Owner job was not selected: %d %v", id, err)
 	}
-	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, other.ID); err == nil ||
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, other.ID); err != nil ||
 		id != 0 {
-		t.Fatal("Owner with no queued map job enumerated another Owner")
+		t.Fatalf("idle Owner should have no work, never another Owner's job: %d %v", id, err)
 	}
 	if err := executeOneBaiduPhotoMapIndexWithTrustedForward(context.Background(), db,
 		owner.ID, deny, serverAK, offlineForward); err == nil {

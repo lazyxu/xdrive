@@ -254,6 +254,11 @@ func TestBaiduPhotoMapAutoPlanOwnerGPSNoConsentPostgres(t *testing.T) {
 		Update("lease_until", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
+	// The expired old-consent lease cannot be claimed or starve the valid
+	// current queue. The planner below safely migrates it under source locks.
+	if claimable, err := selectBaiduPhotoMapIndexDemand(ctx, db, alice.ID); err != nil || claimable != absent.asset.ID {
+		t.Fatalf("expired legacy lease starved ready work: id=%d err=%v", claimable, err)
+	}
 	legacy, err := planBaiduPhotoMapOwnerBackfillBatch(ctx, db, alice.ID, 0, 32)
 	if err != nil || legacy.Queued != 1 {
 		t.Fatalf("expired consent-era lease stranded current Owner GPS: %+v %v", legacy, err)
@@ -395,24 +400,45 @@ func TestBaiduPhotoMapAutoPlanOwnerGPSNoConsentPostgres(t *testing.T) {
 		t.Fatal("cancelled Owner job was replayed")
 	}
 
-	// Historical consent-era cancelled intents must not be reactivated
-	// on upgrade solely because their consent_revision differs from zero.
-	// A genuine new GPS source generation may re-enter the map planner.
+	// Retired consent-era cancellations must be reclaimed for current
+	// Owner GPS; a new current-generation cancellation is still terminal.
 	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
 		Where("asset_id = ?", stale.asset.ID).UpdateColumns(map[string]any{
-		"status":           baiduMapIndexCancelled,
-		"consent_revision": uint64(7),
-		"updated_at":       failedNow.Add(-48 * time.Hour),
+		"status":              baiduMapIndexCancelled,
+		"consent_revision":    uint64(7),
+		"updated_at":          failedNow.Add(-48 * time.Hour),
+		"cancel_requested_at": failedNow.Add(-48 * time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	legacyCancelled, legacyMore, err := queryBaiduPhotoMapAutoCandidates(ctx, db, alice.ID, 0, 32)
-	if err != nil || legacyMore || len(legacyCancelled) != 0 {
-		t.Fatalf("migration-era cancellation was silently restored: %v %t %v", legacyCancelled, legacyMore, err)
+	if err != nil || legacyMore || len(legacyCancelled) != 1 ||
+		legacyCancelled[0] != stale.asset.ID {
+		t.Fatalf("retired photo consent still hid Owner GPS: %v %t %v",
+			legacyCancelled, legacyMore, err)
 	}
-	if err := enqueueBaiduPhotoMapIndexIntent(ctx, db, alice.ID, stale.asset.ID, 0); err == nil {
-		t.Fatal("legacy cancellation could be replayed with zero consent revision")
+	migratedCancelled, err := planBaiduPhotoMapOwnerBackfillBatch(ctx, db, alice.ID, 0, 32)
+	if err != nil || migratedCancelled.Queued != 1 {
+		t.Fatalf("consent-era cancelled photo did not requeue: %+v %v", migratedCancelled, err)
 	}
+	var migratedCancelRow meta.BaiduPhotoMapIndexIntent
+	if err := db.Where("asset_id = ?", stale.asset.ID).
+		Take(&migratedCancelRow).Error; err != nil ||
+		migratedCancelRow.Status != baiduMapIndexQueued ||
+		migratedCancelRow.ConsentRevision != 0 ||
+		migratedCancelRow.Attempts != 0 || migratedCancelRow.LeaseToken != "" ||
+		migratedCancelRow.LeaseUntil != nil || migratedCancelRow.CancelRequestedAt != nil {
+		t.Fatalf("legacy cancelled task reset incorrectly: %+v %v", migratedCancelRow, err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
+		Where("asset_id = ?", stale.asset.ID).
+		Update("status", baiduMapIndexCancelled).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ids, more, err := queryBaiduPhotoMapAutoCandidates(ctx, db, alice.ID, 0, 32); err != nil || more || len(ids) != 0 {
+		t.Fatalf("current Owner cancellation must remain terminal: %v %t %v", ids, more, err)
+	}
+
 	// A legacy failed intent respects the same 24h global cooldown.
 	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
 		Where("asset_id = ?", stale.asset.ID).UpdateColumns(map[string]any{
@@ -458,6 +484,50 @@ func TestBaiduPhotoMapAutoPlanOwnerGPSNoConsentPostgres(t *testing.T) {
 	changedSource, err := planBaiduPhotoMapOwnerBackfillBatch(ctx, db, alice.ID, 0, 32)
 	if err != nil || changedSource.Queued != 1 {
 		t.Fatalf("new GPS generation remained permanently cancelled: %+v %v", changedSource, err)
+	}
+
+	// Old consent-era QUEUED work is not claimable in the consumer:
+	// first rewrite its revision using the same automatic Owner planner.
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
+		Where("asset_id = ?", foreign.asset.ID).
+		Update("consent_revision", uint64(19)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if claimable, err := selectBaiduPhotoMapIndexDemand(ctx, db, bob.ID); err != nil || claimable != 0 {
+		t.Fatalf("legacy queued row entered current consumer: id=%d err=%v", claimable, err)
+	}
+	migratedQueued, err := planBaiduPhotoMapOwnerBackfillBatch(ctx, db, bob.ID, 0, 32)
+	if err != nil || migratedQueued.Queued != 1 {
+		t.Fatalf("legacy queue was not migrated by Owner planner: %+v %v", migratedQueued, err)
+	}
+	var migratedQueuedRow meta.BaiduPhotoMapIndexIntent
+	if err := db.Where("asset_id = ? AND owner_id = ?", foreign.asset.ID, bob.ID).
+		Take(&migratedQueuedRow).Error; err != nil ||
+		migratedQueuedRow.Status != baiduMapIndexQueued ||
+		migratedQueuedRow.ConsentRevision != 0 || migratedQueuedRow.Attempts != 0 {
+		t.Fatalf("legacy queue migration changed current Owner state: %+v %v", migratedQueuedRow, err)
+	}
+
+	// An active Owner without queued work should not produce a global
+	// consumer failure/backoff or dispatch any other Owner's photo.
+	idle := meta.User{Username: "map-auto-idle", PasswordHash: "fixture",
+		Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&idle).Error; err != nil {
+		t.Fatal(err)
+	}
+	if found, err := selectBaiduPhotoMapIndexDemand(ctx, db, idle.ID); err != nil || found != 0 {
+		t.Fatalf("idle Owner treated as Provider failure: id=%d err=%v", found, err)
+	}
+	consumeCursor = bob.ID
+	idleDispatch := false
+	err = server.consumeBaiduPhotoMapAutoOwnersOnceWithExecutor(
+		ctx, &consumeCursor, func(context.Context, uint64, uint64) error {
+			idleDispatch = true
+			return nil
+		})
+	if err != nil || idleDispatch || consumeCursor != idle.ID {
+		t.Fatalf("idle Owner stalled cursor=%d dispatched=%t err=%v",
+			consumeCursor, idleDispatch, err)
 	}
 
 	// A broken durable queue is not an empty Owner. Fail with a private,

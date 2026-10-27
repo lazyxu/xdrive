@@ -14,6 +14,7 @@ const module_={exports:{}}
 new Function('module','exports',compiled.outputText)(module_,module_.exports)
 const validate=module_.exports.xDriveValidBaiduMapCoverageReasons
 const sameTotals=module_.exports.xDriveBaiduMapCoverageReasonTotalsMatch
+const legacyGate=module_.exports.xDriveBaiduMapHasLegacyConsentReasons
 const good={scope:'indexed_ready_photoassets',valid_gps_assets:9,
   eligible_bd09_assets:2,not_eligible_bd09_assets:7,
   consent_unavailable_assets:0,consent_source_changed_assets:0,
@@ -45,6 +46,28 @@ test('two Owner-only snapshots must have matching validated total counts',()=>{
   assert.equal(sameTotals(coverage,{...good,derived_invalid_assets:2}),false)
   assert.equal(sameTotals(null,good),false)
 })
+
+test('retired photo-map consent responses identify old Server without accepting the data',()=>{
+  const coverage={scope:'indexed_ready_photoassets',valid_gps_assets:9,
+    eligible_bd09_assets:2,not_eligible_bd09_assets:7,
+    source_outside_camera_latitude_assets:0,map_runtime_verified:false}
+  const old={...good,consent_unavailable_assets:6,derived_missing_assets:0}
+  assert.equal(validate(old),null,'legacy counts are never current eligibility')
+  assert.equal(sameTotals(coverage,old),false)
+  assert.equal(legacyGate(coverage,old),true)
+  assert.equal(legacyGate(coverage,good),false)
+  for(const untrusted of [
+    {...old,owner_id:3},{...old,source_latitude:35},
+    {...old,derived_missing_assets:2},{...old,consent_unavailable_assets:-1},
+    {...old,consent_unavailable_assets:0},
+    {...old,valid_gps_assets:10},{...old,eligible_bd09_assets:4},
+    {...old,not_eligible_bd09_assets:8},{...old,map_runtime_verified:true},
+    {...old,consent_source_changed_assets:undefined},
+  ]) assert.equal(legacyGate(coverage,untrusted),false)
+  assert.equal(legacyGate({...coverage,eligible_bd09_assets:3,
+    not_eligible_bd09_assets:6},old),false)
+  assert.equal(legacyGate(null,old),false)
+})
 test('Web/Mobile/Agent/Electron carry the optional cancelable Owner-only breakdown',()=>{
   const required=[
     ['web/src/api.ts','/api/v1/media/places/baidu-jsapi/coverage-reasons'],
@@ -70,7 +93,18 @@ test('Web/Mobile/Agent/Electron carry the optional cancelable Owner-only breakdo
   assert.match(ui,/coverage.not_eligible_bd09_assets > 0/)
   assert.match(ui,/if \(!needReasons \|\| !getReasons\) return/)
   assert.match(ui,/xDriveBaiduMapCoverageReasonTotalsMatch\(coverage, reasons\)/)
-  assert.match(ui,/reasonPhase:!reasons \? 'unavailable' : sameTotals \? 'ready' : 'changed'/)
+  assert.match(ui,/reasonPhase: legacy \? 'legacy-server'/)
+  assert.match(ui,/sameTotals \? 'ready' : 'changed'/)
+  // The legacy detector must receive the RAW data, before the current
+  // strict validator turns obsolete nonzero consent counts into null.
+  assert.match(ui,/const rawReasons = await getReasons\(controller\.signal\)/)
+  assert.match(ui,/const reasons = xDriveValidBaiduMapCoverageReasons\(rawReasons\)/)
+  assert.match(ui,/xDriveBaiduMapHasLegacyConsentReasons\(coverage, rawReasons\)/)
+  assert.doesNotMatch(ui,/xDriveBaiduMapHasLegacyConsentReasons\(coverage, reasons\)/)
+  assert.ok(ui.indexOf('const rawReasons = await getReasons(controller.signal)') <
+    ui.indexOf('const reasons = xDriveValidBaiduMapCoverageReasons(rawReasons)'))
+  assert.match(ui,/data-xdrive-map-legacy-server-warning/)
+  assert.match(ui,/服务端仍使用已废弃的逐照片地图授权统计/)
   assert.match(ui,/不代表这些分类都是 0 张/)
   assert.doesNotMatch(ui,/授权未生效或已撤销|授权来源已改变/)
   assert.doesNotMatch(ui,/不会自动向百度发送这些坐标/)
