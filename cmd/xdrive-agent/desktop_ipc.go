@@ -3504,8 +3504,9 @@ func (h *desktopIPCHandler) cloudFilePreviewTicket(w http.ResponseWriter, r *htt
 
 func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		ID          uint64 `json:"id"`
-		Destination string `json:"destination"`
+		ID              uint64 `json:"id"`
+		Destination     string `json:"destination"`
+		ClientRequestID string `json:"client_request_id,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -3515,7 +3516,25 @@ func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_download", "id and destination are required")
 		return
 	}
-	if err := h.ctrl.CloudDownload(r.Context(), input.ID, input.Destination); err != nil {
+	if input.ClientRequestID != "" {
+		// Missing/invalid opt-in capability must fail closed. A legacy Desktop
+		// request without client_request_id behaves exactly as before.
+		if !validAgentCloudDownloadClientRequestID(input.ClientRequestID) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_client_request_id", "invalid download correlation identifier")
+			return
+		}
+		owner, ok := h.ctrl.(interface {
+			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "download_correlation_unsupported", "Agent does not support download correlation")
+			return
+		}
+		if err := owner.CloudDownloadWithClientRequestID(r.Context(), input.ID, input.Destination, input.ClientRequestID); err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+	} else if err := h.ctrl.CloudDownload(r.Context(), input.ID, input.Destination); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

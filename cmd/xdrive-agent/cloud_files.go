@@ -122,9 +122,11 @@ type agentMediaThumbnail struct {
 	Data        []byte
 }
 
+// agentCloudTransferLocation carries an optional local Viewer correlation only.
 type agentCloudTransferLocation struct {
-	ParentID uint64
-	NodeID   uint64
+	ParentID        uint64
+	NodeID          uint64
+	ClientRequestID string
 }
 
 func startAgentCloudTransfer(
@@ -146,6 +148,7 @@ func startAgentCloudTransfer(
 	if len(locations) > 0 {
 		spec.CloudParentID = locations[0].ParentID
 		spec.CloudNodeID = locations[0].NodeID
+		spec.ClientRequestID = locations[0].ClientRequestID
 		// Only this Agent knows the real local path for this direct transfer.
 	}
 	handle := manager.Start(spec)
@@ -1252,7 +1255,35 @@ func (c *agentController) CloudFilePreviewTicket(
 	return cli.FilePreviewTicket(ctx, id)
 }
 
+// A correlation is only a bounded random id, never an authorization token,
+// user filename, Server ID or locally stored destination. Caller uses
+// crypto.getRandomValues (128 random bits; lowercase hex).
+func validAgentCloudDownloadClientRequestID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, letter := range value {
+		if !(letter >= '0' && letter <= '9' || letter >= 'a' && letter <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *agentController) CloudDownload(ctx context.Context, id uint64, destination string) error {
+	return c.CloudDownloadWithClientRequestID(ctx, id, destination, "")
+}
+
+// An optional caller-generated nonce is attached to the exact transfer at
+// Manager.Start, BEFORE any potentially blocking network/download activity.
+// The existing long-running POST response and atomic destination commit remain
+// unchanged; the Viewer observes transfer events rather than guessing names.
+func (c *agentController) CloudDownloadWithClientRequestID(
+	ctx context.Context, id uint64, destination, clientRequestID string,
+) error {
+	if clientRequestID != "" && !validAgentCloudDownloadClientRequestID(clientRequestID) {
+		return fmt.Errorf("invalid Desktop download correlation identifier")
+	}
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return err
@@ -1275,7 +1306,7 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		filepath.Base(destination),
 		destination,
 		0,
-		agentCloudTransferLocation{NodeID: id},
+		agentCloudTransferLocation{NodeID: id, ClientRequestID: clientRequestID},
 	)
 	downloadCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
