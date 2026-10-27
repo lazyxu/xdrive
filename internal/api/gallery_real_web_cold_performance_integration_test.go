@@ -214,9 +214,18 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			t.Fatalf("authentic Mobile chronological first-page mismatch: total=%d offset=%d items=%d",
 				earliest.TotalCount, earliest.Offset, len(earliest.Items))
 		}
-		headImages, headVideos, headLive := galleryFirstVisibleSeedObjects(
-			t, db, countingStore, earliest.Items,
-		)
+		var headImages, headVideos []uint64
+		var headLive int
+		if physicalViewportMode {
+			// P1P must not overwrite any of the already verified, SHA-distinct
+			// 115k physical originals merely to prime the chronological head.
+			// This reuses the same read-only identity selection as the tail.
+			headImages, headVideos, headLive = galleryPhysicalMixedViewportIDs(t, earliest.Items)
+		} else {
+			headImages, headVideos, headLive = galleryFirstVisibleSeedObjects(
+				t, db, countingStore, earliest.Items,
+			)
+		}
 		images = append(images, headImages...)
 		videos = append(videos, headVideos...)
 		liveCount += headLive

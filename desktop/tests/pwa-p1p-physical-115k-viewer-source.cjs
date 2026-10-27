@@ -32,6 +32,8 @@ test('P1P runs genuine authenticated 390px routed Gallery/Viewer/Back on all 115
 test('P1P preserves original physical CAS/Live pairs and keeps old signed Range/160ms test independent', () => {
   for (const marker of [
     'gallerySeedRealPhysicalMixed100K(', 'galleryPhysicalMixedViewportIDs(',
+    'headImages, headVideos, headLive = galleryPhysicalMixedViewportIDs(t, earliest.Items)',
+    'headImages, headVideos, headLive = galleryFirstVisibleSeedObjects(',
     'physicalReport.LiveMotions != mediaGalleryFirstOpenLivePhotos',
     'P1P_LIVE_PHYSICAL_CAS_READY',
     'XD_PWA_P1_PHYSICAL_115K_VIEWER',
