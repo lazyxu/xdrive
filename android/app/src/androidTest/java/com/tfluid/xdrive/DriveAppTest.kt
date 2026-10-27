@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -422,24 +426,32 @@ class DriveAppTest {
         onDownload: ((DriveNode) -> Unit)? = null,
         onUpload: (() -> Unit)? = null,
     ) {
-        compose.setContent { XDriveTheme {
-            DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
-        } }
+        // Observe the real Android IME inset instead of assuming that Done
+        // has finished hiding the keyboard when its Compose callback returns.
+        val imeBottomPx = AtomicInteger(-1)
+        compose.setContent {
+            val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+            SideEffect { imeBottomPx.set(imeBottom) }
+            XDriveTheme {
+                DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+            }
+        }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()
-        // Compose can complete the Done callback before Android's IME inset
-        // actually settles. Keep a real visible/enabled submit assertion; let
-        // the bounded fixture wait re-scroll only while the inset is changing.
-        // Never click an offscreen control or suppress a genuine layout failure.
+        // The visible Compose node can still sit under an animating IME.
+        // Keep the original 10s bound, actual scroll, enabled assertion
+        // and one genuine click; never invoke a semantic callback directly.
         compose.waitUntil(timeoutMillis = 10_000) {
             val submit = compose.onNodeWithTag("auth-submit")
-            runCatching { submit.performScrollTo() }.isSuccess &&
+            imeBottomPx.get() == 0 &&
+                runCatching { submit.performScrollTo() }.isSuccess &&
                 runCatching { submit.assertIsDisplayed() }.isSuccess
         }
-        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.onNodeWithTag("auth-submit")
+            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {
                 controller.state.value.screen == Screen.FILES && controller.state.value.loaded
@@ -452,7 +464,8 @@ class DriveAppTest {
                 "Fixture login did not reach loaded Files: " +
                     "screen=${current.screen}, loading=${current.loading}, " +
                     "loaded=${current.loaded}, itemCount=${current.items.size}, " +
-                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}",
+                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}, " +
+                    "errorPresent=${current.error != null}, imeBottomPx=${imeBottomPx.get()}",
                 failure,
             )
         }
