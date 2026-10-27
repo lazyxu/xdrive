@@ -1,0 +1,8 @@
+# Android Gallery Collections · real Owner API baseline
+
+Source: `web/src/api.ts` and Go `internal/api/media.go`, not a second photo database.
+
+- Read-only native album discovery uses `GET /api/v1/media/albums`, the current owner Bearer/route-pinned OkHttp client and a 2 MiB bounded JSON parser. The returned list contains true imported/manual/smart/folder PhotoCollection identities; an unavailable endpoint or malformed/duplicate list is an error, not a fabricated empty collection.
+- Album media comes exclusively from `GET /api/v1/media/albums/{albumID}/items?range=true&limit=60&offset=...&sort_by=captured&sort_dir=asc&unknown_first=true&fold_duplicates=true`. A verified optional `initial_position=latest` uses the Server's sparse absolute range. The opaque ID is appended as **one encoded URL segment** (never interpolated into a path), with accepted canonical kinds and strict Owner checks. Parsing and timeline validation are the same as Gallery.
+- The first increment adds `GalleryAlbum`, `galleryAlbums`, `galleryAlbumPage` and MockWebServer checks. It intentionally does not expose a fake Collections tab, duplicate photo index/cache, background downloads or write actions. A future Compose/Controller change must implement real album list, selection/open and return anchors with Owner cancellation; PWA's additional Memories/People/Pets/Places require their own actual endpoint adapters.
+- The Android/iOS PWA screenshot parity and production physical-device validation are **按用户决定跳过（未验收）**, not green. Source-level Android unit tests, lint, compile and CI/Final Gate remain required before merge. Keep separate Android Viewer/Transfer/Gallery-dock PRs intact.

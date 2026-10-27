@@ -262,6 +262,83 @@ class XDriveApiTest {
 
 
 
+    @Test fun `Gallery album listing uses true Owner PhotoCollections and rejects corrupted rows`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""[
+                {"id":"manual:11111111-1111-4111-8111-111111111111","kind":"manual",
+                 "name":"旅途","revision":3,"album_folder_id":0,
+                 "item_count":42,"cover_node_id":17},
+                {"id":"source:device:album 1","kind":"imported",
+                 "name":"设备相册","revision":1,"album_folder_id":0,
+                 "item_count":0}
+            ]"""))
+            val albums = api.galleryAlbums("owner-secret")
+            assertEquals(2, albums.size)
+            assertEquals("旅途", albums.first().name)
+            assertEquals(42L, albums.first().itemCount)
+            assertEquals(17L, albums.first().coverNodeId)
+            assertEquals("source:device:album 1", albums.last().id)
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertEquals("/api/v1/media/albums", request.path)
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertFalse(request.path!!.contains("owner-secret"))
+
+            // Fail closed: never blend duplicate, malformed or cross-identity
+            // album rows into the current Owner's Collections presentation.
+            for (bad in listOf(
+                """[{"id":"manual:x","kind":"manual","name":"Good",
+                    "revision":1,"album_folder_id":0,"item_count":1},
+                   {"id":"manual:x","kind":"manual","name":"Other",
+                    "revision":2,"album_folder_id":0,"item_count":2}]""",
+                """[{"id":"../../nodes","kind":"manual","name":"Bad",
+                    "revision":1,"album_folder_id":0,"item_count":1}]""",
+                """[{"id":"manual:x","kind":"manual","name":"Bad",
+                    "revision":1,"album_folder_id":0,"item_count":-1}]""",
+            )) {
+                server.enqueue(MockResponse().setBody(bad))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.galleryAlbums("owner-secret") }.reason)
+            }
+            assertEquals(4, server.requestCount)
+        } }
+    }
+
+    @Test fun `Gallery album range retains opaque ID in one path segment and real Owner sparse offsets`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":87,"parent_id":1,"name":"album.jpg","type":"file",
+                    "size":128,"revision":6},"metadata":{"media_kind":"image",
+                    "has_thumbnail":true}}],
+                "total_count":121,"offset":120,"limit":60
+            }"""))
+            val page = api.galleryAlbumPage("owner-secret",
+                "source:device:2026/holiday", initialLatest = true)
+            assertEquals(121L, page.totalCount)
+            assertEquals(120, page.offset)
+            assertEquals(87L, page.items.single().node.id)
+            val request = server.takeRequest()
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertTrue(request.requestUrl!!.encodedPath.contains(
+                "/media/albums/source:device:2026%2Fholiday/items"))
+            assertEquals("true", request.requestUrl!!.queryParameter("range"))
+            assertEquals("latest", request.requestUrl!!.queryParameter("initial_position"))
+            assertEquals("true", request.requestUrl!!.queryParameter("fold_duplicates"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "items":[],"total_count":121,"offset":10,"limit":60
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryAlbumPage("owner-secret", "manual:x", offset = 60)
+            }.reason)
+            try {
+                api.galleryAlbumPage("owner-secret", "other:x")
+                fail("Accepted unsupported album identity")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     @Test fun `Gallery Owner Range starts at real chronological tail and preserves absolute offset`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody("""{
