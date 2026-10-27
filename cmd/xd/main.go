@@ -47,7 +47,11 @@ func main() {
 	case "doctor":
 		err = doctorCmd(os.Args[2:])
 	case "backup":
-		err = backupCmd(os.Args[2:])
+		if len(os.Args) > 2 && os.Args[2] == "synology-ui" {
+			err = backupSynologyUICmd(os.Args[3:])
+		} else {
+			err = backupCmd(os.Args[2:])
+		}
 	default:
 		usage()
 		os.Exit(2)
@@ -73,6 +77,7 @@ Usage:
   xd update --status
   xd doctor [--strict]
   xd backup init|bind|drafts|list|once|auto|schedule|status|history|pause|cancel|agent [options]
+  xd backup synology-ui authorize --dsm-user USER   (DSM local package account only)
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.

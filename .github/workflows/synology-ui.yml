@@ -1,0 +1,239 @@
+name: Synology DSM authenticated local UI
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'cmd/xd/backup_synology_ui.go'
+      - 'internal/synologyui/**'
+      - 'internal/localbackupipc/remote_backup.go'
+      - 'internal/localbackupipc/owner_quota.go'
+      - 'internal/localbackupipc/owner_files.go'
+      - 'internal/localbackupipc/owner_files_test.go'
+      - 'internal/localbackupipc/owner_text_preview.go'
+      - 'internal/localbackupipc/owner_text_preview_test.go'
+      - 'internal/client/owner_media_range.go'
+      - 'internal/client/owner_media_range_test.go'
+      - 'internal/localbackupipc/owner_media_range.go'
+      - 'internal/localbackupipc/owner_media_range_test.go'
+      - 'internal/synologyui/owner_media_range_test.go'
+      - 'cmd/xdrive-agent/cloud_owner_media_range.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_media_range.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_media_range_test.go'
+      - 'ui/shared/src/synology-media-preview.ts'
+      - 'web/scripts/test-synology-media-preview.mjs'
+      - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
+      - 'ui/shared/src/mui/FilePreviewSurface.tsx'
+      - 'ui/shared/src/synology-owner-files-scope.ts'
+      - 'web/scripts/test-synology-owner-files.mjs'
+      - 'internal/localbackupipc/owner_quota_test.go'
+      - 'cmd/xdrive-agent/desktop_ipc.go'
+      - 'cmd/xdrive-agent/desktop_ipc_runtime_mode.go'
+      - 'cmd/xdrive-agent/desktop_ipc_runtime_mode_test.go'
+      - 'internal/client/client.go'
+      - 'ui/shared/src/mui/CloudStoragePage.tsx'
+      - 'web/scripts/test-synology-owner-quota.mjs'
+      - 'internal/localbackupipc/remote_backup_test.go'
+      - 'web/scripts/test-synology-owner-read.mjs'
+      - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
+      - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
+      - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
+      - 'ui/shared/src/mui/DeviceBackupPage.tsx'
+      - 'ui/shared/src/mui/DeviceBackupDeviceCard.tsx'
+      - 'ui/shared/src/mui/DeviceBackupHistoryList.tsx'
+      - 'ui/shared/src/mui/SettingsDialog.tsx'
+      - 'ui/shared/src/mui/LocalStoragePage.tsx'
+      - 'ui/shared/src/mui/HomePage.tsx'
+      - 'ui/shared/src/mui/SynologyHomeOverview.tsx'
+      - 'ui/shared/src/mui/MetricCards.tsx'
+      - 'desktop/tests/shared-workspace-compact-navigation.cjs'
+      - 'ui/shared/src/mui/TaskCenterPage.tsx'
+      - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/synology-task-status.ts'
+      - 'web/scripts/test-synology-batch-validation.mjs'
+      - 'ui/shared/src/synology-browser-storage.ts'
+      - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/mui/DiagnosticsPage.tsx'
+      - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
+      - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
+      - 'desktop/src/renderer/App.tsx'
+      - 'ui/shared/src/mui/WorkspaceShell.tsx'
+      - 'ui/shared/src/mui/WorkspaceSidebar.tsx'
+      - 'ui/shared/src/mui/WorkspaceNavigation.tsx'
+      - 'ui/shared/src/mui/WorkspaceContent.tsx'
+      - 'ui/shared/src/mui/WorkspaceCompactNavigation.tsx'
+      - 'ui/shared/src/mui/SidebarNav.tsx'
+      - 'ui/shared/src/synology-backup-adapter.ts'
+      - 'web/scripts/test-synology-request-cancel.mjs'
+      - 'ui/shared/src/mui/index.tsx'
+      - 'web/synology.html'
+      - 'web/src/synology.tsx'
+      - 'web/vite.synology.config.ts'
+      - 'web/scripts/verify-synology-ui.mjs'
+      - 'web/scripts/check-synology-desktop-backup-parity.mjs'
+      - 'web/package.json'
+      - 'web/tsconfig.node.json'
+      - 'scripts/build-synology-spk.sh'
+      - 'scripts/synology-spk-icons.go'
+      - 'scripts/ci/test-synology-spk-ui.py'
+      - 'packaging/synology/ui/**'
+      - '.github/workflows/synology-ui.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'cmd/xd/backup_synology_ui.go'
+      - 'internal/synologyui/**'
+      - 'internal/localbackupipc/remote_backup.go'
+      - 'internal/localbackupipc/owner_quota.go'
+      - 'internal/localbackupipc/owner_files.go'
+      - 'internal/localbackupipc/owner_files_test.go'
+      - 'internal/localbackupipc/owner_text_preview.go'
+      - 'internal/localbackupipc/owner_text_preview_test.go'
+      - 'internal/client/owner_media_range.go'
+      - 'internal/client/owner_media_range_test.go'
+      - 'internal/localbackupipc/owner_media_range.go'
+      - 'internal/localbackupipc/owner_media_range_test.go'
+      - 'internal/synologyui/owner_media_range_test.go'
+      - 'cmd/xdrive-agent/cloud_owner_media_range.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_media_range.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_media_range_test.go'
+      - 'ui/shared/src/synology-media-preview.ts'
+      - 'web/scripts/test-synology-media-preview.mjs'
+      - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
+      - 'ui/shared/src/mui/FilePreviewSurface.tsx'
+      - 'ui/shared/src/synology-owner-files-scope.ts'
+      - 'web/scripts/test-synology-owner-files.mjs'
+      - 'internal/localbackupipc/owner_quota_test.go'
+      - 'cmd/xdrive-agent/desktop_ipc.go'
+      - 'cmd/xdrive-agent/desktop_ipc_runtime_mode.go'
+      - 'cmd/xdrive-agent/desktop_ipc_runtime_mode_test.go'
+      - 'internal/client/client.go'
+      - 'ui/shared/src/mui/CloudStoragePage.tsx'
+      - 'web/scripts/test-synology-owner-quota.mjs'
+      - 'internal/localbackupipc/remote_backup_test.go'
+      - 'web/scripts/test-synology-owner-read.mjs'
+      - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
+      - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
+      - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
+      - 'ui/shared/src/mui/DeviceBackupPage.tsx'
+      - 'ui/shared/src/mui/DeviceBackupDeviceCard.tsx'
+      - 'ui/shared/src/mui/DeviceBackupHistoryList.tsx'
+      - 'ui/shared/src/mui/SettingsDialog.tsx'
+      - 'ui/shared/src/mui/LocalStoragePage.tsx'
+      - 'ui/shared/src/mui/HomePage.tsx'
+      - 'ui/shared/src/mui/SynologyHomeOverview.tsx'
+      - 'ui/shared/src/mui/MetricCards.tsx'
+      - 'desktop/tests/shared-workspace-compact-navigation.cjs'
+      - 'ui/shared/src/mui/TaskCenterPage.tsx'
+      - 'ui/shared/src/mui/SynologyLocalTaskSection.tsx'
+      - 'ui/shared/src/synology-task-status.ts'
+      - 'web/scripts/test-synology-batch-validation.mjs'
+      - 'ui/shared/src/synology-browser-storage.ts'
+      - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/mui/DiagnosticsPage.tsx'
+      - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
+      - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
+      - 'desktop/src/renderer/App.tsx'
+      - 'ui/shared/src/mui/WorkspaceShell.tsx'
+      - 'ui/shared/src/mui/WorkspaceSidebar.tsx'
+      - 'ui/shared/src/mui/WorkspaceNavigation.tsx'
+      - 'ui/shared/src/mui/WorkspaceContent.tsx'
+      - 'ui/shared/src/mui/WorkspaceCompactNavigation.tsx'
+      - 'ui/shared/src/mui/SidebarNav.tsx'
+      - 'ui/shared/src/synology-backup-adapter.ts'
+      - 'web/scripts/test-synology-request-cancel.mjs'
+      - 'web/synology.html'
+      - 'web/src/synology.tsx'
+      - 'web/vite.synology.config.ts'
+      - 'web/scripts/verify-synology-ui.mjs'
+      - 'web/scripts/check-synology-desktop-backup-parity.mjs'
+      - 'scripts/build-synology-spk.sh'
+      - 'scripts/synology-spk-icons.go'
+      - 'scripts/ci/test-synology-spk-ui.py'
+      - 'packaging/synology/ui/**'
+      - '.github/workflows/synology-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Each push to this PR must replace old Owner/DSM UI CI, not queue another
+# expensive run. Independent manual invocations remain separate.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  isolated-dsm-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Native DSM session, owner ACL and CSRF negative contracts
+        run: |
+          test -z "$(gofmt -l internal/synologyui cmd/xd/backup_synology_ui.go)"
+          go test -count=1 ./internal/synologyui
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange)'
+          go test -count=1 ./internal/client -run 'TestDownloadVerifiedRange'
+          go test -count=1 ./cmd/xdrive-agent -run 'TestBackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange)'
+          go test -count=1 ./cmd/xd -run 'TestBackup'
+      - name: Check Desktop and DSM shared backup presentation contracts
+        run: node web/scripts/check-synology-desktop-backup-parity.mjs
+      - name: Build isolated DSM-only shared MUI page
+        run: |
+          npm ci --prefix web
+          node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-batch-validation.mjs
+          node web/scripts/test-synology-request-cancel.mjs
+          node web/scripts/test-synology-owner-read.mjs
+          node web/scripts/test-synology-owner-quota.mjs
+          node web/scripts/test-synology-owner-files.mjs
+          node web/scripts/test-synology-media-preview.mjs
+          npm run build:synology --prefix web
+      - name: Verify static artifacts remain relative to DSM launcher
+        run: |
+          test -s web/dist-synology/synology.html
+          test -s web/dist-synology/.vite/manifest.json
+          node web/scripts/verify-synology-ui.mjs
+      - name: Package CLI-only and optional shared-MUI ARMv7 SPKs separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/build-synology-spk.sh  # Preserve original executable file mode in SPK release tooling.
+          sh -n packaging/synology/ui/backup.cgi
+          export XDRIVE_BUILD_VERSION=0.1.0+synology-dev
+          bash scripts/build-synology-spk.sh 0.1.0-1 release/synology-cli
+          python3 scripts/ci/test-synology-spk.py \
+            release/synology-cli/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-ui release/synology-cli/core web/dist-synology
+          python3 scripts/ci/test-synology-spk-ui.py \
+            release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1 web/dist-synology
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-repeat release/synology-cli/core web/dist-synology
+          cmp release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-repeat/xdrivenas-armada38x-0.1.0-1.spk
+      - name: Retain source-exact optional DSM MUI candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrivenas-mui-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            release/synology-ui/*.spk
+            release/synology-ui/*.sha256
+          if-no-files-found: error
+          retention-days: 7

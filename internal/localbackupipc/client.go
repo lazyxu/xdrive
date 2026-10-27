@@ -153,6 +153,17 @@ func hasCapability(capabilities []string, want string) bool {
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body any, target any) error {
+	return c.requestWithLimit(ctx, method, path, body, target, maxReplyBytes)
+}
+
+// A larger, explicitly bounded reply is reserved for the existing Server
+// text-preview endpoint; ordinary Agent IPC replies retain the 1 MiB limit.
+func (c *Client) requestWithLimit(
+	ctx context.Context, method, path string, body any, target any, maxBytes int64,
+) error {
+	if maxBytes < 1 || maxBytes > 8<<20 {
+		return errors.New("invalid Agent reply limit")
+	}
 	if c == nil || ctx == nil || ctx.Err() != nil || c.http == nil {
 		return errors.New("local Agent request unavailable")
 	}
@@ -186,7 +197,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, tar
 	if target == nil {
 		return nil
 	}
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxReplyBytes+1))
+	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxBytes+1))
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("invalid Agent reply: %w", err)
 	}

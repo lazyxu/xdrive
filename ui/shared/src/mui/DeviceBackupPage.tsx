@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Accordion, AccordionDetails, AccordionSummary, Box, Button,
-  Divider, LinearProgress, Stack, Typography,
+  Box, Button,
+  LinearProgress, Stack, Typography,
 } from '@mui/material'
-import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
@@ -20,6 +18,12 @@ import { XDriveDeviceBackupLocalPreviewDialog } from './DeviceBackupLocalPreview
 import { XDriveDeviceBackupLocalSnapshotDialog } from './DeviceBackupLocalSnapshotDialog'
 import { XDriveDeviceBackupLocalFirstFileDialog } from './DeviceBackupLocalFirstFileDialog'
 import { XDriveDeviceBackupLocalCommonBatchDialog } from './DeviceBackupLocalCommonBatchDialog'
+import { XDriveDeviceBackupFolderAccordion } from './DeviceBackupFolderAccordion'
+import { XDriveDeviceBackupLocalPrimaryActions } from './DeviceBackupLocalPrimaryActions'
+import { XDriveDeviceBackupDeviceCard } from './DeviceBackupDeviceCard'
+import { XDriveSynologyBackupLocalPanel } from './SynologyBackupLocalPanel'
+import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
+import { XDriveDeviceBackupHistoryList } from './DeviceBackupHistoryList'
 import { XDriveDeviceBackupLocalDeltaDialog } from './DeviceBackupLocalDeltaDialog'
 import { XDriveDeviceBackupLocalEvidenceDialog } from './DeviceBackupLocalEvidenceDialog'
 import { XDriveDeviceBackupLocalEvidenceSummaryDialog } from './DeviceBackupLocalEvidenceSummaryDialog'
@@ -43,7 +47,6 @@ import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDi
 import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
-import { formatBytes } from '../format'
 import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
 import { validateXDriveDeviceBackupDevicePage, validateXDriveDeviceBackupInitialOverview } from '../device-backup-device-page-validation'
@@ -88,13 +91,6 @@ function timeLabel(value?: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '未知' : date.toLocaleString('zh-CN')
 }
-function runLabel(status: string) {
-  const labels: Record<string, string> = {
-    running: '运行中', completed: '已完成', partial: '部分完成',
-    failed: '失败', cancelled: '已取消',
-  }
-  return labels[status] ?? '未知状态'
-}
 function platformLabel(platform: string) {
   const names: Record<string, string> = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' }
   return names[platform] ?? platform
@@ -103,7 +99,7 @@ function platformLabel(platform: string) {
 // All devices share the strictly redacted read model. The optional local
 // creator exists only in the owning Desktop and is separately Agent-gated;
 // Web/Mobile Web never receive it and cannot mutate or obtain a local Root.
-export function XDriveDeviceBackupPage({
+function XDriveDeviceBackupServerPage({
   source,
   initialSourceID,
   localCreate,
@@ -509,21 +505,15 @@ export function XDriveDeviceBackupPage({
             <Stack key={group.label || 'all'} spacing={1}>
               {group.label ? <Typography variant="subtitle2" fontWeight={700}>{group.label}</Typography> : null}
               {group.devices.map((device) => (
-            <Box key={device.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <DevicesRoundedIcon color="action" />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography fontWeight={700}>{device.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {platformLabel(device.platform)} · {device.client_version || 'Agent 版本未知'} ·
-                    {device.revoked ? ' 授权已撤销' : device.connection_state === 'online' ? ' 在线' : device.connection_state === 'offline' ? ' 离线' : ' 连接状态未知'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    最近登记或活动记录：{timeLabel(device.last_seen_at)}
-                  </Typography>
-                </Box>
-              </Stack>
-              <Divider sx={{ my: 1.5 }} />
+            <XDriveDeviceBackupDeviceCard
+              key={device.id}
+              name={device.name}
+              details={<>
+                {platformLabel(device.platform)} · {device.client_version || 'Agent 版本未知'} ·
+                {device.revoked ? ' 授权已撤销' : device.connection_state === 'online' ? ' 在线' : device.connection_state === 'offline' ? ' 离线' : ' 连接状态未知'}
+              </>}
+              subDetails={`最近登记或活动记录：${timeLabel(device.last_seen_at)}`}
+            >
               {overview.has_more_folders ? (
                 <Stack spacing={1} sx={{ mb: 1.5 }} alignItems="flex-start">
                   <Typography variant="caption" color="text.secondary">
@@ -559,38 +549,22 @@ export function XDriveDeviceBackupPage({
               ) : visibleFolders(device).map((folder) => {
                 const history = histories[folder.source_id]
                 return (
-                  <Accordion key={folder.source_id} disableGutters elevation={0}
+                  <XDriveDeviceBackupFolderAccordion
+                    key={folder.source_id}
+                    folder={folder}
                     expanded={expandedID === folder.source_id}
-                    onChange={(_event, isOpen) => {
+                    onExpandedChange={(isOpen) => {
                       setExpanded({ source, id: isOpen ? folder.source_id : null })
                       if (isOpen && !history) void loadHistory(folder.source_id, 1)
                     }}
-                    sx={{ border: 1, borderColor: 'divider', borderRadius: 1, mb: 1, '&:before': { display: 'none' } }}
                   >
-                    <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle2" fontWeight={700}>{folder.name}</Typography>
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          云端目标：{folder.target_path || '尚未配置'} · {folder.sync_mode === 'mirror' ? '镜像' : '备份'}
-                        </Typography>
-                        {folder.latest_run ? (
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            {runLabel(folder.latest_run.status)}
-                            {' · '}扫描 {folder.latest_run.scanned_items.toLocaleString('zh-CN')} 项
-                            {' · '}传输 {formatBytes(folder.latest_run.transferred_bytes)}
-                            {' · '}失败 {folder.latest_run.failed_items} 项
-                          </Typography>
-                        ) : <Typography variant="caption" color="text.secondary">尚无运行记录</Typography>}
-                        {folder.latest_run?.status === 'running' && folder.latest_run.active_transfer_total_bytes > 0 ? (
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            当前传输 {formatBytes(folder.latest_run.active_transfer_bytes)}
-                            {' / '}{formatBytes(folder.latest_run.active_transfer_total_bytes)}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Stack spacing={1}>
+                    <XDriveDeviceBackupLocalPrimaryActions
+                      onRun={localCommonBatch && folder.sync_mode === 'backup' &&
+                        verifiedLocalDeviceID === device.id && !device.revoked
+                        ? () => setCommonBatchTarget({ source, id: folder.source_id }) : undefined}
+                      onSchedule={localSchedule && verifiedLocalDeviceID === device.id && !device.revoked
+                        ? () => setScheduleTarget({ source, id: folder.source_id }) : undefined}
+                    />
                         {localSettings && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setRenameTarget({ source, id: folder.source_id })}>
@@ -615,12 +589,6 @@ export function XDriveDeviceBackupPage({
                             编辑本机忽略规则
                           </Button>
                         ) : null}
-                        {localSchedule && verifiedLocalDeviceID === device.id && !device.revoked ? (
-                          <Button size="small" variant="outlined"
-                            onClick={() => setScheduleTarget({ source, id: folder.source_id })}>
-                            配置本机同步计划
-                          </Button>
-                        ) : null}
                         {localPreview && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setPreviewTarget({ source, id: folder.source_id })}>
@@ -637,13 +605,6 @@ export function XDriveDeviceBackupPage({
                           <Button size="small" variant="contained"
                             onClick={() => setFirstFileTarget({ source, id: folder.source_id })}>
                             开始真实备份（首文件试运行）
-                          </Button>
-                        ) : null}
-                        {localCommonBatch && folder.sync_mode === 'backup' &&
-                          verifiedLocalDeviceID === device.id && !device.revoked ? (
-                          <Button size="small" variant="contained"
-                            onClick={() => setCommonBatchTarget({ source, id: folder.source_id })}>
-                            手动增量备份（试用）
                           </Button>
                         ) : null}
                         {localDelta && verifiedLocalDeviceID === device.id && !device.revoked ? (
@@ -677,25 +638,14 @@ export function XDriveDeviceBackupPage({
                           </Button>
                         ) : null}
                         <Typography variant="subtitle2">同步历史（只读）</Typography>
-                        <Box data-xdrive-device-backup-history-list={folder.source_id}
-                          aria-busy={Boolean(history?.loading) || undefined}
-                          sx={{ minHeight: 72 }}>
-                          {history && history.items.length > 0 ? history.items.map((run) => (
-                            <Box key={run.id} sx={{ py: 1, borderBottom: 1, borderColor: 'divider' }}>
-                              <Typography variant="body2">{runLabel(run.status)} · {timeLabel(run.started_at)}</Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                扫描 {run.scanned_items} 项
-                                {' · '}传输 {run.transferred_items} 项 / {formatBytes(run.transferred_bytes)}
-                                {' · '}失败 {run.failed_items} 项
-                              </Typography>
-                            </Box>
-                          )) : history?.verified
-                            ? <Typography variant="body2" color="text.secondary">暂无历史记录。</Typography>
-                            : null}
-                        </Box>
-                        {historyError?.source === source && historyError.id === folder.source_id ? (
-                          <Typography variant="caption" color="error">无法加载历史，请重试。</Typography>
-                        ) : null}
+                        <XDriveDeviceBackupHistoryList
+                          sourceID={folder.source_id}
+                          entries={history?.items.map((run) => ({ kind: 'server' as const, run })) ?? []}
+                          loading={Boolean(history?.loading)}
+                          verified={Boolean(history?.verified)}
+                          error={historyError?.source === source && historyError.id === folder.source_id
+                            ? '无法加载历史，请重试。' : undefined}
+                        />
                         {history && (history.page > 1 || history.hasMore) ? (
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Button size="small" disabled={history.loading || history.page <= 1}
@@ -705,12 +655,10 @@ export function XDriveDeviceBackupPage({
                               onClick={() => void loadHistory(folder.source_id, history.page + 1)}>下一页</Button>
                           </Stack>
                         ) : null}
-                      </Stack>
-                    </AccordionDetails>
-                  </Accordion>
+                  </XDriveDeviceBackupFolderAccordion>
                 )
               })}
-            </Box>
+            </XDriveDeviceBackupDeviceCard>
               ))}
             </Stack>
           ))}
@@ -939,4 +887,35 @@ export function XDriveDeviceBackupPage({
       ) : null}
     </XDriveWorkspaceSurface>
   )
+}
+
+
+/** Canonical page entry. DSM is an authenticated native-local host, not a
+ * synthetic Server device. Distinct data adapters keep one shared UI entry;
+ * native/local and Server hooks mount only in their real capability scope.
+ */
+export function XDriveDeviceBackupPage(
+  props: Parameters<typeof XDriveDeviceBackupServerPage>[0] & {
+    localBackupClient?: XDriveSynologyBackupLocalClient
+  },
+) {
+  const [scope, setScope] = useState<'local' | 'owner-read'>('local')
+  if (props.localBackupClient && props.source) {
+    return (
+      <Stack spacing={1.5}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          <Button size="small" variant={scope === 'local' ? 'contained' : 'outlined'}
+            onClick={() => setScope('local')}>本机备份</Button>
+          <Button size="small" variant={scope === 'owner-read' ? 'contained' : 'outlined'}
+            onClick={() => setScope('owner-read')}>账号设备（只读）</Button>
+        </Stack>
+        {scope === 'local'
+          ? <XDriveSynologyBackupLocalPanel client={props.localBackupClient} />
+          : <XDriveDeviceBackupServerPage source={props.source} />}
+      </Stack>
+    )
+  }
+  return props.localBackupClient
+    ? <XDriveSynologyBackupLocalPanel client={props.localBackupClient} />
+    : <XDriveDeviceBackupServerPage {...props} />
 }

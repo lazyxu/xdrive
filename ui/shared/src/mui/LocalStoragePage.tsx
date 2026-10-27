@@ -25,6 +25,8 @@ export type XDriveBrowserStorageStats = {
   cache_entries?: number
   clear_supported: boolean
   scope_label?: string
+  /** Scope for the usage metric; DSM's HTTPS origin can contain other apps. */
+  usage_scope_label?: string
   detail?: string
 }
 
@@ -369,23 +371,28 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
             ) : (
               <>
                 <XDriveMetricGrid>
-                  <XDriveMetricCard title="站点总占用" value={bytesOrDash(browser.total_used_bytes)} suffix={browser.total_used_bytes === undefined ? '当前环境未提供精确总量' : '当前 xDrive 站点'} />
+                  <XDriveMetricCard title="站点总占用" value={bytesOrDash(browser.total_used_bytes)} suffix={browser.usage_scope_label ??
+                    (browser.total_used_bytes === undefined ? '当前环境未提供精确总量' : '当前 xDrive 站点')} />
                   <XDriveMetricCard title="浏览器配额" value={bytesOrDash(browser.quota_bytes)} suffix={browser.quota_bytes === undefined ? '由浏览器管理' : '站点可用上限'} />
-                  <XDriveMetricCard title="可清理缓存" value={bytesOrDash(browser.cache_bytes)} suffix={browser.cache_bytes === undefined ? '可安全清理部分' : '不会清除登录状态'} />
+                  <XDriveMetricCard title="可清理缓存" value={bytesOrDash(browser.cache_bytes)} suffix={browser.cache_bytes === undefined
+                    ? source.clearBrowserCache ? '浏览器未提供精确值' : '当前不支持缓存清理'
+                    : '不会清除登录状态'} />
                   <XDriveMetricCard title="缓存容器" value={browser.cache_entries === undefined ? '—' : browser.cache_entries.toLocaleString()} suffix={browser.cache_entries === undefined ? '当前环境未提供' : '当前站点 Cache Storage'} />
                 </XDriveMetricGrid>
                 <XDriveStatusAlert tone="neutral">
                   {browser.detail || '当前客户端的站点缓存不按登录账号隔离。清理操作只删除可重新生成的缓存，不会清除 Cookie、登录令牌、主题、布局或其他应用偏好。'}
                 </XDriveStatusAlert>
-                <Box>
-                  <XDriveActionButton
-                    startIcon={<DeleteSweepRoundedIcon />}
-                    disabled={Boolean(action) || !source.clearBrowserCache || !browserHasClearableCache}
-                    onClick={() => setPendingAction('browser')}
-                  >
-                    清理浏览器缓存
-                  </XDriveActionButton>
-                </Box>
+                {source.clearBrowserCache ? (
+                  <Box>
+                    <XDriveActionButton
+                      startIcon={<DeleteSweepRoundedIcon />}
+                      disabled={Boolean(action) || !browserHasClearableCache}
+                      onClick={() => setPendingAction('browser')}
+                    >
+                      清理浏览器缓存
+                    </XDriveActionButton>
+                  </Box>
+                ) : null}
               </>
             )}
           </Stack>

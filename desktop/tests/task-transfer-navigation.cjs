@@ -113,6 +113,7 @@ function renderTaskPage(props) {
     '../background-tasks': background,
     '@mui/material': { Box: 'Box', CircularProgress: 'CircularProgress', Divider: 'Divider', Stack: 'Stack', ToggleButton: 'ToggleButton', ToggleButtonGroup: 'ToggleButtonGroup', Typography: 'Typography' },
     './TaskPresentation': { XDriveTaskCenterSection: 'TaskSection' },
+    './SynologyLocalTaskSection': { XDriveSynologyLocalTaskSection: 'SynologyLocalTaskSection' },
     './StatePanel': { XDriveStatePanel: 'StatePanel' },
     './ActionButton': { XDriveActionButton: 'ActionButton' },
     './BackgroundTaskCenter': { XDriveBackgroundTaskList: 'BackgroundTaskList', XDriveBackgroundTaskTable: 'BackgroundTaskTable' },

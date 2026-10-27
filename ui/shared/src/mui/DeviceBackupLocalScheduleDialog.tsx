@@ -25,7 +25,7 @@ export interface XDriveLocalBackupScheduleActions {
   save(sourceID: number, revision: number, schedule: SavedSchedule): Promise<XDriveLocalBoundBackupSchedule>
 }
 
-// Local interval/cron schedules execute only on the owning Windows/Linux
+// Local interval/cron schedules execute only on the owning device's
 // Agent after a verified first manual batch under the CURRENT Source revision.
 // Saving configuration never activates the Server runner or gives remote devices write access.
 export function XDriveDeviceBackupLocalScheduleDialog({
@@ -112,7 +112,7 @@ export function XDriveDeviceBackupLocalScheduleDialog({
       }
       onFinished(proposal.schedule_type === 'manual'
         ? '已保存手动模式，本机不会自动安排增量备份'
-        : '已保存计划。请先在所属 Desktop 完成一次当前版本的手动增量备份，后续才会自动按计划检查')
+        : '已保存计划。请先在所属设备本机完成一次当前版本的手动增量备份，后续才会自动按计划检查')
     } catch (failure) {
       setError('保存本机计划失败：' + (failure instanceof Error ? failure.message : String(failure)))
       setBusy(false)
@@ -125,7 +125,7 @@ export function XDriveDeviceBackupLocalScheduleDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="info">
-            只有所属 Windows/Linux Agent 会执行已明确开启的间隔或 Cron 计划。保存或修改计划后，
+            只有当前设备所属的本机 Agent 会执行已明确开启的间隔或 Cron 计划。保存或修改计划后，
             请先手动完成一次当前 Source 版本的增量备份以建立私有可信检查点。此后 Agent 在线时才会定期检查，
             并复用同一持久任务队列。暂停、取消、不确定任务及撤权不会自动重启；仅 Backup，不删除文件。
           </Alert>

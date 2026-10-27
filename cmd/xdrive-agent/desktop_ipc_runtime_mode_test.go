@@ -101,7 +101,9 @@ func TestBackupOnlyStrictRouteAllowlist(t *testing.T) {
 		{http.MethodPost, "/v1/sources/trigger"},
 		{http.MethodPatch, "/v1/sources"},
 		{http.MethodDelete, "/v1/sources"},
-		{http.MethodGet, "/v1/cloud/root"},
+		{http.MethodPost, "/v1/cloud/root"},
+		{http.MethodPost, "/v1/cloud/children"},
+		{http.MethodGet, "/v1/cloud/children/position"},
 		{http.MethodPost, "/v1/cloud/admin-users"},
 		{http.MethodGet, "/v1/settings"},
 		{http.MethodGet, "/v1/diagnostics"},
@@ -151,6 +153,75 @@ func TestBackupOnlyCapSetCannotClaimMountOrUpdater(t *testing.T) {
 		if strings.Contains(capability, "update") || strings.Contains(capability, "sync-control") ||
 			strings.Contains(capability, "storage-tree") || strings.Contains(capability, "file-availability") {
 			t.Fatalf("unstarted service advertised in backup-only: %s", capability)
+		}
+	}
+}
+
+func TestBackupOnlyCloudQuotaIsExplicitlyReadOnly(t *testing.T) {
+	capabilities := desktopIPCCapabilitiesForRuntime(true)
+	approved := false
+	for _, capability := range capabilities {
+		if capability == "cloud-quota-read" {
+			approved = true
+		}
+	}
+	if !approved {
+		t.Fatal("Backup-only Agent did not declare fixed owner quota read capability")
+	}
+	if fullAgentOnlyRequest(http.MethodGet, "/v1/cloud/quota") {
+		t.Fatal("Owner quota read unexpectedly blocked in Backup-only mode")
+	}
+	for _, operation := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/cloud/quota"},
+		{http.MethodGet, "/v1/cloud/storage-stats"},
+		{http.MethodPost, "/v1/cloud/storage-cache/cleanup"},
+		{http.MethodPost, "/v1/cloud/root"},
+		{http.MethodGet, "/v1/cloud/admin-storage"},
+	} {
+		if !fullAgentOnlyRequest(operation.method, operation.path) {
+			t.Fatalf("Backup-only exposed an unauthorized cloud/storage operation: %s %s", operation.method, operation.path)
+		}
+	}
+}
+
+func TestBackupOnlyCloudFileReadIsLimitedToRootChildrenAndTextPreview(t *testing.T) {
+	seen := false
+	preview := false
+	for _, capability := range desktopIPCCapabilitiesForRuntime(true) {
+		if capability == "cloud-files-read" {
+			seen = true
+		}
+		if capability == "cloud-file-text-preview" {
+			preview = true
+		}
+		if capability == "cloud-files" {
+			t.Fatal("Backup-only cannot claim the full FileExplorer capability")
+		}
+	}
+	if !seen || !preview {
+		t.Fatal("missing bounded Owner cloud files/text-preview capabilities")
+	}
+	for _, route := range []string{"/v1/cloud/root", "/v1/cloud/children", "/v1/cloud/text-preview"} {
+		if fullAgentOnlyRequest(http.MethodGet, route) {
+			t.Fatalf("Owner GET unexpectedly blocked in Backup-only runtime: %s", route)
+		}
+		for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete} {
+			if !fullAgentOnlyRequest(method, route) {
+				t.Fatalf("unapproved cloud write %s %s", method, route)
+			}
+		}
+	}
+	for _, route := range []string{
+		"/v1/cloud/children/position", "/v1/cloud/search", "/v1/cloud/changes",
+		"/v1/cloud/download", "/v1/cloud/file-preview-ticket",
+		"/v1/cloud/directories", "/v1/cloud/nodes", "/v1/cloud/media/items",
+		"/v1/cloud/storage-cache/cleanup", "/v1/cloud/admin-users",
+	} {
+		if !fullAgentOnlyRequest(http.MethodGet, route) {
+			t.Fatalf("full Agent feature unexpectedly enabled in Backup-only: %s", route)
 		}
 	}
 }

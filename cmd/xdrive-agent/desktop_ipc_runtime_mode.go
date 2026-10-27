@@ -31,6 +31,10 @@ func desktopIPCCapabilitiesForRuntime(backupOnly bool) []string {
 		case capability == "status", capability == "status-events",
 			capability == "auth",
 			capability == "device-backup-read",
+			capability == "cloud-quota-read",
+			capability == "cloud-files-read",
+			capability == "cloud-file-text-preview",
+			capability == "cloud-media-range-read",
 			capability == "device-backup-local-device",
 			capability == "local-folder-root-grants",
 			strings.HasPrefix(capability, "device-backup-local-"):
@@ -62,6 +66,11 @@ func restrictBackupOnlyEndpoints(backupOnly bool, next http.Handler) http.Handle
 // instead of inheriting backup-only access from a path prefix.
 var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"DELETE /v1/device-backups/local-bound":                     {},
+	"GET /v1/cloud/quota":                                       {},
+	"GET /v1/cloud/root":                                        {},
+	"GET /v1/cloud/children":                                    {},
+	"GET /v1/cloud/text-preview":                                {},
+	"GET /v1/cloud/media-range":                                 {},
 	"GET /v1/device-backups":                                    {},
 	"GET /v1/device-backups/folders":                            {},
 	"GET /v1/device-backups/local-common-batch":                 {},

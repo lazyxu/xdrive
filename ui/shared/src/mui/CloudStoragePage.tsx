@@ -1,6 +1,6 @@
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Stack, Typography } from '@mui/material'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { QuotaUsage, StorageStats } from '../models'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
@@ -17,32 +17,49 @@ export type XDriveCloudStorageSnapshot = {
 }
 
 export type XDriveCloudStorageDataSource = {
-  load: () => Promise<XDriveCloudStorageSnapshot>
+  load: (signal?: AbortSignal) => Promise<XDriveCloudStorageSnapshot>
 }
 
 export function XDriveCloudStoragePage({
   source,
+  /** DSM session replacement must never keep previous Owner data on failed refresh. */
+  clearOnRefresh = false,
 }: {
   source: XDriveCloudStorageDataSource
+  clearOnRefresh?: boolean
 }) {
   const [snapshot, setSnapshot] = useState<XDriveCloudStorageSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const generation = useRef(0)
+  const activeRequest = useRef<AbortController | null>(null)
 
   const load = useCallback(async () => {
+    const requestID = ++generation.current
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
     setLoading(true)
     setError('')
+    if (clearOnRefresh) setSnapshot(null)
     try {
-      setSnapshot(await source.load())
+      const result = await source.load(controller.signal)
+      if (!controller.signal.aborted && generation.current === requestID) setSnapshot(result)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '加载云端存储信息失败')
+      if (!controller.signal.aborted && generation.current === requestID) {
+        setError(loadError instanceof Error ? loadError.message : '加载云端存储信息失败')
+      }
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted && generation.current === requestID) setLoading(false)
     }
-  }, [source])
+  }, [source, clearOnRefresh])
 
   useEffect(() => {
     void load()
+    return () => {
+      activeRequest.current?.abort()
+      generation.current++
+    }
   }, [load])
 
   const quota = snapshot?.quota

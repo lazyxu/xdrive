@@ -65,6 +65,7 @@ export function XDriveWorkspaceCompactNavigation({
   const drawerSections = fullscreen
     ? [{ key: 'primary', items: primary }, ...moreSections]
     : moreSections
+  const hasMore = moreSections.length > 0
 
   useEffect(() => {
     setMoreOpen(false)
@@ -129,7 +130,7 @@ export function XDriveWorkspaceCompactNavigation({
             onClick={(event) => selectDestination(destination.key, event)}
           />
         ))}
-        <BottomNavigationAction
+        {hasMore ? <BottomNavigationAction
           value="more"
           label="更多"
           icon={<MoreHorizRoundedIcon />}
@@ -140,7 +141,7 @@ export function XDriveWorkspaceCompactNavigation({
           onClick={() => {
             if (!disabled) setMoreOpen(true)
           }}
-        />
+        /> : null}
       </BottomNavigation>}
       <Drawer
         anchor="bottom"

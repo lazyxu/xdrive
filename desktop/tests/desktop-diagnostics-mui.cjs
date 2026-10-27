@@ -4,7 +4,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const page = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const page = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DiagnosticsPage.tsx'), 'utf8')
+const alias = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+assert.match(alias, /XDriveDiagnosticsPage as DesktopDiagnosticsPage/, 'Desktop must import exact shared diagnostics MUI')
 const app = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 

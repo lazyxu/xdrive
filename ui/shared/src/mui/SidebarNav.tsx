@@ -134,17 +134,20 @@ export function XDriveCoreWorkspaceNavItems({
   transferBadge,
   appearance = 'light',
   showLocalStorage = false,
+  coreKeys,
   onSelect,
 }: {
   selected?: string
   transferBadge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
   showLocalStorage?: boolean
+  coreKeys?: readonly XDriveCoreWorkspaceKey[]
   onSelect: (key: XDriveCoreWorkspaceKey, event: MouseEvent<HTMLDivElement>) => void
 }) {
   return (
     <>
-      {xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map((destination) => (
+      {xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map((destination) =>
+        coreKeys !== undefined && !coreKeys.includes(destination.key) ? null : (
         <XDriveSidebarNavItem
           key={destination.key}
           selected={selected === destination.key}
