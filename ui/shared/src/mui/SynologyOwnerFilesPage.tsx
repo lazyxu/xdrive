@@ -333,6 +333,12 @@ export function XDriveSynologyOwnerFilesPage({
         open={previewItem !== null}
         item={previewItem}
         loadTextPreview={loadTextPreview}
+        // The SAME shared two-layer Viewer shows the current Owner's proven
+        // JPEG/PNG thumbnail while the full original is still downloading.
+        // For video, the same source becomes the pre-play poster. A cold
+        // derivative falls back to the existing icon without delaying the
+        // independent original/media Range request.
+        loadImagePreview={loadOwnerThumbnail}
         loadPreviewURL={loadMediaPreview}
         onClose={() => setPreview(null)}
       />

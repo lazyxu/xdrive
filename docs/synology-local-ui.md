@@ -1,4 +1,12 @@
 # Synology DSM 7 authenticated local Backup UI — first adapter slice
+## 2026-10-27 · Thumbnail-first image / poster in the same Quick Look
+
+Following merged **#2785 native media Range playback** and **#2802 Owner-scoped derivatives**, Synology's existing `XDriveFileQuickLookDialog` now passes the **same** `loadOwnerThumbnail` derivative reader to `loadImagePreview` that `XDriveFileExplorer` uses for grid/list tiles. It does not introduce a NAS-specific Viewer. The shared `XDriveDecodedImagePreview` independently initiates the small Owner-verified thumbnail and full original; the thumbnail can render first without being replaced by a blank spinner, while full-resolution image decode continues. For a video, the shared `FilePreviewSurface` uses the derivative as a pre-play poster without blocking native Range playback.
+
+The thumbnail is Server Owner/revision validated for every read and remains an owned `blob:` URL with the shared Preview's abort/revoke lifecycle. Failed or uncached thumbnails degrade to existing file icon/loading behavior and never relax original authentication. The cached thumbnail may be loaded again through the independent viewer adapter; future sharing of live cached leases can optimize that path without expanding authority. **Live Photo, full-size unsupported RAW/HEIC, actual DSM browser playback, full-file download and all Gallery flows remain separately tracked.**
+
+Source-exact regression in `web/scripts/test-synology-owner-thumbnail.mjs` asserts that Quick Look binds both `loadImagePreview` and original `loadPreviewURL` to the original shared two-layer Viewer. The physical DSM and native iOS comparison policy remains **按用户决定跳过（未验收）**; it does not count as successful testing.
+
 
 ## 2026-10-27 · Server Owner thumbnails in the canonical virtualized FileExplorer (development)
 
