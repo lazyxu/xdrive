@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -85,6 +86,7 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
     LaunchedEffect(value.isEmpty()) { if (value.isEmpty()) visible = false }
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
         OutlinedTextField(value, onValueChange, enabled = enabled, singleLine = true,
@@ -105,7 +107,13 @@ private fun AuthField(label: String, value: String, onValueChange: (String) -> U
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (secret) KeyboardType.Password else keyboardType,
                 imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            keyboardActions = KeyboardActions(onDone = {
+                // Explicit onDone replaces the IME's default hide action. On
+                // short Android viewports, clearing focus alone can leave the
+                // keyboard visible while Submit is scrolled into view.
+                keyboard?.hide()
+                focusManager.clearFocus()
+            }),
             trailingIcon = if (secret) { { IconButton(onClick = { visible = !visible }, enabled = enabled, modifier = Modifier.testTag("$tag-reveal")) {
                 Icon(painterResource(if (visible) R.drawable.xd_visibility_off else R.drawable.xd_visibility), if (visible) "隐藏密码" else "显示密码", tint = colors.onSurfaceVariant)
             } } } else null,

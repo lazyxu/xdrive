@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.lazy.LazyColumn
@@ -183,10 +184,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
                     if (photo != null) {
-                        key(photo.node.id, photo.node.revision) {
-                            if (photo.mediaKind == "video")
-                                GalleryVideoPlayer(photo, controller, galleryThumbnails)
-                            else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                        Box(Modifier.fillMaxSize()) {
+                            key(photo.node.id, photo.node.revision) {
+                                if (photo.mediaKind == "video")
+                                    GalleryVideoPlayer(photo, controller, galleryThumbnails)
+                                else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                            }
+                            if (state.galleryViewerPageBusy ||
+                                state.galleryViewerPageError != null) {
+                                Box(Modifier.align(androidx.compose.ui.Alignment.TopCenter)
+                                    .padding(top = 60.dp)) {
+                                    GalleryViewerPageNotice(state, controller)
+                                }
+                            }
                         }
                     } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                         state.gallerySelectedAlbum == null) {
@@ -402,6 +412,37 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 leadingIcon = { Icon(painterResource(R.drawable.xd_logout), null) }, onClick = { expanded = false; controller.logout() })
             if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
                 onClick = { expanded = false; controller.changeServer() })
+        }
+    }
+}
+
+/** Viewer-only, non-blocking range feedback; stays above photo/video, not
+ * above Media3 seek controls. No fake neighbor is displayed before Owner GET. */
+@Composable
+private fun GalleryViewerPageNotice(state: DriveState, controller: DriveController) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 12.dp)
+            .testTag("gallery-viewer-page-status"),
+        color = Color(0xEE242424), shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            if (state.galleryViewerPageBusy)
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp,
+                    color = Color.White)
+            Text(state.galleryViewerPageError ?: if (state.galleryViewerPageDirection < 0)
+                "正在加载上一项…" else "正在加载下一项…",
+                color = Color.White, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f, fill = false))
+            if (!state.galleryViewerPageBusy && state.galleryViewerPageError != null &&
+                state.galleryViewerPageDirection in listOf(-1, 1)) {
+                TextButton(
+                    onClick = { controller.shiftGalleryViewer(state.galleryViewerPageDirection) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-viewer-page-retry"),
+                ) { Text("重试", color = Color.White) }
+            }
         }
     }
 }

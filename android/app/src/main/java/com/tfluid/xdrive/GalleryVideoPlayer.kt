@@ -148,18 +148,18 @@ internal fun GalleryVideoPlayer(
             if (source != null) controller.closeGalleryVideoPlayback(source)
         }
     }
-    val older = controller.galleryViewerNeighbor(-1)
-    val newer = controller.galleryViewerNeighbor(1)
+    val canGoOlder = controller.galleryViewerCanShift(-1)
+    val canGoNewer = controller.galleryViewerCanShift(1)
     Column(
         Modifier.fillMaxSize().background(Color.Black).testTag("gallery-video-viewer")
             .galleryVideoSwipeNavigation(video, controller)
             .semantics {
                 customActions = buildList {
-                    if (older != null) add(CustomAccessibilityAction("上一项") {
+                    if (canGoOlder) add(CustomAccessibilityAction("上一项") {
                         controller.shiftGalleryViewer(-1)
                         true
                     })
-                    if (newer != null) add(CustomAccessibilityAction("下一项") {
+                    if (canGoNewer) add(CustomAccessibilityAction("下一项") {
                         controller.shiftGalleryViewer(1)
                         true
                     })

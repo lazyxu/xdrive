@@ -827,6 +827,10 @@ class DriveControllerTest {
         val asset = requireNotNull(c.state.value.galleryViewer)
         assertArrayEquals("hello".toByteArray(), c.galleryImageBytes(asset))
         assertNull(c.galleryViewerNeighbor(1))
+        assertFalse(c.galleryViewerCanShift(-1))
+        assertFalse(c.galleryViewerCanShift(1))
+        c.shiftGalleryViewer(-1) // Must not fetch a synthetic Gallery Range.
+        assertTrue(c.state.value.viewerReturnToFiles)
         c.back()
         assertEquals(Screen.FILES, c.state.value.screen)
         assertFalse(c.state.value.viewerReturnToFiles)
@@ -1006,6 +1010,124 @@ class DriveControllerTest {
         c.openFilesApp()
         c.shiftGalleryViewer(-1)
         assertNull(c.state.value.galleryViewer)
+    }
+
+    @Test fun galleryViewerSwipesAcrossOlderOwnerRangeWithoutSkipping() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val latest = c.state.value.galleryItems.single()
+        c.openGalleryViewer(latest)
+        assertNull(c.galleryViewerNeighbor(-1))
+        assertTrue(c.galleryViewerCanShift(-1))
+        c.shiftGalleryViewer(-1)
+        assertEquals(latest, c.state.value.galleryViewer)
+        assertTrue(c.state.value.galleryViewerPageBusy)
+        c.shiftGalleryViewer(-1) // Single in-flight page, no duplicate fetch.
+        runCurrent()
+        assertEquals(listOf(0 to true, 60 to false), api.galleryRequests)
+        assertEquals(60, c.state.value.galleryOffset)
+        assertEquals(61, c.state.value.galleryItems.size)
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        assertFalse(c.state.value.galleryViewerPageBusy)
+        assertNull(c.state.value.galleryViewerPageError)
+        assertEquals(latest, c.galleryViewerNeighbor(1))
+        c.close()
+    }
+
+    @Test fun galleryViewerSwipesAcrossNewerTimeJumpRangeWithoutInventedItem() = runTest {
+        val api = Service().apply { provideGalleryTimeline = true }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
+        val last = c.state.value.galleryItems.last()
+        c.openGalleryViewer(last)
+        assertNull(c.galleryViewerNeighbor(1))
+        assertTrue(c.galleryViewerCanShift(1))
+        c.shiftGalleryViewer(1); runCurrent()
+        assertEquals(990L, c.state.value.galleryViewer?.node?.id)
+        assertEquals(60, c.state.value.galleryOffset)
+        assertEquals(61, c.state.value.galleryItems.size)
+        assertEquals(listOf(0 to true, 60 to false, 120 to false), api.galleryRequests)
+        assertFalse(c.galleryViewerCanShift(1))
+        c.close()
+    }
+
+    @Test fun galleryViewerBoundaryFailureKeepsCurrentPhotoAndRetriesOneGet() = runTest {
+        val api = Service().apply { galleryFailOlderOnce = true }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val latest = c.state.value.galleryItems.single()
+        c.openGalleryViewer(latest)
+        c.shiftGalleryViewer(-1); runCurrent()
+        assertEquals(latest, c.state.value.galleryViewer)
+        assertEquals(listOf(latest), c.state.value.galleryItems)
+        assertFalse(c.state.value.galleryViewerPageBusy)
+        assertEquals(-1, c.state.value.galleryViewerPageDirection)
+        assertNotNull(c.state.value.galleryViewerPageError)
+        assertTrue(c.galleryViewerCanShift(-1))
+        c.shiftGalleryViewer(-1); runCurrent()
+        assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
+        assertNull(c.state.value.galleryViewerPageError)
+        assertEquals(listOf(0 to true, 60 to false, 60 to false), api.galleryRequests)
+        c.close()
+    }
+
+    @Test fun viewerInfoCancelsDelayedBoundaryWithoutHidingDialog() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val api = object : Service() {
+            override suspend fun galleryPage(accessToken: String, offset: Int,
+                initialLatest: Boolean): GalleryPage {
+                if (!initialLatest) withContext(NonCancellable) { gate.await() }
+                return super.galleryPage(accessToken, offset, initialLatest)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        c.shiftGalleryViewer(-1); runCurrent()
+        assertTrue(c.state.value.galleryViewerPageBusy)
+        c.showGalleryInfo(photo)
+        assertEquals(photo, c.state.value.gallerySelected)
+        assertFalse(c.state.value.galleryViewerPageBusy)
+        assertEquals(0, c.state.value.galleryViewerPageDirection)
+        gate.complete(Unit); runCurrent()
+        assertEquals(photo, c.state.value.galleryViewer)
+        assertEquals(photo, c.state.value.gallerySelected)
+        assertEquals(listOf(photo), c.state.value.galleryItems)
+        assertNull(c.state.value.galleryViewerPageError)
+        c.dismissGalleryInfo()
+        c.dismissGalleryViewer()
+        c.close()
+    }
+
+    @Test fun galleryViewerNonCooperativeBoundaryCannotPublishAfterLogout() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val api = object : Service() {
+            override suspend fun galleryPage(accessToken: String, offset: Int,
+                initialLatest: Boolean): GalleryPage {
+                if (!initialLatest) withContext(NonCancellable) { gate.await() }
+                return super.galleryPage(accessToken, offset, initialLatest)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryViewer(c.state.value.galleryItems.single())
+        c.shiftGalleryViewer(-1); runCurrent()
+        assertTrue(c.state.value.galleryViewerPageBusy)
+        c.logout()
+        gate.complete(Unit); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.galleryViewer)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertNull(c.state.value.galleryViewerPageError)
+        c.close()
     }
 
     @Test fun galleryViewerSwipeDiscardsOldOriginalAfterAdjacentImageChange() = runTest {
