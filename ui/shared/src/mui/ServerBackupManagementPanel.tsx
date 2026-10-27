@@ -11,6 +11,7 @@ import type {
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -479,9 +480,10 @@ export function XDriveServerBackupManagementPanel({
               <Alert severity={historyDetail.state === 'failed' ? 'warning' : 'info'}>
                 {serverBackupReceiptExplanation(historyDetail)}
               </Alert>
+              <XDriveBackupVerificationReceipt entry={historyDetail} />
               <Typography variant="caption" color="text.secondary">
-                当前协议未为逐代校验提供可靠的对象数量、校验字节数或分项错误计数，
-                因此不显示估算值。原始私有日志仅可由宿主机管理员本地查看。
+                对于没有新版宿主机验证报告的历史记录，仍然不推断对象数量或校验字节。
+                详细错误日志仅可由宿主机管理员本地查看。
               </Typography>
             </Stack>
           ) : null}

@@ -48,8 +48,18 @@ export type XDriveServerBackupOperation = {
   bytes_total?: number
 }
 
+export type XDriveServerBackupVerificationReceipt = {
+  protocol: 'xdrive-host-backup-verify-v1'
+  state: 'success' | 'failed'
+  format: 'v1' | 'v2'
+  scope: 'backup_snapshot_and_referenced_cas'
+  cas_objects_checked: number
+  cas_bytes_hashed: number
+  failure_category?: string
+}
 export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
   mode?: 'fast' | 'deep'
+  verification?: XDriveServerBackupVerificationReceipt
 }
 
 export type XDriveServerBackupPage = {

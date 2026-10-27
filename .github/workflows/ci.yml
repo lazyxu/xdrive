@@ -1090,6 +1090,8 @@ jobs:
           bash -n scripts/server-control.sh
           bash -n scripts/test-server-backup-admin-host.sh
           bash scripts/test-server-backup-admin-host.sh
+          bash -n scripts/test-server-backup-verify-report.sh
+          bash scripts/test-server-backup-verify-report.sh
           bash -n scripts/test-media-worker-control.sh
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
@@ -1568,7 +1570,16 @@ jobs:
       - name: Load exact server image tested by CI
         run: bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test
       - name: Backup, corruption detection, and restore drill
+        env:
+          XD_BACKUP_DRILL_REPORT_PATH: dist/backup-restore-drill-evidence.json
         run: bash scripts/test-server-backup-restore.sh
+      - name: Publish isolated PostgreSQL and file restore evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-server-isolated-restore-drill
+          path: dist/backup-restore-drill-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
   go-windows:
     needs: pr-scope

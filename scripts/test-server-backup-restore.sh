@@ -81,6 +81,22 @@ assert_runtime_services() {
   grep -qx worker <<<"$running"
 }
 
+assert_postgres_legacy_backup_restored() {
+  local found
+  found="$(compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -qAtc \
+    "SELECT COUNT(*) FROM xd_nodes n JOIN xd_files f ON f.node_id=n.id WHERE n.id=$file_id AND n.parent_id=$root_id AND n.owner_id=$uid AND n.name='backup.txt' AND f.storage_key='$storage_key' AND f.size=$legacy_size" | tr -d '\r')"
+  [[ "$found" == 1 ]] || { echo "PostgreSQL legacy node/file mapping not restored" >&2; return 1; }
+}
+
+assert_postgres_cas_backup_restored() {
+  local found marker
+  found="$(compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -qAtc \
+    "SELECT COUNT(*) FROM xd_nodes n JOIN xd_files f ON f.node_id=n.id JOIN xd_content_blobs b ON b.storage_key=f.storage_key WHERE n.id=$cas_node_id AND n.parent_id=$root_id AND n.owner_id=$uid AND n.name='cas-backup.bin' AND f.storage_key='$cas_key' AND f.size=$cas_size AND b.sha256='$cas_sha' AND b.size=$cas_size AND b.ref_count=1 AND b.state='ready'" | tr -d '\r')"
+  [[ "$found" == 1 ]] || { echo "PostgreSQL CAS reference/content mapping not restored" >&2; return 1; }
+  marker="$(compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -qAtc \
+    "SELECT to_regclass('public.backup_restore_probe') IS NULL" | tr -d '\r')"
+  [[ "$marker" == t ]] || { echo "PostgreSQL post-snapshot probe survived restoration" >&2; return 1; }
+}
 cleanup() {
   compose down --remove-orphans >/dev/null 2>&1 || true
   if [[ -d "$DATA_DIR" ]]; then
@@ -107,6 +123,7 @@ file_id="$(compose exec -T postgres psql -U xdrive -d xdrive -Atc "SELECT id FRO
 [[ "$file_id" =~ ^[0-9]+$ ]] || { echo "invalid test file id: $file_id" >&2; exit 1; }
 storage_key="$uid/e2e/blob-backup"
 content='backup-content-v1'
+legacy_size="$(printf '%s' "$content" | wc -c | tr -d '[:space:]')"
 compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c   "INSERT INTO xd_files(node_id,size,storage_key,created_at,updated_at) VALUES ($file_id,${#content},'$storage_key',now(),now())" >/dev/null
 
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "mkdir -p /data/$uid/e2e && printf '%s' '$content' > /data/$storage_key"
@@ -273,6 +290,7 @@ wait_server
 assert_runtime_services
 
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+assert_postgres_legacy_backup_restored
 restored="$(docker run --rm -v "$FILES_DIR:/data":ro --entrypoint cat postgres:17-alpine "/data/$storage_key")"
 [[ "$restored" == "$content" ]] || {
   echo "restored blob mismatch: $restored" >&2
@@ -287,6 +305,7 @@ fi
 # Seed a real referenced canonical immutable CAS alongside the pre-existing
 # legacy data file, so the Docker E2E covers both paths.
 cas_content='canonical-content-v1'
+cas_size="$(printf '%s' "$cas_content" | wc -c | tr -d '[:space:]')"
 cas_sha="$(printf '%s' "$cas_content" | sha256sum | awk '{print $1}')"
 cas_key=".xdrive-blobs/sha256/${cas_sha:0:2}/$cas_sha"
 cas_node_id="$(compose exec -T postgres psql -U xdrive -d xdrive -qAtc \
@@ -492,6 +511,8 @@ bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
   --config-dir "$XDRIVE_HOME" --yes --no-safety-backup >/dev/null
 assert_runtime_services
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+assert_postgres_legacy_backup_restored
+assert_postgres_cas_backup_restored
 restored_incremental="$(docker run --rm -v "$FILES_DIR:/data:ro" \
   --entrypoint cat postgres:17-alpine "/data/$storage_key")"
 restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
@@ -596,6 +617,8 @@ bash "$ROOT/scripts/server-restore.sh" "$second_incremental_backup_dir" \
   --config-dir "$XDRIVE_HOME" --yes --no-safety-backup >/dev/null
 assert_runtime_services
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+assert_postgres_legacy_backup_restored
+assert_postgres_cas_backup_restored
 prune_restored_legacy="$(docker run --rm -v "$FILES_DIR:/data:ro" \
   --entrypoint cat postgres:17-alpine "/data/$storage_key")"
 prune_restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
@@ -605,4 +628,42 @@ prune_restored_cas="$(docker run --rm -v "$FILES_DIR:/data:ro" \
   exit 1
 }
 
+# Emit isolated, non-production CI restore evidence only after ALL SQL and
+# physical-file assertions above have passed. No storage paths or credentials.
+if [[ -n "${XD_BACKUP_DRILL_REPORT_PATH:-}" ]]; then
+  python3 - "$XD_BACKUP_DRILL_REPORT_PATH" <<'PY'
+import datetime, json, os, stat, sys, tempfile
+path=os.path.abspath(sys.argv[1])
+parent=os.path.dirname(path)
+os.makedirs(parent,exist_ok=True)
+if os.path.lexists(path):
+    raise SystemExit("refuse existing or symlinked restore evidence")
+data={
+    "protocol":"xdrive-isolated-backup-restore-drill-v1",
+    "environment":"ci_ephemeral_docker",
+    "production_verified":False,
+    "result":"passed",
+    "database_rows_recovered":True,
+    "postgresql_post_snapshot_probe_absent":True,
+    "legacy_file_bytes_restored":True,
+    "cas_sha256_file_bytes_restored":True,
+    "v1_restore_tested":True,
+    "v2_first_generation_restore_tested":True,
+    "v2_retained_after_manual_prune_restore_tested":True,
+    "ci_checkout_sha":os.environ.get("GITHUB_SHA",""),
+    "observed_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+}
+fd,temporary=tempfile.mkstemp(prefix=".restore-drill-",dir=parent)
+try:
+    with os.fdopen(fd,"w",encoding="utf-8") as stream:
+        os.fchmod(stream.fileno(),0o600)
+        json.dump(data,stream,sort_keys=True,separators=(",",":"))
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary,path)
+finally:
+    if os.path.exists(temporary):os.unlink(temporary)
+PY
+fi
 echo "backup/restore integration test passed"

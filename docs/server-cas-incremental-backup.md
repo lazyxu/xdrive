@@ -287,6 +287,38 @@ Backup verification also does not replace a physical PostgreSQL and file
 recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
 is enabled by the Admin UI.
 
+## Machine-readable CAS verification statistics (source-level)
+
+The internal, read-only `xdrive-backup-repo verify --repo PATH --snapshot NAME
+--json` prints a fixed-schema JSON receipt on stdout. It preserves the
+existing deep SHA-256 verification and nonzero exit status on errors. Fields:
+`protocol`, `state`, `mode`, `objects_checked`, `bytes_hashed`, and
+optional enumerated `failure_category`. These counters come from actual
+verification work, not projected byte counts. **On failure they are partial**;
+never present them as a fully passed scan. The report deliberately omits
+paths, CAS digests and raw error messages. stderr remains a private CLI
+diagnostic channel. `--json` is not valid for create, prune, retention or
+other subcommands.
+
+The Host Manager now supports `xdrive-server backup verify --json [BACKUP_DIR]`.
+Its existing snapshot SHA256SUMS preflight and repository shared lock remain
+in effect, with **one referenced-CAS hash pass**, not two. The bounded
+`xdrive-host-backup-verify-v1` report carries `format`, `state`,
+`scope`, `cas_objects_checked`, `cas_bytes_hashed`, and a fixed failure
+category when available. On v1 these two CAS counters are zero because the
+snapshot files are verified by SHA256SUMS instead. Any v2 success requires
+valid, real CAS helper evidence. Failures retain nonzero exit status and
+partial counts; raw file paths, object hashes and logs are excluded from JSON.
+This does not prove PostgreSQL data can actually be restored and queried.
+
+This internal CAS report is **not itself a complete backup verification**:
+the Host `xdrive-server backup verify` also checks the snapshot metadata,
+SHA256SUMS and database dump. Do not advertise an internal CAS success as a
+fully restorable snapshot. Admin Host Control now persists a validated report as optional evidence on
+each verification-history record. The shared Web/Desktop detail dialog shows
+historical counts and safe failure categories without disclosing Host paths.
+This is evidence of the completed checksum/CAS check, not a restore drill.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and
