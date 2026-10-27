@@ -991,9 +991,16 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     const logout=await until(async()=>p1QVisibleAccountPoint(auditor,'logout'),
       10000,'second window actual Logout MenuItem')
     const before=await p1ViewerVideoProbeStats(base)
+    // Original bytes may advance while the real Logout menu is prepared.
+    // The invariant is an ACTIVE, authenticated Range at the actual click;
+    // zero extra bytes is enforced separately AFTER the server mark.
     assert(before.active>=1&&before.context_done===0&&
-      before.emitted_bytes===inflight.emitted_bytes,
-      'Viewer original Range already stopped before native Logout click')
+      before.signed_range>=inflight.signed_range&&
+      before.emitted_bytes>=inflight.emitted_bytes,
+      'Viewer original Range no longer active before native Logout click: '+
+      JSON.stringify({active:before.active,contextDone:before.context_done,
+        signedRanges:before.signed_range,
+        bytesBeforeClick:before.emitted_bytes-inflight.emitted_bytes}))
     const marked=await fetch(base+'/__perf/viewer-video-range-mark',{method:'POST'})
     assert.equal(marked.status,204,'Go signed Range cancellation timer absent')
     const mark=await p1ViewerVideoProbeStats(base)
