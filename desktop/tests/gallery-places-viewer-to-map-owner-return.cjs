@@ -12,10 +12,15 @@ const section = (from,to) => {
   assert.ok(start>=0 && end>start, 'cannot locate original Gallery boundary')
   return source.slice(start,end)
 }
-test('Viewer map action keeps the original Page map handler',()=>{
-  assert.match(source,/onOpenDynamicMap=\{\(\) => \{/)
-  assert.match(source,/closeMediaPreview\(\)/)
-  assert.match(source,/if \(onShowMap\) onShowMap\(\)/)
+test('Viewer map action admits the current Owner scope BEFORE closing preview',()=>{
+  const handler=section('      <XDriveMediaGalleryViewer', '        positionLabel=')
+  assert.match(handler,/onOpenDynamicMap=\{onShowMap && \(showGalleryMapEntry \|\| nativeCellWall\)/,
+    'only supported Gallery/map collections may offer the action')
+  assert.match(handler,/if \(!onShowMap\(\)\) return/,
+    'map admission must succeed before Viewer closes')
+  assert.ok(handler.indexOf('if (!onShowMap()) return') < handler.indexOf('closeMediaPreview()'))
+  assert.doesNotMatch(handler,/else onSectionChange\?\.\('places'\)/,
+    'never widen a rejected Owner scope to the unfiltered Places tab')
   assert.match(source,/onShowMap=\{showMapFromCurrentGallery\}/)
 })
 test('signed Cell/Camera Viewer map action returns rather than broadens Gallery',()=>{

@@ -3824,20 +3824,20 @@ export function XDriveMediaGalleryPage({
     const accepted = collectionTargetRef.current
     // Viewer → Map from an already signed BD-09 Cell/Camera wall is a return,
     // not a new all-library map entry. Cancel its reader and reveal the existing
-    // Parent map so that /cells is independently Owner/Consent-reauthorized.
+    // Parent map so that /cells independently revalidates Owner/GPS/source.
     // Desktop file: cannot mount an SDK here; retain its HTTPS-only boundary.
     if (!onOpenSecureDesktopMap &&
         (accepted?.kind === 'baidu-cell' || accepted?.kind === 'baidu-viewport')) {
       setError('')
       leaveBaiduCellWall()
-      return
+      return true
     }
     if (loading || collectionError || !accepted ||
         (currentAlbum
           ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
           : accepted.kind !== 'all')) {
-      setError('当前照片集合尚未完成授权加载或集合身份已变化；未打开全图库地图。')
-      return
+      setError('当前照片集合尚未完成加载或集合身份已变化；未打开全图库地图。')
+      return false
     }
     const entry = xDriveGalleryMapEntryScope({
       section,
@@ -3852,14 +3852,14 @@ export function XDriveMediaGalleryPage({
     })
     if (!entry.ok) {
       setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
-      return
+      return false
     }
     // Desktop remains on its original Gallery while only an independently
     // authenticated HTTPS Parent may claim the selected Owner photo scope.
     if (onOpenSecureDesktopMap) {
       setError('')
       onOpenSecureDesktopMap(entry.scope)
-      return
+      return true
     }
     setError('')
     {
@@ -3882,6 +3882,7 @@ export function XDriveMediaGalleryPage({
     changeBaiduMapPhotoScope(entry.scope)
     setMobileCollectionsOverview(false)
     selectSection('places')
+    return true
   }
 
   const appliedScopeLabel = currentFolderView
@@ -4630,7 +4631,7 @@ export interface XDriveMediaGalleryProps {
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onSectionChange?: (section: MediaGallerySection) => void
-  onShowMap?: () => void
+  onShowMap?: () => boolean
   canReturnToMapEntry?: boolean
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
@@ -9389,12 +9390,15 @@ export function XDriveMediaGallery({
 
       <XDriveMediaGalleryViewer
         item={previewItem}
-        onOpenDynamicMap={() => {
-          closeMediaPreview()
-          setPlacesMobileMode('map')
-          if (onShowMap) onShowMap()
-          else onSectionChange?.('places')
-        }}
+        onOpenDynamicMap={onShowMap && (showGalleryMapEntry || nativeCellWall)
+          ? () => {
+              // Reject unsupported/stale Owner ranges before closing the
+              // original Viewer. Never fall back to an unscoped Places tab.
+              if (!onShowMap()) return
+              closeMediaPreview()
+              setPlacesMobileMode('map')
+            }
+          : undefined}
         positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < logicalItemCount - 1}
