@@ -1,4 +1,5 @@
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { xDriveAcquireViewerForeground } from './ViewerForegroundPriority'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material'
@@ -37,6 +38,14 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
     downloadZip: (canDownloadZip ?? canDownload) && Boolean(onDownloadFolder),
     search: false, write: false, delete: false,
   })
+  // Public Share uses its own bounded, server-authorized image Viewer rather
+  // than the Owner's Quick Look dialog. It must still preempt THIS renderer's
+  // disposable Share thumbnail requests without touching ZIP/download jobs.
+  const shareViewerOwner = useRef<object>({})
+  const sharePreviewActive = previewEntry !== null && caps.preview
+  useLayoutEffect(() => sharePreviewActive
+    ? xDriveAcquireViewerForeground(shareViewerOwner.current)
+    : undefined, [sharePreviewActive])
   const canStartDownload = caps.download && !downloadPending
   // The renderer may not retain visible children after Share eligibility is
   // revoked. It is still the Go Share API that enforces expiry/revocation.

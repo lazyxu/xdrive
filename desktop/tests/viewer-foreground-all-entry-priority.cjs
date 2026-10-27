@@ -86,6 +86,7 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   const cover=read('ui/shared/src/mui/MediaGalleryCoverThumbnail.tsx')
   const thumbnail=read('ui/shared/src/mui/FileExplorerThumbnail.tsx')
   const scheduler=read('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
+  const publicShare=read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   assert.match(web,/const viewerActive = Boolean\(xDriveWebAppViewer\(route\.app\)\)/)
   assert.match(web,/xDriveAcquireViewerForeground\(viewerPriorityOwner\.current\)/)
   for(const app of ["'preview'","'media-viewer'","'text-viewer'","'pdf-viewer'","'audio-player'"])
@@ -96,6 +97,10 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(files,/suspended=\{suspendBackgroundThumbnails \|\| quickLookItemID !== null\}/)
   assert.match(desktop,/<XDriveFileExplorer/)
   assert.match(modal,/xDriveAcquireViewerForeground\(viewerPriorityOwner\.current\)/)
+  assert.match(publicShare,/const sharePreviewActive = previewEntry !== null && caps.preview/)
+  assert.match(publicShare,/xDriveAcquireViewerForeground\(shareViewerOwner\.current\)/)
+  assert.match(publicShare,/loadImagePreview=\{/,
+    'public Share read-only image Viewer uses the same foreground lease')
   assert.match(gallery,/onOpenViewer\(item, activeIndex\)/)
   assert.match(gallery,/onOpenBaiduNativePhoto=\{onOpenViewer/)
   assert.match(gallery,/onOpenBaiduNativeCellPhoto=\{onOpenViewer/)
