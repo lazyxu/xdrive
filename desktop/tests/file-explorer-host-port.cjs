@@ -15,8 +15,10 @@ test('native FileExplorer calls are supplied through one explicit, typed Desktop
   const declarations = [...bridge.matchAll(/^  '([A-Za-z]\w*)',$/gm)].map(m => m[1]).sort()
   const mappings = [...bridge.matchAll(/^    ([A-Za-z]\w*): agent\.([A-Za-z]\w*),$/gm)]
     .map(m => { assert.equal(m[1], m[2]); return m[1] }).sort()
-  const invocations = [...new Set([...explorer.matchAll(/\b(?:ownerAgent|agent)\.([A-Za-z]\w*)\s*\(/g)]
-    .map(m => m[1]))].sort()
+  const invocations = [...new Set([
+    ...[...explorer.matchAll(/\bhostPort\.(?:browse|media|write)\.([A-Za-z]\w*)\s*\(/g)].map(m => m[1]),
+    ...[...explorer.matchAll(/\bagent\.([A-Za-z]\w*)\s*\(/g)].map(m => m[1]),
+  ])].sort()
   assert.equal(declarations.length, 58, 'all original owning Agent API methods must remain explicitly listed')
   assert.deepEqual(mappings, declarations, 'no declared capability may silently disappear or become a generic proxy')
   assert.deepEqual(invocations, declarations, 'the visible controller cannot bypass or invoke undeclared Agent methods')
@@ -27,7 +29,9 @@ test('native FileExplorer calls are supplied through one explicit, typed Desktop
     'the Host port must not implement a generic IPC/HTTP forwarding surface')
   assert.equal(explorer.includes('window.xdriveDesktop'), false,
     'shared-bound controller can no longer reach Electron global directly')
-  assert.ok(explorer.includes('const ownerAgent = hostPort.agent'))
+  assert.ok(explorer.includes('const agent = hostPort.media'))
+  assert.equal(explorer.includes('hostPort.agent'), false)
+  assert.equal(bridge.includes('readonly agent: DesktopFileExplorerAgentPort'), false)
   assert.ok(explorer.includes('const nativePort = hostPort.native'))
   assert.ok(app.includes('useMemo(createDesktopFileExplorerHostPort, [])'))
   assert.ok(app.includes('hostPort: fileExplorerHostPort'))
@@ -60,16 +64,25 @@ test('viewport abort and private localhost media tickets belong to the Host, not
 })
 
 test('Owner browse, media/Viewer and write/task interfaces are disjoint exact allowlists', () => {
-  const allowed = [...bridge.matchAll(/^  '([A-Za-z]\\w*)',$/gm)].map(x => x[1]).sort()
+  const allowed = [...bridge.matchAll(/^  '([A-Za-z]\w*)',$/gm)].map(x => x[1]).sort()
   const group = name => {
     const start = bridge.indexOf('export const XDRIVE_DESKTOP_FILES_' + name + '_METHODS = [')
     assert.ok(start >= 0, name + ' domain contract is missing')
     const end = bridge.indexOf('] as const satisfies', start)
     assert.ok(end > start)
     const members = bridge.slice(start, end)
-    return [...members.matchAll(/^    '([A-Za-z]\\w*)',$/gm)].map(x => x[1])
+    return [...members.matchAll(/^    '([A-Za-z]\w*)',$/gm)].map(x => x[1])
   }
   const browse = group('BROWSE'), media = group('MEDIA'), write = group('WRITE')
+  const calls = [...explorer.matchAll(/\bhostPort\.(browse|media|write)\.([A-Za-z]\w*)\s*\(/g)]
+  const boundMethods = { browse, media, write }
+  for (const [, scope, method] of calls) {
+    assert.ok(boundMethods[scope].includes(method),
+      'Unapproved Host method/scope pair: ' + scope + '.' + method)
+  }
+  const capturedMediaCalls = [...explorer.matchAll(/\bagent\.([A-Za-z]\w*)\s*\(/g)]
+  assert.ok(capturedMediaCalls.every(m => media.includes(m[1])),
+    'Late preview/LivePhoto cleanup must stay on originally bound media session')
   assert.equal(browse.length, 13)
   assert.equal(media.length, 14)
   assert.equal(write.length, 31)
