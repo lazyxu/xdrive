@@ -60,6 +60,7 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
+  xDriveDiagnosticsSidebarDestination,
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
   XDriveAdminUsersPage,
@@ -2209,11 +2210,7 @@ export default function App({
       ariaLabel: '桌面版辅助功能',
       placement: 'after-core',
       items: [
-        {
-          key: 'diagnostics',
-          label: '诊断',
-          icon: <BuildRoundedIcon fontSize="small" />,
-        },
+        xDriveDiagnosticsSidebarDestination(),
       ],
     },    ...(status?.role === 'admin'
       ? [{

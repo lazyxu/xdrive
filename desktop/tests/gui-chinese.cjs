@@ -35,6 +35,7 @@ const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', '
 const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
 const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DiagnosticsPage.tsx'), 'utf8')
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
@@ -56,6 +57,7 @@ const renderer = [
   desktopOverviewPage,
   desktopConflictsPage,
   desktopDiagnosticsPage,
+  sharedDiagnosticsPage,
   desktopFilesPage,
   desktopSettingsContent,
 ].join('\n')
@@ -232,7 +234,9 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Desktop diagnostics should appear before the administrator section')
   assert.ok(rendererApp.includes("label: '主页'"), 'Desktop home extension is missing')
   assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
-  assert.ok(rendererApp.includes("label: '诊断'"), 'Desktop diagnostics extension is missing')
+  assert.ok(rendererApp.includes('xDriveDiagnosticsSidebarDestination()') &&
+    sharedWorkspaceNavigation.includes("label: '诊断'"),
+    'Desktop diagnostics extension must come from the same shared navigation model')
   assert.ok(rendererApp.includes('badge: status?.conflict_count'), 'Desktop conflict badge is missing')
 
   for (const icon of [

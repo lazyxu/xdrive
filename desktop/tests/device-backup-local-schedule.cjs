@@ -49,7 +49,7 @@ test('Only the owning Agent controls local schedule; automatic runs need an expl
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /source === source/)
   assert.match(dialog, /actions\.save\(sourceID, loaded\.revision, proposal\)/)
-  assert.match(dialog, /只有所属 Windows\/Linux Agent/)
+  assert.match(dialog, /只有当前设备所属的本机 Agent/)
   assert.match(dialog, /请先手动完成一次当前 Source 版本的增量备份/)
   assert.match(dialog, /暂停、取消、不确定任务及撤权不会自动重启/)
   assert.match(dialog, /不会自动安排增量备份/)

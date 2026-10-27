@@ -6,6 +6,9 @@ set -euo pipefail
 SPK_VERSION="${1:-0.1.0-1}"
 OUTPUT_DIR="${2:-release/synology}"
 CORE_DIR="${3:-}"
+# Optional fourth argument: prebuilt, verified DSM-only shared MUI bundle.
+# Empty keeps the original two-binary CLI SPK byte-for-byte unchanged.
+UI_DIR="${4:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ "$SPK_VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}-[0-9]+$ ]] || {
   echo "expected numeric DSM package version such as 0.1.0-1" >&2
@@ -82,6 +85,34 @@ os_min_ver="7.0-40759"
 ctl_stop="yes"
 silent_upgrade="yes"
 INFO
+
+# Optional DSM desktop application. This must never affect the minimal
+# two-executable SPK unless explicitly given a source-exact MUI build dir.
+if [[ -n "$UI_DIR" ]]; then
+  UI_DIR="$(cd "$UI_DIR" && pwd -P)"
+  node "$ROOT/web/scripts/verify-synology-ui.mjs" "$UI_DIR"
+  mkdir -p "$payload/ui/assets" "$payload/ui/images"
+  install -m 0644 "$ROOT/packaging/synology/ui/config" "$payload/ui/config"
+  install -m 0755 "$ROOT/packaging/synology/ui/backup.cgi" "$payload/ui/backup.cgi"
+  install -m 0644 "$UI_DIR/synology.html" "$payload/ui/synology.html"
+  count=0
+  while IFS= read -r -d '' asset; do
+    relative="${asset#"$UI_DIR"/}"
+    case "$relative" in
+      assets/*.js|assets/*.css|assets/*.png) ;;
+      *) echo "unexpected DSM UI asset: $relative" >&2; exit 1 ;;
+    esac
+    mkdir -p "$payload/ui/$(dirname "$relative")"
+    install -m 0644 "$asset" "$payload/ui/$relative"
+    count=$((count + 1))
+  done < <(find "$UI_DIR/assets" -type f -print0)
+  [[ "$count" -gt 0 ]] || { echo 'DSM UI has no assets' >&2; exit 1; }
+  # DSM registers a relative, same-origin desktop URL (never external IP).
+  printf 'dsmuidir="ui"\ndsmappname="com.xdrive.NASBackup"\n' >> "$pkg/INFO"
+  sed -i 's/(no server, GUI or Docker)/(no server or Docker)/' "$pkg/INFO"
+  (cd "$ROOT" && GO111MODULE=off go run scripts/synology-spk-icons.go \
+    assets/icon/web/pwa-512.png "$payload/ui/images")
+fi
 
 # Derived from the existing PWA icon; no independent DSM icon design.
 (cd "$ROOT" && GO111MODULE=off go run scripts/synology-spk-icons.go \

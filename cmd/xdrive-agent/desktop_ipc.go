@@ -119,6 +119,10 @@ var desktopIPCCapabilities = []string{
 	"media-album-folders",
 	"external-sources",
 	"device-backup-read",
+	"cloud-quota-read",
+	"cloud-files-read",
+	"cloud-file-text-preview",
+	"cloud-media-range-read",
 	"device-backup-local-device",
 	"storage-intelligence",
 	"storage-cache-cleanup",
@@ -686,6 +690,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("GET /v1/cloud/text-preview", h.cloudFileTextPreview)
+	mux.HandleFunc("GET /v1/cloud/media-range", h.cloudOwnerMediaRange)
 	mux.HandleFunc("GET /v1/cloud/file-preview-ticket", h.cloudFilePreviewTicket)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("POST /v1/cloud/download/folder", h.cloudDownloadFolder)

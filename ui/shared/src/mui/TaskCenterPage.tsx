@@ -16,6 +16,8 @@ import { XDriveMediaSelectionJobCenter } from './MediaSelectionJobCenter'
 import type { XDriveMediaSelectionJobPort } from './MediaSelectionJobCenter'
 import { XDriveTransferCenter } from './TransferCenter'
 import { XDriveTaskCenterSection } from './TaskPresentation'
+import { XDriveSynologyLocalTaskSection } from './SynologyLocalTaskSection'
+import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -67,6 +69,9 @@ export interface XDriveTaskCenterClearHistory {
 }
 
 export interface XDriveTaskCenterPageProps {
+  /** Authenticated local Agent capability, NOT a Server task feed. */
+  localBackupClient?: XDriveSynologyBackupLocalClient
+  onOpenLocalBackup?: () => void
   transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
   mediaSelectionJobPort?: XDriveMediaSelectionJobPort
@@ -118,6 +123,8 @@ export interface XDriveTaskCenterPageProps {
 }
 
 export function XDriveTaskCenterPage({
+  localBackupClient,
+  onOpenLocalBackup,
   transfers,
   operations,
   mediaSelectionJobPort,
@@ -222,7 +229,8 @@ export function XDriveTaskCenterPage({
     <XDriveWorkspaceSurface
       presentation="page"
       title={scope === 'global' ? '全局后台任务' : '任务'}
-      subtitle={scope === 'global' ? '查看所有用户及系统的后台任务，按权限执行控制操作。' : subtitle}
+      subtitle={scope === 'global' ? '查看所有用户及系统的后台任务，按权限执行控制操作。'
+        : localBackupClient ? '仅查看 DSM 本机 Agent 的备份批次，不是全量传输与 Server 后台任务。' : subtitle}
       pageActions={actions}
     >
       <Stack ref={contentRef} spacing={2.75}>
@@ -231,7 +239,9 @@ export function XDriveTaskCenterPage({
           <Typography variant="body2" color="text.secondary">
             {scope === 'global'
               ? '管理员视图：跨用户和系统的服务器后台任务，不包含其他设备的本机传输。'
-              : '我的任务：当前用户的文件操作、同步与后台处理；实时上传下载请查看传输入口。'}
+              : localBackupClient
+                ? '只读检查本 NAS 的 Agent 批次；尚未检查的来源不可推断为空闲。'
+                : '我的任务：当前用户的文件操作、同步与后台处理；实时上传下载请查看传输入口。'}
           </Typography>
           {globalTasksEnabled && onBackgroundScopeChange ? (
             <ToggleButtonGroup size="small" exclusive value={scope} aria-label="任务查看范围"
@@ -329,6 +339,9 @@ export function XDriveTaskCenterPage({
               onLoadMore={onLoadMoreBackground}
             /> : null}
           </XDriveTaskCenterSection>
+        ) : localBackupClient ? (
+          <XDriveSynologyLocalTaskSection client={localBackupClient}
+            onOpenBackup={onOpenLocalBackup} />
         ) : (
           <>
             {mediaSelectionJobPort ? (

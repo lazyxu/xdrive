@@ -554,3 +554,40 @@ test('PWA install dialog belongs to the account session and closes before Viewer
   assert.equal(nodes(tree).filter((node) => node.type === 'XDrivePwaInstallDialog').length, 0)
   assert.deepEqual(harness.effects, [])
 })
+
+test('narrow DSM host exposes only real enabled core routes while normal Web/Desktop remain complete', () => {
+  const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
+  const dsm = xDriveCompactWorkspaceNavigation({ coreKeys: ['device-backup'] })
+  assert.deepEqual(keys(dsm.primary), ['device-backup'])
+  assert.deepEqual(dsm.moreSections, [])
+  const desktop = xDriveCompactWorkspaceNavigation({})
+  assert.deepEqual(keys(desktop.primary), ['files', 'gallery', 'transfers'])
+  assert.deepEqual(desktop.moreSections.flatMap((section) => keys(section.items)),
+    ['device-backup', 'remote-pull', 'cloud-storage'])
+})
+
+
+test('DSM Home is a real primary route without changing Desktop or Web defaults', () => {
+  const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
+  const sections = [
+    { key: 'overview', placement: 'before-core', items: [
+      { key: 'overview', label: '主页', icon: null },
+    ] },
+    { key: 'diagnostics', placement: 'after-core', items: [
+      { key: 'diagnostics', label: '诊断', icon: null },
+    ] },
+  ]
+  const scoped = xDriveCompactWorkspaceNavigation({
+    sections, showLocalStorage: true,
+    coreKeys: ['device-backup', 'transfers', 'local-storage'],
+    primaryKeys: ['overview', 'device-backup', 'transfers', 'local-storage'],
+  })
+  assert.deepEqual(keys(scoped.primary),
+    ['overview', 'device-backup', 'transfers', 'local-storage'])
+  assert.deepEqual(scoped.moreSections.flatMap((group) => keys(group.items)),
+    ['diagnostics'])
+  const baseline = xDriveCompactWorkspaceNavigation({})
+  assert.deepEqual(keys(baseline.primary), ['files', 'gallery', 'transfers'])
+  assert.deepEqual(baseline.moreSections.flatMap((group) => keys(group.items)),
+    ['device-backup', 'remote-pull', 'cloud-storage'])
+})

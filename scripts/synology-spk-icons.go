@@ -49,8 +49,8 @@ func create(input image.Image, output string, size int) error {
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		panic("usage: icon.png 64.png 256.png")
+	if len(os.Args) != 4 && len(os.Args) != 3 {
+		panic("usage: icon.png 64.png 256.png | icon.png dsm-ui-icon-dir")
 	}
 	f, err := os.Open(os.Args[1])
 	if err != nil {
@@ -60,6 +60,20 @@ func main() {
 	_ = f.Close()
 	if err != nil {
 		panic(err)
+	}
+	if len(os.Args) == 3 {
+		// DSM application config uses images/icon_{0}.png for all seven
+		// documented sizes. Reuse the existing pixel-averaging algorithm.
+		if err := os.MkdirAll(os.Args[2], 0755); err != nil {
+			panic(err)
+		}
+		for _, size := range []int{16, 24, 32, 48, 64, 72, 256} {
+			name := fmt.Sprintf("%s/icon_%d.png", os.Args[2], size)
+			if err := create(src, name, size); err != nil {
+				panic(err)
+			}
+		}
+		return
 	}
 	if err := create(src, os.Args[2], 64); err != nil {
 		panic(err)

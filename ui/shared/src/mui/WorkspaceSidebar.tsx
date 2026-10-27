@@ -2,6 +2,7 @@ import type { MouseEvent, ReactNode } from 'react'
 import type { QuotaUsage } from '../models'
 import { Box, useMediaQuery } from '@mui/material'
 import type { Theme } from '@mui/material/styles'
+import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
 import {
   XDriveCoreWorkspaceNavItems,
   XDriveSidebarNavItem,
@@ -114,6 +115,8 @@ export function XDriveWorkspaceSidebar({
   selected,
   transferBadge,
   showLocalStorage = false,
+  coreKeys,
+  compactPrimaryKeys,
   sections = [],
   storageSummary,
   appearance = 'light',
@@ -131,6 +134,8 @@ export function XDriveWorkspaceSidebar({
   selected?: string
   transferBadge?: XDriveSidebarBadgeValue
   showLocalStorage?: boolean
+  coreKeys?: readonly XDriveCoreWorkspaceKey[]
+  compactPrimaryKeys?: readonly string[]
   sections?: XDriveSidebarSectionModel[]
   storageSummary?: XDriveWorkspaceSidebarStorageSummary | null
   appearance?: XDriveSidebarAppearance
@@ -147,7 +152,9 @@ export function XDriveWorkspaceSidebar({
 }) {
   const narrow = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'))
   if (responsive && narrow) {
-    const navigation = xDriveCompactWorkspaceNavigation({ sections, transferBadge, showLocalStorage })
+    const navigation = xDriveCompactWorkspaceNavigation({
+      sections, transferBadge, showLocalStorage, coreKeys, primaryKeys: compactPrimaryKeys,
+    })
     return (
       <XDriveWorkspaceCompactNavigation
         {...navigation}
@@ -209,6 +216,7 @@ export function XDriveWorkspaceSidebar({
           transferBadge={transferBadge}
           appearance={appearance}
           showLocalStorage={showLocalStorage}
+          coreKeys={coreKeys}
           onSelect={(key, event) => onSelect(key, event)}
         />
         {afterCoreInlineItems.map((destination) => (

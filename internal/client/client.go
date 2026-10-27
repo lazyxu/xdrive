@@ -1181,7 +1181,9 @@ type FileOperation struct {
 type QuotaUsage struct {
 	QuotaBytes         int64  `json:"quota_bytes"`
 	PhysicalUsedBytes  int64  `json:"physical_used_bytes"`
+	ReservedBytes      int64  `json:"reserved_bytes"`
 	AvailableBytes     int64  `json:"available_bytes"`
+	DiskTotalBytes     *int64 `json:"disk_total_bytes,omitempty"`
 	DiskAvailableBytes *int64 `json:"disk_available_bytes,omitempty"`
 	LogicalFileBytes   int64  `json:"logical_file_bytes"`
 	TrashBytes         int64  `json:"trash_bytes"`

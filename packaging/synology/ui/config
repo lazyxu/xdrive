@@ -1,0 +1,12 @@
+{
+  ".url": {
+    "com.xdrive.NASBackup": {
+      "type": "url",
+      "icon": "images/icon_{0}.png",
+      "title": "xDrive 设备备份",
+      "desc": "管理当前 NAS 的本机备份",
+      "url": "3rdparty/xdrivenas/synology.html",
+      "allUsers": true
+    }
+  }
+}

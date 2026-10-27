@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
@@ -16,6 +18,15 @@ export type XDriveSidebarDestinationModel = {
   icon: ReactNode
   badge?: XDriveSidebarBadgeValue
   secondary?: ReactNode
+}
+
+export function xDriveDiagnosticsSidebarDestination(): XDriveSidebarDestinationModel {
+  return { key: 'diagnostics', label: '诊断', icon: <BuildRoundedIcon fontSize="small" /> }
+}
+
+// The same settings entry may open the canonical shared SettingsDialog.
+export function xDriveSettingsSidebarDestination(): XDriveSidebarDestinationModel {
+  return { key: 'settings', label: '设置', icon: <SettingsRoundedIcon fontSize="small" /> }
 }
 
 export type XDriveSidebarSectionPlacement = 'before-core' | 'after-core' | 'bottom'
@@ -60,30 +71,38 @@ export function xDriveCompactWorkspaceNavigation({
   sections = [],
   transferBadge,
   showLocalStorage = false,
+  coreKeys,
+  primaryKeys,
 }: {
   sections?: XDriveSidebarSectionModel[]
   transferBadge?: XDriveSidebarBadgeValue
   showLocalStorage?: boolean
+  coreKeys?: readonly XDriveCoreWorkspaceKey[]
+  /** Host-specific compact order, including honest extension destinations. */
+  primaryKeys?: readonly string[]
 } = {}): {
   primary: XDriveSidebarDestinationModel[]
   moreSections: XDriveSidebarSectionModel[]
 } {
   const orderedSections: XDriveSidebarSectionModel[] = [
     ...sections.filter((section) => section.placement === 'before-core'),
-    { key: 'core', items: xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }) },
+    { key: 'core', items: xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })
+      .filter((item) => coreKeys === undefined || coreKeys.includes(item.key)) },
     ...sections.filter((section) => (section.placement ?? 'after-core') === 'after-core'),
     ...sections.filter((section) => section.placement === 'bottom'),
   ]
   const destinations = orderedSections.flatMap((section) => section.items)
-  const primary = compactPrimaryKeys.flatMap((key) => {
+  // Only authentic capabilities are navigable in a narrowly scoped DSM host.
+  const activePrimaryKeys = primaryKeys ?? (coreKeys === undefined ? compactPrimaryKeys : coreKeys)
+  const primary = activePrimaryKeys.flatMap((key) => {
     const destination = destinations.find((item) => item.key === key)
     return destination ? [destination] : []
   })
-  const primaryKeys = new Set(primary.map((destination) => destination.key))
+  const promotedDestinationKeys = new Set(primary.map((destination) => destination.key))
   const moreSections = orderedSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((destination) => !primaryKeys.has(destination.key)),
+      items: section.items.filter((destination) => !promotedDestinationKeys.has(destination.key)),
     }))
     .filter((section) => section.items.length > 0)
 

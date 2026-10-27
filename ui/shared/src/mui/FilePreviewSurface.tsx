@@ -161,6 +161,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const retryOwnerRef = useRef({ sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]) })
   const [previewURL, setPreviewURL] = useState('')
   const [loading, setLoading] = useState(false)
+  const [urlDownloadProgress, setURLDownloadProgress] = useState<{ loadedBytes: number; totalBytes?: number } | null>(null)
   const [failed, setFailed] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
   const [mediaBuffering, setMediaBuffering] = useState(false)
@@ -488,6 +489,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setMediaReady(false)
     setMediaBuffering(false)
     setBufferProgress({ bufferedSeconds: 0 })
+    setURLDownloadProgress(null)
 
     // Images own their two decode-gated layers, including pending-source display.
     if (!currentTarget || previewKind === 'none' || previewKind === 'image' || previewKind === 'live_photo') {
@@ -526,7 +528,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     // eventual URL after the response has consumed network resources.
     const controller = new AbortController()
     setLoading(true)
-    void loaders.url(currentTarget, previewKind, controller.signal)
+    void loaders.url(currentTarget, previewKind, controller.signal,
+      (loadedBytes, totalBytes) => {
+        if (!active || controller.signal.aborted ||
+            previewGenerationRef.current !== generation ||
+            !Number.isFinite(loadedBytes) || loadedBytes < 0 ||
+            (totalBytes !== undefined && (!Number.isFinite(totalBytes) || totalBytes < 0))) return
+        setURLDownloadProgress({ loadedBytes, totalBytes })
+      })
       .then(async (value) => {
         if (!value) {
           if (active) setFailed(true)
@@ -987,6 +996,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         minHeight,
         maxHeight,
         height: '100%',
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -994,6 +1004,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       }}
     >
       {body}
+      {loading && previewKind === 'pdf' ? (
+        <XDriveMediaLoadingProgress stage="transfer"
+          loadedBytes={urlDownloadProgress?.loadedBytes ?? 0}
+          totalBytes={urlDownloadProgress?.totalBytes} />
+      ) : null}
     </Box>
   )
 }

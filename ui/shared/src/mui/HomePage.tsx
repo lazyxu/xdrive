@@ -25,6 +25,8 @@ import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatusAlert } from './StatusAlert'
 import type { XDriveStatusTone } from './StatusBadge'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { XDriveSynologyHomeOverview } from './SynologyHomeOverview'
+import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 
 export type XDriveHomeAlert = {
   key: string
@@ -50,7 +52,7 @@ export type XDriveHomeSyncMetric = {
   tone: XDriveStatusTone
 }
 
-export function XDriveHomePage({
+function XDriveHomeServerPage({
   lifecycleKey,
   quota,
   sync,
@@ -296,4 +298,33 @@ export function XDriveHomePage({
       </XDriveWorkspaceSurface>
     </XDriveFileExplorerThumbnailProvider>
   )
+}
+
+
+/**
+ * One Home page entry used by Desktop, Web and DSM.
+ * The DSM branch reads the original Agent's authenticated Server quota,
+ * but cannot assert file gallery or account recent/favorites without
+ * independent real capabilities.
+ */
+export function XDriveHomePage(props:
+  | Parameters<typeof XDriveHomeServerPage>[0]
+  | {
+    localBackupClient: XDriveSynologyBackupLocalClient
+    onOpenBackup?: () => void
+    onOpenTasks?: () => void
+    onOpenDiagnostics?: () => void
+    onOpenCloudStorage?: () => void
+  },
+) {
+  if ('localBackupClient' in props) {
+    return <XDriveSynologyHomeOverview
+      client={props.localBackupClient}
+      onOpenBackup={props.onOpenBackup}
+      onOpenTasks={props.onOpenTasks}
+      onOpenDiagnostics={props.onOpenDiagnostics}
+      onOpenCloudStorage={props.onOpenCloudStorage}
+    />
+  }
+  return <XDriveHomeServerPage {...props} />
 }

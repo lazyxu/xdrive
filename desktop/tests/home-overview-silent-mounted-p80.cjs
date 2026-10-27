@@ -39,6 +39,7 @@ const components = {
   './SectionHeader': { XDriveSectionHeader: 'SectionHeader' },
   './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
   './WorkspaceSurface': { XDriveWorkspaceSurface: 'WorkspaceSurface' },
+  './SynologyHomeOverview': { XDriveSynologyHomeOverview: 'SynologyHomeOverview' },
 }
 const mod = { exports: {} }
 new Function('module', 'exports', 'require', compiled)(

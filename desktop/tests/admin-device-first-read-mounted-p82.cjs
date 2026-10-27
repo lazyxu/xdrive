@@ -52,6 +52,9 @@ function page(file, exportName) {
     if (name === '../device-backup-run-page-validation') return {
       validateXDriveDeviceBackupRunPage: () => {},
     }
+    if (name === './DeviceBackupDeviceCard') return {
+      XDriveDeviceBackupDeviceCard: page('DeviceBackupDeviceCard.tsx', 'XDriveDeviceBackupDeviceCard'),
+    }
     if (name === './WorkspaceSurface') return {
       XDriveWorkspaceSurface: ({ children, pageActions }) =>
         React.createElement('WorkspaceSurface', {}, pageActions, children),
