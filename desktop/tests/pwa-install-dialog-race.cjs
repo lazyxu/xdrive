@@ -25,7 +25,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-function harness() {
+function harness({ lastPromptOutcome = null } = {}) {
   const assetCheck = deferred()
   const deviceEvidence = deferred()
   const nativeInstall = deferred()
@@ -33,7 +33,7 @@ function harness() {
     displayMode: 'browser', platformHint: 'ios',
     secureContext: true, serviceWorkerSupported: true,
     promptAvailable: true, installedEventObserved: false,
-    lastPromptOutcome: null,
+    lastPromptOutcome,
   })
   const mui = {}
   for (const name of [
@@ -137,4 +137,49 @@ test('S5 PWA: closing dialog invalidates pending public inspection and device ev
   assert.equal(h.find('data-xdrive-pwa-s5-evidence-create').props.disabled, false)
   assert.doesNotMatch(h.output(), /private|stale/)
   assert.doesNotMatch(h.output(), /"old"/)
+})
+
+test('S5 PWA: closing and reopening clears completed installation and HEAD diagnostics', async () => {
+  const h = harness()
+  await h.render(true)
+  await act(async () => {
+    h.click('data-xdrive-pwa-prompt')
+    h.click('data-xdrive-pwa-check')
+  })
+  await act(async () => {
+    h.nativeInstall.resolve('accepted')
+    h.assetCheck.resolve([{
+      id: 'manifest', state: 'pass', label: '上一轮资源检测', detail: '旧部署资源正常',
+    }])
+    await Promise.all([h.nativeInstall.promise, h.assetCheck.promise])
+  })
+  assert.match(h.output(), /系统已接受安装请求/)
+  assert.match(h.output(), /上一轮资源检测/)
+  await h.render(false)
+  await h.render(true)
+  assert.doesNotMatch(h.output(), /系统已接受安装请求/,
+    'an old install prompt outcome must not appear in a new dialog session')
+  assert.doesNotMatch(h.output(), /上一轮资源检测|旧部署资源正常/,
+    'a previous public HEAD result must not be reported as a fresh check')
+})
+
+test('S5 PWA: globally retained native install outcome is not fresh dialog evidence', async () => {
+  const h = harness({ lastPromptOutcome: 'accepted' })
+  await h.render(true)
+  assert.doesNotMatch(h.output(), /系统已接受安装请求/,
+    'a prior Browser install result must not be shown as this opening\'s prompt result')
+})
+
+test('S5 PWA: an install response arriving after close cannot revive prompt feedback', async () => {
+  const h = harness()
+  await h.render(true)
+  await act(async () => { h.click('data-xdrive-pwa-prompt') })
+  await h.render(false)
+  await h.render(true)
+  await act(async () => {
+    h.nativeInstall.resolve('accepted')
+    await h.nativeInstall.promise
+  })
+  assert.doesNotMatch(h.output(), /系统已接受安装请求/,
+    'generation fence must reject stale prompt result after reopen')
 })
