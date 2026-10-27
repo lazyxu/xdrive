@@ -327,8 +327,21 @@ class DriveAppTest {
         compose.onNodeWithTag("auth-submit").performScrollTo()
         compose.waitForIdle()
         compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            // Fixture-only state; no server, user, password, token, path or
+            // Compose semantics text is written into public CI logs.
+            val current = controller.state.value
+            throw AssertionError(
+                "Fixture login did not reach loaded Files: " +
+                    "screen=${current.screen}, loading=${current.loading}, " +
+                    "loaded=${current.loaded}, itemCount=${current.items.size}, " +
+                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}",
+                failure,
+            )
         }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
@@ -1057,8 +1070,11 @@ class DriveAppTest {
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {
         var picks = 0
         startAndLogin(onUpload = { picks++ })
-        compose.onNodeWithContentDescription("账户菜单").performClick()
-        compose.onNodeWithTag("files-upload-action").performClick()
+        compose.onNodeWithContentDescription("账户菜单").assertIsDisplayed().performClick()
+        // The account menu scrolls on short emulator screens. Verify the
+        // actual enabled SAF action is visible; keep the exact callback check.
+        compose.onNodeWithTag("files-upload-action")
+            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 
