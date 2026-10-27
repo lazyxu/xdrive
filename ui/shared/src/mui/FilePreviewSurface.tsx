@@ -667,6 +667,22 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       durationSeconds: Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined,
     })
   }, [isCurrentMedia])
+  // Seeking a native media element invalidates the previous playable frame.
+  // Update the buffer window around the NEW currentTime immediately; do not
+  // show an old 00:00-X range while the new seek has no actual buffered bytes.
+  const markMediaSeeking = useCallback((event: SyntheticEvent<HTMLMediaElement>) => {
+    if (!isCurrentMedia()) return
+    updateBuffered(event)
+    setMediaBuffering(true)
+  }, [isCurrentMedia, updateBuffered])
+  const markMediaSeeked = useCallback((event: SyntheticEvent<HTMLMediaElement>) => {
+    if (!isCurrentMedia()) return
+    updateBuffered(event)
+    // Seeked alone does not prove a usable decoded frame. On paused video,
+    // however, HAVE_CURRENT_DATA is sufficient to stop the busy indicator
+    // without waiting for a Playing event that will never fire.
+    if (event.currentTarget.readyState >= 2) markMediaReady()
+  }, [isCurrentMedia, markMediaReady, updateBuffered])
   const mediaPending = Boolean(
     previewURL &&
     (previewKind === 'video' || previewKind === 'audio' || previewKind === 'pdf') &&
@@ -933,6 +949,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onReady={markMediaReady}
               onWaiting={markMediaWaiting}
               onBufferChange={updateBuffered}
+              onSeeking={markMediaSeeking}
+              onSeeked={markMediaSeeked}
               onError={markMediaFailed}
             />
           ) : (
@@ -952,6 +970,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onProgress={updateBuffered}
               onLoadedMetadata={updateBuffered}
               onTimeUpdate={updateBuffered}
+              onSeeking={markMediaSeeking}
+              onSeeked={markMediaSeeked}
               onError={markMediaFailed}
               sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
             />
@@ -976,6 +996,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             onWaiting={markMediaWaiting}
             onProgress={updateBuffered}
             onTimeUpdate={updateBuffered}
+            onSeeking={markMediaSeeking}
+            onSeeked={markMediaSeeked}
             onError={markMediaFailed}
             sx={{ width: '100%' }}
           />

@@ -58,6 +58,9 @@ export function xDriveMediaBufferProgressLabel(
   durationSeconds?: number,
   bufferedStartSeconds?: number,
 ) {
+  // A native element can have metadata/duration without a current buffered
+  // TimeRange (notably just after seeking). Zero is not delivered playback.
+  if (!Number.isFinite(bufferedSeconds) || bufferedSeconds <= 0) return '正在缓冲…'
   const range = bufferedStartSeconds !== undefined && Number.isFinite(bufferedStartSeconds) &&
     bufferedStartSeconds > 0 && bufferedSeconds > bufferedStartSeconds
     ? `缓冲 ${clock(bufferedStartSeconds)}–${clock(bufferedSeconds)}`

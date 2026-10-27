@@ -279,7 +279,11 @@ test('native video buffer range is time-based and does not invent file bytes', (
   assert.equal(xDriveMediaBufferProgressLabel(40, 156),
     '已缓冲 00:40 / 02:36')
   assert.equal(xDriveMediaBufferProgressLabel(0),
-    '已缓冲 00:00')
+    '正在缓冲…')
+  assert.equal(xDriveMediaBufferProgressLabel(0, 156),
+    '正在缓冲…', 'duration metadata alone must not imply buffered playback')
+  assert.equal(xDriveMediaBufferProgressLabel(Number.NaN, 156),
+    '正在缓冲…')
 })
 
 test('observed Web stream forwards bytes through a bounded TransformStream without a second chunk array', () => {
