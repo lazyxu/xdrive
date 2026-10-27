@@ -263,7 +263,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
   assert.ok(sharedXDriveApp.includes('selected={view}') && sharedXDriveApp.includes('onSelect={onNavigate}'), 'shared app must preserve selection and navigation dispatch')
-  assert.ok(rendererApp.includes("host={{ platform: 'desktop' }}"), 'Desktop must identify its real platform adapter')
+  assert.ok(rendererApp.includes("host={{ platform: 'desktop', adminRoleVerified: status?.role === 'admin' }}"), 'Desktop must identify its real platform adapter')
   assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
   for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
     assert.equal(rendererApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
