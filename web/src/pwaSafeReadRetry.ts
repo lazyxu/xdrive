@@ -36,7 +36,15 @@ function retryDelay(response: Response): number | null {
 function abortedError(): DOMException { return new DOMException('Request cancelled', 'AbortError') }
 
 function foreground(signal?: AbortSignal | null): boolean {
-  return !signal?.aborted && (typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  if (signal?.aborted) return false
+  try {
+    return typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  } catch {
+    // A restricted Safari WebKit context may deny the optional visibility
+    // getter. Unknown foreground status must not authorize an extra request
+    // or replace the HTTP response that was already received.
+    return false
+  }
 }
 function delayBeforeRetry(delayMs: number, signal?: AbortSignal | null): Promise<void> {
   if (signal?.aborted) return Promise.reject(abortedError())
