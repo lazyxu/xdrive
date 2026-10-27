@@ -173,10 +173,17 @@ export function startXDrivePwaUpdateObservation(): void {
       channel = null
     }
   }
-  window.addEventListener('online', refresh)
-  window.addEventListener('offline', refresh)
-  window.addEventListener('pageshow', () => { void locateRegistration() })
-  window.addEventListener('xdrive-pwa-registered', () => { void locateRegistration() })
+  // Safari's optional Window event subscriptions can be denied separately.
+  // A failed hint must not prevent initial registration discovery, manual
+  // update checks, or the Service Worker controllerchange observer.
+  try { window.addEventListener('online', refresh) } catch { /* advisory hint */ }
+  try { window.addEventListener('offline', refresh) } catch { /* advisory hint */ }
+  try {
+    window.addEventListener('pageshow', () => { void locateRegistration() })
+  } catch { /* lifecycle hint */ }
+  try {
+    window.addEventListener('xdrive-pwa-registered', () => { void locateRegistration() })
+  } catch { /* lifecycle hint */ }
   // A controller replacement can invalidate the cached registration without
   // navigation. Refresh the controller synchronously, then verify the currently
   // installed registration (including browser-side unregister) asynchronously.
