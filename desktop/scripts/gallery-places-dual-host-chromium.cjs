@@ -101,6 +101,7 @@ let appServer,childSessionRedeems=0,childSDKLoads=0,inlineSDKLoads=0
 let ginURL='',ginProcess=null
 const ginReady=path.join(temp,'real-gin-ready.json')
 const ginStop=path.join(temp,'real-gin-finished')
+const ginFailureStage=path.join(temp,'real-gin-failure-stage')
 async function startRealGin(galleryOrigin){
   const binary=process.env.XD_PLACES_P04_GO_BINARY
   if(!binary)return
@@ -109,7 +110,8 @@ async function startRealGin(galleryOrigin){
     '-test.count=1','-test.timeout=4m'],{
     env:{...process.env,XD_PLACES_P04_BROWSER_GIN:'1',
       XD_PLACES_P04_GALLERY_ORIGIN:galleryOrigin,
-      XD_PLACES_P04_READY_FILE:ginReady,XD_PLACES_P04_STOP_FILE:ginStop},
+      XD_PLACES_P04_READY_FILE:ginReady,XD_PLACES_P04_STOP_FILE:ginStop,
+      XD_PLACES_P04_FAILURE_STAGE:ginFailureStage},
     stdio:['ignore','pipe','pipe'],
   })
   // Never echo fixture stdout/stderr: no token, key or database URL is
@@ -127,7 +129,12 @@ async function startRealGin(galleryOrigin){
       summary.realGin=true
       return
     }
-    if(ginProcess.exitCode!==null)throw Error('real Gin exited before readiness')
+    if(ginProcess.exitCode!==null){
+      const stage=fs.existsSync(ginFailureStage)
+        ? fs.readFileSync(ginFailureStage,'utf8').trim() : 'unknown'
+      throw Error('real Gin exited before readiness at '+
+        (/^[a-z0-9-]{1,40}$/.test(stage)?stage:'redacted'))
+    }
     await new Promise(resolve=>setTimeout(resolve,350))
   }
   throw Error('real Gin startup timeout')

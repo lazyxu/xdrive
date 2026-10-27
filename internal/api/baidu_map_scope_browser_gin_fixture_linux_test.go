@@ -45,6 +45,15 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	origin := os.Getenv("XD_PLACES_P04_GALLERY_ORIGIN")
 	ready := os.Getenv("XD_PLACES_P04_READY_FILE")
 	stop := os.Getenv("XD_PLACES_P04_STOP_FILE")
+	// The parent runner intentionally discards private fixture stdout.
+	// Export only a fixed nonsecret setup stage when a test fatals.
+	stage := "initial-setup"
+	stageFile := os.Getenv("XD_PLACES_P04_FAILURE_STAGE")
+	t.Cleanup(func() {
+		if t.Failed() && stageFile != "" {
+			_ = os.WriteFile(stageFile, []byte(stage), 0600)
+		}
+	})
 	if dsn == "" || ready == "" || stop == "" ||
 		!strings.HasPrefix(origin, "https://gallery.example.net:") {
 		t.Fatal("missing bounded Chromium/Gin fixture configuration")
@@ -169,24 +178,29 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	// The real HEVC-coded sample is decoded by the existing media package,
 	// cached under its production revision/MIME-fenced thumbnail identity,
 	// and later served only by Gin's authenticated /media/items/:id/thumbnail.
+	stage = "heic-seed"
 	seedP04BrowserOwnerPhotoCells(t, db, heicOwner.ID, "heic", 1, 0,
 		casKey, checksum, int64(pngData.Len()))
+	stage = "heic-file"
 	heicOriginal, err := os.ReadFile("../media/testdata/heic-8bit-512.heic")
 	if err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-extract"
 	heicInfo, err := mediapkg.Extract("p04-heic-01.HEIC",
 		bytes.NewReader(heicOriginal), int64(len(heicOriginal)))
 	if err != nil || (heicInfo.MIMEType != "image/heic" &&
 		heicInfo.MIMEType != "image/heif") || heicInfo.Width != 512 || heicInfo.Height != 512 {
 		t.Fatalf("real HEVC-coded HEIC fixture cannot be indexed: %v", err)
 	}
+	stage = "heic-decode"
 	heicThumb, err := mediapkg.ThumbnailWithAlpha(bytes.NewReader(heicOriginal),
 		heicInfo.Orientation, mediaThumbnailEdge)
 	if err != nil || heicThumb.SourceKind != "heic" ||
 		heicThumb.MIMEType != "image/jpeg" || len(heicThumb.Data) < 512 {
 		t.Fatalf("real HEIC did not produce the existing JPEG thumbnail: %v", err)
 	}
+	stage = "heic-storage"
 	heicChecksum := fmt.Sprintf("%x", sha256.Sum256(heicOriginal))
 	heicKey, err := storage.ContentAddressedKey(heicChecksum)
 	if err != nil {
@@ -202,6 +216,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-node"
 	var heicNode meta.Node
 	if err := db.Where("owner_id = ? AND name = ?",
 		heicOwner.ID, "p04-heic-01.png").Take(&heicNode).Error; err != nil {
@@ -212,6 +227,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		heicOwner.ID, heicNode.ID).Take(&heicAsset).Error; err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-metadata"
 	if err := db.Model(&meta.Node{}).Where("id = ?", heicNode.ID).
 		Update("name", "p04-heic-01.HEIC").Error; err != nil {
 		t.Fatal(err)
@@ -245,6 +261,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-thumbnail-cache"
 	var heicMetadata meta.MediaMetadata
 	if err := db.Where("node_id = ?", heicNode.ID).Take(&heicMetadata).Error; err != nil {
 		t.Fatal(err)
@@ -266,6 +283,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	if err := db.Where("node_id = ?", heicNode.ID).Take(&heicMetadata).Error; err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-position"
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).
 		Where("asset_id = ?", heicAsset.ID).
 		Update("media_updated_at", heicMetadata.UpdatedAt).Error; err != nil {
@@ -276,6 +294,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		Update("source_media_updated_at", heicMetadata.UpdatedAt).Error; err != nil {
 		t.Fatal(err)
 	}
+	stage = "heic-ready"
 	v, ciphertext, err := keyring.Seal(baiduJSAPISecretAADID,
 		baiduJSAPISecretKind, []byte("SYNTHETIC_BROWSER_AK_NEVER_USED_WITH_PROVIDER"))
 	if err != nil {
