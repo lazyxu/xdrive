@@ -93,7 +93,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	}
 	db := fileExplorerMediaPerfDatabase(t, dsn)
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.RefreshToken{}, &meta.Node{},
+		// Production logout revokes the refresh token and the map epoch in
+		// one SQL transaction; the private E2E schema must include both tables.
+		&meta.User{}, &meta.RefreshToken{}, &meta.BaiduJSAPIMapEpoch{}, &meta.Node{},
 		&meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
 		&meta.LocalPushQuotaHold{},
@@ -586,7 +588,15 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			fileServer.ServeHTTP(w, request)
 		}
 	})
-	peer := httptest.NewServer(mux)
+	// Opt-in browser Cookie E2E: serve the genuine compiled Web and Gin on
+	// the SAME TLS origin. Existing HTTP S2B3 and upload fixtures stay unchanged.
+	cookieHTTPS := os.Getenv("XD_PWA_S2B3_COOKIE_HTTPS") == "1"
+	var peer *httptest.Server
+	if cookieHTTPS {
+		peer = httptest.NewTLSServer(mux)
+	} else {
+		peer = httptest.NewServer(mux)
+	}
 	defer peer.Close()
 
 	// The private ready-file has no JWT, password, refresh token or CAS bytes.
@@ -596,6 +606,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		"media_node_id": picNode.ID,
 		"real_gin":      true, "postgresql": true, "local_cas": true,
 		"intercepted_api": false, "physical_device": false,
+		"cookie_https": cookieHTTPS,
 	}
 	if wakeMode {
 		ready["pwa_s4d2_wake"] = true

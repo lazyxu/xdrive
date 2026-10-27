@@ -1,0 +1,132 @@
+name: Cookie Login Real Web UI → HTTPS Gin
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/auth-cookie-real-ui-gin.yml'
+      - 'desktop/scripts/pwa-cookie-real-gin-browser.cjs'
+      - 'internal/api/pwa_s2b3_real_gin_auth_integration_test.go'
+      - 'internal/api/auth_browser_cookie*.go'
+      - 'web/src/App.tsx'
+      - 'web/src/api.ts'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/auth-cookie-real-ui-gin.yml'
+      - 'desktop/scripts/pwa-cookie-real-gin-browser.cjs'
+      - 'internal/api/pwa_s2b3_real_gin_auth_integration_test.go'
+      - 'internal/api/auth_browser_cookie*.go'
+      - 'web/src/App.tsx'
+      - 'web/src/api.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  real-web-https-gin-cookie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build real Web UI and isolated Gin/PostgreSQL fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          node --check desktop/scripts/pwa-cookie-real-gin-browser.cjs
+          go test -c -o "$RUNNER_TEMP/xdrive-cookie-real-gin.test" ./internal/api
+          mkdir -p "$RUNNER_TEMP/xdrive-cookie-browser"
+          npm install --prefix "$RUNNER_TEMP/xdrive-cookie-browser" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Real Chrome/Chromium required" >&2
+            exit 1
+          fi
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-cookie-browser/node_modules/playwright-core" >> "$GITHUB_ENV"
+      - name: Genuine React login and rotating HttpOnly cookie over HTTPS to Gin
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          READY="$RUNNER_TEMP/xdrive-cookie-ui-private-ready.json"
+          OUT="$GITHUB_WORKSPACE/desktop/cookie-ui-real-gin-results"
+          mkdir -p "$OUT"
+          XD_PWA_S2B3_REAL_GIN=1 XD_PWA_S2B3_COOKIE_HTTPS=1 \
+          XD_PWA_S2B3_READY_FILE="$READY" \
+          XD_PWA_S2B3_DIST="$GITHUB_WORKSPACE/web/dist" \
+            "$RUNNER_TEMP/xdrive-cookie-real-gin.test" \
+              -test.run='^TestPWAS2B3RealGinAuthFixture$' \
+              -test.count=1 -test.v -test.timeout=7m \
+              > "$RUNNER_TEMP/xdrive-cookie-ui-private-gin.log" 2>&1 &
+          FIXTURE_PID=$!
+          cleanup() {
+            if kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              kill "$FIXTURE_PID" || true
+              wait "$FIXTURE_PID" || true
+            fi
+            rm -f "$READY"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 120); do
+            if [ -s "$READY" ]; then break; fi
+            if ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              echo "isolated genuine Gin fixture exited before private readiness"
+              exit 1
+            fi
+            sleep 1
+          done
+          test -s "$READY" || { echo "No private Go readiness signal"; exit 1; }
+          node desktop/scripts/pwa-cookie-real-gin-browser.cjs \
+            --ready="$READY" --output-dir="$OUT"
+          wait "$FIXTURE_PID" || { echo "Real Gin fixture verification failed"; exit 1; }
+          node -e "const s=require('./desktop/cookie-ui-real-gin-results/summary.json'); const fields=['passed','realWebUI','realGin','realPostgreSQL','realHTTPS','loginFromUI','secureHttpOnly','accessMemoryOnly','privateBearerRead','cookieNotBearer','coldRestore','twoTabRestore','wrongOwnerRejected','logoutFromUI','postLogoutFailClosed']; if(s.apiMocks || fields.some(x=>s[x]!==true))process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cookie-ui-https-real-gin-sanitized
+          # Never upload certificates, cookies, passwords, JWTs, browser state,
+          # private readiness JSON or the Gin request log.
+          path: desktop/cookie-ui-real-gin-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14
