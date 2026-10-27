@@ -1,8 +1,9 @@
 name: Cleanup redundant branches
 
+# A trusted merged/labeled PR event or explicit manual request scans all branches.
+# Do not enqueue duplicate scans on every master push; daily prune covers orphans.
+
 on:
-  push:
-    branches: [master]
   pull_request_target:
     types: [closed, labeled]
   workflow_dispatch:
@@ -21,7 +22,6 @@ jobs:
   cleanup:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
       (
         github.event_name == 'pull_request_target' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
