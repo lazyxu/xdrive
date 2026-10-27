@@ -329,6 +329,15 @@ most recent historical checksum/CAS verification, most recent Host-recorded
 destructive restore action is **not** evidence of an isolated drill. History is
 bounded to 30 receipts, and no history is not a failed backup.
 
+For PR-triggered CI, `GITHUB_SHA` is a synthetic merge checkout, not
+necessarily the feature head or the eventual squash-merge commit. For the
+historical run below, the artifact's `ci_checkout_sha` is
+`316584c0b5c9b0acb8a17c337a40a339a3fff620`; GitHub's merge commit
+has `954fc13622acb83582e5e202bdad914e82e1a2e4` as its second parent.
+Future artifacts additionally include `ci_source_head_sha` and must pass
+an exact SHA/schema/checkout-ancestry validator inside the same CI run
+before upload. Neither mechanism binds artifacts to an installed Host.
+
 The only verified CI drill for feature head `954fc13622acb83582e5e202bdad914e82e1a2e4`
 is [GitHub Actions run 40499948689](https://github.com/lazyxu/xdrive/actions/runs/40499948689)
 with artifact `xdrive-server-isolated-restore-drill` (ID `12734306146`).

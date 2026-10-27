@@ -651,6 +651,7 @@ data={
     "v2_first_generation_restore_tested":True,
     "v2_retained_after_manual_prune_restore_tested":True,
     "ci_checkout_sha":os.environ.get("GITHUB_SHA",""),
+    "ci_source_head_sha":os.environ.get("XD_CI_SOURCE_HEAD_SHA",""),
     "observed_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
 }
 fd,temporary=tempfile.mkstemp(prefix=".restore-drill-",dir=parent)
