@@ -95,3 +95,18 @@ test('Owner browse, media/Viewer and write/task interfaces are disjoint exact al
   assert.equal(dsm.includes('DesktopFilesWritePort'), false)
   assert.equal(dsm.includes('window.xdriveDesktop'), false)
 })
+
+test('Viewer download preserves correlation, save acknowledgment, and redacted native IPC errors', () => {
+  // Native Host Port is a transport boundary, not a reason to drop the
+  // already-accepted Viewer download identity and caller-visible result.
+  assert.match(explorer, /const downloadNode = async \(\s*node: AgentCloudNode, clientRequestID\?: string,/)
+  assert.match(explorer, /Promise<\{ saved: boolean \}>/)
+  assert.match(explorer, /hostPort\.write\.cloudDownload\(\s*node\.id,\s*node\.name,\s*clientRequestID,/)
+  assert.match(explorer, /return \{ saved: result\.data\.saved \}/)
+  assert.match(explorer, /if \(!isActionBusyCurrent\(busyToken\)\) return \{ saved: false \}/)
+  assert.ok(explorer.includes("onError('下载失败，请在任务中心查看或重试。')"),
+    'thrown IPC errors may include native paths and must stay redacted')
+  assert.ok(bridge.includes("'cloudDownload'"),
+    'only the explicit authenticated owning Desktop write port can save files')
+  assert.equal(explorer.includes('window.xdriveDesktop.agent.cloudDownload'), false)
+})
