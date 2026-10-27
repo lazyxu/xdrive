@@ -21,7 +21,9 @@ const favoritesMapEntry = new URLSearchParams(location.search).get('start_favori
 // Controlled Owner GPS -> BD-09 delayed derivative. The mounted SDK starts
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
+const videoPosterMode = new URLSearchParams(location.search).get('map_h264') === '1'
 let derivedLocationReady = !delayedBD09
+let savedSyntheticPoster: Blob | null = null
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
 // The next identical retry must recover without remounting either SDK Host.
 const testCellsFailure = new URLSearchParams(location.search).get('cells_failure') === '1'
@@ -57,6 +59,7 @@ const probe = ((window as any).__mapProbe = {
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoOpens:[] as any[],
   bd09Completions:0,failedOwnerCellsReads:[] as any[],
+  h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -71,7 +74,8 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   return {coordinate_space:'bd09ll' as const,index_scope:'owner_gps_auto_index' as const,
     grid_columns:8,grid_rows:8,total_count:count,
     cells:[{cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
-      node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude}]}
+      node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
+      ...(videoPosterMode?{media_kind:'video' as const}:{})}]}
 }
 const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey:string)=>{
   if(signal.aborted)throw Error('aborted')
@@ -137,10 +141,32 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
 }
 const loadThumbnail=async(_id:number,signal?:AbortSignal)=>{
   if(signal?.aborted)throw Error('cancelled')
+  if(videoPosterMode&&_id===75){
+    if(!savedSyntheticPoster){probe.h264.misses++;return null}
+    probe.h264.warm++
+    return URL.createObjectURL(savedSyntheticPoster)
+  }
   return 'data:image/svg+xml,'+encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96">'+
     '<rect width="96" height="96" fill="#3b82f6"/>'+
     '<circle cx="48" cy="48" r="22" fill="#e0f2fe"/></svg>')
+}
+const mapVideoPreviewURL=async(nodeID:number,kind:'image'|'video'|'live_photo',
+  signal?:AbortSignal):Promise<string|null>=>{
+  if(!videoPosterMode || nodeID!==75 || kind!=='video' || signal?.aborted) return null
+  probe.h264.previewURLs++
+  // Genuine 12-frame AVC1 bitstream is served by the local HTTPS fixture.
+  // This URL is returned by the test's trusted Owner port, never by SDK Child.
+  return location.origin+'/__fixture/h264.mp4'
+}
+const saveMapVideoPoster=async(nodeID:number,revision:number,
+  poster:Blob,signal?:AbortSignal):Promise<void>=>{
+  if(!videoPosterMode || nodeID!==75 || revision!==2 || signal?.aborted ||
+     poster.type!=='image/jpeg' || poster.size<=200)
+    throw Error('invalid synthetic Owner video Poster')
+  savedSyntheticPoster=poster
+  probe.h264.puts++
+  probe.h264.putBytes+=poster.size
 }
 const onOpenCell=(selection:any,scope:Scope)=>{
   probe.clicks.push({node:selection.node_id,asset:selection.asset_id,
@@ -358,6 +384,8 @@ function TestApp(){
       getInlineSignedStatus={getInlineSignedStatus}
       mintChildTicket={mintChildTicket} listOwnerCells={listOwnerCells}
       listOwnerCellItems={listOwnerCellItems} loadThumbnail={loadThumbnail}
+      loadPreviewURL={videoPosterMode?mapVideoPreviewURL:undefined}
+      saveVideoPoster={videoPosterMode?saveMapVideoPoster:undefined}
       onOpenCell={onOpenCell} onOpenCellPhoto={openDrawerPhoto}
       initialCamera={probe.cameras.at(-1)}
       onOpenViewport={onOpenViewport}
