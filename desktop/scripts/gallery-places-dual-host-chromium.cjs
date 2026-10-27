@@ -1219,6 +1219,94 @@ async function testFavoritesMapClose(browser,mode,port){
   }finally{await context.close()}
 }
 
+// Real mounted shared React Parent, not a source regex or direct onReady stub.
+// Intentionally exercise BOTH SDK Hosts without native moveend on centerAndZoom.
+async function testDelayedBD09Map(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try {
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+'&delayed_bd09=1',
+      {waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>window.__mapProbe?.ready===true)
+    const sdkAtEmptyMap=mode==='inline' ? inlineSDKLoads : childSDKLoads
+    await page.locator('[data-xdrive-places-empty-map-recheck]').waitFor({state:'visible'})
+    const initial=await page.evaluate(()=>({
+      empty:window.__mapProbe.queries.some(q=>q.count===0&&
+        q.bounds.west===-180&&q.bounds.east===180),
+      pins:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      completed:window.__mapProbe.bd09Completions,
+    }))
+    record(mode+': initial GPS backlog shows genuine empty Owner BD09 map',
+      initial.empty&&initial.pins===0&&initial.completed===0)
+    await page.locator('#fixture-finish-bd09').click()
+    // The button exercises the production trusted Parent refresh callback;
+    // no new SDK, WGS84 forwarding, GeoConv, or unscoped Gallery query.
+    await page.locator('[data-xdrive-places-empty-map-recheck]').click()
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const image=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return image && image.complete && image.naturalWidth>0
+    })
+    await page.waitForFunction(()=>window.__mapProbe?.cameras.some(camera=>
+      camera.coordinate_space==='bd09ll' &&
+      Math.abs(camera.latitude-30.135)<0.00001 &&
+      Math.abs(camera.longitude-119.975)<0.00001 && camera.zoom===8))
+    // The isolated Host coalesces Child 'viewport' IPC for 120 ms after
+    // Camera. Wait for the Owner-signed result, not merely SDK motion.
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===9 && q.bounds.west===100 && q.bounds.south===20 &&
+      q.bounds.east===125 && q.bounds.north===40))
+    const recovered=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      const image=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return {completed:probe.bd09Completions,decoded:Boolean(image?.naturalWidth),
+        world:probe.queries.some(q=>q.count===9&&q.bounds.west===-180&&
+          q.bounds.south===-85&&q.bounds.east===180&&q.bounds.north===85),
+        live:probe.queries.some(q=>q.count===9&&q.bounds.west===100&&
+          q.bounds.south===20&&q.bounds.east===125&&q.bounds.north===40),
+        allScoped:probe.queries.every(q=>q.albumKey===''&&q.favorite===false),
+        failed:probe.failed}
+    })
+    record(mode+': late BD09 produces Owner worldwide discovery and live camera Cells',
+      recovered.completed===1&&recovered.world&&recovered.live&&
+      recovered.allScoped&&!recovered.failed)
+    record(mode+': trusted cover appears with decoded image after late camera restore',
+      recovered.decoded)
+    record(mode+': recovering derived pins does not remount the Provider SDK',
+      (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkAtEmptyMap)
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().click()
+    await page.locator('#fixture-viewer').waitFor({state:'visible'})
+    await page.locator('#fixture-viewer-back').click()
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const back=await page.evaluate(()=>({
+      drawer:!!document.querySelector('[data-xdrive-places-photo-drawer]'),
+      opens:window.__mapProbe.photoOpens,
+      count:window.__mapProbe.queries.at(-1)?.count,
+      failure:window.__mapProbe.failed,
+    }))
+    record(mode+': map cover → Owner Cell drawer → preview → same signed drawer on Back',
+      back.drawer&&back.opens.some(x=>x.valid===true)&&
+      back.count===9&&!back.failure&&errors.length===0)
+  } finally {await context.close()}
+}
+
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -1306,6 +1394,10 @@ async function main(){
       childSDKLoads===2&&childSessionRedeems===2)
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
+    if(!ginURL){
+      await testDelayedBD09Map(browser,'inline',port)
+      await testDelayedBD09Map(browser,'isolated',port)
+    }
     if(ginURL){
       const inlinePage=await testFullGalleryPage(browser,'inline',port)
       const isolatedPage=await testFullGalleryPage(browser,'isolated',port)
