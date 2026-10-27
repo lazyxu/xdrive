@@ -625,7 +625,9 @@ compose() {
   if compose_profile_enabled media-worker; then
     profile_args+=(--profile media-worker)
   fi
-  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  # Prefetch only uses the checksum-verified TARGET Compose.
+  # The previous config and rollback still use COMPOSE_PATH.
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" "$@" </dev/null
 }
 
 pull_json_supported() {
@@ -649,7 +651,7 @@ pull_service_json() {
     if compose_profile_enabled media-worker; then
       profile_args+=(--profile media-worker)
     fi
-    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
     render_pull_json "$service" "$pid_file" "$watermark_file"
@@ -660,6 +662,46 @@ pull_service_json() {
     return "${statuses[2]}"
   fi
   return "${statuses[0]}"
+}
+
+# Docker-native output for all services: identical to the stage-5 Server
+# verifier, using exact pinned image refs instead of Compose's JSON summary.
+pull_service_image_ref() {
+  local service="$1" variable fallback ref
+  case "$service" in
+    postgres) variable=XD_POSTGRES_IMAGE; fallback=postgres:17-alpine ;;
+    server) variable=XD_SERVER_IMAGE; fallback=ghcr.io/lazyxu/xdrive-server:latest ;;
+    caddy) variable=XD_CADDY_IMAGE; fallback=ghcr.io/lazyxu/xdrive-caddy:latest ;;
+    photo-face) variable=XD_PHOTO_FACE_IMAGE; fallback=ghcr.io/lazyxu/xdrive-photo-face:latest ;;
+    media-worker) variable=XD_MEDIA_WORKER_IMAGE; fallback=ghcr.io/lazyxu/xdrive-media-worker:latest ;;
+    *) echo "[xDrive] unknown image service: $service" >&2; return 2 ;;
+  esac
+  ref="$(printenv "$variable" 2>/dev/null || true)"
+  [[ -n "$ref" ]] || ref="$(env_value "$variable")"
+  [[ -n "$ref" ]] || ref="$fallback"
+  [[ "$ref" != -* && "$ref" != *[[:space:]]* ]] || {
+    echo "[xDrive] invalid $service image reference" >&2
+    return 2
+  }
+  printf '%s\n' "$ref"
+}
+
+# Preserve Docker's own Pulling / Downloading / Pull complete / Digest output.
+# A private log keeps failure evidence; remove CDN query signatures from the
+# console stream without losing pipeline exit status or buffering progress.
+pull_service_native() {
+  local service="$1" image_ref
+  local -a statuses=()
+  image_ref="$(pull_service_image_ref "$service")" || return 2
+  # The host update UI still knows which service is being downloaded, but
+  # cannot claim byte totals absent from the native Docker event stream.
+  write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$service" 0 0
+  printf '[xDrive] pull %s image: %s (Docker native layer progress)\n' "$service" "$image_ref"
+  docker pull "$image_ref" </dev/null 2>&1 |
+    tee -a "$PULL_LOG" |
+    sed -u -E 's#https://[^"[:space:]]+\?[^"[:space:]]+#<signed CDN URL redacted>#g'
+  statuses=("${PIPESTATUS[@]}")
+  [[ "${statuses[0]:-1}" -eq 0 && "${statuses[1]:-1}" -eq 0 && "${statuses[2]:-1}" -eq 0 ]]
 }
 
 pull_service_plain() {
@@ -695,7 +737,13 @@ pull_service_with_retry() {
     fi
     watermark_before="$(wc -c < "$watermark_file")"
 
-    if [[ "$pull_progress_mode" == "json" ]]; then
+    if [[ "$pull_progress_mode" == "native" ]]; then
+      if pull_service_native "$service"; then
+        rm -f "$watermark_file"
+        printf '[xDrive] pull %s complete.\n' "$service"
+        return 0
+      fi
+    elif [[ "$pull_progress_mode" == "json" ]]; then
       if pull_service_json "$service" "$watermark_file"; then
         rm -f "$watermark_file"
         printf '[xDrive] pull %s complete.\n' "$service"
@@ -908,14 +956,29 @@ initialize_image_pull() {
     exit 2
   fi
   
-  pull_progress_mode="plain"
-  if pull_json_supported; then
-    pull_progress_mode="json"
-    echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
-    echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
-  else
-    echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
-  fi
+  # Native layer progress is the default, just like the stage-5 target Server
+  # verifier. Keep the numeric JSON watchdog as an explicit diagnostic option.
+  pull_progress_mode="${XD_PULL_PROGRESS_MODE:-native}"
+  case "$pull_progress_mode" in
+    native)
+      echo "[xDrive] Docker native layer progress enabled for every image."
+      echo "[xDrive] Docker controls native layer progress and per-request timeouts."
+      ;;
+    json)
+      if pull_json_supported; then
+        echo "[xDrive] optional Docker Compose JSON byte-progress mode enabled."
+        echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
+      else
+        echo "[xDrive] Docker Compose JSON unavailable; using native layer progress." >&2
+        pull_progress_mode=native
+      fi
+      ;;
+    plain) echo "[xDrive] optional Docker Compose plain progress enabled." ;;
+    *)
+      echo "xDrive installer: XD_PULL_PROGRESS_MODE must be native, json or plain." >&2
+      exit 2
+      ;;
+  esac
   pull_initialized=1
 }
 
@@ -929,7 +992,11 @@ prepare_target_image() {
   else
     echo "[xDrive] prefetch $service: obtaining target image before downtime..."
     if ! (
-      # Process-only override: the current .env must remain usable for backups.
+      # Legacy Compose may still use old Web/Caddy image definitions or
+      # omit optional services. Pull against the verified TARGET Compose.
+      PREFETCH_COMPOSE_PATH="$STAGING_DIR/docker-compose.yml"
+      [[ -f "$PREFETCH_COMPOSE_PATH" && ! -L "$PREFETCH_COMPOSE_PATH" ]] || exit 1
+      # Process-only image overrides; preserve the live runtime .env.
       export XD_POSTGRES_IMAGE="$target_postgres_image"
       export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
       export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
@@ -2528,7 +2595,15 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   if [[ "$upgrade_backup_verifier" == "target" ]]; then
     if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
       echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
-      if ! docker pull "$target_server_image" </dev/null; then
+      initialize_image_pull
+      # Use the SAME bounded retries as the later native service pulls.
+      # Even when other services opt into JSON diagnostics, this verifier
+      # pulls the exact published Server tag directly, not through old Compose.
+      if ! (
+        export XD_SERVER_IMAGE="$target_server_image"
+        pull_progress_mode=native
+        pull_service_with_retry server
+      ); then
         echo "xDrive installer: cannot fetch pinned target verifier; refusing to enter backup without verified image." >&2
         exit 1
       fi
@@ -2540,7 +2615,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
 
   if [[ "${XD_INSTALL_NO_START:-0}" != "1" ]]; then
     # Acquire every required target image while the previous release is alive.
-    # Only the child Compose pull sees new image refs; backup and rollback
+    # Only the child sees the target Compose and new image refs; backup and rollback
     # continue to read the untouched old release references from the .env.
     initialize_image_pull
     echo "[xDrive] prefetching published target images before maintenance..."
