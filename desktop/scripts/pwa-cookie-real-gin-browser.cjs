@@ -6,7 +6,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
+const { chromium, request } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const args = Object.fromEntries(process.argv.slice(2).map(value => {
   const match = /^--(ready|output-dir)=(.+)$/.exec(value)
@@ -23,6 +23,9 @@ assert.equal(ready.physical_device, false)
 assert(/^https:\/\/127\.0\.0\.1:\d+$/.test(ready.url))
 assert.equal(ready.username, 'pwa-s2b3-owner')
 assert(Number.isSafeInteger(ready.target_id) && ready.target_id > 0)
+assert.equal(ready.password_username, 'pwa-cookie-password-user')
+assert.equal(ready.admin_username, 'pwa-cookie-admin')
+assert(Number.isSafeInteger(ready.password_user_id) && ready.password_user_id > 0)
 const executable = process.env.XDRIVE_BROWSER_EXECUTABLE
 assert(executable && fs.existsSync(executable), 'System Chrome is required')
 const out = path.resolve(args['output-dir'])
@@ -42,6 +45,12 @@ const summary = {
   privateBearerRead: false, cookieNotBearer: false, coldRestore: false,
   twoTabRestore: false, wrongOwnerRejected: false,
   logoutFromUI: false, postLogoutFailClosed: false,
+  forcedPasswordForm: false, passwordCookieRotated: false,
+  stalePasswordJWTRejected: false, stalePasswordCookieRejected: false,
+  passwordColdRestore: false, oldPasswordRejected: false,
+  newPasswordAccepted: false, adminRevoke204: false,
+  adminRevokedJWT: false, adminRevokedCookie: false,
+  adminRevokedBrowserUI: false,
   passed: false, failedAt: null,
 }
 let checkpoint = 'startup'
@@ -73,6 +82,8 @@ async function refreshCookie(context) {
 async function main() {
   let browser
   let context
+  let passwordContext
+  let adminRequest
   try {
     browser = await chromium.launch({
       executablePath: executable, headless: true,
@@ -213,6 +224,152 @@ async function main() {
     assert.equal((await refreshCookie(context)), undefined)
     summary.postLogoutFailClosed = true
 
+    // Separate fixture Owner; never mutate the baseline user's accepted
+    // Gallery/Files behavior. This is a second genuine browser UI flow.
+    checkpoint = 'real-UI-password-forced-login'
+    passwordContext = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      ignoreHTTPSErrors: true, serviceWorkers: 'block', locale: 'zh-CN',
+    })
+    const passwordPage = await passwordContext.newPage()
+    passwordPage.setDefaultTimeout(30000)
+    await passwordPage.goto(origin + '/#/app/files', { waitUntil: 'domcontentloaded' })
+    await passwordPage.locator('#web-login-username').waitFor()
+    const passwordLogin = passwordPage.waitForResponse(
+      isResponse(browserLogin, 'POST', 200))
+    await passwordPage.locator('#web-login-username').fill(ready.password_username)
+    await passwordPage.locator('#web-login-password').fill('PwaCookieOld-TestOnly_2026!')
+    await passwordPage.getByRole('button', { name: '登录', exact: true }).click()
+    const firstPasswordSession = await (await passwordLogin).json()
+    assert.equal(firstPasswordSession.browser_session, true)
+    assert.equal(firstPasswordSession.refresh_token || '', '')
+    const oldAccess = firstPasswordSession.access_token
+    assert(typeof oldAccess === 'string' && oldAccess.length > 16)
+    await passwordPage.getByRole('heading',
+      { name: '修改临时密码', exact: true }).waitFor()
+    const passwordCookieBefore = await refreshCookie(passwordContext)
+    assert(passwordCookieBefore?.httpOnly && passwordCookieBefore.secure)
+    summary.forcedPasswordForm = true
+
+    checkpoint = 'real-UI-password-change-200'
+    const passwordChangeResponse = passwordPage.waitForResponse(
+      isResponse('/api/v1/me/change-password/browser', 'POST', 200))
+    await passwordPage.locator('#xdrive-current-password')
+      .fill('PwaCookieOld-TestOnly_2026!')
+    await passwordPage.locator('#xdrive-new-password')
+      .fill('PwaCookieNew-TestOnly_2026!')
+    await passwordPage.locator('#xdrive-confirm-password')
+      .fill('PwaCookieNew-TestOnly_2026!')
+    await passwordPage.getByRole('button',
+      { name: '修改密码', exact: true }).click()
+    const changed = await (await passwordChangeResponse).json()
+    assert.equal(changed.browser_session, true)
+    assert.equal(changed.refresh_token || '', '')
+    const changedAccess = changed.access_token
+    assert(typeof changedAccess === 'string' && changedAccess.length > 16)
+    const passwordCookieAfter = await refreshCookie(passwordContext)
+    assert(passwordCookieAfter?.httpOnly && passwordCookieAfter.secure)
+    assert.notEqual(passwordCookieAfter.value, passwordCookieBefore.value,
+      'password change must rotate real Gin HttpOnly refresh cookie')
+    await passwordPage.getByRole('heading',
+      { name: '修改临时密码', exact: true }).waitFor({ state: 'detached' })
+    const changedStorage = await inspectPrivateStorage(passwordPage)
+    assert.equal(changedStorage.owner, ready.password_username)
+    assert.equal(changedStorage.mode, 'cookie')
+    assert.equal(changedStorage.cookieVisible, false)
+    assert.equal(changedStorage.tokenStored, false)
+    summary.passwordCookieRotated = true
+
+    // Network security negatives use an independent HTTP client, without
+    // overriding a browser's HttpOnly cookie or modifying production JS.
+    adminRequest = await request.newContext({ ignoreHTTPSErrors: true })
+    checkpoint = 'old-password-session-replay'
+    const oldJWT = await adminRequest.get(origin + '/api/v1/me', {
+      headers: { Authorization: 'Bearer ' + oldAccess },
+    })
+    assert.equal(oldJWT.status(), 401)
+    summary.stalePasswordJWTRejected = true
+    const replay = await adminRequest.post(origin + browserRefresh, {
+      headers: {
+        Origin: origin,
+        'X-XDrive-Browser-Owner': ready.password_username,
+        Cookie: '__Host-xdrive_refresh=' + passwordCookieBefore.value,
+      },
+    })
+    assert.equal(replay.status(), 401)
+    assert.equal((await refreshCookie(passwordContext))?.value,
+      passwordCookieAfter.value)
+    summary.stalePasswordCookieRejected = true
+
+    checkpoint = 'new-password-cold-restore'
+    const passwordColdRefresh = passwordPage.waitForResponse(
+      isResponse(browserRefresh, 'POST', 200))
+    await passwordPage.reload({ waitUntil: 'domcontentloaded' })
+    await passwordColdRefresh
+    assert.equal(await passwordPage.locator('#web-login-username').count(), 0)
+    const afterPasswordReload = await inspectPrivateStorage(passwordPage)
+    assert.equal(afterPasswordReload.owner, ready.password_username)
+    assert.equal(afterPasswordReload.mode, 'cookie')
+    assert.equal(afterPasswordReload.tokenStored, false)
+    summary.passwordColdRestore = true
+
+    checkpoint = 'password-credential-rejection'
+    const oldPasswordLogin = await adminRequest.post(origin + '/api/v1/auth/login', {
+      data: {
+        username: ready.password_username,
+        password: 'PwaCookieOld-TestOnly_2026!',
+      },
+    })
+    assert.equal(oldPasswordLogin.status(), 401)
+    summary.oldPasswordRejected = true
+    const validPasswordLogin = await adminRequest.post(origin + '/api/v1/auth/login', {
+      data: {
+        username: ready.password_username,
+        password: 'PwaCookieNew-TestOnly_2026!',
+      },
+    })
+    assert.equal(validPasswordLogin.status(), 200)
+    summary.newPasswordAccepted = true
+
+    // Real admin login + the ACTUAL protected admin Gin route, not a test
+    // backdoor that simply increments SessionVersion in fixture SQL.
+    checkpoint = 'real-admin-revoke-sessions'
+    const adminLogin = await adminRequest.post(origin + '/api/v1/auth/login', {
+      data: {
+        username: ready.admin_username,
+        password: 'PwaCookieAdmin-TestOnly_2026!',
+      },
+    })
+    assert.equal(adminLogin.status(), 200)
+    const adminJSON = await adminLogin.json()
+    assert.equal(adminJSON.role, 'admin')
+    assert(typeof adminJSON.access_token === 'string' &&
+      adminJSON.access_token.length > 16)
+    const revocation = await adminRequest.post(
+      origin + '/api/v1/admin/users/' + ready.password_user_id + '/revoke-sessions', {
+        headers: { Authorization: 'Bearer ' + adminJSON.access_token },
+      })
+    assert.equal(revocation.status(), 204)
+    summary.adminRevoke204 = true
+
+    checkpoint = 'admin-revoked-jwt-and-cookie'
+    const revokedAccess = await adminRequest.get(origin + '/api/v1/me', {
+      headers: { Authorization: 'Bearer ' + changedAccess },
+    })
+    assert.equal(revokedAccess.status(), 401)
+    summary.adminRevokedJWT = true
+    const revokedRefresh = passwordPage.waitForResponse(
+      isResponse(browserRefresh, 'POST', 401))
+    await passwordPage.reload({ waitUntil: 'domcontentloaded' })
+    await revokedRefresh
+    summary.adminRevokedCookie = true
+    await passwordPage.locator('#web-login-username').waitFor()
+    assert.equal(await passwordPage.getByRole('heading',
+      { name: '修改临时密码', exact: true }).count(), 0)
+    const afterRevokeStorage = await inspectPrivateStorage(passwordPage)
+    assert.equal(afterRevokeStorage.tokenStored, false)
+    summary.adminRevokedBrowserUI = true
+
     checkpoint = 'finish-isolated-real-Gin'
     const finished = await after.evaluate(async () =>
       (await fetch('/__test/pwa-s2b3/finish', { method: 'POST' })).status)
@@ -228,6 +385,8 @@ async function main() {
   } finally {
     fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     console.log('COOKIE_UI_REAL_GIN_EVIDENCE ' + JSON.stringify(summary))
+    await adminRequest?.dispose()
+    await passwordContext?.close()
     await context?.close()
     await browser?.close()
   }
