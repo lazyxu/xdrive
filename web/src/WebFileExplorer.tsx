@@ -100,6 +100,7 @@ export default function WebFileExplorer({
   crumbs,
   virtualDirectory,
   loading,
+  suspendBackgroundThumbnails = false,
   navigationSessionStorageKey,
   initialDirectoryID,
   initialRevealNodeID,
@@ -138,6 +139,7 @@ export default function WebFileExplorer({
   crumbs: Crumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
+  suspendBackgroundThumbnails?: boolean
   navigationSessionStorageKey?: string
   initialDirectoryID?: number
   initialRevealNodeID?: number
@@ -1400,6 +1402,7 @@ export default function WebFileExplorer({
 
       {compactMobile ? (
         <MobileFiles
+          suspendBackgroundThumbnails={suspendBackgroundThumbnails}
           revealTarget={revealTarget ?? undefined}
           key={navigationSessionStorageKey ?? ''}
           lifecycleKey={navigationSessionStorageKey ?? ''}
@@ -1639,6 +1642,7 @@ export default function WebFileExplorer({
         />
       ) : (
       <XDriveFileExplorer
+        suspendBackgroundThumbnails={suspendBackgroundThumbnails}
         interactionLifecycleKey={navigationSessionStorageKey ?? ''}
         selectedIDs={currentResponsiveSelection?.ids ?? []}
         onSelectionChange={onWideResponsiveSelectionChange}

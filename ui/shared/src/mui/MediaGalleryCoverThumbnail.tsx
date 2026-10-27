@@ -1,19 +1,36 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Skeleton } from '@mui/material'
 import type { XDriveMediaThumbnailSourceLoader } from './MediaGalleryThumbnailScheduler'
 import { XDriveMediaGalleryCoverThumbnailPool } from './MediaGalleryCoverThumbnailPool'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveBackgroundMediaThumbnailSuspended, XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
 
 // undefined: standalone renderer, null: current Gallery transport not yet
 // installed. Neither case may use a previous account's cached private Blob.
 const CoverContext = createContext<XDriveMediaGalleryCoverThumbnailPool | null | undefined>(undefined)
 
+// The cover pool lives in the page's ancestor Provider, whereas the inline
+// Desktop Gallery Viewer lives inside XDriveMediaGallery. Only the current
+// mounted Gallery may ask its ancestor pool to pause. Routed Web/PWA already
+// pass the explicit suspended prop and don't depend on this bridge.
+const InlineViewerCoverPauseContext = createContext<(paused: boolean) => void>(() => undefined)
+
+/** Pause ancestor album/Places/People cover reads behind an inline Viewer. */
+export function useXDriveGalleryCoverPauseForInlineViewer(paused: boolean) {
+  const setPaused = useContext(InlineViewerCoverPauseContext)
+  useLayoutEffect(() => {
+    setPaused(paused)
+    return () => setPaused(false)
+  }, [paused, setPaused])
+}
+
 export function XDriveMediaGalleryCoverProvider({
   loadThumbnail,
+  suspended = false,
   children,
 }: {
   loadThumbnail: XDriveMediaThumbnailSourceLoader
+  suspended?: boolean
   children: ReactNode
 }) {
   const [active, setActive] = useState<{
@@ -28,7 +45,20 @@ export function XDriveMediaGalleryCoverProvider({
     return () => pool.dispose()
   }, [loadThumbnail])
   const pool = active?.loader === loadThumbnail ? active.pool : null
-  return <CoverContext.Provider value={pool}>{children}</CoverContext.Provider>
+  const [inlineViewerPaused, setInlineViewerPaused] = useState(false)
+  // The page's routed Viewer pause and its descendant inline Viewer pause
+  // both stop the SAME bounded cover pool; cached Owner leases survive.
+  const coverPaused = suspended || inlineViewerPaused
+  useLayoutEffect(() => {
+    pool?.setSuspended(coverPaused)
+  }, [pool, coverPaused])
+  return (
+    <XDriveBackgroundMediaThumbnailSuspended.Provider value={coverPaused}>
+      <InlineViewerCoverPauseContext.Provider value={setInlineViewerPaused}>
+        <CoverContext.Provider value={pool}>{children}</CoverContext.Provider>
+      </InlineViewerCoverPauseContext.Provider>
+    </XDriveBackgroundMediaThumbnailSuspended.Provider>
+  )
 }
 
 export function XDriveMediaGalleryCoverThumbnail({

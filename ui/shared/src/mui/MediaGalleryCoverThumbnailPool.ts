@@ -48,6 +48,10 @@ export class XDriveMediaGalleryCoverThumbnailPool {
     })
   }
 
+  setSuspended(suspended: boolean) {
+    this.scheduler.setSuspended(suspended)
+  }
+
   load = (
     nodeID: number,
     signal?: AbortSignal,

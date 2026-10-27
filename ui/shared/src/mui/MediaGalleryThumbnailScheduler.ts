@@ -47,6 +47,7 @@ export class XDriveMediaThumbnailScheduler {
   private readonly revokeURL: (url: string) => void
   private sequence = 0
   private disposed = false
+  private suspended = false
   private pumpScheduled = false
   private readonly queue: ThumbnailTask[] = []
   private readonly queued = new Map<string, ThumbnailTask>()
@@ -125,6 +126,10 @@ export class XDriveMediaThumbnailScheduler {
       this.cache.set(key, cached)
       return Promise.resolve(cached)
     }
+
+    // Warm cache remains eligible for Viewer leases; only new background
+    // image network work is refused while the owning Viewer is active.
+    if (this.suspended) return Promise.resolve(null)
 
     const active = this.inFlight.get(key)
     if (active) {
@@ -227,6 +232,21 @@ export class XDriveMediaThumbnailScheduler {
     return true
   }
 
+  /** Viewer preempts only this Gallery's disposable tile/cover reads.
+   * Cached URL leases remain valid, including URLs borrowed by routed Viewer.
+   */
+  setSuspended(suspended: boolean) {
+    if (this.disposed || this.suspended === suspended) return
+    this.suspended = suspended
+    if (suspended) {
+      for (const task of [...this.queue]) this.cancelTask(task)
+      for (const task of [...this.inFlight.values()]) this.cancelTask(task)
+      this.compactQueue()
+    } else {
+      this.schedulePump()
+    }
+  }
+
   setRetention(nodeIDs: Iterable<number>) {
     const retained = new Set(nodeIDs)
     for (const task of [...this.queue]) {
@@ -308,7 +328,7 @@ export class XDriveMediaThumbnailScheduler {
   }
 
   private schedulePump() {
-    if (this.disposed || this.pumpScheduled) return
+    if (this.disposed || this.suspended || this.pumpScheduled) return
     this.pumpScheduled = true
     queueMicrotask(() => {
       this.pumpScheduled = false
@@ -317,7 +337,7 @@ export class XDriveMediaThumbnailScheduler {
   }
 
   private pump() {
-    if (this.disposed) return
+    if (this.disposed || this.suspended) return
     this.compactQueue()
     // Only retained requests occupy a slot. A cancelled HTTP promise can
     // ignore AbortSignal forever, and must not starve the new viewport.

@@ -103,6 +103,8 @@ type Props = {
     signal: AbortSignal,
   ) => Promise<{ index: number; item: XDriveFileExplorerItem } | null>
   lifecycleKey: string
+  /** A routed Viewer overlays this mounted Files workspace. */
+  suspendBackgroundThumbnails?: boolean
   requestedDirectoryID?: number
   items: XDriveFileExplorerItem[]
   virtualCollection?: XDriveFileExplorerVirtualCollection
@@ -2623,7 +2625,11 @@ export default function MobileFiles(props: Props) {
   }
 
   return (
-    <XDriveFileExplorerThumbnailProvider lifecycleKey={props.lifecycleKey} loadThumbnail={props.loadThumbnail}>
+    <XDriveFileExplorerThumbnailProvider
+      lifecycleKey={props.lifecycleKey}
+      loadThumbnail={props.loadThumbnail}
+      suspended={props.suspendBackgroundThumbnails}
+    >
       <Box ref={ownerRef} data-xdrive-mobile-files onKeyDown={handleFilesKeyboard} sx={{
         minHeight: 0, minWidth: 0, height: '100%', flex: 1,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',

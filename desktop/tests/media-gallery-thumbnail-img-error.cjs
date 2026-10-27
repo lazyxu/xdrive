@@ -14,8 +14,9 @@ const start = original.indexOf('export function XDriveMediaAsyncThumbnail(')
 const end = original.indexOf('\nconst mediaPosterConcurrency', start)
 assert.ok(start >= 0 && end > start, 'the shared production thumbnail component must exist')
 const source = [
-  "import { useEffect, useRef, useState } from 'react'",
+  "import { useEffect, useRef, useState, useContext, createContext } from 'react'",
   "import { Box, Skeleton, XDriveMediaLoadingProgress } from './fixture'",
+  'const XDriveBackgroundMediaThumbnailSuspended = createContext(false)',
   'type MediaThumbnailLoader = any; type ReactNode = any',
   "function revokeIfBlob(url: string) { if (url.startsWith('blob:')) URL.revokeObjectURL(url) }",
   original.slice(start, end),

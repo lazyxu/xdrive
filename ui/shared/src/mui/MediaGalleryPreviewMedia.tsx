@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Image as ImageIcon,
@@ -18,6 +18,11 @@ type MediaPreviewURLLoader = (
   signal?: AbortSignal,
 ) => Promise<string | null>
 type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
+
+/** Context belongs to the background Gallery, not to the active Viewer.
+ * Switching to Viewer cancels old tile and poster reads, but never changes
+ * signed Owner preview tickets or Task Center transfers. */
+export const XDriveBackgroundMediaThumbnailSuspended = createContext(false)
 
 function revokeIfBlob(url: string) {
   if (url.startsWith('blob:')) URL.revokeObjectURL(url)
@@ -42,6 +47,7 @@ export function XDriveMediaAsyncThumbnail({
   onImageReadyChange?: (ready: boolean) => void
   onImageDecodeError?: (failedURL: string) => void
 }) {
+  const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended)
   const sourceIdentity = [nodeID ?? 0, revision ?? 0].join(':')
   const [image, setImage] = useState<{ identity: string; url: string } | null>(null)
   const [failedIdentity, setFailedIdentity] = useState('')
@@ -54,6 +60,9 @@ export function XDriveMediaAsyncThumbnail({
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
   useEffect(() => {
+    // Existing decoded frame may remain underneath Viewer. Do not acquire a
+    // new HTTP thumbnail or mark a cancellation as a permanent decode error.
+    if (suspended) return
     let active = true
     let resolved = ''
     setImage(null)
@@ -84,7 +93,7 @@ export function XDriveMediaAsyncThumbnail({
       controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity])
+  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity, suspended])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
@@ -252,6 +261,7 @@ export function XDriveMediaAsyncVideoPoster({
   sourceHeight?: number
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended)
   const [visible, setVisible] = useState(false)
   const posterIdentity = `${nodeID}:${revision}`
   const currentPosterIdentityRef = useRef(posterIdentity)
@@ -282,6 +292,9 @@ export function XDriveMediaAsyncVideoPoster({
   }, [nodeID])
 
   useEffect(() => {
+    // Poster lookup, original video read and local capture all share the
+    // existing cancelable task; none should compete with the active Viewer.
+    if (suspended) return
     let active = true
     let resolved = ''
     setPoster(null)
@@ -335,6 +348,7 @@ export function XDriveMediaAsyncVideoPoster({
     sourceHeight,
     sourceWidth,
     visible,
+    suspended,
   ])
 
   return (

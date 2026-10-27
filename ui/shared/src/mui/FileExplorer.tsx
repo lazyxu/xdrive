@@ -782,6 +782,7 @@ export function XDriveFileExplorer({
   items,
   crumbs,
   interactionLifecycleKey = '',
+  suspendBackgroundThumbnails = false,
   loading = false,
   presentation = 'card',
   keyboardProfile = 'web',
@@ -886,6 +887,8 @@ export function XDriveFileExplorer({
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
   interactionLifecycleKey?: string
+  /** Only ephemeral list/grid thumbnail reads pause under an active Viewer. */
+  suspendBackgroundThumbnails?: boolean
   loading?: boolean
   presentation?: XDriveFileExplorerPresentation
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
@@ -5378,6 +5381,7 @@ export function XDriveFileExplorer({
     <XDriveFileExplorerThumbnailProvider
       lifecycleKey={interactionScopeKey}
       loadThumbnail={loadThumbnail}
+      suspended={suspendBackgroundThumbnails || quickLookItemID !== null}
     >
     <Paper
       ref={explorerElementRef}

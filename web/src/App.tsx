@@ -2422,6 +2422,7 @@ function FileManager({
           >
               <WebFileExplorer
                 api={api}
+                suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}
                 virtualDirectory={virtualDirectory}
@@ -2549,6 +2550,7 @@ function FileManager({
               : undefined}
             mobileWebChrome
             source={gallerySource}
+            suspendBackgroundThumbnails={viewerActive}
             onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
             uploadRevision={galleryUploadRevision}
             onUploadRequested={() => galleryUploadInputRef.current?.click()}
