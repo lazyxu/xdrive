@@ -78,6 +78,32 @@ export function xDriveValidBaiduMapCoverageReasons(value: unknown): MediaBaiduMa
   }
 }
 
+/** Detect a *validly-shaped*, stale Server response from the retired photo
+ * consent era. This is a diagnosis only: the current strict validator still
+ * rejects such reasons, and no previous photo authorization is restored.
+ * Both independent Owner summary and breakdown totals must agree. */
+export function xDriveBaiduMapHasLegacyConsentReasons(
+  coverage: unknown, reasons: unknown,
+): boolean {
+  const summary = xDriveValidBaiduMapCoverage(coverage)
+  if (!summary || !reasons || typeof reasons !== 'object' || Array.isArray(reasons)) return false
+  const r = reasons as Record<string, unknown>
+  if (Object.keys(r).length !== reasonFields.size ||
+      Object.keys(r).some(key => !reasonFields.has(key)) ||
+      r.scope !== 'indexed_ready_photoassets' || r.map_runtime_verified !== false) return false
+  const keys = ['valid_gps_assets','eligible_bd09_assets','not_eligible_bd09_assets',
+    'consent_unavailable_assets','consent_source_changed_assets',
+    'derived_missing_assets','derived_invalid_assets'] as const
+  if (keys.some(key => !nonnegative(r[key]))) return false
+  if (r.valid_gps_assets !== summary.valid_gps_assets ||
+      r.eligible_bd09_assets !== summary.eligible_bd09_assets ||
+      r.not_eligible_bd09_assets !== summary.not_eligible_bd09_assets) return false
+  const retired = (r.consent_unavailable_assets as number) +
+    (r.consent_source_changed_assets as number)
+  return retired > 0 && retired <= summary.not_eligible_bd09_assets &&
+    retired + (r.derived_missing_assets as number) +
+      (r.derived_invalid_assets as number) === summary.not_eligible_bd09_assets
+}
 /** Equal totals are a necessary (not sufficient) cross-request consistency
  * check. It does not prove the two SQL snapshots share photo membership. */
 export function xDriveBaiduMapCoverageReasonTotalsMatch(
