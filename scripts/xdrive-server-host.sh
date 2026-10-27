@@ -1496,7 +1496,7 @@ initdb -D "$PGDATA" -A trust -U xdrive --no-instructions >/dev/null
 pg_ctl -D "$PGDATA" -o "-c listen_addresses='' -c unix_socket_directories=/sandbox/socket -c shared_buffers=16MB -c max_connections=10 -c fsync=off" -w start >/dev/null
 trap 'pg_ctl -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true' EXIT
 createdb -h /sandbox/socket -U xdrive xdrive
-pg_restore -Fc --exit-on-error --no-owner --no-privileges -h /sandbox/socket -U xdrive -d xdrive - >/dev/null
+pg_restore -Fc --exit-on-error --no-owner --no-privileges -h /sandbox/socket -U xdrive -d xdrive >/dev/null
 for relation in xd_nodes xd_files xd_users; do
   psql -qAt -h /sandbox/socket -U xdrive -d xdrive -v ON_ERROR_STOP=1 \
     -c "SELECT count(*) FROM public.$relation" >/dev/null
