@@ -272,6 +272,17 @@ paths, CAS digests and raw error messages. stderr remains a private CLI
 diagnostic channel. `--json` is not valid for create, prune, retention or
 other subcommands.
 
+The Host Manager now supports `xdrive-server backup verify --json [BACKUP_DIR]`.
+Its existing snapshot SHA256SUMS preflight and repository shared lock remain
+in effect, with **one referenced-CAS hash pass**, not two. The bounded
+`xdrive-host-backup-verify-v1` report carries `format`, `state`,
+`scope`, `cas_objects_checked`, `cas_bytes_hashed`, and a fixed failure
+category when available. On v1 these two CAS counters are zero because the
+snapshot files are verified by SHA256SUMS instead. Any v2 success requires
+valid, real CAS helper evidence. Failures retain nonzero exit status and
+partial counts; raw file paths, object hashes and logs are excluded from JSON.
+This does not prove PostgreSQL data can actually be restored and queried.
+
 This internal CAS report is **not itself a complete backup verification**:
 the Host `xdrive-server backup verify` also checks the snapshot metadata,
 SHA256SUMS and database dump. Do not advertise an internal CAS success as a

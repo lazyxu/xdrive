@@ -48,6 +48,7 @@ Usage:
   xdrive-server backup --incremental [--repository-dir /absolute/local/path]
   xdrive-server backup list   # includes an active custom scheduled v2 repository
   xdrive-server backup verify [BACKUP_DIR]  # latest also searches configured v2 repository
+  xdrive-server backup verify --json [BACKUP_DIR]  # structured snapshot + CAS result
   xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N] [--mode fast|deep]
   xdrive-server backup prune --keep-last N --yes [--repository-dir /absolute/local/path]
   xdrive-server backup sources BACKUP_DIR
@@ -875,7 +876,105 @@ backup_list_cmd() {
   echo "Note: incremental SIZE excludes shared CAS objects; use backup verify PATH for hash validation."
 }
 
+# JSON uses the SAME snapshot and referenced-CAS hash pass, not a second read.
+backup_verify_json_cmd() {
+  [[ $# -le 1 ]] || { echo "usage: xdrive-server backup verify --json [BACKUP_DIR]" >&2; return 2; }
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for backup verify --json" >&2; return 1; }
+  local target="${1:-}" format=unknown cas_file log_file status=0 encode_status=0
+  [[ -n "$target" ]] || target="$(latest_snapshot_backup || true)"
+  if [[ -n "$target" && -f "$target/manifest.json" && ! -L "$target/manifest.json" ]]; then
+    if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$target/manifest.json"; then format=v2
+    elif grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$target/manifest.json"; then format=v1
+    fi
+  fi
+  cas_file="$(mktemp "${TMPDIR:-/tmp}/xdrive-verify-cas.XXXXXXXX")" || return 1
+  log_file="$(mktemp "${TMPDIR:-/tmp}/xdrive-verify-log.XXXXXXXX")" || {
+    rm -f -- "$cas_file"; return 1
+  }
+  if XD_BACKUP_VERIFY_CAS_REPORT_FILE="$cas_file" backup_verify_cmd "$target" >"$log_file" 2>&1; then
+    status=0
+  else
+    status=$?
+    cat "$log_file" >&2
+  fi
+  if python3 - "$cas_file" "$status" "$format" <<'PY'
+import json, os, stat, sys
+path, code, fmt = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+categories = {"missing_object", "object_sha256_mismatch", "object_size_mismatch",
+              "unsafe_repository", "unsafe_snapshot", "unsafe_object_bucket",
+              "unreadable_or_unsafe_object", "object_read_failed",
+              "measurement_overflow", "invalid_object_index",
+              "invalid_legacy_archive", "snapshot_outside_repository"}
+record = {"protocol":"xdrive-host-backup-verify-v1",
+          "state":"success" if code==0 else "failed",
+          "format":fmt, "scope":"backup_snapshot_and_referenced_cas",
+          "cas_objects_checked":0, "cas_bytes_hashed":0}
+cas = None
+invalid = False
+try:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_size > 2048:
+            raise ValueError("unsafe record")
+        data = f.read(2049)
+    if len(data)>2048:
+        raise ValueError("oversized record")
+    if data:
+        cas=json.loads(data.decode("utf-8"))
+        required={"protocol","state","mode","objects_checked","bytes_hashed"}
+        optional={"failure_category"}
+        if (not isinstance(cas,dict) or not required <= cas.keys() or
+                set(cas)-required-optional or
+                cas["protocol"]!="xdrive-backup-verify-v1" or
+                cas["state"] not in ("success","failed") or cas["mode"]!="deep"):
+            raise ValueError("unsupported receipt")
+        for k in ("objects_checked","bytes_hashed"):
+            if type(cas[k]) is not int or cas[k]<0 or cas[k]>9007199254740991:
+                raise ValueError("unsafe count")
+        category=cas.get("failure_category","")
+        if type(category) is not str or (category and category not in categories):
+            raise ValueError("unknown category")
+except (OSError,ValueError,UnicodeError,TypeError,KeyError):
+    invalid=True
+if fmt=="v2":
+    if cas is None and code==0:
+        invalid=True
+    if cas is not None and not invalid:
+        if (code==0)!=(cas["state"]=="success"):
+            invalid=True
+        else:
+            record["cas_objects_checked"]=cas["objects_checked"]
+            record["cas_bytes_hashed"]=cas["bytes_hashed"]
+            if cas.get("failure_category"):
+                record["failure_category"]=cas["failure_category"]
+elif fmt=="v1":
+    if cas is not None:
+        invalid=True
+elif code==0:
+    invalid=True
+if invalid:
+    record.update(state="failed",cas_objects_checked=0,cas_bytes_hashed=0,
+                  failure_category="invalid_cas_report")
+elif code!=0 and "failure_category" not in record:
+    record["failure_category"]="snapshot_verification_failed"
+print(json.dumps(record,sort_keys=True,separators=(",",":")))
+if invalid: sys.exit(1)
+PY
+  then encode_status=0
+  else encode_status=$?
+  fi
+  rm -f -- "$cas_file" "$log_file"
+  (( encode_status == 0 )) || return 1
+  return "$status"
+}
+
 backup_verify_cmd() {
+  if [[ "${1:-}" == "--json" ]]; then
+    shift
+    backup_verify_json_cmd "$@"
+    return $?
+  fi
   [[ $# -le 1 ]] || {
     echo "usage: xdrive-server backup verify [BACKUP_DIR]" >&2
     return 2
@@ -980,10 +1079,18 @@ backup_verify_cmd() {
     fi
     [[ -n "$server_image" ]] || server_image="$(env_value XD_SERVER_IMAGE)"
     [[ -n "$server_image" ]] || { echo "xdrive-server: cannot resolve server image for CAS verification." >&2; return 1; }
+    if [[ -n "${XD_BACKUP_VERIFY_CAS_REPORT_FILE:-}" ]]; then
+      docker run --rm --user 0:0 \
+        --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
+        --entrypoint /usr/local/bin/xdrive-backup-repo \
+        "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" --json \
+        </dev/null > "$XD_BACKUP_VERIFY_CAS_REPORT_FILE"
+    else
     docker run --rm --user 0:0 \
       --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
       --entrypoint /usr/local/bin/xdrive-backup-repo \
       "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" </dev/null
+    fi
   fi
   created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
   channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
