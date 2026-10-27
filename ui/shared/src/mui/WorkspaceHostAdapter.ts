@@ -7,6 +7,11 @@ import type { XDriveMediaGalleryPageProps } from './MediaGallery'
 import type { XDriveSourceManagerProps } from './SourceManager'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
 import type { XDriveDeviceBackupPage } from './DeviceBackupPage'
+import type XDriveAdminUsersPage from './AdminUsersPage'
+import type XDriveAdminAuditPage from './AdminAuditPage'
+import type XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
+import type { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
+import type { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -21,6 +26,11 @@ export type XDriveWorkspaceHostServices = {
   readonly deviceBackupPage?: ComponentProps<typeof XDriveDeviceBackupPage>
   readonly remotePullPage?: XDriveSourceManagerProps
   readonly taskCenterPage?: XDriveTaskCenterPageProps
+  readonly adminMaintenancePage?: ComponentProps<typeof XDriveSystemMaintenancePage>
+  readonly adminUsersPage?: ComponentProps<typeof XDriveAdminUsersPage>
+  readonly adminAuditPage?: ComponentProps<typeof XDriveAdminAuditPage>
+  readonly adminStoragePage?: ComponentProps<typeof XDriveGlobalStorageStatsPage>
+  readonly adminServicesPage?: ComponentProps<typeof XDriveServiceDependenciesPage>
 }
 
 export type XDriveWorkspaceHostAdapter = {

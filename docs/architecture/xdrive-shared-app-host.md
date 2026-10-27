@@ -97,3 +97,19 @@ yet moved into host-neutral domain ports. DSM's missing Gallery, Pull and admin
 transports must become real authenticated capabilities rather than simulated
 success. This batch does not claim full DSM functionality or real-device
 acceptance.
+
+
+## Batch 3: administrator workspace pages
+
+All five Desktop administrator routes now render their existing shared MUI
+components from the common Host outlet: Users, Audit, Global Storage,
+Services/Dependencies and Backup/System Maintenance. The **Server-verified**
+role guard remains at the common route/outlet and the original Agent
+capability checks remain on the Desktop Host page props. The Agent IPC code,
+privileged task action, maintenance state and unsaved-dependencies navigation
+guard stay on the Desktop host; no native operation is available through an
+unverified Synology administrator session.
+
+Desktop Overview, full Files, Conflicts, Diagnostics and general Settings
+still need controller extraction; this is NOT completion of full DSM data
+capabilities.

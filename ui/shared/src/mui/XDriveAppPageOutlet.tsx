@@ -9,6 +9,11 @@ import { XDriveSynologyDiagnosticsPanel } from './SynologyDiagnosticsPanel'
 import { XDriveTaskCenterPage } from './TaskCenterPage'
 import { XDriveCloudStoragePage } from './CloudStoragePage'
 import { XDriveLocalStoragePage } from './LocalStoragePage'
+import { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
+import XDriveAdminUsersPage from './AdminUsersPage'
+import XDriveAdminAuditPage from './AdminAuditPage'
+import XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
+import { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
 import {
   xDriveIsWorkspaceAppRoute,
   xDriveWorkspaceRouteRequiresAdmin,
@@ -94,6 +99,31 @@ export function XDriveAppPageOutlet({
       case 'local-storage':
         if (services.localStorage) page = (
           <XDriveLocalStoragePage key={revision} source={services.localStorage} />
+        )
+        break
+      case 'admin-maintenance':
+        if (services.adminMaintenancePage) page = (
+          <XDriveSystemMaintenancePage {...services.adminMaintenancePage} />
+        )
+        break
+      case 'admin-users':
+        if (services.adminUsersPage) page = (
+          <XDriveAdminUsersPage {...services.adminUsersPage} />
+        )
+        break
+      case 'admin-audit':
+        if (services.adminAuditPage) page = (
+          <XDriveAdminAuditPage {...services.adminAuditPage} />
+        )
+        break
+      case 'admin-storage':
+        if (services.adminStoragePage) page = (
+          <XDriveGlobalStorageStatsPage {...services.adminStoragePage} />
+        )
+        break
+      case 'admin-services':
+        if (services.adminServicesPage) page = (
+          <XDriveServiceDependenciesPage {...services.adminServicesPage} />
         )
         break
       default:

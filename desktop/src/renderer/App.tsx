@@ -58,11 +58,6 @@ import {
   XDriveConfirmDialog,
   createXDriveCloudStorageDataSource,
   xDriveDiagnosticsSidebarDestination,
-  XDriveServiceDependenciesPage,
-  XDriveSystemMaintenancePage,
-  XDriveAdminUsersPage,
-  XDriveAdminAuditPage,
-  XDriveGlobalStorageStatsPage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -2805,10 +2800,60 @@ export default function App({
   },
       localStorage: localStorageSource,
       cloudStorage: cloudStorageSource,
+      adminMaintenancePage: status?.role === 'admin'
+        ? {
+        updatePort: serverUpdatePort,
+        backupPort: agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined,
+        onOpenStorage: () => setView('admin-storage'),
+        supported: serverUpdateSupported,
+        unavailableLabel: "服务端与 Desktop",
+        unsupportedMessage: "当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。",
+        disabled: !!busy && busy !== 'server-update',
+        onBusyChange: (active) => {
+              setBusy((current) => active
+                ? 'server-update'
+                : current === 'server-update' ? '' : current)
+            },
+      } : undefined,
+      adminUsersPage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-users')
+        ? {
+        api: adminUsersPort,
+        currentUsername: status.username,
+        onChanged: () => { void refreshCloudQuota() },
+      } : undefined,
+      adminAuditPage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-audit')
+        ? {
+        api: adminAuditPort,
+      } : undefined,
+      adminStoragePage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-storage')
+        ? {
+        api: adminStoragePort,
+        scope: "global",
+        onOpenTaskCenter: () => setView('global-tasks'),
+        onRunStorageMaintenance: async (kind) => {
+                const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
+                  `system-maintenance:${kind}`, 'run', true,
+                )
+                if (!result.ok) throw new Error(result.error.message)
+              },
+      } : undefined,
+      adminServicesPage: status?.role === 'admin' && agent.hello?.capabilities.includes('admin-services')
+        ? {
+        source: adminServicesPort,
+        location: baiduDiagnosticLocation,
+        diagnosticScope: `desktop:${status?.server ?? ''}:${status?.username ?? ''}`,
+        onUnsavedChange: setSystemDependenciesDraftDirty,
+        navigationResetKey: systemDependenciesNavigationResetKey,
+      } : undefined,
     },
-    unavailableMessage: (destination) => destination === 'remote-pull'
-      ? '当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。'
-      : '当前 Desktop Host 尚未接通此功能。',
+    unavailableMessage: (destination) => {
+      if (destination === 'remote-pull') return '当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。'
+      if (destination === 'admin-users') return '当前 xdrive-agent 不支持用户管理，请更新客户端核心组件。'
+      if (destination === 'admin-audit') return '当前 xdrive-agent 不支持审计日志，请更新客户端核心组件。'
+      if (destination === 'admin-storage') return '当前 xdrive-agent 不支持全局存储，请更新客户端核心组件。'
+      if (destination === 'admin-services') return '当前 xdrive-agent 不支持服务状态查询，请更新客户端核心组件。'
+      return '当前 Desktop Host 尚未接通此功能。'
+    },
   }
 
   const desktopTitlebarActions = (
@@ -3192,72 +3237,15 @@ export default function App({
 
 
 
-        {view === 'admin-maintenance' && status?.role === 'admin' && (
-          <XDriveSystemMaintenancePage
-            updatePort={serverUpdatePort}
-            backupPort={agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined}
-            onOpenStorage={() => setView('admin-storage')}
-            supported={serverUpdateSupported}
-            unavailableLabel="服务端与 Desktop"
-            unsupportedMessage="当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。"
-            disabled={!!busy && busy !== 'server-update'}
-            onBusyChange={(active) => {
-              setBusy((current) => active
-                ? 'server-update'
-                : current === 'server-update' ? '' : current)
-            }}
-          />
-        )}
 
-        {view === 'admin-users' && status?.role === 'admin' && (
-          agent.hello?.capabilities.includes('admin-users') ? (
-            <XDriveAdminUsersPage
-              api={adminUsersPort}
-              currentUsername={status.username}
-              onChanged={() => { void refreshCloudQuota() }}
-            />
-          ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持用户管理，请更新客户端核心组件。" />
-          )
-        )}
 
-        {view === 'admin-audit' && status?.role === 'admin' && (
-          agent.hello?.capabilities.includes('admin-audit') ? (
-            <XDriveAdminAuditPage api={adminAuditPort} />
-          ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持审计日志，请更新客户端核心组件。" />
-          )
-        )}
 
-        {view === 'admin-storage' && status?.role === 'admin' && (
-          agent.hello?.capabilities.includes('admin-storage') ? (
-            <XDriveGlobalStorageStatsPage
-              api={adminStoragePort}
-              scope="global"
-              onOpenTaskCenter={() => setView('global-tasks')}
-              onRunStorageMaintenance={async (kind) => {
-                const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
-                  `system-maintenance:${kind}`, 'run', true,
-                )
-                if (!result.ok) throw new Error(result.error.message)
-              }}
-            />
-          ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持全局存储，请更新客户端核心组件。" />
-          )
-        )}
 
-        {view === 'admin-services' && status?.role === 'admin' && (
-          agent.hello?.capabilities.includes('admin-services') ? (
-            <XDriveServiceDependenciesPage source={adminServicesPort}
-              location={baiduDiagnosticLocation}
-              diagnosticScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
-              onUnsavedChange={setSystemDependenciesDraftDirty}
-              navigationResetKey={systemDependenciesNavigationResetKey} />
-          ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持服务状态查询，请更新客户端核心组件。" />
-          )
-        )}
+
+
+
+
+
 
         {view === 'conflicts' && (
           <DesktopConflictsPage

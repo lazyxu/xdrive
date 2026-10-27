@@ -198,7 +198,13 @@ if (!desktopShell.includes('xDriveIsSharedHostPageRoute(view)') ||
     !appPageOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPage} />') ||
     !appPageOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') ||
     !appPageOutlet.includes('<XDriveTaskCenterPage') ||
-    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES')) {
+    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES') ||
+    !desktopShell.includes("adminUsersPage: status?.role === 'admin'") ||
+    !desktopShell.includes("adminAuditPage: status?.role === 'admin'") ||
+    !desktopShell.includes("adminStoragePage: status?.role === 'admin'") ||
+    !appPageOutlet.includes('<XDriveAdminUsersPage {...services.adminUsersPage} />') ||
+    !appPageOutlet.includes('<XDriveAdminAuditPage {...services.adminAuditPage} />') ||
+    !appPageOutlet.includes('<XDriveGlobalStorageStatsPage {...services.adminStoragePage} />')) {
   throw new Error('Desktop retained parallel page JSX for common Host-backed routes')
 }
 // DSM must keep every standard Desktop route visible, while rendering honest

@@ -77,6 +77,8 @@ assert.ok(!dsm.includes('coreKeys='),
 for (const key of [
   'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
   'local-storage', 'cloud-storage',
+  'admin-maintenance', 'admin-users', 'admin-audit',
+  'admin-storage', 'admin-services',
 ]) {
   assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
     'Desktop common outlet must dispatch: ' + key)
@@ -93,6 +95,20 @@ assert.ok(sharedOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPag
   sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') &&
   sharedOutlet.includes('<XDriveTaskCenterPage'),
   'Gallery, Pull and Tasks must render in common UI code')
+for (const pair of [
+  ['adminMaintenancePage', 'XDriveSystemMaintenancePage'],
+  ['adminUsersPage', 'XDriveAdminUsersPage'],
+  ['adminAuditPage', 'XDriveAdminAuditPage'],
+  ['adminStoragePage', 'XDriveGlobalStorageStatsPage'],
+  ['adminServicesPage', 'XDriveServiceDependenciesPage'],
+]) {
+  const [port, name] = pair
+  assert.ok(desktop.includes(port + ': status?.role ===') &&
+    sharedOutlet.includes('<' + name + ' {...services.' + port + '} />'),
+    'Server admin route must render the shared component with an admin-scoped Host port: ' + port)
+}
+assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
+  'privileged UI route must fail closed when not Server verified')
 assert.equal(desktop.includes('<XDriveMediaGalleryPage'), false)
 assert.equal(desktop.includes('<XDriveSourceManager'), false)
 assert.equal(desktop.includes('<XDriveTaskCenterPage'), false)

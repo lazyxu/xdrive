@@ -69,6 +69,7 @@ export function xDriveWorkspaceNavigationAllowed(view: string, serverAdminVerifi
 export const XDRIVE_SHARED_HOST_PAGE_ROUTES = [
   'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
   'local-storage', 'cloud-storage',
+  'admin-maintenance', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services',
 ] as const satisfies readonly XDriveWorkspaceAppRoute[]
 const sharedHostPages = new Set<string>(XDRIVE_SHARED_HOST_PAGE_ROUTES)
 export function xDriveIsSharedHostPageRoute(view: string): boolean {

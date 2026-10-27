@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const view = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/AdminUsersPage.tsx'), 'utf8')
 const web = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(repo, 'desktop/src/renderer/App.tsx'), 'utf8')
+const sharedOutlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
 
 test('admin users stays quiet until authoritative first read, never advertises false empty', () => {
   assert.ok(view.includes('const readComplete = completedSource === api'))
@@ -42,5 +43,7 @@ test('refresh retains accepted rows and does not insert a progressing layout row
   assert.ok(view.includes('aria-busy="true"'), 'unverified state is accessible')
   assert.ok(view.includes('data-xdrive-admin-users-responsive'))
   assert.ok(web.includes('<AdminUsersPanel'))
-  assert.ok(desktop.includes('<XDriveAdminUsersPage'))
+  assert.ok(desktop.includes('adminUsersPage: status?.role ===') &&
+    sharedOutlet.includes('<XDriveAdminUsersPage {...services.adminUsersPage} />'),
+    'admin users must use common page with Server-verified Desktop Host')
 })
