@@ -403,10 +403,10 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
 		Updates(map[string]any{
 			"sha256": liveChecksum, "mime_type": mediapkg.LIVPMIMEType,
-			"media_kind": meta.MediaKindImage,
-			"container_kind": mediapkg.ContainerKindLIVP,
-			"container_json": liveInfo.ContainerJSON,
-			"orientation": liveInfo.Orientation,
+			"media_kind":                  meta.MediaKindImage,
+			"container_kind":              mediapkg.ContainerKindLIVP,
+			"container_json":              liveInfo.ContainerJSON,
+			"orientation":                 liveInfo.Orientation,
 			"live_photo_asset_identifier": liveInfo.LivePhotoAssetIdentifier,
 		}).Error; err != nil {
 		t.Fatal(err)
