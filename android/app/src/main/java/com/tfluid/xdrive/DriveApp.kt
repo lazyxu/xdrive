@@ -88,9 +88,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 if (state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
-                        else controller.openFilesApp()
+                        else controller.back() // Same hierarchy as system Back.
                     }) {
-                        Icon(painterResource(R.drawable.xd_arrow_back), "返回文件")
+                        Icon(painterResource(R.drawable.xd_arrow_back), when {
+                            state.screen == Screen.TRASH -> "返回文件"
+                            state.gallerySelectedAlbum != null -> "返回精选集"
+                            state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
+                            else -> "返回文件"
+                        })
                     }
                 else if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
                     IconButton(onClick = controller::back) {
@@ -102,7 +107,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         mutableStateOf(false)
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
-                        else if (state.screen == Screen.GALLERY) "照片"
+                        else if (state.screen == Screen.GALLERY) when {
+                            state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
+                            state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
+                            else -> "照片"
+                        }
                         else when (state.filesSection) {
                             FilesSection.RECENT -> "最近"
                             FilesSection.FAVORITES -> "收藏"
@@ -171,7 +180,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                         state.gallerySelectedAlbum == null) {
                         gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
-                            GalleryCollections(state, controller)
+                            GalleryCollections(state, controller, galleryThumbnails)
                         }
                     } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
                         Gallery(state, controller, galleryThumbnails)

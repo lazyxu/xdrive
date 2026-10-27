@@ -3,6 +3,8 @@ package com.tfluid.xdrive
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.tfluid.xdrive.core.*
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.*
 import org.junit.After
 import org.junit.Rule
@@ -14,7 +16,7 @@ import org.junit.Assert.assertEquals
 class GalleryCollectionsUiTest {
     @get:Rule val compose = createComposeRule()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val album = GalleryAlbum("manual:trip", "manual", "家庭相册", 1, 3, 0)
+    private val album = GalleryAlbum("manual:trip", "manual", "家庭相册", 1, 3, 0, 778)
     private val libraryPhoto = GalleryAsset(
         DriveNode(777, 1, "library.jpg", "file", size = 16, revision = 1),
         "image", hasThumbnail = false)
@@ -22,6 +24,7 @@ class GalleryCollectionsUiTest {
         DriveNode(778, 1, "album.jpg", "file", size = 16, revision = 1),
         "image", hasThumbnail = false)
     private var albumPageCalls = 0
+    private var coverReads = 0
     private val service = object : XDriveService {
         override suspend fun login(username: String, password: String) =
             AuthSession("fixture-access", "fixture-refresh", username)
@@ -39,6 +42,18 @@ class GalleryCollectionsUiTest {
             accessToken: String, offset: Int, initialLatest: Boolean,
         ) = GalleryPage(listOf(libraryPhoto), 1, 0)
         override suspend fun galleryAlbums(accessToken: String) = listOf(album)
+        override suspend fun galleryAlbumCover(
+            accessToken: String, selected: GalleryAlbum,
+        ): GalleryAlbumCover {
+            assertEquals(album, selected)
+            assertEquals("fixture-access", accessToken)
+            coverReads++
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+            val output = ByteArrayOutputStream()
+            try { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output) }
+            finally { bitmap.recycle() }
+            return GalleryAlbumCover(778, 1, output.toByteArray())
+        }
         override suspend fun galleryAlbumPage(
             accessToken: String, albumId: String, offset: Int,
             initialLatest: Boolean,
@@ -76,6 +91,11 @@ class GalleryCollectionsUiTest {
                 controller.state.value.galleryAlbums == listOf(album)
         }
         compose.onNodeWithTag("gallery-albums-list").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-album-cover-ready-manual:trip",
+                useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.runOnIdle { assertEquals(1, coverReads) }
         compose.onNodeWithTag("gallery-album-item-manual:trip").assertIsDisplayed()
             .performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -97,5 +117,36 @@ class GalleryCollectionsUiTest {
         }
         compose.onNodeWithTag("gallery-wall").assertExists()
         compose.runOnIdle { assertEquals(1, albumPageCalls) }
+
+        // The physical header back must follow the SAME hierarchy as system
+        // Back: album -> Collections -> Library -> Files. It must not bypass
+        // Collections and destroy the user's album return anchor.
+        compose.onNodeWithTag("gallery-open-collections").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                controller.state.value.galleryAlbumsLoaded
+        }
+        compose.onNodeWithTag("gallery-album-item-manual:trip").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySelectedAlbum == album &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("files-nav-title").assertTextEquals("家庭相册")
+        compose.onNodeWithContentDescription("返回精选集").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySelectedAlbum == null &&
+                controller.state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS
+        }
+        compose.onNodeWithTag("files-nav-title").assertTextEquals("精选集")
+        compose.onNodeWithContentDescription("返回图库").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("files-nav-title").assertTextEquals("照片")
+        compose.onNodeWithContentDescription("返回文件").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES
+        }
     }
 }

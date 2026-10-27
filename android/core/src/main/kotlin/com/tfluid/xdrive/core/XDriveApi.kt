@@ -129,6 +129,14 @@ data class GalleryAlbum(
     val coverNodeId: Long? = null,
 )
 
+/** Current-owner versioned album cover result. Never a guessed URL or
+ * unrevisioned image response; the caller owns only bounded JPEG bytes. */
+data class GalleryAlbumCover(
+    val nodeId: Long,
+    val revision: Long,
+    val jpegBytes: ByteArray,
+)
+
 /** Go owns these keys; only accepted prefixes can select a private album Range.
  * Preserve any opaque ID tail and percent-escape it as ONE URL path segment. */
 internal fun validGalleryAlbumId(id: String): Boolean =
@@ -215,6 +223,10 @@ interface XDriveService {
     /** Read-only Collections: use the existing PhotoCollection and member-Range APIs. */
     suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> =
         throw ApiException(501, "Gallery albums unavailable")
+    /** Optional: the cover Node is resolved by the same Owner Server, never
+     * read from Android's local media library or guessed from album members. */
+    suspend fun galleryAlbumCover(accessToken: String, album: GalleryAlbum): GalleryAlbumCover? =
+        throw ApiException(501, "Gallery album covers unavailable")
     suspend fun galleryAlbumPage(
         accessToken: String, albumId: String, offset: Int = 0,
         initialLatest: Boolean = false,
@@ -732,6 +744,32 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 count < 0 || revision < 0 || folder < 0) invalidPayload()
             GalleryAlbum(id, kind, name, count, revision, folder, cover)
         }
+    }
+
+    /** Resolve only the real Server-provided cover_node_id. The album list
+     * has no cover revision; first request the authenticated current media
+     * DTO, then issue an exact revision-fenced, <=4 MiB JPEG thumbnail GET.
+     * When the server has no derived thumbnail, show the native placeholder. */
+    override suspend fun galleryAlbumCover(
+        accessToken: String, album: GalleryAlbum,
+    ): GalleryAlbumCover? {
+        require(validGalleryAlbumId(album.id)) { "Invalid album identity" }
+        val id = album.coverNodeId ?: return null
+        require(id > 0 && album.itemCount > 0 && validToken(accessToken))
+        val detail = request("media/items/$id", accessToken)
+        val owned = node(detail["node"] as? JsonObject ?: invalidPayload())
+        val metadata = detail["metadata"] as? JsonObject ?: invalidPayload()
+        val kind = metadata.string("media_kind")
+        if (owned.id != id || owned.type != "file" || owned.revision <= 0 ||
+            kind !in setOf("image", "video")) invalidPayload()
+        val thumbnail = when (metadata["has_thumbnail"]) {
+            JsonPrimitive(true) -> true
+            JsonPrimitive(false) -> false
+            else -> invalidPayload()
+        }
+        if (!thumbnail) return null
+        return GalleryAlbumCover(id, owned.revision,
+            galleryThumbnail(accessToken, id, owned.revision))
     }
 
     override suspend fun galleryAlbumPage(

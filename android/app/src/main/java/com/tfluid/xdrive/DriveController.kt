@@ -1415,6 +1415,35 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** At most four Owner-authenticated Gallery thumbnails in flight across
+     * photo tiles and Collection covers. An old Owner/tab/album must not
+     * receive even a late non-cooperative detail or thumbnail response. */
+    suspend fun galleryAlbumCover(album: GalleryAlbum): GalleryAlbumCover? {
+        val ticket = generation
+        val initial = state.value
+        val service = api ?: return null
+        if (initial.screen != Screen.GALLERY ||
+            initial.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            initial.gallerySelectedAlbum != null || !initial.galleryAlbumsLoaded ||
+            initial.galleryAlbums.none { it == album } || session == null) return null
+        return galleryThumbnailLimit.withPermit {
+            val cover = authenticated(service, ticket) {
+                service.galleryAlbumCover(it, album)
+            }
+            checkCurrent(ticket)
+            val current = state.value
+            if (current.screen != Screen.GALLERY ||
+                current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+                current.gallerySelectedAlbum != null || !current.galleryAlbumsLoaded ||
+                current.galleryAlbums.none { it == album }) throw CancellationException()
+            if (cover != null && (cover.nodeId != album.coverNodeId ||
+                cover.revision <= 0 || cover.jpegBytes.isEmpty() ||
+                cover.jpegBytes.size > 4 * 1024 * 1024))
+                throw ApiException(0, "Invalid album cover", ApiFailureReason.INVALID_RESPONSE)
+            cover
+        }
+    }
+
     fun openGalleryAlbum(album: GalleryAlbum) {
         val previous = state.value
         if (previous.screen != Screen.GALLERY || session == null ||
