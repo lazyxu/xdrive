@@ -173,6 +173,27 @@ func TestBaiduGeoconvLowerAccountCapsAtomicTwoPools(t *testing.T) {
 	// and day limits, without leaked Owner records or unredacted failures.
 	minute = baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 3, OwnerPoints: 2, FleetPoints: 3}
 	cadence = baiduGeoconvCadenceCaps{OwnerSecond: 2, FleetSecond: 2, OwnerDay: 2, FleetDay: 3}
+	// The quota service uses PostgreSQL clock_timestamp(), not runner time.
+	// If this concurrency burst straddles UTC 00:00 or a minute boundary,
+	// the last minute/day window legitimately contains fewer than ALL
+	// admitted requests. Preserve strict equality whenever no boundary
+	// actually passed; never mistake a rolling window for a cumulative total.
+	type quotaWindow struct {
+		Minute int64
+		Day    int64
+	}
+	readWindow := func() quotaWindow {
+		t.Helper()
+		var window quotaWindow
+		err := db.Raw("SELECT FLOOR(EXTRACT(EPOCH FROM t.now_at) / 60)::bigint AS minute, " +
+			"FLOOR(EXTRACT(EPOCH FROM t.now_at) / 86400)::bigint AS day " +
+			"FROM (SELECT clock_timestamp() AS now_at) t").Scan(&window).Error
+		if err != nil || window.Minute <= 0 || window.Day <= 0 {
+			t.Fatalf("read database quota window: %v", err)
+		}
+		return window
+	}
+	begin := readWindow()
 	var successes atomic.Int64
 	var unexpected atomic.Int64
 	var wg sync.WaitGroup
@@ -195,10 +216,26 @@ func TestBaiduGeoconvLowerAccountCapsAtomicTwoPools(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	if unexpected.Load() != 0 || successes.Load() < 1 || successes.Load() > 3 {
-		t.Fatalf("lower-cap two-pool concurrent admission unsafe: successful=%d errors=%d", successes.Load(), unexpected.Load())
+	end := readWindow()
+	admitted := successes.Load()
+	// With a single UTC day the fleet day cap is 3, even when the
+	// minute rolls over. Across midnight, each UTC day gets its own cap.
+	if unexpected.Load() != 0 || admitted < 1 ||
+		admitted > 3*(end.Day-begin.Day+1) {
+		t.Fatalf("lower-cap two-pool concurrent admission unsafe: successful=%d errors=%d", admitted, unexpected.Load())
 	}
-	if fleet := read(0); fleet.Requests != successes.Load() || fleet.DayRequests != successes.Load() {
-		t.Fatalf("concurrent fleet minute/day counters diverged: %+v", fleet)
+	fleet := read(0)
+	if fleet.WindowMinute < begin.Minute || fleet.WindowMinute > end.Minute ||
+		fleet.WindowDay < begin.Day || fleet.WindowDay > end.Day ||
+		fleet.Requests < 1 || fleet.Requests > admitted ||
+		fleet.Points != fleet.Requests ||
+		fleet.DayRequests < 1 || fleet.DayRequests > admitted {
+		t.Fatalf("concurrent fleet quota accounting outside observed DB windows: admitted=%d start=%+v end=%+v fleet=%+v",
+			admitted, begin, end, fleet)
+	}
+	if (begin.Minute == end.Minute && fleet.Requests != admitted) ||
+		(begin.Day == end.Day && fleet.DayRequests != admitted) {
+		t.Fatalf("concurrent fleet stable-window counters diverged: admitted=%d start=%+v end=%+v fleet=%+v",
+			admitted, begin, end, fleet)
 	}
 }
