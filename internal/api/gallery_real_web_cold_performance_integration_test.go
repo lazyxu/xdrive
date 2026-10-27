@@ -225,13 +225,22 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	// already-accepted Mobile chronological tail, preserving all source IDs.
 	// Parent P0-C2/P1-A/P1-B fixtures are byte-for-byte unchanged otherwise.
 	if os.Getenv("XD_PWA_P1_LIVE_MOTION_HOLD") == "1" {
-		if !p0c2SPAMode || physicalViewportMode {
-			t.Fatal("P1-C Live hold requires bounded authenticated Mobile SPA mode")
+		if !p0c2SPAMode || (physicalViewportMode && os.Getenv("XD_PWA_P1_PHYSICAL_115K_VIEWER") != "1") {
+			t.Fatal("P1-C Live hold requires authenticated Mobile SPA mode")
 		}
-		seeded := pwaP1SeedLiveMotionForTail(
-			t, db, countingStore, ownerRoot.OwnerID, folder.ID, viewport,
-		)
-		t.Logf("P1C_LIVE_REAL_MOTION_CAS_READY count=%d", seeded)
+		if physicalViewportMode {
+			// P1P retains all 15k genuine linked Live motion originals already
+			// seeded in distinct LocalCAS. Never replace them with bounded blobs.
+			if physicalReport.LiveMotions != mediaGalleryFirstOpenLivePhotos {
+				t.Fatalf("P1P complete real physical Live motion corpus missing: %+v", physicalReport)
+			}
+			t.Logf("P1P_LIVE_PHYSICAL_CAS_READY count=%d", physicalReport.LiveMotions)
+		} else {
+			seeded := pwaP1SeedLiveMotionForTail(
+				t, db, countingStore, ownerRoot.OwnerID, folder.ID, viewport,
+			)
+			t.Logf("P1C_LIVE_REAL_MOTION_CAS_READY count=%d", seeded)
+		}
 	}
 
 	// P1-D keeps the existing Owner's real 100k Gallery model, replacing only
@@ -432,7 +441,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	case <-stopped:
 		t.Logf("GALLERY_REAL_WEB_COLD_100K_STOP seed_ms=%.3f images=%d videos=%d live=%d",
 			seedMS, len(images), len(videos), liveCount)
-	case <-time.After(map[bool]time.Duration{true: 16 * time.Minute, false: 6 * time.Minute}[desktopFileExplorerMixed]):
+	case <-time.After(map[bool]time.Duration{true: 16 * time.Minute, false: 6 * time.Minute}[desktopFileExplorerMixed || os.Getenv("XD_PWA_P1_PHYSICAL_115K_VIEWER") == "1"]):
 		t.Fatal("browser did not finish real Web Gallery first-paint workload")
 	}
 }

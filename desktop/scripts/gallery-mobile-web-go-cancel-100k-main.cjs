@@ -16,13 +16,19 @@ const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
 const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
 const p1ViewerVideoAbortMode = process.env.XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL === '1'
+// P1P is opt-in only: 100k Owner PhotoAssets backed by 115k SHA-distinct
+// genuine LocalCAS originals, not the older bounded physical Viewer fixture.
+const physicalP1Mode = process.env.XD_PWA_P1_PHYSICAL_115K_VIEWER === '1'
+assert(!physicalP1Mode || (p0c2SPAMode && p1Mode && p1H264Mode && p1LiveMode &&
+  !p1ViewerVideoAbortMode && !p0c2PageLeaveMode),
+  '115k physical P1P requires real routed JPEG/H264/Live SPA without padded Range probe')
 assert(!p1ViewerVideoAbortMode || p1LiveMode, 'real Viewer video Range Abort requires original P1-C Live stage')
 assert(!p1LiveMode || p1H264Mode, 'Live native hold requires genuine P1 H264 video stage')
 assert(!p1H264Mode || p1Mode,
   'H264 presented-frame mode requires real Owner P1 Gallery Viewer')
 assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', p1ViewerVideoAbortMode ? 'pwa-p1-owner-100k-viewer-range-abort-results' : p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
+const out = path.join(__dirname, '..', physicalP1Mode ? 'pwa-p1p-physical-115k-viewer-results' : p1ViewerVideoAbortMode ? 'pwa-p1-owner-100k-viewer-range-abort-results' : p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -69,13 +75,14 @@ async function startFixture(sample, ready) {
     'compiled actual Go api.test fixture required')
   const child = spawn(goBinary, [
     '-test.run=^TestGalleryRealWebColdFixture100K$',
-    '-test.count=1', '-test.timeout=12m', '-test.v',
+    '-test.count=1', physicalP1Mode ? '-test.timeout=20m' : '-test.timeout=12m', '-test.v',
   ], {
     cwd: root,
     env: {
       ...process.env,
       XD_GALLERY_REAL_WEB_COLD_PERF: '1',
-      XD_GALLERY_REAL_VIEWPORT_CANCEL_PERF: '1',
+      XD_GALLERY_REAL_VIEWPORT_CANCEL_PERF: physicalP1Mode ? '0' : '1',
+      XD_GALLERY_WEB_PHYSICAL_MIXED_VIEWPORT_100K_PERF: physicalP1Mode ? '1' : '0',
       XD_GALLERY_REAL_WEB_DIST: dist,
       XD_GALLERY_REAL_WEB_READY_FILE: ready,
     },
@@ -89,7 +96,7 @@ async function startFixture(sample, ready) {
   const config = await until(() => {
     if (child.exitCode !== null) throw Error('native fixture exited before ready: ' + child.exitCode)
     return fs.existsSync(ready) ? JSON.parse(fs.readFileSync(ready, 'utf8')) : null
-  }, 180000, 'real 100k Gallery PostgreSQL+Gin fixture')
+  }, physicalP1Mode ? 12*60*1000 : 180000, 'real 100k Gallery PostgreSQL+Gin fixture')
   return { log, child, exited, config }
 }
 async function stopFixture(f) {
@@ -572,7 +579,7 @@ async function p1MeasureRealH264ViewerMotion(win) {
     sameHost:returned.sameHost,sameGrid:returned.sameGrid,
     restoredScrollDelta:returned.scrollDelta,
     claim:'two distinct H264 original presented video mediaTime frames in native Chromium after explicit play()',
-    excluded:'iOS Safari installed, Live Motion hold, 115k full CAS, Go video Range cancel',
+    excluded:physicalP1Mode ? 'iOS Safari installed, HEIC/HEVC, independent H264 bitstreams, Go Range cancellation' : 'iOS Safari installed, Live Motion hold, 115k full CAS, Go video Range cancel',
   }
 }
 
@@ -751,7 +758,7 @@ async function p1MeasureLivePhotoHold(win){
     sameHost:returned.sameHost,sameGrid:returned.sameGrid,
     restoredScrollDelta:returned.scrollDelta,
     scope:'actual native Chromium mouse hold shared Live still and paired CAS MP4 motion',
-    notMeasured:'native iOS touch long press; owner revoke while Video Range inflight; 115k physical CAS'}
+    notMeasured:physicalP1Mode ? 'native iOS touch long press; Owner revoke, HEIC/HEVC or in-flight Range Go cancel' : 'native iOS touch long press; owner revoke while Video Range inflight; 115k physical CAS'}
 }
 
 
@@ -906,6 +913,74 @@ async function sampleOnce(sample, ready) {
       '({width:document.documentElement.clientWidth,height:innerHeight,narrow:matchMedia("(max-width:899.95px)").matches})', true)
     assert(viewport.narrow && viewport.width >= 360 && viewport.width <= 390 &&
       viewport.height >= 700, 'actual Mobile Web responsive Gallery not mounted: ' + JSON.stringify(viewport))
+
+    if (physicalP1Mode) {
+      // The same 115k independently hashed physical CAS objects are read by
+      // genuine signed Owner routes for all three consecutive Viewer types.
+      // The original 160ms synthetic slow-stream gate is intentionally NOT
+      // enabled here: this is a separate physical-source lifecycle workload.
+      assert.equal(fixture.config.physical_mode, true)
+      assert.equal(fixture.config.physical_sources, 115000)
+      assert.equal(fixture.config.physical_verified, 12)
+      assert.equal(fixture.config.live_photo_groups, 15000)
+      const healthy = await newIndependentRange(fixture)
+      const goPID = actualFixtureGoPID(fixture.child.pid)
+      const rendererPID = win.webContents.getOSProcessId()
+      const goStart = nativeProcessStats(goPID)
+      const rendererStart = nativeProcessStats(rendererPID)
+      let peakGoRSS = goStart.rssBytes
+      let peakRendererRSS = rendererStart.rssBytes
+      resourceSampler = setInterval(() => {
+        try {
+          peakGoRSS = Math.max(peakGoRSS, nativeProcessStats(goPID).rssBytes)
+          peakRendererRSS = Math.max(peakRendererRSS, nativeProcessStats(rendererPID).rssBytes)
+        } catch { /* a vanished process still fails the mandatory final read */ }
+      }, 25)
+      const jpeg = await p1MeasureRealViewerBack(win)
+      const h264 = await p1MeasureRealH264ViewerMotion(win)
+      const live = await p1MeasureLivePhotoHold(win)
+      clearInterval(resourceSampler)
+      resourceSampler = null
+      const goEnd = nativeProcessStats(goPID)
+      const rendererEnd = nativeProcessStats(rendererPID)
+      peakGoRSS = Math.max(peakGoRSS, goEnd.rssBytes)
+      peakRendererRSS = Math.max(peakRendererRSS, rendererEnd.rssBytes)
+      const resources = {
+        go: {initial:goStart,final:goEnd,
+          rssGrowthBytes:Math.max(0,peakGoRSS-goStart.rssBytes),
+          cpuDeltaMs:goEnd.cpuMs-goStart.cpuMs},
+        renderer: {initial:rendererStart,final:rendererEnd,
+          rssGrowthBytes:Math.max(0,peakRendererRSS-rendererStart.rssBytes),
+          cpuDeltaMs:rendererEnd.cpuMs-rendererStart.cpuMs},
+      }
+      const accepted = failures.length===0 && healthy.status===200 &&
+        jpeg.passed && jpeg.returned.sameDocument && jpeg.returned.sameHost &&
+        jpeg.returned.sameGrid && jpeg.returned.scrollDelta<=2 &&
+        h264.passed && h264.presentedFrameDelta>=1 && h264.frameMediaDeltaMs>5 &&
+        h264.sameDocument && h264.sameHost && h264.sameGrid &&
+        h264.restoredScrollDelta<=2 &&
+        live.passed && live.frameDelta>=1 && live.mediaDeltaMs>5 &&
+        live.pausedOnRelease && live.stillAfterRelease &&
+        live.sameDocument && live.sameHost && live.sameGrid &&
+        live.restoredScrollDelta<=2 &&
+        resources.go.cpuDeltaMs>=0 && resources.renderer.cpuDeltaMs>=0 &&
+        resources.go.rssGrowthBytes<=256*1024*1024 &&
+        resources.renderer.rssGrowthBytes<=256*1024*1024
+      const row = {
+        sample,passed:accepted,physicalMode:true,ownerAuthenticated:true,
+        logicalAssets:fixture.config.logical_assets,
+        physicalOriginals:fixture.config.physical_sources,
+        physicalBytes:fixture.config.physical_bytes,
+        physicalReadbacks:fixture.config.physical_verified,
+        liveGroups:fixture.config.live_photo_groups,seedMsExcluded:fixture.config.seed_ms,
+        viewport,healthy,jpeg,h264,live,resources,
+        limitations:'CURRENT n=1 physical Owner session, not iOS Safari; 115k SHA-distinct containers but videos reuse one real 96x64 H264 bitstream; no HEIC/HEVC, full weak-network/logout/revoke or in-flight signed-Range Go cancellation; NOT a measured causal speedup',
+      }
+      fs.writeFileSync(path.join(out, 'sample-'+sample+'.json'),JSON.stringify(row,null,2)+'\n')
+      console.log('PWA_P1P_PHYSICAL_115K_SAMPLE '+JSON.stringify(row))
+      assert(accepted,'actual 115k physical Owner JPEG/H264/Live Viewer lifecycle failed')
+      return row
+    }
     await until(async () => {
       if (failures.length) throw Error(failures.join('; '))
       const s = await readStats(fixture.config.url)
@@ -1084,6 +1159,39 @@ async function main() {
     await app.whenReady()
     for (let sample = 1; sample <= 3; sample++) {
       rows.push(await sampleOnce(sample, path.join(temp, 'ready-' + sample + '.json')))
+    }
+
+    if (physicalP1Mode) {
+      const median = key => rows.map(row=>key(row)).sort((a,b)=>a-b)[1]
+      const summary = {
+        status:'measured-CURRENT-Owner-115k-distinct-physical-CAS-routed-JPEG-H264-Live',
+        accepted:rows.length===3 && rows.every(row=>row.passed &&
+          row.ownerAuthenticated && row.physicalMode &&
+          row.logicalAssets===100000 && row.physicalOriginals===115000 &&
+          row.physicalReadbacks===12 && row.liveGroups===15000 &&
+          row.viewport.narrow && row.viewport.width>=360 &&
+          row.viewport.width<=390 && row.jpeg.returned.scrollDelta<=2 &&
+          row.h264.restoredScrollDelta<=2 && row.live.restoredScrollDelta<=2),
+        n:rows.length,logicalAssets:100000,physicalOriginals:115000,
+        p50JpegOriginalMs:median(row=>row.jpeg.originalDecodedMs),
+        p50H264PresentedMs:median(row=>row.h264.presentedMs),
+        p50LiveHeldMs:median(row=>row.live.displayedMs),
+        maxGoRSSGrowthBytes:Math.max(...rows.map(row=>row.resources.go.rssGrowthBytes)),
+        maxRendererRSSGrowthBytes:Math.max(...rows.map(row=>row.resources.renderer.rssGrowthBytes)),
+        samples:rows,
+        causalConclusion:'NOT_ESTABLISHED',
+        caveats:'Not a paired BEFORE/AFTER or iOS device result. Distinct physical CAS sources are small synthetic camera-like JPEG and BMFF containers with shared validated H264 bitstream, not 115k independent encodes, HEIC/HEVC, WAN, OS install/background/revocation or signed Range cancellation.',
+      }
+      fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(summary,null,2)+'\n')
+      console.log('PWA_P1P_PHYSICAL_115K_SUMMARY '+JSON.stringify({
+        accepted:summary.accepted,n:summary.n,
+        p50JpegOriginalMs:summary.p50JpegOriginalMs,
+        p50H264PresentedMs:summary.p50H264PresentedMs,
+        p50LiveHeldMs:summary.p50LiveHeldMs,
+        causalConclusion:summary.causalConclusion,
+      }))
+      assert(summary.accepted,'P1P three independent physical Viewer sessions failed')
+      return
     }
     const worst = rows.map(x => x.go.worstContextNotificationMs).sort((a, b) => a - b)
     const summary = {
