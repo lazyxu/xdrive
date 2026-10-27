@@ -30,6 +30,8 @@ const ownerFileIPC = read('internal/localbackupipc/owner_files.go')
 const ownerMediaIPC = read('internal/localbackupipc/owner_media_range.go')
 const ownerServerRange = read('internal/client/owner_media_range.go')
 const synologyMediaPreview = read('ui/shared/src/synology-media-preview.ts')
+const synologyMediaStream = read('ui/shared/src/synology-media-stream.ts')
+const nativeStreamGateway = read('internal/synologyui/media_stream.go')
 const sharedQuickLook = read('ui/shared/src/mui/FileQuickLookDialog.tsx')
 const sharedFileExplorer = read('ui/shared/src/mui/FileExplorer.tsx')
 const synologyFiles = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
@@ -59,7 +61,16 @@ for (const [name, source] of [['Desktop', desktop], ['DSM', nas]]) {
     }
   }
 }
-if (!ownerMediaIPC.includes('cloud-media-range-read') ||
+if (!nativeStreamGateway.includes('parseOwnerStreamRange') ||
+    !nativeStreamGateway.includes('ownerStreamMaxResponseBytes = 1 << 20') ||
+    !nativeStreamGateway.includes('localbackupipc.ValidateOwnerMediaRange') ||
+    !cgiRouting.includes('"cloud-media-stream"') ||
+    !cgi.includes('serveOwnerMediaStream(w, r, reader)') ||
+    !nasAdapter.includes('ownerFileMediaStreamURL:') ||
+    !synologyMediaStream.includes('xDriveSynologyLoadNativeMediaStream') ||
+    !synologyFiles.includes('xDriveSynologyLoadNativeMediaStream(client, item, signal)') ||
+    !sharedQuickLook.includes('export function XDriveFileQuickLookDialog') ||
+    !ownerMediaIPC.includes('cloud-media-range-read') ||
     !ownerMediaIPC.includes('ValidateOwnerMediaRange') ||
     !ownerServerRange.includes('StatusPartialContent') ||
     !ownerServerRange.includes('If-Range') ||

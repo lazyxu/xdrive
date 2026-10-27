@@ -17,10 +17,14 @@ on:
       - 'internal/localbackupipc/owner_media_range.go'
       - 'internal/localbackupipc/owner_media_range_test.go'
       - 'internal/synologyui/owner_media_range_test.go'
+      - 'internal/synologyui/media_stream.go'
+      - 'internal/synologyui/media_stream_test.go'
       - 'cmd/xdrive-agent/cloud_owner_media_range.go'
       - 'cmd/xdrive-agent/desktop_ipc_owner_media_range.go'
       - 'cmd/xdrive-agent/desktop_ipc_owner_media_range_test.go'
       - 'ui/shared/src/synology-media-preview.ts'
+      - 'ui/shared/src/synology-media-stream.ts'
+      - 'web/scripts/test-synology-media-stream.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
       - 'ui/shared/src/mui/FilePreviewSurface.tsx'
@@ -95,10 +99,14 @@ on:
       - 'internal/localbackupipc/owner_media_range.go'
       - 'internal/localbackupipc/owner_media_range_test.go'
       - 'internal/synologyui/owner_media_range_test.go'
+      - 'internal/synologyui/media_stream.go'
+      - 'internal/synologyui/media_stream_test.go'
       - 'cmd/xdrive-agent/cloud_owner_media_range.go'
       - 'cmd/xdrive-agent/desktop_ipc_owner_media_range.go'
       - 'cmd/xdrive-agent/desktop_ipc_owner_media_range_test.go'
       - 'ui/shared/src/synology-media-preview.ts'
+      - 'ui/shared/src/synology-media-stream.ts'
+      - 'web/scripts/test-synology-media-stream.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
       - 'ui/shared/src/mui/FilePreviewSurface.tsx'
@@ -202,6 +210,7 @@ jobs:
           node web/scripts/test-synology-owner-quota.mjs
           node web/scripts/test-synology-owner-files.mjs
           node web/scripts/test-synology-media-preview.mjs
+          node web/scripts/test-synology-media-stream.mjs
           npm run build:synology --prefix web
       - name: Verify static artifacts remain relative to DSM launcher
         run: |

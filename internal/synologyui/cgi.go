@@ -31,7 +31,8 @@ func CGIHandler(next http.Handler) http.Handler {
 		case "bootstrap", "sources", "status", "history", "run", "control", "schedule",
 			"device-backups", "device-backup-runs",
 			"device-backup-page", "device-backup-folders", "cloud-quota",
-			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range":
+			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range",
+			"cloud-media-stream":
 		default:
 			http.Error(w, "unknown CGI operation", http.StatusNotFound)
 			return

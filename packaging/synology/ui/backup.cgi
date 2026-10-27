@@ -6,7 +6,9 @@ umask 077
 
 case "${GATEWAY_INTERFACE:-}" in CGI/*) ;; *) exit 1 ;; esac
 case "${HTTPS:-}" in on|ON|1) ;; *) exit 1 ;; esac
-case "${REQUEST_METHOD:-}" in GET|POST) ;; *) exit 1 ;; esac
+# HTMLMediaElement and browser media probes legitimately issue HEAD.
+# The Go gateway still restricts HEAD to the Owner media stream route.
+case "${REQUEST_METHOD:-}" in GET|HEAD|POST) ;; *) exit 1 ;; esac
 [ -n "${REMOTE_ADDR:-}" ] && [ -n "${HTTP_COOKIE:-}" ] || exit 1
 
 # Resolve DSM's /webman/3rdparty/xdrivenas symlink. No request parameter
