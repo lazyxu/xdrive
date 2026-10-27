@@ -969,8 +969,24 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
       return s.signed_range>=1&&s.partial_content>=1&&s.first_chunks>=1&&
         s.active>=1&&s.emitted_bytes>0?s:null
     },12000,'real signed 206 Range must be in flight during logout')
+    // Compact iOS-style 52px Header intentionally has no avatar:
+    // the REAL account action lives inside the bottom App navigation drawer.
+    // Open it using the genuine header control, not a synthetic DOM click,
+    // an injected menu or an offscreen account shortcut.
+    const navPoint=await until(async()=>{
+      const p=await visibleButtonCenter(auditor,'打开应用导航')
+      return p.error?null:p
+    },12000,'second window real mobile App navigation button')
+    sendActualPointer(auditor,navPoint)
+    await until(async()=>auditor.webContents.executeJavaScript(
+      '(()=>{const d=document.querySelector("[role=dialog][aria-modal=true]");'+
+      'return !!d&&!d.hasAttribute("inert")&&d.getBoundingClientRect().height>200})()',true),
+      12000,'second window mounted real account navigation drawer')
+    // As in prepareAppDestination, wait for the actual MUI Drawer slide.
+    // Final hit testing remains authoritative; no fake state transition.
+    await sleep(430)
     const avatar=await until(async()=>p1QVisibleAccountPoint(auditor,'avatar'),
-      10000,'second window real account avatar')
+      10000,'second window real account avatar inside open App drawer')
     sendActualPointer(auditor,avatar)
     const logout=await until(async()=>p1QVisibleAccountPoint(auditor,'logout'),
       10000,'second window actual Logout MenuItem')

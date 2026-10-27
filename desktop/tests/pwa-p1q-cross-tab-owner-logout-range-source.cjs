@@ -15,6 +15,8 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     "await switchActualApp(win,'图库','gallery')",
     'const warmJPEG=await p1MeasureRealViewerBack(win)',
     'const warmH264=await p1MeasureRealH264ViewerMotion(win)',
+    "visibleButtonCenter(auditor,'打开应用导航')",
+    "second window mounted real account navigation drawer",
     'p1OriginalSignedVideoElement.toString()',
     'p1VisibleH264Tile.toString()',
     "await fetch(base+'/__perf/viewer-video-range-mark'",
