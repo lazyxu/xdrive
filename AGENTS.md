@@ -13,7 +13,7 @@ A later explicit owner decision supersedes older instructions.
 - Continue the existing relevant PR when possible, rather than generating duplicates.
 - Keep changes scoped and shared among platforms. Preserve unrelated changes and real ownership boundaries.
 - Distinguish implemented, tested, CI passed, built, published, deployed and physically validated.
-- Real production or unavailable device acceptance: disclose **跳过（未验收）** once. When the owner has chosen to skip it, do not request confirmation again or block subsequent development. Never claim skipped checks passed.
+- Real production or unavailable device acceptance: say **跳过（未验收）** once and continue safe independent work. Never claim skipped checks passed.
 
 ## Git, CI and merge discipline
 - GitHub master is canonical; merge on GitHub first, then fast-forward GitLab only if not diverged. Never force overwrite GitLab changes.
@@ -36,16 +36,16 @@ A later explicit owner decision supersedes older instructions.
 ## PR, issue and branch hygiene
 - Review least-active branches first. Delete only current exact tip proven merged, contained or safely superseded; check protection and open PR head/base, then delete with an exact-SHA lease.
 - Closed-unmerged PRs are not automatically redundant. Keep unique work until it is ported or explicitly rejected with evidence.
-- Preserve feat/sync-run-outcome-telemetry-p0-p2-20261016 until Issue #2524 resolves its remaining unique semantic differences.
+- The legacy sync-run telemetry orphan was audited in closed Issue #2524. Retire only its recorded exact SHA through reviewed deletion guards; never bulk merge its old 40-file schema or delete an advanced branch.
 - Close completed or duplicate Issues with canonical evidence; preserve actual unfinished work.
 - Avoid branch-name-only deletion and avoid bulk merge of old divergent source.
 
 ## Canonical UI architecture
-- Web/Desktop/Synology must share the canonical `@xdrive/ui/mui` shell (source: `ui/shared`), navigation, all pages, dialogs and theme. This covers Files/Gallery/Viewer, Push/Pull, tasks/transfers, storage, conflicts, diagnostics and admin/settings; use small genuine platform adapters and capability-scoped routes.
+- Web/Desktop/Synology share the same React/MUI ui/shared shell, navigation, page components, dialogs and theme, with small genuine platform adapters.
+- Desktop and Synology DSM MUST mount one canonical `XDriveApp` and full `XDRIVE_APP_WORKSPACE_ROUTES`; maintain pages, Viewer, dialogs, navigation, layouts and interactions once in shared UI, never copy Desktop pages into a second DSM application or add DSM screens one by one. Only the Host transport, authenticated capability handlers, native integration and user/Owner-scoped data differ. A missing DSM capability must show a truthful unavailable action/page, not hide ordinary UI routes or fabricate results. Admin routes require Server-verified admin authorization; physical DSM acceptance remains skip-with-disclosure, never a code/CI security bypass.
 - Use the term 同步文件夹. Main navigation: 概览、云端文件、同步文件夹、传输、存储、冲突、诊断. Admin: 用户管理、审计日志、全局存储、服务与依赖.
 - Desktop uses real Electron/Agent IPC; Web uses Server APIs; Synology uses authenticated DSM-local adapters with same-user and Owner checks. Never fake a platform capability, invent state or create a second DSM UI/queue/CAS writer.
-- The initial DSM 7 armada38x CLI-only backup SPK release is independent of full MUI adoption and physical DSM acceptance; it may ship without a native MUI page.
-- Physical DSM share ACL, first real upload, unchanged second incremental, package stop/restart, upgrade credential/task/checkpoint persistence and effective CGI UID follow the owner's **按用户决定跳过（未验收）** decision: disclose once, continue development, and do not repeatedly seek confirmation. Required code-level security, CI and package-integrity checks still apply.
+- Initial DSM 7 armada38x backup-only SPK may ship without a native MUI page. Physical DSM ACL, real first/second upload and restart/upgrade durability remain explicitly unverified until observed and do not block other work.
 - Mobile Web/PWA follows the full-screen iOS 27 Files/Gallery app-frame baseline, 52px header, previous-app back control, shared virtualization, preserved navigation/scroll anchor and no floating navigation or multiple tabs.
 - Android targets iOS PWA visual parity while retaining genuine native LAN and SAF capabilities; do not assert physical 1:1 without measurements/screenshots.
 
