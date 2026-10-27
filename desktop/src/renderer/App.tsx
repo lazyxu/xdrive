@@ -91,6 +91,7 @@ import {
 } from '@xdrive/shared'
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
+import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -187,6 +188,8 @@ export default function App({
   appearance: XDriveAppearance
   onAppearanceChange: (appearance: XDriveAppearance) => Promise<void>
 }) {
+  // Stable lifetime: no new native connection or Owner token per repaint.
+  const fileExplorerHostPort = useMemo(createDesktopFileExplorerHostPort, [])
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
     appearance: 'system',
@@ -3144,6 +3147,7 @@ export default function App({
           <DesktopFilesPage
             quota={cloudQuota}
             explorer={{
+              hostPort: fileExplorerHostPort,
               items: cloudItems,
               crumbs: cloudCrumbs,
               virtualDirectory: cloudVirtualDirectory,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
@@ -166,6 +167,7 @@ function throwDesktopUploadError(error: { code?: string; message: string }): nev
 }
 
 export default function DesktopFileExplorer({
+  hostPort,
   items,
   crumbs,
   virtualDirectory,
@@ -220,6 +222,7 @@ export default function DesktopFileExplorer({
   onError,
   onFeedback,
 }: {
+  hostPort: DesktopFileExplorerHostPort
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<AgentCloudNode> | null
@@ -283,6 +286,8 @@ export default function DesktopFileExplorer({
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
+  const ownerAgent = hostPort.agent
+  const nativePort = hostPort.native
   const [createOpen, setCreateOpen] = useState(false)
   const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
   const revealSequenceRef = useRef(0)
@@ -353,7 +358,7 @@ export default function DesktopFileExplorer({
   useEffect(() => {
     let active = true
     setSearchSourceOptions([])
-    void window.xdriveDesktop.agent.getSources().then((result) => {
+    void ownerAgent.getSources().then((result) => {
       if (active && result.ok) {
         setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
       }
@@ -386,17 +391,17 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: recentSupported,
     loadItems: async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileRecent(16)
+      const result = await ownerAgent.cloudFileRecent(16)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     touchItem: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.cloudTouchFileRecent(nodeID)
+      const result = await ownerAgent.cloudTouchFileRecent(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     clearItems: async () => {
-      const result = await window.xdriveDesktop.agent.cloudClearFileRecent()
+      const result = await ownerAgent.cloudClearFileRecent()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -477,7 +482,7 @@ export default function DesktopFileExplorer({
     navigationSessionStorageKey,
     onNavigationStateChange,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
-      const result = await window.xdriveDesktop.agent.cloudSearchRange(
+      const result = await ownerAgent.cloudSearchRange(
         query,
         offset,
         limit,
@@ -496,12 +501,12 @@ export default function DesktopFileExplorer({
       }
     },
     loadRoot: async () => {
-      const result = await window.xdriveDesktop.agent.cloudRoot()
+      const result = await ownerAgent.cloudRoot()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     findChildDirectory: async (parentID, name) => {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(
+      const result = await ownerAgent.cloudChildrenPage(
         parentID,
         xDriveFileExplorerPathLookupPageOptions(name),
       )
@@ -521,7 +526,7 @@ export default function DesktopFileExplorer({
       parentID,
       cursor,
       loadPage: async (id, options) => {
-        const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, options)
+        const result = await ownerAgent.cloudChildrenPage(id, options)
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
@@ -533,22 +538,22 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: quickAccessSupported,
     loadItems: async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileQuickAccess()
+      const result = await ownerAgent.cloudFileQuickAccess()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     pinItem: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.cloudPinFileQuickAccess(nodeID)
+      const result = await ownerAgent.cloudPinFileQuickAccess(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     unpinItem: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.cloudUnpinFileQuickAccess(nodeID)
+      const result = await ownerAgent.cloudUnpinFileQuickAccess(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     reorderItems: async (nodeIDs) => {
-      const result = await window.xdriveDesktop.agent.cloudReorderFileQuickAccess(nodeIDs)
+      const result = await ownerAgent.cloudReorderFileQuickAccess(nodeIDs)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -557,62 +562,62 @@ export default function DesktopFileExplorer({
 
   const organizationAdapter = useMemo(() => ({
     listTags: async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileTags()
+      const result = await ownerAgent.cloudFileTags()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     createTag: async (name: string, color: string) => {
-      const result = await window.xdriveDesktop.agent.cloudCreateFileTag(name, color)
+      const result = await ownerAgent.cloudCreateFileTag(name, color)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     updateTag: async (id: number, input: { name?: string; color?: string }) => {
-      const result = await window.xdriveDesktop.agent.cloudUpdateFileTag(id, input)
+      const result = await ownerAgent.cloudUpdateFileTag(id, input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     deleteTag: async (id: number) => {
-      const result = await window.xdriveDesktop.agent.cloudDeleteFileTag(id)
+      const result = await ownerAgent.cloudDeleteFileTag(id)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     queryNodeTags: async (nodeIDs: number[]) => {
-      const result = await window.xdriveDesktop.agent.cloudQueryFileNodeTags(nodeIDs)
+      const result = await ownerAgent.cloudQueryFileNodeTags(nodeIDs)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     addTagNodes: async (tagID: number, nodeIDs: number[]) => {
-      const result = await window.xdriveDesktop.agent.cloudSetFileTagNodes(tagID, nodeIDs, true)
+      const result = await ownerAgent.cloudSetFileTagNodes(tagID, nodeIDs, true)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     removeTagNodes: async (tagID: number, nodeIDs: number[]) => {
-      const result = await window.xdriveDesktop.agent.cloudSetFileTagNodes(tagID, nodeIDs, false)
+      const result = await ownerAgent.cloudSetFileTagNodes(tagID, nodeIDs, false)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     listSavedSearches: async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileSavedSearches()
+      const result = await ownerAgent.cloudFileSavedSearches()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     createSavedSearch: async (input: AgentFileSavedSearchInput) => {
-      const result = await window.xdriveDesktop.agent.cloudCreateFileSavedSearch(input)
+      const result = await ownerAgent.cloudCreateFileSavedSearch(input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     updateSavedSearch: async (id: number, input: AgentFileSavedSearchInput) => {
-      const result = await window.xdriveDesktop.agent.cloudUpdateFileSavedSearch(id, input)
+      const result = await ownerAgent.cloudUpdateFileSavedSearch(id, input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     deleteSavedSearch: async (id: number) => {
-      const result = await window.xdriveDesktop.agent.cloudDeleteFileSavedSearch(id)
+      const result = await ownerAgent.cloudDeleteFileSavedSearch(id)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     reorderSavedSearches: async (ids: number[]) => {
-      const result = await window.xdriveDesktop.agent.cloudReorderFileSavedSearches(ids)
+      const result = await ownerAgent.cloudReorderFileSavedSearches(ids)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -647,7 +652,7 @@ export default function DesktopFileExplorer({
     cursor: string,
     _signal: AbortSignal,
   ) => {
-    const result = await window.xdriveDesktop.agent.cloudChildrenPage(Number(parentID), {
+    const result = await ownerAgent.cloudChildrenPage(Number(parentID), {
       cursor: cursor || undefined,
       limit: 200,
       sort: 'name',
@@ -664,17 +669,17 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: favoritesSupported,
     loadItems: async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileFavorites()
+      const result = await ownerAgent.cloudFileFavorites()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     favoriteItem: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.cloudFavoriteFile(nodeID)
+      const result = await ownerAgent.cloudFavoriteFile(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     unfavoriteItem: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.cloudUnfavoriteFile(nodeID)
+      const result = await ownerAgent.cloudUnfavoriteFile(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -697,14 +702,14 @@ export default function DesktopFileExplorer({
     fileName: (file) => file.name,
     fileSize: (file) => file.size,
     preflight: async (parentID, file, _signal, groupID) => {
-      const result = await window.xdriveDesktop.agent.cloudUploadPreflight(
+      const result = await ownerAgent.cloudUploadPreflight(
         parentID, file.name, transferGroupUploadCancelSupported ? groupID : undefined,
       )
       if (!result.ok) throwDesktopUploadError(result.error)
       return result.data
     },
     preflightBatch: async (targets, _signal, groupID) => {
-      const result = await window.xdriveDesktop.agent.cloudUploadPreflightBatch(
+      const result = await ownerAgent.cloudUploadPreflightBatch(
         targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
         transferGroupUploadCancelSupported ? groupID : undefined,
       )
@@ -712,7 +717,7 @@ export default function DesktopFileExplorer({
       return result.data
     },
     upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
-      const result = await window.xdriveDesktop.agent.cloudUploadFile(
+      const result = await ownerAgent.cloudUploadFile(
         parentID,
         file,
         conflictPolicy,
@@ -727,7 +732,7 @@ export default function DesktopFileExplorer({
           (task.state === 'cancelling' || task.state === 'cancelled'))
         : undefined,
       startGroup: async (input) => {
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'start_group',
           file_name: input.fileName,
           path: input.path,
@@ -740,7 +745,7 @@ export default function DesktopFileExplorer({
         return result.data.id
       },
       startChild: async (groupID, input) => {
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'start_child',
           parent_id: groupID,
           file_name: input.fileName,
@@ -764,7 +769,7 @@ export default function DesktopFileExplorer({
             start,
             start + desktopTransferLifecycleChildBatchSize,
           )
-          const result = await window.xdriveDesktop.agent.transferLifecycle({
+          const result = await ownerAgent.transferLifecycle({
             action: 'start_children',
             parent_id: groupID,
             children: batch.map((input) => ({
@@ -788,7 +793,7 @@ export default function DesktopFileExplorer({
       } : undefined,
       begin: async (id, input) => {
         const group = input?.group
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'begin',
           id,
           ...(group ? {
@@ -805,7 +810,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       progress: async (id, done, total) => {
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'progress',
           id,
           bytes_done: done,
@@ -814,7 +819,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       updateGroup: async (id, group) => {
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'update_group',
           id,
           scan_complete: group.scanComplete,
@@ -829,7 +834,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       finish: async (id, input) => {
-        const result = await window.xdriveDesktop.agent.transferLifecycle({
+        const result = await ownerAgent.transferLifecycle({
           action: 'finish',
           id,
           state: input.state,
@@ -865,7 +870,7 @@ export default function DesktopFileExplorer({
     canPaste,
     clearSearch,
     submitOperation: async (plan) => {
-      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+      const result = await ownerAgent.cloudCreateFileOperation(
         plan.operation,
         plan.items,
         plan.parentID,
@@ -929,7 +934,7 @@ export default function DesktopFileExplorer({
     // Inspector/Quick Look close, navigation or Owner session replacement.
     const result = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.cloudTextPreview(Number(item.id), requestID),
+      (requestID) => ownerAgent.cloudTextPreview(Number(item.id), requestID),
     )
     return result.ok ? result.data : null
   }, [textPreviewSupported])
@@ -944,7 +949,7 @@ export default function DesktopFileExplorer({
     const requestID = nextDesktopFilePropertiesRequestID()
     const refs = xDriveFileExplorerPropertiesRefs(selected)
     const cancel = () => {
-      void window.xdriveDesktop.agent.cloudCancelFilePropertiesStats(requestID)
+      void ownerAgent.cloudCancelFilePropertiesStats(requestID)
     }
     if (signal.aborted) {
       cancel()
@@ -952,7 +957,7 @@ export default function DesktopFileExplorer({
     }
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await window.xdriveDesktop.agent.cloudFilePropertiesStats(
+      const result = await ownerAgent.cloudFilePropertiesStats(
         refs,
         requestID,
       )
@@ -971,7 +976,7 @@ export default function DesktopFileExplorer({
     signal: AbortSignal,
   ) => {
     if (!mediaDetailsSupported || signal.aborted) return []
-    const result = await window.xdriveDesktop.agent.cloudFileMediaDetails([...refs])
+    const result = await ownerAgent.cloudFileMediaDetails([...refs])
     if (signal.aborted) return []
     if (!result.ok) throw new Error(result.error.message)
     return result.data
@@ -984,12 +989,12 @@ export default function DesktopFileExplorer({
     if (!mediaPropertiesSupported || item.kind !== 'file') return null
     const requestID = nextDesktopFilePropertiesRequestID()
     const cancel = () => {
-      void window.xdriveDesktop.agent.cancelMediaItem(requestID)
+      void ownerAgent.cancelMediaItem(requestID)
     }
     if (signal.aborted) return null
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await window.xdriveDesktop.agent.getMediaItem(Number(item.id), requestID)
+      const result = await ownerAgent.getMediaItem(Number(item.id), requestID)
       if (signal.aborted) return null
       if (!result.ok) throw new Error(result.error.message)
       return result.data
@@ -1002,7 +1007,7 @@ export default function DesktopFileExplorer({
     if (!nodeLocationSupported) throw new Error('当前 Agent 不支持文件位置查询，请更新客户端核心组件。')
     const result = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.getNodeLocation(nodeID, requestID),
+      (requestID) => ownerAgent.getNodeLocation(nodeID, requestID),
     )
     if (!result.ok) throw new Error(result.error.message)
     return result.data
@@ -1019,7 +1024,7 @@ export default function DesktopFileExplorer({
       try {
         const result = await xDriveDesktopViewportRequest(
           signal,
-          (requestID) => window.xdriveDesktop.agent.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
+          (requestID) => ownerAgent.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1030,7 +1035,7 @@ export default function DesktopFileExplorer({
         return null
       }
     }
-    const agent = window.xdriveDesktop.agent
+    const agent = ownerAgent
     const discardLate = (late: { ok: boolean; data?: string }) => {
       if (late.ok && typeof late.data === 'string') {
         xDriveReleaseDiscardedDesktopPreviewURL(late.data,
@@ -1067,7 +1072,7 @@ export default function DesktopFileExplorer({
 
     const result = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
+      (requestID) => ownerAgent.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
     )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
@@ -1078,7 +1083,7 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
     onStage?.('video_read')
 
-    const agent = window.xdriveDesktop.agent
+    const agent = ownerAgent
     const preview = await xDriveDesktopViewportRequest(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
@@ -1123,7 +1128,7 @@ export default function DesktopFileExplorer({
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
     const lifecycleGeneration = actionGenerationRef.current
-    const agent = window.xdriveDesktop.agent
+    const agent = ownerAgent
     const fetchMotion = async (requestID?: string) => {
       const result = await agent.getMediaLivePhotoMotion(Number(item.id), onProgress, requestID)
       if (signal?.aborted && result.ok) {
@@ -1165,7 +1170,7 @@ export default function DesktopFileExplorer({
       .map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))
       .join('\n')
     try {
-      window.xdriveDesktop.copyText(text)
+      nativePort.copyText(text)
       onFeedback(
         'good',
         selected.length === 1
@@ -1194,7 +1199,7 @@ export default function DesktopFileExplorer({
       onError('无法确定本地同步路径。')
       return
     }
-    window.xdriveDesktop.startNativeDragOut(relativePath)
+    nativePort.startNativeDragOut(relativePath)
   }
 
   const handleNavigationAvailabilityItemsChange = useCallback((
@@ -1287,7 +1292,7 @@ export default function DesktopFileExplorer({
         const items: AgentFileAvailabilityBatchItem[] = []
         for (let offset = 0; offset < paths.length; offset += desktopFileAvailabilityBatchLimit) {
           const batchPaths = paths.slice(offset, offset + desktopFileAvailabilityBatchLimit)
-          const result = await window.xdriveDesktop.agent.getFileAvailabilityBatch(batchPaths)
+          const result = await ownerAgent.getFileAvailabilityBatch(batchPaths)
           if (cancelled || requestID !== availabilityRequestRef.current) return
           if (!result.ok) {
             rejectProbe(result.error.code)
@@ -1394,7 +1399,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`availability-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.setFileAvailability(
+      const result = await ownerAgent.setFileAvailability(
         relativePath,
         action,
       )
@@ -1441,7 +1446,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`${reveal ? 'reveal' : 'open'}-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.openPath(relativePath, reveal)
+      const result = await ownerAgent.openPath(relativePath, reveal)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1460,7 +1465,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`open-with-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.openWith(relativePath)
+      const result = await ownerAgent.openWith(relativePath)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1474,7 +1479,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`download-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.cloudDownload(node.id, node.name)
+      const result = await ownerAgent.cloudDownload(node.id, node.name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1540,12 +1545,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
       parentID,
       name,
       createDirectory: async (id, directoryName) => {
-        const result = await window.xdriveDesktop.agent.cloudCreateDirectory(id, directoryName)
+        const result = await ownerAgent.cloudCreateDirectory(id, directoryName)
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
       findExistingDirectory: async (id, directoryName) => {
-        const result = await window.xdriveDesktop.agent.cloudChildrenPage(
+        const result = await ownerAgent.cloudChildrenPage(
           id,
           xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName),
         )
@@ -1597,7 +1602,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('upload')
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.cloudUploadFiles(expectedCurrentID)
+      const result = await ownerAgent.cloudUploadFiles(expectedCurrentID)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1642,7 +1647,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('create-folder')
     if (!busyToken) return
     try {
-      const result = await window.xdriveDesktop.agent.cloudCreateDirectory(expectedCurrentID, name)
+      const result = await ownerAgent.cloudCreateDirectory(expectedCurrentID, name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
@@ -1702,7 +1707,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('rename-' + node.id)
     if (!busyToken) throw new Error('当前有文件操作正在进行，请稍后重试。')
     try {
-      const result = await window.xdriveDesktop.agent.cloudRename(node.id, node.revision, name)
+      const result = await ownerAgent.cloudRename(node.id, node.revision, name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       clearSearch()
@@ -1841,7 +1846,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       if (!busyToken) return
       const reportDownloadResult = onDownloadStart?.()
       try {
-        const result = await window.xdriveDesktop.agent.cloudDownloadFolder(
+        const result = await ownerAgent.cloudDownloadFolder(
           folder.id,
           folder.parent_id,
         )
@@ -1878,7 +1883,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       const busyToken = beginActionBusy('download-archive')
       if (!busyToken) return
       try {
-        const result = await window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)
+        const result = await ownerAgent.cloudDownloadArchive(archivePlan.ids)
         if (!isActionBusyCurrent(busyToken)) return
         if (!result.ok) {
           onError(result.error.message)
@@ -1899,7 +1904,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     if (!busyToken) return
     const reportDownloadResult = onDownloadStart?.()
     try {
-      const result = await window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)
+      const result = await ownerAgent.cloudDownloadFiles(plan.items)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1949,7 +1954,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       const busyToken = beginActionBusy('drop-upload')
       if (!busyToken) return false
       try {
-        const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
+        const result = await ownerAgent.cloudUploadDroppedFiles(parentID, files)
         if (!isActionBusyCurrent(busyToken)) return false
         if (!result.ok) {
           onError(result.error.message)
@@ -2078,7 +2083,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         locateCurrentChild={childPositionSupported && !trashActive && searchState.results === null
           ? async (parentID, nodeID, targetSort, targetGrouping, signal) => {
               const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
-                window.xdriveDesktop.agent.cloudChildPosition(
+                ownerAgent.cloudChildPosition(
                   parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, requestID,
                 ),
               )
