@@ -28,7 +28,7 @@ import com.tfluid.xdrive.core.DriveNode
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
-        state.filesPdfViewer != null ||
+        state.filesPdfViewer != null || state.filesAudioViewer != null ||
         (state.screen == Screen.FILES &&
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
@@ -86,7 +86,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         mutableStateOf(false)
     }
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
-        (state.screen == Screen.FILES && state.filesPdfViewer != null)
+        (state.screen == Screen.FILES &&
+            (state.filesPdfViewer != null || state.filesAudioViewer != null))
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
@@ -178,6 +179,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.FILES -> if (state.filesPdfViewer != null) {
                     NativeFilesPdfViewer(requireNotNull(state.filesPdfViewer),
                         controller, state.filesPdfBytes)
+                } else if (state.filesAudioViewer != null) {
+                    NativeFilesAudioViewer(requireNotNull(state.filesAudioViewer), controller)
                 } else filesSaveable.SaveableStateProvider(filesStateKey) {
                     Files(state, controller, filesView,
                         onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },

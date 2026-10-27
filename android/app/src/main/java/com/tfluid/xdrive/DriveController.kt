@@ -40,6 +40,8 @@ data class DriveState(
     /** No PDF bytes, disk path or credential in native UI state. */
     val filesPdfViewer: DriveNode? = null,
     val filesPdfBytes: Long = 0,
+    /** Owner-private foreground audio session; never persists URL or tokens. */
+    val filesAudioViewer: DriveNode? = null,
     /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
     val fileTextPreview: FileTextPreview? = null,
     val fileTextPreviewLoading: Boolean = false,
@@ -147,6 +149,8 @@ class DriveController(
     private var galleryViewerEpoch = 0L
     private var galleryViewerPageJob: Job? = null
     private var filesPdfEpoch = 0L
+    private var audioViewerEpoch = 0L
+    private var audioPlaybackRequestEpoch = 0L
     private var textPreviewEpoch = 0L
     private var textPreviewJob: Job? = null
     private var retryPath: List<DriveNode>? = null
@@ -425,12 +429,15 @@ class DriveController(
     fun open(node: DriveNode) {
         if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
             state.value.destinationKind != null || state.value.browseSelectionMode ||
+            state.value.filesPdfViewer != null || state.value.filesAudioViewer != null ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else if (fileKind(node.name, false) in setOf("image", "video") &&
             node.revision > 0 && node.size > 0) openFilesMedia(node)
         else if (fileKind(node.name, false) == "pdf" &&
             node.revision > 0 && node.size > 0) openFilesPdf(node)
+        else if (fileKind(node.name, false) == "audio" &&
+            node.revision > 0 && node.size > 0) openFilesAudio(node)
         else showDetails(node)
     }
 
@@ -450,6 +457,7 @@ class DriveController(
         val current = state.value
         if (!filesNodeVisible(current, node) || current.loading ||
             current.browseSelectionMode || current.filesPdfViewer != null ||
+            current.filesAudioViewer != null ||
             fileKind(node.name, false) != "pdf" || session == null || api == null) return
         filesPdfEpoch++
         mutableState.value = current.copy(filesPdfViewer = node,
@@ -500,10 +508,68 @@ class DriveController(
         }
     }
 
+    /** Audio uses current Files' verified row and only one foreground player.
+     * No second media transport or local media bytes. */
+    private fun openFilesAudio(node: DriveNode) {
+        val current = state.value
+        if (!filesNodeVisible(current, node) || current.loading ||
+            current.browseSelectionMode || current.filesAudioViewer != null ||
+            current.filesPdfViewer != null ||
+            fileKind(node.name, false) != "audio" || session == null ||
+            api == null) return
+        audioViewerEpoch++
+        mutableState.value = current.copy(filesAudioViewer = node, error = null,
+            selected = null, fileTextPreview = null, fileTextPreviewError = null)
+    }
+
+    /** Async re-verification runs on the caller's Compose effect and is fenced
+     * against logout, Files navigation, A→B→A and late/noncooperative replies.
+     * A verified source is tracked by the existing active media resource owner. */
+    suspend fun openFilesAudioPlayback(node: DriveNode): OwnerVideoPlayback? {
+        val current = state.value
+        if (current.filesAudioViewer != node || !filesNodeVisible(current, node) ||
+            fileKind(node.name, false) != "audio" || session == null) return null
+        val ticket = generation
+        val epoch = audioViewerEpoch
+        // A manual retry may overlap a noncooperative older GET for the same
+        // Node/Owner/revision. Only the most recently requested stream wins.
+        val requestEpoch = ++audioPlaybackRequestEpoch
+        val service = api ?: return null
+        var resource: OwnerVideoPlayback? = null
+        try {
+            resource = authenticated(service, ticket) { token ->
+                service.filesAudioPlayback(token, node)
+            }
+            checkCurrent(ticket)
+            if (epoch != audioViewerEpoch ||
+                requestEpoch != audioPlaybackRequestEpoch ||
+                state.value.filesAudioViewer != node ||
+                !filesNodeVisible(state.value, node)) throw CancellationException()
+            closeActiveVideoPlayback()
+            activeVideoPlayback = resource
+            return resource
+        } catch (failure: Throwable) {
+            resource?.close()
+            throw failure
+        }
+    }
+
+    /** Keep the loaded Files section and scroll position. Disposing the
+     * player also closes its pinned HTTP session (close is idempotent). */
+    fun dismissFilesAudioViewer() {
+        if (state.value.filesAudioViewer == null) return
+        audioViewerEpoch++
+        audioPlaybackRequestEpoch++
+        closeActiveVideoPlayback()
+        mutableState.value = state.value.copy(filesAudioViewer = null)
+    }
+
     private fun openFilesMedia(node: DriveNode) {
         val current = state.value
         if (!filesNodeVisible(current, node) || current.loading ||
-            current.browseSelectionMode || session == null ||
+            current.browseSelectionMode ||
+            current.filesAudioViewer != null || current.filesPdfViewer != null ||
+            session == null ||
             fileKind(node.name, false) !in setOf("image", "video")) return
         val service = api ?: return
         request { ticket ->
@@ -534,7 +600,8 @@ class DriveController(
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.destinationKind != null) return
+        if (current.screen != Screen.FILES || current.destinationKind != null ||
+            current.filesPdfViewer != null || current.filesAudioViewer != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
@@ -1172,12 +1239,15 @@ class DriveController(
     fun openCollectionItem(item: DriveCollectionItem) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+            current.filesAudioViewer != null || current.filesPdfViewer != null ||
             current.collectionItems.none { it == item }) return
         if (item.node.isDirectory) openCollectionFolder(item)
         else if (fileKind(item.node.name, false) in setOf("image", "video") &&
             item.node.revision > 0 && item.node.size > 0) openFilesMedia(item.node)
         else if (fileKind(item.node.name, false) == "pdf" &&
             item.node.revision > 0 && item.node.size > 0) openFilesPdf(item.node)
+        else if (fileKind(item.node.name, false) == "audio" &&
+            item.node.revision > 0 && item.node.size > 0) openFilesAudio(item.node)
         else showDetails(item.node)
     }
 
@@ -2227,6 +2297,10 @@ class DriveController(
             dismissFilesPdfViewer()
             return
         }
+        if (current.filesAudioViewer != null) {
+            dismissFilesAudioViewer()
+            return
+        }
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
@@ -2406,6 +2480,7 @@ class DriveController(
         mutableState.value = prior.copy(
             loading = true, error = null, selected = null,
             filesPdfViewer = null, filesPdfBytes = 0,
+            filesAudioViewer = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
             fileDownloadSaved = false, fileDownloadError = null,
@@ -2531,6 +2606,8 @@ class DriveController(
                 fileTextPreviewLoading = false, fileTextPreviewError = null)
         closeActiveVideoPlayback()
         filesPdfEpoch++
+        audioViewerEpoch++
+        audioPlaybackRequestEpoch++
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
     override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }
