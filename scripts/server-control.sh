@@ -2349,10 +2349,402 @@ start_caddy_compat_observer() {
   echo "Caddy read-only observer launched for missing/stale Caddy evidence or older Host Control runtime."
 }
 
+
+# Admin Server Backup bridge: fixed Host actions, never a browser-supplied
+# shell command, Docker argument, path or arbitrary backup-file mutation.
+backup_admin_protocol=xdrive-backup-admin-v1
+
+backup_admin_policy_values() {
+  backup_admin_format="$(env_value XD_BACKUP_SCHEDULE_FORMAT)"
+  [[ -n "$backup_admin_format" ]] || backup_admin_format=v1
+  backup_admin_days="$(env_value XD_BACKUP_RETENTION_DAYS)"
+  [[ -n "$backup_admin_days" ]] || backup_admin_days=7
+  backup_admin_repo="$(env_value XD_BACKUP_SCHEDULE_REPOSITORY_DIR)"
+  [[ "$backup_admin_format" == v1 || "$backup_admin_format" == v2 ]] || return 1
+  [[ "$backup_admin_days" =~ ^[0-9]{1,4}$ ]] || return 1
+  (( 10#$backup_admin_days <= 3650 )) || return 1
+  if [[ -n "$backup_admin_repo" ]]; then
+    [[ "$backup_admin_format" == v2 && "$backup_admin_repo" == /* && ! -L "$backup_admin_repo" ]] || return 1
+    # Custom directories can be configured before the initial v2 capture.
+    if [[ -d "$backup_admin_repo" ]]; then
+      backup_admin_repo="$(cd "$backup_admin_repo" && pwd -P)" || return 1
+    fi
+  fi
+  backup_admin_revision="$(printf '%s\0%s\0%s' "$backup_admin_format" "$backup_admin_days" "$backup_admin_repo" | sha256sum | cut -d' ' -f1)"
+}
+
+backup_admin_snapshot_directory() {
+  local identity="$1" scope name root
+  [[ "$identity" =~ ^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 1
+  scope="$(printf '%s' "$identity" | cut -d: -f1)"
+  name="$(printf '%s' "$identity" | cut -d: -f2)"
+  case "$scope" in
+    v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+    v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+    v2-configured)
+      backup_admin_policy_values || return 1
+      [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]] || return 1
+      root="$backup_admin_repo/snapshots" ;;
+    *) return 1 ;;
+  esac
+  [[ -d "$root" && ! -L "$root" && -d "$root/$name" && ! -L "$root/$name" ]] || return 1
+  printf '%s\n' "$root/$name"
+}
+
+backup_admin_snapshot_complete() {
+  local snapshot="$1" format="$2" f
+  [[ -d "$snapshot" && ! -L "$snapshot" ]] || return 1
+  for f in database.dump verify.json manifest.json SHA256SUMS.txt; do
+    [[ -f "$snapshot/$f" && ! -L "$snapshot/$f" ]] || return 1
+  done
+  if [[ "$format" == v1 ]]; then
+    [[ -f "$snapshot/blobs.tar" && ! -L "$snapshot/blobs.tar" ]] ||
+      grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$snapshot/manifest.json" || return 1
+  else
+    for f in objects.index legacy.tar; do
+      [[ -f "$snapshot/$f" && ! -L "$snapshot/$f" ]] || return 1
+    done
+  fi
+}
+
+backup_admin_inventory() {
+  local dir="$1" tmp comma="" scope root snap name state bytes file_data created
+  local default_repo backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  backup_admin_policy_values || return 1
+  default_repo="$XDRIVE_HOME/backups/incremental"
+  if [[ -d "$default_repo" ]]; then
+    default_repo="$(cd "$default_repo" && pwd -P)" || return 1
+  fi
+  tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || return 1
+  {
+    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"snapshots":[' \
+      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision"
+
+    # Show the latest 100 generations across all configured repositories,
+    # not the oldest 100 from the alphabetically first (legacy v1) root.
+    while IFS=$'\t' read -r name scope; do
+      [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+      case "$scope" in
+        v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+        v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+        v2-configured)
+          [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]] || continue
+          root="$backup_admin_repo/snapshots" ;;
+        *) continue ;;
+      esac
+      snap="$root/$name"
+      [[ -d "$snap" && ! -L "$snap" ]] || continue
+      state=complete
+      if [[ "$scope" == v1 ]]; then
+        backup_admin_snapshot_complete "$snap" v1 || state=incomplete
+      else
+        backup_admin_snapshot_complete "$snap" v2 || state=incomplete
+      fi
+      if [[ "$state" == complete ]] &&
+         grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
+        state=inconsistent
+      fi
+      bytes="$(du -sb -- "$snap" 2>/dev/null | cut -f1 || true)"
+      [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+      file_data=true
+      if [[ "$scope" == v1 ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
+        file_data=false
+      fi
+      created="$(printf '%s' "$name" | sed -nE 's/^xdrive-backup-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$/\1-\2-\3T\4:\5:\6Z/p')"
+      printf '%s{"id":"%s:%s","name":"%s","format":"%s","created_at":"%s","state":"%s","bytes":%s,"file_data_included":%s}' \
+        "$comma" "$scope" "$name" "$name" \
+        "$([[ "$scope" == v1 ]] && printf v1 || printf v2)" \
+        "$created" "$state" "$bytes" "$file_data"
+      comma=","
+    done < <(
+      for scope in v1 v2-default v2-configured; do
+        case "$scope" in
+          v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+          v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+          v2-configured)
+            [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" &&
+               "$backup_admin_repo" != "$default_repo" ]] || continue
+            root="$backup_admin_repo/snapshots" ;;
+        esac
+        [[ -d "$root" && ! -L "$root" ]] || continue
+        for snap in "$root"/xdrive-backup-*; do
+          [[ -d "$snap" && ! -L "$snap" ]] || continue
+          name="$(basename "$snap")"
+          [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+          printf '%s\t%s\n' "$name" "$scope"
+        done
+      done | LC_ALL=C sort -r | sed -n '1,100p'
+    )
+    printf ']}\n'
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-inventory.json"
+}
+
+backup_admin_status() {
+  local dir="$1" state="$2" action="$3" request_id="$4" snapshot_id="$5" code="$6" message="$7"
+  local started="$8" finished="$9" tmp
+  tmp="$(mktemp "$dir/.backup-admin-status.XXXXXX")" || return 1
+  printf '{"protocol":"%s","state":"%s","request_id":"%s","action":"%s","snapshot_id":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","error_code":"%s","message":"%s"}\n' \
+    "$backup_admin_protocol" "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$action")" \
+    "$(json_escape "$snapshot_id")" "$(json_escape "$started")" "$(now_utc)" "$(json_escape "$finished")" \
+    "$(json_escape "$code")" "$(json_escape "$message")" > "$tmp"
+  chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-status.json"
+}
+
+backup_admin_write_policy() {
+  local fmt="$1" days="$2" expected="$3" tmp install_lock="$STATE_DIR/install.lock"
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  [[ "$fmt" == v1 || "$fmt" == v2 ]] || return 1
+  [[ "$days" =~ ^[0-9]{1,4}$ ]] || return 1
+  (( 10#$days <= 3650 )) || return 1
+  backup_admin_policy_values || return 1
+  [[ "$expected" == "$backup_admin_revision" ]] || return 1
+  [[ "$fmt" == v2 || -z "$backup_admin_repo" ]] || return 1
+  [[ -f "$ENV_PATH" && ! -L "$ENV_PATH" ]] || return 1
+  # The installer owns this lock while writing deployment config; a remote
+  # policy edit cannot overwrite an in-progress upgrade transaction.
+  [[ ! -L "$install_lock" && ( ! -e "$install_lock" || -f "$install_lock" ) ]] || return 1
+  exec 4>>"$install_lock"
+  flock -n 4 || { exec 4>&-; return 1; }
+  # Re-read under the installer lease: a policy change between the first
+  # revision comparison and this lock must fail rather than overwrite it.
+  backup_admin_policy_values || { flock -u 4; exec 4>&-; return 1; }
+  [[ "$expected" == "$backup_admin_revision" ]] || { flock -u 4; exec 4>&-; return 1; }
+  tmp="$(mktemp "$CONFIG_DIR/.backup-admin-env.XXXXXX")" || return 1
+  awk '!/^XD_BACKUP_SCHEDULE_FORMAT=/ && !/^XD_BACKUP_RETENTION_DAYS=/' "$ENV_PATH" > "$tmp" || { rm -f "$tmp"; return 1; }
+  printf 'XD_BACKUP_SCHEDULE_FORMAT=%s\nXD_BACKUP_RETENTION_DAYS=%s\n' "$fmt" "$days" >> "$tmp"
+  chmod --reference="$ENV_PATH" "$tmp" || { rm -f "$tmp"; return 1; }
+  chown --reference="$ENV_PATH" "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$ENV_PATH"
+  local exit_code=$?
+  flock -u 4
+  exec 4>&-
+  return "$exit_code"
+}
+
+backup_admin_delete_v1() {
+  local id="$1" target file name root remaining=0 retired fmt candidate_root
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  local -a recovery_roots
+  [[ "$id" == v1:xdrive-backup-* ]] || return 1
+  target="$(backup_admin_snapshot_directory "$id")" || return 1
+  backup_admin_snapshot_complete "$target" v1 || return 1
+  root="$XDRIVE_HOME/backups/snapshots"
+  recovery_roots=("$root" "$XDRIVE_HOME/backups/incremental/snapshots")
+  # Count all valid, independent recovery points including a configured v2
+  # repository; never use a path supplied by the remote administrator.
+  backup_admin_policy_values || return 1
+  if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+    candidate_root="$backup_admin_repo/snapshots"
+    [[ -d "$candidate_root" && ! -L "$candidate_root" ]] || return 1
+    if [[ "$candidate_root" != "$XDRIVE_HOME/backups/incremental/snapshots" ]]; then
+      recovery_roots+=("$candidate_root")
+    fi
+  fi
+  for candidate_root in "${recovery_roots[@]}"; do
+    [[ -d "$candidate_root" && ! -L "$candidate_root" ]] || continue
+    for file in "$candidate_root"/xdrive-backup-*; do
+      [[ -d "$file" && "$file" != "$target" && ! -L "$file" ]] || continue
+      fmt=v1
+      [[ "$candidate_root" == "$root" ]] || fmt=v2
+      if [[ "$fmt" == v1 ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$file/manifest.json" 2>/dev/null; then
+        continue
+      fi
+      # Filenames or metadata alone do not prove another recovery point.
+      if backup_admin_snapshot_complete "$file" "$fmt" &&
+         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$file" >/dev/null 2>&1; then
+        remaining=$((remaining + 1))
+      fi
+    done
+  done
+  (( remaining > 0 )) || return 1
+  for file in "$target"/*; do
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    name="$(basename "$file")"
+    case "$name" in
+      database.dump|blobs.tar|verify.json|manifest.json|SHA256SUMS.txt) ;;
+      *) return 1 ;;
+    esac
+  done
+  retired="$root/.backup-admin-retired-$(basename "$target")"
+  [[ ! -e "$retired" && ! -L "$retired" ]] || return 1
+  mv -- "$target" "$retired" || return 1
+  for name in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+    if [[ -f "$retired/$name" && ! -L "$retired/$name" ]]; then
+      rm -- "$retired/$name" || return 1
+    fi
+  done
+  rmdir -- "$retired"
+}
+
+backup_admin_execute() {
+  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8"
+  local target install_guard="$STATE_DIR/install.lock"
+  # A standalone Host installer may be upgrading the Server outside this
+  # controller's process. Never overlap its transactional install.lock with
+  # backup/restore/GC. Policy changes already own the same lock internally.
+  if [[ "$action" != policy ]]; then
+    [[ ! -L "$install_guard" && ( ! -e "$install_guard" || -f "$install_guard" ) ]] || return 75
+    exec 4>>"$install_guard"
+    flock -n 4 || { exec 4>&-; return 75; }
+    # fd 4 remains inherited by backup/restore subprocesses until they exit.
+  fi
+  case "$action" in
+    create)
+      [[ -z "$snapshot" && -z "$confirm" && ( "$fmt" == v1 || "$fmt" == v2 ) ]] || return 2
+      if [[ "$fmt" == v2 ]]; then
+        local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+        backup_admin_policy_values || return 2
+        if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental --repository-dir "$backup_admin_repo"
+        else
+          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental
+        fi
+      else XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup; fi ;;
+    verify)
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      if [[ "$mode" == deep && "$snapshot" == v2-* ]]; then
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --repository-dir "$(dirname "$(dirname "$target")")" --keep-last 1 --mode deep
+      fi ;;
+    plan)
+      [[ "$keep" =~ ^[1-9][0-9]{0,3}$ ]] || return 2
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      (( keep <= 1000 )) || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --keep-last "$keep" --mode "$mode" ;;
+    restore)
+      [[ "$confirm" == "RESTORE $snapshot" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # Database-only legacy snapshots require a separately selected recovery
+      # mode. Never let a full restore attempt clear live file storage when
+      # the selected generation did not actually include any file data.
+      if [[ "$snapshot" == v1:* ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$target/manifest.json"; then
+        return 2
+      fi
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
+    delete)
+      [[ "$confirm" == "DELETE $snapshot" ]] || return 2
+      backup_admin_delete_v1 "$snapshot" ;;
+    prune)
+      [[ "$keep" =~ ^[1-9][0-9]{0,3}$ && "$confirm" == "PRUNE $keep" ]] || return 2
+      (( keep <= 1000 )) || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup prune --keep-last "$keep" --yes ;;
+    policy)
+      [[ -z "$snapshot" && -z "$confirm" ]] || return 2
+      backup_admin_write_policy "$fmt" "$days" "$revision" ;;
+    *) return 2 ;;
+  esac
+}
+
+backup_admin_json_int() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE 's/.*"'$key'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$file" | head -n1
+}
+
+backup_admin_process_request() {
+  local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
+  local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
+  [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
+  mv -- "$request" "$active" || return 0
+  protocol="$(json_value "$active" protocol)"
+  id="$(json_value "$active" request_id)"
+  action="$(json_value "$active" action)"
+  snapshot="$(json_value "$active" snapshot_id)"
+  fmt="$(json_value "$active" format)"
+  mode="$(json_value "$active" mode)"
+  keep="$(backup_admin_json_int "$active" keep_last)"
+  days="$(backup_admin_json_int "$active" retention_days)"
+  revision="$(json_value "$active" revision)"
+  confirm="$(json_value "$active" confirmation)"
+  created="$(json_value "$active" created_at)"
+  if [[ "$protocol" != "$backup_admin_protocol" || ! "$id" =~ ^[0-9a-f]{24}$ ]] ||
+     ! request_time_is_fresh "$created"; then
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" invalid_request "请求无效或已过期。" "" "$(now_utc)"
+    rm -f "$active"
+    return 0
+  fi
+  started="$(now_utc)"
+  backup_admin_status "$dir" running "$action" "$id" "$snapshot" "" "宿主机正在执行备份操作。" "$started" ""
+  log="$LOG_DIR/backup-admin-last.log"
+  # Keep the Host Control heartbeat fresh during long pg_dump, hashing and
+  # restoration. The backup-operation flock is inherited by the child: a
+  # crashed runner cannot overlap a still-running privileged backup command.
+  local pid tick=0 guard="$STATE_DIR/backup-admin-operation.lock"
+  local scheduled_guard="$STATE_DIR/scheduled-backup.lock"
+  # The existing v1/v2 scheduled runner owns scheduled-backup.lock. Reuse it
+  # so a remote Admin restore/deletion cannot race scheduled snapshot creation
+  # or the legacy v1 retention job. Preserve the Host-only operation lock as
+  # a fence against a Host Control restart while a child is still running.
+  if [[ -L "$guard" || ( -e "$guard" && ! -f "$guard" ) ||
+        -L "$scheduled_guard" || ( -e "$scheduled_guard" && ! -f "$scheduled_guard" ) ]]; then
+    result=75
+  else
+    exec 6>>"$guard"
+    if ! flock -n 6; then
+      result=75
+    else
+      exec 5>>"$scheduled_guard"
+      if ! flock -n 5; then
+        result=75
+      else
+        ( umask 077; XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" ) > "$log" 2>&1 &
+        pid=$!
+        while kill -0 "$pid" 2>/dev/null; do
+          touch_heartbeat
+          tick=$((tick + 1))
+          if (( tick % 25 == 0 )); then backup_admin_inventory "$dir" || true; fi
+          sleep 1
+        done
+        if wait "$pid"; then result=0; else result=$?; fi
+        flock -u 5
+      fi
+      exec 5>&-
+      flock -u 6
+    fi
+    exec 6>&-
+  fi
+  if [[ "$result" == 0 && "$action" == plan ]]; then
+    tmp="$(mktemp "$dir/.backup-retention.XXXXXX")" || result=1
+    if [[ "$result" == 0 ]]; then
+      if (( $(wc -c < "$log") > 32768 )); then result=1
+      else cp "$log" "$tmp" && chmod 0660 "$tmp" &&
+        mv -f "$tmp" "$dir/backup-admin-retention-report.json" || result=1
+      fi
+      [[ "$result" == 0 ]] || rm -f "$tmp"
+    fi
+  fi
+  if [[ "$result" == 0 ]]; then
+    backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$(now_utc)"
+  else
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" operation_failed "操作失败；请查看宿主机私有日志。" "$started" "$(now_utc)"
+  fi
+  rm -f "$active"
+  backup_admin_inventory "$dir" || true
+}
+
+
+backup_admin_recover_interrupted() {
+  local dir="$1" interrupted_request="$dir/backup-admin-active.json"
+  if [[ ! -f "$interrupted_request" && ! -f "$dir/backup-admin-request.json" ]]; then
+    return 0
+  fi
+  # No queued or active destructive action is replayed across Host restarts.
+  # A new explicit Admin confirmation is required after inspecting the state.
+  [[ -f "$interrupted_request" ]] || interrupted_request="$dir/backup-admin-request.json"
+  backup_admin_status "$dir" failed     "$(json_value "$interrupted_request" action)"     "$(json_value "$interrupted_request" request_id)"     "$(json_value "$interrupted_request" snapshot_id)"     interrupted "上次备份操作被中断；如需继续请重新确认。" "" "$(now_utc)"
+  rm -f -- "$dir/backup-admin-active.json" "$dir/backup-admin-request.json"
+}
+
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
-  local storage_inventory_interval last_storage_inventory_at last_caddy_observation_at now
+  local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
 
@@ -2424,6 +2816,9 @@ serve_cmd() {
   # prevents API/UI consumers from observing a ready-looking status while the
   # host-control heartbeat is still absent during startup.
   touch_heartbeat
+  # Incomplete privileged operations are not silently retried on restart.
+  backup_admin_recover_interrupted "$dir"
+  backup_admin_inventory "$dir" || true
 
   if [[ -f "$dir/active.json" ]]; then
     interrupted_source="$(json_value "$dir/active.json" source)"
@@ -2459,10 +2854,12 @@ serve_cmd() {
   photo_intelligence_host_refresh || true
   photo_host_control_refresh || true
   last_storage_inventory_at="$(date +%s)"
+  last_backup_admin_at="$last_storage_inventory_at"
   last_caddy_observation_at="$last_storage_inventory_at"
 
   while true; do
     touch_heartbeat
+    [[ -f "$dir/backup-admin-request.json" ]] && backup_admin_process_request "$dir"
     [[ -f "$dir/request.json" ]] && process_request
     [[ -f "$dir/caddy-env-request.json" ]] && caddy_env_process
     [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
@@ -2478,6 +2875,10 @@ serve_cmd() {
       caddy_env_refresh || true
       photo_intelligence_host_refresh || true
       last_caddy_observation_at="$now"
+    fi
+    if (( now - last_backup_admin_at >= 30 )); then
+      backup_admin_inventory "$dir" || true
+      last_backup_admin_at="$now"
     fi
     if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
       refresh_storage_host_inventory || true

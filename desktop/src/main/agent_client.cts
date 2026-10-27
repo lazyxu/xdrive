@@ -44,7 +44,7 @@ export type AgentAdminUser = {
   updated_at: string
 }
 export type AgentAdminStorageRequest = {
-  operation: 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced'
+  operation: 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced' | 'optimization-advice'
     | 'staging' | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
   limit?: number
   offset?: number
@@ -53,6 +53,16 @@ export type AgentAdminStorageRequest = {
   run_id?: number
   fresh?: boolean
   kind?: 'media_thumbnail' | 'video_poster' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all'
+}
+export type AgentAdminServerBackupRequest = {
+  action: 'create' | 'verify' | 'plan' | 'restore' | 'delete' | 'prune' | 'policy'
+  snapshot_id?: string
+  format?: 'v1' | 'v2'
+  mode?: 'fast' | 'deep'
+  keep_last?: number
+  retention_days?: number
+  revision?: string
+  confirmation?: string
 }
 export type AgentAdminAuditRangeQuery = {
   limit: number
@@ -4333,6 +4343,12 @@ export class AgentIPCClient {
   }
   cloudAdminStorage(query: AgentAdminStorageRequest) {
     return this.request<unknown>('POST', '/v1/cloud/admin-storage', query, 120_000)
+  }
+  cloudAdminServerBackups() {
+    return this.request<unknown>('GET', '/v1/cloud/admin-backups')
+  }
+  cloudAdminServerBackupAction(input: AgentAdminServerBackupRequest) {
+    return this.request<unknown>('POST', '/v1/cloud/admin-backups/actions', input, 30_000)
   }
   cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
     return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)

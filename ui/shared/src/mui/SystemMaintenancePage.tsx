@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import type { XDriveServerBackupPort } from '../server-backup-admin'
+import { XDriveServerBackupManagementPanel } from './ServerBackupManagementPanel'
 import { Stack } from '@mui/material'
 import {
   xDriveServerUpdateConfirmationDescription,
@@ -23,8 +25,12 @@ export function XDriveSystemMaintenancePage({
   unavailableLabel = '服务',
   unsupportedMessage = '当前客户端不支持服务端更新。',
   onBusyChange,
+  backupPort,
+  onOpenStorage,
 }: {
   updatePort: XDriveServerUpdatePort
+  backupPort?: XDriveServerBackupPort
+  onOpenStorage?: () => void
   supported?: boolean
   disabled?: boolean
   initialChannel?: XDriveServerUpdateChannel
@@ -66,6 +72,9 @@ export function XDriveSystemMaintenancePage({
           onStart={() => { if (!actionDisabled) setConfirmationOpen(true) }}
         />
         {update.error ? <XDriveStatusAlert tone="warning">{update.error}</XDriveStatusAlert> : null}
+        {backupPort ? (
+          <XDriveServerBackupManagementPanel port={backupPort} onOpenStorage={onOpenStorage} />
+        ) : null}
       </Stack>
       <XDriveConfirmDialog
         open={confirmationOpen}

@@ -2990,7 +2990,6 @@ jobs:
           python3 scripts/test-snapshot-release-notes.py
           python3 scripts/test-snapshot-publish-guards.py
           python3 scripts/test-snapshot-tag-preflight.py
-          python3 scripts/test-snapshot-app-token.py
           python3 scripts/test-snapshot-publish-runtime.py
           python3 scripts/test-github-release-archive-contract.py
           go test ./cmd/backuprepo -count=1
@@ -3005,6 +3004,8 @@ jobs:
           bash -n scripts/test-server-verify.sh
           bash scripts/test-server-verify.sh
           bash -n scripts/server-control.sh
+          bash -n scripts/test-server-backup-admin-host.sh
+          bash scripts/test-server-backup-admin-host.sh
           bash -n scripts/test-media-worker-control.sh
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh

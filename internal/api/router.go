@@ -557,6 +557,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/background-tasks/control", s.adminControlBackgroundTask)
 	admin.GET("/update", s.adminServerUpdateStatus)
 	admin.POST("/update", s.adminStartServerUpdate)
+	admin.GET("/backups", s.adminBackupManagement)
+	admin.POST("/backups/actions", s.adminSubmitBackupManagement)
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)
 	admin.GET("/storage/history", s.adminStorageHistory)
