@@ -59,6 +59,9 @@ type backupAdminStatus struct {
 	FinishedAt string `json:"finished_at,omitempty"`
 	ErrorCode  string `json:"error_code,omitempty"`
 	Message    string `json:"message,omitempty"`
+	Stage      string `json:"stage,omitempty"`
+	BytesDone  int64  `json:"bytes_done,omitempty"`
+	BytesTotal int64  `json:"bytes_total,omitempty"`
 }
 
 type backupAdminRequest struct {
@@ -108,6 +111,7 @@ type backupAdminPage struct {
 type backupAdminHistoryEntry struct {
 	backupAdminStatus
 	Mode string `json:"mode,omitempty"`
+	Verification *backupAdminVerificationReceipt `json:"verification,omitempty"`
 }
 
 type backupAdminHistory struct {
@@ -125,6 +129,9 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			strings.Trim(e.RequestID, "0123456789abcdef") != "" || seen[e.RequestID] ||
 			(e.State != "success" && e.State != "failed") || len(e.ErrorCode) > 60 ||
 			(e.SnapshotID != "" && !backupAdminSnapshotID.MatchString(e.SnapshotID)) {
+			return false
+		}
+		if !validBackupVerificationReceipt(e) {
 			return false
 		}
 		switch e.Action {
@@ -244,7 +251,10 @@ func (s *Server) backupAdminState() backupAdminPage {
 		state.Protocol == backupAdminProtocol &&
 		(state.State == "queued" || state.State == "running" ||
 			state.State == "success" || state.State == "failed" || state.State == "idle") &&
-		len(state.Message) <= 200 && len(state.ErrorCode) <= 60 {
+		len(state.Message) <= 200 && len(state.ErrorCode) <= 60 &&
+		len(state.Stage) <= 96 && state.BytesDone >= 0 && state.BytesTotal >= 0 &&
+		state.BytesDone <= 999_999_999_999_999 && state.BytesTotal <= 999_999_999_999_999 &&
+		(state.BytesTotal == 0 || state.BytesDone <= state.BytesTotal) {
 		page.Operation = state
 	} else {
 		page.Operation = backupAdminStatus{Protocol: backupAdminProtocol, State: "idle"}
