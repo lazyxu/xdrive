@@ -800,6 +800,88 @@ class DriveControllerTest {
         assertEquals(990L, c.state.value.galleryItems.last().node.id)
     }
 
+    @Test fun filesMediaUsesGalleryViewerAndBackReturnsExactLoadedBrowse() = runTest {
+        val photo = DriveNode(91, 1, "family.jpg", "file", 5, revision = 4)
+        val api = object : Service() {
+            var mediaDetails = 0
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset {
+                assertEquals("access", accessToken)
+                assertEquals(photo, node)
+                mediaDetails++
+                return GalleryAsset(node, "image", hasThumbnail = true)
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(folder, photo) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val before = c.state.value.items
+        val reads = api.calls.toList()
+        c.open(photo); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertTrue(c.state.value.viewerReturnToFiles)
+        assertEquals(photo, c.state.value.galleryViewer?.node)
+        assertEquals(1, c.state.value.galleryItems.size)
+        assertEquals(1, api.mediaDetails)
+        val asset = requireNotNull(c.state.value.galleryViewer)
+        assertArrayEquals("hello".toByteArray(), c.galleryImageBytes(asset))
+        assertNull(c.galleryViewerNeighbor(1))
+        c.back()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertFalse(c.state.value.viewerReturnToFiles)
+        assertNull(c.state.value.galleryViewer)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertEquals(before, c.state.value.items)
+        assertEquals(reads, api.calls) // No extra directory GET after Viewer.
+        c.close()
+    }
+
+    @Test fun filesVideoViewerClosesOriginalMedia3StreamOnBack() = runTest {
+        val video = DriveNode(92, 1, "clip.mp4", "file", 5, revision = 3)
+        val api = object : Service() {
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode) =
+                GalleryAsset(node, "video", hasThumbnail = false)
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(video) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(video); runCurrent()
+        val media = requireNotNull(c.state.value.galleryViewer)
+        val stream = c.openGalleryVideoPlayback(media)
+        assertNotNull(stream)
+        c.back()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(1, api.videoSessionsClosed)
+        c.closeGalleryVideoPlayback(requireNotNull(stream))
+        assertEquals(1, api.videoSessionsClosed)
+        c.close()
+    }
+
+    @Test fun filesMediaDelayedOwnerDetailCannotReturnAfterLogout() = runTest {
+        val photo = DriveNode(93, 1, "late.jpg", "file", 5, revision = 4)
+        val gate = CompletableDeferred<GalleryAsset>()
+        val api = object : Service() {
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode) =
+                withContext(NonCancellable) { gate.await() }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(photo) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(photo); runCurrent()
+        assertTrue(c.state.value.loading)
+        c.logout()
+        gate.complete(GalleryAsset(photo, "image", hasThumbnail = true)); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.galleryViewer)
+        assertTrue(c.state.value.items.isEmpty())
+        c.close()
+    }
+
     @Test fun galleryImageViewerUsesRevisionedOwnerDownloadAndBackReturnsToWall() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()

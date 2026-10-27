@@ -53,6 +53,10 @@ class DriveAppTest {
     private var liveMotionRequests = 0
     private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
+    private var filesViewerFixture = false
+    private val filesViewerNode = DriveNode(49, 1, "snapshot.jpg", "file",
+        size = 32L * 1024 * 1024 + 1L, revision = 2)
+    private var filesViewerDetailReads = 0
     private var galleryThumbnailFailuresRemaining = 0
     private var galleryThumbnailReads = 0
     private var videoTransportClosed = 0
@@ -147,6 +151,13 @@ class DriveAppTest {
                     "file", size = 64, revision = 1),
                 kind, hasThumbnail = true)), 1, 0)
         }
+        override suspend fun filesMediaItem(
+            accessToken: String, node: DriveNode,
+        ): GalleryAsset {
+            check(filesViewerFixture && accessToken == "fixture" && node == filesViewerNode)
+            filesViewerDetailReads++
+            return GalleryAsset(node, "image", hasThumbnail = true)
+        }
         override suspend fun galleryThumbnail(accessToken: String, nodeId: Long,
             revision: Long): ByteArray {
             galleryThumbnailReads++
@@ -154,7 +165,7 @@ class DriveAppTest {
                 galleryThumbnailFailuresRemaining--
                 throw ApiException(503, "Fixture one-shot unavailable thumbnail")
             }
-            if (galleryOversizeFixture || galleryVideoFixture ||
+            if (galleryOversizeFixture || filesViewerFixture || galleryVideoFixture ||
                 galleryMixedViewerFixture || galleryLivePhotoFixture) {
                 val small = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
                 return try {
@@ -299,6 +310,7 @@ class DriveAppTest {
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) mutableRootRows.toList() +
+                    (if (filesViewerFixture) listOf(filesViewerNode) else emptyList()) +
                     (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
                         else emptyList())
                 else listOf(DriveNode(3, 2, "测试.txt", "file", 12,
@@ -1091,6 +1103,31 @@ class DriveAppTest {
         val accepted = Uri.parse("content://fixture/export")
         org.junit.Assert.assertEquals(accepted, contract.parseResult(Activity.RESULT_OK,
             Intent().setData(accepted)))
+    }
+
+    @Test fun filesImageUsesSameOwnerViewerAndReturnsToOriginalBrowse() {
+        filesViewerFixture = true
+        startAndLogin()
+        val beforePath = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-49").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.viewerReturnToFiles &&
+                controller.state.value.galleryViewer?.node == filesViewerNode &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES &&
+                controller.state.value.galleryViewer == null
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithTag("files-item-49").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(beforePath,
+                controller.state.value.path.map { it.id })
+            org.junit.Assert.assertEquals(1, filesViewerDetailReads)
+        }
     }
 
     @Test fun nativeUploadActionStartsRealSafPickerCallback() {

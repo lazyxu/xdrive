@@ -86,6 +86,8 @@ data class DriveState(
     val galleryPageIntent: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
+    /** Scoped single real Owner file in existing Gallery Viewer; Back returns to Files. */
+    val viewerReturnToFiles: Boolean = false,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
     val destinationPath: List<DriveNode> = emptyList(),
@@ -416,7 +418,51 @@ class DriveController(
             state.value.destinationKind != null || state.value.browseSelectionMode ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
+        else if (fileKind(node.name, false) in setOf("image", "video") &&
+            node.revision > 0 && node.size > 0) openFilesMedia(node)
         else showDetails(node)
+    }
+
+    /** No synthetic Gallery Range is queried. A singleton presentation adapter
+     * lets all existing secure image/video/Live Viewers keep their contracts. */
+    private fun filesNodeVisible(current: DriveState, node: DriveNode): Boolean {
+        if (current.screen != Screen.FILES || node.id <= 0 ||
+            node.revision <= 0 || node.type != "file" ||
+            node.size <= 0 || current.destinationKind != null) return false
+        return if (current.filesSection == FilesSection.BROWSE)
+            current.loaded && current.items.any { it == node }
+        else current.collectionLoaded && current.collectionItems.any { it.node == node }
+    }
+
+    private fun openFilesMedia(node: DriveNode) {
+        val current = state.value
+        if (!filesNodeVisible(current, node) || current.loading ||
+            current.browseSelectionMode || session == null ||
+            fileKind(node.name, false) !in setOf("image", "video")) return
+        val service = api ?: return
+        request { ticket ->
+            val media = authenticated(service, ticket) { token ->
+                service.filesMediaItem(token, node)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (!filesNodeVisible(latest, node) || latest.galleryViewer != null)
+                throw CancellationException()
+            if (media.node != node || media.mediaKind !in setOf("image", "video"))
+                throw ApiException(0, "Files media identity changed",
+                    ApiFailureReason.INVALID_RESPONSE)
+            closeActiveVideoPlayback()
+            galleryViewerEpoch++
+            mutableState.value = latest.copy(
+                screen = Screen.GALLERY, viewerReturnToFiles = true,
+                galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+                galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                gallerySelectedAlbum = null, galleryItems = listOf(media),
+                galleryOffset = 0, galleryTotal = 1, galleryLoaded = true,
+                gallerySearchQuery = "", galleryMediaKind = "",
+                galleryTimelineSets = null, galleryJumpIndex = null,
+                galleryPageIntent = "", gallerySelected = null, galleryViewer = media)
+        }
     }
 
     /** Long-press details may include folders; never use a stale/foreign row. */
@@ -1061,7 +1107,10 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
             current.collectionItems.none { it == item }) return
-        if (item.node.isDirectory) openCollectionFolder(item) else showDetails(item.node)
+        if (item.node.isDirectory) openCollectionFolder(item)
+        else if (fileKind(item.node.name, false) in setOf("image", "video") &&
+            item.node.revision > 0 && item.node.size > 0) openFilesMedia(item.node)
+        else showDetails(item.node)
     }
 
     /** Navigate using an authenticated Owner-scoped breadcrumb, recheck root
@@ -1869,10 +1918,17 @@ class DriveController(
     }
 
     fun dismissGalleryViewer() {
-        if (state.value.galleryViewer == null) return
+        val current = state.value
+        if (current.galleryViewer == null) return
         closeActiveVideoPlayback()
         galleryViewerEpoch++ // Reject stale non-cooperative results, including A -> B -> A.
-        mutableState.value = state.value.copy(galleryViewer = null, gallerySelected = null)
+        mutableState.value = if (current.viewerReturnToFiles) current.copy(
+            screen = Screen.FILES, viewerReturnToFiles = false,
+            galleryViewer = null, gallerySelected = null,
+            galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+            galleryLoaded = false, galleryTimelineSets = null,
+            galleryPageIntent = "", galleryJumpIndex = null)
+        else current.copy(galleryViewer = null, gallerySelected = null)
     }
 
     /** Read a *single* compressed photo, never a second remote media transport.

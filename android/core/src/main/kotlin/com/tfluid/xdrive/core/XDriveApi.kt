@@ -217,6 +217,9 @@ interface XDriveService {
     suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
         throw ApiException(501, "Native upload unavailable")
+    /** Validate a current Files node against its authenticated Owner media DTO. */
+    suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
+        throw ApiException(501, "Native Files media detail unavailable")
     suspend fun galleryPage(accessToken: String, offset: Int = 0,
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
@@ -720,6 +723,39 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** One bounded Owner-only list, including imported, manual and smart albums.
      * Reject a malformed list rather than silently displaying a false empty Collection. */
+    /** The media-kind/Live/thumbnail data comes from Go, never the filename. */
+    override suspend fun filesMediaItem(accessToken: String, original: DriveNode): GalleryAsset {
+        require(original.id > 0 && original.parentId != null && original.revision > 0 &&
+            original.type == "file" && original.size > 0 && validToken(accessToken))
+        val detail = request("media/items/${original.id}", accessToken)
+        val owned = node(detail["node"] as? JsonObject ?: invalidPayload())
+        if (owned.id != original.id || owned.parentId != original.parentId ||
+            owned.name != original.name || owned.revision != original.revision ||
+            owned.size != original.size || owned.type != "file") invalidPayload()
+        val metadata = detail["metadata"] as? JsonObject ?: invalidPayload()
+        val kind = metadata.string("media_kind")
+        if (kind !in setOf("image", "video")) invalidPayload()
+        val thumbnail = when (metadata["has_thumbnail"]) {
+            JsonPrimitive(true) -> true
+            JsonPrimitive(false) -> false
+            else -> invalidPayload()
+        }
+        val captured = metadata.optionalString("captured_at") ?: ""
+        if (captured.length > 64) invalidPayload()
+        val duration = when (metadata["duration_ms"]) {
+            null, JsonNull -> 0L
+            else -> metadata.long("duration_ms")
+        }
+        if (duration < 0) invalidPayload()
+        val live = when (detail["live_photo"]) {
+            null, JsonNull, JsonPrimitive(false) -> false
+            JsonPrimitive(true) -> true
+            else -> invalidPayload()
+        }
+        if (live && kind != "image") invalidPayload()
+        return GalleryAsset(original, kind, captured, duration, live, thumbnail)
+    }
+
     override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
         val records = requestArray("media/albums", accessToken)
         if (records.size > 4096) invalidPayload()
