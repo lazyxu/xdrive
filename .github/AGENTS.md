@@ -5,6 +5,7 @@ AGENTS.md. Preserve the root policy and all other work.
 
 - Keep the primary .github/workflows/ci.yml subscribed to every PR; it is the
   only intentionally broad PR CI workflow in this repository.
+- Keep one-off historical / branch-only benchmarks OUT of that always-on CI jobs graph, even when gated by `github.head_ref`; inactive one-off branch jobs create `Skipped` entries on every master push. Preserve regular Go/Web/Desktop/Android, security, artifact, release and Final Gate jobs. Use a narrowly path-scoped standalone PR workflow for active experiments, or a reviewed manual workflow for genuine one-off reproduction.
 - A standalone benchmark, performance diagnosis, historical evidence or
   branch-specific experiment must NOT use a broad `on.pull_request` plus a
   `jobs.<job>.if: github.head_ref == ...` guard. That still creates a Skipped

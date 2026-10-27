@@ -298,7 +298,7 @@ test('observed Web stream forwards bytes through a bounded TransformStream witho
 
 test('branch-scoped native Chromium HTTP benchmark evaluates checked-in Web reader and CPU/RSS snapshots', () => {
   const source = fs.readFileSync(path.join(root, 'desktop/scripts/media-shared-progress-chromium-main.cjs'), 'utf8')
-  const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
+  const ci = fs.readFileSync(path.join(root, 'docs/history/ci-retired-github-head-ref-jobs-20261027.yml'), 'utf8')
   assert.match(source, /web\/src\/mediaBinaryProgress\.ts/)
   assert.match(source, /xDriveMediaResponseBlob\(response, undefined/)
   assert.match(source, /response\.blob\(\)/)

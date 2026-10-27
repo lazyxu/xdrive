@@ -28,6 +28,12 @@ runs even though nothing was actually tested.
   records. The evidence is the **conclusion for the exact SHA**, not the
   number of rows in Actions.
 
+## Core CI job inventory (2026-10-27)
+
+A 2026-10-27 audit found 50 one-off jobs inside the broadly triggered `ci.yml` which ran only when `github.head_ref` matched now-absent experimental branches. With no matching live branch or open PR, these jobs created 50 `Skipped` entries per `master` run without executing tests. They were removed from the GitHub CI job graph and from the matching GitLab branch-only job graph to preserve the enforced GitHub/GitLab parity contract, not from the underlying benchmark/test files or Git history. All 30 GitHub continuous/branch-relevant jobs (including `final-gate` and both release paths) and all 25 GitLab core jobs were retained with their job bodies and dependencies unchanged.
+
+Do not reintroduce branch-exclusive performance/evidence experiments in `ci.yml`. For an active experiment, use a standalone PR workflow with narrow `pull_request.paths` and an exact source-ref guard, or implement a safely reviewed `workflow_dispatch`. Existing evidence remains accessible in the historical commit and Actions artifacts. Changing the CI graph does not cancel existing queued runs or erase old Skipped checks; new runs use the new workflow graph only.
+
 ## Repeated PR synchronizations and job backlogs
 
 A pull request whose diff matches several standalone workflows will enqueue
