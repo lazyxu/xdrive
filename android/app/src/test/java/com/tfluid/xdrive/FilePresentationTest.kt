@@ -4,6 +4,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FilePresentationTest {
+    @Test fun textPreviewHintMatchesRecognizedFileFamiliesAndNeverClaimsMedia() {
+        listOf("README", "sample.TXT", "code.KT", "config.yaml",
+            ".env.production", "Dockerfile", "metrics.csv", "patch.patch")
+            .forEach { name ->
+                assertEquals("Expected text hint for $name", true,
+                    nativeTextPreviewCandidate(name))
+            }
+        listOf("family.livp", "movie.mp4", "photo.HEIC", "report.pdf",
+            "archive.zip", "notes.docx", "unknown.bin", "photo.txt.exe")
+            .forEach { name ->
+                assertEquals("Should not offer text preview for $name", false,
+                    nativeTextPreviewCandidate(name))
+            }
+    }
+
     @Test fun invalidOrUnknownSavedFilesViewFailsToList() {
         assertEquals(FileViewMode.LIST, FileViewMode.fromPreference(null))
         assertEquals(FileViewMode.LIST, FileViewMode.fromPreference("unexpected"))
