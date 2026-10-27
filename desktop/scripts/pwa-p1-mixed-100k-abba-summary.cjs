@@ -172,6 +172,19 @@ function diagnostic() {
             category:'signed-H264-Range-Go-cancel-over-budget',
             goContextMaxMs:num(parsed.goContextMaxMs),
             signedPartialContent:num(parsed.signedPartialContent),
+            requestsStartedAtMark:num(parsed.requestsStartedAtMark),
+            requestsStartedAfter160Ms:num(parsed.requestsStartedAfter160Ms),
+            activeAtMark:num(parsed.activeAtMark),
+            rangeStartsAtMark:num(parsed.rangeStartsAtMark),
+            rangeStartsAfter160Ms:num(parsed.rangeStartsAfter160Ms),
+            contextDoneAtMark:num(parsed.contextDoneAtMark),
+            contextDoneAfter160Ms:num(parsed.contextDoneAfter160Ms),
+            // A new post-mark request is evidence, not proof that the
+            // still-active request belongs to a re-entered Gallery tile.
+            newRequestsAfterMark: Number.isFinite(parsed.requestsStartedAtMark) &&
+              Number.isFinite(parsed.requestsStartedAfter160Ms) &&
+              parsed.requestsStartedAfter160Ms>=parsed.requestsStartedAtMark
+              ? parsed.requestsStartedAfter160Ms-parsed.requestsStartedAtMark : null,
             contextDone:num(parsed.goContextDone),
             stillActiveAt160Ms:num(parsed.stillActiveAt160Ms),
             wastedBytesAfterViewerBack:num(parsed.wastedBytesAfterViewerBack),
@@ -212,5 +225,47 @@ function diagnostic() {
     probe,failedArms,counts:arms.map(a=>a.completedSampleCount),
     causalConclusion:result.causalConclusion}))
 }
-if(process.argv[2]==='--diagnostic') diagnostic()
+/** A source-exact diagnostic overlay for BOTH frozen test drivers, never for
+ * Web, Go, CAS or shipped Viewer code. It records only existing probe counts
+ * at mark and after the unchanged 160 ms gate, without relaxing any assertion.
+ * The two checkout originals are verified bit-identical before patching. */
+function instrumentFrozenDrivers() {
+  assert.equal(process.argv.length,5,'usage: script --instrument before.cjs after.cjs')
+  const files=process.argv.slice(3)
+  const values=files.map(file=>{
+    assert.equal(path.basename(file),'gallery-mobile-web-go-cancel-100k-main.cjs',
+      'unexpected benchmark driver')
+    const stat=fs.lstatSync(file)
+    assert(stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<1024*1024,
+      'unsafe benchmark driver')
+    return fs.readFileSync(file,'utf8')
+  })
+  assert.equal(values[0],values[1],
+    'A and B must use the identical uninstrumented test harness')
+  const needle=[
+    '    firstChunks:after.first_chunks,activeAtMark:markStats.active,',
+    '    goContextDone:after.context_done,cancelledHandlers:after.cancelled,',
+  ].join('\n')
+  assert.equal(values[0].split(needle).length,2,'native Range marker anchor changed')
+  const patched=values[0].replace(needle,[
+    '    firstChunks:after.first_chunks,activeAtMark:markStats.active,',
+    '    requestsStartedAtMark:markStats.started,',
+    '    requestsStartedAfter160Ms:after.started,',
+    '    rangeStartsAtMark:markStats.signed_range,',
+    '    rangeStartsAfter160Ms:after.signed_range,',
+    '    contextDoneAtMark:markStats.context_done,',
+    '    contextDoneAfter160Ms:after.context_done,',
+    '    goContextDone:after.context_done,cancelledHandlers:after.cancelled,',
+  ].join('\n'))
+  assert(patched.includes('after.max_cancel_us<=160000') &&
+    patched.includes("assert(row.passed,'genuine Viewer video Range did not stop Go work: '"),
+    'native cancellation gate must remain unchanged')
+  for(const file of files) fs.writeFileSync(file,patched)
+  console.log('PWA_P1M_FROZEN_TEST_DRIVER_INSTRUMENTED '+JSON.stringify({
+    identicalBefore:true,identicalAfter:true,onlyCountFieldsAdded:true,
+    gateMilliseconds:160,originalSamplesRequired:3
+  }))
+}
+if(process.argv[2]==='--instrument') instrumentFrozenDrivers()
+else if(process.argv[2]==='--diagnostic') diagnostic()
 else main()

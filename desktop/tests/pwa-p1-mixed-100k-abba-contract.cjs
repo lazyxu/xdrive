@@ -121,6 +121,9 @@ test('failed B2 never aborts A2 collection and publishes ONLY sanitized incomple
       passed:false,rangeStarted:2,signedPartialContent:2,goContextDone:2,
       stillActiveAt160Ms:0,wastedBytesAfterViewerBack:0,
       goContextMaxMs:193.593,restoredScrollDelta:0,
+      activeAtMark:2,requestsStartedAtMark:2,requestsStartedAfter160Ms:3,
+      rangeStartsAtMark:2,rangeStartsAfter160Ms:3,
+      contextDoneAtMark:0,contextDoneAfter160Ms:2,
       ticket:'PRIVATE_SHOULD_NOT_APPEAR',
     }
     fs.writeFileSync(path.join(arms[2],'private-trace.log'),
@@ -136,6 +139,11 @@ test('failed B2 never aborts A2 collection and publishes ONLY sanitized incomple
     assert.deepEqual(report.arms.map(a=>a.completedSampleCount),[3,3,2,3])
     assert.equal(report.arms[2].samples[1].sample,2)
     assert.equal(report.arms[2].failureEvidence.goContextMaxMs,193.593)
+    assert.equal(report.arms[2].failureEvidence.requestsStartedAtMark,2)
+    assert.equal(report.arms[2].failureEvidence.requestsStartedAfter160Ms,3)
+    assert.equal(report.arms[2].failureEvidence.newRequestsAfterMark,1)
+    assert.equal(report.arms[2].failureEvidence.activeAtMark,2)
+    assert.equal(report.arms[2].failureEvidence.contextDoneAfter160Ms,2)
     assert.equal(report.arms[2].failureEvidence.stillActiveAt160Ms,0)
     assert.equal(report.arms[2].failureEvidence.wastedBytesAfterViewerBack,0)
     assert.equal(report.arms[3].complete,true,
@@ -180,4 +188,48 @@ test('native cancellation failures still fail the job after ALL four arms and re
   assert.match(flow,/rm -f "\$OUT"\/a1\/private-trace\.log/)
   assert.match(flow,/pwa-p1m-mixed-abba-results\/diagnostic\.json/)
   assert.doesNotMatch(flow,/pwa-p1m-mixed-abba-results\/\*\*|if-no-files-found: ignore/)
+})
+
+test('native Range count-only instrumentation is identical on A and B and fail-closed',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pwa-p1m-instrument-'))
+  try{
+    const source=fs.readFileSync(
+      path.join(repo,'desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs'),'utf8')
+    const driver='gallery-mobile-web-go-cancel-100k-main.cjs'
+    const both=['before','after'].map(label=>{
+      const dest=path.join(dir,label,'desktop','scripts',driver)
+      fs.mkdirSync(path.dirname(dest),{recursive:true})
+      fs.writeFileSync(dest,source)
+      return dest
+    })
+    const res=execFileSync(process.execPath,[script,'--instrument',...both],{
+      encoding:'utf8'
+    })
+    assert.match(res,/identicalBefore/)
+    const changed=fs.readFileSync(both[0],'utf8')
+    assert.equal(changed,fs.readFileSync(both[1],'utf8'))
+    assert.ok(changed.includes('requestsStartedAtMark:markStats.started'))
+    assert.ok(changed.includes('requestsStartedAfter160Ms:after.started'))
+    assert.ok(changed.includes('contextDoneAfter160Ms:after.context_done'))
+    assert.ok(changed.includes('after.max_cancel_us<=160000'))
+    assert.ok(changed.includes("assert(row.passed,'genuine Viewer video Range did not stop Go work: '"))
+    assert.equal(fs.readFileSync(
+      path.join(repo,'desktop/scripts',driver),'utf8'),source,
+      'instrumentation must NOT change the checked-in frozen driver')
+    const repeat=spawnSync(process.execPath,[script,'--instrument',...both],{
+      encoding:'utf8'
+    })
+    assert.notEqual(repeat.status,0,'must refuse double instrumentation')
+    fs.writeFileSync(both[1],source+'\n// mismatched source')
+    const mismatch=spawnSync(process.execPath,[script,'--instrument',...both],{
+      encoding:'utf8'
+    })
+    assert.notEqual(mismatch.status,0,'must refuse A/B harness mismatch')
+  }finally{fs.rmSync(dir,{recursive:true,force:true})}
+})
+test('all four arms retain unchanged native threshold and upload only sanitized diagnostics',()=>{
+  assert.match(flow,/--instrument\s+\\\n\s+"before\/desktop\/scripts\/gallery-mobile-web-go-cancel-100k-main\.cjs"/)
+  assert.match(flow,/node --check after\/desktop\/scripts\/gallery-mobile-web-go-cancel-100k-main\.cjs/)
+  assert.match(flow,/run_arm before a1[\s\S]*run_arm after b1[\s\S]*run_arm after b2[\s\S]*run_arm before a2/)
+  assert.match(flow,/if \(!diagnostic\.allArmsComplete \|\| diagnostic\.failedArms\.length>0\)/)
 })

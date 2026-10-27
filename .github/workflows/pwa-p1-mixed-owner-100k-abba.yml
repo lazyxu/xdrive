@@ -137,6 +137,15 @@ jobs:
               echo "::warning::P1M $label failed (exit $status); retain invalid evidence and continue the remaining order-balanced arms"
             fi
           }
+          # Apply one identical COUNT-ONLY diagnostic overlay to the two
+          # frozen Node test drivers after source provenance and build checks.
+          # Web bundles and the shared Go fixture are already compiled and
+          # remain unchanged. The original native 160ms gate still fails RED.
+          node probe/desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs --instrument \
+            "before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs" \
+            "after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs"
+          node --check before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node --check after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
           run_arm before a1
           run_arm after b1
           run_arm after b2
