@@ -109,8 +109,15 @@ internal fun ColumnScope.Gallery(
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // PWA's genuine Select/Done control, without selecting unloaded results.
+        TextButton(
+            onClick = { controller.setGallerySelectionMode(!state.gallerySelectionMode) },
+            enabled = state.galleryLoaded && !state.loading &&
+                !state.galleryFavoriteWriteAttempted && !state.viewerReturnToFiles,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-select-mode"),
+        ) { Text(if (state.gallerySelectionMode) "完成" else "选择") }
         // Preserve the real Server query clear action without a second bottom row.
-        if (state.gallerySelectedAlbum == null &&
+        if (!state.gallerySelectionMode && state.gallerySelectedAlbum == null &&
             state.gallerySearchQuery.isNotEmpty()) {
             TextButton(onClick = { controller.searchGallery("") },
                 modifier = Modifier.heightIn(min = 48.dp)
@@ -119,6 +126,7 @@ internal fun ColumnScope.Gallery(
         if (state.gallerySelectedAlbum == null) {
             TextButton(
                 onClick = { kindMenuOpen = true },
+                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-kind-filter")
                     .semantics {
@@ -133,6 +141,7 @@ internal fun ColumnScope.Gallery(
         Box {
             IconButton(
                 onClick = { displayMenuOpen = true },
+                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
                 modifier = Modifier.size(48.dp)
                     .semantics {
                         stateDescription = "缩略图密度 ${preferredColumns} 档，" +
@@ -321,7 +330,9 @@ internal fun ColumnScope.Gallery(
                 Spacer(Modifier.fillMaxWidth().height(blankTop))
             }
             items(state.galleryItems, key = { it.node.id }) { item ->
-                GalleryTile(item, controller, bitmaps, containTiles)
+                GalleryTile(item, controller, bitmaps, containTiles,
+                    state.gallerySelectionMode,
+                    state.gallerySelectedItems.any { it.node.id == item.node.id })
             }
         }
     }
@@ -329,7 +340,8 @@ internal fun ColumnScope.Gallery(
     // PWA source has a time capsule above a separate primary/Search dock.
     // Android has no actual Collections client yet: preserve a functional
     // native classification action rather than adding a fake Collections tab.
-    if (timeSets != null && state.gallerySearchQuery.isEmpty() &&
+    if (!state.gallerySelectionMode && timeSets != null &&
+        state.gallerySearchQuery.isEmpty() &&
         state.gallerySortBy == "captured" && state.gallerySortDir == "asc") {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
@@ -383,7 +395,8 @@ internal fun ColumnScope.Gallery(
     }
     // iOS PWA primary capsule: the middle action must be the real
     // Collections page, never an unrelated media kind filter.
-    Surface(
+    if (state.gallerySelectionMode) GallerySelectionActions(state, controller)
+    else Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding()
             .testTag("gallery-bottom-dock"),
         color = Color.Transparent,
@@ -551,6 +564,8 @@ private fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
     containTiles: Boolean,
+    selectionMode: Boolean,
+    isSelected: Boolean,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
@@ -593,17 +608,25 @@ private fun GalleryTile(
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        // Short tap retains the iOS photo-opening behavior; long press on a
-        // failed tile is the only retry gesture. No action button overlays.
+        // In selection mode the real visible media toggles; never open Viewer.
         .combinedClickable(
             onClick = {
-                if (item.mediaKind == "image" || item.mediaKind == "video")
+                if (selectionMode) controller.toggleGallerySelection(item)
+                else if (item.mediaKind == "image" || item.mediaKind == "video")
                     controller.openGalleryViewer(item)
                 else controller.showGalleryInfo(item)
             },
-            onLongClickLabel = if (failed) "重试缩略图" else null,
-            onLongClick = if (failed) ({ retryAttempt++ }) else null,
+            onLongClickLabel = if (failed) "重试缩略图" else if (!selectionMode) "选择照片" else null,
+            onLongClick = when {
+                failed -> ({ retryAttempt++ })
+                !selectionMode -> ({
+                    controller.setGallerySelectionMode(true)
+                    controller.toggleGallerySelection(item)
+                })
+                else -> null
+            },
         )
+        .semantics { if (selectionMode) selected = isSelected }
         .testTag("gallery-item-${item.node.id}")) {
         val ready = bitmap
         if (ready != null) {
@@ -633,6 +656,15 @@ private fun GalleryTile(
                     .padding(horizontal = 4.dp, vertical = 2.dp)
                     .testTag("gallery-thumbnail-failed-${item.node.id}"),
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
+        if (isSelected) {
+            Surface(modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                .testTag("gallery-selected-mark-${item.node.id}"),
+                shape = RoundedCornerShape(50.dp),
+                color = MaterialTheme.colorScheme.primary) {
+                Text("✓", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onPrimary)
+            }
         }
         if (item.livePhoto || item.mediaKind == "video") {
             Text(if (item.livePhoto) "实况" else "视频",

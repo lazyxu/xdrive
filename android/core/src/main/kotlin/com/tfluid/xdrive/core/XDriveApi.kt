@@ -95,6 +95,8 @@ data class GalleryAsset(
     val durationMs: Long = 0,
     val livePhoto: Boolean = false,
     val hasThumbnail: Boolean = false,
+    /** Null means older/partial media DTO did not describe favorite state. */
+    val favorite: Boolean? = null,
 )
 data class GalleryTimelineGroup(val key: String, val itemCount: Long, val startIndex: Int)
 data class GalleryTimelineSets(
@@ -258,6 +260,10 @@ interface XDriveService {
     suspend fun gallerySortedPage(accessToken: String, offset: Int, initialLatest: Boolean,
         search: String, kind: String, albumId: String?, sortBy: String, sortDir: String): GalleryPage =
         throw ApiException(501, "Gallery Owner sort unavailable")
+    /** Owner-checked, single-attempt metadata action over 1..200 *loaded* Gallery items. */
+    suspend fun galleryFavoriteBatch(accessToken: String, items: List<GalleryAsset>,
+        favorite: Boolean): Int =
+        throw ApiException(501, "Gallery batch favorite unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -993,13 +999,46 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 JsonPrimitive(true) -> true
                 else -> invalidPayload()
             }
-            GalleryAsset(itemNode, kind, captured, duration, live, hasThumb)
+            // Go mediaItemDTO explicitly emits favorite on every real Owner row.
+            // Absent old fixture/client fields remain unknown, not assumed false.
+            val favorite = when (entry["favorite"]) {
+                null, JsonNull -> null
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> invalidPayload()
+            }
+            GalleryAsset(itemNode, kind, captured, duration, live, hasThumb,
+                favorite = favorite)
         }
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60,
             if (sortBy == "captured" && sortDir == "asc")
                 parseGalleryTimelineSets(result["timeline_group_sets"], total) else null)
+    }
+
+    /** Android Selection Mode reuses the existing Go/PWA Owner batch favorite API.
+     * Only a validated current loaded Node snapshot is accepted. Metadata PATCH
+     * is sent exactly once: lost ACK is never a reason to replay the mutation. */
+    override suspend fun galleryFavoriteBatch(
+        accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+    ): Int {
+        require(validToken(accessToken) && items.size in 1..200 &&
+            items.map { it.node.id }.toSet().size == items.size &&
+            items.all { it.node.id > 0 && it.node.revision > 0 &&
+                it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
+            "Invalid Owner media selection"
+        }
+        val body = JsonObject(mapOf(
+            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            "favorite" to JsonPrimitive(favorite),
+        ))
+        val answer = request("media/batch/favorite", accessToken,
+            bodyObject = body, method = "PATCH")
+        val updated = answer.long("updated")
+        if (updated != items.size.toLong() ||
+            answer["favorite"] != JsonPrimitive(favorite)) invalidPayload()
+        return items.size
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups
