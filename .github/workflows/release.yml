@@ -236,10 +236,10 @@ jobs:
     if: inputs.publish
     needs: [verify-client-artifacts, server-images, server-deploy]
     runs-on: ubuntu-latest
-    # Client ID is not secret, but GitHub also permits storing it as a
-    # Repository Secret. Support both settings without relaxing permissions.
+    # The live GitHub JWT endpoint requires a numeric iss (App ID);
+    # the old Client ID is NOT interchangeable with this integer.
     env:
-      SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID || secrets.XD_SNAPSHOT_APP_CLIENT_ID }}
+      SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}
     # Master builds run independently, but floating edge/Snapshot promotion
     # must be serialized. queue:max preserves every pending publisher.
     concurrency:
@@ -372,30 +372,28 @@ jobs:
           )
           gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
           gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
-      # Elevated Git ref permission is opt-in and never exposed to ordinary CI.
-      # Keep the original GITHUB_TOKEN fallback and the existing fail-closed
-      # temporary-ref permission probe when no publisher App is configured.
+      # Only the trusted release bundle receives an elevated App token.
+      # Fail closed until a numeric App ID and its matching PEM are configured.
       - name: Validate optional Snapshot publisher identity
         if: github.ref == 'refs/heads/master'
         shell: bash
         env:
-          HAS_SNAPSHOT_APP_CLIENT_ID: ${{ env.SNAPSHOT_APP_CLIENT_ID != '' }}
+          HAS_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID != '' }}
           HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}
         run: |
           set -euo pipefail
-          if [[ "$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY" ]]; then
-            echo "[xDrive] Snapshot publisher App configuration is incomplete; refusing publication." >&2
+          if [[ "$HAS_SNAPSHOT_APP_ID" != "true" || "$HAS_SNAPSHOT_APP_PRIVATE_KEY" != "true" ]]; then
+            echo "::error title=Incomplete Snapshot App identity::Set numeric XD_SNAPSHOT_APP_ID as a Repository Variable or Secret; keep XD_SNAPSHOT_APP_PRIVATE_KEY in Repository Secrets." >&2
             exit 1
           fi
       - name: Mint scoped Snapshot publisher token
-        if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_CLIENT_ID != ''
+        if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_ID != ''
         id: snapshot_app_token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ env.SNAPSHOT_APP_CLIENT_ID }}
-          private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-workflows: write
+        shell: bash
+        env:
+          XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}
+          XD_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
+        run: bash scripts/ci/mint-snapshot-publisher-token.sh
       - name: Reject stale master snapshot before channel promotion
         if: github.ref == 'refs/heads/master'
         env:
