@@ -33,7 +33,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
-  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
+  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],realHEICMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -1649,6 +1649,65 @@ async function testMapColdH264Poster(browser,mode,port){
   }finally{await context.close()}
 }
 
+
+/** The REAL 512x512 HEVC-coded source in internal/media/testdata is decoded
+ * with production ThumbnailWithAlpha in the opt-in Gin fixture and fetched
+ * over its authenticated Owner /thumbnail route. No Browser HEIC decoder or
+ * fake image MIME is involved: both SDK Hosts reuse the same React cover. */
+async function testRealHEICOwnerMapCover(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&map_real_heic=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    const image=page.locator('[data-xdrive-places-trusted-photo-cover] img').first()
+    await image.waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return img instanceof HTMLImageElement&&img.complete&&
+        img.naturalWidth===512&&img.naturalHeight===512&&
+        (img.currentSrc||img.src).startsWith('blob:')&&
+        window.__mapProbe?.heic?.reads>=1
+    })
+    const proof=await page.evaluate(async()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      await img.decode()
+      return {heic:{...window.__mapProbe.heic},
+        photoCount:window.__mapProbe.queries.map(q=>q.count),
+        nodeID:window.__mapProbe.heic.nodeID,
+        pixelSize:[img.naturalWidth,img.naturalHeight],
+        blobSource:(img.currentSrc||img.src).startsWith('blob:')}
+    })
+    record(mode+': genuine HEIC original becomes decoded cached Owner JPEG map cover',
+      proof.heic.mime==='image/jpeg'&&proof.heic.bytes>512&&
+      proof.pixelSize[0]===512&&proof.pixelSize[1]===512&&
+      proof.blobSource&&proof.photoCount.length>0&&
+      proof.photoCount.every(n=>n===1)&&proof.nodeID>0)
+    const foreign=await page.evaluate(async nodeID=>{
+      const owner=await fetch('/__fixture/map-owner',{cache:'no-store'}).then(r=>r.json())
+      const reply=await fetch('/api/v1/media/items/'+nodeID+'/thumbnail?revision=1',{
+        cache:'no-store',headers:{Authorization:'Bearer '+owner.token},
+      })
+      return reply.status
+    },proof.nodeID)
+    record(mode+': original Owner cannot read a separate HEIC Owner thumbnail',
+      foreign===403||foreign===404)
+    record(mode+': HEIC cover never sends Node or original bytes to the SDK Child',
+      errors.length===0&&requests.every(x=>
+        x.host==='gallery'||x.host==='child'))
+  }finally{await context.close()}
+}
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -1794,6 +1853,9 @@ async function main(){
       await testFullDocumentMapHandoff(browser,'isolated',port)
       record('both SDK Hosts perform real one-use Gin scope handoff across full document',
         summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
+      await testRealHEICOwnerMapCover(browser,'inline',port)
+      await testRealHEICOwnerMapCover(browser,'isolated',port)
+      summary.realHEICMapCoverModes=['inline','isolated']
     }
     summary.passed=true
   }finally{await browser.close()}
