@@ -117,6 +117,27 @@ data class GalleryPage(
     val timeline: GalleryTimelineSets? = null,
 )
 
+/** The same Server PhotoCollection identities used by Web/PWA.
+ * An album is metadata + membership, not a copied directory or media byte cache. */
+data class GalleryAlbum(
+    val id: String,
+    val kind: String,
+    val name: String,
+    val itemCount: Long,
+    val revision: Long,
+    val albumFolderId: Long,
+    val coverNodeId: Long? = null,
+)
+
+/** Go owns these keys; only accepted prefixes can select a private album Range.
+ * Preserve any opaque ID tail and percent-escape it as ONE URL path segment. */
+internal fun validGalleryAlbumId(id: String): Boolean =
+    id.length in 3..512 && id == id.trim() &&
+        id.none { it.isISOControl() } &&
+        listOf("folder:", "source:", "manual:", "smart:").any { prefix ->
+            id.startsWith(prefix) && id.length > prefix.length
+        }
+
 /** Match the Server's Windows-compatible filename subset before sending a
  * mutating request. Server validation remains authoritative. */
 fun validDriveNodeName(name: String): Boolean {
@@ -191,6 +212,13 @@ interface XDriveService {
     suspend fun galleryPage(accessToken: String, offset: Int = 0,
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
+    /** Read-only Collections: use the existing PhotoCollection and member-Range APIs. */
+    suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> =
+        throw ApiException(501, "Gallery albums unavailable")
+    suspend fun galleryAlbumPage(
+        accessToken: String, albumId: String, offset: Int = 0,
+        initialLatest: Boolean = false,
+    ): GalleryPage = throw ApiException(501, "Gallery album range unavailable")
     /** Search uses the same bounded Owner range; no local visible-page filtering. */
     suspend fun gallerySearchPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String): GalleryPage =
@@ -678,6 +706,42 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
 
 
+    /** One bounded Owner-only list, including imported, manual and smart albums.
+     * Reject a malformed list rather than silently displaying a false empty Collection. */
+    override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+        val records = requestArray("media/albums", accessToken)
+        if (records.size > 4096) invalidPayload()
+        val seen = HashSet<String>()
+        return records.map { element ->
+            val entry = element as? JsonObject ?: invalidPayload()
+            val id = entry.string("id")
+            val kind = entry.string("kind")
+            val name = entry.string("name")
+            val revision = entry.long("revision")
+            val folder = entry.long("album_folder_id")
+            val count = entry.long("item_count")
+            val cover = when (entry["cover_node_id"]) {
+                null, JsonNull -> null
+                else -> entry.long("cover_node_id").also { if (it <= 0) invalidPayload() }
+            }
+            if (!validGalleryAlbumId(id) || !seen.add(id) ||
+                kind !in setOf("folder", "imported", "manual", "smart") ||
+                name.isBlank() || name.length > 400 ||
+                name.codePointCount(0, name.length) > 200 ||
+                name.any { it.isISOControl() } ||
+                count < 0 || revision < 0 || folder < 0) invalidPayload()
+            GalleryAlbum(id, kind, name, count, revision, folder, cover)
+        }
+    }
+
+    override suspend fun galleryAlbumPage(
+        accessToken: String, albumId: String, offset: Int,
+        initialLatest: Boolean,
+    ): GalleryPage {
+        require(validGalleryAlbumId(albumId)) { "Invalid gallery album identifier" }
+        return ownerGalleryPage(accessToken, offset, initialLatest, "", albumId = albumId)
+    }
+
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
     override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage =
@@ -697,7 +761,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
 
     private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
-        initialLatest: Boolean, search: String, mediaKind: String = ""): GalleryPage {
+        initialLatest: Boolean, search: String, mediaKind: String = "",
+        albumId: String? = null): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
@@ -707,7 +772,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (initialLatest) query["initial_position"] = "latest"
         if (search.isNotEmpty()) query["q"] = search
         if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
-        val result = request("media/items", accessToken, query = query)
+        val result = if (albumId == null) request("media/items", accessToken, query = query)
+            else request("media/albums", accessToken, query = query,
+                pathTailSegments = listOf(albumId, "items"))
         val raw = result["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 60) invalidPayload()
         val total = result.long("total_count")
@@ -1058,8 +1125,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         numberValues: Map<String, Long> = emptyMap(),
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
+        pathTailSegments: List<String> = emptyList(),
     ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
-        ifMatch, numberValues, bodyObject, longRunning)
+        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -1080,8 +1148,12 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         numberValues: Map<String, Long> = emptyMap(),
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
+        pathTailSegments: List<String> = emptyList(),
     ): JsonElement {
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
+            // Authenticated album IDs may be opaque (including reserved characters):
+            // append each as ONE encoded path segment, never URL interpolation.
+            pathTailSegments.forEach { addPathSegment(it) }
             query.forEach { (name, value) -> addQueryParameter(name, value) }
         }.build()
         val builder = Request.Builder().url(url).header("Accept", "application/json")
