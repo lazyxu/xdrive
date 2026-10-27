@@ -47,6 +47,8 @@ CURRENT_STAGE="startup"
 LAST_ERROR_COMMAND=""
 ROLLBACK_ARMED=0
 ROLLBACK_RUNNING=0
+# Do not disturb the old application before all target images are local.
+MAINTENANCE_STARTED=0
 UPGRADE_EXISTING=0
 DATABASE_ROLLBACK_REQUIRED=0
 PRE_UPGRADE_BACKUP=""
@@ -611,6 +613,17 @@ render_pull_json() {
   done
 }
 
+compose() {
+  local -a profile_args=()
+  if compose_profile_enabled photo-intelligence; then
+    profile_args+=(--profile photo-intelligence)
+  fi
+  if compose_profile_enabled media-worker; then
+    profile_args+=(--profile media-worker)
+  fi
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+}
+
 pull_json_supported() {
   compose --progress json version </dev/null >/dev/null 2>&1
 }
@@ -725,6 +738,87 @@ pull_service_with_retry() {
   echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
   return 1
 }
+# Initialize once, including stage-5 prefetched downloads. Never truncate
+# the private pull log when stage 7 reuses the image cache.
+initialize_image_pull() {
+  [[ "${pull_initialized:-0}" == "1" ]] && return 0
+  mkdir -p "$LOG_DIR"
+  : > "$PULL_LOG"
+  chmod 600 "$PULL_LOG"
+  pull_started="$(date +%s)"
+  pull_attempts="${XD_PULL_ATTEMPTS:-3}"
+  pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
+  pull_stall_timeout="${XD_PULL_STALL_TIMEOUT_SECONDS:-60}"
+  pull_stall_log_interval="${XD_PULL_STALL_LOG_INTERVAL_SECONDS:-15}"
+  case "$pull_attempts" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_retry_delay" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_stall_timeout" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_stall_log_interval" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  if (( pull_attempts < 1 || pull_attempts > 10 )); then
+    echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
+    exit 2
+  fi
+  if (( pull_stall_timeout < 2 || pull_stall_timeout > 3600 )); then
+    echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be between 2 and 3600." >&2
+    exit 2
+  fi
+  if (( pull_stall_log_interval < 1 || pull_stall_log_interval > pull_stall_timeout )); then
+    echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be between 1 and the stall timeout." >&2
+    exit 2
+  fi
+  
+  pull_progress_mode="plain"
+  if pull_json_supported; then
+    pull_progress_mode="json"
+    echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
+    echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
+  else
+    echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
+  fi
+  pull_initialized=1
+}
+
+# Preserve the immutable local image ID from this update's completed preflight.
+declare -A prepared_image_ids=()
+declare -A prepared_image_refs=()
+prepare_target_image() {
+  local service="$1" ref="$2" id=""
+  if docker image inspect "$ref" </dev/null >/dev/null 2>&1; then
+    echo "[xDrive] prefetch $service: target image is already cached locally."
+  else
+    echo "[xDrive] prefetch $service: obtaining target image before downtime..."
+    if ! (
+      # Process-only override: the current .env must remain usable for backups.
+      export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+      export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+      export XD_PHOTO_FACE_IMAGE="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+      export XD_MEDIA_WORKER_IMAGE="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+      pull_service_with_retry "$service"
+    ); then
+      echo "[xDrive] prefetch $service failed; the old runtime has not been stopped." >&2
+      return 1
+    fi
+  fi
+  id="$(docker image inspect --format '{{.Id}}' "$ref" </dev/null 2>/dev/null)" || {
+    echo "[xDrive] prefetch $service: image unavailable after download." >&2
+    return 1
+  }
+  if [[ ! "$id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "[xDrive] prefetch $service: invalid Docker image identity." >&2
+    return 1
+  fi
+  prepared_image_ids["$service"]="$id"
+  prepared_image_refs["$service"]="$ref"
+}
+
 fetch() {
   local url="$1" destination="$2" label="${3:-$(basename "$2")}" tmp="$2.tmp"
   local stats size speed seconds monitor_pid=""
@@ -1668,6 +1762,18 @@ rollback_upgrade() {
   local ok=1 i
   local -a rollback_restore_args
   ROLLBACK_RUNNING=1
+  # Registry/CDN failures during prefetch must not stop the existing stack.
+  # Stage 4 can update the .env; restore only that transactional snapshot.
+  if [[ "$MAINTENANCE_STARTED" != "1" ]]; then
+    echo "[xDrive] rollback: image preflight failed before maintenance; leaving all running containers untouched." >&2
+    if ! restore_transaction_file ".env" "$ENV_PATH" 600; then
+      ROLLBACK_RUNNING=0
+      return 1
+    fi
+    rm -rf "$UPGRADE_STATE_DIR"
+    ROLLBACK_RUNNING=0
+    return 0
+  fi
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
   docker stop xdrive-caddy xdrive-photo-face xdrive-media-worker xdrive-server xdrive-worker xdrive-postgres \
     xdrive-caddy-1 xdrive-photo-face-1 xdrive-media-worker-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
@@ -2296,6 +2402,26 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     echo "[xDrive] stage-5 verifier: legacy runtime deep mode (explicit opt-out)."
   fi
 
+  if [[ "${XD_INSTALL_NO_START:-0}" != "1" ]]; then
+    # Acquire every required target image while the previous release is alive.
+    # Only the child Compose pull sees new image refs; backup and rollback
+    # continue to read the untouched old release references from the .env.
+    initialize_image_pull
+    echo "[xDrive] prefetching published target images before maintenance..."
+    target_postgres_image="$(env_value XD_POSTGRES_IMAGE)"
+    target_postgres_image="${target_postgres_image:-postgres:17-alpine}"
+    prepare_target_image postgres "$target_postgres_image"
+    prepare_target_image server "$target_server_image"
+    prepare_target_image caddy "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+    if compose_profile_enabled photo-intelligence; then
+      prepare_target_image photo-face "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+    fi
+    if compose_profile_enabled media-worker; then
+      prepare_target_image media-worker "$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+    fi
+    echo "[xDrive] all target images are ready locally; entering maintenance window."
+  fi
+  MAINTENANCE_STARTED=1
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
   docker stop xdrive-caddy xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
@@ -2441,18 +2567,6 @@ echo "Host manager:    $HOST_MANAGER_PATH"
 echo "User PATH file:  $SHELL_RC_PATH"
 echo "Current terminal: run: source \"$SHELL_RC_PATH\""
 rm -rf "$STAGING_DIR"
-
-compose() {
-  local -a profile_args=()
-  if compose_profile_enabled photo-intelligence; then
-    profile_args+=(--profile photo-intelligence)
-  fi
-  if compose_profile_enabled media-worker; then
-    profile_args+=(--profile media-worker)
-  fi
-  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-}
-
 compose_with_stdin() {
   local -a profile_args=()
   if compose_profile_enabled photo-intelligence; then
@@ -2506,46 +2620,7 @@ fi
 
 stage 7 "pull images and start services"
 echo "[xDrive] pulling container images; detailed Docker output is captured in $PULL_LOG"
-: > "$PULL_LOG"
-chmod 600 "$PULL_LOG"
-pull_started="$(date +%s)"
-pull_attempts="${XD_PULL_ATTEMPTS:-3}"
-pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
-pull_stall_timeout="${XD_PULL_STALL_TIMEOUT_SECONDS:-60}"
-pull_stall_log_interval="${XD_PULL_STALL_LOG_INTERVAL_SECONDS:-15}"
-case "$pull_attempts" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_retry_delay" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_stall_timeout" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_stall_log_interval" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-if (( pull_attempts < 1 || pull_attempts > 10 )); then
-  echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
-  exit 2
-fi
-if (( pull_stall_timeout < 2 || pull_stall_timeout > 3600 )); then
-  echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be between 2 and 3600." >&2
-  exit 2
-fi
-if (( pull_stall_log_interval < 1 || pull_stall_log_interval > pull_stall_timeout )); then
-  echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be between 1 and the stall timeout." >&2
-  exit 2
-fi
-
-pull_progress_mode="plain"
-if pull_json_supported; then
-  pull_progress_mode="json"
-  echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
-  echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
-else
-  echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
-fi
+initialize_image_pull
 
 pull_services=(postgres server caddy)
 if compose_profile_enabled photo-intelligence; then
@@ -2555,6 +2630,15 @@ if compose_profile_enabled media-worker; then
   pull_services+=(media-worker)
 fi
 for pull_service in "${pull_services[@]}"; do
+  if [[ -n "${prepared_image_ids[$pull_service]:-}" ]]; then
+    current_image_id="$(docker image inspect --format '{{.Id}}' "${prepared_image_refs[$pull_service]}" </dev/null 2>/dev/null || true)"
+    if [[ "$current_image_id" != "${prepared_image_ids[$pull_service]}" ]]; then
+      echo "[xDrive] prepared $pull_service image ID changed before activation; refusing deployment." >&2
+      exit 1
+    fi
+    echo "[xDrive] pull $pull_service skipped: same image prepared before maintenance."
+    continue
+  fi
   pull_service_with_retry "$pull_service"
 done
 
