@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
 import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
@@ -12,6 +13,8 @@ type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favori
 const mode = new URLSearchParams(location.search).get('mode') === 'isolated' ? 'isolated' : 'inline'
 const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
+const darkMapAppearance = new URLSearchParams(location.search).get('ui_scheme') === 'dark'
+const darkMapTheme = createTheme({palette:{mode:'dark'}})
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
 const favoritesMapEntry = new URLSearchParams(location.search).get('start_favorites') === '1'
@@ -381,4 +384,7 @@ function TestApp(){
     ) : null}
   </div>
 }
-createRoot(document.getElementById('root')!).render(fullGalleryPage ? <FullGalleryPage /> : <TestApp />)
+createRoot(document.getElementById('root')!).render(
+  fullGalleryPage ? <FullGalleryPage /> :
+    darkMapAppearance ? <ThemeProvider theme={darkMapTheme}><TestApp /></ThemeProvider> :
+    <TestApp />)
