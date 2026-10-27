@@ -1511,6 +1511,7 @@ SH
       --pids-limit 128 --cpus 2 --memory "$((limit+256))m" \
       --memory-swap "$((limit+256))m" --user 70:70 \
       --tmpfs "/sandbox:rw,nosuid,nodev,size=${limit}m,uid=70,gid=70,mode=0700" \
+      --tmpfs "/var/lib/postgresql/data:rw,nosuid,nodev,noexec,size=16m,uid=70,gid=70,mode=0700" \
       --shm-size 32m --entrypoint /bin/sh postgres:17-alpine \
       -ec "$pgcode" < "$real/database.dump"
   ) >&2; then return 8; fi

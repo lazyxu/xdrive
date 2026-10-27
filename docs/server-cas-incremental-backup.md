@@ -372,6 +372,9 @@ The CAS stage starts as the invoking Host backup owner (not privileged Docker ro
 no-new-privileges Docker helper with bounded memory/PIDs, one strictly
 **read-only backup repository mount** and a disposable `/data` tmpfs. It
 physically restores the referenced CAS objects and legacy file archive.
+The official PostgreSQL image declares a default data volume: this command
+explicitly shadows that default with a second small tmpfs so Docker cannot
+silently provide a disk-backed anonymous database volume.
 PostgreSQL starts a separate non-root, network-disabled
 `postgres:17-alpine` tmpfs container, receives `database.dump` **only
 on stdin**, creates a private database cluster, runs
