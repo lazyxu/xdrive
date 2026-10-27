@@ -62,6 +62,8 @@ data class DriveState(
     val fileUploadCommitted: Boolean = false,
     val fileUploadBytes: Long = 0,
     val fileUploadTotal: Long = 0,
+    /** Last 20 verified SAF transfers, held only for the active login session. */
+    val nativeTransfers: List<NativeTransferEntry> = emptyList(),
     val trashItems: List<TrashEntry> = emptyList(),
     val trashTotal: Long = 0,
     val trashLoaded: Boolean = false,
@@ -115,6 +117,7 @@ class DriveController(
     private val saveRoute: (String, ConnectionRoute) -> Unit = { _, _ -> },
     private val loadRoute: (String) -> ConnectionRoute = { ConnectionRoute() },
     private val sessionPersistence: DriveSessionPersistence? = null,
+    private val transferClockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : Closeable {
     private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
@@ -134,6 +137,63 @@ class DriveController(
     private var retryOffset = 0
     private var retryAppend = false
     private var retryPrepend = false
+    private var nextNativeTransferId = 0L
+
+    /** These records observe the existing Owner-authenticated SAF reader/writer.
+     * They do not own an extra HTTP client, upload queue or independent retry. */
+    private fun beginNativeTransfer(
+        kind: NativeTransferKind, filename: String, totalBytes: Long,
+    ): Long {
+        val id = ++nextNativeTransferId
+        val now = transferClockMillis()
+        val item = NativeTransferEntry(id, kind, filename, totalBytes,
+            startedAtMillis = now)
+        mutableState.value = state.value.copy(
+            nativeTransfers = state.value.nativeTransfers.withStartedTransfer(item))
+        return id
+    }
+
+    private fun nativeTransferProgress(id: Long, bytes: Long) {
+        val current = state.value
+        if (current.nativeTransfers.none {
+                it.id == id && it.status == NativeTransferStatus.RUNNING
+            }) return
+        val now = transferClockMillis()
+        mutableState.value = current.copy(nativeTransfers =
+            current.nativeTransfers.updateTransfer(id) {
+                it.withConfirmedBytes(bytes, now)
+            })
+    }
+
+    private fun finishNativeTransfer(
+        id: Long, outcome: NativeTransferStatus, finalBytes: Long? = null,
+    ) {
+        val current = state.value
+        if (current.nativeTransfers.none {
+                it.id == id && it.status == NativeTransferStatus.RUNNING
+            }) return
+        val now = transferClockMillis()
+        mutableState.value = current.copy(nativeTransfers =
+            current.nativeTransfers.updateTransfer(id) {
+                it.finish(outcome, now, finalBytes)
+            })
+    }
+
+    /** Unknown upload finalize ACK must not be represented as a safe retry. */
+    private fun terminateNativeTransferOnCancellation() {
+        val record = state.value.nativeTransfers.firstOrNull {
+            it.status == NativeTransferStatus.RUNNING
+        } ?: return
+        val outcome = if (record.kind == NativeTransferKind.UPLOAD)
+            NativeTransferStatus.UNCONFIRMED else NativeTransferStatus.CANCELLED
+        finishNativeTransfer(record.id, outcome)
+    }
+
+    fun clearNativeTransferHistory() {
+        val current = state.value
+        mutableState.value = current.copy(nativeTransfers =
+            current.nativeTransfers.filter { it.status == NativeTransferStatus.RUNNING })
+    }
 
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
         loadRoute(ServerAddress.parse(input, allowHttp).url)
@@ -507,17 +567,20 @@ class DriveController(
             gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
+            val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
             var complete = false
             try {
                 val written = authenticatedMutation(ticket) { token ->
                     service.downloadFile(token, owned, openOutput) { bytes ->
                         if (ticket == generation) {
                             mutableState.value = state.value.copy(fileDownloadBytes = bytes)
+                            nativeTransferProgress(transferId, bytes)
                         }
                     }
                 }
                 checkCurrent(ticket)
                 complete = true
+                finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, written)
                 mutableState.value = state.value.copy(
                     fileDownloadBytes = written, fileDownloadActive = false,
                     fileDownloadSaved = true, error = null)
@@ -579,13 +642,19 @@ class DriveController(
             fileUploadActive = true, fileUploadCommitted = false,
             fileUploadBytes = 0, fileUploadTotal = size)
         request(isFileUpload = true) { ticket ->
+            val transferId = beginNativeTransfer(NativeTransferKind.UPLOAD, name, size)
             val result = authenticatedMutation(ticket) { token ->
                 service.uploadFile(token, destination, name, size, openInput) { confirmed ->
-                    if (ticket == generation)
+                    if (ticket == generation) {
                         mutableState.value = state.value.copy(fileUploadBytes = confirmed)
+                        nativeTransferProgress(transferId, confirmed)
+                    }
                 }
             }
             checkCurrent(ticket)
+            // Server finalize returned an exact successful Node ACK; later
+            // Browse reconciliation can fail without making the upload uncertain.
+            finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, size)
             mutableState.value = state.value.copy(
                 fileUploadActive = false, fileUploadCommitted = true,
                 fileUploadBytes = size)
@@ -1890,6 +1959,14 @@ class DriveController(
                 // Obsolete work is not an error; finally only affects its own generation.
             } catch (failure: Exception) {
                 if (ticket == generation) {
+                    val running = state.value.nativeTransfers.firstOrNull {
+                        it.status == NativeTransferStatus.RUNNING
+                    }
+                    if (running != null) {
+                        finishNativeTransfer(running.id,
+                            if (isFileDownload) NativeTransferStatus.FAILED
+                            else NativeTransferStatus.UNCONFIRMED)
+                    }
                     if (failure is ApiException && failure.statusCode == 401 &&
                         failure.reason != ApiFailureReason.CURRENT_PASSWORD_INCORRECT && session != null) {
                         session = null
@@ -1974,6 +2051,9 @@ class DriveController(
     }
 
     private fun invalidate() {
+        // This method also runs for logout, route switching and a superseding
+        // Owner operation. Fence the old transfer before cancelling its Job.
+        terminateNativeTransferOnCancellation()
         generation++
         active?.cancel()
         active = null

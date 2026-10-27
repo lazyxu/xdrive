@@ -1,0 +1,168 @@
+package com.tfluid.xdrive
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import java.util.Locale
+
+/** Displays only the current Owner's existing SAF transfer, with no new Runner. */
+@Composable
+internal fun NativeTransferCenter(
+    state: DriveState,
+    controller: DriveController,
+    dismiss: () -> Unit,
+) {
+    val active = state.nativeTransfers.firstOrNull {
+        it.status == NativeTransferStatus.RUNNING
+    }
+    var nowMillis by remember { mutableLongStateOf(System.nanoTime() / 1_000_000L) }
+    LaunchedEffect(active?.id) {
+        while (active != null) {
+            nowMillis = System.nanoTime() / 1_000_000L
+            delay(1000)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        modifier = Modifier.testTag("native-transfer-center"),
+        title = { Text("传输", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 470.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("本次登录的上传与下载 · 最近最多 20 项",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.nativeTransfers.isEmpty()) {
+                    Text("本次登录暂无传输记录",
+                        modifier = Modifier.testTag("native-transfer-empty"),
+                        style = MaterialTheme.typography.bodyMedium)
+                }
+                for (entry in state.nativeTransfers) {
+                    Column(
+                        Modifier.fillMaxWidth().testTag("native-transfer-item-${entry.id}"),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(entry.fileName, modifier = Modifier.weight(1f),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.width(8.dp))
+                            Text(nativeTransferStatusLabel(entry),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (entry.status == NativeTransferStatus.FAILED ||
+                                    entry.status == NativeTransferStatus.UNCONFIRMED)
+                                    MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        val progress = entry.progressFraction()
+                        val percent = when {
+                            entry.totalBytes == 0L &&
+                                entry.status == NativeTransferStatus.COMPLETED -> "100%"
+                            progress != null -> "${(progress * 100f).toInt()}%"
+                            else -> "待确认"
+                        }
+                        Text("${formatSize(entry.transferredBytes)} / " +
+                            "${formatSize(entry.totalBytes)} · $percent",
+                            modifier = Modifier.testTag("native-transfer-bytes-${entry.id}"),
+                            style = MaterialTheme.typography.bodySmall)
+                        if (entry.status == NativeTransferStatus.RUNNING) {
+                            val fraction = entry.progressFraction()
+                            if (fraction != null) {
+                                LinearProgressIndicator(progress = { fraction },
+                                    modifier = Modifier.fillMaxWidth()
+                                        .testTag("native-transfer-progress-${entry.id}"))
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth()
+                                    .testTag("native-transfer-progress-${entry.id}"))
+                            }
+                        }
+                        val clock = if (entry.status == NativeTransferStatus.RUNNING)
+                            nowMillis else entry.updatedAtMillis
+                        val duration = entry.elapsedMillis(clock)
+                        val rate = entry.averageBytesPerSecond(clock)
+                        val speed = rate?.let {
+                            formatSize(it.coerceAtMost(Long.MAX_VALUE.toDouble()).toLong()) + "/s"
+                        } ?: "尚无法测量"
+                        val eta = entry.remainingMillis(clock)
+                        Text(
+                            "已用 ${nativeTransferElapsed(duration)} · 平均速度 $speed" +
+                                (if (eta != null) " · 预计剩余 ${nativeTransferElapsed(eta)}" else ""),
+                            modifier = Modifier.testTag("native-transfer-rate-${entry.id}"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (entry.status == NativeTransferStatus.UNCONFIRMED)
+                            Text("服务端可能已经收到文件。请刷新所在目录核对，不会自动重传。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error)
+                        if (entry.status == NativeTransferStatus.RUNNING) {
+                            val cancellable = when (entry.kind) {
+                                NativeTransferKind.UPLOAD -> state.fileUploadActive
+                                NativeTransferKind.DOWNLOAD -> state.fileDownloadActive
+                            }
+                            TextButton(
+                                onClick = {
+                                    when (entry.kind) {
+                                        NativeTransferKind.UPLOAD -> controller.cancelFileUpload()
+                                        NativeTransferKind.DOWNLOAD -> controller.cancelFileDownload()
+                                    }
+                                },
+                                enabled = cancellable,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("native-transfer-cancel-${entry.id}"),
+                            ) {
+                                Text("取消${if (entry.kind == NativeTransferKind.UPLOAD) "上传" else "下载"}")
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+                if (state.nativeTransfers.any { it.status != NativeTransferStatus.RUNNING }) {
+                    TextButton(
+                        onClick = controller::clearNativeTransferHistory,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("native-transfer-clear"),
+                    ) { Text("清除已结束的记录") }
+                }
+                Text("仅当前 App 会话；退出登录将清空。后台续传、暂停和跨设备任务尚未实现。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = dismiss,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("native-transfer-close")) { Text("完成") }
+        },
+    )
+}
+
+internal fun nativeTransferStatusLabel(entry: NativeTransferEntry): String =
+    when (entry.status) {
+        NativeTransferStatus.RUNNING ->
+            if (entry.kind == NativeTransferKind.UPLOAD) "上传中" else "下载中"
+        NativeTransferStatus.COMPLETED ->
+            if (entry.kind == NativeTransferKind.UPLOAD) "已上传" else "已保存"
+        NativeTransferStatus.CANCELLED -> "已取消"
+        NativeTransferStatus.FAILED -> "失败"
+        NativeTransferStatus.UNCONFIRMED -> "结果未确认"
+    }
+
+internal fun nativeTransferElapsed(ms: Long): String {
+    val seconds = ms.coerceAtLeast(0L) / 1000L
+    return if (seconds < 60) "${seconds}秒"
+    else String.format(Locale.ROOT, "%d分%02d秒", seconds / 60L, seconds % 60L)
+}

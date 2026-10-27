@@ -934,6 +934,99 @@ class DriveControllerTest {
         assertFalse(c.state.value.galleryLoaded)
     }
 
+    @Test fun nativeTransferHistoryTracksRealUploadAckAndClearsAtLogout() = runTest {
+        val api = Service()
+        var now = 1_000L
+        val c = DriveController(this, { api }, transferClockMillis = { now }).also {
+            it.connect("https://drive.example", false)
+        }
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("saved.txt", 3,
+            { ByteArrayInputStream("abc".toByteArray()) }); runCurrent()
+        val saved = c.state.value.nativeTransfers.single()
+        assertEquals(NativeTransferKind.UPLOAD, saved.kind)
+        assertEquals(NativeTransferStatus.COMPLETED, saved.status)
+        assertEquals("saved.txt", saved.fileName)
+        assertEquals(3L, saved.totalBytes)
+        assertEquals(3L, saved.transferredBytes)
+        assertTrue(c.state.value.fileUploadCommitted)
+        assertEquals(1, api.uploadCount)
+        c.clearNativeTransferHistory()
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
+        assertEquals(1, api.uploadCount) // Clearing does not send any request.
+
+        assertTrue(c.prepareFileUpload())
+        now += 1_000L
+        c.acceptFileUpload("second.txt", 3,
+            { ByteArrayInputStream("abc".toByteArray()) }); runCurrent()
+        assertEquals(1, c.state.value.nativeTransfers.size)
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
+        c.close()
+    }
+
+    @Test fun nativeTransferCancelAndFailureNeverFalselyBecomeCompleted() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        var now = 10_000L
+        val c = DriveController(this, { api }, transferClockMillis = { now }).also {
+            it.connect("https://drive.example", false)
+        }
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        val running = c.state.value.nativeTransfers.single()
+        assertEquals(NativeTransferKind.DOWNLOAD, running.kind)
+        assertEquals(NativeTransferStatus.RUNNING, running.status)
+        assertEquals(3L, running.transferredBytes)
+        assertEquals(42L, running.totalBytes)
+        now += 1_000L
+        c.cancelFileDownload(); runCurrent()
+        assertEquals(1, discarded)
+        val cancelled = c.state.value.nativeTransfers.single()
+        assertEquals(NativeTransferStatus.CANCELLED, cancelled.status)
+        assertEquals(3L, cancelled.transferredBytes)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        c.clearNativeTransferHistory()
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
+
+        api.downloadGate = null
+        api.downloadFailure = ApiException(503, "transient")
+        assertTrue(c.prepareFileExport(file))
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertEquals(2, discarded)
+        assertEquals(NativeTransferStatus.FAILED,
+            c.state.value.nativeTransfers.single().status)
+        assertFalse(c.state.value.fileDownloadSaved)
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
+        c.close()
+    }
+
+    @Test fun nativeTransferUploadCancelledBeforeFinalizeIsExplicitlyUnconfirmed() = runTest {
+        val api = Service().apply { uploadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("uncertain.txt", 3,
+            { ByteArrayInputStream("abc".toByteArray()) }); runCurrent()
+        assertEquals(NativeTransferStatus.RUNNING,
+            c.state.value.nativeTransfers.single().status)
+        assertEquals(1, api.uploadCount)
+        c.cancelFileUpload(); runCurrent()
+        assertEquals(NativeTransferStatus.UNCONFIRMED,
+            c.state.value.nativeTransfers.single().status)
+        assertFalse(c.state.value.fileUploadCommitted)
+        assertFalse(c.state.value.fileUploadActive)
+        c.clearNativeTransferHistory()
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
+        assertEquals(1, api.uploadCount)
+        c.close()
+    }
+
     @Test fun manualFileUploadUsesCurrentOwnerFolderAndNoStalePicker() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
