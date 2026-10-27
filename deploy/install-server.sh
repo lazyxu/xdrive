@@ -738,6 +738,130 @@ pull_service_with_retry() {
   echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
   return 1
 }
+
+# The exact CI-built Caddy Docker-save archive is an ALTERNATE transport, not
+# a second image authority. The current install script's own SHA-256 must
+# match its release manifest before ANY archive is accepted.
+caddy_release_checksum() {
+  local manifest="$1" filename="$2"
+  awk -v filename="$filename" '
+    $2 == filename {
+      count++
+      if (NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-fA-F]+$/) bad=1
+      else result=tolower($1)
+    }
+    END { if (count == 1 && !bad) print result }
+  ' "$manifest"
+}
+
+install_caddy_from_release_archive() {
+  local target_ref="$1" tag base manifest id_file expected_self expected_archive
+  local expected_id_sha current_self actual expected_id loaded_id archive partial cache_dir
+  local attempt rc version
+  if [[ "$requested_source" != github || "$REPOSITORY" != "lazyxu/xdrive" ||
+        "$IMAGE_REGISTRY" != "ghcr.io/lazyxu" ]]; then
+    echo "[xDrive] Caddy Release fallback is only available for official GitHub images." >&2
+    return 1
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[xDrive] Caddy Release fallback requires curl." >&2
+    return 1
+  fi
+  if [[ "$requested_channel" == master ]]; then
+    tag=snapshot
+    [[ "$IMAGE_TAG" =~ ^sha-[0-9a-f]{12}$ ]] || return 1
+  else
+    tag="$IMAGE_TAG"
+    [[ "$tag" =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || return 1
+  fi
+  base="https://github.com/lazyxu/xdrive/releases/download/$tag"
+  manifest="$STAGING_DIR/caddy-release-SHA256SUMS.txt"
+  id_file="$STAGING_DIR/caddy-release-image.id"
+  rm -f "$manifest" "$id_file"
+  echo "[xDrive] Caddy GHCR pull failed; trying exact CI-built GitHub Release archive..."
+  if ! curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
+      -o "$manifest" "$base/SHA256SUMS.txt" </dev/null; then
+    echo "[xDrive] Caddy Release checksum manifest unavailable." >&2
+    return 1
+  fi
+  expected_self="$(caddy_release_checksum "$manifest" xdrive-server-install.sh)"
+  expected_archive="$(caddy_release_checksum "$manifest" xdrive-caddy-image.tar.gz)"
+  expected_id_sha="$(caddy_release_checksum "$manifest" xdrive-caddy-image.id)"
+  current_self="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+  if [[ ! "$expected_self" =~ ^[0-9a-f]{64}$ || "$expected_self" != "$current_self" ||
+        ! "$expected_archive" =~ ^[0-9a-f]{64}$ ||
+        ! "$expected_id_sha" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "[xDrive] Caddy Release archive is not bound to this exact published installer; rejecting stale Snapshot." >&2
+    return 1
+  fi
+  if ! curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
+      -o "$id_file" "$base/xdrive-caddy-image.id" </dev/null; then
+    return 1
+  fi
+  [[ -f "$id_file" && ! -L "$id_file" ]] || return 1
+  [[ "$(sha256sum "$id_file" | awk '{print $1}')" == "$expected_id_sha" ]] || return 1
+  expected_id="$(tr -d '\r\n' < "$id_file")"
+  [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+
+  cache_dir="$STATE_DIR/image-download-cache"
+  [[ ! -L "$cache_dir" ]] || return 1
+  mkdir -p -m 0700 "$cache_dir" || return 1
+  chmod 0700 "$cache_dir" || return 1
+  archive="$cache_dir/xdrive-caddy-${IMAGE_TAG}.tar.gz"
+  partial="$archive.part"
+  [[ ! -L "$archive" && ! -L "$partial" ]] || return 1
+  if [[ -f "$archive" &&
+        "$(sha256sum "$archive" | awk '{print $1}')" != "$expected_archive" ]]; then
+    rm -f "$archive"
+  fi
+  if [[ ! -s "$archive" ]]; then
+    # Range resume survives retries AND future update attempts. If the server
+    # rejects a Range request (curl 33), restart only this partial download.
+    for attempt in 1 2 3 4; do
+      rc=0
+      curl -fLsS --connect-timeout 15 --speed-time 60 --speed-limit 512 \
+        --continue-at - --output "$partial" \
+        "$base/xdrive-caddy-image.tar.gz" </dev/null || rc=$?
+      if [[ "$rc" == 0 ]]; then
+        break
+      fi
+      [[ "$rc" == 33 ]] && rm -f "$partial"
+      echo "[xDrive] Caddy Release download interrupted ($attempt/4), will retry using HTTP Range." >&2
+      [[ "$attempt" -lt 4 ]] || return 1
+      sleep "$((attempt * 2))"
+    done
+    [[ -f "$partial" && ! -L "$partial" ]] || return 1
+    actual="$(sha256sum "$partial" | awk '{print $1}')"
+    if [[ "$actual" != "$expected_archive" ]]; then
+      echo "[xDrive] Caddy archive checksum mismatch; refusing Docker import." >&2
+      rm -f "$partial"
+      return 1
+    fi
+    mv -f "$partial" "$archive"
+  fi
+  [[ -f "$archive" && ! -L "$archive" ]] || return 1
+  [[ "$(sha256sum "$archive" | awk '{print $1}')" == "$expected_archive" ]] || return 1
+  [[ "$(stat -c %s "$archive")" -le 2147483648 ]] || return 1
+  gzip -t "$archive" || return 1
+  if ! docker load -i "$archive" >"$LOG_DIR/caddy-image-import.log" 2>&1; then
+    echo "[xDrive] verified Caddy archive import failed; old deployment is unaffected." >&2
+    return 1
+  fi
+  loaded_id="$(docker image inspect --format '{{.Id}}' xdrive/caddy:test </dev/null 2>/dev/null)" || return 1
+  if [[ "$loaded_id" != "$expected_id" ]]; then
+    echo "[xDrive] imported Caddy image ID does not match CI artifact; refusing activation." >&2
+    return 1
+  fi
+  version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' xdrive/caddy:test </dev/null 2>/dev/null)" || return 1
+  if [[ "$version" != "$IMAGE_TAG" ]] && [[ "$tag" != snapshot || "$version" != snapshot ]]; then
+    echo "[xDrive] imported Caddy image release version mismatch." >&2
+    return 1
+  fi
+  docker tag xdrive/caddy:test "$target_ref" || return 1
+  [[ "$(docker image inspect --format '{{.Id}}' "$target_ref" </dev/null 2>/dev/null)" == "$expected_id" ]] || return 1
+  echo "[xDrive] Caddy restored from SHA-256 verified GitHub Release archive."
+}
+
 # Initialize once, including stage-5 prefetched downloads. Never truncate
 # the private pull log when stage 7 reuses the image cache.
 initialize_image_pull() {
@@ -797,14 +921,17 @@ prepare_target_image() {
     echo "[xDrive] prefetch $service: obtaining target image before downtime..."
     if ! (
       # Process-only override: the current .env must remain usable for backups.
+      export XD_POSTGRES_IMAGE="$target_postgres_image"
       export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
       export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
       export XD_PHOTO_FACE_IMAGE="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
       export XD_MEDIA_WORKER_IMAGE="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
       pull_service_with_retry "$service"
     ); then
-      echo "[xDrive] prefetch $service failed; the old runtime has not been stopped." >&2
-      return 1
+      if [[ "$service" != "caddy" ]] || ! install_caddy_from_release_archive "$ref"; then
+        echo "[xDrive] prefetch $service failed; the old runtime has not been stopped." >&2
+        return 1
+      fi
     fi
   fi
   id="$(docker image inspect --format '{{.Id}}' "$ref" </dev/null 2>/dev/null)" || {
@@ -2408,7 +2535,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     # continue to read the untouched old release references from the .env.
     initialize_image_pull
     echo "[xDrive] prefetching published target images before maintenance..."
-    target_postgres_image="$(env_value XD_POSTGRES_IMAGE)"
+    target_postgres_image="${XD_POSTGRES_IMAGE:-$(env_value XD_POSTGRES_IMAGE)}"
     target_postgres_image="${target_postgres_image:-postgres:17-alpine}"
     prepare_target_image postgres "$target_postgres_image"
     prepare_target_image server "$target_server_image"
