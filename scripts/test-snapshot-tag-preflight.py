@@ -27,15 +27,21 @@ stale = "      - name: Reject stale master snapshot before channel promotion\n"
 assert release.count(identity) == 1 and release.count(mint) == 1
 assert release.index("      - name: Cryptographically verify signed bundle before releasing") < release.index(identity)
 assert release.index(identity) < release.index(mint) < release.index(stale) < release.index(marker)
+# The Client ID may live in Repository Variables or Repository Secrets, but
+# only this trusted publisher job may read it. Do not make private-key-only
+# configuration sufficient to mint a token, and do not weaken fail-closed.
+bundle = release.split("  bundle:\n", 1)[1].split("    steps:\n", 1)[0]
+assert "SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID || secrets.XD_SNAPSHOT_APP_CLIENT_ID }}" in bundle
+assert bundle.count("SNAPSHOT_APP_CLIENT_ID:") == 1
 guard = release.split(identity, 1)[1].split(mint, 1)[0]
-assert "HAS_SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID != '' }}" in guard
+assert "HAS_SNAPSHOT_APP_CLIENT_ID: ${{ env.SNAPSHOT_APP_CLIENT_ID != '' }}" in guard
 assert "HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}" in guard
 assert '"$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY"' in guard
 action = release.split(mint, 1)[1].split(stale, 1)[0]
-assert "if: github.ref == 'refs/heads/master' && vars.XD_SNAPSHOT_APP_CLIENT_ID != ''" in action
+assert "if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_CLIENT_ID != ''" in action
 assert "id: snapshot_app_token" in action
 assert "uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0" in action
-assert "client-id: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID }}" in action
+assert "client-id: ${{ env.SNAPSHOT_APP_CLIENT_ID }}" in action
 assert "private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}" in action
 assert "permission-contents: write" in action and "permission-workflows: write" in action
 assert "repositories:" not in action and "owner:" not in action, "App token must default to current repository only"
