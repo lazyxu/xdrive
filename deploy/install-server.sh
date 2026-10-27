@@ -775,6 +775,8 @@ install_caddy_from_release_archive() {
     [[ "$tag" =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || return 1
   fi
   base="https://github.com/lazyxu/xdrive/releases/download/$tag"
+  [[ ! -L "$STAGING_DIR" ]] || return 1
+  mkdir -p -m 0700 "$STAGING_DIR" || return 1
   manifest="$STAGING_DIR/caddy-release-SHA256SUMS.txt"
   id_file="$STAGING_DIR/caddy-release-image.id"
   rm -f "$manifest" "$id_file"
@@ -820,7 +822,7 @@ install_caddy_from_release_archive() {
     for attempt in 1 2 3 4; do
       rc=0
       curl -fLsS --connect-timeout 15 --speed-time 60 --speed-limit 512 \
-        --continue-at - --output "$partial" \
+        --max-filesize 2147483648 --continue-at - --output "$partial" \
         "$base/xdrive-caddy-image.tar.gz" </dev/null || rc=$?
       if [[ "$rc" == 0 ]]; then
         break
@@ -2766,7 +2768,13 @@ for pull_service in "${pull_services[@]}"; do
     echo "[xDrive] pull $pull_service skipped: same image prepared before maintenance."
     continue
   fi
-  pull_service_with_retry "$pull_service"
+  if ! pull_service_with_retry "$pull_service"; then
+    # A new installation also needs the same offline-capable Caddy fallback.
+    if [[ "$pull_service" != caddy ]] ||
+       ! install_caddy_from_release_archive "$(env_value XD_CADDY_IMAGE)"; then
+      exit 1
+    fi
+  fi
 done
 
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
