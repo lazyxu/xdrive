@@ -919,9 +919,26 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"group: xdrive-release-promote-${{ github.ref }}",
 		"queue: max",
 		"cancel-in-progress: false",
-		"Reject stale master snapshot before channel promotion",
-		"Refusing stale Snapshot promotion before channel update",
+		"Classify stale master Snapshot eligibility before channel promotion",
+		"id: snapshot_eligibility",
+		"publish=true",
+		"publish=false",
+		"Superseded Snapshot",
+		"Diverged Snapshot ancestry",
 	)
+	// A verified old master may no-op, but no floating GHCR tag, Release
+	// asset, or Git ref may change without exact ancestry authorization.
+	requireRaw(t, "GitHub Snapshot gated promotion", githubRelease,
+		"if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'",
+		"if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'",
+		"Probe snapshot Git ref authorization before release mutation",
+		"Log in to GHCR for channel promotion",
+		"Promote successful server images",
+		"Publish rolling snapshot prerelease",
+	)
+	if got := strings.Count(githubRelease, "steps.snapshot_eligibility.outputs.publish == 'true'"); got != 4 {
+		t.Errorf("GitHub Snapshot must guard all four floating-channel steps, got %d", got)
+	}
 
 	releaseAssets := []string{
 		"xdrive-linux-amd64.deb",
