@@ -683,6 +683,46 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun gallerySortIsRealOwnerPaginationAndReturnsToDefaultAfterLeavingApp() = runTest {
+        val api = object : Service() {
+            val sorted = mutableListOf<Triple<String, String, Int>>()
+            override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+                initialLatest: Boolean, search: String, kind: String, albumId: String?,
+                sortBy: String, sortDir: String): GalleryPage {
+                assertEquals("access", accessToken)
+                sorted += Triple(sortBy, sortDir, offset)
+                val row = GalleryAsset(DriveNode(9000L + offset, 1, "sorted-$offset.jpg",
+                    "file", size = 20, revision = 2), "image", hasThumbnail = true)
+                return GalleryPage(listOf(row), 2, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        val oldCount = api.galleryRequests.size
+        c.changeGallerySort("bad", "desc"); runCurrent()
+        assertEquals(oldCount, api.galleryRequests.size)
+        c.changeGallerySort("added", "desc"); runCurrent()
+        assertEquals("added", c.state.value.gallerySortBy)
+        assertEquals("desc", c.state.value.gallerySortDir)
+        assertNull(c.state.value.galleryTimelineSets)
+        assertEquals(0, c.state.value.galleryOffset)
+        assertEquals(9000L, c.state.value.galleryItems.single().node.id)
+        c.galleryLoadNewer(); runCurrent()
+        assertEquals(listOf(9000L, 9001L),
+            c.state.value.galleryItems.map { it.node.id })
+        assertEquals(listOf(Triple("added", "desc", 0),
+            Triple("added", "desc", 1)), api.sorted)
+        c.openFilesApp(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        assertEquals("asc", c.state.value.gallerySortDir)
+        c.openGallery(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.close()
+    }
+
     @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()

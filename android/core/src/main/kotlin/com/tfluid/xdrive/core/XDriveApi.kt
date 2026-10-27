@@ -247,6 +247,10 @@ interface XDriveService {
     suspend fun galleryKindPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, kind: String): GalleryPage =
         throw ApiException(501, "Gallery Owner kind filter unavailable")
+    /** Nondefault iOS PWA sort stays on the authoritative Owner Range. */
+    suspend fun gallerySortedPage(accessToken: String, offset: Int, initialLatest: Boolean,
+        search: String, kind: String, albumId: String?, sortBy: String, sortDir: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner sort unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -864,16 +868,30 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return ownerGalleryPage(accessToken, offset, initialLatest, search, kind)
     }
 
+    /** Reuse the existing Owner-authenticated media Range, including album scopes. */
+    override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String, albumId: String?,
+        sortBy: String, sortDir: String): GalleryPage {
+        require(sortBy in setOf("captured", "added") && sortDir in setOf("asc", "desc"))
+        require(kind in setOf("", "image", "video") && search.length <= 200 &&
+            search == search.trim())
+        if (albumId != null) require(validGalleryAlbumId(albumId))
+        return ownerGalleryPage(accessToken, offset, initialLatest, search, kind, albumId,
+            sortBy, sortDir)
+    }
+
     private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, mediaKind: String = "",
-        albumId: String? = null): GalleryPage {
+        albumId: String? = null, sortBy: String = "captured",
+        sortDir: String = "asc"): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
-            "sort_by" to "captured", "sort_dir" to "asc",
+            "sort_by" to sortBy, "sort_dir" to sortDir,
             "unknown_first" to "true", "fold_duplicates" to "true",
         )
-        if (initialLatest) query["initial_position"] = "latest"
+        // Descending already starts with the newest item at offset zero.
+        if (initialLatest && sortDir == "asc") query["initial_position"] = "latest"
         if (search.isNotEmpty()) query["q"] = search
         if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
         val result = if (albumId == null) request("media/items", accessToken, query = query)
@@ -917,7 +935,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60,
-            parseGalleryTimelineSets(result["timeline_group_sets"], total))
+            if (sortBy == "captured" && sortDir == "asc")
+                parseGalleryTimelineSets(result["timeline_group_sets"], total) else null)
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups

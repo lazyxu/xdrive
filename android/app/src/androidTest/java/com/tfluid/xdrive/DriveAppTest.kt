@@ -89,6 +89,7 @@ class DriveAppTest {
     private val galleryTimelineRequests = mutableListOf<Pair<Int, Boolean>>()
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryKindQueries = mutableListOf<Pair<String, String>>()
+    private val gallerySortQueries = mutableListOf<Pair<String, String>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -166,7 +167,14 @@ class DriveAppTest {
                 DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
                 "image", hasThumbnail = true)), 1, 0)
         }
-        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+        override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String, albumId: String?,
+            sortBy: String, sortDir: String): GalleryPage {
+            gallerySortQueries += sortBy to sortDir
+            return GalleryPage(listOf(GalleryAsset(DriveNode(48L, 1L, "sorted.jpg",
+                "file", size = 44, revision = 1), "image", hasThumbnail = true)), 1, 0)
+        }
+    override suspend fun galleryKindPage(accessToken: String, offset: Int,
             initialLatest: Boolean, search: String, kind: String): GalleryPage {
             galleryKindQueries += search to kind
             return GalleryPage(listOf(GalleryAsset(
@@ -586,6 +594,36 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryMediaKind.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+    }
+
+    @Test fun nativeGallerySortUsesOwnerRangeAndRestoresChronologicalDefault() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-added-desc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "added" &&
+                st.gallerySortDir == "desc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 48L
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("added" to "desc"), gallerySortQueries)
+            org.junit.Assert.assertEquals(0, controller.state.value.galleryOffset)
+        }
+        compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-captured-asc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "captured" &&
+                st.gallerySortDir == "asc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 40L
         }
     }
 

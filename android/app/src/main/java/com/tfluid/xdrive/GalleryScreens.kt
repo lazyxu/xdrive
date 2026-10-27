@@ -73,7 +73,8 @@ internal fun ColumnScope.Gallery(
     var containTiles by rememberSaveable { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
     var kindMenuOpen by remember { mutableStateOf(false) }
-    var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind) {
+    var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind,
+        state.gallerySortBy, state.gallerySortDir) {
         mutableStateOf("all")
     }
     var timePickerOpen by remember { mutableStateOf(false) }
@@ -144,6 +145,29 @@ internal fun ColumnScope.Gallery(
             DropdownMenu(expanded = displayMenuOpen,
                 onDismissRequest = { displayMenuOpen = false },
                 containerColor = MaterialTheme.colorScheme.surface) {
+                // Same four real sorting choices as iOS PWA, using Go Owner Range.
+                for ((sort, label) in listOf(
+                    ("captured" to "asc") to "拍摄时间 · 最早在前",
+                    ("captured" to "desc") to "拍摄时间 · 最新在前",
+                    ("added" to "asc") to "加入时间 · 最早在前",
+                    ("added" to "desc") to "加入时间 · 最新在前"
+                )) {
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (state.gallerySortBy == sort.first &&
+                                state.gallerySortDir == sort.second)
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.testTag(
+                            "gallery-sort-${sort.first}-${sort.second}"),
+                        onClick = {
+                            displayMenuOpen = false
+                            controller.changeGallerySort(sort.first, sort.second)
+                        },
+                    )
+                }
+                HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text("放大缩略图") },
                     enabled = preferredColumns > 2,
@@ -200,6 +224,8 @@ internal fun ColumnScope.Gallery(
                 .testTag("gallery-retry-page")) {
             Text(when {
                 !state.galleryLoaded && state.galleryJumpIndex != null -> "重试日期跳转"
+                state.galleryPageIntent == "newer" &&
+                    state.gallerySortDir == "desc" -> "重试加载更早的照片"
                 state.galleryPageIntent == "newer" -> "重试加载较新的照片"
                 state.galleryLoaded -> "重试加载更早的照片"
                 else -> "重新加载照片"
@@ -212,7 +238,8 @@ internal fun ColumnScope.Gallery(
         val tileGap = 4.dp // Shared PWA Gallery grid gap.
         val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
-        val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
+        val blankTop = if (state.gallerySortDir == "asc" &&
+            state.galleryLoaded && state.galleryItems.isNotEmpty()) {
             (maxHeight - (cellWidth + tileGap) * rows - 8.dp).coerceAtLeast(0.dp)
         } else 0.dp
 
@@ -234,7 +261,9 @@ internal fun ColumnScope.Gallery(
             } else {
                 val last = state.galleryItems.lastIndex
                 if (last >= 0) {
-                    gridState.scrollToItem(last + if (blankTop > 0.dp) 1 else 0)
+                    val first = if (state.gallerySortDir == "desc") 0
+                        else last + (if (blankTop > 0.dp) 1 else 0)
+                    gridState.scrollToItem(first)
                 }
                 positioned = true
             }
@@ -300,7 +329,8 @@ internal fun ColumnScope.Gallery(
     // PWA source has a time capsule above a separate primary/Search dock.
     // Android has no actual Collections client yet: preserve a functional
     // native classification action rather than adding a fake Collections tab.
-    if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
+    if (timeSets != null && state.gallerySearchQuery.isEmpty() &&
+        state.gallerySortBy == "captured" && state.gallerySortDir == "asc") {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                 .testTag("gallery-time-dock"),

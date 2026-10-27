@@ -85,6 +85,8 @@ data class DriveState(
     val galleryLoaded: Boolean = false,
     val gallerySearchQuery: String = "",
     val galleryMediaKind: String = "",
+    val gallerySortBy: String = "captured",
+    val gallerySortDir: String = "asc",
     val galleryTimelineSets: GalleryTimelineSets? = null,
     val galleryJumpIndex: Int? = null,
     val galleryJumpEpoch: Long = 0,
@@ -1498,6 +1500,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1518,6 +1521,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1677,6 +1681,29 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** All four iOS PWA sorts reload real Owner pages, never cached tile subsets. */
+    fun changeGallerySort(by: String, dir: String) {
+        if (by !in setOf("captured", "added") || dir !in setOf("asc", "desc")) return
+        val current = state.value
+        if (current.screen != Screen.GALLERY ||
+            (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                current.gallerySelectedAlbum == null) ||
+            current.galleryViewer != null || current.gallerySelected != null ||
+            session == null || api == null ||
+            (current.gallerySortBy == by && current.gallerySortDir == dir)) return
+        invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
+        mutableState.value = current.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            gallerySortBy = by, gallerySortDir = dir, galleryItems = emptyList(),
+            galleryOffset = 0, galleryTotal = 0, galleryLoaded = false,
+            gallerySelected = null, galleryViewer = null,
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "")
+        loadGallery(initialLatest = true)
+    }
+
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
@@ -1782,7 +1809,9 @@ class DriveController(
     fun jumpGalleryToGroup(scale: String, key: String) {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
-            current.gallerySearchQuery.isNotEmpty() || session == null || api == null) return
+            current.gallerySearchQuery.isNotEmpty() ||
+            current.gallerySortBy != "captured" || current.gallerySortDir != "asc" ||
+            session == null || api == null) return
         val group = current.galleryTimelineSets?.forScale(scale)
             ?.firstOrNull { it.key == key && it.itemCount > 0 } ?: return
         if (group.startIndex.toLong() >= current.galleryTotal) return
@@ -1827,7 +1856,12 @@ class DriveController(
         service: XDriveService, ticket: Long, offset: Int, initialLatest: Boolean,
         search: String, kind: String, albumId: String? = null,
     ): GalleryPage = authenticated(service, ticket) {
+        val sortBy = state.value.gallerySortBy
+        val sortDir = state.value.gallerySortDir
         when {
+            sortBy != "captured" || sortDir != "asc" ->
+                service.gallerySortedPage(it, offset, initialLatest, search, kind, albumId,
+                    sortBy, sortDir)
             albumId != null -> service.galleryAlbumPage(it, albumId, offset, initialLatest)
             kind.isNotEmpty() -> service.galleryKindPage(it, offset, initialLatest, search, kind)
             search.isNotEmpty() -> service.gallerySearchPage(it, offset, initialLatest, search)
