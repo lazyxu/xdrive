@@ -182,7 +182,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	seedP04BrowserOwnerPhotoCells(t, db, heicOwner.ID, "heic", 1, 0,
 		casKey, checksum, int64(pngData.Len()))
 	stage = "heic-file"
-	heicOriginal, err := os.ReadFile("../media/testdata/heic-8bit-512.heic")
+	heicOriginal, err := os.ReadFile(filepath.Join("internal", "media", "testdata", "heic-8bit-512.heic"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	heicFile := map[string]any{
-		"size": int64(len(heicOriginal)),
+		"size":        int64(len(heicOriginal)),
 		"storage_key": heicKey, "sha256": heicChecksum,
 	}
 	for _, model := range []any{&meta.File{}, &meta.FileVersion{}} {
@@ -245,7 +245,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", heicNode.ID).
 		Updates(map[string]any{
 			"sha256": heicChecksum, "mime_type": heicInfo.MIMEType,
-			"media_kind": meta.MediaKindImage,
+			"media_kind":  meta.MediaKindImage,
 			"orientation": heicInfo.Orientation,
 		}).Error; err != nil {
 		t.Fatal(err)
