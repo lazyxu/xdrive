@@ -460,3 +460,65 @@ test('PWA first-render boot independently tolerates denied optional observers an
       'a denied optional PWA API cannot suppress another observer or primary render')
   }
 })
+
+async function boundedInstallCheck(pending) {
+  // An intentionally non-cooperative test transport must never hang CI if
+  // the product deadline regresses. This watchdog is test-only.
+  let watchdog
+  try {
+    return await Promise.race([
+      pending,
+      new Promise((_resolve, reject) => {
+        watchdog = setTimeout(() => reject(Error('PWA installation inspection did not finish')), 1000)
+      }),
+    ])
+  } finally {
+    clearTimeout(watchdog)
+  }
+}
+
+test('S2B8: an unresponsive HEAD cannot retain installation diagnostics after deadline', async () => {
+  let lateResolve
+  let hangingSignal
+  const h = harness({ fetchReply(url, options) {
+    if (url !== '/sw.js') return successfulPublicHead(url)
+    hangingSignal = options.signal
+    return new Promise(resolve => { lateResolve = resolve }) // Ignores AbortSignal.
+  } })
+  const result = await boundedInstallCheck(h.mod.checkXDrivePwaAssets({ timeoutMs: 30 }))
+  assert.equal(hangingSignal.aborted, true, 'native request still receives abort')
+  assert.deepEqual(result.map(x => x.state),
+    ['pass', 'pass', 'pass', 'fail', 'pass', 'pass', 'pass'])
+  assert.match(result[3].detail, /超时/)
+  assert.deepEqual(h.queries.map(([url]) => url),
+    ['/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png'])
+  lateResolve(successfulPublicHead('/sw.js'))
+  await Promise.resolve()
+  assert.equal(result[3].state, 'fail', 'a late response cannot overwrite terminal diagnostics')
+})
+
+test('S2B8: five hung HEAD requests share one deadline and preserve ordered failures', async () => {
+  const h = harness({ fetchReply() { return new Promise(() => {}) } })
+  const result = await boundedInstallCheck(h.mod.checkXDrivePwaAssets({ timeoutMs: 30 }))
+  assert.deepEqual(result.map(x => x.id),
+    ['context', 'transport', 'manifest', 'worker', 'offline', 'icon192', 'icon512'])
+  assert.equal(h.queries.length, 5)
+  assert.ok(h.queries.every(([, options]) => options.signal.aborted))
+  assert.ok(result.slice(2).every(x => x.state === 'fail' && /超时/.test(x.detail)))
+})
+
+test('S2B8: user closing diagnostics returns even when five HEADs ignore cancellation', async () => {
+  const source = new AbortController()
+  const h = harness({ fetchReply() { return new Promise(() => {}) } })
+  const pending = boundedInstallCheck(h.mod.checkXDrivePwaAssets({
+    signal: source.signal, timeoutMs: 1000,
+  }))
+  assert.equal(h.queries.length, 5)
+  source.abort()
+  const result = await pending
+  assert.ok(result.slice(2).every(x => x.state === 'fail' && /取消/.test(x.detail)))
+  assert.ok(h.queries.every(([, options]) => options.signal.aborted))
+  assert.ok(h.queries.every(([, options]) =>
+    options.method === 'HEAD' && options.credentials === 'omit' &&
+    options.mode === 'same-origin' && options.redirect === 'error'))
+})
