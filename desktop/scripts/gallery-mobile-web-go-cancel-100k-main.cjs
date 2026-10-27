@@ -935,17 +935,23 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     await bootOriginalAuthenticatedApp(auditor,base)
     await switchActualApp(auditor,'文件','files')
     await switchActualApp(win,'图库','gallery')
+    // Reuse the already accepted real Owner JPEG -> H264 -> Back route.
+    // Its actual presented video frame and exact deep virtual-grid anchor
+    // establish a real visible H264 tile before the independent P1Q probe.
+    // Do NOT mutate fake DOM, jump directly to a Node, or start the Go
+    // logout stopwatch until the new signed request is in flight.
+    const warmJPEG=await p1MeasureRealViewerBack(win)
+    const warmH264=await p1MeasureRealH264ViewerMotion(win)
+    assert(warmJPEG.passed&&warmJPEG.returned.scrollDelta<=2&&
+      warmH264.passed&&warmH264.restoredScrollDelta<=2&&
+      warmH264.presentedFrameDelta>=1,
+      'P1Q cannot begin logout without real decoded JPEG/H264 Viewer Back')
     const enabled=await fetch(base+'/__perf/viewer-video-range-enable',{method:'POST'})
     assert.equal(enabled.status,204,'P1Q original Go signed Range probe disabled')
     const zero=await p1ViewerVideoProbeStats(base)
     assert.equal(zero.started,0,'signed Range measurement must start at zero')
-    // The real React route may update its hash before its virtualized
-    // Gallery scroll host finishes mounting. Wait for actual scroll extent,
-    // never fabricate a grid or bypass the original authenticated UI.
-    assert(await until(async()=>win.webContents.executeJavaScript(
-      '('+p1RestoreDeepVideoViewport.toString()+')()',true),
-      30000,'actual deep authenticated Gallery scroll host before logout'),
-      'actual deep authenticated Gallery missing before logout')
+    // Keep the exact H264 tile restored by the genuine warm H264 Viewer
+    // Back; resetting the scroll to the very end would discard that anchor.
     const tile=await until(async()=>win.webContents.executeJavaScript(
       '('+p1VisibleH264Tile.toString()+')()',true),
       25000,'real Owner deep H264 photo wall tile missing')

@@ -13,7 +13,8 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'await bootOriginalAuthenticatedApp(auditor,base)',
     "await switchActualApp(auditor,'文件','files')",
     "await switchActualApp(win,'图库','gallery')",
-    "30000,'actual deep authenticated Gallery scroll host before logout'",
+    'const warmJPEG=await p1MeasureRealViewerBack(win)',
+    'const warmH264=await p1MeasureRealH264ViewerMotion(win)',
     'p1OriginalSignedVideoElement.toString()',
     'p1VisibleH264Tile.toString()',
     "await fetch(base+'/__perf/viewer-video-range-mark'",
@@ -22,6 +23,17 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'stable.started===after.started',
     'stable.emitted_bytes===mark.mark_emitted_bytes',
   ])assert.ok(d.includes(text),'missing real Owner lifecycle contract: '+text)
+  const p1qStart=d.indexOf('async function p1MeasureRealCrossTabViewerLogout')
+  const p1qEnd=d.indexOf('async function sampleOnce',p1qStart)
+  const p1q=d.slice(p1qStart,p1qEnd)
+  assert.ok(p1qStart>0&&p1qEnd>p1qStart)
+  assert.ok(p1q.indexOf('const warmJPEG=await p1MeasureRealViewerBack(win)') <
+    p1q.indexOf('const warmH264=await p1MeasureRealH264ViewerMotion(win)'))
+  assert.ok(p1q.indexOf('const warmH264=await p1MeasureRealH264ViewerMotion(win)') <
+    p1q.indexOf("await fetch(base+'/__perf/viewer-video-range-enable'"),
+    'genuine deep JPEG/H264 frame and return anchor must precede the Go Range probe')
+  assert.doesNotMatch(p1q,/p1RestoreDeepVideoViewport\.toString\(\)/,
+    'P1Q must not discard the real H264 Viewer Back scroll anchor')
   assert.match(d,/p1QAccountButtonPoint\.toString\(\)/)
   assert.match(d,/after\.max_cancel_us<=160000/)
   assert.match(d,/after\.active===0/)
