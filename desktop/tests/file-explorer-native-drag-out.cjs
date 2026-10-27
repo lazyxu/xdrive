@@ -118,7 +118,7 @@ test('shared FileExplorer keeps internal drag/drop and exposes a separate native
   )
   for (const token of [
     "keyboardProfile === 'windows' || keyboardProfile === 'macos'",
-    'window.xdriveDesktop.startNativeDragOut(relativePath)',
+    'nativePort.startNativeDragOut(relativePath)',
     'onNativeDragOutItem={!trashActive && nativeDragOutSupported',
   ]) {
     assert.ok(desktop.includes(token), 'Desktop native drag adapter missing: ' + token)

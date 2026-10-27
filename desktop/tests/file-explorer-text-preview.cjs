@@ -112,8 +112,8 @@ test('shared Inspector delegates preview rendering to FilePreviewSurface', () =>
 test('Web and Desktop load preview through authenticated platform adapters', () => {
   assert.ok(webApi.includes('fileTextPreview(id: number, signal?: AbortSignal)'), 'Web API text preview method must support cancellation')
   assert.ok(webExplorer.includes('api.fileTextPreview(Number(item.id), signal)'), 'Web Explorer preview adapter must forward AbortSignal')
-  assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudTextPreview(Number(item.id), requestID)'), 'Desktop Explorer preview adapter must forward sender-scoped request id')
-  assert.ok(desktopExplorer.includes('const result = await xDriveDesktopViewportRequest('), 'Desktop text preview must use shared request-scoped cancellation')
+  assert.ok(desktopExplorer.includes('ownerAgent.cloudTextPreview(Number(item.id), requestID)'), 'Desktop Explorer preview adapter must forward sender-scoped request id')
+  assert.ok(desktopExplorer.includes('const result = await hostPort.requestViewport('), 'Desktop text preview must use shared request-scoped cancellation')
   assert.ok(desktopExplorer.includes('textPreviewSupported ? loadTextPreview : undefined'), 'Desktop preview must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-text-preview')"), 'Desktop App capability gate is missing')
   for (const [label, source, tokens] of [
