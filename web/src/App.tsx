@@ -1,4 +1,4 @@
-import { xDriveAcquireViewerForeground } from '../../ui/shared/src/mui/ViewerForegroundPriority'
+import { xDriveAcquireViewerForeground, xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
@@ -365,6 +365,12 @@ function App({
   const [offlineSnapshotRoute, setOfflineSnapshotRoute] = useState(
     () => window.location.hash === '#/offline/files',
   )
+  // Standalone Public Share/offline pages do not use webAppRuntime; they
+  // still supersede disposable work from the previous authenticated page.
+  useLayoutEffect(() => {
+    if (publicShareToken) xDriveEnterForegroundPage('web:public-share')
+    else if (offlineSnapshotRoute) xDriveEnterForegroundPage('web:offline')
+  }, [publicShareToken, offlineSnapshotRoute])
   const lastNonOfflineHashRef = useRef(
     window.location.hash === '#/offline/files' ? '#/app/files' : window.location.hash,
   )
@@ -436,6 +442,7 @@ function App({
     // Any outstanding earlier refresh is no longer authorized to restore
     // an Owner after logout, account switch or invalid session.
     authEpochRef.current += 1
+    xDriveEnterForegroundPage(null)
     xDriveClearBaiduConversionSession()
     transferApiRef.current?.disposeTransfers()
     // Fail closed across accounts and server instances. Never touch public SW App Shell.

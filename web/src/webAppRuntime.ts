@@ -1,4 +1,5 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
@@ -184,6 +185,12 @@ export function useXDriveWebAppRuntime(
 ) {
   const [route, setRoute] = useState<XDriveWebAppRoute>(() => currentRoute())
   const routeRef = useRef(route)
+  // The real committed route is authoritative, including history/back,
+  // deep links and deferred admin navigation. Never preempt for an unapproved
+  // navigation or just because URL hash parsing was attempted.
+  useLayoutEffect(() => {
+    xDriveEnterForegroundPage('web:' + route.app)
+  }, [route.app])
   const committedHashRef = useRef(window.location.hash)
   const committedStateRef = useRef<XDriveWebAppHistoryState | null>(window.history.state)
   const committedIndexRef = useRef(historyIndex(window.history.state) ?? 0)
@@ -206,6 +213,7 @@ export function useXDriveWebAppRuntime(
     committedIndexRef.current = nextIndex
     committedStateRef.current = window.history.state
     committedHashRef.current = window.location.hash
+    xDriveEnterForegroundPage('web:' + next.app)
     routeRef.current = next
     if (resolvedWorkspacesRef.current.has(next.app as 'files' | 'gallery')) setRoute(next)
     else startTransition(() => setRoute(next))
@@ -216,6 +224,7 @@ export function useXDriveWebAppRuntime(
     committedStateRef.current = window.history.state
     committedHashRef.current = window.location.hash
     committedIndexRef.current = historyIndex(window.history.state) ?? committedIndexRef.current
+    xDriveEnterForegroundPage('web:' + next.app)
     routeRef.current = next
     if (resolvedWorkspacesRef.current.has(next.app as 'files' | 'gallery')) setRoute(next)
     else startTransition(() => setRoute(next))
