@@ -46,6 +46,7 @@ func run(args []string) error {
 	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (read-only plan or explicit prune)")
 	casMode := f.String("mode", "fast", "retention-plan CAS audit: fast (size only) or deep (all SHA-256)")
 	confirmed := f.Bool("yes", false, "explicitly confirm destructive manual prune")
+	jsonReport := f.Bool("json", false, "output bounded actual verification statistics (verify only)")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func run(args []string) error {
 		return err
 	}
 	snap := filepath.Join(root, "snapshots", *snapshot)
-	keepLastPassed, modePassed, yesPassed := false, false, false
+	keepLastPassed, modePassed, yesPassed, jsonPassed := false, false, false, false
 	f.Visit(func(flag *flag.Flag) {
 		switch flag.Name {
 		case "keep-last":
@@ -76,6 +77,8 @@ func run(args []string) error {
 			modePassed = true
 		case "yes":
 			yesPassed = true
+		case "json":
+			jsonPassed = true
 		}
 	})
 	if cmd != "retention-plan" && cmd != "prune" && (keepLastPassed || modePassed || yesPassed) {
@@ -86,6 +89,9 @@ func run(args []string) error {
 	}
 	if cmd == "prune" && (modePassed || !keepLastPassed || !*confirmed) {
 		return errors.New("prune requires explicit --keep-last N --yes, without --mode")
+	}
+	if cmd != "verify" && jsonPassed {
+		return errors.New("--json is available only for verify")
 	}
 	switch cmd {
 	case "estimate":
@@ -130,6 +136,13 @@ func run(args []string) error {
 	case "verify":
 		if *source != "" || *target != "" {
 			return errors.New("verify accepts neither --source nor --target")
+		}
+		if *jsonReport {
+			report, verifyErr := verifyWithReport(root, snap, true)
+			if err := writeVerificationReport(os.Stdout, report); err != nil {
+				return err
+			}
+			return verifyErr
 		}
 		_, err := verify(root, snap, true)
 		return err
@@ -686,58 +699,6 @@ func walkLegacyArchive(snapshot string, visitor func(*tar.Header, *tar.Reader) e
 		}
 	}
 	return nil
-}
-func verify(repo, snapshot string, full bool) (int, error) {
-	if !strings.HasPrefix(snapshot, filepath.Join(repo, "snapshots")+string(os.PathSeparator)) {
-		return 0, errors.New("snapshot outside repository")
-	}
-	if err := checkRepositoryLayout(repo); err != nil {
-		return 0, err
-	}
-	if err := requireRepositoryDirs(snapshot); err != nil {
-		return 0, err
-	}
-	count := 0
-	err := readIndex(snapshot, func(e entry) error {
-		if err := checkObjectBucket(repo, e.hash); err != nil {
-			return err
-		}
-		st, err := regularFile(objectPath(repo, e.hash))
-		if err != nil {
-			return err
-		}
-		if st.Size() != e.size {
-			return fmt.Errorf("CAS size mismatch %s", e.hash)
-		}
-		if full {
-			f, err := os.Open(objectPath(repo, e.hash))
-			if err != nil {
-				return err
-			}
-			sum := sha256.New()
-			n, copyErr := io.Copy(sum, f)
-			c := f.Close()
-			if copyErr != nil {
-				return copyErr
-			}
-			if c != nil {
-				return c
-			}
-			if n != e.size || hex.EncodeToString(sum.Sum(nil)) != e.hash {
-				return fmt.Errorf("CAS hash mismatch %s", e.hash)
-			}
-		}
-		count++
-		return nil
-	})
-	if err != nil {
-		return count, err
-	}
-	if err := walkLegacyArchive(snapshot, func(_ *tar.Header, _ *tar.Reader) error { return nil }); err != nil {
-		return count, err
-	}
-	fmt.Fprintf(os.Stderr, "[xDrive] CAS repository verified: %d objects\n", count)
-	return count, nil
 }
 func restore(repo, snapshot, target string) error {
 	dst, err := filepath.Abs(target)

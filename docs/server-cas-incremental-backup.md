@@ -259,6 +259,26 @@ Backup verification also does not replace a physical PostgreSQL and file
 recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
 is enabled by the Admin UI.
 
+## Machine-readable CAS verification statistics (source-level)
+
+The internal, read-only `xdrive-backup-repo verify --repo PATH --snapshot NAME
+--json` prints a fixed-schema JSON receipt on stdout. It preserves the
+existing deep SHA-256 verification and nonzero exit status on errors. Fields:
+`protocol`, `state`, `mode`, `objects_checked`, `bytes_hashed`, and
+optional enumerated `failure_category`. These counters come from actual
+verification work, not projected byte counts. **On failure they are partial**;
+never present them as a fully passed scan. The report deliberately omits
+paths, CAS digests and raw error messages. stderr remains a private CLI
+diagnostic channel. `--json` is not valid for create, prune, retention or
+other subcommands.
+
+This internal CAS report is **not itself a complete backup verification**:
+the Host `xdrive-server backup verify` also checks the snapshot metadata,
+SHA256SUMS and database dump. Do not advertise an internal CAS success as a
+fully restorable snapshot. Host/API/UI wiring for the new report is a separate
+integration checkpoint; no new browser-accessible private Host report is
+enabled by this source-only change.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and
