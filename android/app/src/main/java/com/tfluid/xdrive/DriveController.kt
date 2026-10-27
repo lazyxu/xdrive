@@ -1467,6 +1467,39 @@ class DriveController(
         }
     }
 
+    /** The Go Server alone validates the Live Photo .livp or exact still/MOV
+     * pair. A ticket only exists for the current authenticated Owner/Revision.
+     * Never reuse the ordinary /files/:id/content Node ETag for these bytes. */
+    suspend fun openGalleryLivePhotoPlayback(item: GalleryAsset): OwnerVideoPlayback? {
+        val ticket = generation
+        val epoch = galleryViewerEpoch
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryViewer != item ||
+            !current.galleryLoaded || current.galleryItems.none { it == item } ||
+            !item.livePhoto || item.mediaKind != "image" ||
+            item.node.type != "file" || item.node.revision <= 0) return null
+        val service = api ?: return null
+        val resource = authenticated(service, ticket) { token ->
+            service.galleryLivePhotoMotionPlayback(token, item.node)
+        }
+        try {
+            checkCurrent(ticket)
+            if (galleryViewerEpoch != epoch ||
+                state.value.screen != Screen.GALLERY ||
+                state.value.galleryViewer != item ||
+                state.value.galleryItems.none { it == item }) throw CancellationException()
+            closeActiveVideoPlayback()
+            activeVideoPlayback = resource
+            return resource
+        } catch (cancelled: CancellationException) {
+            resource.close()
+            throw cancelled
+        } catch (error: Exception) {
+            resource.close()
+            throw error
+        }
+    }
+
     fun closeGalleryVideoPlayback(resource: OwnerVideoPlayback) {
         if (activeVideoPlayback === resource) activeVideoPlayback = null
         resource.close()
@@ -1510,20 +1543,45 @@ class DriveController(
     /** Read a *single* compressed photo, never a second remote media transport.
      * The 32 MiB cap bounds temporary RAM. No raw bytes/token go to UI state,
      * disk cache, saved state or logging. Large originals need tiled decoding. */
-    suspend fun galleryImageBytes(item: GalleryAsset): ByteArray {
+    suspend fun galleryImageBytes(
+        item: GalleryAsset,
+        onProgress: (Long, Long?) -> Unit = { _, _ -> },
+    ): ByteArray {
         val ticket = generation
         val epoch = galleryViewerEpoch
         val current = state.value
         if (current.screen != Screen.GALLERY || current.galleryViewer != item ||
             item.mediaKind != "image" || item.node.type != "file" ||
             item.node.revision <= 0) throw CancellationException()
+        val service = api ?: throw CancellationException()
+        val currentProgress: (Long, Long?) -> Unit = { received, total ->
+            if (ticket == generation && galleryViewerEpoch == epoch &&
+                state.value.screen == Screen.GALLERY &&
+                state.value.galleryViewer == item) onProgress(received, total)
+        }
+        // A reliable .livp is a ZIP *container*; decoding the entire Node as
+        // an image is wrong. Go verifies the embedded still and returns only
+        // its current signed, capped image resource. The suffix is only a
+        // resource-selection hint; Go remains authoritative on validity.
+        val embeddedStill = item.livePhoto &&
+            item.node.name.endsWith(".livp", ignoreCase = true)
+        if (embeddedStill) {
+            val still = authenticated(service, ticket) { token ->
+                service.galleryLivePhotoStill(token, item.node, currentProgress)
+            }
+            checkCurrent(ticket)
+            if (galleryViewerEpoch != epoch || state.value.screen != Screen.GALLERY ||
+                state.value.galleryViewer != item) throw CancellationException()
+            return still
+        }
         if (item.node.size !in 1L..(32L * 1024 * 1024)) {
             throw ApiException(413, "Image exceeds bounded native preview size")
         }
-        val service = api ?: throw CancellationException()
         val buffer = ByteArrayOutputStream(minOf(item.node.size.toInt(), 1024 * 1024))
         val count = authenticated(service, ticket) { token ->
-            service.downloadFile(token, item.node, { buffer })
+            service.downloadFile(token, item.node, { buffer }) { received ->
+                currentProgress(received, item.node.size)
+            }
         }
         checkCurrent(ticket)
         if (galleryViewerEpoch != epoch || state.value.screen != Screen.GALLERY ||

@@ -685,6 +685,89 @@ class DriveControllerTest {
         assertNull(c.galleryViewerNeighbor(-1))
     }
 
+    @Test fun livePhotoUsesRealStillResourceAndNeverDownloadsOuterLIVP() = runTest {
+        val api = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage = GalleryPage(listOf(GalleryAsset(
+                DriveNode(3001, 1, "verified.livp", "file",
+                    80L * 1024 * 1024, revision = 8),
+                "image", livePhoto = true, hasThumbnail = true)), 1, 0)
+            var stillReads = 0
+            override suspend fun galleryLivePhotoStill(
+                accessToken: String, node: DriveNode,
+                onProgress: (Long, Long?) -> Unit,
+            ): ByteArray {
+                stillReads++
+                assertEquals("access", accessToken)
+                assertEquals(3001L, node.id)
+                onProgress(4L, 4L)
+                return "jpeg".toByteArray()
+            }
+        }
+        val controller = controller(this, api)
+        controller.login("owner", "password"); runCurrent()
+        controller.openGallery(); runCurrent()
+        val photo = controller.state.value.galleryItems.single()
+        controller.openGalleryViewer(photo)
+        val progress = mutableListOf<Pair<Long, Long?>>()
+        assertArrayEquals("jpeg".toByteArray(),
+            controller.galleryImageBytes(photo) { done, total ->
+                progress += done to total
+            })
+        assertEquals(listOf(4L to 4L), progress)
+        assertEquals(1, api.stillReads)
+        assertEquals(0, api.downloadReads)
+    }
+
+    @Test fun liveMotionOldOwnerEpochIsRejectedAndLateResourceDisposed() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val photo = GalleryAsset(
+            DriveNode(3002, 1, "verified.jpg", "file",
+                1000L, revision = 2),
+            "image", livePhoto = true, hasThumbnail = true)
+        val api = object : Service() {
+            var motionCalls = 0
+            var motionClosed = 0
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage = GalleryPage(listOf(photo), 1, 0)
+            override suspend fun galleryLivePhotoMotionPlayback(
+                accessToken: String, node: DriveNode,
+            ): OwnerVideoPlayback {
+                motionCalls++
+                if (motionCalls == 1) gate.await()
+                return OwnerVideoPlayback(
+                    "https://fixture.invalid/api/v1/media-live-photo-motion/3002?ticket=fixture",
+                    okhttp3.OkHttpClient(), 0,
+                ) { motionClosed++ }
+            }
+        }
+        val controller = controller(this, api)
+        controller.login("owner", "password"); runCurrent()
+        controller.openGallery(); runCurrent()
+        assertNull("Only a visibly opened current-Owner Live Photo may request motion",
+            controller.openGalleryLivePhotoPlayback(photo))
+        controller.openGalleryViewer(photo)
+        val first = async { controller.openGalleryLivePhotoPlayback(photo) }
+        runCurrent()
+        assertEquals(1, api.motionCalls)
+        controller.dismissGalleryViewer()
+        controller.openGalleryViewer(photo) // same Node+Revision, different Viewer epoch.
+        gate.complete(Unit); runCurrent()
+        assertTrue(first.isCancelled)
+        assertEquals(1, api.motionClosed)
+        val next = controller.openGalleryLivePhotoPlayback(photo)
+        assertNotNull(next)
+        assertEquals(2, api.motionCalls)
+        controller.dismissGalleryViewer()
+        assertEquals(2, api.motionClosed)
+        assertNull(controller.openGalleryLivePhotoPlayback(photo))
+        controller.logout(); runCurrent()
+        assertNull(controller.openGalleryLivePhotoPlayback(photo))
+        assertEquals(2, api.motionCalls)
+    }
+
     @Test fun galleryVideoUsesOwnerOnlyAndClosesStreamOnBackAndLogout() = runTest {
         val api = object : Service() {
             override suspend fun galleryPage(accessToken: String, offset: Int,

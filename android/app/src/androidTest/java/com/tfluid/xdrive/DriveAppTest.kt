@@ -44,6 +44,11 @@ class DriveAppTest {
     private var galleryManyPhotos = false
     private var galleryTimelineFixture = false
     private var galleryVideoFixture = false
+    private var galleryLivePhotoFixture = false
+    private var galleryLIVPFixture = false
+    private var liveStillReads = 0
+    private var liveMotionRequests = 0
+    private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
     private var galleryThumbnailFailuresRemaining = 0
     private var galleryThumbnailReads = 0
@@ -86,6 +91,12 @@ class DriveAppTest {
                         "image", hasThumbnail = true)
                 }, 121, offset)
             }
+            if (galleryLivePhotoFixture) return GalleryPage(listOf(GalleryAsset(
+                DriveNode(48, 1,
+                    if (galleryLIVPFixture) "live.livp" else "paired.jpg",
+                    "file", size = if (galleryLIVPFixture)
+                        80L * 1024 * 1024 else 44L, revision = 2),
+                "image", livePhoto = true, hasThumbnail = true)), 1, 0)
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
                 "video", durationMs = 10_000L, hasThumbnail = true)), 1, 0)
@@ -133,7 +144,7 @@ class DriveAppTest {
                 galleryThumbnailFailuresRemaining--
                 throw ApiException(503, "Fixture one-shot unavailable thumbnail")
             }
-            if (galleryOversizeFixture || galleryVideoFixture) {
+            if (galleryOversizeFixture || galleryVideoFixture || galleryLivePhotoFixture) {
                 val small = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
                 return try {
                     val output = ByteArrayOutputStream()
@@ -154,6 +165,34 @@ class DriveAppTest {
             } finally {
                 bitmap.recycle()
             }
+        }
+        override suspend fun galleryLivePhotoStill(
+            accessToken: String, node: DriveNode,
+            onProgress: (Long, Long?) -> Unit,
+        ): ByteArray {
+            check(galleryLivePhotoFixture && galleryLIVPFixture &&
+                node.id == 48L && node.revision == 2L)
+            liveStillReads++
+            val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+            return try {
+                val output = ByteArrayOutputStream()
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output))
+                val data = output.toByteArray()
+                onProgress(data.size.toLong(), data.size.toLong())
+                data
+            } finally { bitmap.recycle() }
+        }
+        override suspend fun galleryLivePhotoMotionPlayback(
+            accessToken: String, node: DriveNode,
+        ): OwnerVideoPlayback {
+            check(galleryLivePhotoFixture && node.id == 48L && node.revision == 2L)
+            liveMotionRequests++
+            return OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/media-live-photo-motion/48?ticket=fixture",
+                okhttp3.OkHttpClient.Builder().addInterceptor {
+                    throw java.io.IOException("Fixture motion codec unavailable")
+                }.build(), 0L,
+            ) { liveMotionClosed++ }
         }
         override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
             OwnerVideoPlayback(
@@ -749,6 +788,63 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-item-1030", useUnmergedTree = true)
             .assertIsDisplayed()
+    }
+
+    @Test fun nativeLIVPStillIsReadFromSignedResourceNotOuterZip() {
+        galleryLivePhotoFixture = true
+        galleryLIVPFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("gallery-item-48", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            liveStillReads == 1 &&
+                compose.onAllNodesWithTag("gallery-photo-image").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-image").assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, liveStillReads)
+            org.junit.Assert.assertEquals(0, liveMotionRequests)
+        }
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+    }
+
+    @Test fun nativeLivePhotoNeedsExplicitHoldAndReleasesPrivateMotionOnUp() {
+        galleryLivePhotoFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded &&
+                compose.onAllNodesWithTag("gallery-thumbnail-ready-48",
+                    useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-item-48", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-image").fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(0, liveMotionRequests)
+        }
+        compose.onNodeWithTag("gallery-photo-gesture").performTouchInput { longClick() }
+        compose.waitUntil(timeoutMillis = 10_000) { liveMotionRequests == 1 }
+        compose.waitUntil(timeoutMillis = 10_000) { liveMotionClosed == 1 }
+        compose.onNodeWithTag("gallery-photo-image").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-live-motion-surface").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, liveMotionRequests)
+            org.junit.Assert.assertEquals(1, liveMotionClosed)
+        }
     }
 
     @Test fun nativeVideoOpensMedia3AndClosesOwnerStream() {
