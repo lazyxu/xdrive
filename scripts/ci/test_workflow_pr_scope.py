@@ -143,6 +143,20 @@ class ScopeTests(unittest.TestCase):
                              f"{name} is a branch-only job in broad CI")
             self.assertIn("github.ref == 'refs/heads/master'", header)
 
+    def test_branch_sweeps_avoid_redundant_master_push_trigger(self):
+        # PR closure drives immediate guarded cleanup; daily/manual sweeps
+        # cover orphaned refs. A push on every master commit creates a queue
+        # of superseded scans while there are many PR merges.
+        root = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        for name in ("cleanup-merged-branches.yml", "prune-verified-branches.yml"):
+            source = (root / name).read_text(encoding="utf-8")
+            events = source.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
+            self.assertNotRegex(events, r"(?m)^  push:",
+                                f"{name} must not create an additional master-push run")
+            self.assertIn("  workflow_dispatch:", events)
+        self.assertIn("  pull_request_target:", (root / "cleanup-merged-branches.yml").read_text(encoding="utf-8"))
+        self.assertIn("  schedule:", (root / "prune-verified-branches.yml").read_text(encoding="utf-8"))
+
     def test_validator_catches_broad_and_fixtureless_trigger(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

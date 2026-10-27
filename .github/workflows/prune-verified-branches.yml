@@ -1,9 +1,9 @@
 name: Prune verified integrated branches
 
 # Trusted default-branch code only. Never execute a PR's checkout or script.
+# Daily/manual sweep only: merged PR events use the separate guarded cleanup workflow.
+# Avoid creating a redundant queued scan on every master push.
 on:
-  push:
-    branches: [master]
   schedule:
     - cron: '43 3 * * *'
   workflow_dispatch:
