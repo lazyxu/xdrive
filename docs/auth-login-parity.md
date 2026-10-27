@@ -18,10 +18,10 @@
 - TLS 身份/证书变化必须停止认证，不向未经验证的新地址发送密码或 Token。
 - Logout 先清理本地会话/私有缓存，再尽力请求 Server 撤销；网络不可用时不宣称远端撤销已经成功。
 
-## 已合入范围与剩余验收（2026-10-27）
+## 已合入范围与分层验收结果（2026-10-27）
 
 - [#2736](https://github.com/lazyxu/xdrive/pull/2736) 已将浏览器专用 HTTPS 同源 Cookie 登录、轮换、退出与浏览器修改密码端点合入 `master`。
-- [#2741](https://github.com/lazyxu/xdrive/pull/2741) 已将 Web/PWA 客户端切换代码合入 `master@07503074`。**部署到包含对应服务端与客户端代码的 HTTPS 同源环境**、勾选「保持登录」且服务端支持浏览器端点时，使用 HttpOnly Refresh Cookie，Access Token 只留在 JS 内存。与此不同，旧服务端 404 / HTTP 开发环境仍可回退兼容 JSON Token API，不能笼统声称所有 Web 登录都已停用 localStorage Token。
+- [#2741](https://github.com/lazyxu/xdrive/pull/2741) 已将 Web/PWA 客户端切换代码合入 `master@07503074`。**部署到包含对应服务端与客户端代码的 HTTPS 同源环境**、勾选「保持登录」且服务端支持浏览器端点时，使用 HttpOnly Refresh Cookie，Access Token 只留在 JS 内存。与此不同，HTTP 开发环境及保留的 JSON/Bearer 兼容代码仍可使用旧式 Token，不能笼统声称所有 Web 登录都已停用 localStorage Token。**真实旧版 Server 对浏览器 Cookie 端点返回 404 的专项兼容验收已由用户取消，不实施、也不设为合入/发布门槛。**
 - 取消「保持登录」时仅保留页面内存会话，刷新页面需要重新登录；先前保存的 JSON 会话在升级时不会被强制抹去，而是在重新登录或安全清理时按新模式切换。Desktop、Android、xd 仍使用既有原生 JSON/Bearer 协议，不因浏览器迁移修改凭据格式。
 - 浏览器 Cookie 路径包含严格 Origin/Host 与 Fetch Metadata 校验、Owner 绑定、旧刷新凭据重放拒绝、多标签可用时 Web Locks 串行轮换、登出立即清理本地私有视图并保留待远端撤销标记。无 Web Locks（含 Safari 受限能力）仅为安全降级，**不承诺跨标签互斥**；超时不代表远端撤销已经成功。
 - Web/PWA 的手动公网/局域网入口和离线历史继续保持原状；不新增公开注册，也不绕过 HTTPS 身份验证。
@@ -32,7 +32,10 @@
 - [#2767](https://github.com/lazyxu/xdrive/pull/2767) 已加入**两层独立**回归：真实 TLS Gin/PostgreSQL 的 Cookie 轮换、Owner/Origin/重放负例，以及真实 Chromium 中生产 TS 方法的两标签 Web Locks。两层分别验证不能称为同一条 Web UI 端到端链路。
 - [#2776](https://github.com/lazyxu/xdrive/pull/2776) 已将成熟 S2B3 生产 Web/Gin/PostgreSQL 测试夹具**仅在隔离测试时切换为 HTTPS**，用完整的真实 Chromium+React 登录页面在同源链路上完成：HttpOnly/Secure/SameSite Cookie、短期 Access JWT 不落浏览器持久化存储、Cookie 不作 Bearer（401）、冷恢复并轮换、双标签恢复、错误 Owner（409 且不消耗 Cookie）、UI 登出返回 204、Cookie 清除及新标签拒绝恢复。准确 [GitHub Actions #40433874668](https://github.com/lazyxu/xdrive/actions/runs/40433874668) **Success**，`passed=true`，`logoutHTTPStatus=204`，已合入 [`master@a315e799`](https://github.com/lazyxu/xdrive/commit/a315e799d9a884134b0fc7a7b3a40c32bc6344ab)。
 - 此测试把已有 Gin S2B3 **隔离 PostgreSQL** 缺少的 `BaiduJSAPIMapEpoch` 表补入迁移，以满足生产 Logout 中 Refresh Token 撤销、地图 epoch 和审计的原子事务；**不改变生产 TLS/认证代码**。自签名证书宽免仅允许测试 Chrome 访问临时本地 TLS Server；这不是外部实际部署 TLS 身份验收，测试还特意禁用 Service Worker，不能冒充 iOS 安装态验证。
-- **仍未验收**：真实浏览器密码修改、管理员 SessionVersion 撤销、离线退出 Tombstone、新旧服务器/JSON 历史 Session 的升级回归，以及 Safari 受限 Storage/Web Locks 的真实降级行为；在无 Web Locks 时不能宣称跨标签严格互斥。[Issue #2725](https://github.com/lazyxu/xdrive/issues/2725) 保持 Open。Android Keystore/进程重启、Desktop 局域网证书变更、iOS PWA 实体安装态等仍按项目约定“跳过（未验收）”。各个准确 SHA 的完整 master CI / Snapshot 是否成功应独立核查，不以专项通过冒充发布通过。
+- [#2782](https://github.com/lazyxu/xdrive/pull/2782) 在真实 Chromium → 生产 React UI → 同源 HTTPS Gin/PostgreSQL17 链路中补齐强制密码修改、HttpOnly Cookie 轮换、旧 JWT/Cookie/密码拒绝和正式管理员 `revoke-sessions` 的 SessionVersion 撤销；精确 HEAD [Chrome #40438244128](https://github.com/lazyxu/xdrive/actions/runs/40438244128) **Success**，后续 Browser Cookie 401、React 返回登录页面及 PostgreSQL 无有效 Refresh Token 均已断言，已合入 `master@471ee442`。
+- [#2787](https://github.com/lazyxu/xdrive/pull/2787) 验证升级到新版 HTTPS Web 后，真实 Gin 签发的**旧 JSON 持久 Session** 连续冷启动仍能访问原 Owner；明确退出 204 后重新登录迁移为 HttpOnly Cookie，旧存储中的 Access/Refresh Token 清除，新 Cookie 可再次冷恢复。精确 HEAD [Chrome #40438884261](https://github.com/lazyxu/xdrive/actions/runs/40438884261) **Success**，已合入 `master@9631e449`。这**不是**真实旧版 Server 二进制的 404 兼容验收；该项明确取消。
+- [#2791](https://github.com/lazyxu/xdrive/pull/2791) 验证离线主动退出时本地私有 UI 立即清除、Owner-pinned Tombstone 持久保留、断网重启不自动恢复；恢复网络后真正 Gin Logout 204，并用**故障前 Refresh Cookie 再次调用正式 Gin 得到 401**，证明远端 Token 撤销。还在真实 Chromium 中注入 Web Locks getter/request `SecurityError` 与 `localStorage` getter 拒绝，确认不能重复轮换或无 Owner 静默恢复。精确 HEAD [Chrome #40443444740](https://github.com/lazyxu/xdrive/actions/runs/40443444740) **Success**，报告 `passed=true`、`failedAt=null`、`deniedStoragePageErrors=[]`。针对共享 Files 导航存储读取/偏好写入增加失败安全回退，配套实际 TS/TSX Callback Node 回归 **12 项通过、0 失败**；同版完整 CI 作业 **15 成功、15 条件跳过、0 失败**。GitHub 正常合入 [`master@9bf5fb32`](https://github.com/lazyxu/xdrive/commit/9bf5fb32bef740bee305361f0cc1f6fb072e46d9)。
+- **真实设备验收边界：** 上述 Safari-like 测试是在 Chromium 中模拟受限能力，**不等于真实 Safari/WebKit 或 iOS 安装态设备验证**。无 Web Locks 时只承诺安全降级，不承诺严格跨标签互斥。iOS PWA 实体安装态、Android Keystore/杀进程复原、Desktop 局域网证书变化等按项目约定标记「跳过（未验收）」，不能写成通过，也不阻塞源码合并或开发。Chrome 测试的临时自签名 TLS 例外仅限其私有 Fixture；生产 TLS 信任不放宽。准确合入后 `master` CI、Release、Snapshot 与实际生产部署应另按各自 SHA 核查，不以 PR 专项全绿冒充已发布。
 
 ## 2026-10-26 · Browser Cookie 端点（服务端已合入）
 
