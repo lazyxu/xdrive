@@ -13,21 +13,34 @@ export async function xDriveProbePwaServer(
   const controller = new AbortController()
   let timedOut = false
   const timeoutMs = Math.min(10000, Math.max(1000, options.timeoutMs ?? 6000))
-  const abortFromCaller = () => controller.abort()
+  // A WebKit/proxy shim can ignore AbortSignal and leave fetch() or json()
+  // pending. Race both stages against the same cancellation/deadline signal
+  // instead of depending on the transport promise to reject after abort.
+  let rejectAborted!: (reason: Error) => void
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
+  const abortRequest = () => {
+    controller.abort()
+    rejectAborted(new Error('PWA readiness probe aborted'))
+  }
+  const abortFromCaller = () => abortRequest()
   options.signal?.addEventListener('abort', abortFromCaller, { once: true })
-  const timer = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
+  const timer = setTimeout(() => { timedOut = true; abortRequest() }, timeoutMs)
   try {
-    const response = await (options.request ?? fetch)('/api/v1/readyz', {
-      method: 'GET', mode: 'same-origin', credentials: 'omit', cache: 'no-store',
-      redirect: 'error', signal: controller.signal,
-    })
+    const response = await Promise.race([
+      (options.request ?? fetch)('/api/v1/readyz', {
+        method: 'GET', mode: 'same-origin', credentials: 'omit', cache: 'no-store',
+        redirect: 'error', signal: controller.signal,
+      }),
+      aborted,
+    ])
     if (options.signal?.aborted) return { state: 'cancelled' }
+    if (timedOut) return { state: 'timed-out' }
     if (response.status === 200) {
       // Caddy SPA fallback and reverse-proxy login pages can return 200 HTML.
       const type = response.headers.get('Content-Type') || ''
       if (!/^application\/json\b/i.test(type)) return { state: 'unexpected-response', httpStatus: 200 }
       try {
-        const body = (await response.json()) as { ok?: unknown }
+        const body = (await Promise.race([response.json(), aborted])) as { ok?: unknown }
         // fetch() resolves when headers arrive, not when its JSON body is read.
         // A cancellation or deadline during body consumption must not look
         // like malformed HTTP 200 (or a late successful readiness result).

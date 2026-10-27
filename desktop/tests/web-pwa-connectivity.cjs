@@ -117,3 +117,58 @@ test('S3B: a late ready JSON body after cancellation cannot masquerade as a heal
   resolveBody({ ok: true })
   assert.deepEqual(await pending, { state: 'cancelled' })
 })
+
+// Keep intentionally non-cooperative Promise fixtures bounded even if a
+// regression removes the production deadline, rather than hanging all CI.
+async function expectBoundedProbe(options) {
+  let watchdog
+  try {
+    return await Promise.race([
+      probe(options),
+      new Promise((_resolve, reject) => {
+        watchdog = setTimeout(() => reject(new Error('readiness probe never returned')), 4000)
+      }),
+    ])
+  } finally {
+    clearTimeout(watchdog)
+  }
+}
+
+test('S3B: a request that ignores AbortSignal cannot strand the readiness UI after deadline', async () => {
+  let requestSignal
+  const result = await expectBoundedProbe({ timeoutMs: 1000, request: (_path, init) => {
+    requestSignal = init.signal
+    return new Promise(() => {}) // Broken native adapter never rejects on abort.
+  } })
+  assert.deepEqual(result, { state: 'timed-out' })
+  assert.equal(requestSignal.aborted, true, 'the original transport is still asked to abort')
+})
+
+test('S3B: an unresponsive JSON body cannot strand the readiness UI after deadline', async () => {
+  let requestSignal
+  const result = await expectBoundedProbe({ timeoutMs: 1000, request: async (_path, init) => {
+    requestSignal = init.signal
+    return {
+      status: 200, headers: { get: () => 'application/json' },
+      json: () => new Promise(() => {}), // Headers arrived, body never settles.
+    }
+  } })
+  assert.deepEqual(result, { state: 'timed-out' })
+  assert.equal(requestSignal.aborted, true)
+})
+
+test('S3B: user cancellation returns even when the browser transport ignores AbortSignal', async () => {
+  const controller = new AbortController()
+  let signal
+  let notifyStarted
+  const started = new Promise(resolve => { notifyStarted = resolve })
+  const pending = expectBoundedProbe({ signal: controller.signal, timeoutMs: 10000, request: (_path, init) => {
+    signal = init.signal
+    notifyStarted()
+    return new Promise(() => {})
+  } })
+  await started
+  controller.abort()
+  assert.deepEqual(await pending, { state: 'cancelled' })
+  assert.equal(signal.aborted, true)
+})
