@@ -252,7 +252,9 @@ async function testFullDocumentMapHandoff(browser,from,port){
     const fromQuery=from==='isolated'?'&places_map_mode=isolated':''
     await page.goto('https://'+galleryHost+':'+port+
       '/?handoff_doc=1'+fromQuery,{waitUntil:'domcontentloaded'})
-    await page.waitForFunction(()=>window.__mapProbe?.ready===true)
+    // This is the actual XDriveMediaGalleryPlacesMap Parent, not the old
+    // minimal TestApp fixture. Its authoritative ready signal is the rendered
+    // trusted Owner Count, not TestApp's private __mapProbe.ready boolean.
     await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
     record(from+': original Owner Favorites map is mounted before document handoff',
       (await page.evaluate(()=>window.__mapProbe.queries))
@@ -262,8 +264,7 @@ async function testFullDocumentMapHandoff(browser,from,port){
     await page.waitForURL(url=>url.searchParams.get('places_map_scope_required')==='1'&&
       (target==='prototype'?!url.searchParams.has('places_map_mode'):
         url.searchParams.get('places_map_mode')==='isolated'))
-    await page.waitForFunction(()=>window.__mapProbe?.handoff?.state==='ready'&&
-      window.__mapProbe?.ready===true)
+    await page.waitForFunction(()=>window.__mapProbe?.handoff?.state==='ready')
     await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
     const accepted=await page.evaluate(()=>({
       url:location.href,
