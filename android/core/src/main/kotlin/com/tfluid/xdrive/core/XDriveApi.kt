@@ -206,6 +206,13 @@ interface XDriveService {
         throw ApiException(501, "Copy API unavailable")
     suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
         throw ApiException(501, "Move API unavailable")
+    /** Atomic Go batch copy/move: one Owner transaction, never per-item retries. */
+    suspend fun batchCopyNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch copy unavailable")
+    suspend fun batchMoveNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch move unavailable")
     suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
         throw ApiException(501, "Batch Trash API unavailable")
     }
@@ -488,6 +495,62 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             moved.name != original.name || moved.type != original.type ||
             moved.revision <= original.revision) invalidPayload()
         return moved
+    }
+
+    /** Reuse the existing authenticated JSON transport and the Server's
+     * atomic 200-item transaction. Validation after ACK must fail closed:
+     * Controller will freeze writes if any returned identity is inconsistent.
+     * Never replay a POST after timeout or an uncertain acknowledgement. */
+    override suspend fun batchCopyNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "copy")
+
+    override suspend fun batchMoveNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "move")
+
+    private suspend fun batchTransfer(
+        token: String, originals: List<DriveNode>, parentId: Long, operation: String,
+    ): List<DriveNode> {
+        require(operation in setOf("copy", "move") && validToken(token) &&
+            parentId > 0 && originals.size in 1..200 &&
+            originals.map { it.id }.toSet().size == originals.size &&
+            originals.all { it.id > 0 && it.parentId != null &&
+                it.revision > 0 && it.type in setOf("file", "dir") &&
+                !(it.isDirectory && it.id == parentId) }) {
+            "Invalid atomic batch"
+        }
+        if (operation == "move") require(originals.none { it.parentId == parentId }) {
+            "Source is already in target folder"
+        }
+        val requestItems = JsonArray(originals.map { original ->
+            JsonObject(mapOf("id" to JsonPrimitive(original.id),
+                "revision" to JsonPrimitive(original.revision)))
+        })
+        val body = JsonObject(mapOf(
+            "items" to requestItems, "parent_id" to JsonPrimitive(parentId)))
+        // Copying large directory trees may outlive the ordinary 30s JSON
+        // timeout. Keep the original pinned Owner/TLS client, but extend the
+        // bounded idle timeout for this one physical transaction, never retry.
+        val answer = request("nodes/batch/$operation", token, bodyObject = body,
+            longRunning = true)
+        val operationID = answer.string("operation_id")
+        if (operationID.isBlank() || operationID.length > 64) invalidPayload()
+        val returned = answer["items"] as? JsonArray ?: invalidPayload()
+        if (returned.size != originals.size) invalidPayload()
+        val rows = returned.map { node(it as? JsonObject ?: invalidPayload()) }
+        if (rows.map { it.id }.toSet().size != rows.size) invalidPayload()
+        val originalsIds = originals.map { it.id }.toSet()
+        for ((index, row) in rows.withIndex()) {
+            val original = originals[index]
+            if (row.parentId != parentId || row.type != original.type ||
+                row.size != original.size || row.revision <= 0) invalidPayload()
+            if (operation == "copy") {
+                if (row.id in originalsIds) invalidPayload()
+            } else if (row.id != original.id || row.name != original.name ||
+                row.revision <= original.revision) invalidPayload()
+        }
+        return rows
     }
 
     /** Atomic Go batch Trash, capped at 200 Server-verified revisions.

@@ -139,6 +139,77 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun atomicBatchCopyMoveUsesOneOwnerPostAndExactRevisionedItems() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val originals = listOf(
+                DriveNode(7, 1, "a.txt", "file", 6, revision = 2),
+                DriveNode(8, 1, "b.txt", "file", 9, revision = 3),
+            )
+            val copy = """{"operation_id":"dbdf8fd2-e044-4b1a-8345-715b6f3c03d9",
+                "items":[{"id":107,"parent_id":9,"name":"a.txt",
+                "type":"file","size":6,"revision":1},
+                {"id":108,"parent_id":9,"name":"b.txt",
+                "type":"file","size":9,"revision":1}]}"""
+            server.enqueue(MockResponse().setResponseCode(201).setBody(copy))
+            val copied = api.batchCopyNodes("owner-secret", originals, 9)
+            assertEquals(listOf(107L, 108L), copied.map { it.id })
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/v1/nodes/batch/copy", request.path)
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals(listOf(7L, 8L),
+                (Json.parseToJsonElement(request.body.readUtf8()) as JsonObject)
+                    .let { body -> (body["items"] as JsonArray)
+                        .map { (it as JsonObject)["id"]!!.jsonPrimitive.long } })
+            server.enqueue(MockResponse().setBody("""{"operation_id":"dbdf8fd2-e044-4b1a-8345-715b6f3c03d9",
+                "items":[{"id":7,"parent_id":9,"name":"a.txt",
+                "type":"file","size":6,"revision":3},
+                {"id":8,"parent_id":9,"name":"b.txt",
+                "type":"file","size":9,"revision":4}]}"""))
+            assertEquals(listOf(7L, 8L), api.batchMoveNodes(
+                "owner-secret", originals, 9).map { it.id })
+            val moved = server.takeRequest()
+            assertEquals("POST", moved.method)
+            assertEquals("/api/v1/nodes/batch/move", moved.path)
+            assertEquals("Bearer owner-secret", moved.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun batchMutationRejectsDuplicateOrPartialAcknowledgements() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val originals = listOf(
+                DriveNode(7, 1, "a.txt", "file", 6, revision = 2),
+                DriveNode(8, 1, "b.txt", "file", 9, revision = 3),
+            )
+            val inconsistent = listOf(
+                """{"operation_id":"known","items":[{"id":107,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1}]}""",
+                """{"operation_id":"known","items":[{"id":107,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1},
+                    {"id":107,"parent_id":9,"name":"b.txt","type":"file",
+                    "size":9,"revision":1}]}""",
+                """{"operation_id":"known","items":[{"id":7,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1},
+                    {"id":108,"parent_id":9,"name":"b.txt","type":"file",
+                    "size":9,"revision":1}]}""",
+            )
+            for (body in inconsistent) {
+                server.enqueue(MockResponse().setBody(body))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                    api.batchCopyNodes("owner-secret", originals, 9)
+                }.reason)
+            }
+            assertEquals(3, server.requestCount)
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    api.batchMoveNodes("owner-secret",
+                        originals + originals.first(), 9)
+                }
+            }
+            assertEquals(3, server.requestCount) // Failed before POST.
+        } }
+    }
+
     @Test fun textPreviewUsesBearerAndCurrentRevisionBeforeAndAfterRead() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody(textNode()))
