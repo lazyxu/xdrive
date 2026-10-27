@@ -60,6 +60,11 @@ type OwnerMediaRangeReader interface {
 	OwnerFileMediaRange(context.Context, uint64, uint64, int64, int) (localbackupipc.OwnerMediaRange, error)
 }
 
+// Separate thumbnail-only capability, never an arbitrary image proxy.
+type OwnerThumbnailReader interface {
+	OwnerFileThumbnail(context.Context, uint64, uint64) (localbackupipc.OwnerThumbnail, error)
+}
+
 type OwnerQuotaReader interface {
 	OwnerQuota(context.Context) (localbackupipc.OwnerQuota, error)
 }
@@ -388,7 +393,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" {
 		http.NotFound(w, r)
 		return
 	}
@@ -490,6 +495,37 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveOwnerMediaStream(w, r, reader)
+		return
+	}
+	// The real Server verifies the requested Owner/revision before generating
+	// its JPEG/PNG derivative. This is never a NAS local-file read.
+	if r.URL.Path == "/v1/cloud-thumbnail" {
+		q, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(q) != 2 || len(q["node_id"]) != 1 || len(q["revision"]) != 1 {
+			http.Error(w, "invalid Owner thumbnail selector", http.StatusBadRequest)
+			return
+		}
+		nodeID, errID := strconv.ParseUint(q.Get("node_id"), 10, 64)
+		revision, errRevision := strconv.ParseUint(q.Get("revision"), 10, 64)
+		if errID != nil || errRevision != nil ||
+			!localbackupipc.ValidOwnerFileID(nodeID) ||
+			!localbackupipc.ValidOwnerFileID(revision) ||
+			strconv.FormatUint(nodeID, 10) != q.Get("node_id") ||
+			strconv.FormatUint(revision, 10) != q.Get("revision") {
+			http.Error(w, "invalid Owner thumbnail identity", http.StatusBadRequest)
+			return
+		}
+		reader, ok := agent.(OwnerThumbnailReader)
+		if !ok {
+			http.Error(w, "Owner thumbnail capability unavailable", http.StatusNotImplemented)
+			return
+		}
+		thumbnail, err := reader.OwnerFileThumbnail(ctx, nodeID, revision)
+		if err != nil || !localbackupipc.ValidateOwnerThumbnail(thumbnail) {
+			http.Error(w, "Owner image derivative unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, thumbnail)
 		return
 	}
 	// Fixed 256 KiB immutable media slice. The request contains only canonical
