@@ -7,7 +7,12 @@ on:
       - '.github/workflows/system-dependencies-real-chromium.yml'
       - 'desktop/scripts/system-dependencies-real-chromium.*'
       - 'desktop/tests/system-dependencies-real-chromium.cjs'
+      - 'desktop/tests/system-dependencies-unified-layout-20261028.cjs'
       - 'ui/shared/src/mui/ServiceDependenciesPage.tsx'
+      - 'ui/shared/src/mui/BaiduServerAPIDetail.tsx'
+      - 'ui/shared/src/mui/BaiduJSAPIDesiredPanel.tsx'
+      - 'ui/shared/src/mui/CoreDependencyDetail.tsx'
+      - 'ui/shared/src/mui/CaddyDetailV1.tsx'
       - 'ui/shared/src/mui/PhotoHostDesiredPanel.tsx'
       - 'ui/shared/src/mui/WorkspaceSurface.tsx'
       - 'ui/shared/src/system-dependencies-navigation.ts'
@@ -17,7 +22,12 @@ on:
       - '.github/workflows/system-dependencies-real-chromium.yml'
       - 'desktop/scripts/system-dependencies-real-chromium.*'
       - 'desktop/tests/system-dependencies-real-chromium.cjs'
+      - 'desktop/tests/system-dependencies-unified-layout-20261028.cjs'
       - 'ui/shared/src/mui/ServiceDependenciesPage.tsx'
+      - 'ui/shared/src/mui/BaiduServerAPIDetail.tsx'
+      - 'ui/shared/src/mui/BaiduJSAPIDesiredPanel.tsx'
+      - 'ui/shared/src/mui/CoreDependencyDetail.tsx'
+      - 'ui/shared/src/mui/CaddyDetailV1.tsx'
       - 'ui/shared/src/mui/PhotoHostDesiredPanel.tsx'
       - 'ui/shared/src/mui/WorkspaceSurface.tsx'
       - 'ui/shared/src/system-dependencies-navigation.ts'
@@ -63,7 +73,7 @@ jobs:
           else
             echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
           fi
-      - name: Verify source contract and actual 320px / 390px / Desktop chromium UI
+      - name: Verify source contract and actual six-viewport Chromium UI
         shell: bash
         env:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -72,7 +82,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
           node --check desktop/scripts/system-dependencies-real-chromium.cjs
-          node --test desktop/tests/system-dependencies-real-chromium.cjs
+          node --test desktop/tests/system-dependencies-real-chromium.cjs desktop/tests/system-dependencies-unified-layout-20261028.cjs
           node desktop/scripts/system-dependencies-real-chromium.cjs
           node - <<'NODE'
           const fs = require('node:fs')
@@ -80,7 +90,7 @@ jobs:
             'desktop/system-dependencies-chromium-results/summary.json', 'utf8'))
           if (!p.passed || !p.realChromium || !p.mountedSharedMUI ||
               !p.syntheticOnly || p.sourceCommit !== process.env.XD_PR_HEAD ||
-              p.widths.join(',') !== '320,390,1280' ||
+              p.widths.join(',') !== '320,390,899,900,1280,1740' ||
               p.checks.length < 22 || p.checks.some(check => !check.passed) ||
               p.pageErrors.length || p.externalRequests || p.error) process.exit(1)
           NODE
