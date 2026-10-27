@@ -187,24 +187,33 @@ export async function checkXDrivePwaAssets(
   // One bounded budget for all five parallel HEADs; a hung proxy must not
   // retain the dialog indefinitely. Abort on unmount/close/retry as well.
   const controller = new AbortController()
-  const abortFromCaller = () => { controller.abort() }
-  if (options.signal?.aborted) controller.abort()
+  // AbortSignal alone is not a completion guarantee for restricted WebKit
+  // fetch adapters. Resolve a shared interruption sentinel so even a HEAD
+  // promise that never settles cannot keep the install dialog spinning.
+  let interrupt!: () => void
+  const interrupted = new Promise<null>(resolve => { interrupt = () => resolve(null) })
+  const abortFromCaller = () => { controller.abort(); interrupt() }
+  if (options.signal?.aborted) abortFromCaller()
   else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
   const budget = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.min(6000, Math.floor(options.timeoutMs))) : 6000
   let timedOut = false
   const timer = setTimeout(() => {
     timedOut = true
-    controller.abort()
+    abortFromCaller()
   }, budget)
   try {
     const assetChecks = await Promise.all(assets.map(async (asset): Promise<XDrivePwaAssetCheck> => {
       try {
         if (controller.signal.aborted) throw new Error('cancelled')
-        const response = await fetch(asset.path, {
-          method: 'HEAD', credentials: 'omit', cache: 'no-store',
-          redirect: 'error', mode: 'same-origin', signal: controller.signal,
-        })
+        const response = await Promise.race([
+          fetch(asset.path, {
+            method: 'HEAD', credentials: 'omit', cache: 'no-store',
+            redirect: 'error', mode: 'same-origin', signal: controller.signal,
+          }),
+          interrupted,
+        ])
+        if (response === null) throw new Error('cancelled')
         const contentType = response.headers.get('Content-Type') || ''
         if (response.status !== 200 || !asset.mime.test(contentType)) {
           return {
