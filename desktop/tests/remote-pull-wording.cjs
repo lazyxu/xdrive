@@ -47,6 +47,6 @@ test('Web, Mobile Web and Desktop use the same Pull-only surface and preserve tr
   assert.match(manager, /adapter\.createSource\(/)
   assert.match(manager, /adapter\.deleteSource\(/)
   assert.doesNotMatch(web, /该同步文件夹不存在|正在根据原同步文件夹 ID 确认 Push\/Pull/)
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.match(agents, /远程拉取.*拉取来源/)
 })

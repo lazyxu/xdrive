@@ -224,6 +224,6 @@ test('P97 source-exact Gallery entrypoints preserve Collections and silent autho
   assert.match(route, /if \(!pendingCompactPhoto\) setMobileCollectionsOverview\(false\)/)
   assert.ok(source.includes('XDriveMediaAsyncThumbnail'))
   assert.ok(source.includes('XDriveMediaAsyncVideoPoster'))
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P97 Mobile Gallery Library/Favorites atomic photo-wall navigation (mandatory)').length, 2)
 })

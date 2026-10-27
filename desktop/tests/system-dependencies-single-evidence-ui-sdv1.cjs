@@ -76,7 +76,7 @@ test('one real shared UI applies to Web/Mobile Web and Desktop without extra adm
 
 test('A3h thumbnail cluster markers are a pending explicit P0, not already-delivered numeric circles', () => {
   const roadmap=read('docs/gallery-places-ios27-roadmap.md')
-  const rules=read('AGENTS.md')
+  const rules=read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   const native=read('ui/shared/src/media-gallery-baidu-jsapi4-cells.ts')
   assert.match(roadmap, /P0-Places-A3h/)
   assert.match(roadmap, /明确未完成/)

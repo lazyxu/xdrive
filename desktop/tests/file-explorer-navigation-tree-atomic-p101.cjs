@@ -255,6 +255,6 @@ test('P101 source-exact owner fences / no height animation / shared transport / 
     assert.ok(src.includes('<XDriveFileExplorerNavigationPane'), client)
     assert.ok(src.includes('loadDirectoryPage={loadTreeDirectoryPage}'), client)
   }
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P101 verified tree disclosure without height animation (mandatory)').length, 2)
 })

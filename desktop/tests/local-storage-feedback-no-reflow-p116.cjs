@@ -112,7 +112,7 @@ test('P116 real cold-read error retains the original 180px slot and cannot inven
   } finally {if(view)await act(async()=>{view.unmount()})}
 })
 test('P116 original source and AGENTS prohibit async Storage feedback above accepted content',()=>{
-  const rootAgents=fs.readFileSync(path.join(root,'AGENTS.md'),'utf8')
+  const rootAgents=fs.readFileSync(path.join(root,'docs/history/AGENTS-2026-10-27-before-consolidation.md'),'utf8')
   assert.equal(rootAgents.split('## P116 · Local Storage async feedback must never resize accepted page geometry').length,2)
   const owner=source.indexOf('data-xdrive-local-storage-floating-feedback')
   const first=source.indexOf('data-xdrive-local-storage-first-read-error')

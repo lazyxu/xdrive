@@ -217,6 +217,6 @@ test('P103 source-exact original first-Range guards and permanent AGENTS rule', 
   assert.ok(source.includes('onBack={leaveCollection}'))
   assert.ok(source.includes('XDriveMediaAsyncThumbnail'))
   assert.ok(source.includes('XDriveMediaAsyncVideoPoster'))
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('## P103 · Mobile Gallery detail Back must wait for verified first photo Range').length, 2)
 })

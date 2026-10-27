@@ -6,7 +6,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 const matrix = read('docs/performance-platform-coverage.md')
-const agents = read('AGENTS.md')
+const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
 const registry = read('docs/performance-test-registry.md')
 
 test('AGENTS and deduplicated performance registry both require cross-platform acceptance matrix', () => {

@@ -37,6 +37,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
 	githubProviderSpecificJobs := map[string]struct{}{
+		// PR-only change classification and policy checks run on trusted GitHub
+		// pull_request refs. They are scheduling controls, not build products
+		// or source tests that must be duplicated in GitLab's core pipeline.
+		// Keep the actual cross-platform build/test/publish jobs in parity.
+		"pr-scope":        {},
+		"policy-contract": {},
 		// Android v1 uses GitHub-hosted KVM; GitLab Android deployment is outside this slice.
 		"android-native":      {},
 		"server-rootless-e2e": {},
@@ -510,10 +516,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-image",
 		"web",
 	} {
-		assertGitHubJobNeeds(t, github, job, nil)
+		// GitHub PR jobs depend on a trusted-base scope classifier, but the
+		// same source/build jobs on GitLab have no such scheduler. Verify the
+		// actual original dependencies rather than treating this safe gate as drift.
+		assertGitHubJobNeeds(t, github, job, []string{"pr-scope"})
 		assertGitLabJobNeeds(t, gitlab, job, nil)
 	}
-	assertGitHubJobNeeds(t, github, "caddy-image", []string{"web"})
+	assertGitHubJobNeeds(t, github, "caddy-image", []string{"pr-scope", "web"})
 	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
 	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
 	// Post-build real OCR model smoke must consume the exact Photo Host image,

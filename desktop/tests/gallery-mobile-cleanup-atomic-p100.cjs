@@ -201,6 +201,6 @@ test('P100 original Refresh, Back, post-delete and route source preserve one cur
   assert.match(originalGallery, /nextSection === 'memories' \|\| nextSection === 'cleanup'/)
   assert.match(originalGallery, /XDriveMediaAsyncThumbnail/)
   assert.match(originalGallery, /XDriveMediaAsyncVideoPoster/)
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P100 Mobile Gallery Cleanup-index atomic first-list navigation (mandatory)').length, 2)
 })

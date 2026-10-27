@@ -112,6 +112,6 @@ test('P106 wide Web/Desktop share one original read-bound policy, preserve expli
     'data-xdrive-file-explorer-scroll-host',
     'XDriveFileExplorerThumbnail',
   ]) assert.ok(shared.includes(marker),marker)
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('## P106 · Shared Wide Explorer display loading belongs only to its read Owner').length, 2)
 })

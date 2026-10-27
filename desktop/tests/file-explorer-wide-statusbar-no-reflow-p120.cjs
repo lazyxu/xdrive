@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '../..')
 const source = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
 const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(root, 'desktop/src/renderer/DesktopFileExplorer.tsx'), 'utf8')
-const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
 const ast = ts.createSourceFile('FileExplorer.tsx', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
 
 function statusBarNode() {

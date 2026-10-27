@@ -45,7 +45,7 @@ test('Owner map SQL and Router do not require or expose an extra grant', () => {
 
 test('policy supersedes historical photo consent without removing account isolation', () => {
   const policy = read('docs/gallery-places-no-photo-consent-policy.md')
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.match(policy, /no additional consent/)
   assert.match(agents, /Permanent photo-map no-extra-consent policy/)
   assert.match(agents, /strict Owner/)

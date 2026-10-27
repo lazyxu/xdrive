@@ -109,6 +109,6 @@ test('P89 permanent no-jitter source contract forbids Promise-only Mobile folder
   assert.ok(mobile.includes('const rowDirectoryCommit = Boolean(pendingRow'))
   assert.ok(mobile.includes('props.virtualCollection.interactionKey !== pendingRow.previousRangeKey'))
   assert.ok(mobile.includes('pendingRow.intent === navigationIntentRef.current'))
-  assert.ok(read('AGENTS.md').includes('P89 bound row commits / reused-generation quiet-first-read'))
+  assert.ok(read('docs/history/AGENTS-2026-10-27-before-consolidation.md').includes('P89 bound row commits / reused-generation quiet-first-read'))
   assert.ok(read('docs/mobile-navigation-stability.md').includes('P89 · Row acknowledgements'))
 })

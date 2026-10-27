@@ -408,7 +408,7 @@ test('P99: original Search owner receipt, quiet summary and permanent AGENTS con
   assert.ok(launch.indexOf('pendingGlobalSearchRef.current = { intent') <
     launch.indexOf("setSection('browse')"),
   'only previously committed directory search may use old eager path')
-  assert.ok(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  assert.ok(fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
     .includes('P99 Mobile Home/Recent/Favorites Search verified-first-Range (mandatory)'))
 })
 
@@ -4976,7 +4976,7 @@ test('P104 source-exact Web/Mobile Owner-only navigation gates retain independen
   assert.ok(web.includes('loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}'))
   assert.ok(mobile.includes('XDriveFileExplorerThumbnail'))
   assert.ok(mobile.includes('showRangeLoading'))
-  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   assert.equal(agents.split('## P104 · Mobile Files directory receipt independent from background operations').length, 2)
 })
 
@@ -5074,7 +5074,7 @@ test('P105 source gates empty/cold Browse states on Owner GET and retains indepe
   assert.ok(web.includes('loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}'))
   assert.ok(mobile.includes('XDriveFileExplorerThumbnail'))
   assert.ok(mobile.includes('showRangeLoading'))
-  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   assert.equal(agents.split('## P105 · Verified-zero Mobile directory independent from operation busy').length, 2)
 })
 
@@ -5200,7 +5200,7 @@ test('P107: only a current failed saved-folder receipt returns to Browse Home', 
 test('P107: original Web restore reports the actual accepted owner GET; permanent rule and media progress remain', () => {
   const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
   const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
-  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   assert.ok(web.includes('await navigateTo(chain, true, navigationIntentID, currentAccepted => {'))
   assert.ok(web.includes('return accepted && isNavigationIntentCurrent(navigationIntentID)'))
   assert.ok(web.includes('const initialSavedMobileFolderID = useMemo'))
@@ -5295,7 +5295,7 @@ test('P108: actual Web guard suppresses only provisional root and currently aban
     'const displayedCount = savedResumePending ? 0',
     'XDriveFileExplorerThumbnailProvider',
   ]) assert.ok(mobile.includes(marker), marker)
-  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   assert.equal(agents.split('## P108 · Mobile saved-folder route mirrors only committed Owner').length, 2)
 })
 
@@ -5329,7 +5329,7 @@ test('P109: transient Mobile Files action feedback never reflows or remounts the
 
 test('P109: permanent no-in-flow-feedback contract preserves real progress and accessibility', () => {
   const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
-  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   const begin = source.indexOf('        <Box data-mobile-files-feedback-overlay')
   const end = source.indexOf('        {selectionActive ? (', begin)
   assert.ok(begin > 0 && end > begin, 'one overlay owns all transient bottom feedback')

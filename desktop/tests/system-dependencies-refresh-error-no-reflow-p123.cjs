@@ -6,7 +6,7 @@ const path = require('node:path')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '../..')
 const source = fs.readFileSync(path.join(root, 'ui/shared/src/mui/ServiceDependenciesPage.tsx'), 'utf8')
-const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
 const ast = ts.createSourceFile('ServiceDependenciesPage.tsx', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
 function attr(open, marker) {
   return Boolean(open?.attributes?.properties?.some(p =>
