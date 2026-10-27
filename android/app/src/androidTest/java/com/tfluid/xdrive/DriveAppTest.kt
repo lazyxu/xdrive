@@ -624,6 +624,43 @@ class DriveAppTest {
     }
 
 
+
+    @Test fun gallerySelectionReviewRemovesAndClearsOnlyActualSelectedOwnerRows() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selected-mark-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("gallery-selection-review-open").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-selection-review").assertExists()
+        compose.onNodeWithTag("gallery-selected-review-item-40").assertExists()
+        compose.onNodeWithTag("gallery-selection-remove-40").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectedItems.isEmpty())
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectionMode)
+            org.junit.Assert.assertTrue(galleryFavoriteCalls.isEmpty())
+            org.junit.Assert.assertTrue(galleryTagsCalls.isEmpty())
+        }
+        compose.onNodeWithTag("gallery-review-empty").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-review-return").performClick()
+        compose.onNodeWithTag("gallery-selection-actions").assertExists()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selection-review-open").performClick()
+        compose.onNodeWithTag("gallery-review-clear").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectedItems.isEmpty())
+            org.junit.Assert.assertTrue(galleryFavoriteCalls.isEmpty())
+            org.junit.Assert.assertTrue(galleryTagsCalls.isEmpty())
+        }
+        compose.onNodeWithTag("gallery-review-return").performClick()
+        compose.onNodeWithTag("gallery-selection-done").performClick()
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+    }
+
     @Test fun galleryNativeSelectionAddsRealServerTagsAndRestoresDock() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()

@@ -368,6 +368,49 @@ class DriveControllerTest {
         c.close()
     }
 
+
+    @Test fun gallerySelectionReviewFilterAndLocalEditsNeverWriteOrLeakAcrossOwner() = runTest {
+        val list = listOf(
+            GalleryAsset(DriveNode(11, 1, "Trip.JPG", "file", 4, revision = 1), "image"),
+            GalleryAsset(DriveNode(12, 1, "night.mp4", "file", 9, revision = 2), "video"),
+        )
+        assertEquals(list, gallerySelectedReviewFilter(list, " "))
+        assertEquals(listOf(list.first()), gallerySelectedReviewFilter(list, "trip"))
+        assertEquals(listOf(list[1]), gallerySelectedReviewFilter(list, "  MP4  "))
+        assertTrue(gallerySelectedReviewFilter(list, "not-loaded").isEmpty())
+        assertTrue(gallerySelectedReviewFilter(emptyList(), "trip").isEmpty())
+
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val row = c.state.value.galleryItems.single()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(row)
+        c.removeGallerySelected(-1)
+        c.removeGallerySelected(row.node.id + 1)
+        assertEquals(listOf(row), c.state.value.gallerySelectedItems)
+        c.removeGallerySelected(row.node.id)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertTrue(c.state.value.gallerySelectionMode)
+
+        c.toggleGallerySelection(row)
+        c.clearGallerySelection()
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertTrue(c.state.value.gallerySelectionMode)
+        assertTrue(api.galleryFavoriteCalls.isEmpty())
+        assertTrue(api.galleryTagsCalls.isEmpty())
+        c.toggleGallerySelection(row)
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.removeGallerySelected(row.node.id)
+        c.clearGallerySelection()
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.close()
+    }
+
     @Test fun galleryFavoriteUncertainAckFreezesUntilReadOnlyRefresh() = runTest {
         val api = Service().apply {
             galleryFavoriteFailure = ApiException(503, "ACK lost")

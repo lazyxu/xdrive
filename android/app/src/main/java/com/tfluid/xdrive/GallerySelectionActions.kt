@@ -16,6 +16,7 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
     val selected = state.gallerySelectedItems
     val uncertain = state.galleryMetadataWriteAttempted
     var tagsOpen by remember { mutableStateOf(false) }
+    var reviewOpen by remember { mutableStateOf(false) }
     var tagsDraft by remember { mutableStateOf("") }
     val tags = remember(tagsDraft) { parseGalleryTagInput(tagsDraft) }
     val enabled = selected.isNotEmpty() && !state.loading &&
@@ -30,15 +31,21 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
         tonalElevation = 2.dp,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 TextButton(
                     onClick = { controller.setGallerySelectionMode(false) },
                     enabled = !state.loading && !uncertain,
                     modifier = Modifier.testTag("gallery-selection-done").heightIn(min = 48.dp),
                 ) { Text("完成") }
-                Text("已选择 ${selected.size} 项（最多 200）",
-                    modifier = Modifier.padding(top = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium)
+                TextButton(
+                    onClick = { reviewOpen = true },
+                    enabled = selected.isNotEmpty() && !state.loading && !uncertain,
+                    modifier = Modifier.testTag("gallery-selection-review-open")
+                        .heightIn(min = 48.dp),
+                ) { Text("查看已选项") }
+                Text("已选 ${selected.size}/200",
+                    style = MaterialTheme.typography.bodySmall)
             }
             if (uncertain) {
                 TextButton(
@@ -105,4 +112,6 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
             ) { Text("取消") }
         },
     )
+    if (reviewOpen && !uncertain)
+        GallerySelectionReviewDialog(state, controller) { reviewOpen = false }
 }

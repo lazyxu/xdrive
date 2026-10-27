@@ -1767,6 +1767,35 @@ class DriveController(
         } else mutableState.value = current.copy(gallerySelectedItems = selected + item)
     }
 
+    /** Review-only edits to the frozen, selected current Owner media set.
+     * Removal/clear never issues HTTP, reaches unselected nodes, or refreshes
+     * the Gallery. The ordinary selection writer retains its strict snapshot. */
+    fun removeGallerySelected(nodeId: Long) {
+        val current = state.value
+        if (nodeId <= 0 || current.screen != Screen.GALLERY ||
+            !current.gallerySelectionMode || !current.galleryLoaded ||
+            current.galleryViewer != null || current.loading ||
+            current.galleryMetadataWriteAttempted || session == null ||
+            current.gallerySelectedItems.none { it.node.id == nodeId }) return
+        mutableState.value = current.copy(
+            gallerySelectedItems = current.gallerySelectedItems.filterNot {
+                it.node.id == nodeId
+            },
+            error = if (current.error == "一次最多选择 200 项。") null else current.error,
+        )
+    }
+
+    fun clearGallerySelection() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.gallerySelectionMode ||
+            !current.galleryLoaded || current.galleryViewer != null ||
+            current.loading || current.galleryMetadataWriteAttempted || session == null) return
+        mutableState.value = current.copy(
+            gallerySelectedItems = emptyList(),
+            error = if (current.error == "一次最多选择 200 项。") null else current.error,
+        )
+    }
+
     /** Shared, bounded Owner media metadata operation for favorite/tags.
      * Never replay a physical write on token refresh, failure, or missing ACK. */
     private fun submitGalleryMetadata(
