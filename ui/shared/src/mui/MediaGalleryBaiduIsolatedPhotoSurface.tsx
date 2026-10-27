@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem } from '../models'
@@ -49,6 +51,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   listOwnerCells,
   listOwnerCellItems,
   loadThumbnail,
+  loadPreviewURL,
+  saveVideoPoster,
   edgeToEdge = false,
   onOpenCell,
   onOpenCellPhoto,
@@ -76,6 +80,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     limit: number, offset: number, sort: XDriveBaiduCellRangeSort,
     signal: AbortSignal) => Promise<import('../models').MediaItemRange>
   loadThumbnail?: MediaThumbnailLoader
+  loadPreviewURL?: import('./MediaGallery').MediaPreviewURLLoader
+  saveVideoPoster?: import('./MediaGallery').MediaVideoPosterSaver
   edgeToEdge?: boolean
   onOpenCell: (selection: MediaBaiduNativeCellSelection, scope: XDriveBaiduMapPhotoScope) => void
   onOpenCellPhoto?: (selection: MediaBaiduNativeCellSelection,
@@ -546,6 +552,29 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // key as private media authority. A pan/revoke clears both inputs.
   const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
     ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
+  // Server-approved media kind never enters Baidu's iframe or SDK DOM.
+  // Join only the exact current Owner representative before loading bytes.
+  const ownerCover=(selection:MediaBaiduNativeCellSelection,
+    alt:string,fallback:ReactNode):ReactNode=>{
+    if(!loadThumbnail)return fallback
+    const representative=trustedSummary?.cells.find(cell=>
+      cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
+      cell.asset_id===selection.asset_id && cell.node_id===selection.node_id &&
+      cell.node_revision===selection.node_revision &&
+      cell.photo_count===selection.photo_count)
+    if(representative?.media_kind==='video' && loadPreviewURL){
+      // Reuse Gallery's bounded VideoPoster queue, warm cache, cold signed
+      // video read, revision-fenced PUT and active-Viewer suspension.
+      return <XDriveMediaAsyncVideoPoster
+        nodeID={selection.node_id} revision={selection.node_revision}
+        alt={alt} loadPreviewURL={loadPreviewURL} loadThumbnail={loadThumbnail}
+        saveVideoPoster={saveVideoPoster} fallback={fallback}/>
+    }
+    // Older Server without kind retains the cached thumbnail fallback.
+    return <XDriveMediaGalleryCoverThumbnail
+      nodeID={selection.node_id} revision={selection.node_revision}
+      alt={alt} loadThumbnail={loadThumbnail} fallback={fallback}/>
+  }
   const openVerifiedCell=(selection:MediaBaiduNativeCellSelection)=>{
     selectCellRef.current(selection)
   }
@@ -601,16 +630,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 
                 <Box sx={{width:'100%',height:'100%',borderRadius:1,overflow:'hidden',
                   bgcolor:'action.hover'}}>
-                  {loadThumbnail ? (
-                    <XDriveMediaGalleryCoverThumbnail
-                      nodeID={pin.selection.node_id}
-                      revision={pin.selection.node_revision}
-                      alt="地图聚集点代表照片" loadThumbnail={loadThumbnail}
-                      fallback={<Box sx={{width:'100%',height:'100%',display:'grid',
-                        placeItems:'center',color:'text.secondary'}}>
-                        <PhotoLibraryOutlinedIcon fontSize="small"/>
-                      </Box>}/>
-                  ) : null}
+                  {loadThumbnail ? ownerCover(pin.selection,'地图聚集点代表照片',
+                    <Box sx={{width:'100%',height:'100%',display:'grid',
+                      placeItems:'center',color:'text.secondary'}}>
+                      <PhotoLibraryOutlinedIcon fontSize="small"/>
+                    </Box>) : null}
                 </Box>
                 {pin.count > 1 ? (
                   <Box component="span" data-xdrive-places-photo-count-badge
@@ -664,12 +688,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                         outlineColor:'primary.main',outlineOffset:2}}}>
                     <Box sx={{width:'100%',height:52,borderRadius:1,
                       overflow:'hidden',bgcolor:'background.default'}}>
-                      <XDriveMediaGalleryCoverThumbnail
-                        nodeID={pin.selection.node_id}
-                        revision={pin.selection.node_revision}
-                        loadThumbnail={loadThumbnail}
-                        alt={'区域 '+(pin.selection.cell_y*8+pin.selection.cell_x+1)+'代表照片'}
-                        fallback={<PhotoLibraryOutlinedIcon fontSize="small"/>}/>
+                      {ownerCover(pin.selection,
+                        '区域 '+(pin.selection.cell_y*8+pin.selection.cell_x+1)+'代表照片',
+                        <PhotoLibraryOutlinedIcon fontSize="small"/> )}
                     </Box>
                     <Typography variant="caption" component="span"
                       sx={{fontSize:10,fontWeight:700,display:'block',lineHeight:'16px'}}>

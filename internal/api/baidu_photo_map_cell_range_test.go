@@ -251,6 +251,20 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	if err != nil || summary.TotalCount != 3 || len(summary.Items) != 2 {
 		t.Fatalf("owner map cells=%+v %v", summary, err)
 	}
+	for _, cell := range summary.Items {
+		if cell.MediaKind != meta.MediaKindImage && cell.MediaKind != meta.MediaKindVideo {
+			t.Fatalf("untrusted representative media kind: %+v", cell)
+		}
+	}
+	// Select the current Owner video Node to verify the actual typed representative.
+	videoMembers := db.Model(&meta.Node{}).Select("id").
+		Where("id = ? AND owner_id = ?", n2.ID, alice.ID)
+	videoOnly, err := queryBaiduPhotoMapCellsScoped(
+		context.Background(), db, alice.ID, bounds, videoMembers, mediaQueryOptions{})
+	if err != nil || videoOnly.TotalCount != 1 || len(videoOnly.Items) != 1 ||
+		videoOnly.Items[0].NodeID != n2.ID || videoOnly.Items[0].MediaKind != meta.MediaKindVideo {
+		t.Fatalf("video map representative kind mismatch: %+v err=%v", videoOnly, err)
+	}
 	var target baiduPhotoMapCellSelection
 	for _, c := range summary.Items {
 		if c.PhotoCount == 2 {

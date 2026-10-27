@@ -82,6 +82,26 @@ test('C20 authentic Server count and complete 64-bin DTO validation; reject fake
   assert.equal(cells.xDriveValidBaiduNativeCellsPage(page(sixtyfour),bounds),true)
   assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([...sixtyfour,original]),bounds),false)
 })
+
+test('trusted representative media kind is only image/video and does not reach SDK Child',()=>{
+  const video={...original,node_revision:7,media_kind:'video'}
+  const still={...original,node_revision:7,media_kind:'image'}
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([video]),bounds),true)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([still]),bounds),true)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([original]),bounds),true)
+  for(const bad of ['audio','live_photo','text','video/mp4','',null,0]){
+    assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([{...video,media_kind:bad}]),bounds),false)
+  }
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([
+    {...video,video_url:'https://invalid.example/video'}]),bounds),false)
+  const server=read('internal/api/baidu_photo_map_cells.go')
+  const host=read('ui/shared/src/media-gallery-baidu-isolated-frame-host.ts')
+  const child=read('deploy/baidu-isolated-child/child.js')
+  assert.match(server,/m\.media_kind AS media_kind/)
+  assert.match(server,/cell\.MediaKind != meta\.MediaKindImage/)
+  assert.match(host,/reduced\.push\(\{ key, latitude: cell\.latitude, longitude: cell\.longitude,/)
+  assert.doesNotMatch(child,/media_kind|node_id|PhotoAsset|loadThumbnail/)
+})
 test('C20 true count uses official JSAPI4 Labels; clicks, revoke and stale bubble cleanup',()=>{
   const f=nativeFixture()
   const ctl=new cells.XDriveBaiduJSAPI4NativeCellOverlays(f.map,{Point:f.Point,Label:f.Label},

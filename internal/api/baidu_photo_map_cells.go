@@ -25,6 +25,7 @@ type baiduPhotoMapCell struct {
 	AssetID      uint64  `json:"asset_id"`
 	NodeID       uint64  `json:"node_id"`
 	NodeRevision uint64  `json:"node_revision"` // Current Owner-bound revision, never a new media grant.
+	MediaKind    string  `json:"media_kind"` // Parent-only representative kind; not sent to SDK Child.
 	Latitude     float64 `json:"latitude"`
 	Longitude    float64 `json:"longitude"`
 }
@@ -105,7 +106,7 @@ func queryBaiduPhotoMapCellsScoped(
 	const xWrapCell = "LEAST(7, GREATEST(0, FLOOR((CASE WHEN p.longitude >= ? THEN p.longitude - ? ELSE p.longitude + 360 - ? END) / ?)))::integer AS cell_x"
 	selectCells := "p.asset_id AS asset_id, p.primary_node_id AS node_id, p.node_revision AS node_revision, " +
 		"p.latitude AS latitude, p.longitude AS longitude, " +
-		"m.captured_at AS captured_at, n.created_at AS added_at, " + yCell + ", "
+		"m.media_kind AS media_kind, m.captured_at AS captured_at, n.created_at AS added_at, " + yCell + ", "
 	var values []any
 	values = append(values, bounds.South, stepY)
 	if bounds.West < bounds.East {
@@ -146,7 +147,7 @@ func queryBaiduPhotoMapCellsScoped(
 	var cells []baiduPhotoMapCell
 	err = db.WithContext(readCtx).Table("(?) AS ranked", ranked).
 		Select("ranked.cell_x, ranked.cell_y, ranked.photo_count, ranked.asset_id, "+
-			"ranked.node_id, ranked.node_revision, ranked.latitude, ranked.longitude").
+			"ranked.node_id, ranked.node_revision, ranked.media_kind, ranked.latitude, ranked.longitude").
 		Where("ranked.row_in_cell = ?", 1).
 		Order("ranked.cell_y ASC, ranked.cell_x ASC").
 		Limit(baiduPhotoMapCellMax + 1).Scan(&cells).Error
@@ -159,6 +160,7 @@ func queryBaiduPhotoMapCellsScoped(
 			cell.CellY < 0 || cell.CellY >= baiduPhotoMapCellGrid ||
 			cell.PhotoCount <= 0 || cell.PhotoCount > math.MaxInt64-total ||
 			cell.AssetID == 0 || cell.NodeID == 0 || cell.NodeRevision == 0 ||
+			(cell.MediaKind != meta.MediaKindImage && cell.MediaKind != meta.MediaKindVideo) ||
 			math.IsNaN(cell.Latitude) || math.IsNaN(cell.Longitude) ||
 			math.IsInf(cell.Latitude, 0) || math.IsInf(cell.Longitude, 0) ||
 			math.Abs(cell.Latitude) > 90 || math.Abs(cell.Longitude) > 180 {
