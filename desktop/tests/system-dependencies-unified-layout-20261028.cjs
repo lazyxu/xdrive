@@ -49,6 +49,17 @@ test('Caddy, PostgreSQL, storage, Worker and Baidu Server all fill the same deta
   }
 })
 
+test('Caddy atomic HTTPS and AliDNS editors use the same 12px vertical rhythm', () => {
+  const detail = text.caddy
+  const https = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  const dns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
+  assert.match(detail, /data-xdrive-caddy-v1-config sx=\{\{ scrollMarginTop: 72, mt: 1\.5 \}\}/)
+  assert.match(detail, /<Stack spacing=\{1\.5\}>/)
+  assert.match(https, /mt: atomicMode \? 0 : 1\.5/)
+  assert.match(dns, /mt: atomicMode \? 0 : 1\.5/)
+  assert.match(detail, /data-xdrive-caddy-v11-atomic-save/)
+})
+
 test('Baidu Server and Browser AK are independent controls but one vertical card stack', () => {
   assert.match(text.page,
     /data-xdrive-baidu-jsapi-separate sx=\{\{ width: '100%', minWidth: 0 \}\}/)
@@ -66,7 +77,11 @@ test('Baidu Server and Browser AK are independent controls but one vertical card
 })
 
 test('all edited shared React/MUI modules transpile without JSX syntax errors', () => {
-  for (const filename of Object.values(targets)) {
+  for (const filename of [
+    ...Object.values(targets),
+    'ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx',
+    'ui/shared/src/mui/CaddyAliDNSPanel.tsx',
+  ]) {
     const output = ts.transpileModule(read(filename), {
       fileName: filename, reportDiagnostics: true,
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX,
