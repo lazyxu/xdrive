@@ -1,0 +1,80 @@
+name: Prune queued CI superseded by published Snapshot
+
+# Deliberately NOT push-triggered: no extra job for each master commit.
+# Only a post-verification Release edit is used. Initial `published` fires
+# before remote asset integrity checks complete and must not prune CI.
+# The edited Snapshot is promoted with a scoped publisher App, not with
+# GITHUB_TOKEN, so this event can start an independent cleanup workflow.
+on:
+  release:
+    types: [edited]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Inspect old queued CI without cancelling them'
+        type: boolean
+        default: true
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/snapshot-prune-queued-master-ci.yml'
+      - 'scripts/ci/prune-queued-master-ci.cjs'
+      - 'scripts/ci/prune-queued-master-ci.test.cjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Only newer PR tests may replace obsolete PR checks. Published Snapshot
+  # and manually reviewed cleanup executions always get a unique run ID.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # PR code is executable only here, using a read-only token and an exact SHA.
+  selector-contract:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Run isolated cancellation selector regression without write permission
+        run: |
+          node --check scripts/ci/prune-queued-master-ci.cjs
+          node --test scripts/ci/prune-queued-master-ci.test.cjs
+
+  # Never run PR-supplied code with Actions write. Only release/manual events
+  # enter this guarded job, and checkout always selects trusted master.
+  prune-queued:
+    permissions:
+      contents: read
+      actions: write
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && github.event.release.tag_name == 'snapshot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted master-only cleanup code
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          persist-credentials: false
+      - name: Run fail-closed cancellation selector regression
+        run: node --test scripts/ci/prune-queued-master-ci.test.cjs
+      - name: Prune only old queued CI already superseded by Snapshot
+        uses: actions/github-script@v7
+        env:
+          PRUNE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        with:
+          script: |
+            const {pruneQueuedMasterCI} = require('./scripts/ci/prune-queued-master-ci.cjs')
+            await pruneQueuedMasterCI({
+              github, context, core,
+              dryRun: String(process.env.PRUNE_DRY_RUN) === 'true',
+            })
