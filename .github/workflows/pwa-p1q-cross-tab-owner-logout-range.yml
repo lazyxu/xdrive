@@ -1,0 +1,91 @@
+name: PWA P1Q Real Owner Cross-Tab Logout Signed Range
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs'
+      - 'desktop/tests/pwa-p1q-cross-tab-owner-logout-range-source.cjs'
+      - '.github/workflows/pwa-p1q-cross-tab-owner-logout-range.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-p1q-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  real-owner-logout-signed-range:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-p1q-owner-cross-tab-logout-range-20261028'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+      XD_PWA_P1_100K_VIEWER_BACK: '1'
+      XD_PWA_P1_H264_VIEWER_FRAME: '1'
+      XD_PWA_P1_LIVE_MOTION_HOLD: '1'
+      XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL: '1'
+      XD_PWA_P1Q_CROSS_TAB_LOGOUT_VIDEO_RANGE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert signed Range and source-only P1Q invariants
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node --test desktop/tests/pwa-p1q-cross-tab-owner-logout-range-source.cjs
+          test -z "$(gofmt -l internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go internal/api/gallery_real_web_cold_performance_integration_test.go)"
+      - name: Compile original Web and authenticated Gin PostgreSQL17 LocalCAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix desktop install --no-audit --no-fund
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/pwa-p1q-owner-logout-go
+          go test -c -o desktop/pwa-p1q-owner-logout-go/api.test ./internal/api
+          test -x desktop/pwa-p1q-owner-logout-go/api.test
+      - name: Measure n3 real Owner logout while original H264 Range is in flight
+        run: |
+          set -euo pipefail
+          export XD_GALLERY_MOBILE_NATIVE_GO_BINARY="$GITHUB_WORKSPACE/desktop/pwa-p1q-owner-logout-go/api.test"
+          mkdir -p desktop/pwa-p1q-cross-tab-owner-logout-range-results
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > desktop/pwa-p1q-cross-tab-owner-logout-range-results/source.txt
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          test "$(find desktop/pwa-p1q-cross-tab-owner-logout-range-results -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+          node -e 'const s=require("./desktop/pwa-p1q-cross-tab-owner-logout-range-results/summary.json");if(!(s.passed&&s.sampleCount===3&&s.logicalAssets===100000&&s.goNativeHTTPRange&&s.authenticCrossWindowButton&&s.goLogoutMaxMs<=160&&s.wastedBytes===0&&s.actualServerRevocationVerified===false&&s.samples.every(x=>x.passed&&x.ownerLogout.passed&&x.ownerLogout.stillActiveAt160Ms===0&&x.ownerLogout.browser.loggedOut&&x.ownerLogout.browser.viewerUnmounted&&x.ownerLogout.noNewRequestAfterLogout)))process.exit(1);console.log(JSON.stringify({passed:true,n:s.sampleCount,maxGoCancelMs:s.goLogoutMaxMs,wastedBytes:s.wastedBytes,causalConclusion:s.causalConclusion}))'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1q-owner-cross-tab-logout-range
+          path: |
+            desktop/pwa-p1q-cross-tab-owner-logout-range-results/source.txt
+            desktop/pwa-p1q-cross-tab-owner-logout-range-results/sample-*.json
+            desktop/pwa-p1q-cross-tab-owner-logout-range-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

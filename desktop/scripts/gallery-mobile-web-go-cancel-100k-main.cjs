@@ -19,6 +19,10 @@ const p1ViewerVideoAbortMode = process.env.XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL =
 // P1P is opt-in only: 100k Owner PhotoAssets backed by 115k SHA-distinct
 // genuine LocalCAS originals, not the older bounded physical Viewer fixture.
 const physicalP1Mode = process.env.XD_PWA_P1_PHYSICAL_115K_VIEWER === '1'
+const p1CrossTabLogoutMode = process.env.XD_PWA_P1Q_CROSS_TAB_LOGOUT_VIDEO_RANGE === '1'
+assert(!p1CrossTabLogoutMode || (p1ViewerVideoAbortMode && p0c2SPAMode &&
+  !physicalP1Mode && !p0c2PageLeaveMode),
+  'P1Q requires authenticated bounded Owner signed H264 Range, not physical mode')
 assert(!physicalP1Mode || (p0c2SPAMode && p1Mode && p1H264Mode && p1LiveMode &&
   !p1ViewerVideoAbortMode && !p0c2PageLeaveMode),
   '115k physical P1P requires real routed JPEG/H264/Live SPA without padded Range probe')
@@ -28,7 +32,7 @@ assert(!p1H264Mode || p1Mode,
   'H264 presented-frame mode requires real Owner P1 Gallery Viewer')
 assert(!p1Mode || p0c2SPAMode, 'P1 authentic Owner Viewer requires SPA mode')
 assert(!(p0c2PageLeaveMode && p0c2SPAMode), 'P0-C2 document-leave and SPA workloads must be independent')
-const out = path.join(__dirname, '..', physicalP1Mode ? 'pwa-p1p-physical-115k-viewer-results' : p1ViewerVideoAbortMode ? 'pwa-p1-owner-100k-viewer-range-abort-results' : p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
+const out = path.join(__dirname, '..', physicalP1Mode ? 'pwa-p1p-physical-115k-viewer-results' : p1CrossTabLogoutMode ? 'pwa-p1q-cross-tab-owner-logout-range-results' : p1ViewerVideoAbortMode ? 'pwa-p1-owner-100k-viewer-range-abort-results' : p1LiveMode ? 'pwa-p1-owner-100k-live-hold-results' : p1H264Mode ? 'pwa-p1-owner-100k-h264-viewer-results' : p1Mode ? 'pwa-p1-owner-100k-viewer-back-results' : p0c2SPAMode ?
   'pwa-p0c2-spa-go-results' : p0c2PageLeaveMode ?
   'pwa-p0c2-pageleave-go-results' : 'gallery-mobile-web-go-cancel-100k-results')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -884,6 +888,129 @@ async function p1MeasureRealViewerRangeAbort(win,base){
   return row
 }
 
+
+// Test-only P1Q: second real authenticated native Chromium window clicks
+// Logout while the FIRST Owner Viewer's genuine signed H264 206 Range is in
+// flight. No synthetic BroadcastChannel event or JavaScript DOM .click().
+function p1QAccountButtonPoint(mode) {
+  const avatar=mode==='avatar'
+  const query=avatar?'button[aria-label="账户菜单"]':'[role="menuitem"]'
+  const target=avatar?'账户菜单':'退出登录'
+  const matches=[...document.querySelectorAll(query)].filter(button=>{
+    const label=(button.getAttribute('aria-label')||button.textContent||'')
+      .replace(/\s+/g,'').trim()
+    if(label!==target)return false
+    const rect=button.getBoundingClientRect(),style=getComputedStyle(button)
+    if(rect.width<12||rect.height<12||rect.left<0||rect.top<0||
+      rect.right>innerWidth||rect.bottom>innerHeight||
+      style.visibility==='hidden'||style.pointerEvents==='none')return false
+    const x=rect.left+rect.width/2,y=rect.top+rect.height/2
+    const hit=document.elementFromPoint(x,y)
+    return hit===button||button.contains(hit)
+  })
+  if(matches.length!==1)return null
+  const rect=matches[0].getBoundingClientRect()
+  return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)}
+}
+async function p1QVisibleAccountPoint(win,mode) {
+  return win.webContents.executeJavaScript(
+    '('+p1QAccountButtonPoint.toString()+')('+JSON.stringify(mode)+')',true)
+}
+async function p1QBrowserOwnerState(win) {
+  return win.webContents.executeJavaScript('(() => ({'+
+    'viewerMounted:!!document.querySelector("[data-xdrive-web-viewer]"),'+
+    'galleryMounted:!!document.querySelector("[data-xdrive-media-gallery-virtual-grid]"),'+
+    'loginMounted:!!document.querySelector("#web-login-username"),'+
+    'hasOwnerSession:!!localStorage.getItem("xdrive.access_token"),'+
+    'nativeVideoMounted:!!document.querySelector("[data-xdrive-web-viewer] video"),'+
+    'sameDocument:document.documentElement===window.__pwaC2SPADocument'+
+    '}))()',true)
+}
+async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
+  const auditor=new BrowserWindow({show:true,x:520,y:12,width:390,height:844,
+    webPreferences:{partition:'real-mobile-gallery-web-scroll-'+sample,
+      sandbox:false,nodeIntegration:false,contextIsolation:true,
+      webSecurity:true,backgroundThrottling:false}})
+  try {
+    await bootOriginalAuthenticatedApp(auditor,base)
+    await switchActualApp(auditor,'文件','files')
+    await switchActualApp(win,'图库','gallery')
+    const enabled=await fetch(base+'/__perf/viewer-video-range-enable',{method:'POST'})
+    assert.equal(enabled.status,204,'P1Q original Go signed Range probe disabled')
+    const zero=await p1ViewerVideoProbeStats(base)
+    assert.equal(zero.started,0,'signed Range measurement must start at zero')
+    assert(await win.webContents.executeJavaScript(
+      '('+p1RestoreDeepVideoViewport.toString()+')()',true),
+      'actual deep authenticated Gallery missing before logout')
+    const tile=await until(async()=>win.webContents.executeJavaScript(
+      '('+p1VisibleH264Tile.toString()+')()',true),
+      25000,'real Owner deep H264 photo wall tile missing')
+    assert(tile.depth>=0.7&&tile.tiles>0&&tile.tiles<1000,
+      'not a real bounded 100k Owner Gallery tile')
+    sendActualPointer(win,tile)
+    await until(async()=>win.webContents.executeJavaScript(
+      "location.hash.startsWith('#/app/media-viewer?') && !!document.querySelector('[data-xdrive-web-viewer]')",
+      true),30000,'first window actual routed H264 Viewer')
+    await until(async()=>win.webContents.executeJavaScript(
+      '('+p1OriginalSignedVideoElement.toString()+')()',true),
+      12000,'actual signed original video before logout')
+    const inflight=await until(async()=>{
+      const s=await p1ViewerVideoProbeStats(base)
+      return s.signed_range>=1&&s.partial_content>=1&&s.first_chunks>=1&&
+        s.active>=1&&s.emitted_bytes>0?s:null
+    },12000,'real signed 206 Range must be in flight during logout')
+    const avatar=await until(async()=>p1QVisibleAccountPoint(auditor,'avatar'),
+      10000,'second window real account avatar')
+    sendActualPointer(auditor,avatar)
+    const logout=await until(async()=>p1QVisibleAccountPoint(auditor,'logout'),
+      10000,'second window actual Logout MenuItem')
+    const before=await p1ViewerVideoProbeStats(base)
+    assert(before.active>=1&&before.context_done===0&&
+      before.emitted_bytes===inflight.emitted_bytes,
+      'Viewer original Range already stopped before native Logout click')
+    const marked=await fetch(base+'/__perf/viewer-video-range-mark',{method:'POST'})
+    assert.equal(marked.status,204,'Go signed Range cancellation timer absent')
+    const mark=await p1ViewerVideoProbeStats(base)
+    assert(mark.active>=1&&mark.mark_emitted_bytes===mark.emitted_bytes,
+      'not an active original H264 Range at logout mark')
+    const started=performance.now()
+    sendActualPointer(auditor,logout)
+    await sleep(160)
+    const after=await p1ViewerVideoProbeStats(base)
+    const logoutElapsedMs=performance.now()-started
+    const browser=await until(async()=>{
+      const b=await p1QBrowserOwnerState(win)
+      return b.sameDocument&&!b.viewerMounted&&!b.galleryMounted&&
+        !b.nativeVideoMounted&&!b.hasOwnerSession&&b.loginMounted?b:null
+    },10000,'logout must retire first Owner Viewer and private media')
+    await sleep(200)
+    const stable=await p1ViewerVideoProbeStats(base)
+    const passed=after.context_done>=mark.active&&after.cancelled>=1&&
+      after.active===0&&after.max_cancel_us>0&&after.max_cancel_us<=160000&&
+      after.emitted_bytes===mark.mark_emitted_bytes&&
+      stable.active===0&&stable.started===after.started&&
+      stable.emitted_bytes===mark.mark_emitted_bytes&&
+      browser.sameDocument&&!browser.hasOwnerSession&&
+      !browser.viewerMounted&&!browser.nativeVideoMounted&&browser.loginMounted
+    const row={passed,ownerAuthenticatedBefore:true,crossWindowNativeLogout:true,
+      signedPartialContent:after.partial_content,signedRangeStarted:after.signed_range,
+      activeAtMark:mark.active,contextDone:after.context_done,
+      cancelledHandlers:after.cancelled,stillActiveAt160Ms:after.active,
+      wastedBytesAfterLogout:after.emitted_bytes-mark.mark_emitted_bytes,
+      goContextMaxMs:after.max_cancel_us/1000,logoutElapsedMs,
+      noNewRequestAfterLogout:stable.started===after.started,
+      browser:{sameDocument:browser.sameDocument,loggedOut:!browser.hasOwnerSession,
+        loginMounted:browser.loginMounted,viewerUnmounted:!browser.viewerMounted,
+        mediaUnmounted:!browser.nativeVideoMounted&&!browser.galleryMounted},
+      proof:'second authenticated native App Logout -> BroadcastChannel Owner teardown -> first actual signed H264 Range Go Context.Done',
+      exclusions:'Not Server access-token revocation proof, physical iOS, HEIC, HEVC or full 115k original CAS'}
+    assert(row.passed,'P1Q cross-tab Owner video Range cancellation failed: '+JSON.stringify(row))
+    return row
+  } finally {
+    if(!auditor.isDestroyed())auditor.destroy()
+  }
+}
+
 async function sampleOnce(sample, ready) {
   let fixture = null, win = null, resourceSampler = null
   try {
@@ -1105,6 +1232,40 @@ async function sampleOnce(sample, ready) {
     console.log('GALLERY_MOBILE_WEB_GO_CANCEL_100K_PRE_RANGE ' +
       JSON.stringify(cancelDiagnostic))
     const healthy = await newIndependentRange(fixture)
+    if(p1CrossTabLogoutMode){
+      const ownerLogout=await p1MeasureRealCrossTabViewerLogout(
+        win,fixture.config.url,sample)
+      clearInterval(resourceSampler);resourceSampler=null
+      const goEnd=nativeProcessStats(actualGoPID)
+      const rendererEnd=nativeProcessStats(rendererPID)
+      peakGoRSS=Math.max(peakGoRSS,goEnd.rssBytes)
+      peakRendererRSS=Math.max(peakRendererRSS,rendererEnd.rssBytes)
+      const resources={
+        goRSSGrowthBytes:Math.max(0,peakGoRSS-goStart.rssBytes),
+        rendererRSSGrowthBytes:Math.max(0,peakRendererRSS-rendererStart.rssBytes),
+        goCPUMs:goEnd.cpuMs-goStart.cpuMs,
+        rendererCPUMs:rendererEnd.cpuMs-rendererStart.cpuMs,
+      }
+      const oldGalleryCancelled=after.active===0&&
+        after.context_done-started.context_done===streamCount&&
+        after.cancelled-started.cancelled===streamCount&&
+        after.emitted_bytes===started.emitted_bytes&&
+        after.max_cancel_us<=160000
+      const row={sample,passed:failures.length===0&&healthy.status===200&&
+          oldGalleryCancelled&&ownerLogout.passed&&
+          resources.goRSSGrowthBytes<=128*1024*1024&&
+          resources.rendererRSSGrowthBytes<=128*1024*1024&&
+          resources.goCPUMs>=0&&resources.rendererCPUMs>=0,
+        logicalAssets:100000,physicalNodes:115000,
+        ownerLogout,oldGalleryCancelled,resources,
+        scope:'Real Gin PG17 bounded CAS 100k Owner SPA; genuine second-window Logout unmounts original Viewer and cancels signed H264 206 Range within 160ms',
+        exclusions:'Not physical iOS, HEIC, HEVC, independent token revocation proof, or causal speedup'}
+      fs.writeFileSync(path.join(out,'sample-'+sample+'.json'),
+        JSON.stringify(row,null,2)+'\n')
+      console.log('PWA_P1Q_OWNER_LOGOUT_SAMPLE '+JSON.stringify(row))
+      assert(row.passed,'P1Q authentic Owner logout lifecycle not accepted')
+      return row
+    }
     const p1ViewerBack = p1Mode ? await p1MeasureRealViewerBack(win) : null
     const p1H264Frames = p1H264Mode ? await p1MeasureRealH264ViewerMotion(win) : null
     const p1LiveMotion = p1LiveMode ? await p1MeasureLivePhotoHold(win) : null
@@ -1161,6 +1322,35 @@ async function main() {
       rows.push(await sampleOnce(sample, path.join(temp, 'ready-' + sample + '.json')))
     }
 
+    if(p1CrossTabLogoutMode){
+      const report={
+        status:'measured-P1Q-cross-tab-Owner-logout-signed-H264-Range',
+        sampleCount:rows.length,
+        passed:rows.length===3&&rows.every(row=>row.passed&&
+          row.logicalAssets===100000&&row.physicalNodes===115000&&
+          row.oldGalleryCancelled&&row.ownerLogout?.passed&&
+          row.ownerLogout?.crossWindowNativeLogout&&
+          row.ownerLogout?.contextDone>=row.ownerLogout?.activeAtMark&&
+          row.ownerLogout?.stillActiveAt160Ms===0&&
+          row.ownerLogout?.wastedBytesAfterLogout===0&&
+          row.ownerLogout?.goContextMaxMs<=160&&
+          row.ownerLogout?.browser?.loggedOut&&
+          row.ownerLogout?.browser?.viewerUnmounted&&
+          row.ownerLogout?.noNewRequestAfterLogout),
+        goLogoutMaxMs:Math.max(...rows.map(row=>row.ownerLogout.goContextMaxMs)),
+        wastedBytes:rows.reduce((sum,row)=>sum+row.ownerLogout.wastedBytesAfterLogout,0),
+        logicalAssets:100000,physicalNodes:115000,
+        sameRunner:true,authenticCrossWindowButton:true,goNativeHTTPRange:true,
+        actualServerRevocationVerified:false,realIOSSafari:false,
+        causalConclusion:'NOT_ESTABLISHED',samples:rows,
+      }
+      fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(report,null,2)+'\n')
+      console.log('PWA_P1Q_OWNER_LOGOUT_SUMMARY '+JSON.stringify({
+        passed:report.passed,n:report.sampleCount,maxGoCancelMs:report.goLogoutMaxMs,
+        wastedBytes:report.wastedBytes,causalConclusion:report.causalConclusion}))
+      assert(report.passed,'P1Q original Owner cross-tab Logout signed Range gate failed')
+      return
+    }
     if (physicalP1Mode) {
       const median = key => rows.map(row=>key(row)).sort((a,b)=>a-b)[1]
       const summary = {
