@@ -756,7 +756,8 @@ test -x "$TMP/config/bin/xdrive-server"
 test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
 test ! -e "$TMP/host-bin/xdrive-server"
-grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
+# Pre-maintenance failures retain manager without entering the disruptive rollback path.
+grep -q 'leaving all running containers untouched' "$TMP/pull-fail.err"
 
 
 
