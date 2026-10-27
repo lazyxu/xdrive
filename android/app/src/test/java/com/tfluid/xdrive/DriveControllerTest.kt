@@ -1942,6 +1942,144 @@ class DriveControllerTest {
         assertEquals(listOf(root), c.state.value.path)
     }
 
+    @Test fun atomicBrowseBatchCopyUsesOnlySelectedOwnerRowsAndOneServerPost() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var batches = 0
+            override suspend fun batchCopyNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                assertEquals("access", accessToken)
+                assertEquals(root.id, parentId)
+                assertEquals(listOf(file, second), originals)
+                batches++
+                val copies = originals.mapIndexed { index, node ->
+                    node.copy(id = 110L + index, parentId = parentId,
+                        name = node.name + " - 副本", revision = 1)
+                }
+                mutationRows += copies
+                mutationListing = true
+                return copies
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        assertEquals(listOf(file, second), c.state.value.destinationSources)
+        assertEquals(root.id, c.state.value.destinationPath.single().id)
+        assertTrue(c.state.value.destinationLoaded)
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.batches)
+        assertTrue(c.state.value.items.any { it.id == 110L })
+        assertTrue(c.state.value.items.any { it.id == 111L })
+        assertTrue(c.state.value.items.any { it == file })
+        assertFalse(c.state.value.browseSelectionMode)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertTrue(c.state.value.destinationSources.isEmpty())
+        assertNull(c.state.value.destinationKind)
+        c.close()
+    }
+
+    @Test fun batchMoveIsOneAtomicWriteAndCannotTargetCurrentParent() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var batches = 0
+            override suspend fun batchMoveNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                batches++
+                assertEquals("access", accessToken)
+                assertEquals(listOf(file, second), originals)
+                assertEquals(folder.id, parentId)
+                mutationRows = mutationRows.filterNot { it.id in originals.map { o -> o.id } }
+                mutationListing = true
+                return originals.map { it.copy(parentId = parentId,
+                    revision = it.revision + 1) }
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        api.listing = { parent, offset ->
+            if (parent == root.id) NodeRange(
+                if (offset == 0) api.mutationRows else emptyList(),
+                api.mutationRows.size.toLong(), offset)
+            else NodeRange(emptyList(), 0, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file); c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.MOVE); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(0, api.batches) // Root is their existing parent.
+        c.enterDestinationFolder(folder); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.batches)
+        assertEquals(listOf(folder), c.state.value.items)
+        assertEquals(listOf(root), c.state.value.path)
+        assertNull(c.state.value.destinationKind)
+        assertFalse(c.state.value.browseSelectionMode)
+        c.close()
+    }
+
+    @Test fun uncertainBatchAckFreezesBrowseAndDoesNotRepeatPhysicalWrite() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var attempts = 0
+            override suspend fun batchCopyNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                attempts++
+                throw ApiException(503, "Commit ACK might have been lost")
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file); c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        assertFalse(c.state.value.loaded)
+        assertTrue(c.state.value.destinationWriteAttempted)
+        assertTrue(c.state.value.error.orEmpty().contains("结果未确认"))
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        c.dismissDestination()
+        assertNull(c.state.value.destinationKind)
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        c.close()
+    }
+
+    @Test fun batchPickerRejectsMissingOrUnrevisionedSourceAndKeepsSelectionOnCancel() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = Service().apply {
+            mutationRows = listOf(folder, file, second)
+            mutationListing = true
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseSelectedDestination(FilesTransferKind.COPY)
+        assertNull(c.state.value.destinationKind)
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        assertEquals(2, c.state.value.destinationSources.size)
+        c.dismissDestination(); runCurrent()
+        assertNull(c.state.value.destinationKind)
+        assertTrue(c.state.value.destinationSources.isEmpty())
+        assertEquals(setOf(file.id, second.id), c.state.value.browseSelectedIds)
+        c.setBrowseSelectionMode(false)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        c.close()
+    }
+
     @Test fun nativeCopyToCurrentFolderAcceptsServerGeneratedDuplicateName() = runTest {
         val api = Service()
         api.listing = { parent, offset ->
