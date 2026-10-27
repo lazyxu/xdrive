@@ -135,6 +135,7 @@ import type { XDrivePointerDragPoint } from './usePointerDrag'
 import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
+import type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import { XDriveFileNameDialogView, xDriveFileNameValidationError } from './FileNameDialog'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
@@ -840,6 +841,8 @@ export function XDriveFileExplorer({
   onRedo,
   canRedo = false,
   onDownloadItems,
+  viewerDownloadReceipt,
+  onQuickLookDownloadWithReceipt,
   folderDownloadSupported = false,
   onDeleteItems,
   getSelectionActionDisabledReason,
@@ -951,6 +954,11 @@ export function XDriveFileExplorer({
   onRedo?: () => void
   canRedo?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
+  /** Optional Desktop-only Task Center binding for the already-open Quick Look. */
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
+  onQuickLookDownloadWithReceipt?: (
+    item: XDriveFileExplorerItem, clientRequestID: string,
+  ) => Promise<void | { saved: boolean }>
   folderDownloadSupported?: boolean
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
   getSelectionActionDisabledReason?: (
@@ -7173,6 +7181,8 @@ export function XDriveFileExplorer({
               : `${quickLookIndex + 1} / ${quickLookFiles.length}`
           : undefined}
         actions={quickLookActions}
+        viewerDownloadReceipt={viewerDownloadReceipt}
+        onDownloadWithReceipt={onQuickLookDownloadWithReceipt}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
         loadLivePhotoMotion={loadLivePhotoMotion}

@@ -79,3 +79,30 @@ func TestOldAgentCannotSilentlyDropViewerDownloadCorrelation(t *testing.T) {
 		t.Fatalf("legacy Agent silently accepted an untracked download: HTTP %d", response.Code)
 	}
 }
+
+func TestViewerDownloadCorrelationCapabilityOnlyWhenImplemented(t *testing.T) {
+	supported := &fakeIPCViewerDownloadCorrelated{
+		fakeDesktopIPCController: &fakeDesktopIPCController{revision: 1},
+	}
+	unsupported := &fakeDesktopIPCController{revision: 1}
+	for _, tc := range []struct {
+		name string
+		ctrl desktopIPCController
+		want bool
+	}{
+		{name: "supported", ctrl: supported, want: true},
+		{name: "legacy", ctrl: unsupported, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newDesktopIPCHandler(tc.ctrl, "secret", func() {}, false)
+			response := desktopIPCRequest(t, handler, http.MethodGet, "/v1/hello", "")
+			if response.Code != http.StatusOK {
+				t.Fatalf("hello failed: HTTP %d", response.Code)
+			}
+			has := strings.Contains(response.Body.String(), "\"transfer-download-correlation\"")
+			if has != tc.want {
+				t.Fatalf("incorrect Agent download capability, want %t got %t", tc.want, has)
+			}
+		})
+	}
+}

@@ -180,6 +180,7 @@ import {
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
+import type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt'
 import type { XDriveBorrowedPreviewImageURL, XDriveFilePreviewImageLoader } from './FilePreviewSurface'
 import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveShareDialog } from './ShareDialog'
@@ -467,7 +468,9 @@ export interface MediaGalleryDataSource {
   setFavoriteBatch?: (nodeIDs: number[], favorite: boolean) => Promise<void>
   addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
   deleteItems?: (items: MediaItem[]) => Promise<MediaGalleryDeleteOperation | void>
-  downloadItems?: (items: MediaItem[]) => Promise<void>
+  downloadItems?: (items: MediaItem[], clientRequestID?: string) => Promise<void | { saved: boolean }>
+  /** Desktop-only live Agent receipt; subscribed by the mounted Viewer, not the 100k wall. */
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   exportLivePhoto?: (item: MediaItem) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
@@ -3655,11 +3658,11 @@ export function XDriveMediaGalleryPage({
     }
   }, [onError, source])
 
-  const downloadItems = useCallback(async (selectedItems: MediaItem[]) => {
+  const downloadItems = useCallback(async (selectedItems: MediaItem[], clientRequestID?: string) => {
     if (!source.downloadItems || selectedItems.length === 0) return
     setError('')
     try {
-      await source.downloadItems(selectedItems)
+      return await source.downloadItems(selectedItems, clientRequestID)
     } catch (downloadError) {
       setError(xDriveMediaGalleryErrorMessage(downloadError))
       onError?.(downloadError)
@@ -3913,6 +3916,7 @@ export function XDriveMediaGalleryPage({
         <XDriveMediaGallery
         key={preferenceScope || 'gallery-default'}
         parentReportsViewerActionErrors={Boolean(onError)}
+        viewerDownloadReceipt={source.viewerDownloadReceipt}
         preferenceScope={preferenceScope}
         onRegisterViewerThumbnailCache={onRegisterViewerThumbnailCache}
         mobileWebChrome={mobileWebChrome}
@@ -4609,7 +4613,8 @@ export interface XDriveMediaGalleryProps {
   onAddTagsBatch?: (items: MediaItem[], tags: string[]) => Promise<void>
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
-  onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  onDownloadItems?: (items: MediaItem[], clientRequestID?: string) => Promise<void | { saved: boolean }>
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   // Outer Gallery Page may already report mutation/transfer failures to its
   // host Snackbar. Direct Gallery consumers default to Viewer-local feedback.
   parentReportsViewerActionErrors?: boolean
@@ -6344,6 +6349,7 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  viewerDownloadReceipt,
   parentReportsViewerActionErrors = false,
   onUploadRequested,
   onExportLivePhoto,
@@ -8367,7 +8373,11 @@ export function XDriveMediaGallery({
               )
             : undefined}
           onDownload={!isTrashSection && onDownloadItems
-            ? () => runSelectionAction(onDownloadItems, false)
+            ? () => runSelectionAction(async (selectedItems) => {
+                // Selection keeps its original void contract; only an explicit
+                // single Viewer download consumes a native SaveDialog receipt.
+                await onDownloadItems(selectedItems)
+              }, false)
             : undefined}
           onCreateCollage={
             !isTrashSection &&
@@ -9486,8 +9496,9 @@ export function XDriveMediaGallery({
           ? () => onRefresh()
           : undefined}
         onDownload={onDownloadItems
-          ? (item) => onDownloadItems([item])
+          ? (item, clientRequestID) => onDownloadItems([item], clientRequestID)
           : undefined}
+        viewerDownloadReceipt={viewerDownloadReceipt}
         onExportLivePhoto={onExportLivePhoto}
         onShare={onShareItem}
         onDelete={onDeleteItems
