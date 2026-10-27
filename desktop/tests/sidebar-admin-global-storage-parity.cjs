@@ -7,6 +7,8 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
 const page = read('ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx')
 const web = read('web', 'src', 'StorageStatsPanel.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
 const main = read('desktop', 'src', 'main', 'index.cts')
 const client = read('internal', 'client', 'admin_storage.go')
 const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc_admin_storage.go')
@@ -15,9 +17,9 @@ const port = read('ui', 'shared', 'src', 'admin-management.ts')
 
 test('full Web and Desktop global storage shares the entire MUI page', () => {
   assert.ok(web.includes("export { XDriveGlobalStorageStatsPage as default } from '@xdrive/ui/mui'"))
-  assert.ok(desktop.includes('<XDriveGlobalStorageStatsPage'))
-  assert.ok(desktop.includes("key: 'admin-storage', label: '全局存储'"))
-  assert.ok(desktop.includes("view === 'admin-storage' && status?.role === 'admin'"))
+  assert.ok(desktop.includes('adminStoragePage:') && outlet.includes('<XDriveGlobalStorageStatsPage'))
+  assert.ok(sections.includes("key: 'admin-storage', label: '全局存储'"))
+  assert.ok(desktop.includes("adminStoragePage: status?.role === 'admin'") && outlet.includes("case 'admin-storage':"))
   assert.ok(desktop.includes("capabilities.includes('admin-storage')"))
   for (const key of [
     'api.adminStorageHistory(', 'api.adminStorageLegacyObjects(',

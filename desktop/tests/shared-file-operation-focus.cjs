@@ -118,6 +118,12 @@ function appFocusOwner(platform) {
         }
       }
     }
+    if (platform === 'Desktop' && ts.isPropertyAssignment(entry) &&
+      ['operationFocusID', 'operationFocusRequestID'].includes(entry.name.getText(ast))) {
+      // After shared-Host migration the real page properties are fields of
+      // workspaceHost.services.taskCenterPage, not Desktop-specific JSX.
+      focusProps.set(entry.name.getText(ast), entry.initializer.getText(ast))
+    }
     ts.forEachChild(entry, visit)
   }
   visit(ast)

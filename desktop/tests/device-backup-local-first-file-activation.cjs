@@ -26,7 +26,7 @@ test('true first-file upload is gated by the owning Desktop and dedicated authen
   assert.ok(agentClient.includes('/v1/device-backups/local-first-file'))
   assert.ok(preload.includes("'agent:start-device-backup-local-first-file'"))
   assert.ok(desktop.includes("agent.hello?.capabilities.includes('device-backup-local-first-file')"))
-  assert.ok(desktop.includes('localFirstFile={localBackupFirstFile}'))
+  assert.ok(desktop.includes('localFirstFile: localBackupFirstFile'))
   assert.ok(view.includes("folder.sync_mode === 'backup' && verifiedLocalDeviceID === device.id && !device.revoked"))
   assert.ok(view.includes('localOwnsFolder(firstFileTarget.id)'))
   assert.equal(web.includes('localFirstFile='), false, 'Web and Mobile Web must not get the writer')

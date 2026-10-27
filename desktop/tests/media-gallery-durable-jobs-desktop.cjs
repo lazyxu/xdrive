@@ -17,7 +17,7 @@ test('Desktop durable Gallery jobs share the Web UI and owner-scoped Task Center
   const go = read('internal/client/media.go')
 
   assert.match(renderer, /mediaSelectionJobsSupported/)
-  assert.match(renderer, /mediaSelectionJobPort=\{view === 'transfers' \? mediaSelectionJobPort : undefined\}/)
+  assert.match(renderer, /mediaSelectionJobPort:\s*view === 'transfers' \? mediaSelectionJobPort : undefined/)
   assert.match(renderer, /createDesktopMediaGalleryDataSource\(/)
   assert.match(gallery, /durableJobsSupported \? \{/)
   for (const name of ['submitSelectionFavoriteJob', 'getSelectionJob',
