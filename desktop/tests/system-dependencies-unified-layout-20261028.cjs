@@ -31,7 +31,14 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   // All the paths used by real Web, Electron Desktop and DSM remain the
   // existing single React/MUI component tree: never fork platform UI.
   assert.match(read('web/src/App.tsx'), /XDriveServiceDependenciesPage/)
-  assert.match(read('desktop/src/renderer/App.tsx'), /XDriveServiceDependenciesPage/)
+  // Desktop and DSM route through the same Host outlet; the page itself
+  // remains the sole shared XDriveServiceDependenciesPage implementation.
+  // Do not require each Host App to import its page directly.
+  const desktop = read('desktop/src/renderer/App.tsx')
+  const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.match(desktop, /xDriveIsSharedHostPageRoute\(view\) \? <XDriveAppPageOutlet view=\{view\} host=\{workspaceHost\}/)
+  assert.match(outlet, /case 'admin-services':/)
+  assert.match(outlet, /<XDriveServiceDependenciesPage \{\.\.\.services\.adminServicesPage\} \/>/)
 })
 
 test('Caddy, PostgreSQL, storage, Worker and Baidu Server all fill the same detail column', () => {
