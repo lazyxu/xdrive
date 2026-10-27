@@ -26,7 +26,13 @@
 - 浏览器 Cookie 路径包含严格 Origin/Host 与 Fetch Metadata 校验、Owner 绑定、旧刷新凭据重放拒绝、多标签可用时 Web Locks 串行轮换、登出立即清理本地私有视图并保留待远端撤销标记。无 Web Locks（含 Safari 受限能力）仅为安全降级，**不承诺跨标签互斥**；超时不代表远端撤销已经成功。
 - Web/PWA 的手动公网/局域网入口和离线历史继续保持原状；不新增公开注册，也不绕过 HTTPS 身份验证。
 
-**验证状态须分开记录：** #2741 合入前同一功能 HEAD 的 Web lint/构建、Desktop、Go API、服务器备份和相关打包检查已通过；Android 先前因 Viewer 缓存复用后的旧测试断言失败，已由 [#2760](https://github.com/lazyxu/xdrive/pull/2760) 的准确提交通过 API35 仪器测试并修复合入。合并后的 `master@07503074` CI / Snapshot 产物仍需看实际结果，不把合并成功冒充发布成功。真实 Chrome 双标签 Cookie 竞争、Safari 受限存储/ Web Locks、旧 Session 迁移及 401/403、密码变更/管理员撤销的端到端浏览器验证尚未完整取得证据；这些未验收项在 [#2725](https://github.com/lazyxu/xdrive/issues/2725) 继续跟踪。实际 Android Keystore/进程杀死重启、Desktop 局域网/证书变化、安装态 iOS PWA 测试均按项目约定标记「跳过（未验收）」，不替代源码安全测试。
+**验证状态须分开记录（2026-10-27）：**
+
+- [#2736](https://github.com/lazyxu/xdrive/pull/2736) + [#2741](https://github.com/lazyxu/xdrive/pull/2741) 是生产 Server + Web/PWA Cookie 登录实现；[#2760](https://github.com/lazyxu/xdrive/pull/2760) 修正 Android Viewer 缓存复用旧断言，Android API35 实测通过。
+- [#2767](https://github.com/lazyxu/xdrive/pull/2767) 已加入**两层独立**回归：真实 TLS Gin/PostgreSQL 的 Cookie 轮换、Owner/Origin/重放负例，以及真实 Chromium 中生产 TS 方法的两标签 Web Locks。两层分别验证不能称为同一条 Web UI 端到端链路。
+- [#2776](https://github.com/lazyxu/xdrive/pull/2776) 已将成熟 S2B3 生产 Web/Gin/PostgreSQL 测试夹具**仅在隔离测试时切换为 HTTPS**，用完整的真实 Chromium+React 登录页面在同源链路上完成：HttpOnly/Secure/SameSite Cookie、短期 Access JWT 不落浏览器持久化存储、Cookie 不作 Bearer（401）、冷恢复并轮换、双标签恢复、错误 Owner（409 且不消耗 Cookie）、UI 登出返回 204、Cookie 清除及新标签拒绝恢复。准确 [GitHub Actions #40433874668](https://github.com/lazyxu/xdrive/actions/runs/40433874668) **Success**，`passed=true`，`logoutHTTPStatus=204`，已合入 [`master@a315e799`](https://github.com/lazyxu/xdrive/commit/a315e799d9a884134b0fc7a7b3a40c32bc6344ab)。
+- 此测试把已有 Gin S2B3 **隔离 PostgreSQL** 缺少的 `BaiduJSAPIMapEpoch` 表补入迁移，以满足生产 Logout 中 Refresh Token 撤销、地图 epoch 和审计的原子事务；**不改变生产 TLS/认证代码**。自签名证书宽免仅允许测试 Chrome 访问临时本地 TLS Server；这不是外部实际部署 TLS 身份验收，测试还特意禁用 Service Worker，不能冒充 iOS 安装态验证。
+- **仍未验收**：真实浏览器密码修改、管理员 SessionVersion 撤销、离线退出 Tombstone、新旧服务器/JSON 历史 Session 的升级回归，以及 Safari 受限 Storage/Web Locks 的真实降级行为；在无 Web Locks 时不能宣称跨标签严格互斥。[Issue #2725](https://github.com/lazyxu/xdrive/issues/2725) 保持 Open。Android Keystore/进程重启、Desktop 局域网证书变更、iOS PWA 实体安装态等仍按项目约定“跳过（未验收）”。各个准确 SHA 的完整 master CI / Snapshot 是否成功应独立核查，不以专项通过冒充发布通过。
 
 ## 2026-10-26 · Browser Cookie 端点（服务端已合入）
 
