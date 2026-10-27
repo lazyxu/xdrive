@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import java.util.Locale
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,13 +70,19 @@ internal fun GalleryPhotoViewer(
     // Only an explicit user action retries both existing authenticated readers.
     // Never poll a failed or revoked private media request in the background.
     var retryNonce by remember(photo.node.id, photo.node.revision) { mutableIntStateOf(0) }
+    var liveHeld by remember(photo.node.id, photo.node.revision) { mutableStateOf(false) }
+    var originalProgress by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf(0L to (null as Long?))
+    }
     val currentZoom by rememberUpdatedState(zoom)
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val older = controller.galleryViewerNeighbor(-1)
     val newer = controller.galleryViewerNeighbor(1)
     val cacheKey = "${photo.node.id}:${photo.node.revision}"
     val cachedThumbnail = thumbnails.get(cacheKey)
-    val canReadOriginal = photo.node.size in 1L..(32L * 1024 * 1024)
+    val canReadOriginal =
+        (photo.livePhoto && photo.node.name.endsWith(".livp", ignoreCase = true)) ||
+        photo.node.size in 1L..(32L * 1024 * 1024)
     val stage by produceState<ImageStage>(
         cachedThumbnail?.let {
             ImageStage.Ready(it, thumbnailOnly = true, upgrading = canReadOriginal)
@@ -119,7 +126,9 @@ internal fun GalleryPhotoViewer(
             }
             if (!originalDone) launch {
                 original = try {
-                    val bytes = controller.galleryImageBytes(photo)
+                    val bytes = controller.galleryImageBytes(photo) { done, total ->
+                        originalProgress = done to total
+                    }
                     withContext(Dispatchers.Default) { decodeGalleryOriginal(bytes) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -147,6 +156,10 @@ internal fun GalleryPhotoViewer(
         BoxWithConstraints(
             Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-photo-gesture")
+                .galleryLivePhotoHold(
+                    enabled = photo.livePhoto && stage is ImageStage.Ready,
+                    sourceIdentity = "${photo.node.id}:${photo.node.revision}",
+                ) { pressed -> liveHeld = pressed }
                 // One-finger swipes are only page navigation at default zoom.
                 // Pinch/pan remains owned by the image transformable recognizer.
                 .pointerInput(photo.node.id, photo.node.revision) {
@@ -185,8 +198,16 @@ internal fun GalleryPhotoViewer(
                 },
             contentAlignment = Alignment.Center) {
             when (val current = stage) {
-                ImageStage.Loading -> CircularProgressIndicator(
-                    color = Color.White, modifier = Modifier.testTag("gallery-photo-loading"))
+                ImageStage.Loading -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = Color.White, modifier = Modifier.testTag("gallery-photo-loading"))
+                    if (originalProgress.first > 0L) Text(
+                        "正在下载原图 · " + galleryByteLabel(
+                            originalProgress.first, originalProgress.second),
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = Color.White, style = MaterialTheme.typography.labelSmall,
+                    )
+                }
                 ImageStage.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("原图无法预览", color = Color.White)
                     Text("请检查连接或图片格式；大于 32 MiB 的原图尚不支持分块预览。",
@@ -231,7 +252,18 @@ internal fun GalleryPhotoViewer(
                                 })
                             }
                             .testTag("gallery-photo-image"))
-                    if (current.upgrading) {
+                    if (current.upgrading && originalProgress.first > 0L) {
+                        Text(
+                            "正在下载原图 · " + galleryByteLabel(
+                                originalProgress.first, originalProgress.second),
+                            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("gallery-photo-original-progress"),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    } else if (current.upgrading) {
                         CircularProgressIndicator(
                             modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
                                 .size(22.dp).testTag("gallery-photo-upgrading"),
@@ -253,6 +285,37 @@ internal fun GalleryPhotoViewer(
                     }
                 }
             }
+            if (photo.livePhoto) {
+                GalleryLivePhotoMotion(
+                    photo = photo,
+                    controller = controller,
+                    held = liveHeld,
+                    stillReady = stage is ImageStage.Ready,
+                )
+            }
         }
     }
+}
+
+/** IEC-only label: the denominator is the actual body size when verified,
+ * not the .livp outer ZIP length or a speculative original size. */
+private fun galleryByteLabel(loaded: Long, total: Long?): String {
+    val amount = maxOf(loaded, total ?: 0L)
+    val unit = when {
+        amount >= 1024L * 1024L * 1024L -> 1024L * 1024L * 1024L
+        amount >= 1024L * 1024L -> 1024L * 1024L
+        amount >= 1024L -> 1024L
+        else -> 1L
+    }
+    val unitName = when (unit) {
+        1024L * 1024L * 1024L -> "GiB"
+        1024L * 1024L -> "MiB"
+        1024L -> "KiB"
+        else -> "B"
+    }
+    fun number(bytes: Long) = if (unit == 1L) bytes.toString()
+        else String.format(Locale.ROOT, "%.1f", bytes.toDouble() / unit)
+    return if (total != null && total > 0L)
+        "${number(loaded)} / ${number(total)} $unitName"
+    else "${number(loaded)} $unitName"
 }
