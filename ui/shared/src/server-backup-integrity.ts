@@ -1,0 +1,129 @@
+import type {
+  XDriveServerBackupHistoryEntry, XDriveServerBackupPage,
+  XDriveServerBackupSnapshot,
+} from './server-backup-admin'
+
+/**
+ * Counts only Host-discovered snapshots. A structurally complete generation or
+ * a previous successful verification is never treated as current integrity
+ * evidence: bytes can change after the last receipt.
+ */
+export type XDriveServerBackupIntegritySummary = {
+  snapshots: number
+  fullCandidates: number
+  databaseOnly: number
+  incomplete: number
+  inconsistent: number
+  historicalPassed: number
+  historicalFailed: number
+  withoutRecentReceipt: number
+  newestFullID: string | null
+  needsAttention: boolean
+}
+
+export function summarizeServerBackupIntegrity(
+  page: XDriveServerBackupPage,
+): XDriveServerBackupIntegritySummary {
+  const snapshots = page.inventory.snapshots
+  const lastVerify = new Map<string, XDriveServerBackupHistoryEntry>()
+  for (const entry of page.history || []) {
+    if (entry.action !== 'verify' || !entry.snapshot_id) continue
+    const previous = lastVerify.get(entry.snapshot_id)
+    // Host currently writes newest first; compare timestamps anyway so a
+    // reordered but otherwise valid bounded history cannot show stale success.
+    if (!previous || (entry.finished_at || '') > (previous.finished_at || '')) {
+      lastVerify.set(entry.snapshot_id, entry)
+    }
+  }
+
+  let fullCandidates = 0
+  let databaseOnly = 0
+  let incomplete = 0
+  let inconsistent = 0
+  let historicalPassed = 0
+  let historicalFailed = 0
+  let withoutRecentReceipt = 0
+  let newestFull: XDriveServerBackupSnapshot | undefined
+
+  for (const snapshot of snapshots) {
+    if (snapshot.state === 'inconsistent') {
+      inconsistent++
+    } else if (snapshot.state !== 'complete') {
+      incomplete++
+    } else if (!snapshot.file_data_included) {
+      databaseOnly++
+    } else {
+      fullCandidates++
+      if (!newestFull || snapshot.created_at > newestFull.created_at) {
+        newestFull = snapshot
+      }
+    }
+
+    const receipt = lastVerify.get(snapshot.id)
+    if (!receipt) {
+      withoutRecentReceipt++
+    } else if (receipt.state === 'success') {
+      historicalPassed++
+    } else {
+      historicalFailed++
+    }
+  }
+
+  return {
+    snapshots: snapshots.length,
+    fullCandidates,
+    databaseOnly,
+    incomplete,
+    inconsistent,
+    historicalPassed,
+    historicalFailed,
+    withoutRecentReceipt,
+    newestFullID: newestFull?.id || null,
+    needsAttention: fullCandidates === 0 || incomplete > 0 ||
+      inconsistent > 0 || historicalFailed > 0,
+  }
+}
+
+/** Pick actual latest completed Host verification, not array display order. */
+export function latestServerBackupVerification(
+  history: XDriveServerBackupPage['history'],
+  snapshotID: string,
+): XDriveServerBackupHistoryEntry | undefined {
+  let latest: XDriveServerBackupHistoryEntry | undefined
+  for (const entry of history || []) {
+    if (entry.action !== 'verify' || entry.snapshot_id !== snapshotID) continue
+    if (!latest || (entry.finished_at || '') > (latest.finished_at || '')) latest = entry
+  }
+  return latest
+}
+
+/** Duration is computed only from the two authentic Host timestamps. */
+export function serverBackupReceiptDurationSeconds(
+  entry: XDriveServerBackupHistoryEntry,
+): number | null {
+  const start = Date.parse(entry.started_at || '')
+  const finish = Date.parse(entry.finished_at || '')
+  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start) return null
+  return Math.round((finish - start) / 1000)
+}
+
+/** Explain only authenticated structured error codes; never expose a raw Host log. */
+export function serverBackupReceiptExplanation(
+  entry: XDriveServerBackupHistoryEntry,
+): string {
+  if (entry.state === 'success') {
+    return entry.action === 'verify'
+      ? '宿主机记录这次校验通过。历史结果不保证快照当前仍然完整，恢复时必须重新校验。'
+      : '宿主机记录该操作完成。创建备份成功不等于实际恢复演练通过。'
+  }
+  switch (entry.error_code) {
+    case 'lock_busy':
+      return '宿主机备份、安装或定时任务锁正在被占用；未开始并行修改。'
+    case 'interrupted':
+      return '宿主机重启或操作中断，未自动重放危险操作。请重新检查后手动提交。'
+    case 'operation_failed':
+      return '宿主机报告执行失败；具体原因仅保存在宿主机私有日志，网页不会展示原始路径或日志。'
+    default:
+      return '宿主机报告失败；该历史记录没有可公开的结构化失败分类。'
+  }
+}

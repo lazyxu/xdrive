@@ -253,6 +253,34 @@ executed results plus a per-snapshot *last verification (historical)* receipt.
 This is not a claim that previously verified bytes remain valid: any actual
 restore re-runs the full fail-closed verification.
 
+Manual Create uses the existing `server-backup.sh` progress file.
+Host Control copies bounded, actual per-stage bytes and labels to its
+authenticated status. Web/Desktop render a determinate progress bar only
+when a trustworthy byte total is known. Unknown totals remain indeterminate;
+stage counters can reset and must not be described as an overall percentage.
+Other actions retain indeterminate progress until native evidence exists.
+Final Host terminal receipts remain authoritative.
+
+The shared administrator panel also provides an **integrity overview** based
+only on Host-discovered generations and the most recent (up to 30) operation
+receipts. It separates structurally complete file+database restore candidates,
+database-only, incomplete, inconsistent, previous verify success/failure and
+absent recent verify receipts. A failed historical check is a warning; a
+previous success is **not** a current integrity guarantee. The read-only
+"verify latest complete backup" shortcut defaults to `fast` and uses the
+same authorized fixed Host action. No client-side hash estimate or fake
+recovery-success badge is emitted.
+
+History rows now offer an individual **Host execution detail** dialog with
+start/end timestamps, actual elapsed seconds, structured result/error code,
+mode and receipt ID. Lock contention, interrupted Host actions and generic
+failures have bounded, human-readable explanations; raw Host logs and paths
+are never sent to the browser. The existing v2 retention preview displays
+actual `hashed_objects` / `hashed_bytes` when the Host reports them.
+Individual verification object counts and per-category failures are still
+unavailable from the existing Host protocol and are **explicitly not
+estimated**. This is historical diagnostic evidence, not a restore drill.
+
 Online CAS verification/repair lives in **全局存储** and Task Center;
 a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file
@@ -286,9 +314,10 @@ This does not prove PostgreSQL data can actually be restored and queried.
 This internal CAS report is **not itself a complete backup verification**:
 the Host `xdrive-server backup verify` also checks the snapshot metadata,
 SHA256SUMS and database dump. Do not advertise an internal CAS success as a
-fully restorable snapshot. Host/API/UI wiring for the new report is a separate
-integration checkpoint; no new browser-accessible private Host report is
-enabled by this source-only change.
+fully restorable snapshot. Admin Host Control now persists a validated report as optional evidence on
+each verification-history record. The shared Web/Desktop detail dialog shows
+historical counts and safe failure categories without disclosing Host paths.
+This is evidence of the completed checksum/CAS check, not a restore drill.
 
 ## Compression
 

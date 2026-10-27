@@ -53,4 +53,9 @@ test('v1 zero CAS counters do not imply that no backup bytes were checked', () =
     root, 'ui/shared/src/mui/BackupVerificationReceipt.tsx'), 'utf8')
   assert.match(component, /data-xdrive-admin-backup-verification-report/)
   assert.match(component, /不代表已完成 PostgreSQL 与文件恢复演练/)
+  const panel = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
+  assert.match(panel, /XDriveBackupVerificationReceipt entry=\{historyDetail\}/)
+  assert.match(panel, /data-xdrive-admin-backup-progress/)
+  assert.match(panel, /data-xdrive-admin-backup-history-detail/)
 })
