@@ -7,6 +7,8 @@ import type {
 import { XDriveFileExplorer } from './FileExplorer'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { xDriveFileSupportsTextPreview } from '../file-preview'
+import { xDriveFileSupportsThumbnail } from './FileExplorerItemPresentation'
+import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import type { XDriveByteProgressHandler } from '../file-preview'
 import {
   xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME,
@@ -38,7 +40,7 @@ function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerI
     createdAt: node.created_at,
     updatedAt: node.updated_at,
     statusLabel: '只读',
-    thumbnailEligible: false,
+    thumbnailEligible: xDriveFileSupportsThumbnail(node.name, node.type),
   }
 }
 
@@ -83,6 +85,11 @@ export function XDriveSynologyOwnerFilesPage({
     }
     return client.ownerFileTextPreview(item.id, signal)
   }, [client])
+  const loadOwnerThumbnail = useCallback((
+    item: XDriveFileExplorerItem,
+    signal?: AbortSignal,
+    onProgress?: XDriveByteProgressHandler,
+  ) => xDriveSynologyLoadOwnerThumbnail(client, item, signal, onProgress), [client])
   const loadMediaPreview = useCallback((
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
@@ -254,8 +261,8 @@ export function XDriveSynologyOwnerFilesPage({
       }}>
         <XDriveStatusAlert tone="neutral">
           本页提供经 Server Owner 鉴权的文件列表、最多 1 MiB 的文本预览，以及最多 32 MiB 的
-          JPEG/PNG/WebP/GIF/PDF 查看，以及 DSM 身份验证下的原生视频/音频 Range 播放。
-          Live、缩略图、下载、上传、移动、删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
+          JPEG/PNG/WebP/GIF/PDF 查看和可见图片/视频的 Server 派生缩略图，支持 DSM 身份验证下的原生视频/音频 Range 播放。
+          Live、下载、上传、移动、删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
         </XDriveStatusAlert>
         {rootError ? <XDriveStatusAlert tone="bad">{rootError}</XDriveStatusAlert> : null}
         {loadingRoot ? <Box data-xdrive-nas-cloud-root-first-read aria-busy
@@ -266,7 +273,7 @@ export function XDriveSynologyOwnerFilesPage({
             {notice ? <XDriveStatusAlert tone="neutral">{notice}</XDriveStatusAlert> : null}
             <XDriveFileExplorer
               presentation="workspace"
-              interactionLifecycleKey={crumbs.map(crumb => crumb.id).join('/')}
+              interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
               items={displayedItems}
               crumbs={crumbs}
               loading={loading}
@@ -285,6 +292,7 @@ export function XDriveSynologyOwnerFilesPage({
               }}
               onRefresh={refreshAuthenticatedOwner}
               loadTextPreview={loadTextPreview}
+              loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
               onOpenItem={item => {
                 if (item.kind === 'dir') {

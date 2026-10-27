@@ -28,6 +28,10 @@ const browserStorage = read('ui/shared/src/synology-browser-storage.ts')
 const ownerQuotaIPC = read('internal/localbackupipc/owner_quota.go')
 const ownerFileIPC = read('internal/localbackupipc/owner_files.go')
 const ownerMediaIPC = read('internal/localbackupipc/owner_media_range.go')
+const ownerThumbIPC = read('internal/localbackupipc/owner_thumbnail.go')
+const ownerThumbServer = read('internal/client/owner_thumbnail.go')
+const ownerThumbAdapter = read('ui/shared/src/synology-owner-thumbnail.ts')
+const commonThumbnails = read('ui/shared/src/mui/FileExplorerThumbnail.tsx')
 const ownerServerRange = read('internal/client/owner_media_range.go')
 const synologyMediaPreview = read('ui/shared/src/synology-media-preview.ts')
 const synologyMediaStream = read('ui/shared/src/synology-media-stream.ts')
@@ -61,7 +65,20 @@ for (const [name, source] of [['Desktop', desktop], ['DSM', nas]]) {
     }
   }
 }
-if (!nativeStreamGateway.includes('parseOwnerStreamRange') ||
+if (!ownerThumbIPC.includes('cloud-thumbnail-read') ||
+    !ownerThumbIPC.includes('ValidateOwnerThumbnail') ||
+    !ownerThumbServer.includes('MediaOwnerThumbnail') ||
+    !ownerThumbServer.includes('revision=%s') ||
+    !backupOnly.includes('"GET /v1/cloud/thumbnail"') ||
+    !cgiRouting.includes('"cloud-thumbnail"') ||
+    !cgi.includes('reader.OwnerFileThumbnail(ctx, nodeID, revision)') ||
+    !nasAdapter.includes('ownerFileThumbnail: async (nodeID, revision, signal)') ||
+    !synologyFiles.includes('loadThumbnail={loadOwnerThumbnail}') ||
+    !synologyFiles.includes("interactionLifecycleKey={rootRevision + ':' + currentScopeKey}") ||
+    !ownerThumbAdapter.includes('xDriveSynologyLoadOwnerThumbnail') ||
+    !commonThumbnails.includes('fileThumbnailConcurrency = 6') ||
+    !commonThumbnails.includes('disposeFileThumbnailCache') ||
+    !nativeStreamGateway.includes('parseOwnerStreamRange') ||
     !nativeStreamGateway.includes('ownerStreamMaxResponseBytes = 1 << 20') ||
     !nativeStreamGateway.includes('localbackupipc.ValidateOwnerMediaRange') ||
     !cgiRouting.includes('"cloud-media-stream"') ||

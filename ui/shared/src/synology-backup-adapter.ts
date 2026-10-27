@@ -38,6 +38,14 @@ export type XDriveSynologyOwnerMediaRange = {
 }
 export const XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES = 256 << 10
 
+export const XDRIVE_SYNOLOGY_THUMBNAIL_MAX_BYTES = 2 << 20
+export type XDriveSynologyOwnerThumbnail = {
+  contentType: 'image/jpeg' | 'image/png'
+  alphaState: '' | 'opaque' | 'masked' | 'unavailable'
+  alphaMask: string
+  data: Uint8Array
+}
+
 export type XDriveSynologyOwnerStreamMIME =
   | 'video/mp4' | 'video/webm'
   | 'audio/mpeg' | 'audio/mp4' | 'audio/ogg' | 'audio/wav' | 'audio/flac'
@@ -117,6 +125,11 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ownerFilesRoot(signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Strict bounded JSON text read, not arbitrary binary or signed content URL. */
   ownerFileTextPreview(nodeID: number, signal?: AbortSignal): Promise<XDriveFileTextPreview>
+  /** Current revision must be re-verified by the Owner Server; no Agent cached
+   * data from a previous login may be returned under this file identity. */
+  ownerFileThumbnail(
+    nodeID: number, revision: number, signal?: AbortSignal,
+  ): Promise<XDriveSynologyOwnerThumbnail>
   ownerFileMediaRange(
     nodeID: number, revision: number, offset: number, length: number,
     signal?: AbortSignal,
@@ -153,7 +166,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota',
-      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range'].includes(operation)) {
+      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -254,6 +267,59 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         throw new Error('Invalid or oversized authenticated Owner text preview')
       }
       return preview
+    },
+    ownerFileThumbnail: async (nodeID, revision, signal) => {
+      if (!Number.isSafeInteger(nodeID) || nodeID < 1 ||
+          !Number.isSafeInteger(revision) || revision < 1) {
+        throw new Error('Invalid Owner thumbnail ID or revision')
+      }
+      const raw = await request<unknown>(
+        '/v1/cloud-thumbnail?node_id=' + nodeID + '&revision=' + revision,
+        'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Invalid Owner thumbnail payload')
+      }
+      const obj = raw as Record<string, unknown>
+      if (Object.keys(obj).length !== 4 ||
+        Object.keys(obj).some(k => !['content_type', 'alpha_state', 'alpha_mask', 'data'].includes(k)) ||
+        (obj.content_type !== 'image/jpeg' && obj.content_type !== 'image/png') ||
+        !['', 'opaque', 'masked', 'unavailable'].includes(obj.alpha_state as string) ||
+        typeof obj.alpha_mask !== 'string' ||
+        typeof obj.data !== 'string' ||
+        obj.data.length > Math.ceil(XDRIVE_SYNOLOGY_THUMBNAIL_MAX_BYTES / 3) * 4 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(obj.data) ||
+        (obj.alpha_state !== 'masked' && obj.alpha_mask !== '') ||
+        (obj.alpha_state === 'masked' && (
+          obj.content_type !== 'image/png' || obj.alpha_mask.length < 4 ||
+          obj.alpha_mask.length > 4096 ||
+          !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(obj.alpha_mask)))) {
+        throw new Error('Invalid Owner thumbnail image or alpha metadata')
+      }
+      const binary = atob(obj.data)
+      if (!binary.length || binary.length > XDRIVE_SYNOLOGY_THUMBNAIL_MAX_BYTES) {
+        throw new Error('Invalid Owner thumbnail body size')
+      }
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const isPNG = obj.content_type === 'image/png'
+      if (isPNG ? bytes.length < 8 ||
+            ![137, 80, 78, 71, 13, 10, 26, 10].every((n,i) => bytes[i] === n)
+          : bytes.length < 3 || bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255) {
+        throw new Error('Invalid Owner thumbnail file signature')
+      }
+      if (obj.alpha_state === 'masked') {
+        const mask = atob(obj.alpha_mask)
+        if (mask.length < 8 ||
+          ![137, 80, 78, 71, 13, 10, 26, 10].every((n,i) => mask.charCodeAt(i) === n)) {
+          throw new Error('Invalid Owner thumbnail alpha mask')
+        }
+      }
+      return {
+        contentType: obj.content_type as 'image/jpeg' | 'image/png',
+        alphaState: obj.alpha_state as XDriveSynologyOwnerThumbnail['alphaState'],
+        alphaMask: obj.alpha_mask,
+        data: bytes,
+      }
     },
     ownerFileMediaRange: async (nodeID, revision, offset, length, signal) => {
       const validID = (value: number) => Number.isSafeInteger(value) && value > 0
