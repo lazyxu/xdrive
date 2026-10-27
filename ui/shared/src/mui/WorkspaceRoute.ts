@@ -67,7 +67,7 @@ export function xDriveWorkspaceNavigationAllowed(view: string, serverAdminVerifi
 // Desktop/DSM domain ports. Legacy Desktop controller pages are extracted
 // separately without keeping another DSM-specific navigation registry.
 export const XDRIVE_SHARED_HOST_PAGE_ROUTES = [
-  'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
+  'overview', 'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
   'local-storage', 'cloud-storage', 'conflicts', 'diagnostics',
   'admin-maintenance', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services',
 ] as const satisfies readonly XDriveWorkspaceAppRoute[]

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveHomePage } from './HomePage'
+import { XDriveOverviewPage } from './OverviewPage'
 import { XDriveMediaGalleryPage } from './MediaGallery'
 import { XDriveSourceManager } from './SourceManager'
 import { XDriveSynologyOwnerFilesPage } from './SynologyOwnerFilesPage'
@@ -51,7 +52,8 @@ export function XDriveAppPageOutlet({
   if (services) {
     switch (view) {
       case 'overview':
-        if (local) page = (
+        if (services.overviewPage) page = <XDriveOverviewPage key={revision} {...services.overviewPage} />
+        else if (local) page = (
           <XDriveHomePage key={revision} localBackupClient={local}
             onOpenBackup={navigate('device-backup')}
             onOpenTasks={navigate('transfers')}

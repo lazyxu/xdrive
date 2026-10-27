@@ -92,7 +92,7 @@ import {
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
-import { DesktopOverviewPage } from './DesktopOverviewPage'
+import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { desktopShareDialogAdapter } from './fileDialogAdapters'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
@@ -2660,6 +2660,47 @@ export default function App({
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      overviewPage: {
+        port: desktopOverviewPort,
+        status: status,
+        quota: cloudQuota,
+        activeTaskCount: taskCenter.badge ?? 0,
+        transfers: transfers.transfers,
+        fileOperations: cloudFileOperations,
+        backgroundTasks: taskCenter.backgroundTasks,
+        activityRevision: [
+              status?.revision ?? 0,
+              transfers.transfers.find((task) => (
+                task.state === 'completed' ||
+                task.state === 'partial' ||
+                task.state === 'failed' ||
+                task.state === 'cancelled'
+              ))?.updated_at ?? '',
+              cloudFileOperations.find((operation) => (
+                operation.status === 'completed' ||
+                operation.status === 'failed' ||
+                operation.status === 'cancelled'
+              ))?.updated_at ?? '',
+            ].join(':'),
+        recentSupported: fileRecentSupported,
+        favoritesSupported: fileFavoritesSupported,
+        fileAvailabilitySupported: fileAvailabilitySupported,
+        localDiskSpaceSupported: agent.hello?.capabilities.includes('local-disk-space') ?? false,
+        folderUploadSupported: Boolean(
+              agent.hello?.capabilities.includes('upload-conflict-preflight') &&
+              agent.hello?.capabilities.includes('upload-conflict-policy')
+            ),
+        openFolderLoading: busy === 'folder',
+        onOpenFolder: () => {
+              void run('folder', () => window.xdriveDesktop.agent.openFolder())
+            },
+        onOpenFiles: () => setView('files'),
+        onRequestFileAction: requestCloudFileAction,
+        onOpenGallery: () => setView('gallery'),
+        onOpenTransfers: () => setTransferPopoverOpen(true),
+        onOpenConflicts: () => setView('conflicts'),
+        onError: setError,
+      },
       galleryPage: {
     source: mediaGallerySource,
     preferenceScope: `desktop:${status?.server ?? ''}:${status?.username ?? ''}`,
@@ -3094,48 +3135,7 @@ export default function App({
 
         {xDriveIsSharedHostPageRoute(view) ? <XDriveAppPageOutlet view={view} host={workspaceHost} /> : null}
 
-        {view === 'overview' && (
-          <DesktopOverviewPage
-            status={status}
-            quota={cloudQuota}
-            activeTaskCount={taskCenter.badge ?? 0}
-            transfers={transfers.transfers}
-            fileOperations={cloudFileOperations}
-            backgroundTasks={taskCenter.backgroundTasks}
-            activityRevision={[
-              status?.revision ?? 0,
-              transfers.transfers.find((task) => (
-                task.state === 'completed' ||
-                task.state === 'partial' ||
-                task.state === 'failed' ||
-                task.state === 'cancelled'
-              ))?.updated_at ?? '',
-              cloudFileOperations.find((operation) => (
-                operation.status === 'completed' ||
-                operation.status === 'failed' ||
-                operation.status === 'cancelled'
-              ))?.updated_at ?? '',
-            ].join(':')}
-            recentSupported={fileRecentSupported}
-            favoritesSupported={fileFavoritesSupported}
-            fileAvailabilitySupported={fileAvailabilitySupported}
-            localDiskSpaceSupported={agent.hello?.capabilities.includes('local-disk-space') ?? false}
-            folderUploadSupported={Boolean(
-              agent.hello?.capabilities.includes('upload-conflict-preflight') &&
-              agent.hello?.capabilities.includes('upload-conflict-policy')
-            )}
-            openFolderLoading={busy === 'folder'}
-            onOpenFolder={() => {
-              void run('folder', () => window.xdriveDesktop.agent.openFolder())
-            }}
-            onOpenFiles={() => setView('files')}
-            onRequestFileAction={requestCloudFileAction}
-            onOpenGallery={() => setView('gallery')}
-            onOpenTransfers={() => setTransferPopoverOpen(true)}
-            onOpenConflicts={() => setView('conflicts')}
-            onError={setError}
-          />
-        )}
+
 
 
 
