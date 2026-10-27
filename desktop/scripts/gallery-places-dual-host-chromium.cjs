@@ -33,7 +33,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
-  favoriteMapCloseModes:[],
+  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -231,6 +231,69 @@ async function testActualGinIssueRedeem(page,mode){
     ['valid','actual Gin/PostgreSQL Owner Scope and Camera restored'],
     ['replayBlocked','consumed Owner scope ticket cannot replay'],
   ])record(mode+': '+label,result[key]===true)
+}
+
+
+async function testFullDocumentMapHandoff(browser,from,port){
+  const target=from==='inline'?'isolated':'prototype'
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const u=new URL(route.request().url())
+    assert.equal(u.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const fromQuery=from==='isolated'?'&places_map_mode=isolated':''
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?handoff_doc=1'+fromQuery,{waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>window.__mapProbe?.ready===true)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(from+': original Owner Favorites map is mounted before document handoff',
+      (await page.evaluate(()=>window.__mapProbe.queries))
+        .every(q=>q.favorite===true&&q.albumKey===''))
+    await page.locator('[data-xdrive-places-map-more-menu] summary').click()
+    await page.locator('[data-xdrive-map-mode-'+target+']').click()
+    await page.waitForURL(url=>url.searchParams.get('places_map_scope_required')==='1'&&
+      (target==='prototype'?!url.searchParams.has('places_map_mode'):
+        url.searchParams.get('places_map_mode')==='isolated'))
+    await page.waitForFunction(()=>window.__mapProbe?.handoff?.state==='ready'&&
+      window.__mapProbe?.ready===true)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const accepted=await page.evaluate(()=>({
+      url:location.href,
+      ownerQueries:window.__mapProbe.queries,
+      handoff:window.__mapProbe.handoff,
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+      cover:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    record(from+'→'+target+': actual Gin/PostgreSQL ticket survives full document with same Owner Favorites',
+      accepted.handoff.consumes===1&&accepted.handoff.state==='ready'&&
+      accepted.ownerQueries.length>0&&
+      accepted.ownerQueries.every(q=>q.favorite===true&&q.albumKey==='')&&
+      accepted.count?.includes('3 张照片')&&accepted.cover>0)
+    record(from+'→'+target+': opaque one-use token is scrubbed before SDK load',
+      accepted.url.includes('places_map_scope_required=1')&&
+      !accepted.url.includes('places_map_handoff=')&&
+      !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true'))
+    await page.reload({waitUntil:'domcontentloaded'})
+    await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
+    const denied=await page.evaluate(()=>({
+      state:window.__mapProbe?.handoff?.state,
+      queries:window.__mapProbe?.queries?.length,
+      map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      token:location.href.includes('places_map_handoff='),
+    }))
+    record(from+'→'+target+': full reload cannot replay or broaden restricted Owner map',
+      denied.state==='denied'&&denied.queries===0&&denied.map===0&&
+      !denied.token&&errors.length===0)
+    summary.fullDocumentHandoffModes.push(from)
+  }finally{await context.close()}
 }
 
 async function testMode(browser,mode,port){
@@ -1597,9 +1660,13 @@ async function main(){
     const child=host===childHost+':'+port
     const pathname=new URL(req.url||'/','https://'+host).pathname
     requests.push({host:gallery?'gallery':child?'child':'unexpected',path:pathname})
-    if(gallery&&pathname==='/')return content(res,200,'text/html',
-      ginURL?resultHTML.replace('</head>',
-        '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML)
+    if(gallery&&pathname==='/'){
+      let html=ginURL?resultHTML.replace('</head>',
+        '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML
+      if(new URL(req.url||'/','https://'+host).searchParams.get('handoff_doc')==='1')
+        html=html.replace('<head>','<head><meta name="referrer" content="no-referrer">')
+      return content(res,200,'text/html',html)
+    }
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
         pathname.startsWith('/api/v1/media/places/baidu-jsapi/') ||
@@ -1713,6 +1780,10 @@ async function main(){
       await testFavoritesMapClose(browser,'isolated',port)
       record('both Hosts return from map to same authenticated Favorites membership',
         summary.favoriteMapCloseModes.join(',')==='inline,isolated')
+      await testFullDocumentMapHandoff(browser,'inline',port)
+      await testFullDocumentMapHandoff(browser,'isolated',port)
+      record('both SDK Hosts perform real one-use Gin scope handoff across full document',
+        summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}

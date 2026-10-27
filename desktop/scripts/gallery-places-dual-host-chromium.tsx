@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
 import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
+import { XDriveMediaGalleryPlacesMap } from '../../ui/shared/src/mui/MediaGalleryPlacesMap'
+import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
+import type { XDriveBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
+import { xDriveTakeMapScopeHandoffFromURL, xDriveRestoreMapReferrerAfterScrub } from '../../web/src/mapScopeHandoff'
 import { xDriveRememberPlacesDrawerViewerReturn } from '../../ui/shared/src/media-gallery-places-photo-drawer'
 import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import { xDriveBaiduNativeViewportRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
@@ -22,6 +28,13 @@ const favoritesMapEntry = new URLSearchParams(location.search).get('start_favori
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
 const videoPosterMode = new URLSearchParams(location.search).get('map_h264') === '1'
+// The genuine Web bootstrap must inspect and scrub the opaque one-use URL
+// before a React map, SDK loader or private Owner Cell can mount.
+const fullDocumentHandoff = genuineGin &&
+  new URLSearchParams(location.search).get('handoff_doc') === '1'
+const initialHandoff = fullDocumentHandoff
+  ? xDriveTakeMapScopeHandoffFromURL(window) : {state:'none' as const}
+if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
 let derivedLocationReady = !delayedBD09
 let savedSyntheticPoster: Blob | null = null
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
@@ -60,6 +73,7 @@ const probe = ((window as any).__mapProbe = {
   photoPreviewRanges:[] as any[], photoOpens:[] as any[],
   bd09Completions:0,failedOwnerCellsReads:[] as any[],
   h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
+  handoff:{state:initialHandoff.state,issues:0,consumes:0},
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -412,7 +426,97 @@ function TestApp(){
     ) : null}
   </div>
 }
+
+type FullDocumentMapState =
+  | {phase:'pending'|'denied'}
+  | {phase:'ready';scope:XDriveBaiduMapPhotoScope;camera?:XDriveBaiduNativeCameraSnapshot}
+const freshFavoritesScope:XDriveBaiduMapPhotoScope={
+  albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',favorite:true},
+}
+const handoffAPI='/api/v1/media/places/baidu-jsapi/scope-handoff'
+const postAuthenticatedMapHandoff=async (
+  suffix:string,payload:unknown,signal?:AbortSignal,
+):Promise<any>=>{
+  const token=await ownerToken()
+  if(signal?.aborted)throw Error('cancelled')
+  const response=await fetch(handoffAPI+suffix,{
+    method:'POST',cache:'no-store',signal,
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify(payload),
+  })
+  if(!response.ok)throw Error('actual Gin Owner map handoff denied')
+  return response.json()
+}
+
+/** Entire-document map mode transition using the ORIGINAL trusted Gallery
+ * Parent and Web startup scrubber, backed by actual Gin/PostgreSQL one-use
+ * handoff. A pending, revoked or reused nonce never mounts either SDK host. */
+function FullDocumentHandoffMap(){
+  const [snapshot,setSnapshot]=useState<FullDocumentMapState>(()=>
+    initialHandoff.state==='none'
+      ? {phase:'ready',scope:freshFavoritesScope}
+      : {phase:initialHandoff.state==='pending'?'pending':'denied'})
+  const claimed=useRef(false)
+  useEffect(()=>{
+    if(initialHandoff.state!=='pending'||claimed.current)return
+    claimed.current=true
+    let mounted=true
+    void postAuthenticatedMapHandoff('/consume',{
+      target_mode:initialHandoff.target,ticket:initialHandoff.ticket,
+    }).then(receipt=>{
+      if(!mounted)return
+      const scope=xDriveNormalizeBaiduMapPhotoScope(receipt?.scope)
+      const camera=receipt?.camera==null ? undefined :
+        xDriveValidBaiduNativeCameraSnapshot(receipt.camera)
+          ? receipt.camera as XDriveBaiduNativeCameraSnapshot : null
+      if(!scope||camera===null||receipt?.target_mode!==initialHandoff.target)
+        throw Error('invalid Owner handoff receipt')
+      probe.handoff.consumes++
+      probe.handoff.state='ready'
+      setSnapshot({phase:'ready',scope,camera})
+    }).catch(()=>{
+      if(!mounted)return
+      probe.handoff.state='denied'
+      setSnapshot({phase:'denied'})
+    })
+    return()=>{mounted=false}
+  },[])
+  if(snapshot.phase!=='ready')
+    return <main data-xdrive-map-handoff-denied={snapshot.phase==='denied'?'1':undefined}
+      data-xdrive-map-handoff-pending={snapshot.phase==='pending'?'1':undefined}>
+      {snapshot.phase==='denied'?'Owner map scope expired or already consumed':
+        'Validating authenticated map handoff'}
+    </main>
+  return <XDriveMediaGalleryPlacesMap
+    places={[]} totalCount={null}
+    diagnosticScope="p04-authenticated-full-document"
+    listBaiduNativeCells={listOwnerCells}
+    listBaiduNativeCellItems={listOwnerCellItems}
+    getBaiduJSAPI4Status={getInlineSignedStatus}
+    getBaiduJSAPIPrototype={getInlinePrototypeConfig}
+    mintBaiduIsolatedChildTicket={mintChildTicket}
+    loadPhotoCoverThumbnail={loadThumbnail}
+    onOpenBaiduNativeCell={onOpenCell}
+    onBaiduNativeCellInvalidated={onInvalidated}
+    onBaiduNativeViewport={undefined}
+    initialNativeCamera={snapshot.camera}
+    mapPhotoScope={snapshot.scope}
+    onMapPhotoScopeChange={scope=>setSnapshot(previous=>
+      previous.phase==='ready'?{...previous,scope}:previous)}
+    onMapModeHandoff={async(scope,target,signal,camera)=>{
+      probe.handoff.issues++
+      const receipt=await postAuthenticatedMapHandoff('',{
+        target_mode:target,scope,camera:camera??null,
+      },signal)
+      if(typeof receipt?.ticket!=='string'||
+        !/^[a-f0-9]{64}$/.test(receipt.ticket))
+        throw Error('invalid one-use Owner handoff ticket')
+      return receipt.ticket as string
+    }}
+    onNativeCameraChange={onCamera} onNativeCameraClear={()=>{}}/>
+}
 createRoot(document.getElementById('root')!).render(
+  fullDocumentHandoff ? <FullDocumentHandoffMap /> :
   fullGalleryPage ? <FullGalleryPage /> :
     darkMapAppearance ? <ThemeProvider theme={darkMapTheme}><TestApp /></ThemeProvider> :
     <TestApp />)
