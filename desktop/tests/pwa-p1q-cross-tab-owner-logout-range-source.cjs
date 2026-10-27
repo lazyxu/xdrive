@@ -26,6 +26,9 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'browser.loginMounted','!browser.hasOwnerSession',
     'stable.started===after.started',
     'stable.emitted_bytes===mark.mark_emitted_bytes',
+    'contextDoneSinceMark>=mark.active',
+    'cancelledSinceMark>=mark.active',
+    'row.ownerLogout?.contextDoneSinceMark>=row.ownerLogout?.activeAtMark',
   ])assert.ok(d.includes(text),'missing real Owner lifecycle contract: '+text)
   const p1qStart=d.indexOf('async function p1MeasureRealCrossTabViewerLogout')
   const p1qEnd=d.indexOf('async function sampleOnce',p1qStart)
@@ -40,6 +43,12 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'P1Q must not discard the real H264 Viewer Back scroll anchor')
   assert.match(d,/p1QAccountButtonPoint\.toString\(\)/)
   assert.match(d,/after\.max_cancel_us<=160000/)
+  assert.doesNotMatch(d,/before\.active>=1&&before\.context_done===0/,
+    'old decoder cancellations must not satisfy or falsely block the current Logout gate')
+  const instrument=read('desktop/scripts/pwa-p1m-signed-range-instrument.cjs')
+  assert.match(instrument,/const p1qMarker=/)
+  assert.match(instrument,/parts\[1\]\.includes\(p1qMarker\)/)
+  assert.match(instrument,/measureRest\.split\('p1ViewerVideoProbeStats\(base\)'\)/)
   assert.match(d,/after\.active===0/)
   assert.match(d,/after\.emitted_bytes===mark\.mark_emitted_bytes/)
   assert.doesNotMatch(d,/BroadcastChannel\('xdrive\.auth\.events'\)\.postMessage/)

@@ -994,7 +994,10 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     // Original bytes may advance while the real Logout menu is prepared.
     // The invariant is an ACTIVE, authenticated Range at the actual click;
     // zero extra bytes is enforced separately AFTER the server mark.
-    assert(before.active>=1&&before.context_done===0&&
+    // Prior completed or cancelled decoder Ranges may already have reported
+    // Context.Done before we open the real Logout menu. They do not prove
+    // the CURRENT Viewer Range has stopped: active must still be nonzero.
+    assert(before.active>=1&&
       before.signed_range>=inflight.signed_range&&
       before.emitted_bytes>=inflight.emitted_bytes,
       'Viewer original Range no longer active before native Logout click: '+
@@ -1018,7 +1021,12 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     },10000,'logout must retire first Owner Viewer and private media')
     await sleep(200)
     const stable=await p1ViewerVideoProbeStats(base)
-    const passed=after.context_done>=mark.active&&after.cancelled>=1&&
+    // Only NEW authoritative Go cancellations after this exact Logout mark
+    // count as evidence. Earlier video Range completions cannot satisfy it.
+    const contextDoneSinceMark=after.context_done-mark.context_done
+    const cancelledSinceMark=after.cancelled-mark.cancelled
+    const passed=contextDoneSinceMark>=mark.active&&
+      cancelledSinceMark>=mark.active&&
       after.active===0&&after.max_cancel_us>0&&after.max_cancel_us<=160000&&
       after.emitted_bytes===mark.mark_emitted_bytes&&
       stable.active===0&&stable.started===after.started&&
@@ -1028,7 +1036,8 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     const row={passed,ownerAuthenticatedBefore:true,crossWindowNativeLogout:true,
       signedPartialContent:after.partial_content,signedRangeStarted:after.signed_range,
       activeAtMark:mark.active,contextDone:after.context_done,
-      cancelledHandlers:after.cancelled,stillActiveAt160Ms:after.active,
+      contextDoneSinceMark,cancelledHandlers:after.cancelled,
+      cancelledSinceMark,stillActiveAt160Ms:after.active,
       wastedBytesAfterLogout:after.emitted_bytes-mark.mark_emitted_bytes,
       goContextMaxMs:after.max_cancel_us/1000,logoutElapsedMs,
       noNewRequestAfterLogout:stable.started===after.started,
@@ -1363,7 +1372,8 @@ async function main() {
           row.logicalAssets===100000&&row.physicalNodes===115000&&
           row.oldGalleryCancelled&&row.ownerLogout?.passed&&
           row.ownerLogout?.crossWindowNativeLogout&&
-          row.ownerLogout?.contextDone>=row.ownerLogout?.activeAtMark&&
+          row.ownerLogout?.contextDoneSinceMark>=row.ownerLogout?.activeAtMark&&
+          row.ownerLogout?.cancelledSinceMark>=row.ownerLogout?.activeAtMark&&
           row.ownerLogout?.stillActiveAt160Ms===0&&
           row.ownerLogout?.wastedBytesAfterLogout===0&&
           row.ownerLogout?.goContextMaxMs<=160&&
