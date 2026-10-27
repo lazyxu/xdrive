@@ -98,7 +98,7 @@ test('UI reuses Server-verified /cells -> /cell-items, not a new photo source',(
     'data-xdrive-places-photo-collection-strip',
     'onClick={() => openVerifiedCell(pin.selection)}',
     'XDriveMediaGalleryCoverThumbnail',
-    'revision={pin.selection.node_revision}',
+    'revision={selection.node_revision}',
     'frame.replaceAuthorizedCells(cells)',
     'xDriveSelectBaiduNativeCell(page,bounds,cell)',
   ]) assert.ok(ui.includes(fragment),fragment)

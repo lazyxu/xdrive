@@ -1138,6 +1138,8 @@ export interface MediaBaiduNativeCellsPage {
     node_id: number
     /** New Server: paired primary Node revision; older Server omits it. */
     node_revision?: number
+    /** Trusted Owner representative kind; the SDK Child never receives it. */
+    media_kind?: 'image' | 'video'
     latitude: number
     longitude: number
   }>

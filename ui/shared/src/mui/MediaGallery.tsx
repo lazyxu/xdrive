@@ -8548,6 +8548,8 @@ export function XDriveMediaGallery({
             listBaiduNativeCellItems={listBaiduNativeCellItems}
             listPlacesMapOverview={listPlacesMapOverview}
             loadPhotoCoverThumbnail={loadThumbnail}
+            loadPhotoCoverPreviewURL={loadPreviewURL}
+            savePhotoCoverVideoPoster={saveVideoPoster}
             getBaiduMapCoverage={getBaiduMapCoverage}
             getBaiduMapCoverageReasons={getBaiduMapCoverageReasons}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
