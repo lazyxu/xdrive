@@ -233,3 +233,75 @@ test('all four arms retain unchanged native threshold and upload only sanitized 
   assert.match(flow,/run_arm before a1[\s\S]*run_arm after b1[\s\S]*run_arm after b2[\s\S]*run_arm before a2/)
   assert.match(flow,/if \(!diagnostic\.allArmsComplete \|\| diagnostic\.failedArms\.length>0\)/)
 })
+
+test('P1M source-exact test overlay tracks Viewer signed ticket SHA256, not other Gallery posters',()=>{
+  const runner=path.join(repo,'desktop/scripts/pwa-p1m-signed-range-instrument.cjs')
+  const sources=[
+    'internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go',
+    'internal/api/gallery_real_web_cold_performance_integration_test.go',
+    'desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs',
+  ]
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'pwa-p1m-ticket-overlay-'))
+  const a=path.join(temp,'before'),b=path.join(temp,'after')
+  const setup=home=>{
+    for(const source of sources){
+      const target=path.join(home,source)
+      fs.mkdirSync(path.dirname(target),{recursive:true})
+      fs.copyFileSync(path.join(repo,source),target)
+    }
+  }
+  try {
+    setup(a);setup(b)
+    execFileSync(process.execPath,[runner,a,b],{encoding:'utf8'})
+    for(const source of sources){
+      const left=fs.readFileSync(path.join(a,source),'utf8')
+      const right=fs.readFileSync(path.join(b,source),'utf8')
+      assert.equal(left,right,'frozen A/B test-only overlay must be byte-identical')
+      assert.notEqual(left,fs.readFileSync(path.join(repo,source),'utf8'))
+    }
+    const go=fs.readFileSync(path.join(a,sources[0]),'utf8')
+    const api=fs.readFileSync(path.join(a,sources[1]),'utf8')
+    const driver=fs.readFileSync(path.join(a,sources[2]),'utf8')
+    assert.match(go,/sha256\.Sum256\(\[\]byte\(r\.URL\.Query\(\)\.Get\("ticket"\)\)\)/)
+    assert.match(go,/tickets\s+sync\.Map/)
+    assert.match(go,/w\.ticket\.partialContent\.Add\(1\)/)
+    assert.match(go,/w\.ticket\.emittedBytes\.Add\(int64\(n\)\)/)
+    assert.match(go,/ticket\.contextDone\.Add\(1\)/)
+    assert.match(go,/ticket\.cancelled\.Add\(1\)/)
+    assert.match(api,/case "\/__perf\/viewer-video-range-target":/)
+    assert.match(api,/case "\/__perf\/viewer-video-range-target-stats":/)
+    assert.match(api,/hex\.DecodeString\(hash\)/)
+    assert.match(api,/targetHash\.Store\(hash\)/)
+    assert.match(driver,/crypto\.subtle\.digest/)
+    assert.match(driver,/p1BindSignedViewerRangeTicket\(win,base\)/)
+    assert.match(driver,/p1ViewerVideoTicketStats\(base\)/)
+    assert.match(driver,/const globalVideo=await p1ViewerVideoProbeStats\(base\)/)
+    assert.match(driver,/after\.max_cancel_us<=160000/)
+    assert.match(driver,/after\.emitted_bytes===markStats\.mark_emitted_bytes/)
+    assert.doesNotMatch(driver,/console\.log\([^)]*ticket_hash/)
+    new Function('require','process',driver)
+    // A real A/B mismatch must fail the overlay's exact SHA comparison,
+    // not merely fail because a previously instrumented file was reused.
+    const other=path.join(temp,'different-A'),different=path.join(temp,'different-B')
+    for(const dir of [other,different]){
+      for(const source of sources){
+        const target=path.join(dir,source)
+        fs.mkdirSync(path.dirname(target),{recursive:true})
+        fs.copyFileSync(path.join(repo,source),target)
+      }
+    }
+    fs.appendFileSync(path.join(different,sources[2]),'\n// drifting fixture with valid anchors\n')
+    const drift=spawnSync(process.execPath,[runner,other,different],{encoding:'utf8'})
+    assert.notEqual(drift.status,0)
+    assert.match(drift.stderr,/A\/B instrumentation source must be identical/)
+  } finally {fs.rmSync(temp,{recursive:true,force:true})}
+})
+test('P1M scoped Range instrumentation only applies after frozen source proof',()=>{
+  assert.match(flow,/node --check probe\/desktop\/scripts\/pwa-p1m-signed-range-instrument\.cjs/)
+  assert.match(flow,/node probe\/desktop\/scripts\/pwa-p1m-signed-range-instrument\.cjs before after/)
+  assert.match(flow,/cmp "before\/\$file" "after\/\$file"/)
+  assert.match(flow,/gofmt -w before\/internal\/api/)
+  assert.match(flow,/node --check before\/desktop\/scripts\/gallery-mobile-web-go-cancel-100k-main\.cjs/)
+  assert.match(flow,/XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL: '1'/)
+  assert.doesNotMatch(flow,/sed -i .*threshold|160000.*200000/)
+})

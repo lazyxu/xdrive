@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs'
+      - 'desktop/scripts/pwa-p1m-signed-range-instrument.cjs'
       - 'desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs'
   workflow_dispatch:
 
@@ -86,7 +87,25 @@ jobs:
             cmp "before/$file" "after/$file"
           done
           node --check probe/desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs
+          node --check probe/desktop/scripts/pwa-p1m-signed-range-instrument.cjs
           (cd probe && node --test desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs)
+          # Only AFTER frozen source provenance/16-file diff was verified:
+          # apply identical TEST-ONLY per-signed-ticket Go and Chromium
+          # attribution to both A/B releases; production components remain
+          # pinned and 160ms cancellation stays mandatory.
+          node probe/desktop/scripts/pwa-p1m-signed-range-instrument.cjs before after
+          gofmt -w before/internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go \
+            before/internal/api/gallery_real_web_cold_performance_integration_test.go \
+            after/internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go \
+            after/internal/api/gallery_real_web_cold_performance_integration_test.go
+          for file in \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs \
+            internal/api/gallery_real_web_cold_performance_integration_test.go \
+            internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go; do
+            cmp "before/$file" "after/$file"
+          done
+          node --check before/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node --check after/desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
       - name: Build pinned production Web A/B and one unchanged native Go fixture
         run: |
           set -euo pipefail

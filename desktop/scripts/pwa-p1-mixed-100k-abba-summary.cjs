@@ -99,11 +99,12 @@ function main(){
       kernel:os.release(),node:process.version},
     logicalAssets:100000,metadataNodes:115000,
     realGoGinPG17CAS:true,physicalOriginals115k:false,
+    signedViewerTicketDigestScoped:true,unrelatedGalleryPosterRequestsMeasuredSeparately:true,
     sourceFixtureIdentical:true,bitwiseDataEqualityVerified:false,
     realIOSSafari:false,materialGainEstablished:false,
     causalConclusion:'NOT_ESTABLISHED',metrics:KEYS,
     deltaAB:ab,deltaBA:ba,orderBalancedObservedDelta:observed,
-    limitations:'The original pinned Go fixture creates 100k logical PhotoAssets and 115k metadata Nodes but only bounded real JPEG/H264/Live originals. No 115k distinct CAS objects, physical iOS Home Screen, per-arm physical-file SHA equality, or independent causal proof. Go/renderer CPU/RSS are sampled in the initial Gallery cancellation segment, not continuously across every subsequent Viewer.',
+    limitations:'The original pinned Go fixture creates 100k logical PhotoAssets and 115k metadata Nodes but only bounded real JPEG/H264/Live originals. No 115k distinct CAS objects, physical iOS Home Screen, per-arm physical-file SHA equality, or independent causal proof. The original test-only pinned A/B Go fixture and JS driver are instrumented identically to scope cancellation to the current Viewer signed ticket SHA-256; other Gallery poster requests remain separately reported. Go/renderer CPU/RSS are sampled in the initial Gallery cancellation segment, not continuously across every subsequent Viewer.',
   }
   const file=path.resolve(process.argv[6])
   fs.mkdirSync(path.dirname(file),{recursive:true})
@@ -150,6 +151,8 @@ function diagnostic() {
         h264PresentedMs:num(row.p1H264Frames?.presentedMs),
         livePresentedMs:num(row.p1LiveMotion?.displayedMs),
         signedRangeGoCancelMs:num(row.p1ViewerRangeAbort?.goContextMaxMs),
+        unrelatedGalleryVideoActiveAfterBack:num(row.p1ViewerRangeAbort?.otherVideoActiveAfterBack),
+        globalOwnerVideoRanges:num(row.p1ViewerRangeAbort?.globalSignedVideoRanges),
         emittedBytesAfterCancel:num(row.p1ViewerRangeAbort?.wastedBytesAfterViewerBack),
         galleryGoCancelMs:num(row.go?.worstContextNotificationMs),
         goRSSGrowthMiB:num(row.resources?.go?.peakGrowthBytes/1048576),
@@ -215,6 +218,7 @@ function diagnostic() {
     causalConclusion:'NOT_ESTABLISHED',materialGainEstablished:false,
     physicalOriginals115k:false,realIOSSafari:false,
     noInvalidSamplesDiscarded:true,
+    signedViewerTicketDigestScoped:true,
     limits:'Diagnostic only. Incomplete/failed arms are never dropped from the balanced comparison. Native signed Range Context.Done remains <=160ms; zero extra bytes and original scroll anchor are mandatory. Only bounded per-sample numeric snapshots and a whitelist of Range error fields are exported.',
   }
   const out=path.resolve(process.argv[7])
