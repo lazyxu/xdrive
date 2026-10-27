@@ -319,6 +319,36 @@ each verification-history record. The shared Web/Desktop detail dialog shows
 historical counts and safe failure categories without disclosing Host paths.
 This is evidence of the completed checksum/CAS check, not a restore drill.
 
+### Recoverability evidence in the Admin shared UI
+
+The **恢复能力与演练证据** section uses the selected snapshot and the
+existing authenticated Host inventory/history, not a new Docker/CLI writer.
+It shows four independent evidence classes: structural backup candidate,
+most recent historical checksum/CAS verification, most recent Host-recorded
+*actual restore action*, and isolated recovery-drill acceptance. A successful
+destructive restore action is **not** evidence of an isolated drill. History is
+bounded to 30 receipts, and no history is not a failed backup.
+
+For PR-triggered CI, `GITHUB_SHA` is a synthetic merge checkout, not
+necessarily the feature head or the eventual squash-merge commit. For the
+historical run below, the artifact's `ci_checkout_sha` is
+`316584c0b5c9b0acb8a17c337a40a339a3fff620`; GitHub's merge commit
+has `954fc13622acb83582e5e202bdad914e82e1a2e4` as its second parent.
+Future artifacts additionally include `ci_source_head_sha` and must pass
+an exact SHA/schema/checkout-ancestry validator inside the same CI run
+before upload. Neither mechanism binds artifacts to an installed Host.
+
+The only verified CI drill for feature head `954fc13622acb83582e5e202bdad914e82e1a2e4`
+is [GitHub Actions run 40499948689](https://github.com/lazyxu/xdrive/actions/runs/40499948689)
+with artifact `xdrive-server-isolated-restore-drill` (ID `12734306146`).
+This is **ephemeral CI Docker/PostgreSQL**, with actual SQL, legacy-file,
+CAS-byte and post-prune restoration assertions, **not** evidence that the
+operator's currently installed Host has been drilled. The Admin UI therefore
+does not render a green production-drill state or automatically trust CI
+artifacts. Physical Host-only acceptance is **跳过（未验收）** until separate
+Host-bound evidence exists. No new remote Admin action or production restore
+is invoked by this read-only view.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and
