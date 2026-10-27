@@ -213,6 +213,11 @@ interface XDriveService {
     suspend fun downloadFile(accessToken: String, node: DriveNode,
         openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
         throw ApiException(501, "Native file download unavailable")
+    /** Exact Owner PDF: authenticated, revision-verified temporary byte stream.
+     * The caller owns its seekable destination and removal on exit. */
+    suspend fun filesPdfDownload(accessToken: String, original: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
+        throw ApiException(501, "Native PDF preview unavailable")
     /** One manual file, current verified Owner directory. No new content writer. */
     suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
@@ -585,6 +590,27 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
     }
 
+
+    /** The PdfRenderer requires seekable storage. Both Node checks and the
+     * existing ETag/optional SHA/length-verified download are Owner-scoped. */
+    override suspend fun filesPdfDownload(
+        accessToken: String, original: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+    ): Long {
+        require(original.id > 0 && original.parentId != null &&
+            original.type == "file" && original.revision > 0 &&
+            original.name.endsWith(".pdf", ignoreCase = true) &&
+            original.size in 1L..(64L * 1024 * 1024) && validToken(accessToken))
+        suspend fun verify() {
+            val current = node(request("nodes/${original.id}", accessToken))
+            if (current != original) invalidPayload()
+        }
+        verify()
+        val written = downloadFile(accessToken, original, openDestination, onProgress)
+        if (written != original.size) invalidPayload()
+        verify()
+        return written
+    }
 
     /**
      * Manual Android SAF upload via the existing Go UploadSession / CAS writer.

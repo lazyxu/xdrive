@@ -37,6 +37,9 @@ data class DriveState(
     val focusedBrowseIndex: Int = 0,
     val focusedBrowseEpoch: Long = 0,
     val selected: DriveNode? = null,
+    /** No PDF bytes, disk path or credential in native UI state. */
+    val filesPdfViewer: DriveNode? = null,
+    val filesPdfBytes: Long = 0,
     /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
     val fileTextPreview: FileTextPreview? = null,
     val fileTextPreviewLoading: Boolean = false,
@@ -143,6 +146,7 @@ class DriveController(
     private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
     private var galleryViewerPageJob: Job? = null
+    private var filesPdfEpoch = 0L
     private var textPreviewEpoch = 0L
     private var textPreviewJob: Job? = null
     private var retryPath: List<DriveNode>? = null
@@ -425,6 +429,8 @@ class DriveController(
         if (node.isDirectory) load(state.value.path + node, 0)
         else if (fileKind(node.name, false) in setOf("image", "video") &&
             node.revision > 0 && node.size > 0) openFilesMedia(node)
+        else if (fileKind(node.name, false) == "pdf" &&
+            node.revision > 0 && node.size > 0) openFilesPdf(node)
         else showDetails(node)
     }
 
@@ -437,6 +443,61 @@ class DriveController(
         return if (current.filesSection == FilesSection.BROWSE)
             current.loaded && current.items.any { it == node }
         else current.collectionLoaded && current.collectionItems.any { it.node == node }
+    }
+
+    /** Enter one current Owner PDF without changing loaded Files rows/viewport. */
+    private fun openFilesPdf(node: DriveNode) {
+        val current = state.value
+        if (!filesNodeVisible(current, node) || current.loading ||
+            current.browseSelectionMode || current.filesPdfViewer != null ||
+            fileKind(node.name, false) != "pdf" || session == null || api == null) return
+        filesPdfEpoch++
+        mutableState.value = current.copy(filesPdfViewer = node,
+            filesPdfBytes = 0, selected = null, error = null)
+    }
+
+    fun dismissFilesPdfViewer() {
+        if (state.value.filesPdfViewer == null) return
+        filesPdfEpoch++
+        mutableState.value = state.value.copy(filesPdfViewer = null, filesPdfBytes = 0)
+    }
+
+    /** Caller creates and deletes its private seekable temporary file. A
+     * subsequent logout, refresh, navigation or app switch fences all results. */
+    suspend fun downloadFilesPdf(node: DriveNode, output: () -> OutputStream): Long {
+        val ticket = generation
+        val epoch = filesPdfEpoch
+        val current = state.value
+        val service = api ?: throw CancellationException()
+        if (current.filesPdfViewer != node || !filesNodeVisible(current, node) ||
+            fileKind(node.name, false) != "pdf" || session == null)
+            throw CancellationException()
+        if (node.size !in 1L..(64L * 1024 * 1024))
+            throw ApiException(413, "PDF exceeds native preview limit")
+        try {
+            val count = authenticated(service, ticket) { token ->
+                service.filesPdfDownload(token, node, output) { received ->
+                    if (ticket == generation && filesPdfEpoch == epoch &&
+                        state.value.filesPdfViewer == node &&
+                        filesNodeVisible(state.value, node)) {
+                        mutableState.value = state.value.copy(
+                            filesPdfBytes = received.coerceIn(0L, node.size))
+                    }
+                }
+            }
+            checkCurrent(ticket)
+            if (filesPdfEpoch != epoch || state.value.filesPdfViewer != node ||
+                !filesNodeVisible(state.value, node)) throw CancellationException()
+            if (count != node.size)
+                throw ApiException(0, "Incomplete PDF", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = state.value.copy(filesPdfBytes = count)
+            return count
+        } catch (failure: ApiException) {
+            if (failure.statusCode == 401 && ticket == generation &&
+                filesPdfEpoch == epoch && state.value.filesPdfViewer == node)
+                endSession(changeServer = false)
+            throw failure
+        }
     }
 
     private fun openFilesMedia(node: DriveNode) {
@@ -1115,6 +1176,8 @@ class DriveController(
         if (item.node.isDirectory) openCollectionFolder(item)
         else if (fileKind(item.node.name, false) in setOf("image", "video") &&
             item.node.revision > 0 && item.node.size > 0) openFilesMedia(item.node)
+        else if (fileKind(item.node.name, false) == "pdf" &&
+            item.node.revision > 0 && item.node.size > 0) openFilesPdf(item.node)
         else showDetails(item.node)
     }
 
@@ -2160,6 +2223,10 @@ class DriveController(
             }
             return
         }
+        if (current.filesPdfViewer != null) {
+            dismissFilesPdfViewer()
+            return
+        }
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
@@ -2338,6 +2405,7 @@ class DriveController(
         val prior = state.value
         mutableState.value = prior.copy(
             loading = true, error = null, selected = null,
+            filesPdfViewer = null, filesPdfBytes = 0,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
             fileDownloadSaved = false, fileDownloadError = null,
@@ -2462,6 +2530,7 @@ class DriveController(
             mutableState.value = current.copy(fileTextPreview = null,
                 fileTextPreviewLoading = false, fileTextPreviewError = null)
         closeActiveVideoPlayback()
+        filesPdfEpoch++
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
     override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }
