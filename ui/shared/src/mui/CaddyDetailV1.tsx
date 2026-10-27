@@ -478,7 +478,7 @@ export function XDriveCaddyDetailV1({
 
   return (
     <Box data-xdrive-caddy-v1-detail data-xdrive-caddy-single-page="true"
-      sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
+      sx={{ width: '100%', minWidth: 0 }}>
       <Box id="caddy-v1-overview" sx={{ scrollMarginTop: 72 }}>
         <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}>
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between"
