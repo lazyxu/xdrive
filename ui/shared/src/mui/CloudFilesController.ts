@@ -49,6 +49,9 @@ export type XDriveCloudFilesControllerOptions<
 > = {
   port: XDriveCloudFilesPort<TNode, TQuota, TSort>
   enabled: boolean
+  /** Only passive File change/quota polling is paused offscreen.
+   * Explicit file navigation, quota receipts and transfers are unaffected. */
+  foreground?: boolean
   lifecycleKey?: string
   defaultSort: TSort
   rootLabel?: string
@@ -82,6 +85,7 @@ export function useXDriveCloudFilesController<
 >({
   port,
   enabled,
+  foreground = true,
   lifecycleKey = '',
   defaultSort,
   rootLabel = '我的文件',
@@ -108,11 +112,13 @@ export function useXDriveCloudFilesController<
   const changeRefreshParentIDRef = useRef<number | null>(null)
   const changeRefreshTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const enabledRef = useRef(enabled)
+  const foregroundRef = useRef(foreground)
   const lifecycleKeyRef = useRef(lifecycleKey)
   const crumbsRef = useRef(crumbs)
   const virtualTargetRef = useRef(virtualTarget)
   const onErrorRef = useRef(onError)
   enabledRef.current = enabled
+  foregroundRef.current = foreground
   crumbsRef.current = crumbs
   virtualTargetRef.current = virtualTarget
   onErrorRef.current = onError
@@ -363,6 +369,7 @@ export function useXDriveCloudFilesController<
     const getChanges = port.getChanges
     if (
       !enabledRef.current ||
+      !foregroundRef.current ||
       !getChanges ||
       changePollRunningRef.current
     ) return false
@@ -375,7 +382,8 @@ export function useXDriveCloudFilesController<
         const snapshot = await getChanges(0, 1)
         if (
           requestID !== changeRequestRef.current ||
-          !enabledRef.current
+          !enabledRef.current ||
+          !foregroundRef.current
         ) return false
         changeCursorRef.current = snapshot.latest_cursor
         changeHandshakeRefreshRef.current = true
@@ -394,7 +402,8 @@ export function useXDriveCloudFilesController<
         const page = await getChanges(cursor, 200)
         if (
           requestID !== changeRequestRef.current ||
-          !enabledRef.current
+          !enabledRef.current ||
+          !foregroundRef.current
         ) return false
 
         const inFlightParentID = directoryInFlightParentIDRef.current
@@ -609,6 +618,7 @@ export function useXDriveCloudFilesController<
   useEffect(() => {
     if (
       !enabled ||
+      !foreground ||
       !virtualTarget ||
       (
         !changeHandshakeRefreshRef.current &&
@@ -620,6 +630,7 @@ export function useXDriveCloudFilesController<
     void scheduleChangedDirectoryRefresh()
   }, [
     enabled,
+    foreground,
     scheduleChangedDirectoryRefresh,
     virtualTarget,
   ])
@@ -627,6 +638,7 @@ export function useXDriveCloudFilesController<
   useEffect(() => {
     if (
       !enabled ||
+      !foreground ||
       !port.getChanges ||
       changePollIntervalMs <= 0
     ) return
@@ -647,15 +659,15 @@ export function useXDriveCloudFilesController<
       changeRequestRef.current += 1
       changePollRunningRef.current = false
     }
-  }, [changePollIntervalMs, enabled, port, refreshChanges])
+  }, [changePollIntervalMs, enabled, foreground, port, refreshChanges])
 
   useEffect(() => {
-    if (!enabled || quotaRefreshIntervalMs <= 0) return
+    if (!enabled || !foreground || quotaRefreshIntervalMs <= 0) return
     const timer = globalThis.setInterval(() => {
       void refreshQuota()
     }, quotaRefreshIntervalMs)
     return () => globalThis.clearInterval(timer)
-  }, [enabled, quotaRefreshIntervalMs, refreshQuota])
+  }, [enabled, foreground, quotaRefreshIntervalMs, refreshQuota])
 
   return {
     quota: lifecycleCurrent ? quota : null,
