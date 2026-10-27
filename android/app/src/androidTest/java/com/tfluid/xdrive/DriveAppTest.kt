@@ -617,6 +617,32 @@ class DriveAppTest {
             .assert(SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription, "缩略图密度 4 档，完整比例"))
     }
+    @Test fun filesThumbnailFailureRetriesOnlyFromMenuThenReusesImageInGrid() {
+        // Real Compose Files list/grid with a generated decodable JPEG. No
+        // Gallery wall, external media provider, or dummy thumbnail overlay.
+        galleryVideoFixture = true // Fixture's 8px real JPEG response.
+        galleryThumbnailFailuresRemaining = 1
+        mutableRootRows += DriveNode(72, 1, "真实封面.jpg", "file", size = 2048, revision = 3)
+        startAndLogin()
+        compose.waitUntil(timeoutMillis = 10_000) { galleryThumbnailReads == 1 }
+        compose.waitForIdle()
+        compose.onNodeWithTag("files-item-72").assertIsDisplayed()
+        compose.onNodeWithTag("files-thumbnail-ready-72", useUnmergedTree = true)
+            .assertDoesNotExist() // Failed derivative must show the file glyph.
+        compose.onNodeWithTag("files-item-72").performTouchInput { longClick() }
+        compose.onNodeWithTag("files-thumbnail-retry-72").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-thumbnail-ready-72", useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailReads) }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-grid").assertExists()
+        compose.onNodeWithTag("files-thumbnail-ready-72", useUnmergedTree = true).assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailReads) }
+    }
+
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()

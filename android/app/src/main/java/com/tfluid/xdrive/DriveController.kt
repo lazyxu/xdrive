@@ -1664,6 +1664,36 @@ class DriveController(
         }
     }
 
+    /** Files rows use exactly the Gallery Owner/revision JPEG transport,
+     * sharing its four-request semaphore and enforcing the current visible
+     * Files section before/after I/O. No original-file fallback. */
+    suspend fun filesThumbnail(node: DriveNode): ByteArray? {
+        val ticket = generation
+        val service = api ?: return null
+        val token = session?.accessToken ?: return null
+        fun visible(): Boolean {
+            val current = state.value
+            if (current.screen != Screen.FILES || !nativeFileThumbnailCandidate(node)) return false
+            val rows = if (current.filesSection == FilesSection.BROWSE) current.items
+                else current.collectionItems.map { it.node }
+            return rows.any { it == node }
+        }
+        if (!visible()) return null
+        return try {
+            galleryThumbnailLimit.withPermit {
+                checkCurrent(ticket)
+                if (api !== service || session?.accessToken != token || !visible()) return@withPermit null
+                val raw = service.galleryThumbnail(token, node.id, node.revision)
+                checkCurrent(ticket)
+                if (api !== service || session?.accessToken != token || !visible()) null else raw
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null // Optional derivative absent/invalid; preserve the file glyph.
+        }
+    }
+
     /** Thumbnails reuse the live Owner session and the pinned API client.
      * They are individually cancellable (when tiles unmount) and at most four
      * concurrent requests. Never cache Bearer tokens or private bytes on disk. */
