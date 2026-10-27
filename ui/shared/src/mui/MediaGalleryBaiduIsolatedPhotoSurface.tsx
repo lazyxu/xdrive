@@ -119,7 +119,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const acceptedScope = useRef<{key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
   const acceptedCells = useRef<MediaBaiduNativeCellSelection[]>([])
   const lastViewport = useRef<{bounds:Bounds;live:boolean}|null>(null)
-  const refreshFilteredCells = useRef<(() => void) | null>(null)
+  const refreshFilteredCells = useRef<((skipPending?:boolean) => void) | null>(null)
   const lastFilterKey = useRef(currentFilterKey)
   const invalidated = useRef(onInvalidated)
   const cameraUpdate = useRef(onCamera)
@@ -225,6 +225,22 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
   const trustedSummary = scopeIsCurrent ? summary : null
+  // An already-open map must notice GPS→BD-09 backfill without a user
+  // gesture. Poll only the current authenticated EMPTY /cells snapshot,
+  // at most once per 2 minutes while the Parent document is visible.
+  // Both SDK Hosts reuse this one Parent. The existing request cancellation
+  // and Owner/PhotoScope fences are authoritative; no new map SDK session,
+  // original EXIF transfer, or provider geoconv occurs here.
+  const recheckEmptyMap = phase === 'ready' && scopeIsCurrent &&
+    trustedSummary?.total_count === 0 && !activeDrawer
+  useEffect(() => {
+    if (!recheckEmptyMap) return
+    const timer = setInterval(() => {
+      if (mount.current?.ownerDocument.visibilityState === 'hidden') return
+      refreshFilteredCells.current?.(true)
+    }, 120_000)
+    return () => clearInterval(timer)
+  }, [recheckEmptyMap, currentFilterKey])
   // Revoke stale SDK pins before the browser can paint a changed Owner
   // Album/favorite/date/type scope. queryCells synchronously cancels the old
   // Camera/Cells and clears the Child markers before awaiting the new Owner
@@ -251,6 +267,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           latitude: initialCamera.latitude, longitude: initialCamera.longitude,
           zoom: initialCamera.zoom }
       : null
+    // The first worldwide /cells request may be empty while Server backfill
+    // is still converting the Owner's GPS. Preserve worldwide discovery until
+    // the first real derived cell appears, unless a user has changed the SDK
+    // camera or this map is restoring an explicit Viewer camera.
+    let cameraTouched = Boolean(returnCamera)
+    let initialWorldEmpty = false
     setPhase('loading')
     setError(false)
     setSummary(null)
@@ -304,7 +326,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           selectCellRef.current(selection)
         }
       },
-      onCancel:cancel,
+      onCancel:()=>{ cameraTouched=true; cancel() },
       onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
@@ -406,12 +428,33 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             ' · '+page.cells[index].photo_count.toLocaleString('zh-CN'),
           selection:item.selection,
         })))
+        // The initial worldwide empty result is distinct from an empty
+        // camera viewport. Its later automatic recheck must query the bounded
+        // worldwide Owner Cells, not keep polling the SDK's arbitrary default
+        // center which might be thousands of km from the photo locations.
+        const refocus = !liveCamera && initialWorldEmpty && !cameraTouched &&
+          page.total_count > 0 && cells.length > 0
+        if (!liveCamera) initialWorldEmpty = page.total_count === 0 && !cameraTouched
         setSummary(page)
         // Only a live, Owner-verified SDK viewport can open the full photo
         // wall. The bootstrapping worldwide /cells query is not a camera.
         const accepted = liveCamera ? { ...bounds } : null
         latestAcceptedViewport.current = accepted
         setAcceptedViewport(accepted)
+        if (refocus) {
+          const representative = cells[0]
+          // Defer camera movement until the Parent has accepted this exact
+          // Owner response. The SDK move cancels it and requests a fresh
+          // live-camera Range; it never carries unsigned media permission.
+          queueMicrotask(() => {
+            if (lifetime.signal.aborted || failed || cameraTouched ||
+                run !== generation || approved.key!==filterRef.current.key ||
+                acceptedScope.current?.key!==approved.key) return
+            frame.restoreCamera({coordinate_space:'bd09ll',
+              latitude:representative.latitude,longitude:representative.longitude,
+              zoom:8})
+          })
+        }
         return true
       } catch {
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation) {
@@ -427,10 +470,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(activeQuery===request)activeQuery=null
       }
     }
-    refreshFilteredCells.current=()=>{
-      if(lifetime.signal.aborted || failed || !lastViewport.current)return
+    refreshFilteredCells.current=(skipPending=false)=>{
+      if(lifetime.signal.aborted || failed || !lastViewport.current ||
+         (skipPending && (activeQuery ||
+           acceptedScope.current?.key!==filterRef.current.key)))return
       const last=lastViewport.current
-      void queryCells({...last.bounds},last.live)
+      const worldwideDiscovery = skipPending && initialWorldEmpty && !cameraTouched
+      const bounds = worldwideDiscovery
+        ? {...last.bounds,west:-180,south:-85,east:180,north:85}
+        : {...last.bounds}
+      void queryCells(bounds,worldwideDiscovery ? false : last.live)
     }
     const acquireTicket=async() => {
       if(lifetime.signal.aborted || failed) return
@@ -634,8 +683,18 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             sx={{bgcolor:'background.paper',px:1,py:0.75,borderRadius:2,boxShadow:2}}>
             {trustedSummary.total_count > 0
               ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
-              : '当前地图暂无可显示的定位照片；有 GPS 的照片将在位置派生完成后出现。'}
+              : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
           </Typography>
+          {phase === 'ready' && trustedSummary.total_count === 0 &&
+              acceptedScope.current?.key === currentFilterKey ? (
+            <Button size="small" variant="outlined"
+              data-xdrive-places-empty-map-recheck
+              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
+                bgcolor:'background.paper',boxShadow:2}}
+              onClick={() => refreshFilteredCells.current?.(true)}>
+              刷新定位照片
+            </Button>
+          ) : null}
           {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-full-camera-wall
