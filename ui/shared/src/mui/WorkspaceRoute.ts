@@ -61,3 +61,16 @@ export function xDriveWorkspaceNavigationAllowed(view: string, serverAdminVerifi
   return xDriveIsWorkspaceAppRoute(view) &&
     (!xDriveWorkspaceRouteRequiresAdmin(view) || serverAdminVerified)
 }
+
+
+// Migrated Host-data-driven pages: the same renderer receives the actual
+// Desktop/DSM domain ports. Legacy Desktop controller pages are extracted
+// separately without keeping another DSM-specific navigation registry.
+export const XDRIVE_SHARED_HOST_PAGE_ROUTES = [
+  'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
+  'local-storage', 'cloud-storage',
+] as const satisfies readonly XDriveWorkspaceAppRoute[]
+const sharedHostPages = new Set<string>(XDRIVE_SHARED_HOST_PAGE_ROUTES)
+export function xDriveIsSharedHostPageRoute(view: string): boolean {
+  return sharedHostPages.has(view)
+}

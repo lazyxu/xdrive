@@ -56,9 +56,7 @@ import {
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
-  XDriveCloudStoragePage,
   createXDriveCloudStorageDataSource,
-  XDriveLocalStoragePage,
   xDriveDiagnosticsSidebarDestination,
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
@@ -70,16 +68,14 @@ import {
   xDriveWorkspaceStorageSummary,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
-  XDriveMediaGalleryPage,
-  XDriveTaskCenterPage,
   XDriveFileExplorerActionFeedback,
   XDriveTransferPopover,
   XDriveApp,
+  XDriveAppPageOutlet,
+  xDriveIsSharedHostPageRoute,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
-  XDriveSourceManager,
-  XDriveDeviceBackupPage,
   useXDriveCloudFilesController,
   useXDriveFileExplorerDeleteController,
   useXDriveFileOperationLifecycle,
@@ -91,6 +87,7 @@ import type {
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
   XDriveWorkspaceAppRoute,
+  XDriveWorkspaceHostAdapter,
   XDriveStatusTone,
   XDriveLocalStorageDataSource,
 } from '@xdrive/ui/mui'
@@ -2712,6 +2709,108 @@ export default function App({
     )
   }
 
+  // UI-owned JSX for every migrated page lives in ui/shared/XDriveAppPageOutlet.
+  // Only authenticated domain data and real Desktop operations are injected.
+  const workspaceHost: XDriveWorkspaceHostAdapter = {
+    platform: 'desktop',
+    adminRoleVerified: status?.role === 'admin',
+    services: {
+      galleryPage: {
+    source: mediaGallerySource,
+    preferenceScope: `desktop:${status?.server ?? ''}:${status?.username ?? ''}`,
+    onOpenSecureDesktopMap: (scope) => {
+              void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure(scope))
+                .catch((openError) => setError(
+                  openError instanceof Error ? openError.message : String(openError),
+                ))
+            },
+    onOpenBaiduMapDiagnostics: status?.role === 'admin' &&
+              agent.hello?.capabilities.includes('admin-services') ? () => {
+                setBaiduDiagnosticLocation({ service: 'baidu-map', tab: 'verify' })
+                setView('admin-services')
+              } : undefined,
+    uploadRevision: galleryUploadRevision,
+    onUploadRequested: () => { void uploadGalleryFiles() },
+    fileOperations: cloudFileOperations,
+    onFileOperationQueued: () => { void refreshCloudFileOperations() },
+    onShowInFolder: (location) => {
+              if (!location.parent_id) return
+              const ancestry = location.breadcrumbs
+                .filter((crumb) => crumb.id !== location.node_id)
+                .map((crumb) => ({ id: crumb.id, name: crumb.name }))
+              if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
+              void revealCloudNodeInDirectory(location.parent_id, location.node_id, ancestry)
+            },
+    shareDialog: {
+              adapter: desktopShareDialogAdapter,
+              expiryMode: 'days',
+              listVariant: 'compact',
+              showCloseAction: true,
+            },
+    onError: (galleryError) => setError(
+              galleryError instanceof Error ? galleryError.message : String(galleryError),
+            ),
+  },
+      deviceBackupPage: {
+    source: deviceBackupSource,
+    localCreate: localBackupCreate,
+    targetBrowser: localBackupCreate || localBackupTarget ? desktopSourceTargetBrowser : undefined,
+    localDrafts: localBackupDraftReader,
+    localSettings: localBackupSettings,
+    localTarget: localBackupTarget,
+    localMode: localBackupMode,
+    localRules: localBackupRules,
+    localSchedule: localBackupSchedule,
+    localPreview: localBackupPreview,
+    localSnapshot: localBackupSnapshot,
+    localFirstFile: localBackupFirstFile,
+    localCommonBatch: localBackupCommonBatch,
+    localDelta: localBackupDelta,
+    localEvidence: localBackupEvidence,
+    localEvidenceSummary: localBackupEvidenceSummary,
+    localEvidencePreflight: localBackupEvidencePreflight,
+    localRemove: localBackupRemove,
+  },
+      remotePullPage: agent.hello?.capabilities.includes('external-sources')
+        ? {
+    directionFilter: "pull",
+    adapter: sourceManagerAdapter,
+    defaultTargetLabel: "我的文件",
+    defaultTargetPath: "",
+    targetBrowser: desktopSourceTargetBrowser,
+    cookieHelpVariant: "dialog",
+    onError: (sourceError) => setError(
+                sourceError instanceof Error ? sourceError.message : String(sourceError),
+              ),
+  } : undefined,
+      taskCenterPage: {
+    ...taskCenter.pageProps,
+    globalTasksEnabled: status?.role === 'admin',
+    globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
+    backgroundScope: view === 'global-tasks' ? 'global' : 'mine',
+    onBackgroundScopeChange: (scope) => {
+              taskCenter.pageProps.onBackgroundScopeChange?.(scope)
+              setView(scope === 'global' ? 'global-tasks' : 'transfers')
+            },
+    mediaSelectionJobPort: view === 'transfers' ? mediaSelectionJobPort : undefined,
+    operationFocusID: filesOperationFocus?.operationID,
+    operationFocusRequestID: filesOperationFocus?.requestID,
+    clearHistory: {
+              ...taskCenter.pageProps.clearHistory!,
+              disabled: taskCenter.pageProps.clearHistory?.disabled || !agent.hello?.capabilities.includes('transfer-history-scope'),
+            },
+    transferRetryingID: busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : '',
+    transferRetryDisabled: Boolean(busy) || fileOperationActions.clearHistoryLoading,
+    onRetryTransfer: (id) => { void retryTransfer(id) },
+  },
+      localStorage: localStorageSource,
+      cloudStorage: cloudStorageSource,
+    },
+    unavailableMessage: (destination) => destination === 'remote-pull'
+      ? '当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。'
+      : '当前 Desktop Host 尚未接通此功能。',
+  }
+
   const desktopTitlebarActions = (
     <Stack direction="row" alignItems="center" spacing={0.25} className="desktop-titlebar-action-row">
       <XDriveStatusBadge
@@ -2869,7 +2968,7 @@ export default function App({
 
   return renderDesktopFrame(
     <XDriveApp
-      host={{ platform: 'desktop', adminRoleVerified: status?.role === 'admin' }}
+      host={workspaceHost}
       view={view}
       sidebar={{
         ariaLabel: '桌面版侧边栏',
@@ -2934,6 +3033,8 @@ export default function App({
           </Stack>
         ) : null}
 
+        {xDriveIsSharedHostPageRoute(view) ? <XDriveAppPageOutlet view={view} host={workspaceHost} /> : null}
+
         {view === 'overview' && (
           <DesktopOverviewPage
             status={status}
@@ -2977,85 +3078,8 @@ export default function App({
           />
         )}
 
-        {view === 'gallery' && (
-          <XDriveMediaGalleryPage
-            source={mediaGallerySource}
-            preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
-            onOpenSecureDesktopMap={(scope) => {
-              void run('baidu-secure-map', () => window.xdriveDesktop.openBaiduMapSecure(scope))
-                .catch((openError) => setError(
-                  openError instanceof Error ? openError.message : String(openError),
-                ))
-            }}
-            onOpenBaiduMapDiagnostics={status?.role === 'admin' &&
-              agent.hello?.capabilities.includes('admin-services') ? () => {
-                setBaiduDiagnosticLocation({ service: 'baidu-map', tab: 'verify' })
-                setView('admin-services')
-              } : undefined}
-            uploadRevision={galleryUploadRevision}
-            onUploadRequested={() => { void uploadGalleryFiles() }}
-            fileOperations={cloudFileOperations}
-            onFileOperationQueued={() => { void refreshCloudFileOperations() }}
-            onShowInFolder={(location) => {
-              if (!location.parent_id) return
-              const ancestry = location.breadcrumbs
-                .filter((crumb) => crumb.id !== location.node_id)
-                .map((crumb) => ({ id: crumb.id, name: crumb.name }))
-              if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
-              void revealCloudNodeInDirectory(location.parent_id, location.node_id, ancestry)
-            }}
-            shareDialog={{
-              adapter: desktopShareDialogAdapter,
-              expiryMode: 'days',
-              listVariant: 'compact',
-              showCloseAction: true,
-            }}
-            onError={(galleryError) => setError(
-              galleryError instanceof Error ? galleryError.message : String(galleryError),
-            )}
-          />
-        )}
 
-        {view === 'device-backup' && (
-          <XDriveDeviceBackupPage
-            source={deviceBackupSource}
-            localCreate={localBackupCreate}
-            targetBrowser={localBackupCreate || localBackupTarget ? desktopSourceTargetBrowser : undefined}
-            localDrafts={localBackupDraftReader}
-            localSettings={localBackupSettings}
-            localTarget={localBackupTarget}
-            localMode={localBackupMode}
-            localRules={localBackupRules}
-            localSchedule={localBackupSchedule}
-            localPreview={localBackupPreview}
-            localSnapshot={localBackupSnapshot}
-            localFirstFile={localBackupFirstFile}
-            localCommonBatch={localBackupCommonBatch}
-            localDelta={localBackupDelta}
-            localEvidence={localBackupEvidence}
-            localEvidenceSummary={localBackupEvidenceSummary}
-            localEvidencePreflight={localBackupEvidencePreflight}
-            localRemove={localBackupRemove}
-          />
-        )}
 
-        {view === 'remote-pull' && (
-          agent.hello?.capabilities.includes('external-sources') ? (
-            <XDriveSourceManager
-              directionFilter="pull"
-              adapter={sourceManagerAdapter}
-              defaultTargetLabel="我的文件"
-              defaultTargetPath=""
-              targetBrowser={desktopSourceTargetBrowser}
-              cookieHelpVariant="dialog"
-              onError={(sourceError) => setError(
-                sourceError instanceof Error ? sourceError.message : String(sourceError),
-              )}
-            />
-          ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。" />
-          )
-        )}
 
         {view === 'files' && (
           <DesktopFilesPage
@@ -3165,36 +3189,8 @@ export default function App({
           />
         )}
 
-        {(view === 'transfers' || view === 'global-tasks') && (
-          <XDriveTaskCenterPage
-            {...taskCenter.pageProps}
-            globalTasksEnabled={status?.role === 'admin'}
-            globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}
-            backgroundScope={view === 'global-tasks' ? 'global' : 'mine'}
-            onBackgroundScopeChange={(scope) => {
-              taskCenter.pageProps.onBackgroundScopeChange?.(scope)
-              setView(scope === 'global' ? 'global-tasks' : 'transfers')
-            }}
-            mediaSelectionJobPort={view === 'transfers' ? mediaSelectionJobPort : undefined}
-            operationFocusID={filesOperationFocus?.operationID}
-            operationFocusRequestID={filesOperationFocus?.requestID}
-            clearHistory={{
-              ...taskCenter.pageProps.clearHistory!,
-              disabled: taskCenter.pageProps.clearHistory?.disabled || !agent.hello?.capabilities.includes('transfer-history-scope'),
-            }}
-            transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
-            onRetryTransfer={(id) => { void retryTransfer(id) }}
-          />
-        )}
 
-        {view === 'local-storage' && (
-          <XDriveLocalStoragePage source={localStorageSource} />
-        )}
 
-        {view === 'cloud-storage' && (
-          <XDriveCloudStoragePage source={cloudStorageSource} />
-        )}
 
         {view === 'admin-maintenance' && status?.role === 'admin' && (
           <XDriveSystemMaintenancePage

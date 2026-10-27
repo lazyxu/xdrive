@@ -80,3 +80,20 @@ still live in `desktop/src/renderer/App.tsx`; its full FileExplorer must
 converge with the transitional DSM Owner-read bridge on host-neutral ports.
 Gallery/map, Pull, transfer history, conflicts and administrator features
 still require real authorized DSM transports, never fabricated success.
+
+
+## Batch 2: Desktop common Host-backed page migration
+
+The same `XDriveAppPageOutlet` now renders **Gallery/Map/Viewer, DeviceBackup,
+remote Pull/SourceManager, personal/global TaskCenter, Cloud Storage and Local
+Storage** from typed domain data and operation props. Their Desktop JSX
+branches have been removed from `desktop/src/renderer/App.tsx`; Electron IPC,
+native dialogs and real Agent API calls remain in Desktop Host controllers.
+The common page itself never imports the Electron global.
+
+The remaining Desktop Overview, full Files/Viewer controller, Conflicts,
+Diagnostics, settings/modal composition and Server admin controllers have not
+yet moved into host-neutral domain ports. DSM's missing Gallery, Pull and admin
+transports must become real authenticated capabilities rather than simulated
+success. This batch does not claim full DSM functionality or real-device
+acceptance.

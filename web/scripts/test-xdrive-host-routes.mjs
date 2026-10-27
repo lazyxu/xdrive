@@ -74,6 +74,28 @@ assert.ok(dsm.includes('services: {') && hostContract.includes('XDriveWorkspaceH
   'shared page outlet composes pages using authenticated host data')
 assert.ok(!dsm.includes('coreKeys='),
   'DSM must not maintain a reduced alternative navigation')
+for (const key of [
+  'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
+  'local-storage', 'cloud-storage',
+]) {
+  assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
+    'Desktop common outlet must dispatch: ' + key)
+}
+assert.ok(desktop.includes('xDriveIsSharedHostPageRoute(view)') &&
+  desktop.includes('<XDriveAppPageOutlet view={view} host={workspaceHost} />'),
+  'Desktop must mount the same page outlet as DSM for migrated routes')
+assert.ok(desktop.includes('galleryPage: {') &&
+  desktop.includes('taskCenterPage: {') &&
+  desktop.includes('deviceBackupPage: {') &&
+  desktop.includes('remotePullPage:'),
+  'Desktop Host must inject page props, not alternate React page factories')
+assert.ok(sharedOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPage} />') &&
+  sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') &&
+  sharedOutlet.includes('<XDriveTaskCenterPage'),
+  'Gallery, Pull and Tasks must render in common UI code')
+assert.equal(desktop.includes('<XDriveMediaGalleryPage'), false)
+assert.equal(desktop.includes('<XDriveSourceManager'), false)
+assert.equal(desktop.includes('<XDriveTaskCenterPage'), false)
 assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')

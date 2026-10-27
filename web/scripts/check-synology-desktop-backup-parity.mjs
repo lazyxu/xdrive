@@ -141,7 +141,8 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !cloudStoragePage.includes('activeRequest.current?.abort()') ||
     !nasAdapter.includes("'/v1/cloud-quota'") ||
     !nasAdapter.includes('createXDriveSynologyCloudStorageDataSource') ||
-    !appPageOutlet.includes('<XDriveCloudStoragePage key={revision} source={services.cloudStorage} clearOnRefresh') ||
+    !appPageOutlet.includes('<XDriveCloudStoragePage key={revision} source={services.cloudStorage}') ||
+    !appPageOutlet.includes("clearOnRefresh={host.platform === 'synology'}") ||
     !appPageOutlet.includes('clearOnRefresh') ||
     !agentRead.includes('device-backup-read') ||
     !agentRead.includes('"/v1/device-backups"') ||
@@ -185,6 +186,20 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
     !routeRegistry.includes('xDriveWorkspaceRouteRequiresAdmin') ||
     !muiExports.includes("export * from './XDriveApp'")) {
   throw new Error('Desktop and DSM lost the canonical host-neutral xDrive application')
+}
+// Migrated Desktop pages must be mounted through exactly the same common
+// UI outlet as DSM, with Desktop retaining ownership of real Agent operations.
+if (!desktopShell.includes('xDriveIsSharedHostPageRoute(view)') ||
+    !desktopShell.includes('host={workspaceHost}') ||
+    !desktopShell.includes('galleryPage: {') ||
+    !desktopShell.includes('deviceBackupPage: {') ||
+    !desktopShell.includes('taskCenterPage: {') ||
+    !desktopShell.includes('remotePullPage:') ||
+    !appPageOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPage} />') ||
+    !appPageOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') ||
+    !appPageOutlet.includes('<XDriveTaskCenterPage') ||
+    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES')) {
+  throw new Error('Desktop retained parallel page JSX for common Host-backed routes')
 }
 // DSM must keep every standard Desktop route visible, while rendering honest
 // unavailable states for unimplemented transport capabilities, not fake data.

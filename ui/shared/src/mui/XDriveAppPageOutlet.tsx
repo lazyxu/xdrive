@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveHomePage } from './HomePage'
+import { XDriveMediaGalleryPage } from './MediaGallery'
+import { XDriveSourceManager } from './SourceManager'
 import { XDriveSynologyOwnerFilesPage } from './SynologyOwnerFilesPage'
 import { XDriveDeviceBackupPage } from './DeviceBackupPage'
 import { XDriveSynologyDiagnosticsPanel } from './SynologyDiagnosticsPanel'
@@ -50,11 +52,19 @@ export function XDriveAppPageOutlet({
             onOpenCloudStorage={navigate('cloud-storage')} />
         )
         break
+      case 'gallery':
+        if (services.galleryPage) page = <XDriveMediaGalleryPage {...services.galleryPage} />
+        break
+      case 'remote-pull':
+        if (services.remotePullPage) page = <XDriveSourceManager {...services.remotePullPage} />
+        break
       case 'files':
         if (local) page = <XDriveSynologyOwnerFilesPage key={revision} client={local} />
         break
       case 'device-backup':
-        if (local) page = (
+        if (services.deviceBackupPage) {
+          page = <XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />
+        } else if (local) page = (
           <XDriveDeviceBackupPage key={revision}
             localBackupClient={local} source={services.deviceBackups} />
         )
@@ -63,7 +73,12 @@ export function XDriveAppPageOutlet({
         if (local) page = <XDriveSynologyDiagnosticsPanel key={revision} client={local} />
         break
       case 'transfers':
-        if (local) page = (
+      case 'global-tasks':
+        if (services.taskCenterPage) {
+          page = <XDriveTaskCenterPage key={revision} {...services.taskCenterPage}
+            backgroundScope={view === 'global-tasks' ? 'global' : 'mine'}
+            mediaSelectionJobPort={view === 'global-tasks' ? undefined : services.taskCenterPage.mediaSelectionJobPort} />
+        } else if (local && view === 'transfers') page = (
           // With local Agent enabled, TaskCenter ignores Server arrays;
           // empty arguments do not mean Server feeds were verified empty.
           <XDriveTaskCenterPage key={revision} transfers={[]} operations={[]}
@@ -72,7 +87,8 @@ export function XDriveAppPageOutlet({
         break
       case 'cloud-storage':
         if (services.cloudStorage) page = (
-          <XDriveCloudStoragePage key={revision} source={services.cloudStorage} clearOnRefresh />
+          <XDriveCloudStoragePage key={revision} source={services.cloudStorage}
+            clearOnRefresh={host.platform === 'synology'} />
         )
         break
       case 'local-storage':

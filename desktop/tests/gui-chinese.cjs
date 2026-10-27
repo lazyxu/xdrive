@@ -6,6 +6,7 @@ const path = require('node:path')
 const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
+const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
@@ -263,7 +264,10 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
   assert.ok(sharedXDriveApp.includes('selected={view}') && sharedXDriveApp.includes('onSelect={onNavigate}'), 'shared app must preserve selection and navigation dispatch')
-  assert.ok(rendererApp.includes("host={{ platform: 'desktop' }}"), 'Desktop must identify its real platform adapter')
+  assert.ok(rendererApp.includes('host={workspaceHost}') &&
+    rendererApp.includes("platform: 'desktop'") &&
+    rendererApp.includes("adminRoleVerified: status?.role === 'admin'"),
+    'Desktop must identify real Host with Server-verified admin role')
   assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
   for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
     assert.equal(rendererApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
@@ -298,7 +302,9 @@ test('desktop settings use a dialog instead of a workspace page', () => {
 
 test('desktop transient management surfaces use shared modal features', () => {
   assert.ok(rendererApp.includes('<XDriveSettingsDialog'), 'Desktop must render the shared settings dialog')
-  assert.ok(rendererApp.includes('<XDriveSourceManager'), 'Desktop must render the shared Source manager')
+  assert.ok(rendererApp.includes('remotePullPage:') &&
+    sharedHostOutlet.includes('<XDriveSourceManager'),
+    'Desktop must provide the real Source adapter to shared SourceManager')
   assert.ok(desktopFilesPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
   assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
@@ -507,7 +513,8 @@ test('Desktop Source adapter is the only IPC boundary for the shared manager', (
     assert.ok(desktopSourceAdapter.includes(token), `Desktop Source adapter missing IPC operation: ${token}`)
   }
   assert.ok(rendererApp.includes('createDesktopSourceManagerAdapter'), 'Desktop App must inject the Source IPC adapter')
-  assert.ok(rendererApp.includes('targetBrowser={desktopSourceTargetBrowser}'), 'Desktop target-folder browsing must be injected into the shared manager')
+  assert.ok(rendererApp.includes('targetBrowser: desktopSourceTargetBrowser'),
+    'Desktop target-folder browsing must be injected into shared SourceManager')
   assert.ok(desktopSourceAdapter.includes('cloudRoot()'), 'Desktop Source target browser must load the cloud root')
   assert.ok(desktopSourceAdapter.includes('cloudChildren(parentID)'), 'Desktop Source target browser must browse child folders')
 })

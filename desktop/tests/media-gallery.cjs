@@ -71,6 +71,7 @@ const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
 const webAdapter = read('web', 'src', 'mediaGalleryAdapter.ts')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const sharedHostOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
 const desktopAdapter = read('desktop', 'src', 'renderer', 'mediaGalleryAdapter.ts')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
@@ -147,7 +148,12 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.ok(desktopAdapter.includes('xDriveReleaseDiscardedDesktopPreviewURL(late.data'), 'Desktop Gallery must release late still tickets after cancellation')
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
-  assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
+  assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 0,
+    'Desktop Host must no longer own Gallery page JSX')
+  assert.equal((sharedHostOutlet.match(/<XDriveMediaGalleryPage/g) || []).length, 1,
+    'one shared Host outlet must render the real Gallery page')
+  assert.ok(desktopApp.includes('galleryPage: {') && desktopApp.includes('source: mediaGallerySource'),
+    'Desktop must inject the genuine Gallery data source into the shared page')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>'), 'shared Gallery page must own workspace chrome without duplicating its title')
   assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopGalleryPage.tsx')), false, 'Desktop must not keep a pass-through Gallery wrapper')
   assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')

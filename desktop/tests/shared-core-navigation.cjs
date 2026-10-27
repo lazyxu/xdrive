@@ -13,6 +13,7 @@ const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
+const sharedHostOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 
 test('shared core navigation owns common destinations and capability-gates local storage rendering', () => {
   assert.ok(sharedRoute.includes('export const XDRIVE_CORE_WORKSPACE_KEYS = ['), 'shared route model must own core workspace keys')
@@ -178,9 +179,13 @@ test('local storage is shared across Web and Desktop while platform adapters rem
   assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
   assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
   assert.ok(web.includes('showLocalStorage'), 'Web must expose the shared local-storage destination')
-  assert.ok(desktop.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render shared Local Storage')
+  assert.ok(desktop.includes('localStorage: localStorageSource') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage'),
+    'Desktop Host must delegate real Local Storage data to common outlet')
   assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared Local Storage')
-  assert.ok(desktop.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render shared Cloud Storage')
+  assert.ok(desktop.includes('cloudStorage: cloudStorageSource') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'Desktop Host must delegate real Cloud Storage data to common outlet')
   assert.ok(web.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared Cloud Storage')
 })
 
