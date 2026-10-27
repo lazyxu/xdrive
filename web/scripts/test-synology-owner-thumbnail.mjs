@@ -114,6 +114,20 @@ assert.equal(revoked.length, 0, 'shared cache, not adapter, owns object URL leas
 
 const page = fs.readFileSync(path.join(root, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
 assert.match(page, /loadThumbnail=\{loadOwnerThumbnail\}/)
+assert.match(page, /loadImagePreview=\{loadOwnerThumbnail\}/,
+  'Quick Look must use the same authenticated derivative while the original loads')
+assert.match(page, /loadPreviewURL=\{loadMediaPreview\}/,
+  'thumbnail priority must not replace the original Owner media loader')
+const sharedQuickLook = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/FileQuickLookDialog.tsx'), 'utf8')
+assert.match(sharedQuickLook, /loadImagePreview=\{loadImagePreview\}/,
+  'NAS must reuse the standard Desktop/Web Quick Look prop')
+const sharedImageLayers = fs.readFileSync(path.join(root,
+  'ui/shared/src/mui/FilePreviewImage.tsx'), 'utf8')
+assert.match(sharedImageLayers, /loaders\.loadImagePreview/)
+assert.match(sharedImageLayers, /loaders\.loadPreviewURL/)
+assert.match(sharedImageLayers, /URL\.revokeObjectURL/,
+  'closing/replacing an Owner must retire its image Blob URLs')
 assert.match(page, /thumbnailEligible: xDriveFileSupportsThumbnail\(node.name, node.type\)/)
 assert.match(page, /interactionLifecycleKey=\{rootRevision \+ ':' \+ currentScopeKey\}/)
 const common = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorerThumbnail.tsx'), 'utf8')
