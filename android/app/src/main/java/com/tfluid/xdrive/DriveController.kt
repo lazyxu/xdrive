@@ -221,7 +221,7 @@ class DriveController(
                 install(next, allowHttp, route, ip)
             }
         } catch (_: IllegalArgumentException) {
-            mutableState.value = state.value.copy(error = "请检查服务器地址及连接设置。内网仅支持私有 IP，公网仅支持公共 IP；连接方式设置需要 HTTPS 域名。")
+            mutableState.value = state.value.copy(error = "服务器地址或内网 IP 配置无效。请检查完整服务器 URL；可选内网 IP 须为私有地址，不能与 IP 形式的服务器地址同时配置。")
         }
     }
 
@@ -2209,7 +2209,7 @@ class DriveController(
 
     private fun safeError(failure: Exception): String {
         when ((failure as? ApiException)?.reason) {
-            ApiFailureReason.DNS -> return "DNS 解析失败，未找到可用公网地址。可填写公网 IP。"
+            ApiFailureReason.DNS -> return "服务器域名 DNS 解析失败。请检查域名和网络；内网连接可填写可选的内网 IP。"
             ApiFailureReason.CONNECTION -> return "连接被拒绝或不可达。请检查所选网络和服务器端口。"
             ApiFailureReason.TIMEOUT -> return "连接超时，请检查所选网络后重新连接。"
             ApiFailureReason.TLS -> return "HTTPS 证书验证失败。请检查域名与证书；不会自动切换连接。"
