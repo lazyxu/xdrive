@@ -605,8 +605,12 @@ render_pull_json() {
     if (( now > previous_time && sum_current >= previous_current )); then
       rate=$(( (sum_current - previous_current) / (now - previous_time) ))
     fi
-    printf '[xDrive] pull %-8s | %s / %s (%d%%) | %s/s | elapsed %ss\n' \
-      "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$(format_bytes "$rate")" "$elapsed"
+    local phase_hint=""
+    if (( sum_current == sum_total )); then
+      phase_hint=" | reported layer bytes complete; waiting for Docker image readiness"
+    fi
+    printf '[xDrive] pull %-8s | %s / %s (%d%%) | %s/s | elapsed %ss%s\n' \
+      "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$(format_bytes "$rate")" "$elapsed" "$phase_hint"
     last_print="$now"
     previous_time="$now"
     previous_current="$sum_current"
@@ -732,8 +736,11 @@ pull_service_with_retry() {
   done
 
   rm -f "$watermark_file"
-  echo "xDrive server installer: pull $service failed after $attempt attempts. Last Docker pull messages:" >&2
-  tail -n 40 "$PULL_LOG" >&2 || true
+  echo "xDrive server installer: pull $service failed after $attempt attempts. Last Docker pull messages (signed CDN URLs redacted):" >&2
+  tail -n 40 "$PULL_LOG" | sed -E 's#https://[^"[:space:]]+\?[^"[:space:]]+#<signed CDN URL redacted>#g' >&2 || true
+  if grep -Fq 'TLS handshake timeout' "$PULL_LOG"; then
+    echo "[xDrive] Docker registry/CDN TLS handshake timed out; the image is not corrupted simply because its CDN connection failed." >&2
+  fi
   echo "xDrive server installer: repeated registry failures usually mean Docker daemon connectivity is poor." >&2
   echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
   return 1
