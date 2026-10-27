@@ -4,7 +4,7 @@ import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
-import type { XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
+import type { XDriveBorrowedPreviewImageURL, XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveTransformedImagePreview } from './FilePreviewTransformedMedia'
 
 type ImageRole = 'original' | 'thumbnail'
@@ -107,6 +107,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     // or aborting an already-decoded thumbnail.
     const controllers = new Map<ImageRole, AbortController>()
     const activeURLs = new Map<ImageRole, string>()
+    const borrowedURLs = new Map<ImageRole, XDriveBorrowedPreviewImageURL>()
     const ownedURLs = new Set<string>()
     const releasedURLs = new Set<string>()
     const startedRoles = new Set<ImageRole>()
@@ -144,39 +145,58 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       if (generationRef.current !== generation ||
           attemptsRef.current[role] !== attempt || activeURLs.get(role) !== url) return
       activeURLs.delete(role)
-      retireBlobLease(url)
-      if (![...activeURLs.values()].includes(url)) {
-        if (pendingRoleAttempts.size > 0) deferredFailedURLs.add(url)
-        else release(url)
+      const borrowed = borrowedURLs.get(role)
+      if (borrowed?.url === url) {
+        borrowedURLs.delete(role)
+        borrowed.release()
+      } else {
+        retireBlobLease(url)
+        if (![...activeURLs.values()].includes(url)) {
+          if (pendingRoleAttempts.size > 0) deferredFailedURLs.add(url)
+          else release(url)
+        }
       }
     }
     releaseFailedRoleRef.current = releaseFailedRole
     const load = async (
       role: ImageRole,
-      loader: () => Promise<string | null | undefined>,
+      loader: () => Promise<string | XDriveBorrowedPreviewImageURL | null | undefined>,
       attempt: number,
       signal: AbortSignal,
     ) => {
       let url = ''
+      let borrowed: XDriveBorrowedPreviewImageURL | null = null
       try {
-        url = (await loader()) || ''
+        const source = await loader()
+        if (typeof source === 'string') url = source
+        else if (source) {
+          borrowed = source
+          url = source.url
+        }
       } catch {
         // An unavailable original must not displace the decoded thumbnail.
       }
       if (pendingRoleAttempts.get(role) === attempt) pendingRoleAttempts.delete(role)
       if (generationRef.current !== generation ||
-          attemptsRef.current[role] !== attempt || signal.aborted) {
-        // Previous Viewer children may be fully unmounted by the time their
-        // requests settle. Never revoke a Blob held by another current child.
-        if (url) release(url)
+          attemptsRef.current[role] !== attempt || signal.aborted || !url) {
+        // Late leases return to the Gallery even after the Viewer unmounted.
+        if (borrowed) borrowed.release()
+        else if (url) release(url)
+        if (!url && generationRef.current === generation &&
+            attemptsRef.current[role] === attempt && !signal.aborted) {
+          setSources((current) => ({
+            ...current, [role]: { url: '', status: 'failed', attempt },
+          }))
+        }
         releaseDeferredFailedURLs()
         return
       }
-      if (url) {
+      if (borrowed) borrowedURLs.set(role, borrowed)
+      else {
         ownedURLs.add(url)
-        activeURLs.set(role, url)
         acquireBlobLease(url)
       }
+      activeURLs.set(role, url)
       setSources((current) => ({
         ...current,
         [role]: { url, status: url ? 'loading' : 'failed', attempt },
@@ -186,7 +206,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
 
     const start = (
       role: ImageRole,
-      loader?: (signal: AbortSignal, attempt: number) => Promise<string | null | undefined>,
+      loader?: (signal: AbortSignal, attempt: number) => Promise<string | XDriveBorrowedPreviewImageURL | null | undefined>,
       force = false,
     ) => {
       if (!loader || (startedRoles.has(role) && !force)) return
@@ -194,9 +214,15 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         controllers.get(role)?.abort()
         const previousURL = activeURLs.get(role)
         activeURLs.delete(role)
-        if (previousURL) retireBlobLease(previousURL)
-        // Do not revoke a URL still owned by the visible thumbnail.
-        if (previousURL && ![...activeURLs.values()].includes(previousURL)) release(previousURL)
+        const previousBorrowed = borrowedURLs.get(role)
+        if (previousBorrowed) {
+          borrowedURLs.delete(role)
+          previousBorrowed.release()
+        } else {
+          if (previousURL) retireBlobLease(previousURL)
+          // Do not revoke a URL still owned by the visible thumbnail.
+          if (previousURL && ![...activeURLs.values()].includes(previousURL)) release(previousURL)
+        }
         for (const key of decodingRef.current) {
           if (key.startsWith(`${role}:`)) decodingRef.current.delete(key)
         }
@@ -253,7 +279,12 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       if (acquireSourcesRef.current === acquireAvailableSources) acquireSourcesRef.current = null
       if (releaseFailedRoleRef.current === releaseFailedRole) releaseFailedRoleRef.current = null
       retryOriginalRef.current = null
-      for (const url of activeURLs.values()) retireBlobLease(url)
+      for (const [role, url] of activeURLs) {
+        const borrowed = borrowedURLs.get(role)
+        if (borrowed?.url === url) borrowed.release()
+        else retireBlobLease(url)
+      }
+      borrowedURLs.clear()
       activeURLs.clear()
       for (const url of deferredFailedURLs) release(url)
       deferredFailedURLs.clear()

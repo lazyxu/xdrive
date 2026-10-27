@@ -31,11 +31,17 @@ export type XDriveFilePreviewTextLoader<T extends XDriveFilePreviewTarget = XDri
   signal?: AbortSignal,
 ) => Promise<XDriveFileTextPreview | null | undefined>
 
+export type XDriveBorrowedPreviewImageURL = {
+  url: string
+  /** Release a borrowed Gallery cache reference, never revoke it here. */
+  release: () => void
+}
+
 export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
   signal?: AbortSignal,
   onProgress?: XDriveByteProgressHandler,
-) => Promise<string | null | undefined>
+) => Promise<string | XDriveBorrowedPreviewImageURL | null | undefined>
 
 export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
@@ -204,12 +210,18 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const identity = sourceIdentity
     let active = true
     let acquiredURL = ''
+    let borrowedPoster: XDriveBorrowedPreviewImageURL | null = null
     setVideoPoster(null)
-    void loader(target, controller.signal).then((url) => {
-      if (!url) return
+    void loader(target, controller.signal).then((source) => {
+      if (!source) return
+      const url = typeof source === 'string' ? source : source.url
+      if (typeof source !== 'string') borrowedPoster = source
       acquiredURL = url
       if (!active || controller.signal.aborted) {
-        revokePreviewURL(url)
+        if (borrowedPoster) borrowedPoster.release()
+        else revokePreviewURL(url)
+        acquiredURL = ''
+        borrowedPoster = null
         return
       }
       setVideoPoster({ identity, url })
@@ -219,7 +231,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     return () => {
       active = false
       controller.abort()
-      if (acquiredURL) revokePreviewURL(acquiredURL)
+      if (borrowedPoster) borrowedPoster.release()
+      else if (acquiredURL) revokePreviewURL(acquiredURL)
+      borrowedPoster = null
+      acquiredURL = ''
     }
   }, [sourceIdentity, previewKind, hasVideoPosterLoader])
   if (retryOwnerRef.current.sourceIdentity !== sourceIdentity) {

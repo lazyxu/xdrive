@@ -810,3 +810,32 @@ test('first-frame Viewer reports actual thumbnail transfer and fences old revisi
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+test('video poster borrowed from Gallery never revokes the shared thumbnail URL', async () => {
+  const old = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  let releases = 0
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: { id: 330, revision: 7, name: 'clip.mp4', kind: 'file' },
+        loadPreviewURL: async () => 'https://example.invalid/video',
+        loadImagePreview: async () => ({
+          url: 'blob:gallery-video-cover', release: () => { releases++ },
+        }),
+      }))
+    })
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:gallery-video-cover')
+    await act(async () => renderer.root.findByType('video').props.onLoadedData())
+    assert.equal(renderer.root.findByType('video').props.poster, undefined)
+    assert.equal(releases, 0, 'first frame does not revoke a still-mounted cached poster')
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.equal(releases, 1)
+    assert.deepEqual(revoked, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = old
+  }
+})

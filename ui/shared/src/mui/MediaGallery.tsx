@@ -180,6 +180,7 @@ import {
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
+import type { XDriveFilePreviewImageLoader } from './FilePreviewSurface'
 import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveShareDialog } from './ShareDialog'
 import type { XDriveShareDialogAdapter } from './ShareDialog'
@@ -6381,6 +6382,24 @@ export function XDriveMediaGallery({
     () => new XDriveMediaThumbnailScheduler(loadThumbnail),
     [loadThumbnail],
   )
+  // Borrow only a warmed Node/revision Blob. For a cache miss, keep the
+  // canonical Viewer reader rather than the viewport-pruned thumbnail queue.
+  const loadBorrowedViewerThumbnail = useCallback<XDriveFilePreviewImageLoader>(
+    async (target, signal, onProgress) => {
+      if (signal?.aborted) return null
+      const nodeID = Number(target.id)
+      const revision = Number(target.revision)
+      const borrowed = thumbnailScheduler.borrowCachedForViewer(nodeID, revision)
+      if (borrowed) {
+        if (signal?.aborted) {
+          borrowed.release()
+          return null
+        }
+        return borrowed
+      }
+      return loadThumbnail(nodeID, signal, revision, onProgress)
+    }, [thumbnailScheduler, loadThumbnail],
+  )
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
   const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   const [placesMobileMode, setPlacesMobileMode] = useState<'map' | 'list'>('map')
@@ -9401,6 +9420,7 @@ export function XDriveMediaGallery({
         filmstripEntries={previewFilmstripEntries}
         activeIndex={previewIndex}
         loadThumbnail={loadThumbnail}
+        loadBorrowedThumbnail={loadBorrowedViewerThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPreviewURL={loadPreviewURL}
         getBaiduMapConsent={getBaiduMapConsent}

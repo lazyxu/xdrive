@@ -40,6 +40,7 @@ import { XDriveMediaGalleryViewerLocationDialog } from './MediaGalleryViewerLoca
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
+import type { XDriveFilePreviewImageLoader } from './FilePreviewSurface'
 import { useXDrivePreviewPresentation, useXDrivePreviewSlideshow } from './usePreviewSlideshow'
 import { xDriveClassifyFilePreview } from '../file-preview'
 import { xDriveMediaCaptureTimeLabel } from '../media-viewer'
@@ -59,6 +60,7 @@ export function XDriveMediaGalleryViewer({
   filmstripEntries,
   activeIndex,
   loadThumbnail,
+  loadBorrowedThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
   getBaiduMapConsent,
@@ -94,6 +96,7 @@ export function XDriveMediaGalleryViewer({
   filmstripEntries: readonly XDriveMediaGalleryFilmstripEntry[]
   activeIndex: number
   loadThumbnail: MediaThumbnailLoader
+  loadBorrowedThumbnail?: XDriveFilePreviewImageLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
@@ -155,6 +158,7 @@ export function XDriveMediaGalleryViewer({
     nodeID: item?.node.id,
     nodeRevision: item?.node.revision,
     thumbnailLoader: loadThumbnail,
+    borrowedThumbnailLoader: loadBorrowedThumbnail,
     previewLoader: loadPreviewURL,
     motionLoader: loadLivePhotoMotion,
     session: 0,
@@ -164,6 +168,7 @@ export function XDriveMediaGalleryViewer({
     actionOwnerRef.current.nodeID !== item?.node.id ||
     actionOwnerRef.current.nodeRevision !== item?.node.revision ||
     actionOwnerRef.current.thumbnailLoader !== loadThumbnail ||
+    actionOwnerRef.current.borrowedThumbnailLoader !== loadBorrowedThumbnail ||
     actionOwnerRef.current.previewLoader !== loadPreviewURL ||
     actionOwnerRef.current.motionLoader !== loadLivePhotoMotion
   ) {
@@ -175,6 +180,7 @@ export function XDriveMediaGalleryViewer({
       nodeID: item?.node.id,
       nodeRevision: item?.node.revision,
       thumbnailLoader: loadThumbnail,
+      borrowedThumbnailLoader: loadBorrowedThumbnail,
       previewLoader: loadPreviewURL,
       motionLoader: loadLivePhotoMotion,
       session,
@@ -533,6 +539,7 @@ export function XDriveMediaGalleryViewer({
             key={actionOwner.session}
             item={item}
             loadThumbnail={loadThumbnail}
+            loadBorrowedThumbnail={loadBorrowedThumbnail}
             loadLivePhotoMotion={loadLivePhotoMotion}
             loadPreviewURL={loadPreviewURL}
             onPresentationStateChange={slideshowPresentation.onPresentationStateChange}

@@ -20,6 +20,7 @@ import type {
 export function XDriveMediaViewerContent({
   item,
   loadThumbnail,
+  loadBorrowedThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
   onPresentationStateChange,
@@ -32,6 +33,8 @@ export function XDriveMediaViewerContent({
 }: {
   item: MediaItem
   loadThumbnail: MediaThumbnailLoader
+  /** Gallery may borrow a currently cached Blob; routed Web uses transport. */
+  loadBorrowedThumbnail?: XDriveFilePreviewImageLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
@@ -73,8 +76,9 @@ export function XDriveMediaViewerContent({
 
   const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal, onProgress) => {
     if (!item.metadata.has_thumbnail) return null
+    if (loadBorrowedThumbnail) return loadBorrowedThumbnail(_target, signal, onProgress)
     return loadThumbnail(item.node.id, signal, item.node.revision, onProgress)
-  }, [item.metadata.has_thumbnail, item.node.id, item.node.revision, loadThumbnail])
+  }, [item.metadata.has_thumbnail, item.node.id, item.node.revision, loadThumbnail, loadBorrowedThumbnail])
 
   const loadOpenLivePhotoMotion = useCallback((
     onProgress?: Parameters<MediaMotionLoader>[1],
