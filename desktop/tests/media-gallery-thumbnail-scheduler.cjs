@@ -204,3 +204,47 @@ test('P0-L4c1 decode-failed URL is evicted only for the exact Node revision and 
   scheduler.dispose()
   assert.ok(revoked.includes(recovered) && revoked.includes(unaffected))
 })
+
+test('Gallery Viewer lease pins the warmed revision Blob across eviction/disposal', async () => {
+  const revoked = []
+  let calls = 0
+  const scheduler = new XDriveMediaThumbnailScheduler(
+    async (node) => { calls++; return `blob:tile-${node}-${calls}` },
+    { maxCacheEntries: 1, revokeURL: url => revoked.push(url) },
+  )
+  const first = await scheduler.load(9, 0, 2)
+  assert.equal(first, 'blob:tile-9-1')
+  assert.equal(scheduler.borrowCachedForViewer(9, 3), null, 'different revision may not borrow')
+  assert.equal(scheduler.borrowCachedForViewer(0, 2), null)
+  const lease = scheduler.borrowCachedForViewer(9, 2)
+  assert.equal(lease?.url, first)
+  assert.equal(calls, 1, 'Viewer warm cache skips a second transport')
+  await scheduler.load(10, 0, 2)
+  assert.deepEqual(revoked, [], 'eviction may not revoke a Viewer-mounted Blob URL')
+  lease.release(); lease.release()
+  assert.deepEqual(revoked, [first], 'release is idempotent')
+  const next = scheduler.borrowCachedForViewer(10, 2)
+  assert.equal(next?.url, 'blob:tile-10-2')
+  scheduler.dispose()
+  assert.deepEqual(revoked, [first], 'Gallery disposal defers active Viewer Blob revocation')
+  next.release()
+  assert.deepEqual(revoked, [first, next.url])
+  assert.equal(scheduler.borrowCachedForViewer(10, 2), null)
+})
+
+test('invalidate a decode-failed cached revision without revoking the borrowing Viewer', async () => {
+  const revoked = []
+  const scheduler = new XDriveMediaThumbnailScheduler(
+    async () => 'blob:bad-tile',
+    { revokeURL: url => revoked.push(url) },
+  )
+  const url = await scheduler.load(81, 0, 5)
+  const lease = scheduler.borrowCachedForViewer(81, 5)
+  assert.equal(lease?.url, url)
+  assert.equal(scheduler.invalidateDecodedURL(81, 5, url), true)
+  assert.deepEqual(revoked, [])
+  assert.equal(scheduler.borrowCachedForViewer(81, 5), null)
+  lease.release()
+  assert.deepEqual(revoked, [url])
+  scheduler.dispose()
+})

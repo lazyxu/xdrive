@@ -52,6 +52,10 @@ export class XDriveMediaThumbnailScheduler {
   private readonly queued = new Map<string, ThumbnailTask>()
   private readonly inFlight = new Map<string, ThumbnailTask>()
   private readonly cache = new Map<string, string>()
+  // Gallery's cached Blob may be borrowed by Viewer. Retire on eviction,
+  // but wait for the final Viewer lease before revoking its still-mounted URL.
+  private readonly viewerLeases = new Map<string, number>()
+  private readonly retiredViewerURLs = new Set<string>()
   // Bounded to the existing thumbnail LRU capacity. The first genuine DOM
   // decode error permits ONE future uncached attempt; another decode error
   // for that same Node:revision exhausts it. Never launch work in onError.
@@ -166,6 +170,39 @@ export class XDriveMediaThumbnailScheduler {
     return promise
   }
 
+  /** Borrow an already-cached current-revision thumbnail without a new GET.
+   * Borrowers release this lease on render close/error/cancellation. */
+  borrowCachedForViewer(nodeID: number, revision: number): { url: string; release: () => void } | null {
+    if (this.disposed || !Number.isSafeInteger(nodeID) || nodeID <= 0 ||
+        !Number.isSafeInteger(revision) || revision <= 0) return null
+    const key = `${nodeID}:${revision}`
+    if (this.decodeRecovery.get(key) === 'exhausted') return null
+    const url = this.cache.get(key)
+    if (!url?.startsWith('blob:')) return null
+    this.cache.delete(key)
+    this.cache.set(key, url)
+    this.viewerLeases.set(url, (this.viewerLeases.get(url) || 0) + 1)
+    let released = false
+    return {
+      url,
+      release: () => {
+        if (released) return
+        released = true
+        const count = this.viewerLeases.get(url)
+        if (!count) return
+        if (count === 1) this.viewerLeases.delete(url)
+        else this.viewerLeases.set(url, count - 1)
+        if (count === 1 && this.retiredViewerURLs.delete(url)) this.revokeURL(url)
+      },
+    }
+  }
+
+  private retireCachedURL(url: string) {
+    if (!url.startsWith('blob:')) return
+    if ((this.viewerLeases.get(url) || 0) > 0) this.retiredViewerURLs.add(url)
+    else this.revokeURL(url)
+  }
+
   // Browser image decoding happens after a successful network/Blob response.
   // A failed decoded URL must not poison this node+revision's LRU on a later
   // viewport remount. Match the exact returned URL: an old onError callback
@@ -178,7 +215,7 @@ export class XDriveMediaThumbnailScheduler {
     const key = `${nodeID}:${currentRevision}`
     if (this.cache.get(key) !== failedURL) return false
     this.cache.delete(key)
-    this.revokeURL(failedURL)
+    this.retireCachedURL(failedURL)
     const state = this.decodeRecovery.get(key)
     if (state === 'attempted') {
       // The fresh bytes also failed in the actual browser image decoder.
@@ -210,7 +247,7 @@ export class XDriveMediaThumbnailScheduler {
     this.queue.length = 0
     this.queued.clear()
     this.inFlight.clear()
-    for (const url of this.cache.values()) this.revokeURL(url)
+    for (const url of this.cache.values()) this.retireCachedURL(url)
     this.cache.clear()
     this.decodeRecovery.clear()
   }
@@ -333,14 +370,14 @@ export class XDriveMediaThumbnailScheduler {
 
   private cacheURL(key: string, url: string) {
     const previous = this.cache.get(key)
-    if (previous && previous !== url) this.revokeURL(previous)
+    if (previous && previous !== url) this.retireCachedURL(previous)
     this.cache.delete(key)
     this.cache.set(key, url)
     while (this.cache.size > this.maxCacheEntries) {
       const oldest = this.cache.entries().next().value as [string, string] | undefined
       if (!oldest) break
       this.cache.delete(oldest[0])
-      this.revokeURL(oldest[1])
+      this.retireCachedURL(oldest[1])
     }
   }
 }

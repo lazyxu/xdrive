@@ -109,3 +109,18 @@ test('empty Filmstrip never renders an otherwise blank Gallery chrome overlay', 
   assert.match(galleryViewer, /videoControlsSafeArea=\{narrowViewer \? \(filmstripEntries\.length > 0/)
   assert.match(webViewers, /videoControlsSafeArea=\{narrowMediaViewer \? \(viewer\.filmstripEntries\.length > 0/)
 })
+
+test('Gallery Viewer borrows only warmed current thumbnail; routed Web keeps its scoped reader', () => {
+  const gallery = read('ui','shared','src','mui','MediaGallery.tsx')
+  const scheduler = read('ui','shared','src','mui','MediaGalleryThumbnailScheduler.ts')
+  const preview = read('ui','shared','src','mui','FilePreviewImage.tsx')
+  assert.match(gallery, /thumbnailScheduler\.borrowCachedForViewer\(nodeID, revision\)/)
+  assert.match(gallery, /return loadThumbnail\(nodeID, signal, revision, onProgress\)/)
+  assert.match(gallery, /loadBorrowedThumbnail=\{loadBorrowedViewerThumbnail\}/)
+  assert.match(galleryViewer, /loadBorrowedThumbnail=\{loadBorrowedThumbnail\}/)
+  assert.match(content, /if \(loadBorrowedThumbnail\) return loadBorrowedThumbnail\(_target, signal, onProgress\)/)
+  assert.match(scheduler, /this\.retiredViewerURLs\.add\(url\)/)
+  assert.match(preview, /borrowed\.release\(\)/)
+  assert.match(webViewers, /loadThumbnail=\{gallerySource\.loadThumbnail\}/,
+    'a separate routed Viewer must not borrow from a former Gallery Owner')
+})

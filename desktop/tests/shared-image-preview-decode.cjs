@@ -392,3 +392,85 @@ test('closing or changing the RAW preview source aborts its pending high-resolut
     second.resolve(null)
   }
 })
+
+test('a borrowed Gallery thumbnail remains owned by the cache until Viewer closes', async () => {
+  const revoked = []
+  const originalRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  let releases = 0
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target, loadPreviewURL: async () => null,
+        loadImagePreview: async () => ({
+          url: 'blob:gallery-owned', release: () => { releases++ },
+        }),
+      }))
+    })
+    await loadImage(renderer, 'blob:gallery-owned')
+    assert.equal(visibleImages(renderer).length, 1)
+    assert.equal(releases, 0)
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.equal(releases, 1, 'Viewer returns the Gallery lease exactly once')
+    assert.deepEqual(revoked, [], 'Viewer may never revoke a borrowed Gallery URL')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+})
+
+test('late borrowed thumbnail is released after stale Viewer unmount', async () => {
+  const pending = deferred()
+  const revoked = []
+  const originalRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  let releases = 0
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target, loadImagePreview: () => pending.promise,
+      }))
+    })
+    await act(async () => { renderer.unmount(); renderer = null })
+    await act(async () => pending.resolve({
+      url: 'blob:late-cache', release: () => { releases++ },
+    }))
+    assert.equal(releases, 1)
+    assert.deepEqual(revoked, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+})
+
+test('borrowed thumbnail decode error returns exactly its lease, retaining original', async () => {
+  const revoked = []
+  const originalRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  let releases = 0
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target, loadPreviewURL: async () => 'https://example.invalid/original.jpg',
+        loadImagePreview: async () => ({
+          url: 'blob:broken-borrowed', release: () => { releases++ },
+        }),
+      }))
+    })
+    await act(async () => images(renderer)
+      .find(x => x.props.src === 'blob:broken-borrowed').props.onError())
+    assert.equal(releases, 1)
+    await loadImage(renderer, 'https://example.invalid/original.jpg')
+    assert.deepEqual(visibleImages(renderer).map(x => x.props.src),
+      ['https://example.invalid/original.jpg'])
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.equal(releases, 1, 'failure + unmount cannot double-release')
+    assert.deepEqual(revoked, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+})
