@@ -40,7 +40,7 @@ function fixture(options={}) {
     }
   }}
   const core={info:()=>{},warning:()=>{}}
-  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'release',payload:{release:{tag_name:'snapshot',prerelease:true,draft:false}},runId:987}
+  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'repository_dispatch',payload:{action:'xdrive_snapshot_published'},runId:987}
   return {github,core,context,calls,run,runs}
 }
 
@@ -190,4 +190,45 @@ test('unknown, oversized, truncated or mismatched child job inventories fail clo
     assert.deepEqual(t.calls.cancel,[])
     assert.match(r.audit[0].action,/^preserved-/)
   }
+})
+
+
+test('release edits and unrelated repository_dispatch events cannot prune CI', async()=>{
+  const release=fixture()
+  release.context.eventName='release'
+  release.context.payload={release:{tag_name:'snapshot',prerelease:true,draft:false}}
+  await assert.rejects(pruneQueuedMasterCI(release),/unsupported event/)
+  assert.deepEqual(release.calls.cancel,[])
+  const wrong=fixture()
+  wrong.context.payload.action='other_repo_dispatch'
+  await assert.rejects(pruneQueuedMasterCI(wrong),/explicit Snapshot-published event/)
+  assert.deepEqual(wrong.calls.cancel,[])
+})
+
+test('manual dispatch keeps safe dry-run access', async()=>{
+  const fixtureRun=fixture()
+  fixtureRun.context.eventName='workflow_dispatch'
+  fixtureRun.context.payload={}
+  const result=await pruneQueuedMasterCI({...fixtureRun,dryRun:true})
+  assert.equal(result.eligible,1)
+  assert.equal(result.cancelled,0)
+  assert.deepEqual(fixtureRun.calls.cancel,[])
+})
+
+test('cleanup is dispatched once from the verified publisher, never from release.edited', ()=>{
+  const fs=require('node:fs')
+  const path=require('node:path')
+  const root=path.resolve(__dirname,'../..')
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/snapshot-prune-queued-master-ci.yml'),'utf8')
+  const release=fs.readFileSync(path.join(root,'.github/workflows/release.yml'),'utf8')
+  assert.ok(workflow.includes('  repository_dispatch:\n    types: [xdrive_snapshot_published]'))
+  assert.equal(workflow.includes('    types: [edited]'),false)
+  assert.equal(workflow.includes("github.event_name == 'release'"),false)
+  assert.ok(workflow.includes("github.event.action == 'xdrive_snapshot_published'"))
+  const assetCheck=release.indexOf('      - name: Assert distribution assets are not archive-wrapped')
+  const notification=release.indexOf('      - name: Notify bounded queued-CI prune after verified Snapshot publication')
+  const stableRelease=release.indexOf('      - name: Publish GitHub Release',notification)
+  assert.ok(assetCheck>=0 && notification>assetCheck && stableRelease>notification)
+  assert.ok(release.includes('-f event_type=xdrive_snapshot_published'))
+  assert.ok(release.includes('if [[ "$published" != "$GITHUB_SHA" ]]'))
 })
