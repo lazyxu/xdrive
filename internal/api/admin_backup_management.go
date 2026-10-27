@@ -110,7 +110,7 @@ type backupAdminPage struct {
 // Host-authored historical receipts, not current snapshot integrity guarantees.
 type backupAdminHistoryEntry struct {
 	backupAdminStatus
-	Mode string `json:"mode,omitempty"`
+	Mode         string                          `json:"mode,omitempty"`
 	Verification *backupAdminVerificationReceipt `json:"verification,omitempty"`
 }
 

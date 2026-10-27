@@ -4,13 +4,13 @@ import "strings"
 
 // A fixed-schema Host receipt. Never include raw paths, object hashes or logs.
 type backupAdminVerificationReceipt struct {
-	Protocol string `json:"protocol"`
-	State string `json:"state"`
-	Format string `json:"format"`
-	Scope string `json:"scope"`
-	CASObjectsChecked int64 `json:"cas_objects_checked"`
-	CASBytesHashed int64 `json:"cas_bytes_hashed"`
-	FailureCategory string `json:"failure_category,omitempty"`
+	Protocol          string ${tick}json:"protocol"${tick}
+	State             string ${tick}json:"state"${tick}
+	Format            string ${tick}json:"format"${tick}
+	Scope             string ${tick}json:"scope"${tick}
+	CASObjectsChecked int64  ${tick}json:"cas_objects_checked"${tick}
+	CASBytesHashed    int64  ${tick}json:"cas_bytes_hashed"${tick}
+	FailureCategory   string ${tick}json:"failure_category,omitempty"${tick}
 }
 
 func validBackupVerificationReceipt(e backupAdminHistoryEntry) bool {
@@ -27,7 +27,9 @@ func validBackupVerificationReceipt(e backupAdminHistoryEntry) bool {
 		return false
 	}
 	expected := "v2"
-	if strings.HasPrefix(e.SnapshotID, "v1:") { expected = "v1" }
+	if strings.HasPrefix(e.SnapshotID, "v1:") {
+		expected = "v1"
+	}
 	if v.Format != expected || (v.Format == "v1" &&
 		(v.CASObjectsChecked != 0 || v.CASBytesHashed != 0)) {
 		return false

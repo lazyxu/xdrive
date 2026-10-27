@@ -2770,7 +2770,7 @@ backup_admin_execute() {
     verify)
       [[ "$mode" == fast || "$mode" == deep ]] || return 2
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
-      if [[ -n "$XD_BACKUP_ADMIN_VERIFY_JSON_FILE" ]]; then
+      if [[ -n "${XD_BACKUP_ADMIN_VERIFY_JSON_FILE:-}" ]]; then
         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify --json "$target" > "$XD_BACKUP_ADMIN_VERIFY_JSON_FILE" || return
       else
         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
