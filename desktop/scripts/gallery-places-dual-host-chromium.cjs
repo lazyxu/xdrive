@@ -273,11 +273,20 @@ async function testFullDocumentMapHandoff(browser,from,port){
       count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
       cover:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
     }))
-    record(from+'→'+target+': actual Gin/PostgreSQL ticket survives full document with same Owner Favorites',
-      accepted.handoff.consumes===1&&accepted.handoff.state==='ready'&&
+    // Assert independent real-Gin restore properties before waiting for
+    // any third-party SDK pixel projection. A valid Owner /cells Count may
+    // render before asynchronously projected pins; neither should mask an
+    // authentication or filter regression behind a composite assertion.
+    record(from+'→'+target+': one Gin/PostgreSQL Owner handoff consumed',
+      accepted.handoff.consumes===1&&accepted.handoff.state==='ready')
+    record(from+'→'+target+': Favorites-only Owner Cells survived full document',
       accepted.ownerQueries.length>0&&
       accepted.ownerQueries.every(q=>q.favorite===true&&q.albumKey==='')&&
-      accepted.count?.includes('3 张照片')&&accepted.cover>0)
+      accepted.count?.includes('3 张照片'))
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    record(from+'→'+target+': restored Owner photo cover actually rendered',
+      await page.locator('[data-xdrive-places-trusted-photo-cover]').count()>0)
     record(from+'→'+target+': opaque one-use token is scrubbed before SDK load',
       accepted.url.includes('places_map_scope_required=1')&&
       !accepted.url.includes('places_map_handoff=')&&
