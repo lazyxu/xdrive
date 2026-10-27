@@ -78,8 +78,8 @@ internal fun GalleryPhotoViewer(
     }
     val currentZoom by rememberUpdatedState(zoom)
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
-    val older = controller.galleryViewerNeighbor(-1)
-    val newer = controller.galleryViewerNeighbor(1)
+    val canGoOlder = controller.galleryViewerCanShift(-1)
+    val canGoNewer = controller.galleryViewerCanShift(1)
     val cacheKey = "${photo.node.id}:${photo.node.revision}"
     val cachedThumbnail = thumbnails.get(cacheKey)
     val canReadOriginal =
@@ -203,11 +203,11 @@ internal fun GalleryPhotoViewer(
                 // inventing extra iOS-foreign overlay arrows or media controls.
                 .semantics {
                     customActions = buildList {
-                        if (older != null) add(CustomAccessibilityAction("上一项") {
+                        if (canGoOlder) add(CustomAccessibilityAction("上一项") {
                             controller.shiftGalleryViewer(-1)
                             true
                         })
-                        if (newer != null) add(CustomAccessibilityAction("下一项") {
+                        if (canGoNewer) add(CustomAccessibilityAction("下一项") {
                             controller.shiftGalleryViewer(1)
                             true
                         })

@@ -9,6 +9,11 @@ import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { xDriveFileSupportsTextPreview } from '../file-preview'
 import { xDriveFileSupportsThumbnail } from './FileExplorerItemPresentation'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
+import {
+  xDriveSynologyFetchVerifiedDownload,
+  XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES,
+} from '../synology-owner-download'
+import { xDriveMediaByteProgressLabel } from './MediaLoadProgress'
 import type { XDriveByteProgressHandler } from '../file-preview'
 import {
   xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME,
@@ -67,7 +72,13 @@ export function XDriveSynologyOwnerFilesPage({
   const [hasMore, setHasMore] = useState(false)
   const [nextCursor, setNextCursor] = useState('')
   const [rootRevision, setRootRevision] = useState(0)
+  const [download, setDownload] = useState<{ name: string; loaded: number; total: number } | null>(null)
+  const [verifiedDownload, setVerifiedDownload] = useState<{
+    filename: string; url: string; scopeKey: string; rootRevision: number
+  } | null>(null)
 
+  const downloadAbort = useRef<AbortController | null>(null)
+  const verifiedDownloadURL = useRef<string | null>(null)
   const pageEpoch = useRef(0)
   const pendingPage = useRef<AbortController | null>(null)
   const pagingActive = useRef(false)
@@ -79,6 +90,9 @@ export function XDriveSynologyOwnerFilesPage({
   const currentScopeVerified = verified && verifiedScopeKey === currentScopeKey
   const previewItem = currentScopeVerified && preview?.scopeKey === currentScopeKey
     ? preview.item : null
+  const readyDownload = currentScopeVerified &&
+    verifiedDownload?.scopeKey === currentScopeKey &&
+    verifiedDownload.rootRevision === rootRevision ? verifiedDownload : null
   const loadTextPreview = useCallback((item: XDriveFileExplorerItem, signal?: AbortSignal) => {
     if (typeof item.id !== 'number' || !xDriveFileSupportsTextPreview(item.name, item.kind)) {
       return Promise.reject(new Error('仅允许对已确认的文本文件执行 Owner 预览'))
@@ -90,6 +104,69 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => xDriveSynologyLoadOwnerThumbnail(client, item, signal, onProgress), [client])
+  // Native OS/browser saving is initiated only AFTER complete Owner/revision
+  // validation and whole-file SHA-256 proof. No unsafe Server URL or token
+  // is ever exposed, and partial bytes never reach the browser download UI.
+  const downloadSelectedFiles = useCallback((selected: XDriveFileExplorerItem[]) => {
+    if (!currentScopeVerified || downloadAbort.current || selected.length !== 1) {
+      setNotice('仅能在当前已确认目录中下载一个文件。')
+      return
+    }
+    const item = selected[0]
+    // A stale FileExplorer/Quick Look selection from a previous Owner or
+    // folder must not silently select an unrelated current-Owner Node.
+    if (!itemsRef.current.some(node =>
+      node.type === 'file' && node.id === item.id &&
+      node.revision === item.revision && node.name === item.name &&
+      node.size === item.size)) {
+      setNotice('文件不属于当前已核实目录，请刷新后重新选择。')
+      return
+    }
+    // Retire a previous verified but unused Blob before a different request.
+    if (verifiedDownloadURL.current) {
+      URL.revokeObjectURL(verifiedDownloadURL.current)
+      verifiedDownloadURL.current = null
+      setVerifiedDownload(null)
+    }
+    const controller = new AbortController()
+    downloadAbort.current = controller
+    setDownload({ name: item.name, loaded: 0, total: item.size ?? 0 })
+    setNotice('')
+    void xDriveSynologyFetchVerifiedDownload(client, item, controller.signal,
+      (loaded, total) => {
+        if (downloadAbort.current === controller && !controller.signal.aborted) {
+          setDownload({ name: item.name, loaded, total: total ?? item.size ?? 0 })
+        }
+      })
+      .then(({ filename, blob }) => {
+        if (controller.signal.aborted || downloadAbort.current !== controller) return
+        // Safari can reject a synthetic anchor.click() following 128 awaited
+        // Owner range requests. Expose a real user-activated a[download] link
+        // only after complete SHA verification, never a premature save.
+        const url = URL.createObjectURL(blob)
+        verifiedDownloadURL.current = url
+        setVerifiedDownload({ filename, url, scopeKey: currentScopeKey, rootRevision })
+        setNotice('文件完整性校验成功，请点击“保存文件”；链接 60 秒后失效。')
+        window.setTimeout(() => {
+          if (verifiedDownloadURL.current !== url) return
+          verifiedDownloadURL.current = null
+          URL.revokeObjectURL(url)
+          setVerifiedDownload(previous => previous?.url === url ? null : previous)
+        }, 60_000)
+      })
+      .catch(() => {
+        if (downloadAbort.current === controller && !controller.signal.aborted) {
+          setNotice('文件下载未完成完整性校验，未提供不完整的文件。')
+        }
+      })
+      .finally(() => {
+        if (downloadAbort.current === controller) {
+          downloadAbort.current = null
+          setDownload(null)
+        }
+      })
+  }, [client, currentScopeVerified, currentScopeKey, rootRevision])
+
   const loadMediaPreview = useCallback((
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
@@ -206,6 +283,15 @@ export function XDriveSynologyOwnerFilesPage({
   // background tab or pressing Refresh starts with a newly authenticated root,
   // rather than retaining breadcrumbs or file names from a previous Owner.
   const refreshAuthenticatedOwner = useCallback(() => {
+    // Do not carry an in-progress Owner download into another login/session.
+    downloadAbort.current?.abort()
+    downloadAbort.current = null
+    setDownload(null)
+    if (verifiedDownloadURL.current) {
+      URL.revokeObjectURL(verifiedDownloadURL.current)
+      verifiedDownloadURL.current = null
+    }
+    setVerifiedDownload(null)
     pendingPage.current?.abort()
     pageEpoch.current++
     pagingActive.current = false
@@ -225,6 +311,23 @@ export function XDriveSynologyOwnerFilesPage({
     setLoadingRoot(true)
     setRootRevision(epoch => epoch + 1)
   }, [])
+
+  // Folder, sort, account/root revision, client or page unmount may invalidate
+  // an Owner-scoped download. Cancel the private Agent range requests.
+  useEffect(() => {
+    // A previous account or directory's status must disappear even if its
+    // canceled Agent promise settles much later than the new page render.
+    setDownload(null)
+    setVerifiedDownload(null)
+    return () => {
+      downloadAbort.current?.abort()
+      downloadAbort.current = null
+      if (verifiedDownloadURL.current) {
+        URL.revokeObjectURL(verifiedDownloadURL.current)
+        verifiedDownloadURL.current = null
+      }
+    }
+  }, [client, rootRevision, currentScopeKey])
 
   useEffect(() => {
     const onResume = () => {
@@ -262,7 +365,8 @@ export function XDriveSynologyOwnerFilesPage({
         <XDriveStatusAlert tone="neutral">
           本页提供经 Server Owner 鉴权的文件列表、最多 1 MiB 的文本预览，以及最多 32 MiB 的
           JPEG/PNG/WebP/GIF/PDF 查看和可见图片/视频的 Server 派生缩略图，支持 DSM 身份验证下的原生视频/音频 Range 播放。
-          Live、下载、上传、移动、删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
+          支持单文件最多 32 MiB 完整 SHA-256 校验后下载。Live、批量或更大的下载、上传、移动、
+          删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
         </XDriveStatusAlert>
         {rootError ? <XDriveStatusAlert tone="bad">{rootError}</XDriveStatusAlert> : null}
         {loadingRoot ? <Box data-xdrive-nas-cloud-root-first-read aria-busy
@@ -271,6 +375,38 @@ export function XDriveSynologyOwnerFilesPage({
           <>
             {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
             {notice ? <XDriveStatusAlert tone="neutral">{notice}</XDriveStatusAlert> : null}
+            {readyDownload ? (
+              <XDriveStatusAlert tone="neutral">
+                已核实：{readyDownload.filename}
+                {' '}
+                <Box component="a" href={readyDownload.url}
+                  download={readyDownload.filename} rel="noopener noreferrer"
+                  onClick={() => setNotice('已向浏览器请求保存：' + readyDownload.filename)}
+                  sx={{ display: 'inline-block', color: 'primary.main', fontWeight: 600,
+                    textDecoration: 'underline', mx: 1 }}>
+                  保存文件
+                </Box>
+                <XDriveActionButton compact onClick={() => {
+                  if (verifiedDownloadURL.current === readyDownload.url) {
+                    URL.revokeObjectURL(readyDownload.url)
+                    verifiedDownloadURL.current = null
+                  }
+                  setVerifiedDownload(null)
+                  setNotice('')
+                }}>取消保存</XDriveActionButton>
+              </XDriveStatusAlert>
+            ) : null}
+            {download ? (
+              <XDriveStatusAlert tone="neutral">
+                下载校验：{download.name} · {xDriveMediaByteProgressLabel(download.loaded, download.total)}
+                <XDriveActionButton compact onClick={() => {
+                  downloadAbort.current?.abort()
+                  downloadAbort.current = null
+                  setDownload(null)
+                  setNotice('已取消文件下载。')
+                }}>取消下载</XDriveActionButton>
+              </XDriveStatusAlert>
+            ) : null}
             <XDriveFileExplorer
               presentation="workspace"
               interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
@@ -294,6 +430,26 @@ export function XDriveSynologyOwnerFilesPage({
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
+              onDownloadItems={downloadSelectedFiles}
+              getSelectionActionDisabledReason={(action, selected, count) => {
+                if (action !== 'download') return null
+                if (!currentScopeVerified) return '当前 Server Owner 目录尚未验证'
+                if (download) return '已有正在执行的文件下载'
+                if (count !== 1 || selected.length !== 1) return '暂仅支持单个文件下载'
+                const item = selected[0]
+                if (item.kind !== 'file' || typeof item.size !== 'number' ||
+                    !Number.isSafeInteger(item.size) || item.size < 1 ||
+                    item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
+                  return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
+                }
+                if (!itemsRef.current.some(node =>
+                  node.type === 'file' && node.id === item.id &&
+                  node.revision === item.revision && node.name === item.name &&
+                  node.size === item.size)) {
+                  return '该文件不属于当前已核实的 Server Owner 目录'
+                }
+                return null
+              }}
               onOpenItem={item => {
                 if (item.kind === 'dir') {
                   setPreview(null)

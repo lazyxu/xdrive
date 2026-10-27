@@ -31,6 +31,7 @@ const ownerMediaIPC = read('internal/localbackupipc/owner_media_range.go')
 const ownerThumbIPC = read('internal/localbackupipc/owner_thumbnail.go')
 const ownerThumbServer = read('internal/client/owner_thumbnail.go')
 const ownerThumbAdapter = read('ui/shared/src/synology-owner-thumbnail.ts')
+const verifiedOwnerDownload = read('ui/shared/src/synology-owner-download.ts')
 const commonThumbnails = read('ui/shared/src/mui/FileExplorerThumbnail.tsx')
 const ownerServerRange = read('internal/client/owner_media_range.go')
 const synologyMediaPreview = read('ui/shared/src/synology-media-preview.ts')
@@ -65,7 +66,15 @@ for (const [name, source] of [['Desktop', desktop], ['DSM', nas]]) {
     }
   }
 }
-if (!ownerThumbIPC.includes('cloud-thumbnail-read') ||
+if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
+    !verifiedOwnerDownload.includes('crypto.subtle.digest') ||
+    !verifiedOwnerDownload.includes('XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES = 32 << 20') ||
+    !synologyFiles.includes('onDownloadItems={downloadSelectedFiles}') ||
+    !synologyFiles.includes('getSelectionActionDisabledReason={(action, selected, count)') ||
+    !synologyFiles.includes('download={readyDownload.filename}') ||
+    !synologyFiles.includes('href={readyDownload.url}') ||
+    !synologyFiles.includes('downloadAbort.current?.abort()') ||
+    !ownerThumbIPC.includes('cloud-thumbnail-read') ||
     !ownerThumbIPC.includes('ValidateOwnerThumbnail') ||
     !ownerThumbServer.includes('MediaOwnerThumbnail') ||
     !ownerThumbServer.includes('revision=%s') ||

@@ -253,6 +253,14 @@ executed results plus a per-snapshot *last verification (historical)* receipt.
 This is not a claim that previously verified bytes remain valid: any actual
 restore re-runs the full fail-closed verification.
 
+Manual Create uses the existing `server-backup.sh` progress file.
+Host Control copies bounded, actual per-stage bytes and labels to its
+authenticated status. Web/Desktop render a determinate progress bar only
+when a trustworthy byte total is known. Unknown totals remain indeterminate;
+stage counters can reset and must not be described as an overall percentage.
+Other actions retain indeterminate progress until native evidence exists.
+Final Host terminal receipts remain authoritative.
+
 The shared administrator panel also provides an **integrity overview** based
 only on Host-discovered generations and the most recent (up to 30) operation
 receipts. It separates structurally complete file+database restore candidates,

@@ -86,6 +86,10 @@ data class DriveState(
     val galleryPageIntent: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
+    /** A boundary lookup is independent of the current photo/Media3/Live stream. */
+    val galleryViewerPageDirection: Int = 0,
+    val galleryViewerPageBusy: Boolean = false,
+    val galleryViewerPageError: String? = null,
     /** Scoped single real Owner file in existing Gallery Viewer; Back returns to Files. */
     val viewerReturnToFiles: Boolean = false,
     val destinationKind: FilesTransferKind? = null,
@@ -138,6 +142,7 @@ class DriveController(
     private val galleryThumbnailLimit = Semaphore(4)
     private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
+    private var galleryViewerPageJob: Job? = null
     private var textPreviewEpoch = 0L
     private var textPreviewJob: Job? = null
     private var retryPath: List<DriveNode>? = null
@@ -1823,9 +1828,10 @@ class DriveController(
             !current.galleryLoaded || item.mediaKind !in setOf("image", "video") ||
             item.node.type != "file" || item.node.revision <= 0 ||
             current.galleryItems.none { it == item }) return
+        cancelGalleryViewerPage()
         closeActiveVideoPlayback()
         galleryViewerEpoch++
-        mutableState.value = current.copy(galleryViewer = item, gallerySelected = null)
+        mutableState.value = state.value.copy(galleryViewer = item, gallerySelected = null)
     }
 
     /** A private Owner media session, tied to this one currently opened video.
@@ -1906,12 +1912,144 @@ class DriveController(
         }
     }
 
-    /** Changing media immediately releases an old video stream and fences
-     * in-flight image/Live requests (including noncooperative A -> B -> A).
-     * Neither direction refetches Gallery rows or skips a video. */
+    /** A Viewer swipe may cross exactly one unloaded Owner Range page.
+     * The visible neighbor is never guessed from a thumbnail or local index.
+     * While a page is pending, do not dispatch another swipe. */
+    fun galleryViewerCanShift(direction: Int): Boolean {
+        val current = state.value
+        if (direction !in listOf(-1, 1) || current.screen != Screen.GALLERY ||
+            current.viewerReturnToFiles ||
+            !current.galleryLoaded || current.galleryViewer == null ||
+            current.gallerySelected != null || current.galleryViewerPageBusy ||
+            current.loading) return false
+        if (galleryViewerNeighbor(direction) != null) return true
+        val index = current.galleryItems.indexOfFirst { it == current.galleryViewer }
+        if (index < 0) return false
+        return if (direction == -1) {
+            index == 0 && current.galleryOffset > 0
+        } else {
+            val end = current.galleryOffset.toLong() + current.galleryItems.size
+            index == current.galleryItems.lastIndex && end < current.galleryTotal &&
+                end <= Int.MAX_VALUE.toLong()
+        }
+    }
+
+    /** Stop a speculative boundary GET before Owner, route, Viewer or item
+     * identity changes. A noncooperative reply still fails the generation
+     * and Viewer epoch checks below. */
+    private fun cancelGalleryViewerPage() {
+        galleryViewerPageJob?.cancel()
+        galleryViewerPageJob = null
+        val current = state.value
+        if (current.galleryViewerPageDirection != 0 || current.galleryViewerPageBusy ||
+            current.galleryViewerPageError != null) mutableState.value = current.copy(
+                galleryViewerPageDirection = 0, galleryViewerPageBusy = false,
+                galleryViewerPageError = null)
+    }
+
+    /** Only the same authenticated album/search/kind and stable total can extend
+     * the currently opened Viewer. This independent read does not invalidate
+     * the current image/Media3 player while the page is loading. */
+    private fun loadViewerBoundary(direction: Int, starting: DriveState) {
+        val source = starting.galleryViewer ?: return
+        val service = api ?: return
+        val ticket = generation
+        val epoch = galleryViewerEpoch
+        val before = starting.galleryItems
+        val firstOffset = starting.galleryOffset
+        val requested = if (direction == -1) (firstOffset - 60).coerceAtLeast(0)
+            else (firstOffset.toLong() + before.size).toInt()
+        val search = starting.gallerySearchQuery
+        val kind = starting.galleryMediaKind
+        val albumId = starting.gallerySelectedAlbum?.id
+        val total = starting.galleryTotal
+        mutableState.value = starting.copy(galleryViewerPageDirection = direction,
+            galleryViewerPageBusy = true, galleryViewerPageError = null)
+        galleryViewerPageJob = scope.launch {
+            try {
+                val page = fetchGalleryPage(service, ticket, requested, false, search, kind, albumId)
+                checkCurrent(ticket)
+                val latest = state.value
+                if (galleryViewerEpoch != epoch || latest.screen != Screen.GALLERY ||
+                    latest.galleryViewer != source || !latest.galleryLoaded ||
+                    latest.galleryItems != before || latest.galleryOffset != firstOffset ||
+                    latest.galleryTotal != total || latest.gallerySearchQuery != search ||
+                    latest.galleryMediaKind != kind ||
+                    latest.gallerySelectedAlbum?.id != albumId ||
+                    latest.gallerySelected != null ||
+                    !latest.galleryViewerPageBusy ||
+                    latest.galleryViewerPageDirection != direction) throw CancellationException()
+                if (page.offset != requested || page.totalCount != total ||
+                    page.items.isEmpty() || requested.toLong() + page.items.size > total)
+                    throw ApiException(0, "Viewer Owner range changed",
+                        ApiFailureReason.INVALID_RESPONSE)
+                val additions = if (direction == -1) {
+                    val prefix = firstOffset - requested
+                    val overlap = page.items.drop(prefix)
+                    if (prefix <= 0 || page.items.size < prefix ||
+                        overlap.size > before.size ||
+                        overlap != before.take(overlap.size))
+                        throw ApiException(0, "Viewer older range changed",
+                            ApiFailureReason.INVALID_RESPONSE)
+                    page.items.take(prefix)
+                } else {
+                    if (firstOffset.toLong() + before.size != requested.toLong())
+                        throw ApiException(0, "Viewer newer offset changed",
+                            ApiFailureReason.INVALID_RESPONSE)
+                    page.items
+                }
+                if (additions.isEmpty() ||
+                    additions.map { it.node.id }.toSet().size != additions.size ||
+                    additions.any { added ->
+                        added.node.id <= 0 || added.node.revision <= 0 ||
+                            added.node.type != "file" ||
+                            added.mediaKind !in setOf("image", "video") ||
+                            before.any { it.node.id == added.node.id }
+                    }) throw ApiException(0, "Viewer neighbor is not a verified Owner item",
+                    ApiFailureReason.INVALID_RESPONSE)
+                val next = if (direction == -1) additions.last() else additions.first()
+                closeActiveVideoPlayback() // Close only when a genuine new item is ready.
+                galleryViewerEpoch++ // Fence original/Live bytes from the previous item.
+                mutableState.value = latest.copy(
+                    galleryItems = if (direction == -1) additions + before else before + additions,
+                    galleryOffset = if (direction == -1) requested else firstOffset,
+                    galleryViewer = next, gallerySelected = null,
+                    galleryViewerPageDirection = 0, galleryViewerPageBusy = false,
+                    galleryViewerPageError = null)
+            } catch (_: CancellationException) {
+                // The Viewer or Owner changed. Never publish a delayed page.
+            } catch (failure: Exception) {
+                if (ticket == generation && galleryViewerEpoch == epoch &&
+                    state.value.screen == Screen.GALLERY &&
+                    state.value.galleryViewer == source &&
+                    state.value.gallerySelected == null &&
+                    state.value.galleryViewerPageBusy) {
+                    if (failure is ApiException && failure.statusCode == 401) {
+                        endSession(changeServer = false)
+                    } else {
+                        mutableState.value = state.value.copy(
+                            galleryViewerPageBusy = false,
+                            galleryViewerPageError =
+                                "无法加载相邻媒体，请重试；若图库内容已变更，请返回图库刷新。")
+                    }
+                }
+            } finally {
+                if (galleryViewerPageJob === kotlin.coroutines.coroutineContext[Job])
+                    galleryViewerPageJob = null
+            }
+        }
+    }
+
+    /** Loaded neighbors switch synchronously; missing range neighbors fetch
+     * exactly one verified page with a visible error/retry state. */
     fun shiftGalleryViewer(direction: Int) {
-        val next = galleryViewerNeighbor(direction) ?: return
-        if (state.value.gallerySelected != null) return // Info dialog has priority.
+        if (!galleryViewerCanShift(direction)) return
+        val next = galleryViewerNeighbor(direction)
+        if (next == null) {
+            loadViewerBoundary(direction, state.value)
+            return
+        }
+        cancelGalleryViewerPage()
         closeActiveVideoPlayback() // Cancel native Range before Compose retires Media3.
         galleryViewerEpoch++
         mutableState.value = state.value.copy(galleryViewer = next, gallerySelected = null)
@@ -1920,15 +2058,17 @@ class DriveController(
     fun dismissGalleryViewer() {
         val current = state.value
         if (current.galleryViewer == null) return
+        cancelGalleryViewerPage()
         closeActiveVideoPlayback()
         galleryViewerEpoch++ // Reject stale non-cooperative results, including A -> B -> A.
-        mutableState.value = if (current.viewerReturnToFiles) current.copy(
+        val latest = state.value
+        mutableState.value = if (latest.viewerReturnToFiles) latest.copy(
             screen = Screen.FILES, viewerReturnToFiles = false,
             galleryViewer = null, gallerySelected = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, galleryTimelineSets = null,
             galleryPageIntent = "", galleryJumpIndex = null)
-        else current.copy(galleryViewer = null, gallerySelected = null)
+        else latest.copy(galleryViewer = null, gallerySelected = null)
     }
 
     /** Read a *single* compressed photo, never a second remote media transport.
@@ -1985,7 +2125,10 @@ class DriveController(
     fun showGalleryInfo(item: GalleryAsset) {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.galleryItems.none { it == item }) return
-        mutableState.value = current.copy(gallerySelected = item)
+        // Opening Info is a user navigation decision. It must retire any
+        // outstanding Viewer boundary GET before the dialog is displayed.
+        cancelGalleryViewerPage()
+        mutableState.value = state.value.copy(gallerySelected = item)
     }
 
     fun dismissGalleryInfo() {
@@ -2305,6 +2448,7 @@ class DriveController(
     }
 
     private fun invalidate() {
+        cancelGalleryViewerPage()
         // This method also runs for logout, route switching and a superseding
         // Owner operation. Fence the old transfer before cancelling its Job.
         terminateNativeTransferOnCancellation()

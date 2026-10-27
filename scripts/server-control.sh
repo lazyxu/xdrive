@@ -2483,18 +2483,73 @@ backup_admin_inventory() {
 
 backup_admin_status() {
   local dir="$1" state="$2" action="$3" request_id="$4" snapshot_id="$5" code="$6" message="$7"
-  local started="$8" finished="$9" tmp
+  local started="$8" finished="$9" stage="${10:-}" bytes_done="${11:-0}" bytes_total="${12:-0}" tmp
+  [[ "$bytes_done" =~ ^[0-9]{1,15}$ ]] || bytes_done=0
+  [[ "$bytes_total" =~ ^[0-9]{1,15}$ ]] || bytes_total=0
+  [[ ${#stage} -le 96 ]] || stage=""
   tmp="$(mktemp "$dir/.backup-admin-status.XXXXXX")" || return 1
-  printf '{"protocol":"%s","state":"%s","request_id":"%s","action":"%s","snapshot_id":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","error_code":"%s","message":"%s"}\n' \
+  printf '{"protocol":"%s","state":"%s","request_id":"%s","action":"%s","snapshot_id":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","error_code":"%s","message":"%s","stage":"%s","bytes_done":%s,"bytes_total":%s}\n' \
     "$backup_admin_protocol" "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$action")" \
     "$(json_escape "$snapshot_id")" "$(json_escape "$started")" "$(now_utc)" "$(json_escape "$finished")" \
-    "$(json_escape "$code")" "$(json_escape "$message")" > "$tmp"
+    "$(json_escape "$code")" "$(json_escape "$message")" "$(json_escape "$stage")" "$bytes_done" "$bytes_total" > "$tmp"
   chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-status.json"
 }
 
 
 # Persist only Host-observed terminal results; bounded to 30 receipts. No
 # renderer path, log contents or credentials can enter this private record.
+
+# Read only actual backup stage/byte evidence. Verify, restore and GC have
+# unknown byte totals and never receive estimated percentages.
+backup_admin_publish_live_progress() {
+  local dir="$1" action="$2" id="$3" snapshot="$4" started="$5"
+  local file="$dir/backup-admin-progress.env" fields service done_bytes total_bytes
+  [[ "$action" == create ]] || return 0
+  # One O_NOFOLLOW open and fstat against a 2 KiB cap prevents a symlink
+  # replacement between Lstat and grep. No raw file or path is sent to API.
+  fields="$(python3 - "$file" <<'PY'
+import os
+import re
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        st = os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+            sys.exit(1)
+        raw = stream.read(2049)
+    if len(raw) > 2048:
+        sys.exit(1)
+    lines = raw.decode("utf-8").splitlines()
+except (OSError, UnicodeError):
+    sys.exit(1)
+
+values = {}
+for line in lines:
+    key, separator, value = line.partition("=")
+    if separator and key in ("service", "bytes_done", "bytes_total"):
+        values[key] = value
+service = values.get("service", "")
+if (not service or len(service.encode("utf-8")) > 96 or
+        any(ord(char) < 32 or ord(char) == 127 for char in service)):
+    service = "正在创建服务器备份"
+def count(name):
+    value = values.get(name, "")
+    return int(value, 10) if re.fullmatch(r"[0-9]{1,15}", value) else 0
+done = count("bytes_done")
+total = count("bytes_total")
+if total and done > total:
+    done = total
+print(f"{service}\t{done}\t{total}")
+PY
+)" || return 0
+  IFS=$'\t' read -r service done_bytes total_bytes <<< "$fields"
+  backup_admin_status "$dir" running "$action" "$id" "$snapshot" "" \
+    "宿主机正在执行备份操作。" "$started" "" "$service" "$done_bytes" "$total_bytes"
+}
 backup_admin_history_append() {
   local dir="$1" state="$2" action="$3" id="$4" snapshot="$5" mode="$6"
   local started="$7" finished="$8" error_code="$9"
@@ -2711,6 +2766,7 @@ backup_admin_json_int() {
 backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
   local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
+  local progress_file="$dir/backup-admin-progress.env"
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
   mv -- "$request" "$active" || return 0
   protocol="$(json_value "$active" protocol)"
@@ -2743,7 +2799,8 @@ backup_admin_process_request() {
   # or the legacy v1 retention job. Preserve the Host-only operation lock as
   # a fence against a Host Control restart while a child is still running.
   if [[ -L "$guard" || ( -e "$guard" && ! -f "$guard" ) ||
-        -L "$scheduled_guard" || ( -e "$scheduled_guard" && ! -f "$scheduled_guard" ) ]]; then
+        -L "$scheduled_guard" || ( -e "$scheduled_guard" && ! -f "$scheduled_guard" ) ||
+        -L "$progress_file" || ( -e "$progress_file" && ! -f "$progress_file" ) ]]; then
     result=75
   else
     exec 6>>"$guard"
@@ -2754,11 +2811,18 @@ backup_admin_process_request() {
       if ! flock -n 5; then
         result=75
       else
-        ( umask 077; XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" ) > "$log" 2>&1 &
+        rm -f -- "$progress_file"
+        ( umask 077
+          if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
+          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm"
+        ) > "$log" 2>&1 &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do
           touch_heartbeat
           tick=$((tick + 1))
+          if (( tick % 2 == 0 )); then
+            backup_admin_publish_live_progress "$dir" "$action" "$id" "$snapshot" "$started" || true
+          fi
           if (( tick % 25 == 0 )); then backup_admin_inventory "$dir" || true; fi
           sleep 1
         done
@@ -2793,6 +2857,7 @@ backup_admin_process_request() {
   backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" ||
     echo "[xDrive] warning: private backup history not persisted" >&2
   rm -f "$active"
+  if [[ -f "$progress_file" && ! -L "$progress_file" ]]; then rm -f -- "$progress_file"; fi
   backup_admin_inventory "$dir" || true
 }
 
@@ -2814,6 +2879,10 @@ backup_admin_recover_interrupted() {
   backup_admin_status "$dir" failed "$old_action" "$old_id" "$old_snapshot" interrupted "上次备份操作被中断；如需继续请重新确认。" "" "$finished"
   backup_admin_history_append "$dir" failed "$old_action" "$old_id" "$old_snapshot" "$old_mode" "$finished" "$finished" interrupted || true
   rm -f -- "$dir/backup-admin-active.json" "$dir/backup-admin-request.json"
+  # Interrupted jobs are never replayed; discard any stale stage evidence.
+  if [[ -f "$dir/backup-admin-progress.env" && ! -L "$dir/backup-admin-progress.env" ]]; then
+    rm -f -- "$dir/backup-admin-progress.env"
+  fi
 }
 
 serve_cmd() {

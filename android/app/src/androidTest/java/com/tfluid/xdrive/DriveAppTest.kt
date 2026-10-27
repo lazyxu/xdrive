@@ -335,9 +335,15 @@ class DriveAppTest {
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()
-        compose.waitForIdle()
-        compose.onNodeWithTag("auth-submit").performScrollTo()
-        compose.waitForIdle()
+        // Compose can complete the Done callback before Android's IME inset
+        // actually settles. Keep a real visible/enabled submit assertion; let
+        // the bounded fixture wait re-scroll only while the inset is changing.
+        // Never click an offscreen control or suppress a genuine layout failure.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val submit = compose.onNodeWithTag("auth-submit")
+            runCatching { submit.performScrollTo() }.isSuccess &&
+                runCatching { submit.assertIsDisplayed() }.isSuccess
+        }
         compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {

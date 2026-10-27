@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress,
   MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
@@ -183,6 +183,29 @@ export function XDriveServerBackupManagementPanel({
           {page.operation.message ? ' · ' + page.operation.message : ''}
           {page.operation.request_id ? ' · ' + page.operation.request_id : ''}
         </Alert>
+      ) : null}
+
+
+      {page?.operation.state === 'running' ? (
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-progress>
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">
+              当前阶段：{page.operation.stage || '宿主机执行中'}
+            </Typography>
+            {Number(page.operation.bytes_total || 0) > 0 ? (
+              <LinearProgress variant="determinate" value={Math.max(0, Math.min(100,
+                100 * Number(page.operation.bytes_done || 0) / Number(page.operation.bytes_total)))} />
+            ) : <LinearProgress />}
+            <Typography variant="caption" color="text.secondary">
+              {Number(page.operation.bytes_total || 0) > 0
+                ? '当前阶段已处理 ' + displayBytes(page.operation.bytes_done || 0) +
+                  ' / ' + displayBytes(page.operation.bytes_total || 0)
+                : Number(page.operation.bytes_done || 0) > 0
+                  ? '当前阶段已处理 ' + displayBytes(page.operation.bytes_done || 0) + '（总量未知）'
+                  : '当前阶段尚无可靠的字节总量，不显示估算百分比。'}
+            </Typography>
+          </Stack>
+        </Paper>
       ) : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>

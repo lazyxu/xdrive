@@ -43,6 +43,9 @@ export type XDriveServerBackupOperation = {
   finished_at?: string
   error_code?: string
   message?: string
+  stage?: string
+  bytes_done?: number
+  bytes_total?: number
 }
 
 export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
