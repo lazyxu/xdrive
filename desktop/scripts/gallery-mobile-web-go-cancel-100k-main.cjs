@@ -939,8 +939,12 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     assert.equal(enabled.status,204,'P1Q original Go signed Range probe disabled')
     const zero=await p1ViewerVideoProbeStats(base)
     assert.equal(zero.started,0,'signed Range measurement must start at zero')
-    assert(await win.webContents.executeJavaScript(
+    // The real React route may update its hash before its virtualized
+    // Gallery scroll host finishes mounting. Wait for actual scroll extent,
+    // never fabricate a grid or bypass the original authenticated UI.
+    assert(await until(async()=>win.webContents.executeJavaScript(
       '('+p1RestoreDeepVideoViewport.toString()+')()',true),
+      30000,'actual deep authenticated Gallery scroll host before logout'),
       'actual deep authenticated Gallery missing before logout')
     const tile=await until(async()=>win.webContents.executeJavaScript(
       '('+p1VisibleH264Tile.toString()+')()',true),
