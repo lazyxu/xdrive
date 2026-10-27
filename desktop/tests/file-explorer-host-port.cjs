@@ -58,3 +58,27 @@ test('viewport abort and private localhost media tickets belong to the Host, not
   assert.match(cleanup, /url\.hostname === '127\.0\.0\.1'/)
   assert.match(cleanup, /\^\\\/preview\\\/\[0-9a-f\]\{64\}\$/)
 })
+
+test('Owner browse, media/Viewer and write/task interfaces are disjoint exact allowlists', () => {
+  const allowed = [...bridge.matchAll(/^  '([A-Za-z]\\w*)',$/gm)].map(x => x[1]).sort()
+  const group = name => {
+    const start = bridge.indexOf('export const XDRIVE_DESKTOP_FILES_' + name + '_METHODS = [')
+    assert.ok(start >= 0, name + ' domain contract is missing')
+    const end = bridge.indexOf('] as const satisfies', start)
+    assert.ok(end > start)
+    const members = bridge.slice(start, end)
+    return [...members.matchAll(/^    '([A-Za-z]\\w*)',$/gm)].map(x => x[1])
+  }
+  const browse = group('BROWSE'), media = group('MEDIA'), write = group('WRITE')
+  assert.equal(browse.length, 13)
+  assert.equal(media.length, 14)
+  assert.equal(write.length, 31)
+  const joined = [...browse, ...media, ...write]
+  assert.equal(new Set(joined).size, 58, 'no API can silently cross Owner/read vs write classifications')
+  assert.deepEqual(joined.sort(), allowed)
+  for (const name of ['browse', 'media', 'write']) {
+    assert.ok(bridge.includes(name + ': Object.freeze({'), name + ' Host implementation must be real')
+  }
+  assert.equal(dsm.includes('DesktopFilesWritePort'), false)
+  assert.equal(dsm.includes('window.xdriveDesktop'), false)
+})
