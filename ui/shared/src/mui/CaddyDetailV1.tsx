@@ -545,7 +545,7 @@ export function XDriveCaddyDetailV1({
         )}
       </Box>
 
-      <Box id="caddy-v1-config" data-xdrive-caddy-v1-config sx={{ scrollMarginTop: 72 }}>
+      <Box id="caddy-v1-config" data-xdrive-caddy-v1-config sx={{ scrollMarginTop: 72, mt: 1.5 }}>
         <Stack spacing={1.5}>
           <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={atomicRefreshID}
             inlineEdit atomicMode atomicSaving={editorsLocked} onAtomicDraft={setHTTPSDraft}
