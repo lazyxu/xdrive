@@ -161,6 +161,8 @@ test('temporary BD09 stays private and ordinary Viewer survives denied Safari se
   const mod={exports:{}}
   new Function('module','exports','require',built.outputText)(mod,mod.exports,name=>{
     if(name==='react')return require('react')
+    if(name==='../../ui/shared/src/mui/ViewerForegroundPriority')
+      return { xDriveEnterForegroundPage: () => undefined }
     if(name==='../../ui/shared/src')return {
       xDriveParseWebAppHash:()=>null,xDriveWebAppHash:()=>'',xDriveWebAppViewer:()=>false,
     }

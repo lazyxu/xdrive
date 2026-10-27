@@ -126,6 +126,7 @@ async function fileTrial(mode, attempt) {
   let renderer
   let releasePriority = null
   try {
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
     const component = loadTypescript(filePath)
     const loadThumbnail = async (item, signal) => {
       const response = await fetch(url + '/thumbnail/' + item.id, { signal })
@@ -157,6 +158,10 @@ async function fileTrial(mode, attempt) {
       await act(async () => {
         releasePriority = priorityModule.xDriveAcquireViewerForeground({})
       })
+    } else if(mode==='page'){
+      await act(async()=>{
+        priorityModule.xDriveEnterForegroundPage('web:gallery')
+      })
     }
     if (mode !== 'baseline') await until(
       () => state.thumbnails.slice(0, 6).every(row => row.closedAt !== null),
@@ -182,6 +187,9 @@ async function fileTrial(mode, attempt) {
       if (releasePriority) {
         await act(async () => { releasePriority(); releasePriority = null })
       }
+      if(mode==='page') await act(async()=>{
+        priorityModule.xDriveEnterForegroundPage('web:files')
+      })
       await act(async () => { renderer.update(view(false)) })
       await until(() => state.thumbnails.length >= 12,
         'return to Files resumes only mounted/visible thumbnail reads')
@@ -199,6 +207,7 @@ async function fileTrial(mode, attempt) {
   } finally {
     releasePriority?.()
     if (renderer) await act(async () => { renderer.unmount() })
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
     await httpFixture.close()
     for (const name of Object.keys(before)) {
       if (before[name] === undefined) delete global[name]
@@ -213,6 +222,7 @@ async function galleryTrial(mode, attempt) {
   let scheduler
   let releasePriority = null
   try {
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:gallery')
     scheduler = new XDriveMediaThumbnailScheduler(async (nodeID, signal) => {
       const response = await fetch(url + '/thumbnail/' + nodeID, { signal })
       await response.arrayBuffer()
@@ -226,6 +236,7 @@ async function galleryTrial(mode, attempt) {
     await until(() => state.waitingViewers.length === 1, 'Viewer GET blocked by Gallery')
     if (mode === 'preempt') scheduler.setSuspended(true)
     else if (mode === 'foreground') releasePriority = priorityModule.xDriveAcquireViewerForeground({})
+    else if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
     const viewerBody = await viewerRequest
     assert.equal(viewerBody, 'viewer-current-original')
     const elapsedMS = state.viewerFinishedAt - openAt
@@ -249,6 +260,7 @@ async function galleryTrial(mode, attempt) {
       assert.equal(state.thumbnails.length, 6)
       releasePriority?.()
       releasePriority = null
+      if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:gallery')
       scheduler.setSuspended(false)
       const resumed = scheduler.load(100000 + attempt, 0, 1)
       await until(() => state.thumbnails.length === 7, 'resumed Gallery requests')
@@ -267,9 +279,19 @@ async function galleryTrial(mode, attempt) {
   } finally {
     releasePriority?.()
     scheduler?.dispose()
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
     await fixture.close()
   }
 }
+test('any committed page change preempts six genuine Files/Gallery HTTP requests without pausing its successor',async()=>{
+  for(const [kind,trial] of [['Files',fileTrial],['Gallery',galleryTrial]]){
+    const row=await trial('page',8)
+    assert.equal(row.earlyClosed,6,kind+' prior-page HTTP must disconnect')
+    assert.equal(row.sentThumbnailBytes,0,kind+' stale page bytes must not transfer')
+    assert.ok(row.viewerMS<250,kind+' successor page must get freed slots')
+    assert.equal(priorityModule.xDriveCurrentForegroundPage(),null)
+  }
+})
 test('a shared foreground Viewer lease preempts six genuine HTTP thumbnails in Files and Gallery', async () => {
   // Local-HTTP six-slot contention, NOT a claimed real iPhone/Go 100k speedup.
   for (const [kind, trial] of [['Files', fileTrial], ['Gallery', galleryTrial]]) {
