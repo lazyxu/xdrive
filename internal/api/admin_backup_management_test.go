@@ -268,3 +268,49 @@ func TestBackupAdminZeroRetentionDaysReachHost(t *testing.T) {
 		t.Fatalf("zero-day policy silently omitted from Host request: %s", contents)
 	}
 }
+func TestBackupAdminHistoryReceiptValidation(t *testing.T) {
+	server, dir := readyBackupAdminTestServer(t)
+	item := backupAdminHistoryEntry{backupAdminStatus: backupAdminStatus{
+		Protocol: backupAdminProtocol, RequestID: "0123456789abcdef01234567", Action: "verify",
+		SnapshotID: testBackupID, State: "success",
+		StartedAt: "2026-10-27T03:00:00Z", FinishedAt: "2026-10-27T03:00:01Z",
+	}, Mode: "deep"}
+	writeBackupTestJSON(t, dir, "backup-admin-history.json", backupAdminHistory{
+		Protocol:   "xdrive-backup-admin-history-v1",
+		Operations: []backupAdminHistoryEntry{item},
+	})
+	if got := server.backupAdminState(); !got.Supported || len(got.History) != 1 {
+		t.Fatalf("expected valid Host verification history: %+v", got)
+	}
+	item.SnapshotID = "v2-default:../../etc/passwd"
+	writeBackupTestJSON(t, dir, "backup-admin-history.json", backupAdminHistory{
+		Protocol:   "xdrive-backup-admin-history-v1",
+		Operations: []backupAdminHistoryEntry{item},
+	})
+	if got := server.backupAdminState(); !got.Supported || len(got.History) != 0 {
+		t.Fatalf("untrusted history should not disable safe backup reads: %+v", got)
+	}
+}
+
+func TestBackupAdminHistoryRejectsDuplicatesAndOversizedCollections(t *testing.T) {
+	server, dir := readyBackupAdminTestServer(t)
+	entry := backupAdminHistoryEntry{backupAdminStatus: backupAdminStatus{
+		Protocol: backupAdminProtocol, RequestID: "0123456789abcdef01234567",
+		Action: "verify", SnapshotID: testBackupID, State: "failed",
+		StartedAt: "2026-10-27T03:00:00Z", FinishedAt: "2026-10-27T03:00:01Z",
+		ErrorCode: "operation_failed",
+	}, Mode: "fast"}
+	for _, entries := range [][]backupAdminHistoryEntry{
+		{entry, entry},
+		make([]backupAdminHistoryEntry, 31),
+	} {
+		writeBackupTestJSON(t, dir, "backup-admin-history.json", backupAdminHistory{
+			Protocol:   "xdrive-backup-admin-history-v1",
+			Operations: entries,
+		})
+		page := server.backupAdminState()
+		if !page.Supported || len(page.History) > 0 {
+			t.Fatalf("untrusted history should be ignored: %+v", page)
+		}
+	}
+}

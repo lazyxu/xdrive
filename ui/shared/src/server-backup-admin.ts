@@ -45,6 +45,10 @@ export type XDriveServerBackupOperation = {
   message?: string
 }
 
+export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
+  mode?: 'fast' | 'deep'
+}
+
 export type XDriveServerBackupPage = {
   supported: boolean
   message?: string
@@ -56,6 +60,7 @@ export type XDriveServerBackupPage = {
   }
   operation: XDriveServerBackupOperation
   retention?: XDriveServerBackupRetention
+  history?: XDriveServerBackupHistoryEntry[]
 }
 
 export type XDriveServerBackupRequest =

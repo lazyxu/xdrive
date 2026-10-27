@@ -63,11 +63,11 @@ PY
 
 write_request() {
   python3 - "$dir/backup-admin-request.json" "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
-import datetime,json,sys
+import datetime,json,sys,uuid
 path,action,snapshot,fmt,mode,keep,confirm=sys.argv[1:]
 request={
   "protocol":"xdrive-backup-admin-v1",
-  "request_id":"0123456789abcdef01234567",
+  "request_id":uuid.uuid4().hex[:24],
   "action":action,
   "snapshot_id":snapshot,
   "format":fmt,
@@ -269,4 +269,54 @@ PY
   [[ -d "$XDRIVE_HOME/backups/snapshots/$old" ]]
 )
 
-echo 'Admin Server Backup host bridge: inventory, verify, plan, restore, prune, v1 delete, policy, custom v2 and negative tests passed'
+
+# Host receipts are durable evidence from execution, not request acceptance.
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+data=json.load(open(sys.argv[1],encoding="utf-8"))
+assert data["protocol"]=="xdrive-backup-admin-history-v1"
+items=data["operations"]
+assert 1 <= len(items) <= 30
+assert any(e["action"]=="verify" and e["state"]=="success" and e["mode"]=="deep" for e in items)
+assert any(e["state"]=="failed" for e in items)
+assert len(set(e["request_id"] for e in items))==len(items)
+PY
+[[ "$(stat -c %a "$dir/backup-admin-history.json")" == 660 ]]
+# Reject a symlink rather than overwriting another Host-owned file.
+mv "$dir/backup-admin-history.json" "$dir/backup-admin-history.saved"
+printf safe > "$TMP/history-outside"
+ln -s "$TMP/history-outside" "$dir/backup-admin-history.json"
+if backup_admin_history_append "$dir" success verify 0123456789abcdef01234567 \
+  "v2-default:$v2" deep 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z ""; then
+  echo 'unsafe history symlink followed' >&2
+  exit 1
+fi
+[[ "$(cat "$TMP/history-outside")" == safe ]]
+rm "$dir/backup-admin-history.json"
+mv "$dir/backup-admin-history.saved" "$dir/backup-admin-history.json"
+
+
+# A full 30-row history is trimmed on the next real Host action. Seed the
+# previous history in one operation to keep CI fast (no 35 fsync subprocesses).
+python3 - "$dir/backup-admin-history.json" "$v2" <<'PY'
+import json,sys
+path,snapshot=sys.argv[1:]
+entries=[dict(protocol="xdrive-backup-admin-v1",request_id=f"{n:024x}",action="verify",
+    snapshot_id="v2-default:"+snapshot,mode="fast",state="success",
+    started_at="2026-10-27T03:00:00Z",finished_at="2026-10-27T03:00:01Z",
+    error_code="") for n in range(30,0,-1)]
+with open(path,"w",encoding="utf-8") as f:
+    json.dump(dict(protocol="xdrive-backup-admin-history-v1",operations=entries),f)
+PY
+backup_admin_history_append "$dir" success verify 00000000000000000000001f \
+  "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z ""
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+events=json.load(open(sys.argv[1],encoding="utf-8"))["operations"]
+assert len(events)==30,len(events)
+assert events[0]["request_id"]==f"{31:024x}"
+assert events[-1]["request_id"]==f"{2:024x}"
+assert all(e["state"]=="success" and e["mode"]=="fast" for e in events)
+PY
+
+echo 'Admin Server Backup host bridge: CRUD, verification, bounded history, custom v2 and negative tests passed'
