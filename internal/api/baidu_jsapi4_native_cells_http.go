@@ -119,7 +119,7 @@ func (s *Server) listBaiduNativeMapCells(c *gin.Context) {
 	ctx, stop := context.WithTimeout(c.Request.Context(), baiduPhotoMapQueryTimeout)
 	defer stop()
 	// Reuse the original Owner/PhotoMetadata/Album query from Gallery Range,
-	// then intersect with the signed, live BD09 Owner/Consent predicate.
+	// then intersect with the signed, live BD09 Owner/GPS/source-revision predicate.
 	gallery, err := s.mediaItemsBaseQuery(ctx, prior.UserID, options, album)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cells_unavailable"})

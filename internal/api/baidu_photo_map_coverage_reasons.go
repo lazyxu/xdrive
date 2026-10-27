@@ -50,9 +50,9 @@ func (r baiduPhotoMapCoverageReasons) valid() bool {
 // queryBaiduPhotoMapCoverageReasons classifies only the same ready, live,
 // Owner-scoped PhotoAssets as the existing coverage endpoint. Both source and
 // the exact BD09 eligible subset belong to one read-only REPEATABLE READ
-// snapshot. A changed GPS, consent generation, expired grant, missing derived
-// row, stale source revision or invalid map latitude cannot be misreported as
-// an authorized map member. The method has NO HTTP route or provider egress.
+// snapshot. A changed GPS, missing derived row, stale source revision or
+// invalid map latitude cannot be misreported as a displayable Owner GPS map
+// member. Old photo-specific Consent/revocation no longer affect membership. The method has NO HTTP route or provider egress.
 func queryBaiduPhotoMapCoverageReasons(
 	ctx context.Context, db *gorm.DB, ownerID uint64,
 ) (baiduPhotoMapCoverageReasons, error) {
