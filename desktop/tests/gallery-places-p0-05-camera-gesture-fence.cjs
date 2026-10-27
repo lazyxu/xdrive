@@ -24,14 +24,15 @@ test('Baidu native gesture cancel invalidates Owner Camera and current Cells tog
   assert.match(cancel, /setAcceptedViewport\(null\)/)
   assert.match(cancel, /invalidated\.current\?\.\(\)/)
   const host = section('    const commonMapOptions = {', '    const queryCells = async')
-  assert.match(host, /onCancel:cancel/)
+  assert.match(host, /onCancel:\(\)=>\{ cameraTouched=true; cancel\(\) \}/)
+  assert.match(source,/let cameraTouched = Boolean\(returnCamera\)/)
   assert.match(host, /onViewport: \(bounds:Bounds\) => \{ void queryCells\(bounds, true\) \}/)
   assert.match(host, /xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>/)
   assert.match(host, /xDriveMountBaiduInlineMap<MediaBaiduNativeCellSelection>/)
 })
 
 test('filter refresh cannot reauthorize the canceled Camera before a new request', () => {
-  const query = section('    const queryCells = async', '    refreshFilteredCells.current=()=>{')
+  const query = section('    const queryCells = async', '    refreshFilteredCells.current=(skipPending=false)=>{')
   const cancelAt = query.indexOf('      cancel()')
   const rememberAt = query.indexOf('      lastViewport.current={bounds:{...bounds},live:liveCamera}')
   const fetchAt = query.indexOf('await listOwnerCells(bounds,request.signal,')
@@ -39,9 +40,11 @@ test('filter refresh cannot reauthorize the canceled Camera before a new request
     'new camera can be registered only after old Camera/Cells are invalidated')
   assert.match(query, /request\.signal\.aborted \|\| lifetime\.signal\.aborted \|\| run!==generation/)
   assert.match(query, /approved\.key!==filterRef\.current\.key/)
-  const refresh = section('    refreshFilteredCells.current=()=>{', '    const acquireTicket=async')
-  assert.match(refresh, /if\(lifetime\.signal\.aborted \|\| failed \|\| !lastViewport\.current\)return/)
-  assert.match(refresh, /void queryCells\(\{\.\.\.last\.bounds\},last\.live\)/)
+  const refresh = section('    refreshFilteredCells.current=(skipPending=false)=>{', '    const acquireTicket=async')
+  assert.match(refresh, /if\(lifetime\.signal\.aborted \|\| failed \|\| !lastViewport\.current \|\|/)
+  assert.match(refresh, /skipPending && \(activeQuery \|\|/)
+  assert.match(refresh, /acceptedScope\.current\?\.key!==filterRef\.current\.key/)
+  assert.match(refresh, /void queryCells\(bounds,worldwideDiscovery \? false : last\.live\)/)
 })
 
 test('canceled Camera cannot leave private cover, filmstrip or full-wall authority', () => {
