@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { Typography, useTheme } from '@mui/material'
 import {
   XDriveAppearanceThemeProvider,
-  XDriveWorkspaceShell,
-  XDriveWorkspaceSidebar,
+  XDriveApp,
+  XDriveAppPageOutlet,
   XDriveWorkspaceContent,
   XDriveDeviceBackupPage,
   XDriveHomePage,
@@ -17,17 +18,18 @@ import {
   XDriveSettingsDialog,
   xDriveDiagnosticsSidebarDestination,
   xDriveSettingsSidebarDestination,
+  xDriveIsWorkspaceAppRoute,
+  xDriveWorkspaceRouteRequiresAdmin,
   createXDriveSynologyBackupLocalClient,
   createXDriveSynologyOwnerBackupSource,
   createXDriveSynologyCloudStorageDataSource,
   createXDriveSynologyBrowserStorageSource,
 } from '@xdrive/ui/mui'
+import type { XDriveWorkspaceAppRoute, XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import './styles.css'
 
-// DSM is an authenticated platform host, not an independent xDrive frontend.
-// Render the SAME shared workspace frame/Sidebar used by Desktop and Web.
-// As more genuine DSM/Server adapters are implemented, add their corresponding
-// shared pages to the capability-scoped route registry. No inert navigation.
+// DSM and Desktop mount the same application shell and navigation registry.
+// The only differences are authenticated host capabilities, not page JSX.
 const cgi = new URL('backup.cgi', window.location.href)
 const local = createXDriveSynologyBackupLocalClient(cgi.href)
 const ownerBackupRead = createXDriveSynologyOwnerBackupSource(local)
@@ -41,57 +43,76 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pageRevision, refreshPage] = useState(0)
-  const [selected, setSelected] = useState<'overview' | 'files' | 'device-backup' | 'diagnostics' | 'local-storage' | 'cloud-storage' | 'transfers'>('overview')
+  const [selected, setSelected] = useState<XDriveWorkspaceAppRoute>('overview')
+
+  const host: XDriveWorkspaceHostAdapter = {
+    platform: 'synology',
+    // All pages live in the same application registry. Missing capabilities
+    // render an honest state instead of disappearing from DSM navigation.
+    pages: {
+      overview: { render: () => (
+        <XDriveHomePage key={pageRevision} localBackupClient={local}
+          onOpenBackup={() => setSelected('device-backup')}
+          onOpenTasks={() => setSelected('transfers')}
+          onOpenDiagnostics={() => setSelected('diagnostics')}
+          onOpenCloudStorage={() => setSelected('cloud-storage')} />
+      ) },
+      files: { render: () => <XDriveSynologyOwnerFilesPage key={pageRevision} client={local} /> },
+      'device-backup': { render: () => (
+        <XDriveDeviceBackupPage key={pageRevision} localBackupClient={local} source={ownerBackupRead} />
+      ) },
+      diagnostics: { render: () => <XDriveSynologyDiagnosticsPanel key={pageRevision} client={local} /> },
+      transfers: { render: () => (
+        <XDriveTaskCenterPage key={pageRevision} transfers={[]} operations={[]}
+          localBackupClient={local}
+          onOpenLocalBackup={() => setSelected('device-backup')} />
+      ) },
+      'cloud-storage': { render: () => (
+        <XDriveCloudStoragePage key={pageRevision} source={ownerCloudStorage}
+          clearOnRefresh />
+      ) },
+      'local-storage': { render: () => (
+        <XDriveLocalStoragePage key={pageRevision} source={browserStorage} />
+      ) },
+    },
+    unavailableMessage: () =>
+      '此功能采用与 Desktop 相同的页面；DSM 对应的认证 Host API 尚未接通，不能执行操作。',
+  }
+
   return (
-    <XDriveWorkspaceShell responsive sx={{ height: '100dvh', minHeight: 0 }}>
-      <XDriveWorkspaceSidebar
-        selected={selected}
-        coreKeys={['files', 'device-backup', 'transfers', 'local-storage', 'cloud-storage']}
-        showLocalStorage
-        compactPrimaryKeys={['overview', 'files', 'device-backup', 'transfers']}
-        sections={[
-          { key: 'overview', placement: 'before-core',
-            items: [{ key: 'overview', label: '主页', icon: <DashboardRoundedIcon fontSize="small" /> }] },
+    <XDriveApp
+      host={host}
+      view={selected}
+      shellSx={{ height: '100dvh', minHeight: 0 }}
+      sidebar={{
+        ariaLabel: 'xDrive NAS 应用导航',
+        navAriaLabel: 'xDrive 功能导航',
+        appearance: theme.palette.mode,
+        showLocalStorage: true,
+        compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers'],
+        sections: [
+          {
+            key: 'overview', placement: 'before-core',
+            items: [{ key: 'overview', label: '主页', icon: <DashboardRoundedIcon fontSize="small" /> }],
+          },
+          {
+            key: 'conflicts', placement: 'after-core',
+            items: [{ key: 'conflicts', label: '冲突', icon: <WarningAmberRoundedIcon fontSize="small" /> }],
+          },
           { key: 'diagnostics', placement: 'after-core', items: [xDriveDiagnosticsSidebarDestination()] },
           { key: 'settings', placement: 'bottom', items: [xDriveSettingsSidebarDestination()] },
-        ]}
-        appearance={theme.palette.mode}
-        responsive
-        ariaLabel="xDrive NAS 应用导航"
-        navAriaLabel="NAS 已实现页面"
-        onSelect={(key) => {
-          // Only a real, locally authenticated route is presently available.
-          // Reselect it to request a fresh owner-scoped Agent view.
-          if (key === 'settings') { setSettingsOpen(true); return }
-          if (key === 'overview' || key === 'files' || key === 'device-backup' || key === 'diagnostics' ||
-            key === 'local-storage' || key === 'cloud-storage' || key === 'transfers') {
-            if (key === selected) refreshPage((value) => value + 1)
-            else { setSelected(key); refreshPage(0) }
-          }
-        }}
-      />
+        ],
+      }}
+      onNavigate={(key) => {
+        if (key === 'settings') { setSettingsOpen(true); return }
+        if (!xDriveIsWorkspaceAppRoute(key) || xDriveWorkspaceRouteRequiresAdmin(key)) return
+        if (key === selected) refreshPage((value) => value + 1)
+        else { setSelected(key); refreshPage(0) }
+      }}
+    >
       <XDriveWorkspaceContent presentation="page" responsive
         sx={{ p: { xs: 2, md: '34px 40px 48px' } }}>
-        {selected === 'overview'
-          ? <XDriveHomePage key={pageRevision} localBackupClient={local}
-              onOpenBackup={() => setSelected('device-backup')}
-              onOpenTasks={() => setSelected('transfers')}
-              onOpenDiagnostics={() => setSelected('diagnostics')}
-              onOpenCloudStorage={() => setSelected('cloud-storage')} />
-          : selected === 'files'
-            ? <XDriveSynologyOwnerFilesPage key={pageRevision} client={local} />
-          : selected === 'device-backup'
-            ? <XDriveDeviceBackupPage key={pageRevision} localBackupClient={local} source={ownerBackupRead} />
-          : selected === 'diagnostics'
-            ? <XDriveSynologyDiagnosticsPanel key={pageRevision} client={local} />
-            : selected === 'transfers'
-              ? <XDriveTaskCenterPage key={pageRevision} transfers={[]} operations={[]}
-                  localBackupClient={local}
-                  onOpenLocalBackup={() => setSelected('device-backup')} />
-              : selected === 'cloud-storage'
-                ? <XDriveCloudStoragePage key={pageRevision} source={ownerCloudStorage}
-                    clearOnRefresh />
-                : <XDriveLocalStoragePage key={pageRevision} source={browserStorage} />}
+        <XDriveAppPageOutlet view={selected} host={host} />
       </XDriveWorkspaceContent>
       <XDriveSettingsDialog
         open={settingsOpen}
@@ -104,7 +125,7 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
           外观只在当前窗口生效，重新打开时跟随系统。套件、账号及备份配置请使用现有 DSM 或 xDrive 管理入口。
         </Typography>
       </XDriveSettingsDialog>
-    </XDriveWorkspaceShell>
+    </XDriveApp>
   )
 }
 

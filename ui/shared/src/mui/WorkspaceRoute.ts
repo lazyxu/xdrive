@@ -27,3 +27,29 @@ export function xDriveWorkspacePresentation(
 ): XDriveWorkspaceContentPresentation {
   return view === 'files' ? 'files' : 'page'
 }
+
+// The navigation vocabulary belongs to the application, not to Electron or DSM.
+// Host-specific capabilities affect actions and readiness, not the page registry.
+export const XDRIVE_APP_WORKSPACE_ROUTES = [
+  'overview',
+  ...XDRIVE_CORE_WORKSPACE_KEYS,
+  'conflicts',
+  'diagnostics',
+  'admin-users',
+  'admin-audit',
+  'admin-storage',
+  'admin-services',
+  'admin-maintenance',
+] as const
+
+export type XDriveWorkspaceAppRoute = typeof XDRIVE_APP_WORKSPACE_ROUTES[number]
+
+const workspaceAppRoutes = new Set<string>(XDRIVE_APP_WORKSPACE_ROUTES)
+
+export function xDriveIsWorkspaceAppRoute(value: string): value is XDriveWorkspaceAppRoute {
+  return workspaceAppRoutes.has(value)
+}
+
+export function xDriveWorkspaceRouteRequiresAdmin(view: string): boolean {
+  return view === 'global-tasks' || view.startsWith('admin-')
+}
