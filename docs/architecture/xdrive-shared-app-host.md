@@ -7,9 +7,11 @@ application**. Do not implement or evolve DSM routes, menus, Gallery, Viewer,
 settings, dialogs, or page layout independently of Desktop. Desktop changes
 should become available to DSM through the same shared UI component.
 
-The authoritative navigation vocabulary is
-`ui/shared/src/mui/WorkspaceRoute.ts`; both host entries mount
-`XDriveApp` and the same `XDriveWorkspaceSidebar`. A missing host
+The authoritative navigation vocabulary and privileged-route admission policy
+are in `ui/shared/src/mui/WorkspaceRoute.ts`; both hosts mount `XDriveApp`
+and the same `XDriveWorkspaceSidebar`. The shared frame checks verified
+Server role before any administrative sidebar action reaches a Host callback.
+The DSM adapter must not authorize itself as Server administrator. A missing host
 capability produces an explicitly unavailable action/page, **not**
 a disappearing route, fabricated transfers, simulated file writes, or
 unverified success. Server administrator routes must not appear or execute

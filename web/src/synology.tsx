@@ -19,7 +19,6 @@ import {
   xDriveDiagnosticsSidebarDestination,
   xDriveSettingsSidebarDestination,
   xDriveIsWorkspaceAppRoute,
-  xDriveWorkspaceRouteRequiresAdmin,
   createXDriveSynologyBackupLocalClient,
   createXDriveSynologyOwnerBackupSource,
   createXDriveSynologyCloudStorageDataSource,
@@ -105,7 +104,7 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
       }}
       onNavigate={(key) => {
         if (key === 'settings') { setSettingsOpen(true); return }
-        if (!xDriveIsWorkspaceAppRoute(key) || xDriveWorkspaceRouteRequiresAdmin(key)) return
+        if (!xDriveIsWorkspaceAppRoute(key)) return
         if (key === selected) refreshPage((value) => value + 1)
         else { setSelected(key); refreshPage(0) }
       }}

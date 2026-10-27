@@ -53,3 +53,11 @@ export function xDriveIsWorkspaceAppRoute(value: string): value is XDriveWorkspa
 export function xDriveWorkspaceRouteRequiresAdmin(view: string): boolean {
   return view === 'global-tasks' || view.startsWith('admin-')
 }
+
+// One UI route-admission policy for every Host. Backend checks remain mandatory.
+export function xDriveWorkspaceNavigationAllowed(view: string, serverAdminVerified: boolean): boolean {
+  // Settings is a dialog action, not a content page.
+  if (view === 'settings') return true
+  return xDriveIsWorkspaceAppRoute(view) &&
+    (!xDriveWorkspaceRouteRequiresAdmin(view) || serverAdminVerified)
+}

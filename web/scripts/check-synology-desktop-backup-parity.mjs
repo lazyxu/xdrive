@@ -176,6 +176,7 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
     !appShell.includes('<XDriveWorkspaceSidebar') ||
     !appShell.includes('selected={view}') ||
     !appShell.includes('onSelect={onNavigate}') ||
+    !appShell.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)') ||
     !appShell.includes('host.adminRoleVerified !== true') ||
     !dsmEntry.includes('<XDriveAppPageOutlet view={selected} host={host}') ||
     !routeRegistry.includes('XDRIVE_APP_WORKSPACE_ROUTES') ||
@@ -188,7 +189,7 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
 // Server Owner role remains authoritative for admin routes.
 if (dsmEntry.includes('coreKeys=') ||
     !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
-    !dsmEntry.includes("xDriveWorkspaceRouteRequiresAdmin(key)") ||
+    !routeRegistry.includes('xDriveWorkspaceNavigationAllowed') ||
     !dsmEntry.includes("pages: {") ||
     !dsmEntry.includes("'device-backup': { render:") ||
     !dsmEntry.includes("'cloud-storage': { render:") ||

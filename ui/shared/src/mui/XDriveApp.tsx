@@ -6,6 +6,7 @@ import { XDriveWorkspaceSidebar } from './WorkspaceSidebar'
 import {
   xDriveIsWorkspaceAppRoute,
   xDriveWorkspaceRouteRequiresAdmin,
+  xDriveWorkspaceNavigationAllowed,
   type XDriveWorkspaceAppRoute,
 } from './WorkspaceRoute'
 
@@ -36,7 +37,7 @@ export type XDriveAppSidebarProps = Omit<
 export function XDriveApp({
   host,
   view,
-  onNavigate,
+  onNavigate: onRequestedNavigate,
   sidebar,
   shellSx,
   children,
@@ -49,6 +50,12 @@ export function XDriveApp({
   children: ReactNode
 }) {
   const responsive = host.platform === 'synology'
+  // Keep a single privileged-route gate before forwarding any sidebar action.
+  // Unknown and admin-only destinations must never reach Host callbacks.
+  const onNavigate = (destination: string) => {
+    if (!xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)) return
+    onRequestedNavigate(destination)
+  }
   return (
     <XDriveWorkspaceShell responsive={responsive} sx={shellSx}>
       <XDriveWorkspaceSidebar

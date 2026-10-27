@@ -36,11 +36,28 @@ for (const key of ['overview', ...expectedCore.filter(x => x !== 'global-tasks')
   assert.equal(routes.xDriveWorkspaceRouteRequiresAdmin(key), false, 'ordinary Owner route should be visible: ' + key)
 }
 
+// Verify actual exported route logic against anonymous and Server-admin roles.
+for (const key of registered) {
+  assert.equal(routes.xDriveWorkspaceNavigationAllowed(key, true), true,
+    'Server admin must reach registered page: ' + key)
+  assert.equal(routes.xDriveWorkspaceNavigationAllowed(key, false),
+    !routes.xDriveWorkspaceRouteRequiresAdmin(key),
+    'anonymous/non-admin must not navigate to privileged page: ' + key)
+}
+assert.equal(routes.xDriveWorkspaceNavigationAllowed('settings', false), true)
+for (const bogus of ['', '__proto__', 'gallery/../admin-users', 'admin-typo']) {
+  assert.equal(routes.xDriveWorkspaceNavigationAllowed(bogus, true), false,
+    'unknown routes must fail closed: ' + bogus)
+}
+
 const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
 assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
   'Desktop and DSM must mount the same complete app frame')
+assert.ok(sharedApp.includes('onSelect={onNavigate}') &&
+  sharedApp.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)'),
+  'the shared sidebar must not forward unknown or unverified admin routes')
 assert.ok(sharedApp.includes('host.adminRoleVerified !== true'),
   'shared outlet must reject unverified administrative session')
 assert.ok(sharedApp.includes('if (!page)'),

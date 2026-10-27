@@ -42,6 +42,7 @@ A later explicit owner decision supersedes older instructions.
 
 ## Canonical UI architecture
 - Web/Desktop/Synology share the same React/MUI ui/shared shell, navigation, page components, dialogs and theme, with small genuine platform adapters.
+- Desktop and Synology DSM MUST mount one canonical `XDriveApp` and full `XDRIVE_APP_WORKSPACE_ROUTES`; maintain pages, Viewer, dialogs, navigation, layouts and interactions once in shared UI, never copy Desktop pages into a second DSM application or add DSM screens one by one. Only the Host transport, authenticated capability handlers, native integration and user/Owner-scoped data differ. A missing DSM capability must show a truthful unavailable action/page, not hide ordinary UI routes or fabricate results. Admin routes require Server-verified admin authorization; physical DSM acceptance remains skip-with-disclosure, never a code/CI security bypass.
 - Use the term 同步文件夹. Main navigation: 概览、云端文件、同步文件夹、传输、存储、冲突、诊断. Admin: 用户管理、审计日志、全局存储、服务与依赖.
 - Desktop uses real Electron/Agent IPC; Web uses Server APIs; Synology uses authenticated DSM-local adapters with same-user and Owner checks. Never fake a platform capability, invent state or create a second DSM UI/queue/CAS writer.
 - Initial DSM 7 armada38x backup-only SPK may ship without a native MUI page. Physical DSM ACL, real first/second upload and restart/upgrade durability remain explicitly unverified until observed and do not block other work.

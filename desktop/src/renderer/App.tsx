@@ -2869,7 +2869,7 @@ export default function App({
 
   return renderDesktopFrame(
     <XDriveApp
-      host={{ platform: 'desktop' }}
+      host={{ platform: 'desktop', adminRoleVerified: status?.role === 'admin' }}
       view={view}
       sidebar={{
         ariaLabel: '桌面版侧边栏',
