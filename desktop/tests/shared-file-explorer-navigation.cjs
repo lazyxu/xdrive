@@ -126,3 +126,68 @@ test('FileExplorer session restore stays shared and persists only committed open
     'workspace controller must pass the optional session storage key into shared navigation',
   )
 })
+
+
+test('view mode storage denial cannot unmount shared navigation or corrupt the selected view', () => {
+  const ts = require('typescript')
+  const ast = ts.createSourceFile('FileExplorerNavigation.ts', shared,
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const loader = ast.statements.find(node =>
+    ts.isFunctionDeclaration(node) && node.name?.text === 'loadStoredViewMode')
+  assert.ok(loader, 'must test the actual shared navigation storage loader')
+  const js = code => ts.transpileModule(code, {
+    fileName: 'FileExplorerNavigation.ts',
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const loadCode = js(loader.getText(ast) + '\nexports.load = loadStoredViewMode;')
+  const loaderFor = win => {
+    const output = {}
+    new Function('exports', 'window', loadCode)(output, win)
+    return output.load
+  }
+  const deniedGetter = {}
+  Object.defineProperty(deniedGetter, 'localStorage', {
+    get() { throw new Error('SecurityError: denied by browser') },
+  })
+  assert.equal(loaderFor(deniedGetter)('owner-42.view'), 'details')
+  assert.equal(loaderFor({ localStorage: { getItem() {
+    throw new Error('SecurityError: denied read')
+  } } })('owner-42.view'), 'details')
+  for (const [saved, expected] of [['grid', 'grid'], ['columns', 'columns'],
+    ['invalid-view', 'details'], [null, 'details']]) {
+    assert.equal(loaderFor({
+      localStorage: { getItem: () => saved },
+    })('owner-42.view'), expected)
+  }
+
+  const writers = []
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEffect' &&
+        node.arguments.length > 0 && ts.isArrowFunction(node.arguments[0])) {
+      const text = node.arguments[0].getText(ast)
+      if (text.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)')) {
+        writers.push(text)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(writers.length, 1, 'must test the production List/Grid persistence effect')
+  const effectCode = js('exports.effect = ' + writers[0] + ';')
+  const effectFor = (win, viewMode = 'grid') => {
+    const output = {}
+    new Function('exports', 'window', 'viewModeStorageKey', 'viewMode',
+      effectCode)(output, win, 'owner-42.view', viewMode)
+    return output.effect
+  }
+  assert.doesNotThrow(effectFor(deniedGetter),
+    'Safari localStorage getter denial must not throw in React effect')
+  assert.doesNotThrow(effectFor({
+    localStorage: { setItem() { throw new Error('QuotaExceededError') } },
+  }), 'denied writes must leave current in-memory view usable')
+  const writes = []
+  effectFor({ localStorage: {
+    setItem(key, value) { writes.push([key, value]) },
+  } }, 'columns')()
+  assert.deepEqual(writes, [['owner-42.view', 'columns']])
+})

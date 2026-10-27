@@ -372,12 +372,21 @@ export function XDriveFileExplorerNavigationPane({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))
+    try {
+      window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))
+    } catch {
+      // Safari/private browsing can deny the getter or write operation.
+      // Section folding must remain usable in React memory regardless.
+    }
   }, [expandedSections, sectionPreferencesKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem(`${sectionPreferencesKey}.customize`, JSON.stringify(sidebarPreferences))
+    try {
+      window.localStorage.setItem(`${sectionPreferencesKey}.customize`, JSON.stringify(sidebarPreferences))
+    } catch {
+      // Optional sidebar customization persistence must never unmount Files.
+    }
   }, [sectionPreferencesKey, sidebarPreferences])
 
   const toggleSection = (section: XDriveFileExplorerNavigationSection) => {

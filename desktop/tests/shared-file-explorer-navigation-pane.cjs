@@ -196,3 +196,59 @@ test('navigation sections use spacing while customization keeps one menu divider
   assert.ok(pane.includes('快速访问排序'), 'the single divider should belong to the sidebar customization menu')
   assert.ok((pane.match(/py: 0\.5/g) || []).length >= 6, 'navigation sections should use compact vertical spacing')
 })
+
+
+test('navigation section persistence failures never unmount Files or mutate in-memory preferences', () => {
+  const ts = require('typescript')
+  const ast = ts.createSourceFile('FileExplorerNavigationPane.tsx', pane,
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const effects = []
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEffect' &&
+        node.arguments.length > 0 && ts.isArrowFunction(node.arguments[0])) {
+      const code = node.arguments[0].getText(ast)
+      if (code.includes('window.localStorage.setItem(')) effects.push(code)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(effects.length, 2, 'both navigation preferences must use guarded effects')
+
+  const expandedSections = Object.freeze({ tree: true, recent: false })
+  const sidebarPreferences = Object.freeze({ visible: Object.freeze({ tree: true }) })
+  const compile = (code, window) => {
+    const js = ts.transpileModule('exports.run = ' + code + ';', {
+      fileName: 'FileExplorerNavigationPane.tsx',
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+    const output = {}
+    new Function('exports', 'window', 'sectionPreferencesKey',
+      'expandedSections', 'sidebarPreferences', js)(
+      output, window, 'owner-42.sections', expandedSections, sidebarPreferences)
+    return output.run
+  }
+
+  const deniedGetter = {}
+  Object.defineProperty(deniedGetter, 'localStorage', {
+    get() { throw new Error('SecurityError: Safari denied storage getter') },
+  })
+  for (const effect of effects) {
+    assert.doesNotThrow(compile(effect, deniedGetter),
+      'denied localStorage getter must not throw from React effect')
+    assert.doesNotThrow(compile(effect, {
+      localStorage: { setItem() { throw new Error('QuotaExceededError: write denied') } },
+    }), 'denied or full site storage must not throw from React effect')
+  }
+  assert.equal(expandedSections.tree, true)
+  assert.equal(expandedSections.recent, false)
+  assert.equal(sidebarPreferences.visible.tree, true)
+
+  const writes = new Map()
+  for (const effect of effects) {
+    compile(effect, {
+      localStorage: { setItem(key, value) { writes.set(key, value) } },
+    })()
+  }
+  assert.equal(writes.get('owner-42.sections'), JSON.stringify(expandedSections))
+  assert.equal(writes.get('owner-42.sections.customize'), JSON.stringify(sidebarPreferences))
+})
