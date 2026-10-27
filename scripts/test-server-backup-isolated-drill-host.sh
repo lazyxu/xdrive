@@ -19,7 +19,11 @@ printf '{"format_version":2,"file_data_included":true}\n' > "$snapshot/manifest.
 touch "$XD_CONFIG_DIR/backups/incremental/.backup.lock"
 cat > "$TMP/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
-printf 'DOCKER CALLED\n' >> "$XD_DRILL_TEST_SENTINEL"
+# Inspect and compose ps are harmless read-only Host discovery. The test
+# must prove that no Docker *container* starts on bad input.
+if [[ "${1:-}" == run ]]; then
+  printf 'DOCKER RUN CALLED\n' >> "$XD_DRILL_TEST_SENTINEL"
+fi
 exit 10
 FAKE
 chmod 700 "$TMP/bin/docker"
