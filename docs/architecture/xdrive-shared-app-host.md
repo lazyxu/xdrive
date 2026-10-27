@@ -129,3 +129,12 @@ separately authenticated diagnostic read adapter.
 Only the Desktop Overview and full Files controllers remain outside the
 common page outlet. This does not imply Synology supports absent Agent
 capabilities or Server administrator roles.
+
+
+## Shared navigation composition
+
+`xDriveWorkspaceHostSections` now owns Home, Conflicts, Diagnostics,
+Server-admin menus and Settings for both Desktop and DSM. Host-specific
+status counts remain passed-in data. DSM's own administrator status does
+not enable Server-admin links; only a verified xDrive Server role does.
+Both Settings sidebar actions open the actual shared dialog.

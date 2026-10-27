@@ -53,6 +53,7 @@ for (const bogus of ['', '__proto__', 'gallery/../admin-users', 'admin-typo']) {
 const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
 const sharedOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
 const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
+const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
 assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
@@ -72,6 +73,13 @@ assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
 assert.ok(dsm.includes('services: {') && hostContract.includes('XDriveWorkspaceHostServices') &&
   sharedOutlet.includes('switch (view)') && sharedOutlet.includes('services.deviceBackups'),
   'shared page outlet composes pages using authenticated host data')
+assert.ok(dsm.includes('sections: xDriveWorkspaceHostSections({') &&
+  desktop.includes('xDriveWorkspaceHostSections({') &&
+  hostSections.includes('...(adminRoleVerified ? [') &&
+  hostSections.includes('items: [xDriveSettingsSidebarDestination()]'),
+  'Desktop and DSM must reuse the same privileged-nav and Settings model')
+assert.ok(desktop.includes("if (destination === 'settings')") &&
+  desktop.includes('setSettingsOpen(true)'), 'Settings must open real Desktop dialog')
 assert.ok(!dsm.includes('coreKeys='),
   'DSM must not maintain a reduced alternative navigation')
 for (const key of [

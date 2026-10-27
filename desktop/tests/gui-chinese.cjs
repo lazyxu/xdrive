@@ -7,6 +7,7 @@ const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
+const sharedHostSections = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
 const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
@@ -231,22 +232,27 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(rendererApp.includes('sections: desktopSidebarSections,') && sharedXDriveApp.includes('{...sidebar}'), 'Desktop extensions must be forwarded through the shared app to the same sidebar')
   assert.equal(rendererApp.includes('leadingItems='), false, 'Desktop must not keep the legacy leading-items extension contract')
   assert.equal(rendererApp.includes('trailingItems='), false, 'Desktop must not keep the legacy trailing-items extension contract')
-  assert.ok(rendererApp.includes("key: 'overview',\n      placement: 'before-core'"), 'Desktop overview should be injected before shared core navigation')
-  assert.ok(rendererApp.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Desktop conflicts should be injected after shared core navigation')
-  assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Desktop diagnostics should appear before the administrator section')
-  assert.ok(rendererApp.includes("label: '主页'"), 'Desktop home extension is missing')
-  assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
-  assert.ok(rendererApp.includes('xDriveDiagnosticsSidebarDestination()') &&
-    sharedWorkspaceNavigation.includes("label: '诊断'"),
-    'Desktop diagnostics extension must come from the same shared navigation model')
-  assert.ok(rendererApp.includes('badge: status?.conflict_count'), 'Desktop conflict badge is missing')
+  assert.ok(rendererApp.includes('xDriveWorkspaceHostSections({') &&
+    rendererApp.includes("adminRoleVerified: status?.role === 'admin'"),
+    'Desktop uses the canonical Server-role-scoped Host navigation')
+  assert.ok(sharedHostSections.includes("key: 'overview'") &&
+    sharedHostSections.includes("label: '主页'"))
+  assert.ok(sharedHostSections.includes("key: 'conflicts'") &&
+    sharedHostSections.includes("label: '冲突'"))
+  assert.ok(rendererApp.includes("diagnosticsAriaLabel: '桌面版辅助功能'"))
+  assert.ok(sharedHostSections.includes('xDriveDiagnosticsSidebarDestination()') &&
+    sharedWorkspaceNavigation.includes("label: '诊断'"))
+  assert.ok(rendererApp.includes('conflictCount: status?.conflict_count') &&
+    sharedHostSections.includes('badge: conflictCount'))
+  assert.ok(rendererApp.includes("if (destination === 'settings')") &&
+    rendererApp.includes('setSettingsOpen(true)'))
 
   for (const icon of [
     'DashboardRoundedIcon',
     'WarningAmberRoundedIcon',
     'BuildRoundedIcon',
   ]) {
-    assert.ok(rendererApp.includes(icon), `missing Desktop-only sidebar icon: ${icon}`)
+    assert.ok(sharedHostSections.includes(icon), `missing canonical shared Host nav icon: ${icon}`)
   }
   for (const icon of [
     'CloudOutlinedIcon',

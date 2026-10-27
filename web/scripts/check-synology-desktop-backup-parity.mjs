@@ -15,6 +15,7 @@ const cgi = read('internal/synologyui/gateway.go')
 const cgiRouting = read('internal/synologyui/cgi.go')
 const agentRead = read('internal/localbackupipc/remote_backup.go')
 const dsmEntry = read('web/src/synology.tsx')
+const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const sharedHome = read('ui/shared/src/mui/HomePage.tsx')
 const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
 const desktopShell = read('desktop/src/renderer/App.tsx')
@@ -246,6 +247,8 @@ if (dsmEntry.includes('coreKeys=') ||
     !taskStatus.includes('current_cas_verified !== false') ||
     !muiExports.includes("export * from './SynologyLocalTaskSection'") ||
     !dsmEntry.includes('showLocalStorage: true') ||
+    !dsmEntry.includes('sections: xDriveWorkspaceHostSections({') ||
+    !desktopShell.includes('xDriveWorkspaceHostSections({') ||
     !appPageOutlet.includes('<XDriveLocalStoragePage') ||
     !appPageOutlet.includes('source={services.localStorage}') ||
     !muiExports.includes("export * from '../synology-browser-storage'") ||
@@ -284,7 +287,7 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !sharedHistory.includes("kind: 'local-receipt'") ||
     !dsmEntry.includes('<XDriveSettingsDialog') ||
     !dsmEntry.includes('appearance={appearance}') ||
-    !dsmEntry.includes('xDriveSettingsSidebarDestination()') ||
+    !hostSections.includes('xDriveSettingsSidebarDestination()') ||
     !deskDiag.includes('XDriveDiagnosticsPage as DesktopDiagnosticsPage') ||
     !nasDiag.includes('<XDriveDiagnosticsPage') ||
     !appPageOutlet.includes('<XDriveSynologyDiagnosticsPanel') ||
