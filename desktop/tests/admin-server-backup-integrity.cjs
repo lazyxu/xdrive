@@ -100,6 +100,14 @@ test('elapsed seconds and categories use only structured Host receipts', () => {
   const component = fs.readFileSync(
     path.join(root, 'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
   assert.match(component, /data-xdrive-admin-backup-history-detail/)
-  assert.match(component, /当前协议未为逐代校验提供可靠的对象数量/)
+  // The prior text-only protocol was intentionally replaced by bounded,
+  // real Host verification receipts. Preserve both new-evidence and legacy-
+  // missing-evidence guards without pinning an obsolete UI sentence.
+  assert.match(component, /XDriveBackupVerificationReceipt entry=\\{historyDetail\\}/)
+  assert.match(component, /对于没有新版宿主机验证报告的历史记录，仍然不推断对象数量或校验字节/)
+  const receiptComponent = fs.readFileSync(
+    path.join(root, 'ui/shared/src/mui/BackupVerificationReceipt.tsx'), 'utf8')
+  assert.match(receiptComponent, /data-xdrive-admin-backup-verification-report/)
+  assert.match(receiptComponent, /不代表已完成 PostgreSQL 与文件恢复演练/)
   assert.match(component, /retention.hashed_objects/)
 })
