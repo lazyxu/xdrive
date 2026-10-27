@@ -1473,17 +1473,27 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const downloadNode = async (node: AgentCloudNode) => {
+  const downloadNode = async (
+    node: AgentCloudNode, clientRequestID?: string,
+  ): Promise<{ saved: boolean }> => {
     const busyToken = beginActionBusy(`download-${node.id}`)
-    if (!busyToken) return
+    if (!busyToken) return { saved: false }
     try {
-      const result = await hostPort.write.cloudDownload(node.id, node.name)
-      if (!isActionBusyCurrent(busyToken)) return
+      // Keep Viewer correlation while using the explicit Desktop Host writer.
+      const result = await hostPort.write.cloudDownload(
+        node.id, node.name, clientRequestID,
+      )
+      if (!isActionBusyCurrent(busyToken)) return { saved: false }
       if (!result.ok) {
         onError(result.error.message)
-        return
+        return { saved: false }
       }
       if (result.data.saved) onFeedback('good', `${node.name} 已保存。`)
+      return { saved: result.data.saved }
+    } catch {
+      // Native IPC can include private paths or credentials in thrown errors.
+      onError('下载失败，请在任务中心查看或重试。')
+      return { saved: false }
     } finally {
       finishActionBusy(busyToken)
     }
