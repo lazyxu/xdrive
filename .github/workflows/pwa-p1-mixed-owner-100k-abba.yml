@@ -1,0 +1,177 @@
+name: PWA P1M Mixed Owner 100k Viewer ABBA
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs'
+      - 'desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  real-owner-mixed-abba:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-p1-mixed-owner-100k-abba-20261027'
+    runs-on: ubuntu-latest
+    timeout-minutes: 155
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+      XD_PWA_P1_100K_VIEWER_BACK: '1'
+      XD_PWA_P1_H264_VIEWER_FRAME: '1'
+      XD_PWA_P1_LIVE_MOTION_HOLD: '1'
+      XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL: '1'
+      XD_BEFORE: 6d3743c114b03b158efb4fba52338435a9d0be66
+      XD_AFTER: bac65ab3154c50c0c8c0d478a81a1aaa5fd72aa1
+      XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: probe
+      - uses: actions/checkout@v4
+        with:
+          ref: 6d3743c114b03b158efb4fba52338435a9d0be66
+          path: before
+      - uses: actions/checkout@v4
+        with:
+          ref: bac65ab3154c50c0c8c0d478a81a1aaa5fd72aa1
+          fetch-depth: 2
+          path: after
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: after/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: after/web/package-lock.json
+      - name: Verify source provenance and exact ABBA gate
+        run: |
+          set -euo pipefail
+          test "$(git -C probe rev-parse HEAD)" = "$XD_PR_HEAD"
+          test "$(git -C before rev-parse HEAD)" = "$XD_BEFORE"
+          test "$(git -C after rev-parse HEAD)" = "$XD_AFTER"
+          test "$(git -C after rev-parse HEAD^)" = "$XD_BEFORE"
+          test "$(git -C after diff-tree --no-commit-id --name-only -r "$XD_AFTER" | wc -l)" -eq 16
+          for file in \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs \
+            internal/api/gallery_real_web_cold_performance_integration_test.go \
+            internal/api/pwa_p1_live_motion_fixture_test.go \
+            internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go \
+            go.mod go.sum web/package-lock.json; do
+            cmp "before/$file" "after/$file"
+          done
+          node --check probe/desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs
+          (cd probe && node --test desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs)
+      - name: Build pinned production Web A/B and one unchanged native Go fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix before/web ci --no-audit --no-fund
+          npm --prefix after/web ci --no-audit --no-fund
+          npm --prefix after/desktop install --no-audit --no-fund
+          ln -s "$GITHUB_WORKSPACE/after/desktop/node_modules" before/desktop/node_modules
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix before/web run build
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix after/web run build
+          mkdir -p after/desktop/pwa-p1m-go-bin
+          (cd after && go test -c -o "$GITHUB_WORKSPACE/after/desktop/pwa-p1m-go-bin/api.test" ./internal/api)
+          test -x after/desktop/pwa-p1m-go-bin/api.test
+      - name: Measure genuine Owner mixed JPEG H264 Live and signed Range A B B A
+        env:
+          XD_GALLERY_MOBILE_NATIVE_GO_BINARY: ${{ github.workspace }}/after/desktop/pwa-p1m-go-bin/api.test
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/probe/desktop/pwa-p1m-mixed-abba-results"
+          mkdir -p "$OUT"
+          # Record every arm even if the native 160ms Go cancellation gate
+          # fails. Do NOT discard the bad sample, retry it as a replacement,
+          # or claim a valid BEFORE/AFTER from an incomplete arm.
+          run_arm() {
+            local release="$1" label="$2" status=0
+            mkdir -p "$OUT/$label"
+            # The A2 release shares A1's checkout: never read a stale
+            # summary/sample from a prior arm after a partial native failure.
+            local input="$release/desktop/pwa-p1-owner-100k-viewer-range-abort-results"
+            mkdir -p "$input"
+            rm -f "$input"/summary.json "$input"/sample-1.json \
+              "$input"/sample-2.json "$input"/sample-3.json
+            (cd "$release" && xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+              "$GITHUB_WORKSPACE/after/desktop/node_modules/.bin/electron" --no-sandbox \
+              desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs) \
+              2>&1 | tee "$OUT/$label/private-trace.log" || status=$?
+            printf '%s\n' "$status" > "$OUT/$label/exit-code.txt"
+            if test -s "$input/summary.json"; then
+              cp "$input/summary.json" "$OUT/$label/summary.json"
+            fi
+            for n in 1 2 3; do
+              if test -s "$input/sample-$n.json"; then
+                cp "$input/sample-$n.json" "$OUT/$label/sample-$n.json"
+              fi
+            done
+            if test "$status" -ne 0; then
+              echo "::warning::P1M $label failed (exit $status); retain invalid evidence and continue the remaining order-balanced arms"
+            fi
+          }
+          run_arm before a1
+          run_arm after b1
+          run_arm after b2
+          run_arm before a2
+          # The diagnostic is a sanitized allowlist of numeric metrics,
+          # including a failed Range duration. Raw logs are NEVER artifacts.
+          node probe/desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs \
+            --diagnostic "$OUT/a1" "$OUT/b1" "$OUT/b2" "$OUT/a2" "$OUT/diagnostic.json"
+          rm -f "$OUT"/a1/private-trace.log "$OUT"/b1/private-trace.log \
+            "$OUT"/b2/private-trace.log "$OUT"/a2/private-trace.log
+          node - "$OUT/diagnostic.json" <<'NODE'
+          const fs=require('node:fs')
+          const diagnostic=JSON.parse(fs.readFileSync(process.argv[2],'utf8'))
+          if (!diagnostic.allArmsComplete || diagnostic.failedArms.length>0) {
+            console.error('::error::P1M native Owner/Range gate failed; invalid arm(s): '+diagnostic.failedArms.join(','))
+            process.exit(1)
+          }
+          NODE
+          node probe/desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs \
+            "$OUT/a1" "$OUT/b1" "$OUT/b2" "$OUT/a2" "$OUT/paired.json"
+          node - <<'NODE'
+          const s = require('./probe/desktop/pwa-p1m-mixed-abba-results/paired.json')
+          if (s.releaseOrder !== 'A-B-B-A' || s.arms.length !== 4 ||
+              s.arms.some(a => a.n !== 3) ||
+              s.causalConclusion !== 'NOT_ESTABLISHED' ||
+              s.realIOSSafari || s.physicalOriginals115k ||
+              s.bitwiseDataEqualityVerified || s.materialGainEstablished) process.exit(1)
+          console.log('P1M mixed Viewer ABBA measured; NO causal acceleration claim')
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-p1m-mixed-owner-100k-abba
+          path: |
+            probe/desktop/pwa-p1m-mixed-abba-results/paired.json
+            probe/desktop/pwa-p1m-mixed-abba-results/diagnostic.json
+          if-no-files-found: warn
+          retention-days: 14
