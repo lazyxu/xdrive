@@ -13,7 +13,7 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 
-function browser({ denied = null, supported = true } = {}) {
+function browser({ denied = null, supported = true, eventFailure = null } = {}) {
   const exports = {}
   const outbound = []
   const registered = []
@@ -38,8 +38,17 @@ function browser({ denied = null, supported = true } = {}) {
   const events = []
   const win = {
     isSecureContext: true,
-    addEventListener(name) { events.push(name) },
-    setInterval() {},
+    addEventListener(name) {
+      if (eventFailure === name || eventFailure === 'all') {
+        throw new Error('Safari denied Window event: ' + name)
+      }
+      events.push(name)
+    },
+    setInterval() {
+      if (eventFailure === 'timer' || eventFailure === 'all') {
+        throw new Error('Safari denied optional heartbeat')
+      }
+    },
   }
   if (denied === 'secure-context') {
     Object.defineProperty(win, 'isSecureContext', {
@@ -48,7 +57,12 @@ function browser({ denied = null, supported = true } = {}) {
   }
   const env = {
     exports, window: win,
-    document: { addEventListener(name) { events.push(name) } },
+    document: { addEventListener(name) {
+      if (eventFailure === name || eventFailure === 'all') {
+        throw new Error('Safari denied Document event: ' + name)
+      }
+      events.push(name)
+    } },
     crypto,
     require(name) {
       assert.equal(name, './pwaWorkloadSafety')
@@ -116,4 +130,28 @@ test('PWA Safari denied secure-context getter cannot break pre-React peer startu
   assert.equal(app.snapshot().knownPeerBusy, false)
   assert.equal(app.outbound.length, 0)
   assert.deepEqual(app.events, [])
+})
+
+test('PWA Safari denied optional lifecycle listener preserves anonymous peer status', () => {
+  const eventNames = ['pageshow', 'pagehide', 'visibilitychange']
+  for (const denied of [...eventNames, 'timer', 'all']) {
+    const app = browser({ eventFailure: denied })
+    assert.doesNotThrow(app.start, denied)
+    assert.equal(app.snapshot().available, true,
+      'a denied lifecycle listener must not silently break supported peer observation')
+    assert.deepEqual(app.events,
+      denied === 'all' ? [] : eventNames.filter(name => name !== denied),
+      'independent supported listeners continue to subscribe')
+    assert.equal(app.registered.length, 1, 'the existing channel handler stays registered')
+    assert.equal(app.outbound.length, 2,
+      'initial hello and status must still be sent without optional lifecycle hints')
+    const remote = {
+      kind: 'status', sender: '00000000-0000-4000-8000-000000000002',
+      sequence: 1, observed: true, busy: true,
+    }
+    app.registered[0][1]({ data: remote })
+    assert.equal(app.snapshot().knownPeerBusy, true,
+      'a busy peer remains visible when Safari denies an optional listener')
+    assert.doesNotMatch(JSON.stringify(app.outbound), /Authorization|cookie|token|path|node_id/)
+  }
 })
