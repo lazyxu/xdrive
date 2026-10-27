@@ -53,6 +53,8 @@ for (const bogus of ['', '__proto__', 'gallery/../admin-users', 'admin-typo']) {
 const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
 const sharedOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
 const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
+const overview = read('ui/shared/src/mui/OverviewPage.tsx')
+const desktopPort = read('desktop/src/renderer/desktopOverviewAdapter.ts')
 const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
@@ -83,7 +85,7 @@ assert.ok(desktop.includes("if (destination === 'settings')") &&
 assert.ok(!dsm.includes('coreKeys='),
   'DSM must not maintain a reduced alternative navigation')
 for (const key of [
-  'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
+  'overview', 'gallery', 'device-backup', 'remote-pull', 'transfers', 'global-tasks',
   'local-storage', 'cloud-storage',
   'admin-maintenance', 'admin-users', 'admin-audit',
   'admin-storage', 'admin-services',
@@ -126,6 +128,14 @@ assert.ok(desktop.includes('conflictsPage: {') && desktop.includes('diagnosticsP
   'Conflicts and Diagnostics must use the same shared React/MUI outlet')
 assert.equal(desktop.includes('<DesktopConflictsPage'), false)
 assert.equal(desktop.includes('<DesktopDiagnosticsPage'), false)
+assert.ok(desktop.includes('overviewPage: {') && sharedOutlet.includes('<XDriveOverviewPage') &&
+  hostContract.includes('readonly overviewPage?: XDriveOverviewPageProps'),
+  'Desktop must use one lazily-mounted Overview Host port and shared page')
+assert.ok(overview.includes('port.cloudFileRecent(6)') &&
+  overview.includes('port.cloudFileFavorites()') &&
+  !overview.includes('window.xdriveDesktop') &&
+  desktopPort.includes('window.xdriveDesktop.agent'),
+  'Owner reads must stay in a host-neutral controller with native IPC in Desktop adapter')
 assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')

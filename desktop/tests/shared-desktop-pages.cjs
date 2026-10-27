@@ -5,7 +5,8 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
-const overview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const overview = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
+const desktopOverviewPort = read('desktop', 'src', 'renderer', 'desktopOverviewAdapter.ts')
 const sharedHome = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
 const conflicts = read('ui', 'shared', 'src', 'mui', 'ConflictsPage.tsx')
 const desktopConflictAlias = read('desktop', 'src', 'renderer', 'DesktopConflictsPage.tsx')
@@ -42,7 +43,10 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     'failedTransfer',
     'failedOperation',
     'failedBackgroundTask',
-  ]) assert.ok(overview.includes(token), `Desktop Home adapter missing: ${token}`)
+  ]) assert.ok((overview + desktopOverviewPort).includes(token), `shared Home or Desktop port missing: ${token}`)
+  assert.equal(overview.includes('window.xdriveDesktop'), false, 'shared Overview cannot call Electron IPC')
+  assert.ok(app.includes('overviewPage: {') && commonOutlet.includes('<XDriveOverviewPage'),
+    'Desktop Home must be mounted through the common shared outlet')
   for (const diagnostic of ['IPC ', 'title="Agent"', '修订号', '桌面桥接']) {
     assert.equal(overview.includes(diagnostic), false, `Desktop home must not expose diagnostic chrome: ${diagnostic}`)
   }

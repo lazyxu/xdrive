@@ -35,7 +35,8 @@ const sharedPasswordChangeForm = fs.readFileSync(path.join(root, '..', 'ui', 'sh
 const desktopFileExplorer = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'fileDialogAdapters.ts'), 'utf8')
-const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
+const desktopOverviewPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'OverviewPage.tsx'), 'utf8')
+const desktopOverviewPort = fs.readFileSync(path.join(root, 'src', 'renderer', 'desktopOverviewAdapter.ts'), 'utf8')
 const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
 const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DiagnosticsPage.tsx'), 'utf8')
@@ -58,6 +59,7 @@ const renderer = [
   desktopSourceAdapter,
   desktopShareAdapter,
   desktopOverviewPage,
+  desktopOverviewPort,
   desktopConflictsPage,
   desktopDiagnosticsPage,
   sharedDiagnosticsPage,

@@ -138,3 +138,22 @@ Server-admin menus and Settings for both Desktop and DSM. Host-specific
 status counts remain passed-in data. DSM's own administrator status does
 not enable Server-admin links; only a verified xDrive Server role does.
 Both Settings sidebar actions open the actual shared dialog.
+
+
+## Owner-scoped Overview controller migration
+
+Desktop Overview now renders through the **same shared app outlet** as DSM.
+`ui/shared/src/mui/OverviewPage.tsx` owns the React state and Home composition;
+only `desktop/src/renderer/desktopOverviewAdapter.ts` calls Electron IPC
+for recent/favorites, availability, disk, file open and native thumbnail/poster.
+No background Overview data requests or timers are mounted while Files,
+Gallery/Viewer or another page is selected.
+
+The controller fences all accepted Home data and failure messages by the
+current Owner identity, rejects superseded asynchronous account responses,
+preserves silent unverified first-read list cards, and does not treat a failed
+read as a confirmed empty result. DSM retains its real authenticated local
+overview fallback without inventing a full Server/Agent Home port.
+
+The remaining full Files page still requires host-neutral extraction of
+DesktopFileExplorer and Owner-authorized DSM mutation/preview actions.
