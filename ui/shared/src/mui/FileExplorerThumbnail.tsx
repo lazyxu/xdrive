@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -310,10 +311,13 @@ function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
 export function XDriveFileExplorerThumbnailProvider({
   lifecycleKey = '',
   loadThumbnail,
+  suspended = false,
   children,
 }: {
   lifecycleKey?: string
   loadThumbnail?: XDriveFileExplorerThumbnailLoader
+  /** Pause only disposable list/grid thumbnails behind an active Viewer. */
+  suspended?: boolean
   children: ReactNode
 }) {
   const cache = useMemo<FileThumbnailCache>(
@@ -330,6 +334,15 @@ export function XDriveFileExplorerThumbnailProvider({
   const [foreground, setForeground] = useState(
     () => typeof document === 'undefined' || !document.hidden,
   )
+
+  // The underlying Files workspace stays mounted under the routed Viewer.
+  // Abort network/Agent IPC thumbnail tasks before Viewer paint; retain
+  // decoded Blob leases and all durable transfers. On close only genuinely
+  // visible tiles may requeue through the existing IntersectionObserver.
+  useLayoutEffect(() => {
+    if (!suspended) return
+    for (const cancel of [...cache.pending]) cancel()
+  }, [cache, suspended])
 
   useEffect(() => {
     cache.disposed = false
@@ -365,8 +378,8 @@ export function XDriveFileExplorerThumbnailProvider({
   }, [cache])
 
   const value = useMemo(
-    () => ({ loadThumbnail, cache, foreground }),
-    [cache, loadThumbnail, foreground],
+    () => ({ loadThumbnail, cache, foreground: foreground && !suspended }),
+    [cache, loadThumbnail, foreground, suspended],
   )
 
   return (

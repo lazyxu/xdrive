@@ -159,7 +159,7 @@ import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
 import { xDriveKeepMediaPlaceHierarchyQuery } from '../media-gallery-places-hierarchy-query'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
-import { XDriveMediaGalleryCoverProvider, XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { XDriveMediaGalleryCoverProvider, XDriveMediaGalleryCoverThumbnail, useXDriveGalleryCoverPauseForInlineViewer } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
@@ -185,6 +185,7 @@ import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveShareDialog } from './ShareDialog'
 import type { XDriveShareDialogAdapter } from './ShareDialog'
 import {
+  XDriveBackgroundMediaThumbnailSuspended,
   XDriveMediaAsyncThumbnail,
   XDriveMediaAsyncVideoPoster,
   xDriveMediaFallback,
@@ -642,6 +643,8 @@ const mobileGalleryBrowsePositions = new Map<string, XDriveMobileGalleryBrowsePo
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   mobileWebChrome?: boolean
+  /** Routed Viewer overlays the still-mounted Gallery, which must stop I/O. */
+  suspendBackgroundThumbnails?: boolean
   fileOperations?: readonly MediaGalleryDeleteOperation[]
   onFileOperationQueued?: (operation: MediaGalleryDeleteOperation) => void
   onUploadRequested?: () => void
@@ -668,6 +671,7 @@ export interface XDriveMediaGalleryPageProps {
 export function XDriveMediaGalleryPage({
   source,
   mobileWebChrome = false,
+  suspendBackgroundThumbnails = false,
   fileOperations,
   onFileOperationQueued,
   onUploadRequested,
@@ -3904,6 +3908,7 @@ export function XDriveMediaGalleryPage({
       <XDriveMediaGalleryCoverProvider
         key={preferenceScope || "gallery-default"}
         loadThumbnail={source.loadThumbnail}
+        suspended={suspendBackgroundThumbnails}
       >
         <XDriveMediaGallery
         key={preferenceScope || 'gallery-default'}
@@ -3911,6 +3916,7 @@ export function XDriveMediaGalleryPage({
         preferenceScope={preferenceScope}
         onRegisterViewerThumbnailCache={onRegisterViewerThumbnailCache}
         mobileWebChrome={mobileWebChrome}
+        suspendBackgroundThumbnails={suspendBackgroundThumbnails}
         onUploadRequested={onUploadRequested}
         mobileCollectionsOverview={mobileCollectionsOverview}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
@@ -4308,6 +4314,7 @@ export function XDriveMediaGalleryPage({
       <XDriveMediaGalleryCoverProvider
         key={`${preferenceScope || 'gallery-default'}:verified-fold`}
         loadThumbnail={source.loadThumbnail}
+        suspended={suspendBackgroundThumbnails}
       >
       <Dialog
         open={Boolean(foldDialog)}
@@ -4467,6 +4474,7 @@ export type XDriveMediaGalleryVirtualCollection = {
 
 export interface XDriveMediaGalleryProps {
   mobileWebChrome?: boolean
+  suspendBackgroundThumbnails?: boolean
   mobileCollectionsOverview?: boolean
   onMobileCollectionsOverviewChange?: (overview: boolean) => void
   onMobilePrimaryTabChange?: (tab: 'library' | 'collections') => void
@@ -6213,6 +6221,7 @@ const personDialogDescriptions = {
 
 export function XDriveMediaGallery({
   mobileWebChrome = false,
+  suspendBackgroundThumbnails = false,
   mobileCollectionsOverview = false,
   onMobileCollectionsOverviewChange,
   onMobilePrimaryTabChange,
@@ -6428,6 +6437,15 @@ export function XDriveMediaGallery({
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [mediaContextMenu, setMediaContextMenu] = useState<{ item: MediaItem; index: number; top: number; left: number } | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
+  // Inline Desktop and routed Web/PWA Viewer both preempt only background
+  // tiles; the mounted LRU and borrowed Blob leases survive the transition.
+  const thumbnailBackgroundSuspended = suspendBackgroundThumbnails || previewItem !== null
+  useLayoutEffect(() => {
+    thumbnailScheduler.setSuspended(thumbnailBackgroundSuspended)
+  }, [thumbnailScheduler, thumbnailBackgroundSuspended])
+  // The Gallery page owns a separate album/Places/People cover pool above this
+  // inline Viewer; cancel that pool too when Desktop opens a local preview.
+  useXDriveGalleryCoverPauseForInlineViewer(thumbnailBackgroundSuspended)
   const placesReturnAnchorRef = useRef<HTMLDivElement | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
@@ -7750,6 +7768,7 @@ export function XDriveMediaGallery({
   )
 
   return (
+    <XDriveBackgroundMediaThumbnailSuspended.Provider value={thumbnailBackgroundSuspended}>
     <Stack
       id="xdrive-mobile-gallery-main"
       ref={galleryRootRef}
@@ -9977,5 +9996,6 @@ export function XDriveMediaGallery({
       </Box>
 
     </Stack>
+    </XDriveBackgroundMediaThumbnailSuspended.Provider>
   )
 }

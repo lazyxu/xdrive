@@ -116,7 +116,7 @@ function loadThumbnailProvider(runtime) {
   }
   const mod = { exports: {} }
   const localRequire = (request) => {
-    if (request === 'react') return runtime.react
+    if (request === 'react') return { ...runtime.react, useLayoutEffect: runtime.react.useEffect }
     if (request === 'react/jsx-runtime') return jsxRuntime
     if (request === '@mui/material') return { Box: () => null }
     if (request === './MediaLoadProgress') {

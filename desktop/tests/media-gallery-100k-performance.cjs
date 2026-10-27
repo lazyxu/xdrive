@@ -77,6 +77,8 @@ const preview = transpile(previewPath, previewSource, (id) => {
   if (id === 'react') {
     return {
       useEffect: () => {},
+      createContext: (value) => ({ current: value }),
+      useContext: (context) => context.current,
       useRef: (value) => ({ current: value }),
       useState: (value) => [value, () => {}],
     }
