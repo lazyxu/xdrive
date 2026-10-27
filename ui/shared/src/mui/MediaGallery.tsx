@@ -1,3 +1,4 @@
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import {
@@ -6443,9 +6444,11 @@ export function XDriveMediaGallery({
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [mediaContextMenu, setMediaContextMenu] = useState<{ item: MediaItem; index: number; top: number; left: number } | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
+  const [viewerPriorityActive, setViewerPriorityActive] = useState(xDriveViewerForegroundActive)
+  useLayoutEffect(() => xDriveObserveViewerForeground(setViewerPriorityActive), [])
   // Inline Desktop and routed Web/PWA Viewer both preempt only background
   // tiles; the mounted LRU and borrowed Blob leases survive the transition.
-  const thumbnailBackgroundSuspended = suspendBackgroundThumbnails || previewItem !== null
+  const thumbnailBackgroundSuspended = suspendBackgroundThumbnails || previewItem !== null || viewerPriorityActive
   useLayoutEffect(() => {
     thumbnailScheduler.setSuspended(thumbnailBackgroundSuspended)
   }, [thumbnailScheduler, thumbnailBackgroundSuspended])

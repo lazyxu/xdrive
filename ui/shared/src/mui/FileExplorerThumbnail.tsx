@@ -1,3 +1,4 @@
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
 import {
   createContext,
   useContext,
@@ -335,14 +336,24 @@ export function XDriveFileExplorerThumbnailProvider({
     () => typeof document === 'undefined' || !document.hidden,
   )
 
+  // The foreground lease is shared by every Viewer entry, not only this
+  // FileExplorer's Quick Look. Cancel disposable requests synchronously;
+  // preserve cached Blob leases and all durable upload/download operations.
+  const [viewerPriorityActive, setViewerPriorityActive] = useState(xDriveViewerForegroundActive)
+  useLayoutEffect(() => xDriveObserveViewerForeground((active) => {
+    if (active) for (const cancel of [...cache.pending]) cancel()
+    setViewerPriorityActive(active)
+  }), [cache])
+  const thumbnailsSuspended = suspended || viewerPriorityActive
+
   // The underlying Files workspace stays mounted under the routed Viewer.
   // Abort network/Agent IPC thumbnail tasks before Viewer paint; retain
   // decoded Blob leases and all durable transfers. On close only genuinely
   // visible tiles may requeue through the existing IntersectionObserver.
   useLayoutEffect(() => {
-    if (!suspended) return
+    if (!thumbnailsSuspended) return
     for (const cancel of [...cache.pending]) cancel()
-  }, [cache, suspended])
+  }, [cache, thumbnailsSuspended])
 
   useEffect(() => {
     cache.disposed = false
@@ -378,8 +389,8 @@ export function XDriveFileExplorerThumbnailProvider({
   }, [cache])
 
   const value = useMemo(
-    () => ({ loadThumbnail, cache, foreground: foreground && !suspended }),
-    [cache, loadThumbnail, foreground, suspended],
+    () => ({ loadThumbnail, cache, foreground: foreground && !thumbnailsSuspended }),
+    [cache, loadThumbnail, foreground, thumbnailsSuspended],
   )
 
   return (
