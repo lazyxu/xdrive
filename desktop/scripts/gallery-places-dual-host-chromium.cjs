@@ -1448,6 +1448,40 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     })
     record(mode+': '+scheme+' 844x390 landscape map stays within safe viewport',
       landscape.height>=180&&landscape.bottom<=390-8)
+    // iOS 27 map parity must cover the actual 899/900 breakpoint in both
+    // orientations as well as the narrower 375px iPhone. Execute on the same
+    // already-mounted trusted React Parent and both SDK Hosts: a source-only
+    // CSS assertion cannot prove the photos stay visible after a real resize.
+    for (const [width,height] of [[375,812],[899,390],[900,390],
+      [899,1200],[900,1200]]) {
+      await page.setViewportSize({width,height})
+      const bounds=await page.evaluate(()=>{
+        const rect=selector=>{
+          const element=document.querySelector(selector)
+          if(!element)return null
+          const box=element.getBoundingClientRect()
+          return {left:box.left,right:box.right,top:box.top,
+            bottom:box.bottom,width:box.width,height:box.height}
+        }
+        return {map:rect('[data-xdrive-places-cluster-overview]'),
+          cover:rect('[data-xdrive-places-trusted-photo-cover]'),
+          strip:rect('[data-xdrive-places-photo-collection-strip]'),
+          count:document.querySelector('[data-xdrive-places-photo-count-badge]')?.textContent,
+          regionLabel:document.querySelector('[aria-label="定位照片聚集地图"]')?.getAttribute('role')}
+      })
+      const inside=(outer,inner)=>Boolean(outer&&inner&&
+        inner.left>=outer.left-1&&inner.right<=outer.right+1&&
+        inner.top>=outer.top-1&&inner.bottom<=outer.bottom+1)
+      record(mode+': '+scheme+' '+width+'x'+height+
+        ' map and signed-photo cover remain within the usable viewport',
+        bounds.map&&bounds.map.width>0&&bounds.map.height>=180&&
+        bounds.map.bottom<=height-8&&bounds.map.right<=width+1&&
+        inside(bounds.map,bounds.cover)&&bounds.cover.width>=44&&
+        bounds.cover.height>=44&&bounds.count==='9')
+      record(mode+': '+scheme+' '+width+'x'+height+
+        ' shared photo strip stays inside map bounds',
+        inside(bounds.map,bounds.strip)&&bounds.strip.width>=44)
+    }
     await page.setViewportSize({width:390,height:844})
     await cover.focus()
     const focused=await cover.evaluate(element=>document.activeElement===element)
