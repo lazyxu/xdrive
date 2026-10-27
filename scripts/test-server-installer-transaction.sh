@@ -928,6 +928,7 @@ for native_scenario in success caddy-failure; do
   TEST_PULL_MODE="native-$native_scenario" \
   TEST_HEALTH_OK=1 \
   XD_PULL_PROGRESS_MODE=native \
+  XD_INSTALL_PROGRESS_FILE="$native_state/install-progress.env" \
   XD_PULL_ATTEMPTS=3 \
   XD_PULL_RETRY_DELAY_SECONDS=0 \
   PATH="$TMP/bin:/usr/bin:/bin" \
@@ -962,6 +963,8 @@ for native_scenario in success caddy-failure; do
   else
     [[ "$native_status" -ne 0 ]]
     [[ "$(cat "$native_state/pull-count-caddy")" -eq 3 ]]
+    grep -Fq 'service=caddy' "$native_state/install-progress.env"
+    grep -Fq 'bytes_total=0' "$native_state/install-progress.env"
     grep -Fq 'Docker registry/CDN TLS handshake timed out' "$TMP/native-caddy-failure.err"
     grep -Fq 'prefetch caddy failed; the old runtime has not been stopped' "$TMP/native-caddy-failure.err"
     if grep -Eq '^stop |^load -i |^tag xdrive/caddy:test' "$native_state/docker-calls"; then

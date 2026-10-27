@@ -693,6 +693,9 @@ pull_service_native() {
   local service="$1" image_ref
   local -a statuses=()
   image_ref="$(pull_service_image_ref "$service")" || return 2
+  # The host update UI still knows which service is being downloaded, but
+  # cannot claim byte totals absent from the native Docker event stream.
+  write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$service" 0 0
   printf '[xDrive] pull %s image: %s (Docker native layer progress)\n' "$service" "$image_ref"
   docker pull "$image_ref" </dev/null 2>&1 |
     tee -a "$PULL_LOG" |
@@ -2592,6 +2595,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   if [[ "$upgrade_backup_verifier" == "target" ]]; then
     if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
       echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
+      write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "server" 0 0
       if ! docker pull "$target_server_image" </dev/null; then
         echo "xDrive installer: cannot fetch pinned target verifier; refusing to enter backup without verified image." >&2
         exit 1
