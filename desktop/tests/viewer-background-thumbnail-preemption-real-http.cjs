@@ -322,7 +322,7 @@ test('both mounted workspace entry points pause only background thumbnails, not 
   assert.match(files, /suspended=\{suspendBackgroundThumbnails \|\| quickLookItemID !== null\}/,
     'Desktop local QuickLook also preempts its mounted background FileExplorer')
   assert.match(provider, /for \(const cancel of \[\.\.\.cache\.pending\]\) cancel\(\)/)
-  assert.match(provider, /foreground: foreground && !suspended/,
+  assert.match(provider, /foreground: foreground && !thumbnailsSuspended/,
     'cancelled tile effects cannot immediately restart while Viewer is active')
   assert.match(gallery, /thumbnailScheduler\.setSuspended\(thumbnailBackgroundSuspended\)/)
   assert.match(gallery, /thumbnailBackgroundSuspended = suspendBackgroundThumbnails \|\| previewItem !== null \|\| viewerPriorityActive/,

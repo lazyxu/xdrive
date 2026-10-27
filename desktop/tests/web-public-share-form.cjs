@@ -78,6 +78,11 @@ function loadPublicShare(api) {
       if (name === './PublicShareUnifiedDirectoryExplorer') {
         return load('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
       }
+      // The Public Share preview uses the exact pure renderer-local priority
+      // coordinator; only visual Grid/Details presentation remains hosted here.
+      if (name === './ViewerForegroundPriority') {
+        return load('ui/shared/src/mui/ViewerForegroundPriority.ts')
+      }
       if (name === './FileExplorer') {
         return { XDriveFileExplorer: require('./share-core-host.cjs')(
           React, load('ui/shared/src/mui/FileExplorerItemPresentation.tsx').xDriveFileTypeLabel,

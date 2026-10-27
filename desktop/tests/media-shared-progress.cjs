@@ -14,7 +14,8 @@ function compile(relative) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', output)(mod.exports, mod, require)
+  new Function('exports', 'module', 'require', output)(mod.exports, mod,
+    id => id === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : require(id))
   return mod.exports
 }
 

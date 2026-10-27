@@ -51,7 +51,8 @@ test('P0-L17 versioned cover uses existing production Scheduler one-shot replay,
     new Function('exports', 'module', 'require', js)(module.exports, module, req)
     return module.exports
   }
-  const scheduler = run(transpile(schedulerSource, 'scheduler.ts'))
+  const scheduler = run(transpile(schedulerSource, 'scheduler.ts'),
+    name => name === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : require(name))
   const Pool = run(transpile(poolSource, 'pool.ts'), (name) =>
     name === './MediaGalleryThumbnailScheduler' ? scheduler : require(name)).XDriveMediaGalleryCoverThumbnailPool
   const calls = []
@@ -89,7 +90,8 @@ test('P0-L17 a versioned fold thumb cannot abort a distinct unknown-revision Gal
     new Function('exports', 'module', 'require', source)(m.exports, m, req)
     return m.exports
   }
-  const Scheduler = load(compile(schedulerSource, 'scheduler.ts'))
+  const Scheduler = load(compile(schedulerSource, 'scheduler.ts'),
+    name => name === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : require(name))
   const Pool = load(compile(poolSource, 'pool.ts'), (name) =>
     name === './MediaGalleryThumbnailScheduler' ? Scheduler : require(name))
     .XDriveMediaGalleryCoverThumbnailPool
