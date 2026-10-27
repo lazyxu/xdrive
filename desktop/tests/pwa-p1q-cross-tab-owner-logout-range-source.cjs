@@ -13,6 +13,7 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'await bootOriginalAuthenticatedApp(auditor,base)',
     "await switchActualApp(auditor,'文件','files')",
     "await switchActualApp(win,'图库','gallery')",
+    "30000,'actual deep authenticated Gallery scroll host before logout'",
     'p1OriginalSignedVideoElement.toString()',
     'p1VisibleH264Tile.toString()',
     "await fetch(base+'/__perf/viewer-video-range-mark'",
