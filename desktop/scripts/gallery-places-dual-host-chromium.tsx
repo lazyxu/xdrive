@@ -15,6 +15,10 @@ const genuineGin = (window as any).__P04_REAL_GIN === true
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
 const favoritesMapEntry = new URLSearchParams(location.search).get('start_favorites') === '1'
+// Controlled Owner GPS -> BD-09 delayed derivative. The mounted SDK starts
+// with no signed Cells, then the test completes indexing without remounting.
+const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
+let derivedLocationReady = !delayedBD09
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
   {cache:'no-store'}).then(async response=>{
@@ -45,6 +49,7 @@ const probe = ((window as any).__mapProbe = {
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoOpens:[] as any[],
+  bd09Completions:0,
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -74,7 +79,12 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
     if(favorite)query.set('favorite','true')
     data=await ownerRequest('cells',query,signal)
   }else{
-    data=pageFor(bounds,favorite)
+    // Same strictly shaped signed Owner /cells DTO with no derived pins
+    // until the synthetic background job finishes. Never substitute WGS84.
+    data=derivedLocationReady ? pageFor(bounds,favorite) : {
+      coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
+      grid_columns:8,grid_rows:8,total_count:0,cells:[],
+    }
   }
   probe.queries.push({favorite,albumKey,count:data.total_count,
     bounds:JSON.parse(JSON.stringify(bounds))})
@@ -310,6 +320,12 @@ function TestApp(){
     }catch{probe.rangeError=true}
   }
   return <div>
+    {delayedBD09 ? (
+      <button type="button" id="fixture-finish-bd09"
+        onClick={()=>{derivedLocationReady=true;probe.bd09Completions++}}>
+        Complete synthetic Owner BD-09 indexing
+      </button>
+    ) : null}
     <button type="button" id="toggle-favorite" onClick={()=>setFavorite(x=>!x)}>
       Switch Owner favorite scope
     </button>
