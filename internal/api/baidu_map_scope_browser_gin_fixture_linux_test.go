@@ -408,6 +408,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			"container_json":              liveInfo.ContainerJSON,
 			"orientation":                 liveInfo.Orientation,
 			"live_photo_asset_identifier": liveInfo.LivePhotoAssetIdentifier,
+			"derived_resource_version":    mediapkg.LIVPDerivedResourceVersion,
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +436,8 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := mediaThumbnailSourceMIME(liveMetadata); got != heicInfo.MIMEType ||
-		mediaThumbnailVersion(liveMetadata) != mediapkg.ThumbnailAlphaVersion {
+		mediaThumbnailVersion(liveMetadata) != mediapkg.ThumbnailAlphaVersion ||
+		liveMetadata.DerivedResourceVersion != mediapkg.LIVPDerivedResourceVersion {
 		t.Fatal("LIVP cache did not resolve the embedded HEIC still as a v4 image")
 	}
 	liveThumbKey := mediaThumbnailStorageKey(liveNode, liveMetadata)
