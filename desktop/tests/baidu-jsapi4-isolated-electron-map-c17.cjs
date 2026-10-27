@@ -88,11 +88,12 @@ test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynami
   assert.match(main, /'账户已禁用'/)
   assert.match(preload, /openBaiduMapSecure: \(scope: unknown\) => ipcRenderer\.invoke\('desktop:open-baidu-map-secure',scope\)/)
   assert.match(globals, /openBaiduMapSecure:/)
-  assert.match(desktopApp, /onOpenSecureDesktopMap=\{\(scope\) => \{/)
+  assert.match(desktopApp, /onOpenSecureDesktopMap:\s*\(scope\) => \{/)
   assert.match(desktopApp, /window\.xdriveDesktop\.openBaiduMapSecure\(scope\)/)
   // Electron file pages never load the unisolated SDK. Web may opt into the old
   // same-document prototype, but the Desktop action is always an HTTPS Child.
-  assert.match(desktopApp, /<XDriveMediaGalleryPage/)
+  assert.match(desktopApp, /galleryPage:\s*\{/)
+  assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveMediaGalleryPage/)
   assert.match(places, /const hasMapPorts = Boolean\(/)
   assert.match(places, /activation_state === 'authorized_signed_release'/)
   assert.match(places, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
