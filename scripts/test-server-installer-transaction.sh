@@ -73,6 +73,18 @@ emit() {
 }
 
 case "$url" in
+  */releases/download/snapshot/SHA256SUMS.txt)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/SHA256SUMS.txt" "$out"
+    ;;
+  */releases/download/snapshot/xdrive-caddy-image.id)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/image.id" "$out"
+    ;;
+  */releases/download/snapshot/xdrive-caddy-image.tar.gz)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/image.tar.gz" "$out"
+    ;;
   */git/ref/tags/snapshot)
     emit '{
   "ref": "refs/tags/snapshot",
@@ -189,7 +201,11 @@ if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then
   ref="${3:-}"
   [[ "$ref" == "--format" ]] && ref="${5:-}"
   if [[ "$args" == *"--format"* ]]; then
-    printf 'sha256:%064d\n' 0
+    if [[ "$args" == *"org.opencontainers.image.version"* ]]; then
+      printf 'snapshot\n'
+    else
+      printf 'sha256:%064d\n' 0
+    fi
     exit 0
   fi
   if [[ "${TEST_TARGET_IMAGE_PRESENT:-0}" == "1" && "$ref" == *"/xdrive-server:sha-0123456789ab" ]]; then
@@ -202,6 +218,16 @@ fi
 if [[ "$1" == "pull" ]]; then
   [[ "${TEST_TARGET_PULL_FAIL:-0}" == "1" ]] && exit 1
   printf '%s\n' "${2:-}" >> "$TEST_STATE/cached-images"
+  exit 0
+fi
+
+if [[ "$1" == "load" && "${2:-}" == "-i" ]]; then
+  printf 'xdrive/caddy:test\n' >> "$TEST_STATE/cached-images"
+  exit 0
+fi
+
+if [[ "$1" == "tag" && "${2:-}" == "xdrive/caddy:test" ]]; then
+  printf '%s\n' "${3:-}" >> "$TEST_STATE/cached-images"
   exit 0
 fi
 
@@ -895,6 +921,69 @@ done
 
 echo "server transactional upgrade tests passed"
  "$TMP/caddy-preflight-fail-config/config/.env"
+
+
+# GitHub Release fallback downloads an exact, checksum-bound CI image via the
+# separate Release asset path, after a repeatable registry TLS failure.
+fixture="$TMP/caddy-release-fixture"
+mkdir -p "$fixture"
+printf 'mock validated image archive\n' | gzip -1 > "$fixture/image.tar.gz"
+printf 'sha256:%064d\n' 0 > "$fixture/image.id"
+{
+  printf '%s  xdrive-server-install.sh\n' "$(sha256sum "$INSTALLER" | awk '{print $1}')"
+  printf '%s  xdrive-caddy-image.tar.gz\n' "$(sha256sum "$fixture/image.tar.gz" | awk '{print $1}')"
+  printf '%s  xdrive-caddy-image.id\n' "$(sha256sum "$fixture/image.id" | awk '{print $1}')"
+} > "$fixture/SHA256SUMS.txt"
+
+for scenario in caddy-release-success caddy-release-wrong-installer caddy-release-bad-archive; do
+  scenario_config="$TMP/$scenario-config"
+  scenario_state="$TMP/$scenario-state"
+  scenario_fixture="$TMP/$scenario-fixture"
+  cp -a "$TMP/config" "$scenario_config"
+  cp -a "$fixture" "$scenario_fixture"
+  mkdir -p "$scenario_state"
+  sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$scenario_config/.env" "$scenario_config/config/.env"
+  case "$scenario" in
+    caddy-release-wrong-installer)
+      sed -i "s/^[0-9a-f]\{64\}  xdrive-server-install.sh/$(printf '%064d' 0)  xdrive-server-install.sh/" "$scenario_fixture/SHA256SUMS.txt"
+      ;;
+    caddy-release-bad-archive)
+      printf 'corrupt download\n' > "$scenario_fixture/image.tar.gz"
+      ;;
+  esac
+  set +e
+  TEST_STATE="$scenario_state" \
+  TEST_PULL_MODE=caddy-permanent \
+  TEST_CADDY_RELEASE_FIXTURE="$scenario_fixture" \
+  TEST_HEALTH_OK=1 \
+  XD_UPGRADE_BACKUP_VERIFIER=legacy \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$scenario_config" \
+  XD_SHELL_RC_PATH="$TMP/$scenario.bashrc" \
+  XD_PULL_ATTEMPTS=3 \
+  XD_PULL_RETRY_DELAY_SECONDS=0 \
+  XD_NONINTERACTIVE=1 \
+  bash "$INSTALLER" --channel master >"$TMP/$scenario.out" 2>"$TMP/$scenario.err"
+  scenario_status=$?
+  set -e
+  [[ "$(cat "$scenario_state/pull-count-caddy")" == 3 ]]
+  if [[ "$scenario" == caddy-release-success ]]; then
+    [[ "$scenario_status" == 0 ]]
+    grep -q 'Caddy restored from SHA-256 verified GitHub Release archive' "$TMP/$scenario.out"
+    grep -q '^load -i ' "$scenario_state/docker-calls"
+    grep -q '^tag xdrive/caddy:test ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab$' "$scenario_state/docker-calls"
+    load_line="$(grep -n '^load -i ' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    stop_line="$(grep -n '^stop xdrive-caddy' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    [[ -n "$stop_line" && "$load_line" -lt "$stop_line" ]]
+  else
+    [[ "$scenario_status" != 0 ]]
+    if grep -Eq '^stop |^load -i ' "$scenario_state/docker-calls"; then
+      echo "invalid/stale Caddy archive caused load or maintenance" >&2
+      exit 1
+    fi
+    grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/$scenario.err"
+  fi
+done
 
 # Default target-first verification: the pinned target is acquired before
 # stopping Caddy and used directly, without running the legacy validator.
