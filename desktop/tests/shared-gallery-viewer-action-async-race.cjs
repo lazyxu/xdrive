@@ -134,6 +134,9 @@ function fixture(ports = {}) {
       }
       current = Viewer({
         item,
+        // downloadCurrent closes over the actual component callback, not
+        // the separate JSX-only event environment used by this harness.
+        onDownload: actions.onDownload,
         loadThumbnail: loaders.thumbnail,
         loadPreviewURL: loaders.preview,
         loadLivePhotoMotion: loaders.motion,

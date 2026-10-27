@@ -37,12 +37,18 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
     'cloudRename(node.id, node.revision, name)',
     'refreshCurrentDirectoryIfCurrent(expectedCurrentID)',
     'onRenameItem={trashActive ? undefined : renameItem}',
-    'cloudDownload(node.id, node.name)',
     'getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}',
     'backgroundMenuItems={trashActive ? [] : backgroundMenuItems}',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer operation: ${token}`)
   }
+  // Optional exact Viewer correlation reuses the authenticated native
+  // SaveDialog; ordinary FileExplorer actions still omit the nonce.
+  assert.match(explorer,
+    /window\.xdriveDesktop\.agent\.cloudDownload\(\s*node\.id,\s*node\.name,\s*clientRequestID,\s*\)/,
+    'Desktop native download must preserve optional Viewer correlation')
+  assert.match(explorer, /void downloadNode\(node\)/,
+    'ordinary FileExplorer downloads must not invent a correlation')
   assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete flow must use the shared delete-to-trash controller')
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete controller must keep Agent submission local')
   assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must own delete planning')

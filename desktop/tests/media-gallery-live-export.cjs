@@ -77,8 +77,13 @@ test('Web, Desktop and standalone Web Viewer expose explicit full Live export se
   for (const adapter of [web, desktop]) {
     assert.ok(adapter.includes('xDriveCompleteLivePhotoOriginalNodeIDs(item)'))
     assert.ok(adapter.includes('exportLivePhoto: (item) =>'))
-    assert.ok(adapter.includes('downloadItems: (items) =>'), 'regular original download must be unchanged')
   }
+  assert.ok(web.includes('downloadItems: (items) =>'),
+    'Web original download must stay unchanged')
+  assert.ok(desktop.includes('downloadItems: (items, clientRequestID) =>'),
+    'Desktop original download retains its optional exact Viewer correlation')
+  assert.match(desktop, /agent\.cloudDownload\(items\[0\]\.node\.id, items\[0\]\.node\.name, clientRequestID\)/,
+    'Desktop original download must keep the native Agent SaveDialog path')
   assert.ok(web.includes("api.downloadArchive(ids, 'xdrive-live-photo.zip')"))
   assert.ok(desktop.includes('agent.cloudDownloadArchive(ids)'))
   assert.ok(port.includes('exportLivePhoto: port.exportLivePhoto'))
