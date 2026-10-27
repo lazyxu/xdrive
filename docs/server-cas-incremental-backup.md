@@ -214,6 +214,45 @@ Returned byte counts are logical bytes, not guaranteed filesystem-block
 savings. Corrupt/missing CAS, unexpected files, incomplete .partial
 generations, suspicious symlinks or lock contention fail closed.
 
+## Administrator Web / Desktop shared interface (Host-owned Server backups)
+
+The administrator's **备份与系统维护 → 服务器备份与恢复** section
+uses the existing authenticated Server API and Host Control bridge. It is
+separate from owning-device Push backups and from online CAS storage checks.
+
+- **Create**: manual v1 or v2 via the original Host backup command; v2 reuses
+  configured scheduled repository if selected, otherwise the default.
+- **Read**: Host-listed committed snapshot identities and sizes, current
+  schedule format, v1 retention days, operation status and bounded read-only
+  v2 retention previews. This initial UI lists up to 100 generations and
+  never accepts raw browser-supplied paths.
+- **Update**: revision-fenced v1/v2 scheduled format and v1 retention days.
+  Immutable snapshot objects are never edited. The original schedule is
+  retained; changing to v2 does not enable scheduled pruning.
+- **Delete**: separate explicitly confirmed v1 snapshot deletion with a
+  restricted file allowlist; v2 deletion is only the existing
+  `backup prune --keep-last N --yes` and revalidates shared CAS references.
+- **Verify / restore**: checksum validation and optional full v2 CAS hashing.
+  Restoration requires typing the exact snapshot identity and uses the
+  original Host command with mandatory pre-restore safety backup.
+  Legacy database-only snapshots are listed and remain verifiable but are
+  **not** offered as a full database-and-file restore; use the explicit
+  local `--database-only` recovery procedure instead.
+
+The API itself has neither a Docker socket nor arbitrary Host file access.
+Commands are chosen from a fixed allowlist, executed only by the existing
+Host Control daemon under its Host-owned policy and repository locks.
+Desktop uses the same MUI panel via fixed Agent IPC methods with an independent Admin role check. Agents without `admin-backups` do not advertise this capability.
+
+If the Host Control runner or current inventory is unavailable, the UI
+is disabled rather than pretending the operation succeeded.
+
+Online CAS verification/repair lives in **全局存储** and Task Center;
+a successful online health check does not prove a backup can be restored.
+Backup verification also does not replace a physical PostgreSQL and file
+recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
+is enabled by the Admin UI.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and

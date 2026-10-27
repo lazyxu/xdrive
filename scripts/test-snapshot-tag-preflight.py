@@ -19,40 +19,32 @@ assert release.index(marker) < release.index("      - name: Publish rolling snap
 assert "python3 scripts/test-snapshot-tag-preflight.py" in ci
 
 
-# Numeric-App-ID installation tokens are minted only in the trusted release
-# bundle after attestation and before public image/Release mutation. GitHub's
-# live JWT endpoint currently rejects a string-valued iss (Client ID).
+# The optional App token must be minted in the trusted release bundle,
+# after signing, and before any public image or Release mutation.
 identity = "      - name: Validate optional Snapshot publisher identity\n"
 mint = "      - name: Mint scoped Snapshot publisher token\n"
 stale = "      - name: Reject stale master snapshot before channel promotion\n"
 assert release.count(identity) == 1 and release.count(mint) == 1
 assert release.index("      - name: Cryptographically verify signed bundle before releasing") < release.index(identity)
 assert release.index(identity) < release.index(mint) < release.index(stale) < release.index(marker)
+# The Client ID may live in Repository Variables or Repository Secrets, but
+# only this trusted publisher job may read it. Do not make private-key-only
+# configuration sufficient to mint a token, and do not weaken fail-closed.
 bundle = release.split("  bundle:\n", 1)[1].split("    steps:\n", 1)[0]
-assert "SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}" in bundle
-assert bundle.count("SNAPSHOT_APP_ID:") == 1
+assert "SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID || secrets.XD_SNAPSHOT_APP_CLIENT_ID }}" in bundle
+assert bundle.count("SNAPSHOT_APP_CLIENT_ID:") == 1
 guard = release.split(identity, 1)[1].split(mint, 1)[0]
-assert "HAS_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID != '' }}" in guard
+assert "HAS_SNAPSHOT_APP_CLIENT_ID: ${{ env.SNAPSHOT_APP_CLIENT_ID != '' }}" in guard
 assert "HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}" in guard
-assert '"$HAS_SNAPSHOT_APP_ID" != "true" || "$HAS_SNAPSHOT_APP_PRIVATE_KEY" != "true"' in guard
+assert '"$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY"' in guard
 action = release.split(mint, 1)[1].split(stale, 1)[0]
-assert "if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_ID != ''" in action
+assert "if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_CLIENT_ID != ''" in action
 assert "id: snapshot_app_token" in action
-assert "XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}" in action
-assert "XD_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}" in action
-assert "run: bash scripts/ci/mint-snapshot-publisher-token.sh" in action
-assert "actions/create-github-app-token@" not in action
-helper = (root / "scripts/ci/mint-snapshot-publisher-token.sh").read_text(encoding="utf-8")
-assert '--argjson iss "$XD_SNAPSHOT_APP_ID"' in helper
-assert '"$GITHUB_REPOSITORY" != "lazyxu/xdrive"' in helper
-assert 'permissions:{contents:"write",workflows:"write"}' in helper
-assert 'select([.repositories[]?.full_name] == [$repo])' in helper
-assert "https://api.github.com/repos/$GITHUB_REPOSITORY/installation" in helper
-assert '::add-mask::%s' in helper
-revoke = release.split("      - name: Revoke scoped Snapshot publisher token\n", 1)[1]
-assert "if: always() && steps.snapshot_app_token.outputs.token != ''" in revoke
-assert "https://api.github.com/installation/token" in revoke
-assert release.index("      - name: Revoke scoped Snapshot publisher token") > release.index("      - name: Publish rolling snapshot prerelease")
+assert "uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0" in action
+assert "client-id: ${{ env.SNAPSHOT_APP_CLIENT_ID }}" in action
+assert "private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}" in action
+assert "permission-contents: write" in action and "permission-workflows: write" in action
+assert "repositories:" not in action and "owner:" not in action, "App token must default to current repository only"
 token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
 assert release.count(token) == 3, "preflight, permission probe and Snapshot publish must share token"
 assert release.count("GH_TOKEN: ${{ github.token }}") == 2, "attestation check and stable publish keep original token"

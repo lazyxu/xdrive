@@ -167,6 +167,7 @@ import {
   type AgentAdminAuditRange,
   type AgentAdminAuditRangeQuery,
   type AgentAdminStorageRequest,
+  type AgentAdminServerBackupRequest,
   type AgentAdminCreateUserInput,
   type AgentAdminUpdateUserInput,
   type AgentBackgroundTaskActiveSummary,
@@ -6810,7 +6811,7 @@ function registerIPCHandlers() {
 
   const adminStorageOperations = new Set([
     'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',
-    'cleanup-runs', 'cleanup-failures', 'cleanup-staging', 'cleanup-cache',
+    'cleanup-runs', 'cleanup-failures', 'cleanup-staging', 'cleanup-cache', 'optimization-advice',
   ])
   ipcMain.handle('agent:cloud-admin-storage', (_event, input: unknown) => runAgentAction<unknown>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -6835,6 +6836,52 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudAdminStorage(p as AgentAdminStorageRequest)
   }, false))
+  // No arbitrary Server method, Host filesystem path or shell command.
+  const validDesktopServerBackupAction = (raw: unknown): raw is AgentAdminServerBackupRequest => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+    const value = raw as Record<string, unknown>
+    const keys: Record<string, string[]> = {
+      create: ['action', 'format'], verify: ['action', 'snapshot_id', 'mode'],
+      plan: ['action', 'keep_last', 'mode'], restore: ['action', 'snapshot_id', 'confirmation'],
+      delete: ['action', 'snapshot_id', 'confirmation'],
+      prune: ['action', 'keep_last', 'confirmation'],
+      policy: ['action', 'format', 'retention_days', 'revision'],
+    }
+    const allowed = keys[String(value.action)]
+    if (!allowed || Object.keys(value).some(key => !allowed.includes(key))) return false
+    const validID = typeof value.snapshot_id === 'string' &&
+      /^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$/.test(value.snapshot_id)
+    const validFormat = value.format === 'v1' || value.format === 'v2'
+    const validKeep = Number.isSafeInteger(value.keep_last) &&
+      (value.keep_last as number) >= 1 && (value.keep_last as number) <= 1000
+    switch (value.action) {
+      case 'create': return validFormat
+      case 'verify': return validID && (value.mode === 'fast' || value.mode === 'deep')
+      case 'plan': return validKeep && (value.mode === 'fast' || value.mode === 'deep')
+      case 'restore': return validID && value.confirmation === 'RESTORE ' + value.snapshot_id
+      case 'delete': return validID && (value.snapshot_id as string).startsWith('v1:') &&
+        value.confirmation === 'DELETE ' + value.snapshot_id
+      case 'prune': return validKeep && value.confirmation === 'PRUNE ' + value.keep_last
+      case 'policy': return validFormat && Number.isSafeInteger(value.retention_days) &&
+        (value.retention_days as number) >= 0 && (value.retention_days as number) <= 3650 &&
+        typeof value.revision === 'string' && /^[a-f0-9]{64}$/.test(value.revision)
+      default: return false
+    }
+  }
+  const requireDesktopAdminBackups = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-backups')
+    return requireAgentClient()
+  }
+  ipcMain.handle('agent:cloud-admin-backups', () => runAgentAction<unknown>(async () =>
+    (await requireDesktopAdminBackups()).cloudAdminServerBackups(), false))
+  ipcMain.handle('agent:cloud-admin-backup-action', (_event, input: unknown) =>
+    runAgentAction<unknown>(async () => {
+      if (!validDesktopServerBackupAction(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid fixed administrator backup action.')
+      }
+      return (await requireDesktopAdminBackups()).cloudAdminServerBackupAction(input)
+    }, false))
   const requireDesktopAdminAudit = async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-audit')

@@ -1722,6 +1722,12 @@ function FileManager({
     }
   }, [appView, profile])
 
+  const maintenanceBackupPort = useMemo(() => ({
+    read: () => api.adminServerBackups(),
+    submit: (request: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) =>
+      api.adminServerBackupAction(request),
+  }), [api])
+
   const maintenanceUpdatePort = useMemo(() => ({
     getState: () => api.adminServerUpdate(),
     startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
@@ -2129,7 +2135,7 @@ function FileManager({
             },
             {
               key: 'admin-maintenance',
-              label: '系统维护',
+              label: '备份与系统维护',
               icon: <BuildRoundedIcon fontSize="small" />,
             },
           ],
@@ -2239,7 +2245,7 @@ function FileManager({
     overview: '主页', files: '文件', gallery: '图库', 'device-backup': '设备备份', 'remote-pull': '远程拉取',
     transfers: '任务', 'global-tasks': '全局后台任务', 'local-storage': '本地存储',
     'cloud-storage': '云端存储', 'admin-users': '用户管理',
-    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖', 'admin-maintenance': '系统维护',
+    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖', 'admin-maintenance': '备份与系统维护',
   }
 
   return (
@@ -2651,6 +2657,8 @@ function FileManager({
         ) : appView === 'admin-maintenance' && profile?.role === 'admin' ? (
           <XDriveSystemMaintenancePage
             updatePort={maintenanceUpdatePort}
+            backupPort={maintenanceBackupPort}
+            onOpenStorage={() => setAppView('admin-storage')}
             unavailableLabel="Web/API"
             initialChannel={serverBuild?.channel === 'master' ? 'master' : 'stable'}
           />

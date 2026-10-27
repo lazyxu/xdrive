@@ -1308,6 +1308,20 @@ export class XDriveApi {
     })
   }
 
+  adminServerBackups() {
+    return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupPage>(
+      '/api/v1/admin/backups', { cache: 'no-store' },
+    )
+  }
+
+  adminServerBackupAction(input: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) {
+    return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>(
+      '/api/v1/admin/backups/actions', {
+        method: 'POST', cache: 'no-store', body: JSON.stringify(input),
+      },
+    )
+  }
+
   adminServerUpdate() {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }

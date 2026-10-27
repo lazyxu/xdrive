@@ -1,0 +1,390 @@
+package api
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Server backups belong to the authenticated administrator and are executed
+// solely by the existing Host Control process. The API container never gets a
+// Docker socket, a backup directory mount or a generic command execution API.
+const backupAdminProtocol = "xdrive-backup-admin-v1"
+
+var backupAdminSnapshotID = regexp.MustCompile(`^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$`)
+
+type backupAdminSnapshot struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Format           string `json:"format"`
+	CreatedAt        string `json:"created_at"`
+	State            string `json:"state"`
+	Bytes            int64  `json:"bytes"`
+	FileDataIncluded bool   `json:"file_data_included"`
+}
+
+type backupAdminPolicy struct {
+	ScheduleFormat string `json:"schedule_format"`
+	RetentionDays  int    `json:"retention_days"`
+	Repository     string `json:"repository"`
+	Revision       string `json:"revision"`
+}
+
+type backupAdminInventory struct {
+	Protocol    string                `json:"protocol"`
+	GeneratedAt string                `json:"generated_at"`
+	Policy      backupAdminPolicy     `json:"policy"`
+	Snapshots   []backupAdminSnapshot `json:"snapshots"`
+}
+
+type backupAdminStatus struct {
+	Protocol   string `json:"protocol"`
+	State      string `json:"state"`
+	RequestID  string `json:"request_id,omitempty"`
+	Action     string `json:"action,omitempty"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
+	StartedAt  string `json:"started_at,omitempty"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	ErrorCode  string `json:"error_code,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+type backupAdminRequest struct {
+	Protocol      string `json:"protocol"`
+	RequestID     string `json:"request_id"`
+	Action        string `json:"action"`
+	SnapshotID    string `json:"snapshot_id,omitempty"`
+	Format        string `json:"format,omitempty"`
+	Mode          string `json:"mode,omitempty"`
+	KeepLast      int    `json:"keep_last,omitempty"`
+	RetentionDays int    `json:"retention_days"`
+	Revision      string `json:"revision,omitempty"`
+	Confirmation  string `json:"confirmation,omitempty"`
+	RequestedBy   string `json:"requested_by,omitempty"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type backupAdminRetention struct {
+	Mode                  string   `json:"mode"`
+	Validation            string   `json:"validation"`
+	KeepLast              int      `json:"keep_last"`
+	CommittedSnapshots    int      `json:"committed_snapshots"`
+	KeepSnapshots         []string `json:"keep_snapshots"`
+	DropCandidates        []string `json:"drop_candidates"`
+	RetainedObjects       int      `json:"retained_objects"`
+	DropOnlyObjects       int      `json:"drop_only_objects"`
+	UnreferencedObjects   int      `json:"unreferenced_objects"`
+	DropOnlyObjectBytes   int64    `json:"drop_only_object_bytes"`
+	UnreferencedBytes     int64    `json:"unreferenced_bytes"`
+	DropSnapshotBytes     int64    `json:"drop_snapshot_bytes"`
+	PotentialLogicalBytes int64    `json:"potential_logical_bytes"`
+	DeleteEnabled         bool     `json:"delete_enabled"`
+	Warning               string   `json:"warning"`
+	HashedObjects         int      `json:"hashed_objects"`
+	HashedBytes           int64    `json:"hashed_bytes"`
+}
+type backupAdminPage struct {
+	Supported bool                  `json:"supported"`
+	Message   string                `json:"message,omitempty"`
+	Inventory backupAdminInventory  `json:"inventory"`
+	Operation backupAdminStatus     `json:"operation"`
+	Retention *backupAdminRetention `json:"retention,omitempty"`
+}
+
+func readSafeBackupAdminJSON(dir, name string, maxSize int64, out any) error {
+	path := filepath.Join(dir, name)
+	st, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !st.Mode().IsRegular() || st.Size() < 1 || st.Size() > maxSize {
+		return errors.New("unsafe host backup control record")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(io.LimitReader(file, maxSize+1))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("trailing host backup control record")
+	}
+	return nil
+}
+
+func (s *Server) backupAdminState() backupAdminPage {
+	page := backupAdminPage{
+		Message: "宿主机备份控制尚未连接，操作入口已禁用。",
+		Inventory: backupAdminInventory{
+			Protocol:  backupAdminProtocol,
+			Snapshots: []backupAdminSnapshot{},
+		},
+		Operation: backupAdminStatus{Protocol: backupAdminProtocol, State: "unavailable"},
+	}
+	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
+		return page
+	}
+	dir := s.HostControlDir
+	heartbeat, err := os.Lstat(filepath.Join(dir, "heartbeat"))
+	if err != nil || !heartbeat.Mode().IsRegular() ||
+		time.Since(heartbeat.ModTime()) > 45*time.Second ||
+		time.Until(heartbeat.ModTime()) > 15*time.Second {
+		return page
+	}
+	var inventory backupAdminInventory
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-inventory.json", 128<<10, &inventory); err != nil {
+		page.Message = "宿主机尚未提供可验证的备份清单。"
+		return page
+	}
+	generated, err := time.Parse(time.RFC3339, inventory.GeneratedAt)
+	if err != nil || time.Since(generated) > 120*time.Second ||
+		time.Until(generated) > 15*time.Second || inventory.Protocol != backupAdminProtocol ||
+		len(inventory.Snapshots) > 100 ||
+		(inventory.Policy.ScheduleFormat != "v1" && inventory.Policy.ScheduleFormat != "v2") ||
+		inventory.Policy.RetentionDays < 0 || inventory.Policy.RetentionDays > 3650 ||
+		len(inventory.Policy.Revision) != 64 ||
+		strings.Trim(inventory.Policy.Revision, "0123456789abcdef") != "" {
+		page.Message = "备份清单已过期或结构不符合协议。"
+		return page
+	}
+	seen := make(map[string]bool, len(inventory.Snapshots))
+	for _, item := range inventory.Snapshots {
+		backupTime, parsedTimeErr := time.Parse(time.RFC3339, item.CreatedAt)
+		namespace := strings.SplitN(item.ID, ":", 2)[0]
+		if !backupAdminSnapshotID.MatchString(item.ID) || seen[item.ID] ||
+			(item.Format != "v1" && item.Format != "v2") ||
+			(item.Format == "v1") != (namespace == "v1") ||
+			parsedTimeErr != nil ||
+			backupTime.UTC().Format("20060102T150405Z") != strings.TrimPrefix(item.Name, "xdrive-backup-") ||
+			(item.State != "complete" && item.State != "incomplete" && item.State != "inconsistent") ||
+			item.Bytes < 0 || item.Name != strings.SplitN(item.ID, ":", 2)[1] ||
+			len(item.CreatedAt) > 64 || (item.Format == "v2" && !item.FileDataIncluded) {
+			page.Message = "备份清单包含无效或重复的快照。"
+			return page
+		}
+		seen[item.ID] = true
+	}
+	page.Supported = true
+	page.Message = ""
+	page.Inventory = inventory
+	var state backupAdminStatus
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-status.json", 4096, &state); err == nil &&
+		state.Protocol == backupAdminProtocol &&
+		(state.State == "queued" || state.State == "running" ||
+			state.State == "success" || state.State == "failed" || state.State == "idle") &&
+		len(state.Message) <= 200 && len(state.ErrorCode) <= 60 {
+		page.Operation = state
+	} else {
+		page.Operation = backupAdminStatus{Protocol: backupAdminProtocol, State: "idle"}
+	}
+	var pending backupAdminRequest
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-request.json", 2048, &pending); err == nil &&
+		pending.Protocol == backupAdminProtocol {
+		page.Operation = backupAdminStatus{
+			Protocol: backupAdminProtocol, State: "queued",
+			RequestID: pending.RequestID, Action: pending.Action,
+			SnapshotID: pending.SnapshotID, Message: "等待宿主机执行。",
+		}
+	}
+	var report backupAdminRetention
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-retention-report.json", 32<<10, &report); err == nil &&
+		report.Mode == "read_only" && report.KeepLast >= 1 && report.KeepLast <= 1000 &&
+		!report.DeleteEnabled && len(report.KeepSnapshots) <= 100 && len(report.DropCandidates) <= 100 {
+		page.Retention = &report
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "backup-admin-active.json")); err == nil &&
+		page.Operation.State != "running" {
+		// Never claim idle/success while an active operation may be in progress.
+		page.Operation.State = "running"
+		page.Operation.Message = "宿主机正在处理备份操作。"
+	}
+	return page
+}
+
+func (s *Server) adminBackupManagement(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, s.backupAdminState())
+}
+
+func validateBackupAdminRequest(request backupAdminRequest) error {
+	if request.SnapshotID != "" && !backupAdminSnapshotID.MatchString(request.SnapshotID) {
+		return errors.New("invalid backup snapshot identity")
+	}
+	switch request.Action {
+	case "create":
+		if request.Format != "v1" && request.Format != "v2" {
+			return errors.New("create requires v1 or v2")
+		}
+		if request.SnapshotID != "" || request.Confirmation != "" ||
+			request.KeepLast != 0 || request.RetentionDays != 0 || request.Revision != "" || request.Mode != "" {
+			return errors.New("unexpected create parameters")
+		}
+	case "verify":
+		if request.SnapshotID == "" || request.Mode != "fast" && request.Mode != "deep" ||
+			request.Format != "" || request.Confirmation != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("invalid verification parameters")
+		}
+	case "plan":
+		if request.KeepLast < 1 || request.KeepLast > 1000 ||
+			(request.Mode != "fast" && request.Mode != "deep") ||
+			request.SnapshotID != "" || request.Format != "" || request.Confirmation != "" ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("plan requires keep-last and fast or deep mode")
+		}
+	case "restore":
+		if request.SnapshotID == "" || request.Confirmation != "RESTORE "+request.SnapshotID ||
+			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("restore requires exact snapshot confirmation")
+		}
+	case "delete":
+		if !strings.HasPrefix(request.SnapshotID, "v1:") ||
+			request.Confirmation != "DELETE "+request.SnapshotID ||
+			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("only exact v1 snapshot deletion is supported")
+		}
+	case "prune":
+		if request.KeepLast < 1 || request.KeepLast > 1000 ||
+			request.Confirmation != fmt.Sprintf("PRUNE %d", request.KeepLast) ||
+			request.SnapshotID != "" || request.Mode != "" ||
+			request.Format != "" || request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("prune requires keep-last and exact confirmation")
+		}
+	case "policy":
+		if (request.Format != "v1" && request.Format != "v2") ||
+			request.RetentionDays < 0 || request.RetentionDays > 3650 ||
+			len(request.Revision) != 64 ||
+			strings.Trim(request.Revision, "0123456789abcdef") != "" ||
+			request.SnapshotID != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.Confirmation != "" {
+			return errors.New("invalid backup schedule settings")
+		}
+	default:
+		return errors.New("unsupported backup action")
+	}
+	return nil
+}
+
+func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2048)
+	var request backupAdminRequest
+	dec := json.NewDecoder(c.Request.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_request"})
+		return
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_request"})
+		return
+	}
+	if err := validateBackupAdminRequest(request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_request", "detail": err.Error()})
+		return
+	}
+	page := s.backupAdminState()
+	if !page.Supported {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backup_controller_unavailable"})
+		return
+	}
+	if page.Operation.State == "running" || page.Operation.State == "queued" {
+		c.JSON(http.StatusConflict, gin.H{"error": "backup_operation_in_progress"})
+		return
+	}
+	if request.Action == "policy" && request.Revision != page.Inventory.Policy.Revision {
+		c.JSON(http.StatusConflict, gin.H{"error": "backup_policy_revision_changed"})
+		return
+	}
+	if request.SnapshotID != "" {
+		found := false
+		for _, snap := range page.Inventory.Snapshots {
+			if snap.ID == request.SnapshotID &&
+				(request.Action == "verify" || snap.State == "complete") {
+				if request.Action == "restore" && !snap.FileDataIncluded {
+					c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_database_only"})
+					return
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_not_current"})
+			return
+		}
+	}
+	value := [12]byte{}
+	if _, err := rand.Read(value[:]); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "backup_request_failed"})
+		return
+	}
+	request.Protocol = backupAdminProtocol
+	request.RequestID = hex.EncodeToString(value[:])
+	request.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	if user, ok := currentUser(c); ok {
+		request.RequestedBy = user.Username
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "backup_request_failed"})
+		return
+	}
+	dir := s.HostControlDir
+	temp, err := os.CreateTemp(dir, ".backup-admin-request-*.tmp")
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backup_request_failed"})
+		return
+	}
+	defer os.Remove(temp.Name())
+	if err := temp.Chmod(0660); err == nil {
+		_, err = temp.Write(append(raw, '\n'))
+	}
+	if err == nil {
+		err = temp.Sync()
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Link(temp.Name(), filepath.Join(dir, "backup-admin-request.json"))
+	}
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			c.JSON(http.StatusConflict, gin.H{"error": "backup_operation_in_progress"})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backup_request_failed"})
+		}
+		return
+	}
+	if s.DB != nil {
+		s.recordAuditBestEffort(c, auditEventFromContext(c,
+			"admin.backup."+request.Action, "server_backup",
+			request.SnapshotID, request.SnapshotID, "success",
+			map[string]any{"request_id": request.RequestID,
+				"keep_last": request.KeepLast, "format": request.Format}))
+	}
+	c.JSON(http.StatusAccepted, backupAdminStatus{
+		Protocol: backupAdminProtocol, State: "queued",
+		RequestID: request.RequestID, Action: request.Action,
+		SnapshotID: request.SnapshotID, Message: "等待宿主机执行。",
+	})
+}

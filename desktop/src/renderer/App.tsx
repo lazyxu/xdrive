@@ -726,6 +726,18 @@ export default function App({
     startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
+  const maintenanceBackupPort = useMemo<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPort>(() => ({
+    read: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBackups()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    submit: async request => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBackupAction(request)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  }), [status?.server, status?.username])
   const cloudFilesPort = useMemo<XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>>(() => ({
     getRoot: async () => {
       const result = await window.xdriveDesktop.agent.cloudRoot()
@@ -2224,7 +2236,7 @@ export default function App({
             { key: 'admin-audit', label: '审计日志', icon: <AssessmentRoundedIcon fontSize="small" /> },
             { key: 'admin-storage', label: '全局存储', icon: <StorageRoundedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
-            { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
+            { key: 'admin-maintenance', label: '备份与系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
           ],
         }]
       : []),
@@ -3186,6 +3198,8 @@ export default function App({
         {view === 'admin-maintenance' && status?.role === 'admin' && (
           <XDriveSystemMaintenancePage
             updatePort={serverUpdatePort}
+            backupPort={agent.hello?.capabilities.includes('admin-backups') ? maintenanceBackupPort : undefined}
+            onOpenStorage={() => setView('admin-storage')}
             supported={serverUpdateSupported}
             unavailableLabel="服务端与 Desktop"
             unsupportedMessage="当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。"
