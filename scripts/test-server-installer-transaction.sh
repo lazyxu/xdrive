@@ -73,6 +73,18 @@ emit() {
 }
 
 case "$url" in
+  */releases/download/snapshot/SHA256SUMS.txt)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/SHA256SUMS.txt" "$out"
+    ;;
+  */releases/download/snapshot/xdrive-caddy-image.id)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/image.id" "$out"
+    ;;
+  */releases/download/snapshot/xdrive-caddy-image.tar.gz)
+    [[ -n "${TEST_CADDY_RELEASE_FIXTURE:-}" ]] || exit 22
+    cp "$TEST_CADDY_RELEASE_FIXTURE/image.tar.gz" "$out"
+    ;;
   */git/ref/tags/snapshot)
     emit '{
   "ref": "refs/tags/snapshot",
@@ -186,12 +198,34 @@ if [[ "$1" == "inspect" ]]; then
 fi
 
 if [[ "$1" == "image" && "${2:-}" == "inspect" ]]; then
-  [[ "${TEST_TARGET_IMAGE_PRESENT:-0}" == "1" ]] && exit 0
+  ref="${3:-}"
+  [[ "$ref" == "--format" ]] && ref="${5:-}"
+  if [[ "$args" == *"--format"* ]]; then
+    if [[ "$args" == *"org.opencontainers.image.version"* ]]; then
+      printf 'snapshot\n'
+    else
+      printf 'sha256:%064d\n' 0
+    fi
+    exit 0
+  fi
+  if [[ "${TEST_TARGET_IMAGE_PRESENT:-0}" == 1 && "$ref" == *"/xdrive-server:sha-0123456789ab" ]]; then
+    exit 0
+  fi
+  grep -Fxq -- "$ref" "$TEST_STATE/cached-images" 2>/dev/null && exit 0
   exit 1
 fi
 
 if [[ "$1" == "pull" ]]; then
-  [[ "${TEST_TARGET_PULL_FAIL:-0}" == "1" ]] && exit 1
+  [[ "${TEST_TARGET_PULL_FAIL:-0}" == 1 ]] && exit 1
+  printf '%s\n' "${2:-}" >> "$TEST_STATE/cached-images"
+  exit 0
+fi
+if [[ "$1" == "load" && "${2:-}" == "-i" ]]; then
+  printf 'xdrive/caddy:test\n' >> "$TEST_STATE/cached-images"
+  exit 0
+fi
+if [[ "$1" == "tag" && "${2:-}" == "xdrive/caddy:test" ]]; then
+  printf '%s\n' "${3:-}" >> "$TEST_STATE/cached-images"
   exit 0
 fi
 
@@ -235,7 +269,12 @@ case "$1" in
     count=$((count + 1))
     printf '%s\n' "$count" > "$count_file"
     mode="${TEST_PULL_MODE:-success}"
-    if [[ "$mode" == "permanent" || ( "$mode" == "transient" && "$service" == "postgres" && "$count" -lt 3 ) ]]; then
+    if [[ "$mode" == "caddy-permanent" && "$service" == "caddy" ]]; then
+      echo 'failed to copy: Get "https://pkg-containers.githubusercontent.com/ghcrblobs02/blob?sig=never-print": net/http: TLS handshake timeout' >&2
+      exit 1
+    fi
+    if [[ "$mode" == "permanent" ||
+        ( "$mode" == "transient" && "$service" == "postgres" && "$count" -lt 3 ) ]]; then
       echo "failed to copy: read tcp: connection reset by peer" >&2
       exit 1
     fi
@@ -289,6 +328,15 @@ case "$1" in
       /usr/bin/sleep 3
       exit 1
     fi
+    case "$service" in
+      postgres) image_ref="postgres:17-alpine" ;;
+      server) image_ref="ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ;;
+      caddy) image_ref="ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab" ;;
+      photo-face) image_ref="ghcr.io/lazyxu/xdrive-photo-face:sha-0123456789ab" ;;
+      media-worker) image_ref="ghcr.io/lazyxu/xdrive-media-worker:sha-0123456789ab" ;;
+      *) image_ref="unknown" ;;
+    esac
+    printf '%s\n' "$image_ref" >> "$TEST_STATE/cached-images"
     if [[ "$progress_mode" == "json" ]]; then
       printf '%s\n' \
         '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}' \
@@ -393,6 +441,18 @@ grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
 grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
 grep -q 'pull postgres.*4.0 KiB / 4.0 KiB (100%)' "$TMP/upgrade.out"
+grep -q 'reported layer bytes complete; waiting for Docker image readiness' "$TMP/upgrade.out"
+# All target images must be pulled before stopping the old gateway.
+first_stop_line="$(grep -n '^stop xdrive-caddy' "$TMP/state/docker-calls" | head -n1 | cut -d: -f1)"
+[[ -n "$first_stop_line" ]]
+for service in postgres server caddy; do
+  pull_line="$(grep -nE " --progress json pull $service$" "$TMP/state/docker-calls" | head -n1 | cut -d: -f1)"
+  [[ -n "$pull_line" && "$pull_line" -lt "$first_stop_line" ]] || {
+    echo "target $service download happened after the old gateway was stopped" >&2
+    exit 1
+  }
+  grep -q "pull $service skipped: same image prepared before maintenance" "$TMP/upgrade.out"
+done
 test -x "$TMP/config/bin/xdrive-server"
 test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
@@ -663,7 +723,7 @@ grep -q 'pull server complete.' "$TMP/incremental-success.out"
 # any new application container or migration is started. Rollback must restore
 # the old deployment without a database restore and must keep the host manager
 # available for another xdrive-server update.
-rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored"
+rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored" "$TMP/state/cached-images" "$TMP/state/docker-calls"
 set +e
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=permanent \
@@ -684,7 +744,11 @@ test ! -f "$TMP/state/pull-count-server"
 test ! -f "$TMP/state/pull-count-web"
 test ! -f "$TMP/state/pull-count-photo-face"
 grep -q 'pull postgres failed after 3 attempts' "$TMP/pull-fail.err"
-grep -q 'database restore not required for this failure point' "$TMP/pull-fail.err"
+grep -q 'rollback: image preflight failed before maintenance; leaving all running containers untouched' "$TMP/pull-fail.err"
+if grep -q '^stop ' "$TMP/state/docker-calls"; then
+  echo "prefetch failure stopped the existing application" >&2
+  exit 1
+fi
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
 test ! -f "$TMP/state/data-restored"
 grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
@@ -697,8 +761,105 @@ test -x "$TMP/config/bin/xdrive-server"
 test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
 test ! -e "$TMP/host-bin/xdrive-server"
-grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
+# Pre-maintenance failures retain manager without entering the disruptive rollback path.
+grep -q 'leaving all running containers untouched' "$TMP/pull-fail.err"
 
+
+
+# CDN/TLS failure on just the Caddy image must not stop the old edge.
+cp -a "$TMP/config" "$TMP/caddy-preflight-fail-config"
+mkdir -p "$TMP/caddy-preflight-fail-state"
+set +e
+TEST_STATE="$TMP/caddy-preflight-fail-state" \
+TEST_PULL_MODE=caddy-permanent \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/caddy-preflight-fail-config" \
+XD_SHELL_RC_PATH="$TMP/caddy-preflight-fail.bashrc" \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_NONINTERACTIVE=1 \
+bash "$INSTALLER" --channel master >"$TMP/caddy-preflight-fail.out" 2>"$TMP/caddy-preflight-fail.err"
+caddy_preflight_status=$?
+set -e
+[[ "$caddy_preflight_status" -ne 0 ]]
+[[ "$(cat "$TMP/caddy-preflight-fail-state/pull-count-caddy")" == 3 ]]
+grep -q 'prefetch caddy failed; the old runtime has not been stopped' "$TMP/caddy-preflight-fail.err"
+grep -q 'Docker registry/CDN TLS handshake timed out' "$TMP/caddy-preflight-fail.err"
+if grep -q 'sig=never-print' "$TMP/caddy-preflight-fail.err"; then
+  echo "signed CDN query leaked into public installer error output" >&2
+  exit 1
+fi
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/caddy-preflight-fail.err"
+if grep -Eq '(^stop | up -d| --force-recreate)' "$TMP/caddy-preflight-fail-state/docker-calls"; then
+  echo "Caddy CDN failure touched the existing runtime" >&2
+  exit 1
+fi
+test ! -e "$TMP/caddy-preflight-fail-state/backup-images"
+grep -q '^old-compose$' "$TMP/caddy-preflight-fail-config/config/docker-compose.yml"
+grep -q '^XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold$' "$TMP/caddy-preflight-fail-config/config/.env"
+
+# The GitHub Release archive is bound to this exact installer and must be
+# checked before docker load. A signed manifest of a newer Snapshot is refused.
+fixture="$TMP/caddy-release-fixture"
+mkdir -p "$fixture"
+printf 'mock validated Docker-save archive\n' | gzip -1 > "$fixture/image.tar.gz"
+printf 'sha256:%064d\n' 0 > "$fixture/image.id"
+{
+  printf '%s  xdrive-server-install.sh\n' "$(sha256sum "$INSTALLER" | awk '{print $1}')"
+  printf '%s  xdrive-caddy-image.tar.gz\n' "$(sha256sum "$fixture/image.tar.gz" | awk '{print $1}')"
+  printf '%s  xdrive-caddy-image.id\n' "$(sha256sum "$fixture/image.id" | awk '{print $1}')"
+} > "$fixture/SHA256SUMS.txt"
+
+for scenario in caddy-release-success caddy-release-wrong-installer caddy-release-bad-archive; do
+  scenario_config="$TMP/$scenario-config"
+  scenario_state="$TMP/$scenario-state"
+  scenario_fixture="$TMP/$scenario-fixture"
+  cp -a "$TMP/config" "$scenario_config"
+  cp -a "$fixture" "$scenario_fixture"
+  mkdir -p "$scenario_state"
+  sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$scenario_config/.env" "$scenario_config/config/.env"
+  case "$scenario" in
+    caddy-release-wrong-installer)
+      sed -i "s/^[0-9a-f]\{64\}  xdrive-server-install.sh/$(printf '%064d' 0)  xdrive-server-install.sh/" "$scenario_fixture/SHA256SUMS.txt"
+      ;;
+    caddy-release-bad-archive)
+      printf 'corrupt download\n' > "$scenario_fixture/image.tar.gz"
+      ;;
+  esac
+  set +e
+  TEST_STATE="$scenario_state" \
+  TEST_PULL_MODE=caddy-permanent \
+  TEST_CADDY_RELEASE_FIXTURE="$scenario_fixture" \
+  TEST_HEALTH_OK=1 \
+  XD_UPGRADE_BACKUP_VERIFIER=legacy \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$scenario_config" \
+  XD_SHELL_RC_PATH="$TMP/$scenario.bashrc" \
+  XD_PULL_ATTEMPTS=3 \
+  XD_PULL_RETRY_DELAY_SECONDS=0 \
+  XD_NONINTERACTIVE=1 \
+  bash "$INSTALLER" --channel master >"$TMP/$scenario.out" 2>"$TMP/$scenario.err"
+  scenario_status=$?
+  set -e
+  [[ "$(cat "$scenario_state/pull-count-caddy")" == 3 ]]
+  if [[ "$scenario" == caddy-release-success ]]; then
+    [[ "$scenario_status" == 0 ]]
+    grep -q 'Caddy restored from SHA-256 verified GitHub Release archive' "$TMP/$scenario.out"
+    grep -q '^load -i ' "$scenario_state/docker-calls"
+    grep -q '^tag xdrive/caddy:test ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab$' "$scenario_state/docker-calls"
+    load_line="$(grep -n '^load -i ' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    stop_line="$(grep -n '^stop xdrive-caddy' "$scenario_state/docker-calls" | head -n1 | cut -d: -f1)"
+    [[ -n "$stop_line" && "$load_line" -lt "$stop_line" ]]
+  else
+    [[ "$scenario_status" != 0 ]]
+    if grep -Eq '^stop |^load -i ' "$scenario_state/docker-calls"; then
+      echo "invalid Caddy archive caused Docker load or service stop" >&2
+      exit 1
+    fi
+    grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/$scenario.err"
+  fi
+done
 
 # Default target-first verification: the pinned target is acquired before
 # stopping Caddy and used directly, without running the legacy validator.

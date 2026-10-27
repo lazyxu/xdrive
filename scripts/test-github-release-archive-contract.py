@@ -24,6 +24,8 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
     windows = release / "xdrive-backup-windows-amd64.zip"
     linux.write_bytes(b"fixture-linux-cli")
     windows.write_bytes(b"fixture-windows-cli")
+    (release / "xdrive-caddy-image.tar.gz").write_bytes(b"fixture-caddy-archive")
+    (release / "xdrive-caddy-image.id").write_bytes(("sha256:" + "0" * 64 + "\n").encode())
     (release / "xdrive-linux-amd64.deb").write_bytes(b"fixture-direct-installer")
 
     def verify(expected_success: bool, scenario: str) -> None:
@@ -33,7 +35,11 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
             f"exit={result.returncode}, stdout={result.stdout}, stderr={result.stderr}"
         )
 
-    verify(True, "exact two CLI packages and direct installer")
+    assert "name: xdrive-caddy-image" in bundle
+    assert "cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz" in bundle
+    assert "xdrive-caddy-image.tar.gz \\" in bundle
+    assert "xdrive-caddy-image.id \\" in bundle
+    verify(True, "two CLI archives and exact signed Caddy image archive")
     for name in ("other.zip", "other.tar.gz", "other.tgz", ".hidden.zip", "xdrive-desktop-amd64.zip"):
         extra = release / name
         extra.write_bytes(b"unexpected archive")
@@ -52,6 +58,15 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
     windows.unlink()
     windows.write_bytes(b"fixture-windows-cli")
     verify(True, "restore Windows CLI")
+    caddy = release / "xdrive-caddy-image.tar.gz"
+    caddy.unlink()
+    verify(False, "reject missing Caddy image archive")
+    caddy.write_bytes(b"fixture-caddy-archive")
+    verify(True, "restore Caddy image archive")
+    image_id = release / "xdrive-caddy-image.id"
+    image_id.unlink()
+    verify(False, "reject missing Caddy image identity")
+    image_id.write_bytes(("sha256:" + "0" * 64 + "\n").encode())
     verify(True, "final valid distribution")
 
 print("GitHub Snapshot exact Backup CLI archive allowlist: passed")
