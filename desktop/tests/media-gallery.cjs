@@ -440,7 +440,7 @@ test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => 
 
   assert.ok(sharedGalleryFilmstrip.includes('data-xdrive-gallery-filmstrip'))
   assert.match(webApp, /shareDialog=\{\{[\s\S]*adapter: shareDialogAdapter[\s\S]*expiryMode: 'datetime'/)
-  assert.match(desktopApp, /shareDialog=\{\{[\s\S]*adapter: desktopShareDialogAdapter[\s\S]*expiryMode: 'days'/)
+  assert.match(desktopApp, /shareDialog:\s*\{[\s\S]*adapter: desktopShareDialogAdapter[\s\S]*expiryMode: 'days'/)
   assert.match(sharedGalleryMain, /<XDriveShareDialog[\s\S]*adapter=\{shareDialog\.adapter\}/)
   assert.equal(sharedGalleryViewer.includes('createShare'), false, 'Viewer must not create a parallel share implementation')
 })
