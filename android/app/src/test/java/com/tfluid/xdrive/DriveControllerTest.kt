@@ -901,6 +901,148 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun filesAudioOpensOwnerRangeAndBackClosesWithoutReloadingRows() = runTest {
+        val audio = DriveNode(91, 1, "song.mp3", "file", 6, revision = 4)
+        val api = object : Service() {
+            var started = 0
+            var closed = 0
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+                assertEquals("access", accessToken)
+                assertEquals(audio, node)
+                started++
+                return OwnerVideoPlayback("https://fixture.invalid/api/v1/files/91/content",
+                    okhttp3.OkHttpClient(), node.size) { closed++ }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset) }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val oldRows = c.state.value.items
+        val oldCalls = api.calls.toList()
+        c.open(audio)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        val source = c.openFilesAudioPlayback(audio)
+        assertNotNull(source)
+        assertEquals(1, api.started)
+        c.back()
+        assertNull(c.state.value.filesAudioViewer)
+        assertEquals(1, api.closed)
+        c.closeGalleryVideoPlayback(requireNotNull(source))
+        assertEquals(1, api.closed)
+        assertEquals(oldRows, c.state.value.items)
+        assertEquals(oldCalls, api.calls)
+        c.close()
+    }
+
+    @Test fun filesAudioRetryIgnoresNonCooperativePreviousOwnerStream() = runTest {
+        val audio = DriveNode(99, 1, "retry.mp3", "file", 8, revision = 2)
+        val firstGate = CompletableDeferred<Unit>()
+        var opened = 0
+        val closed = mutableListOf<Int>()
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+                OwnerVideoPlayback {
+                opened++
+                val requestNumber = opened
+                if (requestNumber == 1) withContext(NonCancellable) {
+                    firstGate.await()
+                }
+                return OwnerVideoPlayback(
+                    "https://fixture.invalid/api/v1/files/99/content",
+                    okhttp3.OkHttpClient(), node.size,
+                ) { closed += requestNumber }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(audio)
+        val stale = async { c.openFilesAudioPlayback(audio) }
+        runCurrent()
+        assertEquals(1, opened)
+        val current = requireNotNull(c.openFilesAudioPlayback(audio))
+        assertEquals(2, opened)
+        // Deliberately complete the older, uncooperative GET after retry.
+        firstGate.complete(Unit); runCurrent()
+        assertTrue(stale.isCancelled)
+        assertEquals(listOf(1), closed) // Old stream released, current stays live.
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        c.back()
+        assertEquals(listOf(1, 2), closed)
+        c.closeGalleryVideoPlayback(current) // Idempotent close.
+        assertEquals(listOf(1, 2), closed)
+        c.close()
+    }
+
+    @Test fun oldOwnerAudioStreamCannotAppearAfterLogout() = runTest {
+        val audio = DriveNode(91, 1, "song.mp3", "file", 6, revision = 4)
+        val gate = CompletableDeferred<Unit>()
+        var releases = 0
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+                OwnerVideoPlayback = withContext(NonCancellable) {
+                gate.await()
+                OwnerVideoPlayback("https://fixture.invalid/files/91", okhttp3.OkHttpClient(),
+                    node.size) { releases++ }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset) }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(audio)
+        val pending = async { c.openFilesAudioPlayback(audio) }
+        runCurrent()
+        c.logout()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        assertEquals(1, releases)
+        assertNull(c.state.value.filesAudioViewer)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        c.close()
+    }
+
+    @Test fun oneFilesOwnerCanOpenPdfThenAudioWithoutLosingOwnerRows() = runTest {
+        val pdf = DriveNode(97, 1, "paper.pdf", "file", 8, revision = 2)
+        val audio = DriveNode(98, 1, "voice.mp3", "file", 8, revision = 3)
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode) =
+                OwnerVideoPlayback("https://fixture.invalid/files/98", okhttp3.OkHttpClient(),
+                    node.size)
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf, audio) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val first = c.state.value.items.toList()
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertNull(c.state.value.filesAudioViewer)
+        c.open(audio) // A stale/offscreen row cannot open a second Viewer.
+        assertNull(c.state.value.filesAudioViewer)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        c.open(audio)
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        assertNull(c.state.value.filesPdfViewer)
+        c.open(pdf) // A new PDF can't replace audio before its resource closes.
+        assertNull(c.state.value.filesPdfViewer)
+        val playback = c.openFilesAudioPlayback(audio)
+        assertNotNull(playback)
+        c.back()
+        assertNull(c.state.value.filesAudioViewer)
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(first, c.state.value.items)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        c.close()
+    }
+
     @Test fun filesMediaUsesGalleryViewerAndBackReturnsExactLoadedBrowse() = runTest {
         val photo = DriveNode(91, 1, "family.jpg", "file", 5, revision = 4)
         val api = object : Service() {

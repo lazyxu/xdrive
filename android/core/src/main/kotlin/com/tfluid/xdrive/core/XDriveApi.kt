@@ -256,6 +256,10 @@ interface XDriveService {
         throw ApiException(501, "Gallery Owner kind filter unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
+    /** Read-only audio: same Range/ETag/Bearer transport as native video,
+     * but the current file must first be re-verified against the Owner tree. */
+    suspend fun filesAudioPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
+        throw ApiException(501, "Native Owner audio unavailable")
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
     fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
         throw ApiException(501, "Native Owner video unavailable")
@@ -1008,6 +1012,22 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             return groups
         }
         return GalleryTimelineSets(groups("year"), groups("month"), groups("day"))
+    }
+
+    /** A private audio session must never trust stale Files rows or redirect
+     * Media3 to a second host. Reuse the existing exact-URL, Bearer, ETag
+     * and bounded Range checks already exercised for native Gallery video. */
+    override suspend fun filesAudioPlayback(
+        accessToken: String, original: DriveNode,
+    ): OwnerVideoPlayback {
+        require(original.id > 0 && original.parentId != null &&
+            original.type == "file" && original.size > 0 &&
+            original.revision > 0 && validToken(accessToken))
+        val latest = node(request("nodes/${original.id}", accessToken))
+        if (latest != original) invalidPayload()
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/files/" + original.id + "/content").build()
+        return ownerVideoPlayback(http, url, accessToken, original)
     }
 
     /** Existing versioned Owner content endpoint supports HTTP Range. */

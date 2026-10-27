@@ -82,6 +82,27 @@ test('C20 authentic Server count and complete 64-bin DTO validation; reject fake
   assert.equal(cells.xDriveValidBaiduNativeCellsPage(page(sixtyfour),bounds),true)
   assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([...sixtyfour,original]),bounds),false)
 })
+test('C20 trusted map Cells accept only authenticated image/video representative kinds',()=>{
+  const video={...original,node_revision:7,media_kind:'video'}
+  const still={...original,node_revision:7,media_kind:'image'}
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([video]),bounds),true)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([still]),bounds),true)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(page([original]),bounds),true,
+    'old Cells payloads remain accepted during Client/Server rolling updates')
+  for(const invalid of ['audio','live_photo','text','video/mp4','',null,0]){
+    assert.equal(cells.xDriveValidBaiduNativeCellsPage(
+      page([{...video,media_kind:invalid}]),bounds),false)
+  }
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(
+    page([{...video,media_url:'https://attacker.example/video.mp4'}]),bounds),false)
+  const server=read('internal/api/baidu_photo_map_cells.go')
+  const frame=read('ui/shared/src/media-gallery-baidu-isolated-frame-host.ts')
+  const child=read('deploy/baidu-isolated-child/child.js')
+  assert.match(server,/m\.media_kind AS media_kind/)
+  assert.match(server,/cell\.MediaKind != meta\.MediaKindImage/)
+  assert.match(frame,/reduced\.push\(\{ key, latitude: cell\.latitude, longitude: cell\.longitude,/)
+  assert.doesNotMatch(child,/media_kind|node_id|PhotoAsset|loadThumbnail/)
+})
 test('C20 true count uses official JSAPI4 Labels; clicks, revoke and stale bubble cleanup',()=>{
   const f=nativeFixture()
   const ctl=new cells.XDriveBaiduJSAPI4NativeCellOverlays(f.map,{Point:f.Point,Label:f.Label},

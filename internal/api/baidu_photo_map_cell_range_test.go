@@ -251,6 +251,21 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	if err != nil || summary.TotalCount != 3 || len(summary.Items) != 2 {
 		t.Fatalf("owner map cells=%+v %v", summary, err)
 	}
+	for _, cell := range summary.Items {
+		if cell.MediaKind != meta.MediaKindImage && cell.MediaKind != meta.MediaKindVideo {
+			t.Fatalf("untrusted Owner map representative kind: %+v", cell)
+		}
+	}
+	// A video-only subset must return the real Owner-authenticated kind,
+	// not infer it from an SDK point, guessed MIME or arbitrary filename.
+	videoNodes := db.Model(&meta.Node{}).Select("id").
+		Where("id = ? AND owner_id = ?", n2.ID, alice.ID)
+	videoOnly, err := queryBaiduPhotoMapCellsScoped(
+		context.Background(), db, alice.ID, bounds, videoNodes, mediaQueryOptions{})
+	if err != nil || videoOnly.TotalCount != 1 || len(videoOnly.Items) != 1 ||
+		videoOnly.Items[0].NodeID != n2.ID || videoOnly.Items[0].MediaKind != meta.MediaKindVideo {
+		t.Fatalf("video-only Owner map cover kind invalid: %+v err=%v", videoOnly, err)
+	}
 	var target baiduPhotoMapCellSelection
 	for _, c := range summary.Items {
 		if c.PhotoCount == 2 {

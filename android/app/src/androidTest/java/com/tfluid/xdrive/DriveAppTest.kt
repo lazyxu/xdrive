@@ -59,6 +59,10 @@ class DriveAppTest {
     private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
     private var filesViewerFixture = false
+    private var filesAudioFixture = false
+    private val filesAudioNode = DriveNode(50, 1, "music.mp3", "file", size = 40, revision = 3)
+    private var filesAudioSessions = 0
+    private var filesAudioClosures = 0
     private var filesPdfFixture = false
     private var filesPdfReads = 0
     private val filesPdfFixtureBytes: ByteArray by lazy {
@@ -186,6 +190,17 @@ class DriveAppTest {
             openDestination().use { it.write(filesPdfFixtureBytes) }
             onProgress(filesPdfFixtureBytes.size.toLong())
             return filesPdfFixtureBytes.size.toLong()
+        }
+        override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+            OwnerVideoPlayback {
+            check(filesAudioFixture && accessToken == "fixture" && node == filesAudioNode)
+            filesAudioSessions++
+            return OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/files/50/content",
+                okhttp3.OkHttpClient.Builder().addInterceptor {
+                    throw java.io.IOException("Fixture deliberately has no MP3 bytes")
+                }.build(), node.size,
+            ) { filesAudioClosures++ }
         }
         override suspend fun filesMediaItem(
             accessToken: String, node: DriveNode,
@@ -371,6 +386,7 @@ class DriveAppTest {
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) mutableRootRows.toList() +
                     (if (batchTransferFixture) listOf(batchSecondFile) else emptyList()) +
+                    (if (filesAudioFixture) listOf(filesAudioNode) else emptyList()) +
                     (if (filesPdfFixture) listOf(filesPdfNode) else emptyList()) +
                     (if (filesViewerFixture) listOf(filesViewerNode) else emptyList()) +
                     (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
@@ -1214,6 +1230,28 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             dir.listFiles().orEmpty().none { it.name.startsWith("preview-") &&
                 it.name.endsWith(".pdf") }
+        }
+    }
+
+    @Test fun filesAudioUsesNativeMedia3AndReturnsToOriginalFilesWithoutRefreshing() {
+        filesAudioFixture = true
+        startAndLogin()
+        val before = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-50").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == filesAudioNode
+        }
+        compose.onNodeWithTag("files-audio-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) { filesAudioSessions == 1 }
+        compose.onNodeWithTag("files-audio-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == null &&
+                filesAudioClosures == 1
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithTag("files-item-50").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(before, controller.state.value.path.map { it.id })
         }
     }
 

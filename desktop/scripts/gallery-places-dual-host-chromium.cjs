@@ -1381,6 +1381,89 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Real browser accessibility and color-scheme semantics for the SAME mounted
+// trusted Owner React map, in inline and independent HTTPS Child SDK modes.
+// This is controlled Chromium (not physical VoiceOver/Safari certification).
+async function testMapKeyboardAppearance(browser,mode,scheme,port){
+  const dark=scheme==='dark'
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',colorScheme:scheme,
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try {
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&ui_scheme='+scheme,{waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>window.__mapProbe?.ready===true)
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.getByRole('button',{name:'查看该区域 9 张照片'}).first()
+    await cover.waitFor({state:'visible'})
+    const region=page.getByRole('region',{name:'定位照片聚集地图'})
+    const photoNav=page.getByRole('navigation',{name:'浏览地图当前聚合区域照片'})
+    await region.waitFor({state:'visible'})
+    await photoNav.waitFor({state:'visible'})
+    const mobile=await page.evaluate(()=>{
+      const map=document.querySelector('[data-xdrive-places-cluster-overview]')
+      const cover=document.querySelector('[data-xdrive-places-trusted-photo-cover]')
+      const nav=document.querySelector('[data-xdrive-places-photo-collection-strip]')
+      const button=document.querySelector('[data-xdrive-places-collection-thumb]')
+      const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
+      const bounds=map?.getBoundingClientRect()
+      const target=cover?.getBoundingClientRect()
+      const action=button?.getBoundingClientRect()
+      return {mapBottom:bounds?.bottom,coverWidth:target?.width,
+        coverHeight:target?.height,stripWidth:action?.width,
+        stripHeight:action?.height,nav:Boolean(nav),
+        badge:badge?getComputedStyle(badge).backgroundColor:null,
+        ownerQueries:window.__mapProbe.queries.every(q=>q.albumKey===''&&!q.favorite)}
+    })
+    record(mode+': '+scheme+' 390px accessible map and >=44px cover targets',
+      await region.count()===1 && await photoNav.count()===1 &&
+      mobile.mapBottom<=844-8 && mobile.coverWidth>=44 &&
+      mobile.coverHeight>=44&&mobile.stripWidth>=44&&mobile.stripHeight>=44&&
+      mobile.nav&&mobile.ownerQueries)
+    record(mode+': '+scheme+' iOS blue map count has correct light/dark theme',
+      mobile.badge===(dark?'rgb(10, 132, 255)':'rgb(0, 122, 255)'))
+    // On landscape iPhone heights, the same trusted Parent cannot force a
+    // 640px desktop minimum that moves keyboard/VoiceOver content offscreen.
+    await page.setViewportSize({width:844,height:390})
+    const landscape=await region.evaluate(element=>{
+      const bounds=element.getBoundingClientRect()
+      return {bottom:bounds.bottom,height:bounds.height}
+    })
+    record(mode+': '+scheme+' 844x390 landscape map stays within safe viewport',
+      landscape.height>=180&&landscape.bottom<=390-8)
+    await page.setViewportSize({width:390,height:844})
+    await cover.focus()
+    const focused=await cover.evaluate(element=>document.activeElement===element)
+    await cover.press('Enter')
+    const drawer=page.getByRole('region',{name:'当前位置的照片'})
+    await drawer.waitFor({state:'visible'})
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const photos=await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()
+    record(mode+': '+scheme+' map cover keyboard Enter opens the signed 9-photo drawer',
+      focused&&photos===9&&errors.length===0)
+    await page.getByRole('button',{name:'关闭照片抽屉'}).click()
+    await drawer.waitFor({state:'hidden'})
+    const stripButton=photoNav.getByRole('button',{name:/查看区域 .* 的 9 张照片/}).first()
+    await stripButton.waitFor({state:'visible'})
+    await stripButton.focus()
+    await stripButton.press('Enter')
+    await drawer.waitFor({state:'visible'})
+    record(mode+': '+scheme+' lower photo strip keyboard Enter reopens Owner drawer',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===9&&
+      errors.length===0)
+  }finally{await context.close()}
+}
+
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -1473,6 +1556,10 @@ async function main(){
       await testDelayedBD09Map(browser,'isolated',port)
       await testOwnerCellsFailureRetry(browser,'inline',port)
       await testOwnerCellsFailureRetry(browser,'isolated',port)
+      for(const scheme of ['light','dark']){
+        await testMapKeyboardAppearance(browser,'inline',scheme,port)
+        await testMapKeyboardAppearance(browser,'isolated',scheme,port)
+      }
     }
     if(ginURL){
       const inlinePage=await testFullGalleryPage(browser,'inline',port)

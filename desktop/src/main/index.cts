@@ -7255,7 +7255,13 @@ function registerIPCHandlers() {
     }), false),
   )
 
-  ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
+  ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown, clientRequestID?: unknown) => {
+    // A Desktop Viewer may opt into exact Task Center correlation. Validate
+    // BEFORE showing a save dialog; no path, token, or filename is a receipt.
+    if (clientRequestID !== undefined &&
+        (typeof clientRequestID !== 'string' || !/^[0-9a-f]{32}$/.test(clientRequestID))) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Invalid download correlation identifier.' } }
+    }
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
         typeof name !== 'string' || !name.trim()) {
       return { ok: false, error: { code: 'invalid_input', message: 'File id and name are required.' } }
@@ -7277,7 +7283,11 @@ function registerIPCHandlers() {
       if (selected.canceled || !selected.filePath) {
         return { ok: true, data: { saved: false } }
       }
-      await requireAgentClient().cloudDownload(id, selected.filePath)
+      if (clientRequestID) {
+        await requireAgentClient().cloudDownloadWithClientRequestID(id, selected.filePath, clientRequestID)
+      } else {
+        await requireAgentClient().cloudDownload(id, selected.filePath)
+      }
       return { ok: true, data: { saved: true } }
     } catch (error) {
       return { ok: false, error: agentError(error) }

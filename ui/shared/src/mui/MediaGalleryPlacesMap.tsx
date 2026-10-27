@@ -23,7 +23,7 @@ import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
+  listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
@@ -40,6 +40,8 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
+  loadPhotoCoverPreviewURL?: import('./MediaGallery').MediaPreviewURLLoader
+  savePhotoCoverVideoPoster?: import('./MediaGallery').MediaVideoPosterSaver
   getBaiduMapCoverage?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverage']
   getBaiduMapCoverageReasons?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverageReasons']
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
@@ -533,6 +535,8 @@ export function XDriveMediaGalleryPlacesMap({
           mintChildTicket={mintBaiduIsolatedChildTicket}
           listOwnerCells={listBaiduNativeCells} listOwnerCellItems={listBaiduNativeCellItems}
           loadThumbnail={loadPhotoCoverThumbnail}
+          loadPreviewURL={loadPhotoCoverPreviewURL}
+          saveVideoPoster={savePhotoCoverVideoPoster}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}
           onOpenCellPhoto={onOpenBaiduNativeCellPhoto}
           onOpenViewport={onOpenBaiduNativeViewport}

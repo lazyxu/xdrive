@@ -43,26 +43,29 @@ const (
 
 type RetryFunc func(context.Context) error
 
+// ClientRequestID is a local authenticated Desktop download correlation label;
+// it grants no additional access and is never a ticket or Server identity.
 type Spec struct {
-	FileName       string
-	Path           string
-	RelativePath   string
-	CloudParentID  uint64
-	CloudNodeID    uint64
-	Kind           string
-	Direction      string
-	ParentID       string
-	RootID         string
-	Scope          string
-	Phase          string
-	ScanComplete   bool
-	TotalBytes     int64
-	TotalItems     int64
-	CompletedItems int64
-	FailedItems    int64
-	RunningItems   int64
-	QueuedItems    int64
-	Retry          RetryFunc
+	FileName        string
+	Path            string
+	RelativePath    string
+	CloudParentID   uint64
+	CloudNodeID     uint64
+	ClientRequestID string
+	Kind            string
+	Direction       string
+	ParentID        string
+	RootID          string
+	Scope           string
+	Phase           string
+	ScanComplete    bool
+	TotalBytes      int64
+	TotalItems      int64
+	CompletedItems  int64
+	FailedItems     int64
+	RunningItems    int64
+	QueuedItems     int64
+	Retry           RetryFunc
 }
 
 type GroupProgress struct {
@@ -89,6 +92,7 @@ type Task struct {
 	RelativePath          string     `json:"relative_path,omitempty"`
 	CloudParentID         uint64     `json:"cloud_parent_id,omitempty"`
 	CloudNodeID           uint64     `json:"cloud_node_id,omitempty"`
+	ClientRequestID       string     `json:"client_request_id,omitempty"`
 	LocalRevealable       bool       `json:"local_revealable,omitempty"`
 	Kind                  string     `json:"kind"`
 	Direction             string     `json:"direction"`
@@ -223,29 +227,30 @@ func (m *Manager) startLocked(spec Spec, now time.Time) *Handle {
 		}
 	}
 	item := Task{
-		ID:             id,
-		ParentID:       spec.ParentID,
-		RootID:         rootID,
-		Scope:          scope,
-		Phase:          phase,
-		ScanComplete:   scanComplete,
-		FileName:       spec.FileName,
-		Path:           spec.Path,
-		RelativePath:   spec.RelativePath,
-		CloudParentID:  spec.CloudParentID,
-		CloudNodeID:    spec.CloudNodeID,
-		Kind:           spec.Kind,
-		Direction:      spec.Direction,
-		State:          state,
-		BytesTotal:     total,
-		ItemsTotal:     itemsTotal,
-		ItemsCompleted: itemsCompleted,
-		ItemsFailed:    itemsFailed,
-		ItemsRunning:   itemsRunning,
-		ItemsQueued:    itemsQueued,
-		Retryable:      spec.Retry != nil,
-		StartedAt:      now,
-		UpdatedAt:      now,
+		ID:              id,
+		ParentID:        spec.ParentID,
+		RootID:          rootID,
+		Scope:           scope,
+		Phase:           phase,
+		ScanComplete:    scanComplete,
+		FileName:        spec.FileName,
+		Path:            spec.Path,
+		RelativePath:    spec.RelativePath,
+		CloudParentID:   spec.CloudParentID,
+		CloudNodeID:     spec.CloudNodeID,
+		ClientRequestID: spec.ClientRequestID,
+		Kind:            spec.Kind,
+		Direction:       spec.Direction,
+		State:           state,
+		BytesTotal:      total,
+		ItemsTotal:      itemsTotal,
+		ItemsCompleted:  itemsCompleted,
+		ItemsFailed:     itemsFailed,
+		ItemsRunning:    itemsRunning,
+		ItemsQueued:     itemsQueued,
+		Retryable:       spec.Retry != nil,
+		StartedAt:       now,
+		UpdatedAt:       now,
 	}
 	m.entries[id] = &entry{task: item, retry: spec.Retry, lastAt: now, rateStartedAt: now}
 	m.order = append(m.order, id)
