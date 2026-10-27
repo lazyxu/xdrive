@@ -23,13 +23,8 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
-import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
-import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
-import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
-import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
@@ -57,7 +52,6 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   createXDriveCloudStorageDataSource,
-  xDriveDiagnosticsSidebarDestination,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -66,6 +60,7 @@ import {
   XDriveFileExplorerActionFeedback,
   XDriveTransferPopover,
   XDriveApp,
+  xDriveWorkspaceHostSections,
   XDriveAppPageOutlet,
   xDriveIsSharedHostPageRoute,
   XDriveStatePanel,
@@ -2182,54 +2177,11 @@ export default function App({
     adminCleanupStorageCache: (kind) => adminStorageRequest({ operation: 'cleanup-cache', kind }),
   }), [status?.server, status?.username])
 
-  const desktopSidebarSections: XDriveSidebarSectionModel[] = [
-    {
-      key: 'overview',
-      placement: 'before-core',
-      items: [
-        {
-          key: 'overview',
-          label: '主页',
-          icon: <DashboardRoundedIcon fontSize="small" />,
-        },
-      ],
-    },
-    {
-      key: 'conflicts',
-      placement: 'after-core',
-      items: [
-        {
-          key: 'conflicts',
-          label: '冲突',
-          icon: <WarningAmberRoundedIcon fontSize="small" />,
-          badge: status?.conflict_count,
-        },
-      ],
-    },
-    {
-      key: 'diagnostics',
-      ariaLabel: '桌面版辅助功能',
-      placement: 'after-core',
-      items: [
-        xDriveDiagnosticsSidebarDestination(),
-      ],
-    },    ...(status?.role === 'admin'
-      ? [{
-          key: 'admin',
-          label: '管理',
-          ariaLabel: '管理员功能',
-          placement: 'after-core' as const,
-          items: [
-            { key: 'admin-users', label: '用户管理', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
-            { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
-            { key: 'admin-audit', label: '审计日志', icon: <AssessmentRoundedIcon fontSize="small" /> },
-            { key: 'admin-storage', label: '全局存储', icon: <StorageRoundedIcon fontSize="small" /> },
-            { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
-            { key: 'admin-maintenance', label: '备份与系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
-          ],
-        }]
-      : []),
-  ]
+  const desktopSidebarSections: XDriveSidebarSectionModel[] = xDriveWorkspaceHostSections({
+    adminRoleVerified: status?.role === 'admin',
+    conflictCount: status?.conflict_count,
+    diagnosticsAriaLabel: '桌面版辅助功能',
+  })
 
   if (!agent.connected) {
     return renderDesktopFrame(
@@ -3086,6 +3038,7 @@ export default function App({
         storageSummary: xDriveWorkspaceStorageSummary(cloudQuota),
       }}
       onNavigate={(destination) => {
+        if (destination === 'settings') { setSettingsOpen(true); return }
         if (destination === 'admin-services') {
           setSystemDependenciesNavigationResetKey((value) => value + 1)
         }

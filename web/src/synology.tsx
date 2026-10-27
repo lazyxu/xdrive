@@ -1,12 +1,10 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { Typography, useTheme } from '@mui/material'
 import {
   XDriveAppearanceThemeProvider,
   XDriveApp, XDriveAppPageOutlet, XDriveWorkspaceContent, XDriveSettingsDialog,
-  xDriveDiagnosticsSidebarDestination, xDriveSettingsSidebarDestination,
+  xDriveWorkspaceHostSections,
   xDriveIsWorkspaceAppRoute,
   createXDriveSynologyBackupLocalClient,
   createXDriveSynologyOwnerBackupSource,
@@ -56,18 +54,9 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
         appearance: theme.palette.mode,
         showLocalStorage: true,
         compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers'],
-        sections: [
-          {
-            key: 'overview', placement: 'before-core',
-            items: [{ key: 'overview', label: '主页', icon: <DashboardRoundedIcon fontSize="small" /> }],
-          },
-          {
-            key: 'conflicts', placement: 'after-core',
-            items: [{ key: 'conflicts', label: '冲突', icon: <WarningAmberRoundedIcon fontSize="small" /> }],
-          },
-          { key: 'diagnostics', placement: 'after-core', items: [xDriveDiagnosticsSidebarDestination()] },
-          { key: 'settings', placement: 'bottom', items: [xDriveSettingsSidebarDestination()] },
-        ],
+        sections: xDriveWorkspaceHostSections({
+          adminRoleVerified: host.adminRoleVerified === true,
+        }),
       }}
       onNavigate={(key) => {
         if (key === 'settings') { setSettingsOpen(true); return }
