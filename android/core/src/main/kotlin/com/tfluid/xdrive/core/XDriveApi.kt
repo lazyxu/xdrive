@@ -95,6 +95,8 @@ data class GalleryAsset(
     val durationMs: Long = 0,
     val livePhoto: Boolean = false,
     val hasThumbnail: Boolean = false,
+    /** Null means older/partial media DTO did not describe favorite state. */
+    val favorite: Boolean? = null,
 )
 data class GalleryTimelineGroup(val key: String, val itemCount: Long, val startIndex: Int)
 data class GalleryTimelineSets(
@@ -206,6 +208,13 @@ interface XDriveService {
         throw ApiException(501, "Copy API unavailable")
     suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
         throw ApiException(501, "Move API unavailable")
+    /** Atomic Go batch copy/move: one Owner transaction, never per-item retries. */
+    suspend fun batchCopyNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch copy unavailable")
+    suspend fun batchMoveNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch move unavailable")
     suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
         throw ApiException(501, "Batch Trash API unavailable")
     }
@@ -213,6 +222,11 @@ interface XDriveService {
     suspend fun downloadFile(accessToken: String, node: DriveNode,
         openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
         throw ApiException(501, "Native file download unavailable")
+    /** Exact Owner PDF: authenticated, revision-verified temporary byte stream.
+     * The caller owns its seekable destination and removal on exit. */
+    suspend fun filesPdfDownload(accessToken: String, original: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit = {}): Long =
+        throw ApiException(501, "Native PDF preview unavailable")
     /** One manual file, current verified Owner directory. No new content writer. */
     suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
@@ -242,8 +256,20 @@ interface XDriveService {
     suspend fun galleryKindPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, kind: String): GalleryPage =
         throw ApiException(501, "Gallery Owner kind filter unavailable")
+    /** Nondefault iOS PWA sort stays on the authoritative Owner Range. */
+    suspend fun gallerySortedPage(accessToken: String, offset: Int, initialLatest: Boolean,
+        search: String, kind: String, albumId: String?, sortBy: String, sortDir: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner sort unavailable")
+    /** Owner-checked, single-attempt metadata action over 1..200 *loaded* Gallery items. */
+    suspend fun galleryFavoriteBatch(accessToken: String, items: List<GalleryAsset>,
+        favorite: Boolean): Int =
+        throw ApiException(501, "Gallery batch favorite unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
+    /** Read-only audio: same Range/ETag/Bearer transport as native video,
+     * but the current file must first be re-verified against the Owner tree. */
+    suspend fun filesAudioPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
+        throw ApiException(501, "Native Owner audio unavailable")
     /** Opaque private native Video data source using this Server's pinned TLS/DNS. */
     fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
         throw ApiException(501, "Native Owner video unavailable")
@@ -477,6 +503,62 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return moved
     }
 
+    /** Reuse the existing authenticated JSON transport and the Server's
+     * atomic 200-item transaction. Validation after ACK must fail closed:
+     * Controller will freeze writes if any returned identity is inconsistent.
+     * Never replay a POST after timeout or an uncertain acknowledgement. */
+    override suspend fun batchCopyNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "copy")
+
+    override suspend fun batchMoveNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "move")
+
+    private suspend fun batchTransfer(
+        token: String, originals: List<DriveNode>, parentId: Long, operation: String,
+    ): List<DriveNode> {
+        require(operation in setOf("copy", "move") && validToken(token) &&
+            parentId > 0 && originals.size in 1..200 &&
+            originals.map { it.id }.toSet().size == originals.size &&
+            originals.all { it.id > 0 && it.parentId != null &&
+                it.revision > 0 && it.type in setOf("file", "dir") &&
+                !(it.isDirectory && it.id == parentId) }) {
+            "Invalid atomic batch"
+        }
+        if (operation == "move") require(originals.none { it.parentId == parentId }) {
+            "Source is already in target folder"
+        }
+        val requestItems = JsonArray(originals.map { original ->
+            JsonObject(mapOf("id" to JsonPrimitive(original.id),
+                "revision" to JsonPrimitive(original.revision)))
+        })
+        val body = JsonObject(mapOf(
+            "items" to requestItems, "parent_id" to JsonPrimitive(parentId)))
+        // Copying large directory trees may outlive the ordinary 30s JSON
+        // timeout. Keep the original pinned Owner/TLS client, but extend the
+        // bounded idle timeout for this one physical transaction, never retry.
+        val answer = request("nodes/batch/$operation", token, bodyObject = body,
+            longRunning = true)
+        val operationID = answer.string("operation_id")
+        if (operationID.isBlank() || operationID.length > 64) invalidPayload()
+        val returned = answer["items"] as? JsonArray ?: invalidPayload()
+        if (returned.size != originals.size) invalidPayload()
+        val rows = returned.map { node(it as? JsonObject ?: invalidPayload()) }
+        if (rows.map { it.id }.toSet().size != rows.size) invalidPayload()
+        val originalsIds = originals.map { it.id }.toSet()
+        for ((index, row) in rows.withIndex()) {
+            val original = originals[index]
+            if (row.parentId != parentId || row.type != original.type ||
+                row.size != original.size || row.revision <= 0) invalidPayload()
+            if (operation == "copy") {
+                if (row.id in originalsIds) invalidPayload()
+            } else if (row.id != original.id || row.name != original.name ||
+                row.revision <= original.revision) invalidPayload()
+        }
+        return rows
+    }
+
     /** Atomic Go batch Trash, capped at 200 Server-verified revisions.
      * No optimistic success is inferred from an uncertain response. */
     override suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
@@ -585,6 +667,27 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
     }
 
+
+    /** The PdfRenderer requires seekable storage. Both Node checks and the
+     * existing ETag/optional SHA/length-verified download are Owner-scoped. */
+    override suspend fun filesPdfDownload(
+        accessToken: String, original: DriveNode,
+        openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+    ): Long {
+        require(original.id > 0 && original.parentId != null &&
+            original.type == "file" && original.revision > 0 &&
+            original.name.endsWith(".pdf", ignoreCase = true) &&
+            original.size in 1L..(64L * 1024 * 1024) && validToken(accessToken))
+        suspend fun verify() {
+            val current = node(request("nodes/${original.id}", accessToken))
+            if (current != original) invalidPayload()
+        }
+        verify()
+        val written = downloadFile(accessToken, original, openDestination, onProgress)
+        if (written != original.size) invalidPayload()
+        verify()
+        return written
+    }
 
     /**
      * Manual Android SAF upload via the existing Go UploadSession / CAS writer.
@@ -834,16 +937,30 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return ownerGalleryPage(accessToken, offset, initialLatest, search, kind)
     }
 
+    /** Reuse the existing Owner-authenticated media Range, including album scopes. */
+    override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String, albumId: String?,
+        sortBy: String, sortDir: String): GalleryPage {
+        require(sortBy in setOf("captured", "added") && sortDir in setOf("asc", "desc"))
+        require(kind in setOf("", "image", "video") && search.length <= 200 &&
+            search == search.trim())
+        if (albumId != null) require(validGalleryAlbumId(albumId))
+        return ownerGalleryPage(accessToken, offset, initialLatest, search, kind, albumId,
+            sortBy, sortDir)
+    }
+
     private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, mediaKind: String = "",
-        albumId: String? = null): GalleryPage {
+        albumId: String? = null, sortBy: String = "captured",
+        sortDir: String = "asc"): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
-            "sort_by" to "captured", "sort_dir" to "asc",
+            "sort_by" to sortBy, "sort_dir" to sortDir,
             "unknown_first" to "true", "fold_duplicates" to "true",
         )
-        if (initialLatest) query["initial_position"] = "latest"
+        // Descending already starts with the newest item at offset zero.
+        if (initialLatest && sortDir == "asc") query["initial_position"] = "latest"
         if (search.isNotEmpty()) query["q"] = search
         if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
         val result = if (albumId == null) request("media/items", accessToken, query = query)
@@ -882,12 +999,46 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 JsonPrimitive(true) -> true
                 else -> invalidPayload()
             }
-            GalleryAsset(itemNode, kind, captured, duration, live, hasThumb)
+            // Go mediaItemDTO explicitly emits favorite on every real Owner row.
+            // Absent old fixture/client fields remain unknown, not assumed false.
+            val favorite = when (entry["favorite"]) {
+                null, JsonNull -> null
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> invalidPayload()
+            }
+            GalleryAsset(itemNode, kind, captured, duration, live, hasThumb,
+                favorite = favorite)
         }
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60,
-            parseGalleryTimelineSets(result["timeline_group_sets"], total))
+            if (sortBy == "captured" && sortDir == "asc")
+                parseGalleryTimelineSets(result["timeline_group_sets"], total) else null)
+    }
+
+    /** Android Selection Mode reuses the existing Go/PWA Owner batch favorite API.
+     * Only a validated current loaded Node snapshot is accepted. Metadata PATCH
+     * is sent exactly once: lost ACK is never a reason to replay the mutation. */
+    override suspend fun galleryFavoriteBatch(
+        accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+    ): Int {
+        require(validToken(accessToken) && items.size in 1..200 &&
+            items.map { it.node.id }.toSet().size == items.size &&
+            items.all { it.node.id > 0 && it.node.revision > 0 &&
+                it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
+            "Invalid Owner media selection"
+        }
+        val body = JsonObject(mapOf(
+            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            "favorite" to JsonPrimitive(favorite),
+        ))
+        val answer = request("media/batch/favorite", accessToken,
+            bodyObject = body, method = "PATCH")
+        val updated = answer.long("updated")
+        if (updated != items.size.toLong() ||
+            answer["favorite"] != JsonPrimitive(favorite)) invalidPayload()
+        return items.size
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups
@@ -919,6 +1070,22 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             return groups
         }
         return GalleryTimelineSets(groups("year"), groups("month"), groups("day"))
+    }
+
+    /** A private audio session must never trust stale Files rows or redirect
+     * Media3 to a second host. Reuse the existing exact-URL, Bearer, ETag
+     * and bounded Range checks already exercised for native Gallery video. */
+    override suspend fun filesAudioPlayback(
+        accessToken: String, original: DriveNode,
+    ): OwnerVideoPlayback {
+        require(original.id > 0 && original.parentId != null &&
+            original.type == "file" && original.size > 0 &&
+            original.revision > 0 && validToken(accessToken))
+        val latest = node(request("nodes/${original.id}", accessToken))
+        if (latest != original) invalidPayload()
+        val url = address.url.toHttpUrlOrNull()!!.newBuilder()
+            .addPathSegments("api/v1/files/" + original.id + "/content").build()
+        return ownerVideoPlayback(http, url, accessToken, original)
     }
 
     /** Existing versioned Owner content endpoint supports HTTP Range. */

@@ -37,6 +37,11 @@ data class DriveState(
     val focusedBrowseIndex: Int = 0,
     val focusedBrowseEpoch: Long = 0,
     val selected: DriveNode? = null,
+    /** No PDF bytes, disk path or credential in native UI state. */
+    val filesPdfViewer: DriveNode? = null,
+    val filesPdfBytes: Long = 0,
+    /** Owner-private foreground audio session; never persists URL or tokens. */
+    val filesAudioViewer: DriveNode? = null,
     /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
     val fileTextPreview: FileTextPreview? = null,
     val fileTextPreviewLoading: Boolean = false,
@@ -80,12 +85,19 @@ data class DriveState(
     val galleryLoaded: Boolean = false,
     val gallerySearchQuery: String = "",
     val galleryMediaKind: String = "",
+    val gallerySortBy: String = "captured",
+    val gallerySortDir: String = "asc",
     val galleryTimelineSets: GalleryTimelineSets? = null,
     val galleryJumpIndex: Int? = null,
     val galleryJumpEpoch: Long = 0,
     val galleryPageIntent: String = "",
     val gallerySelected: GalleryAsset? = null,
     val galleryViewer: GalleryAsset? = null,
+    /** Current Owner, verified loaded rows only; never persisted or query-wide. */
+    val gallerySelectionMode: Boolean = false,
+    val gallerySelectedItems: List<GalleryAsset> = emptyList(),
+    /** Uncertain metadata ACK must be followed by GET, not another PATCH. */
+    val galleryFavoriteWriteAttempted: Boolean = false,
     /** A boundary lookup is independent of the current photo/Media3/Live stream. */
     val galleryViewerPageDirection: Int = 0,
     val galleryViewerPageBusy: Boolean = false,
@@ -94,6 +106,9 @@ data class DriveState(
     val viewerReturnToFiles: Boolean = false,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
+    /** Nonempty only for an atomic batch Copy/Move of 1–200 confirmed rows.
+     * The legacy single-node picker continues to use destinationSource. */
+    val destinationSources: List<DriveNode> = emptyList(),
     val destinationPath: List<DriveNode> = emptyList(),
     val destinationFolders: List<DriveNode> = emptyList(),
     val destinationOffset: Int = 0,
@@ -109,8 +124,14 @@ data class DriveState(
         destinationOffset <= Int.MAX_VALUE - 100
 }
 
+private fun DriveState.withoutGallerySelection(): DriveState = copy(
+    gallerySelectionMode = false, gallerySelectedItems = emptyList(),
+    galleryFavoriteWriteAttempted = false,
+)
+
 private fun DriveState.withoutDestination(): DriveState = copy(
-    destinationKind = null, destinationSource = null, destinationPath = emptyList(),
+    destinationKind = null, destinationSource = null, destinationSources = emptyList(),
+    destinationPath = emptyList(),
     destinationFolders = emptyList(), destinationOffset = 0, destinationTotal = 0,
     destinationLoaded = false, destinationSubmitting = false,
     destinationWriteAttempted = false,
@@ -143,6 +164,9 @@ class DriveController(
     private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
     private var galleryViewerPageJob: Job? = null
+    private var filesPdfEpoch = 0L
+    private var audioViewerEpoch = 0L
+    private var audioPlaybackRequestEpoch = 0L
     private var textPreviewEpoch = 0L
     private var textPreviewJob: Job? = null
     private var retryPath: List<DriveNode>? = null
@@ -421,10 +445,15 @@ class DriveController(
     fun open(node: DriveNode) {
         if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
             state.value.destinationKind != null || state.value.browseSelectionMode ||
+            state.value.filesPdfViewer != null || state.value.filesAudioViewer != null ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else if (fileKind(node.name, false) in setOf("image", "video") &&
             node.revision > 0 && node.size > 0) openFilesMedia(node)
+        else if (fileKind(node.name, false) == "pdf" &&
+            node.revision > 0 && node.size > 0) openFilesPdf(node)
+        else if (fileKind(node.name, false) == "audio" &&
+            node.revision > 0 && node.size > 0) openFilesAudio(node)
         else showDetails(node)
     }
 
@@ -439,10 +468,124 @@ class DriveController(
         else current.collectionLoaded && current.collectionItems.any { it.node == node }
     }
 
+    /** Enter one current Owner PDF without changing loaded Files rows/viewport. */
+    private fun openFilesPdf(node: DriveNode) {
+        val current = state.value
+        if (!filesNodeVisible(current, node) || current.loading ||
+            current.browseSelectionMode || current.filesPdfViewer != null ||
+            current.filesAudioViewer != null ||
+            fileKind(node.name, false) != "pdf" || session == null || api == null) return
+        filesPdfEpoch++
+        mutableState.value = current.copy(filesPdfViewer = node,
+            filesPdfBytes = 0, selected = null, error = null)
+    }
+
+    fun dismissFilesPdfViewer() {
+        if (state.value.filesPdfViewer == null) return
+        filesPdfEpoch++
+        mutableState.value = state.value.copy(filesPdfViewer = null, filesPdfBytes = 0)
+    }
+
+    /** Caller creates and deletes its private seekable temporary file. A
+     * subsequent logout, refresh, navigation or app switch fences all results. */
+    suspend fun downloadFilesPdf(node: DriveNode, output: () -> OutputStream): Long {
+        val ticket = generation
+        val epoch = filesPdfEpoch
+        val current = state.value
+        val service = api ?: throw CancellationException()
+        if (current.filesPdfViewer != node || !filesNodeVisible(current, node) ||
+            fileKind(node.name, false) != "pdf" || session == null)
+            throw CancellationException()
+        if (node.size !in 1L..(64L * 1024 * 1024))
+            throw ApiException(413, "PDF exceeds native preview limit")
+        try {
+            val count = authenticated(service, ticket) { token ->
+                service.filesPdfDownload(token, node, output) { received ->
+                    if (ticket == generation && filesPdfEpoch == epoch &&
+                        state.value.filesPdfViewer == node &&
+                        filesNodeVisible(state.value, node)) {
+                        mutableState.value = state.value.copy(
+                            filesPdfBytes = received.coerceIn(0L, node.size))
+                    }
+                }
+            }
+            checkCurrent(ticket)
+            if (filesPdfEpoch != epoch || state.value.filesPdfViewer != node ||
+                !filesNodeVisible(state.value, node)) throw CancellationException()
+            if (count != node.size)
+                throw ApiException(0, "Incomplete PDF", ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = state.value.copy(filesPdfBytes = count)
+            return count
+        } catch (failure: ApiException) {
+            if (failure.statusCode == 401 && ticket == generation &&
+                filesPdfEpoch == epoch && state.value.filesPdfViewer == node)
+                endSession(changeServer = false)
+            throw failure
+        }
+    }
+
+    /** Audio uses current Files' verified row and only one foreground player.
+     * No second media transport or local media bytes. */
+    private fun openFilesAudio(node: DriveNode) {
+        val current = state.value
+        if (!filesNodeVisible(current, node) || current.loading ||
+            current.browseSelectionMode || current.filesAudioViewer != null ||
+            current.filesPdfViewer != null ||
+            fileKind(node.name, false) != "audio" || session == null ||
+            api == null) return
+        audioViewerEpoch++
+        mutableState.value = current.copy(filesAudioViewer = node, error = null,
+            selected = null, fileTextPreview = null, fileTextPreviewError = null)
+    }
+
+    /** Async re-verification runs on the caller's Compose effect and is fenced
+     * against logout, Files navigation, A→B→A and late/noncooperative replies.
+     * A verified source is tracked by the existing active media resource owner. */
+    suspend fun openFilesAudioPlayback(node: DriveNode): OwnerVideoPlayback? {
+        val current = state.value
+        if (current.filesAudioViewer != node || !filesNodeVisible(current, node) ||
+            fileKind(node.name, false) != "audio" || session == null) return null
+        val ticket = generation
+        val epoch = audioViewerEpoch
+        // A manual retry may overlap a noncooperative older GET for the same
+        // Node/Owner/revision. Only the most recently requested stream wins.
+        val requestEpoch = ++audioPlaybackRequestEpoch
+        val service = api ?: return null
+        var resource: OwnerVideoPlayback? = null
+        try {
+            resource = authenticated(service, ticket) { token ->
+                service.filesAudioPlayback(token, node)
+            }
+            checkCurrent(ticket)
+            if (epoch != audioViewerEpoch ||
+                requestEpoch != audioPlaybackRequestEpoch ||
+                state.value.filesAudioViewer != node ||
+                !filesNodeVisible(state.value, node)) throw CancellationException()
+            closeActiveVideoPlayback()
+            activeVideoPlayback = resource
+            return resource
+        } catch (failure: Throwable) {
+            resource?.close()
+            throw failure
+        }
+    }
+
+    /** Keep the loaded Files section and scroll position. Disposing the
+     * player also closes its pinned HTTP session (close is idempotent). */
+    fun dismissFilesAudioViewer() {
+        if (state.value.filesAudioViewer == null) return
+        audioViewerEpoch++
+        audioPlaybackRequestEpoch++
+        closeActiveVideoPlayback()
+        mutableState.value = state.value.copy(filesAudioViewer = null)
+    }
+
     private fun openFilesMedia(node: DriveNode) {
         val current = state.value
         if (!filesNodeVisible(current, node) || current.loading ||
-            current.browseSelectionMode || session == null ||
+            current.browseSelectionMode ||
+            current.filesAudioViewer != null || current.filesPdfViewer != null ||
+            session == null ||
             fileKind(node.name, false) !in setOf("image", "video")) return
         val service = api ?: return
         request { ticket ->
@@ -473,7 +616,8 @@ class DriveController(
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.destinationKind != null) return
+        if (current.screen != Screen.FILES || current.destinationKind != null ||
+            current.filesPdfViewer != null || current.filesAudioViewer != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
@@ -793,11 +937,42 @@ class DriveController(
         }
     }
 
+    /** Atomic 1–200 batch Copy/Move. Source rows and revisions are frozen
+     * from the already-authenticated visible Files selection; no per-file HTTP
+     * writes, no guessed Node and no cross-Owner selection. */
+    fun chooseSelectedDestination(kind: FilesTransferKind) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            !current.loaded || current.loading || current.destinationKind != null ||
+            !current.browseSelectionMode || current.error != null ||
+            current.browseBatchWriteAttempted || current.path.isEmpty() ||
+            current.filesPdfViewer != null ||
+            current.browseSelectedIds.size !in 1..200 || session == null) return
+        val sourceID = current.path.last().id
+        val rows = current.items.filter { it.id in current.browseSelectedIds &&
+            it.parentId == sourceID && it.revision > 0 }
+        if (rows.size != current.browseSelectedIds.size ||
+            rows.map { it.id }.toSet().size != rows.size) return
+        val service = api ?: return
+        mutableState.value = current.copy(destinationKind = kind,
+            destinationSource = rows.first(), destinationSources = rows,
+            destinationPath = emptyList(), destinationFolders = emptyList(),
+            destinationOffset = 0, destinationTotal = 0,
+            destinationLoaded = false, destinationSubmitting = false,
+            destinationWriteAttempted = false)
+        request { ticket ->
+            val root = authenticated(service, ticket) { service.root(it) }
+            checkCurrent(ticket)
+            loadDestination(service, listOf(root), 0, ticket)
+        }
+    }
+
     fun chooseDestination(node: DriveNode, kind: FilesTransferKind) {
         val current = editableBrowseState(node) ?: return
         val service = api ?: return
         mutableState.value = current.copy(
             destinationKind = kind, destinationSource = node,
+            destinationSources = emptyList(),
             destinationPath = emptyList(), destinationFolders = emptyList(),
             destinationOffset = 0, destinationTotal = 0, destinationLoaded = false,
             destinationSubmitting = false, destinationWriteAttempted = false)
@@ -820,8 +995,10 @@ class DriveController(
         if (current.destinationKind == null || !current.destinationLoaded ||
             current.loading || current.destinationFolders.none { it == node } ||
             !node.isDirectory) return
-        if (current.destinationSource?.isDirectory == true &&
-            node.id == current.destinationSource.id) return
+        val sources = current.destinationSources.ifEmpty {
+            listOfNotNull(current.destinationSource)
+        }
+        if (sources.any { it.isDirectory && it.id == node.id }) return
         val service = api ?: return
         val path = current.destinationPath + node
         // Record the *requested* destination before the GET starts. If the
@@ -859,14 +1036,17 @@ class DriveController(
         val current = state.value
         if (current.destinationKind == null || current.loading ||
             current.destinationSubmitting || current.destinationWriteAttempted) return
+        val service = api ?: return
         if (current.destinationPath.isEmpty()) {
-            val node = current.destinationSource ?: return
-            val kind = current.destinationKind
-            dismissDestination()
-            chooseDestination(node, kind)
+            // Re-read the same trusted root without discarding frozen batch
+            // identities or accidentally restarting the single-file picker.
+            request { ticket ->
+                val root = authenticated(service, ticket) { service.root(it) }
+                checkCurrent(ticket)
+                loadDestination(service, listOf(root), 0, ticket)
+            }
             return
         }
-        val service = api ?: return
         val path = current.destinationPath.toList()
         request { ticket -> loadDestination(service, path, 0, ticket) }
     }
@@ -899,37 +1079,55 @@ class DriveController(
         )
     }
 
-    /** No token refresh/replay for either physical copy or move commit. */
+    /** Server commits batch Copy/Move in one SQL transaction. No token
+     * refresh/replay for either individual or batch physical writes. */
     fun commitDestination() {
         val current = state.value
         val source = current.destinationSource ?: return
         val kind = current.destinationKind ?: return
+        val frozenBatch = current.destinationSources
+        val sources = frozenBatch.ifEmpty { listOf(source) }
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
             current.loading || current.destinationSubmitting || current.destinationWriteAttempted ||
-            !current.destinationLoaded || current.error != null || current.destinationPath.isEmpty() ||
-            current.path.isEmpty() || current.items.none { it == source } ||
-            source.parentId != current.path.last().id) return
+            !current.destinationLoaded || current.error != null ||
+            current.destinationPath.isEmpty() || current.path.isEmpty() ||
+            sources.size !in 1..200 || sources.map { it.id }.toSet().size != sources.size ||
+            sources.any { it.parentId != current.path.last().id || it.revision <= 0 ||
+                current.items.none { visible -> visible == it } }) return
+        if (frozenBatch.isNotEmpty() && (!current.browseSelectionMode ||
+            current.browseSelectedIds != frozenBatch.map { it.id }.toSet())) return
         val targetID = current.destinationPath.last().id
-        if (kind == FilesTransferKind.MOVE && source.parentId == targetID) return
-        if (source.isDirectory && current.destinationPath.any { it.id == source.id }) return
+        if (kind == FilesTransferKind.MOVE && sources.any { it.parentId == targetID }) return
+        if (sources.any { it.isDirectory &&
+            current.destinationPath.any { target -> target.id == it.id } }) return
         val service = api ?: return
         val path = current.path.toList()
+        val selectedIds = sources.map { it.id }.toSet()
         mutableState.value = current.copy(
             destinationSubmitting = true, destinationWriteAttempted = true)
         request { ticket ->
-            val result = authenticatedMutation(ticket) {
-                if (kind == FilesTransferKind.COPY) service.copyNode(it, source, targetID)
-                else service.moveNode(it, source, targetID)
+            val results = authenticatedMutation(ticket) { token ->
+                if (frozenBatch.isNotEmpty()) {
+                    if (kind == FilesTransferKind.COPY)
+                        service.batchCopyNodes(token, frozenBatch, targetID)
+                    else service.batchMoveNodes(token, frozenBatch, targetID)
+                } else {
+                    listOf(if (kind == FilesTransferKind.COPY)
+                        service.copyNode(token, source, targetID)
+                    else service.moveNode(token, source, targetID))
+                }
             }
             checkCurrent(ticket)
-            mutableState.value = state.value.withoutDestination()
+            mutableState.value = state.value.withoutDestination().copy(
+                browseSelectionMode = false, browseSelectedIds = emptySet(),
+                browseBatchWriteAttempted = false)
             reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
                 if (kind == FilesTransferKind.MOVE) fresh.copy(
-                    items = fresh.items.filterNot { it.id == source.id },
-                    totalCount = (fresh.totalCount - 1).coerceAtLeast(0))
+                    items = fresh.items.filterNot { it.id in selectedIds },
+                    totalCount = (fresh.totalCount - sources.size).coerceAtLeast(0L))
                 else if (targetID == path.last().id) fresh.copy(
-                    items = (fresh.items + result).distinctBy { it.id },
-                    totalCount = fresh.totalCount + 1)
+                    items = (fresh.items + results).distinctBy { it.id },
+                    totalCount = fresh.totalCount + results.size)
                 else fresh
             }
         }
@@ -1111,10 +1309,15 @@ class DriveController(
     fun openCollectionItem(item: DriveCollectionItem) {
         val current = state.value
         if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+            current.filesAudioViewer != null || current.filesPdfViewer != null ||
             current.collectionItems.none { it == item }) return
         if (item.node.isDirectory) openCollectionFolder(item)
         else if (fileKind(item.node.name, false) in setOf("image", "video") &&
             item.node.revision > 0 && item.node.size > 0) openFilesMedia(item.node)
+        else if (fileKind(item.node.name, false) == "pdf" &&
+            item.node.revision > 0 && item.node.size > 0) openFilesPdf(item.node)
+        else if (fileKind(item.node.name, false) == "audio" &&
+            item.node.revision > 0 && item.node.size > 0) openFilesAudio(item.node)
         else showDetails(item.node)
     }
 
@@ -1355,7 +1558,7 @@ class DriveController(
             current.fileUploadActive || current.fileDownloadActive ||
             current.destinationKind != null || current.browseBatchWriteAttempted) return
         invalidate()
-        mutableState.value = current.copy(
+        mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadSaved = false, fileDownloadError = null, fileUploadPickerParent = null,
@@ -1365,6 +1568,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1373,9 +1577,9 @@ class DriveController(
 
     fun openFilesApp() {
         val current = state.value
-        if (current.screen != Screen.GALLERY) return
+        if (current.screen != Screen.GALLERY || current.galleryFavoriteWriteAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
-        mutableState.value = current.copy(
+        mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.FILES, loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false,
@@ -1385,6 +1589,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1398,9 +1603,10 @@ class DriveController(
         if (previous.screen != Screen.GALLERY || session == null || api == null ||
             previous.galleryViewer != null || previous.fileUploadActive ||
             previous.fileDownloadActive ||
-            previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS) return
+            previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS ||
+            previous.galleryFavoriteWriteAttempted) return
         invalidate()
-        mutableState.value = previous.copy(
+        mutableState.value = previous.withoutGallerySelection().copy(
             galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
             gallerySelectedAlbum = null, loading = false, error = null,
             galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
@@ -1455,11 +1661,11 @@ class DriveController(
         val previous = state.value
         if (previous.screen != Screen.GALLERY || session == null ||
             previous.galleryViewer != null || previous.fileUploadActive ||
-            previous.fileDownloadActive ||
+            previous.fileDownloadActive || previous.galleryFavoriteWriteAttempted ||
             (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 previous.gallerySelectedAlbum == null)) return
         invalidate()
-        mutableState.value = previous.copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+        mutableState.value = previous.withoutGallerySelection().copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             gallerySelectedAlbum = null, loading = false, error = null,
             galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
             galleryTotal = 0, gallerySearchQuery = "", galleryMediaKind = "",
@@ -1504,9 +1710,10 @@ class DriveController(
             previous.loading || previous.galleryViewer != null ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
             previous.gallerySelectedAlbum != null || !previous.galleryAlbumsLoaded ||
+            previous.galleryFavoriteWriteAttempted ||
             previous.galleryAlbums.none { it == album }) return
         invalidate()
-        mutableState.value = previous.copy(gallerySelectedAlbum = album,
+        mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = album,
             loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
             galleryOffset = 0, galleryTotal = 0, gallerySearchQuery = "",
             galleryMediaKind = "", galleryTimelineSets = null, galleryJumpIndex = null,
@@ -1519,21 +1726,90 @@ class DriveController(
         val previous = state.value
         if (previous.screen != Screen.GALLERY ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
-            previous.gallerySelectedAlbum == null || previous.galleryViewer != null) return
+            previous.gallerySelectedAlbum == null || previous.galleryViewer != null ||
+            previous.galleryFavoriteWriteAttempted) return
         invalidate()
-        mutableState.value = previous.copy(gallerySelectedAlbum = null,
+        mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = null,
             loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
             galleryOffset = 0, galleryTotal = 0, galleryTimelineSets = null,
             galleryJumpIndex = null, galleryJumpEpoch = previous.galleryJumpEpoch + 1,
             galleryPageIntent = "", gallerySelected = null, galleryViewer = null)
     }
 
+    /** Current Owner's bounded, loaded Gallery selection; not a query-wide promise. */
+    fun setGallerySelectionMode(enabled: Boolean) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
+            current.galleryViewer != null || current.viewerReturnToFiles ||
+            current.gallerySelected != null || current.loading ||
+            current.galleryFavoriteWriteAttempted || session == null) return
+        mutableState.value = current.copy(gallerySelectionMode = enabled,
+            gallerySelectedItems = emptyList(),
+            error = if (current.error == "一次最多选择 200 项。") null else current.error)
+    }
+
+    fun toggleGallerySelection(item: GalleryAsset) {
+        val current = state.value
+        if (!current.gallerySelectionMode || !current.galleryLoaded ||
+            current.screen != Screen.GALLERY || current.loading ||
+            current.galleryFavoriteWriteAttempted || current.galleryViewer != null ||
+            session == null || item.node.revision <= 0 ||
+            item.mediaKind !in setOf("image", "video") ||
+            current.galleryItems.none { it == item }) return
+        val selected = current.gallerySelectedItems
+        if (selected.any { it.node.id == item.node.id }) {
+            mutableState.value = current.copy(
+                gallerySelectedItems = selected.filterNot { it.node.id == item.node.id },
+                error = if (current.error == "一次最多选择 200 项。") null else current.error)
+        } else if (current.error != null) return
+        else if (selected.size >= 200) {
+            mutableState.value = current.copy(error = "一次最多选择 200 项。")
+        } else mutableState.value = current.copy(gallerySelectedItems = selected + item)
+    }
+
+    /** One non-replayed PATCH over frozen authenticated Node identities.
+     * Lost/invalid response freezes actions until a fresh Owner GET. */
+    fun favoriteGallerySelected(favorite: Boolean) {
+        val current = state.value
+        if (!current.gallerySelectionMode || current.screen != Screen.GALLERY ||
+            !current.galleryLoaded || current.loading || current.error != null ||
+            current.galleryViewer != null || current.galleryFavoriteWriteAttempted ||
+            current.gallerySelectedItems.size !in 1..200 || session == null) return
+        val selected = current.gallerySelectedItems.toList()
+        val ids = selected.map { it.node.id }.toSet()
+        if (ids.size != selected.size || selected.any { item ->
+                item.node.revision <= 0 || current.galleryItems.none { it == item }
+            }) return
+        val service = api ?: return
+        mutableState.value = current.copy(galleryFavoriteWriteAttempted = true)
+        request { ticket ->
+            val acknowledged = authenticatedMutation(ticket) { token ->
+                service.galleryFavoriteBatch(token, selected, favorite)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (acknowledged != selected.size ||
+                latest.screen != Screen.GALLERY || !latest.gallerySelectionMode ||
+                latest.gallerySelectedItems != selected ||
+                selected.any { row -> latest.galleryItems.none { it == row } })
+                throw ApiException(0, "Gallery favorite ACK mismatch",
+                    ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(
+                galleryItems = latest.galleryItems.map { item ->
+                    if (item.node.id in ids) item.copy(favorite = favorite) else item
+                },
+                gallerySelectionMode = false, gallerySelectedItems = emptyList(),
+                galleryFavoriteWriteAttempted = false, error = null)
+        }
+    }
+
     fun refreshGallery() {
+        if (state.value.galleryFavoriteWriteAttempted && state.value.loading) return
         if (state.value.screen != Screen.GALLERY ||
             (state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 state.value.gallerySelectedAlbum == null)) return
         invalidate() // Stop prior Owner range before replacing its query intent.
-        mutableState.value = state.value.copy(loading = false, error = null,
+        mutableState.value = state.value.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             galleryItems = emptyList(), galleryOffset = 0,
@@ -1544,16 +1820,41 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** All four iOS PWA sorts reload real Owner pages, never cached tile subsets. */
+    fun changeGallerySort(by: String, dir: String) {
+        if (by !in setOf("captured", "added") || dir !in setOf("asc", "desc")) return
+        val current = state.value
+        if (current.screen != Screen.GALLERY ||
+            (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                current.gallerySelectedAlbum == null) ||
+            current.galleryViewer != null || current.gallerySelected != null ||
+            current.gallerySelectionMode || current.galleryFavoriteWriteAttempted ||
+            session == null || api == null ||
+            (current.gallerySortBy == by && current.gallerySortDir == dir)) return
+        invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
+        mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            gallerySortBy = by, gallerySortDir = dir, galleryItems = emptyList(),
+            galleryOffset = 0, galleryTotal = 0, galleryLoaded = false,
+            gallerySelected = null, galleryViewer = null,
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "")
+        loadGallery(initialLatest = true)
+    }
+
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
+        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null) return
         val query = input.trim()
         if (query.length > 200 || query == current.gallerySearchQuery) return
         invalidate() // Cancel the previous query and prevent A→B→A stale replies.
-        mutableState.value = current.copy(loading = false, error = null,
+        mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             fileDownloadBytes = 0, fileDownloadTotal = 0,
@@ -1570,12 +1871,13 @@ class DriveController(
     fun filterGalleryKind(kind: String) {
         if (kind != "" && kind != "image" && kind != "video") return
         val current = state.value
+        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null ||
             kind == current.galleryMediaKind) return
         invalidate() // Cancels prior Range/thumbnail/Viewer and fences stale replies.
-        mutableState.value = current.copy(loading = false, error = null,
+        mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             fileDownloadBytes = 0, fileDownloadTotal = 0,
@@ -1590,6 +1892,10 @@ class DriveController(
     /** Retry only the failed Owner GET; failed jumps retain their exact index. */
     fun retryGallery() {
         val current = state.value
+        if (current.galleryFavoriteWriteAttempted && !current.loading) {
+            refreshGallery() // Re-read only; never replay the mutation.
+            return
+        }
         if (current.screen != Screen.GALLERY || current.loading ||
             (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 current.gallerySelectedAlbum == null)) return
@@ -1648,13 +1954,16 @@ class DriveController(
     /** Jump ONLY by a Server-indexed Owner time group. */
     fun jumpGalleryToGroup(scale: String, key: String) {
         val current = state.value
+        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
-            current.gallerySearchQuery.isNotEmpty() || session == null || api == null) return
+            current.gallerySearchQuery.isNotEmpty() ||
+            current.gallerySortBy != "captured" || current.gallerySortDir != "asc" ||
+            session == null || api == null) return
         val group = current.galleryTimelineSets?.forScale(scale)
             ?.firstOrNull { it.key == key && it.itemCount > 0 } ?: return
         if (group.startIndex.toLong() >= current.galleryTotal) return
         invalidate()
-        mutableState.value = current.copy(loading = false, error = null,
+        mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
             fileDownloadBytes = 0, fileDownloadTotal = 0,
@@ -1694,7 +2003,12 @@ class DriveController(
         service: XDriveService, ticket: Long, offset: Int, initialLatest: Boolean,
         search: String, kind: String, albumId: String? = null,
     ): GalleryPage = authenticated(service, ticket) {
+        val sortBy = state.value.gallerySortBy
+        val sortDir = state.value.gallerySortDir
         when {
+            sortBy != "captured" || sortDir != "asc" ->
+                service.gallerySortedPage(it, offset, initialLatest, search, kind, albumId,
+                    sortBy, sortDir)
             albumId != null -> service.galleryAlbumPage(it, albumId, offset, initialLatest)
             kind.isNotEmpty() -> service.galleryKindPage(it, offset, initialLatest, search, kind)
             search.isNotEmpty() -> service.gallerySearchPage(it, offset, initialLatest, search)
@@ -1825,7 +2139,8 @@ class DriveController(
     fun openGalleryViewer(item: GalleryAsset) {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.loading ||
-            !current.galleryLoaded || item.mediaKind !in setOf("image", "video") ||
+            !current.galleryLoaded || current.gallerySelectionMode ||
+            item.mediaKind !in setOf("image", "video") ||
             item.node.type != "file" || item.node.revision <= 0 ||
             current.galleryItems.none { it == item }) return
         cancelGalleryViewerPage()
@@ -2152,12 +2467,25 @@ class DriveController(
         }
         if (current.screen == Screen.GALLERY) {
             when {
+                current.gallerySelectionMode -> {
+                    if (current.galleryFavoriteWriteAttempted) {
+                        if (!current.loading) refreshGallery() // GET-only reconciliation
+                    } else setGallerySelectionMode(false)
+                }
                 current.gallerySelected != null -> dismissGalleryInfo()
                 current.galleryViewer != null -> dismissGalleryViewer()
                 current.gallerySelectedAlbum != null -> closeGalleryAlbum()
                 current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> openGalleryLibrary()
                 else -> openFilesApp()
             }
+            return
+        }
+        if (current.filesPdfViewer != null) {
+            dismissFilesPdfViewer()
+            return
+        }
+        if (current.filesAudioViewer != null) {
+            dismissFilesAudioViewer()
             return
         }
         if (current.destinationKind != null) dismissDestination()
@@ -2338,6 +2666,8 @@ class DriveController(
         val prior = state.value
         mutableState.value = prior.copy(
             loading = true, error = null, selected = null,
+            filesPdfViewer = null, filesPdfBytes = 0,
+            filesAudioViewer = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
             fileDownloadSaved = false, fileDownloadError = null,
@@ -2396,6 +2726,9 @@ class DriveController(
                     } else if (state.value.trashRestoreAttempted) {
                         mutableState.value = state.value.copy(trashLoaded = false,
                             error = "恢复结果未确认，请刷新回收站核对，勿重复提交。")
+                    } else if (state.value.galleryFavoriteWriteAttempted) {
+                        mutableState.value = state.value.copy(
+                            error = "收藏结果未确认，请刷新图库核对后再操作；切勿重复提交。")
                     } else if (state.value.browseBatchWriteAttempted) {
                         // The Server may have committed an atomic batch before
                         // its ACK was lost. Do not leave the stale selection
@@ -2462,6 +2795,9 @@ class DriveController(
             mutableState.value = current.copy(fileTextPreview = null,
                 fileTextPreviewLoading = false, fileTextPreviewError = null)
         closeActiveVideoPlayback()
+        filesPdfEpoch++
+        audioViewerEpoch++
+        audioPlaybackRequestEpoch++
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
     override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }

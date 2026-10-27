@@ -90,7 +90,8 @@ test('Desktop FileExplorer stale Live Photo dispose cannot release through the n
   const actionGenerationRef = { current: 1 }
 
   const loadLivePhotoMotion = compileCallback(filename, callback, {
-    hostPort: { media: agentA },
+    ownerAgent: agentA,
+    hostPort: {},
     actionGenerationRef,
   })
 
@@ -153,7 +154,8 @@ test('Desktop FileExplorer Live Photo load finishing after account switch is dis
   const actionGenerationRef = { current: 4 }
 
   const loadLivePhotoMotion = compileCallback(filename, callback, {
-    hostPort: { media: agentA },
+    ownerAgent: agentA,
+    hostPort: {},
     actionGenerationRef,
   })
 
@@ -234,7 +236,8 @@ test('Desktop FileExplorer late aborted Live Photo proxy is released through its
     return result
   }
   const loader = compileCallback(filename, callback, {
-    hostPort: { media: oldAgent, requestViewport: xDriveDesktopViewportRequest },
+    ownerAgent: oldAgent,
+    hostPort: { requestViewport: xDriveDesktopViewportRequest },
     actionGenerationRef,
   })
   const controller = new AbortController()

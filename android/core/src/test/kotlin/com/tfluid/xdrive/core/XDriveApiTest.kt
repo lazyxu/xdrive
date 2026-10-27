@@ -21,6 +21,42 @@ class XDriveApiTest {
         """{"id":7,"parent_id":1,"name":"note.txt","type":"file",
             "size":$size,"revision":$revision}"""
 
+    @Test fun galleryFavoriteBatchUsesOnePinnedOwnerPatchAndRejectsFalseAcknowledgement() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val rows = listOf(
+                GalleryAsset(DriveNode(7, 1, "one.jpg", "file", 123, revision = 2),
+                    "image", hasThumbnail = true, favorite = false),
+                GalleryAsset(DriveNode(8, 1, "two.mp4", "file", 333, revision = 4),
+                    "video", hasThumbnail = true, favorite = false),
+            )
+            server.enqueue(MockResponse().setBody("""{"updated":2,"favorite":true}"""))
+            assertEquals(2, api.galleryFavoriteBatch("owner-secret", rows, true))
+            val req = server.takeRequest()
+            assertEquals("PATCH", req.method)
+            assertEquals("/api/v1/media/batch/favorite", req.path)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            val body = Json.parseToJsonElement(req.body.readUtf8()) as JsonObject
+            assertEquals(listOf(7L, 8L),
+                (body["node_ids"] as JsonArray).map { it.jsonPrimitive.long })
+            assertEquals(JsonPrimitive(true), body["favorite"])
+            assertFalse(req.path!!.contains("owner-secret"))
+            server.enqueue(MockResponse().setBody("""{"updated":1,"favorite":true}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryFavoriteBatch("owner-secret", rows, true) }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setBody("""{"updated":2,"favorite":false}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryFavoriteBatch("owner-secret", rows, true) }.reason)
+            server.takeRequest()
+            assertEquals(3, server.requestCount) // never auto-replay a lost/invalid ACK
+            try {
+                api.galleryFavoriteBatch("owner-secret", rows + rows.first(), true)
+                fail("Duplicate Owner media identity accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun filesMediaItemVerifiesOwnerRevisionAndServerMediaType() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val file = DriveNode(27, 1, "family.jpg", "file", 5, revision = 4)
@@ -54,6 +90,159 @@ class XDriveApiTest {
             }"""))
             assertEquals(ApiFailureReason.INVALID_RESPONSE,
                 failure { api.filesMediaItem("owner-secret", file) }.reason)
+        } }
+    }
+
+    @Test fun filesPdfPreviewUsesExactOwnerRevisionAndEtagShaCheckedBytes() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val payload = "%PDF-1.4\n%%EOF".toByteArray()
+            val node = DriveNode(27, 1, "private.pdf", "file",
+                payload.size.toLong(), revision = 4)
+            val nodeJson = """{"id":27,"parent_id":1,"name":"private.pdf",
+                "type":"file","size":${payload.size},"revision":4}"""
+            val digest = MessageDigest.getInstance("SHA-256").digest(payload)
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
+            server.enqueue(MockResponse().setBody(nodeJson))
+            server.enqueue(MockResponse().setBody(String(payload))
+                .addHeader("ETag", "\"4\"")
+                .addHeader("X-Content-SHA256", digest))
+            server.enqueue(MockResponse().setBody(nodeJson))
+            val copied = ByteArrayOutputStream()
+            val progress = mutableListOf<Long>()
+            assertEquals(payload.size.toLong(), api.filesPdfDownload(
+                "owner-secret", node, { copied }, { progress += it }))
+            assertArrayEquals(payload, copied.toByteArray())
+            assertEquals(payload.size.toLong(), progress.last())
+            val requests = (0 until 3).map { server.takeRequest() }
+            assertEquals(listOf("/api/v1/nodes/27",
+                "/api/v1/files/27/content", "/api/v1/nodes/27"),
+                requests.map { it.path })
+            assertTrue(requests.all {
+                it.method == "GET" && it.getHeader("Authorization") == "Bearer owner-secret"
+            })
+
+            server.enqueue(MockResponse().setBody(nodeJson.replace(
+                "\"revision\":4", "\"revision\":5")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesPdfDownload("owner-secret", node,
+                    { ByteArrayOutputStream() }) }.reason)
+            // The Owner node may change *after* the byte stream ACK.
+            server.enqueue(MockResponse().setBody(nodeJson))
+            server.enqueue(MockResponse().setBody(String(payload))
+                .addHeader("ETag", "\"4\""))
+            server.enqueue(MockResponse().setBody(nodeJson.replace(
+                "\"revision\":4", "\"revision\":5")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesPdfDownload("owner-secret", node,
+                    { ByteArrayOutputStream() }) }.reason)
+        } }
+    }
+
+    @Test fun filesAudioPlaybackVerifiesNodeAndPinsRangeBearerAndRevision() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val audio = DriveNode(7, 1, "song.mp3", "file", 6, revision = 4)
+            server.enqueue(MockResponse().setBody("""{
+                "id":7,"parent_id":1,"name":"song.mp3","type":"file",
+                "size":6,"revision":4
+            }"""))
+            server.enqueue(MockResponse().setResponseCode(206).setBody("abcd")
+                .addHeader("ETag", "\"4\"")
+                .addHeader("Content-Range", "bytes 0-3/6"))
+            val playback = api.filesAudioPlayback("owner-secret", audio)
+            playback.use {
+                val call = it.client.newCall(Request.Builder().url(it.url)
+                    .header("Range", "bytes=0-3").build())
+                call.execute().use { response ->
+                    assertEquals(206, response.code)
+                    assertEquals("abcd", response.body!!.string())
+                }
+            }
+            val detail = server.takeRequest()
+            val streaming = server.takeRequest()
+            assertEquals("/api/v1/nodes/7", detail.path)
+            assertEquals("/api/v1/files/7/content", streaming.path)
+            assertEquals("Bearer owner-secret", detail.getHeader("Authorization"))
+            assertEquals("Bearer owner-secret", streaming.getHeader("Authorization"))
+            assertEquals("\"4\"", streaming.getHeader("If-Match"))
+            assertEquals("bytes=0-3", streaming.getHeader("Range"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "id":7,"parent_id":1,"name":"song.mp3","type":"file",
+                "size":6,"revision":5
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesAudioPlayback("owner-secret", audio) }.reason)
+        } }
+    }
+
+    @Test fun atomicBatchCopyMoveUsesOneOwnerPostAndExactRevisionedItems() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val originals = listOf(
+                DriveNode(7, 1, "a.txt", "file", 6, revision = 2),
+                DriveNode(8, 1, "b.txt", "file", 9, revision = 3),
+            )
+            val copy = """{"operation_id":"dbdf8fd2-e044-4b1a-8345-715b6f3c03d9",
+                "items":[{"id":107,"parent_id":9,"name":"a.txt",
+                "type":"file","size":6,"revision":1},
+                {"id":108,"parent_id":9,"name":"b.txt",
+                "type":"file","size":9,"revision":1}]}"""
+            server.enqueue(MockResponse().setResponseCode(201).setBody(copy))
+            val copied = api.batchCopyNodes("owner-secret", originals, 9)
+            assertEquals(listOf(107L, 108L), copied.map { it.id })
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/v1/nodes/batch/copy", request.path)
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals(listOf(7L, 8L),
+                (Json.parseToJsonElement(request.body.readUtf8()) as JsonObject)
+                    .let { body -> (body["items"] as JsonArray)
+                        .map { (it as JsonObject)["id"]!!.jsonPrimitive.long } })
+            server.enqueue(MockResponse().setBody("""{"operation_id":"dbdf8fd2-e044-4b1a-8345-715b6f3c03d9",
+                "items":[{"id":7,"parent_id":9,"name":"a.txt",
+                "type":"file","size":6,"revision":3},
+                {"id":8,"parent_id":9,"name":"b.txt",
+                "type":"file","size":9,"revision":4}]}"""))
+            assertEquals(listOf(7L, 8L), api.batchMoveNodes(
+                "owner-secret", originals, 9).map { it.id })
+            val moved = server.takeRequest()
+            assertEquals("POST", moved.method)
+            assertEquals("/api/v1/nodes/batch/move", moved.path)
+            assertEquals("Bearer owner-secret", moved.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun batchMutationRejectsDuplicateOrPartialAcknowledgements() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val originals = listOf(
+                DriveNode(7, 1, "a.txt", "file", 6, revision = 2),
+                DriveNode(8, 1, "b.txt", "file", 9, revision = 3),
+            )
+            val inconsistent = listOf(
+                """{"operation_id":"known","items":[{"id":107,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1}]}""",
+                """{"operation_id":"known","items":[{"id":107,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1},
+                    {"id":107,"parent_id":9,"name":"b.txt","type":"file",
+                    "size":9,"revision":1}]}""",
+                """{"operation_id":"known","items":[{"id":7,"parent_id":9,
+                    "name":"a.txt","type":"file","size":6,"revision":1},
+                    {"id":108,"parent_id":9,"name":"b.txt","type":"file",
+                    "size":9,"revision":1}]}""",
+            )
+            for (body in inconsistent) {
+                server.enqueue(MockResponse().setBody(body))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                    api.batchCopyNodes("owner-secret", originals, 9)
+                }.reason)
+            }
+            assertEquals(3, server.requestCount)
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    api.batchMoveNodes("owner-secret",
+                        originals + originals.first(), 9)
+                }
+            }
+            assertEquals(3, server.requestCount) // Failed before POST.
         } }
     }
 
@@ -458,7 +647,8 @@ class XDriveApiTest {
             server.enqueue(MockResponse().setBody("""{
                 "items":[{"node":{"id":87,"parent_id":1,"name":"latest.jpg","type":"file",
                     "size":128,"revision":6},"metadata":{"media_kind":"image",
-                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true},"live_photo":true}],
+                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true},"live_photo":true,
+                    "favorite":true}],
                 "total_count":121,"offset":120,"limit":60
             }"""))
             val page = api.galleryPage("owner-secret", initialLatest = true)
@@ -467,6 +657,7 @@ class XDriveApiTest {
             assertEquals(87L, page.items.single().node.id)
             assertTrue(page.items.single().livePhoto)
             assertTrue(page.items.single().hasThumbnail)
+            assertEquals(true, page.items.single().favorite)
             val sent = server.takeRequest()
             assertEquals("GET", sent.method)
             assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))
@@ -476,6 +667,37 @@ class XDriveApiTest {
             assertEquals("asc", sent.requestUrl!!.queryParameter("sort_dir"))
             assertEquals("true", sent.requestUrl!!.queryParameter("unknown_first"))
             assertEquals("true", sent.requestUrl!!.queryParameter("fold_duplicates"))
+        } }
+    }
+
+    @Test fun `Gallery sorting requests Server Owner Range instead of locally reordering tiles`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":79,"parent_id":1,"name":"clip.mp4",
+                    "type":"file","size":256,"revision":2},
+                    "metadata":{"media_kind":"video","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.gallerySortedPage("owner-secret", 0, true,
+                "sunset", "video", null, "added", "desc")
+            assertEquals(79L, page.items.single().node.id)
+            assertNull(page.timeline)
+            val req = server.takeRequest()
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("added", req.requestUrl!!.queryParameter("sort_by"))
+            assertEquals("desc", req.requestUrl!!.queryParameter("sort_dir"))
+            assertEquals("sunset", req.requestUrl!!.queryParameter("q"))
+            assertEquals("video", req.requestUrl!!.queryParameter("kind"))
+            assertEquals("true", req.requestUrl!!.queryParameter("range"))
+            assertNull(req.requestUrl!!.queryParameter("initial_position"))
+            for ((by, dir) in listOf("invalid" to "asc", "added" to "wrong")) {
+                try {
+                    api.gallerySortedPage("owner-secret", 0, true, "", "",
+                        null, by, dir)
+                    fail("Invalid server sort accepted")
+                } catch (_: IllegalArgumentException) { }
+            }
+            assertEquals(1, server.requestCount)
         } }
     }
 

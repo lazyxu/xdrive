@@ -87,7 +87,8 @@ test('shared iOS photo map pins show only verified blue counts above singleton p
   assert.match(pins, /theme.palette.mode === 'dark' \? '#0A84FF' : '#007AFF'/)
   assert.match(pins, /\{pin.count.toLocaleString\('zh-CN'\)\}/)
   assert.doesNotMatch(pins, /\{pin.count.toLocaleString\('zh-CN'\)\}张/)
-  assert.match(pins, /revision=\{pin.selection.node_revision\}/)
+  assert.match(pins, /ownerCover\(pin\.selection/)
+  assert.match(source, /revision=\{selection\.node_revision\}/)
 })
 
 test('photo thumbnails, real Owner camera count and wall action remain on map', () => {
@@ -104,7 +105,8 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   assert.match(source, /@media \(orientation: landscape\) and \(max-height: 600px\)/)
   assert.match(source, /height:'max\(200px, calc\(100dvh - 165px\)\)'/)
   assert.match(source, /data-xdrive-places-trusted-photo-cover-pins/)
-  assert.match(source, /revision=\{pin.selection.node_revision\}/)
+  assert.match(source, /ownerCover\(pin\.selection/)
+  assert.match(source, /revision=\{selection\.node_revision\}/)
   assert.match(source, /onClick=\{\(\) => openVerifiedCell\(pin.selection\)\}/)
   assert.match(source, /approved.key===filterRef.current.key/)
   assert.match(source, /xDriveMountBaiduIsolatedFrame/)

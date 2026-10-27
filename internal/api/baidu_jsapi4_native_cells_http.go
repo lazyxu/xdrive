@@ -82,6 +82,21 @@ func parseBaiduNativeMapCellsScope(raw string) (baiduPhotoMapBounds, string, err
 	return bounds, album, nil
 }
 
+// baiduNativeMapCoverCellsForClient preserves the original Cell wire shape
+// for installed older Web/PWA clients. A shallow copy ensures the visibility
+// negotiation cannot mutate the source Owner response or its selected IDs.
+func baiduNativeMapCoverCellsForClient(cells []baiduPhotoMapCell, includeKind bool) []baiduPhotoMapCell {
+	if includeKind {
+		return cells
+	}
+	out := make([]baiduPhotoMapCell, len(cells))
+	copy(out, cells)
+	for i := range out {
+		out[i].MediaKind = ""
+	}
+	return out
+}
+
 // An authenticated, release-fenced, no-provider-egress summary. It never
 // issues map Cookie, calls Baidu, grants media bytes or returns original WGS84.
 // The same post-query Owner/session/epoch/signed-release checks as the raw
@@ -143,10 +158,17 @@ func (s *Server) listBaiduNativeMapCells(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_runtime_unavailable"})
 		return
 	}
+	// Older installed PWAs strictly validate the historical 8-field Cell.
+	// Keep the old wire shape unless the same-origin authenticated Client
+	// opts into the new reviewed representative-kind field. This header is
+	// NOT authority or a request for more media bytes; Owner/Scope checks
+	// above still run in full before any response is written.
+	kindHeader := c.Request.Header.Values("X-XDrive-Map-Cover-Kind")
+	wantsKind := len(kindHeader) == 1 && kindHeader[0] == "video-poster-v1"
 	c.JSON(http.StatusOK, baiduNativeMapCellsDTO{
 		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
 		IndexScope:      baiduNativeMapIndexScope,
-		Cells:           page.Items,
+		Cells:           baiduNativeMapCoverCellsForClient(page.Items, wantsKind),
 		TotalCount:      page.TotalCount,
 		GridColumns:     page.GridColumns,
 		GridRows:        page.GridRows,

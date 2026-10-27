@@ -1034,9 +1034,11 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
   assert.equal((webApp.match(/createWebMediaGalleryDataSource\s*\(/g) || []).length, 1, 'Web must use one Gallery adapter, not a second data source')
   assert.match(
     desktopApp,
-    /createDesktopMediaGalleryDataSource\(\s*window\.xdriveDesktop\.agent,\s*mediaSelectionJobsSupported,\s*\)/,
-    'Desktop App must consume its thin Gallery transport adapter with explicit Agent capability',
+    /createDesktopMediaGalleryDataSource\(\s*window\.xdriveDesktop\.agent,\s*mediaSelectionJobsSupported,\s*viewerDownloadCorrelationSupported,\s*\)/,
+    'Desktop App must consume its thin Gallery transport adapter with both explicit Agent capabilities',
   )
+  assert.ok(desktopApp.includes("capabilities.includes('transfer-download-correlation')"),
+    'old Agents must not claim exact Viewer download progress')
   assert.ok(
     desktopApp.includes("capabilities.includes('media-selection-jobs')"),
     'Desktop must not expose durable job mutations on older Agents',

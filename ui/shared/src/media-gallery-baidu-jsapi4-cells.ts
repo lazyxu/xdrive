@@ -49,10 +49,11 @@ export function xDriveValidBaiduNativeCellsPage(
   let total = 0
   for (const c of p.cells) {
     if (!c || typeof c !== 'object' || Array.isArray(c) ||
-        (Object.keys(c).length !== 7 && Object.keys(c).length !== 8) ||
+        (Object.keys(c).length < 7 || Object.keys(c).length > 9) ||
         Object.keys(c).some(k => !['cell_x','cell_y','photo_count','asset_id',
-          'node_id','node_revision','latitude','longitude'].includes(k)) ||
+          'node_id','node_revision','media_kind','latitude','longitude'].includes(k)) ||
         ('node_revision' in c && !positive(c.node_revision)) ||
+        ('media_kind' in c && c.media_kind !== 'image' && c.media_kind !== 'video') ||
         !safeInt(c.cell_x) || c.cell_x < 0 || c.cell_x >= 8 ||
         !safeInt(c.cell_y) || c.cell_y < 0 || c.cell_y >= 8 ||
         !positive(c.photo_count) || !positive(c.asset_id) || !positive(c.node_id) ||

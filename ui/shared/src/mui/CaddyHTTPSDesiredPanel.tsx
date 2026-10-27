@@ -234,7 +234,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
 
 
   return (
-    <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
+    <Paper variant="outlined" sx={{ mt: atomicMode ? 0 : 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
       data-xdrive-admin-caddy-https-desired>
       <Stack spacing={1.5}>
         {section === 'config' && (<>

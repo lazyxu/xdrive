@@ -33,7 +33,7 @@ test('both shared map menus dismiss on click-away and Escape and exclude each ot
   assert.match(map, /filterMenuRef\.current\.open = false/)
   assert.match(map, /window.addEventListener\('blur', dismissMapMenus\)/)
   assert.match(map, /dismissMapMenus\(\)/)
-  assert.match(map, /\[onNativeCameraChange, dismissMapMenus\]/)
+  assert.match(map, /\[onNativeCameraChange, dismissMapMenus, cancelStaleHandoff\]/)
 })
 
 test('photo drawer drag handle offers mouse/keyboard click and touch/pen swipe', () => {

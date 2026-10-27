@@ -18,7 +18,7 @@ const entire = component.getText(file)
 const index = entire.search(/\n\s*const actions = item \? \(/)
 assert.ok(index > 0, 'missing Viewer action presentation boundary')
 const extracted = entire.slice(0, index) +
-  '\n return {run, close, previousIfCurrent, nextIfCurrent, filmstripIfCurrent, setFullScreenIfCurrent, toggleSlideshowIfCurrent, fullScreen, slideshowPlaying, busyAction, actionError: visibleActionError, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
+  '\n return {run, close, downloadCurrent, previousIfCurrent, nextIfCurrent, filmstripIfCurrent, setFullScreenIfCurrent, toggleSlideshowIfCurrent, fullScreen, slideshowPlaying, busyAction, actionError: visibleActionError, item, session: actionOwner.session, deleteOpen, creativeOpen, editOpen, locationOpen, setDeleteOpen, setCreativeOpen, setEditOpen, setLocationOpen}; \n}'
 const compiled = ts.transpileModule(extracted, {
   fileName: filename,
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS},
@@ -35,7 +35,9 @@ function visit(node) {
     if (tag === 'IconButton' && click && ts.isJsxExpression(click.initializer)) {
       const value = click.initializer.expression?.getText(file)
       if (value?.includes("run('favorite'")) expressions.favorite = value
-      if (value?.includes("run('download'") && value.includes('onDownload(item)')) {
+      if (value?.includes('downloadCurrent()')) {
+        // The real Download button now delegates to the same synchronous
+        // guarded run() action plus optional Agent receipt registration.
         expressions.download = value
       }
       if (value?.includes("run('download'") && value.includes('onExportLivePhoto(item)')) {
@@ -98,6 +100,11 @@ function fixture(ports = {}) {
       onPresentationStateChange() {},
     }),
     useXDrivePreviewSlideshow: () => {},
+    // This owner-race test deliberately runs without a Desktop receipt port:
+    // the same original download action must still be single-flight.
+    useXDriveViewerDownloadReceipt: () => ({
+      claim: () => undefined, dismiss: () => {}, text: '', announce: false,
+    }),
   }
   const keys = Object.keys(hooks)
   const exports = {}
@@ -127,6 +134,9 @@ function fixture(ports = {}) {
       }
       current = Viewer({
         item,
+        // downloadCurrent closes over the actual component callback, not
+        // the separate JSX-only event environment used by this harness.
+        onDownload: actions.onDownload,
         loadThumbnail: loaders.thumbnail,
         loadPreviewURL: loaders.preview,
         loadLivePhotoMotion: loaders.motion,

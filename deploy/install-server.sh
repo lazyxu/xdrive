@@ -47,6 +47,8 @@ CURRENT_STAGE="startup"
 LAST_ERROR_COMMAND=""
 ROLLBACK_ARMED=0
 ROLLBACK_RUNNING=0
+# Do not disturb the old application before all target images are local.
+MAINTENANCE_STARTED=0
 UPGRADE_EXISTING=0
 DATABASE_ROLLBACK_REQUIRED=0
 PRE_UPGRADE_BACKUP=""
@@ -603,12 +605,29 @@ render_pull_json() {
     if (( now > previous_time && sum_current >= previous_current )); then
       rate=$(( (sum_current - previous_current) / (now - previous_time) ))
     fi
-    printf '[xDrive] pull %-8s | %s / %s (%d%%) | %s/s | elapsed %ss\n' \
-      "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$(format_bytes "$rate")" "$elapsed"
+    local phase_hint=""
+    if (( sum_current == sum_total )); then
+      phase_hint=" | reported layer bytes complete; waiting for Docker image readiness"
+    fi
+    printf '[xDrive] pull %-8s | %s / %s (%d%%) | %s/s | elapsed %ss%s\n' \
+      "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$(format_bytes "$rate")" "$elapsed" "$phase_hint"
     last_print="$now"
     previous_time="$now"
     previous_current="$sum_current"
   done
+}
+
+compose() {
+  local -a profile_args=()
+  if compose_profile_enabled photo-intelligence; then
+    profile_args+=(--profile photo-intelligence)
+  fi
+  if compose_profile_enabled media-worker; then
+    profile_args+=(--profile media-worker)
+  fi
+  # Prefetch only uses the checksum-verified TARGET Compose.
+  # The previous config and rollback still use COMPOSE_PATH.
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" "$@" </dev/null
 }
 
 pull_json_supported() {
@@ -632,7 +651,7 @@ pull_service_json() {
     if compose_profile_enabled media-worker; then
       profile_args+=(--profile media-worker)
     fi
-    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
     render_pull_json "$service" "$pid_file" "$watermark_file"
@@ -643,6 +662,46 @@ pull_service_json() {
     return "${statuses[2]}"
   fi
   return "${statuses[0]}"
+}
+
+# Docker-native output for all services: identical to the stage-5 Server
+# verifier, using exact pinned image refs instead of Compose's JSON summary.
+pull_service_image_ref() {
+  local service="$1" variable fallback ref
+  case "$service" in
+    postgres) variable=XD_POSTGRES_IMAGE; fallback=postgres:17-alpine ;;
+    server) variable=XD_SERVER_IMAGE; fallback=ghcr.io/lazyxu/xdrive-server:latest ;;
+    caddy) variable=XD_CADDY_IMAGE; fallback=ghcr.io/lazyxu/xdrive-caddy:latest ;;
+    photo-face) variable=XD_PHOTO_FACE_IMAGE; fallback=ghcr.io/lazyxu/xdrive-photo-face:latest ;;
+    media-worker) variable=XD_MEDIA_WORKER_IMAGE; fallback=ghcr.io/lazyxu/xdrive-media-worker:latest ;;
+    *) echo "[xDrive] unknown image service: $service" >&2; return 2 ;;
+  esac
+  ref="$(printenv "$variable" 2>/dev/null || true)"
+  [[ -n "$ref" ]] || ref="$(env_value "$variable")"
+  [[ -n "$ref" ]] || ref="$fallback"
+  [[ "$ref" != -* && "$ref" != *[[:space:]]* ]] || {
+    echo "[xDrive] invalid $service image reference" >&2
+    return 2
+  }
+  printf '%s\n' "$ref"
+}
+
+# Preserve Docker's own Pulling / Downloading / Pull complete / Digest output.
+# A private log keeps failure evidence; remove CDN query signatures from the
+# console stream without losing pipeline exit status or buffering progress.
+pull_service_native() {
+  local service="$1" image_ref
+  local -a statuses=()
+  image_ref="$(pull_service_image_ref "$service")" || return 2
+  # The host update UI still knows which service is being downloaded, but
+  # cannot claim byte totals absent from the native Docker event stream.
+  write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$service" 0 0
+  printf '[xDrive] pull %s image: %s (Docker native layer progress)\n' "$service" "$image_ref"
+  docker pull "$image_ref" </dev/null 2>&1 |
+    tee -a "$PULL_LOG" |
+    sed -u -E 's#https://[^"[:space:]]+\?[^"[:space:]]+#<signed CDN URL redacted>#g'
+  statuses=("${PIPESTATUS[@]}")
+  [[ "${statuses[0]:-1}" -eq 0 && "${statuses[1]:-1}" -eq 0 && "${statuses[2]:-1}" -eq 0 ]]
 }
 
 pull_service_plain() {
@@ -678,7 +737,13 @@ pull_service_with_retry() {
     fi
     watermark_before="$(wc -c < "$watermark_file")"
 
-    if [[ "$pull_progress_mode" == "json" ]]; then
+    if [[ "$pull_progress_mode" == "native" ]]; then
+      if pull_service_native "$service"; then
+        rm -f "$watermark_file"
+        printf '[xDrive] pull %s complete.\n' "$service"
+        return 0
+      fi
+    elif [[ "$pull_progress_mode" == "json" ]]; then
       if pull_service_json "$service" "$watermark_file"; then
         rm -f "$watermark_file"
         printf '[xDrive] pull %s complete.\n' "$service"
@@ -719,12 +784,244 @@ pull_service_with_retry() {
   done
 
   rm -f "$watermark_file"
-  echo "xDrive server installer: pull $service failed after $attempt attempts. Last Docker pull messages:" >&2
-  tail -n 40 "$PULL_LOG" >&2 || true
+  echo "xDrive server installer: pull $service failed after $attempt attempts. Last Docker pull messages (signed CDN URLs redacted):" >&2
+  tail -n 40 "$PULL_LOG" | sed -E 's#https://[^"[:space:]]+\?[^"[:space:]]+#<signed CDN URL redacted>#g' >&2 || true
+  if grep -Fq 'TLS handshake timeout' "$PULL_LOG"; then
+    echo "[xDrive] Docker registry/CDN TLS handshake timed out; the image is not corrupted simply because its CDN connection failed." >&2
+  fi
   echo "xDrive server installer: repeated registry failures usually mean Docker daemon connectivity is poor." >&2
   echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
   return 1
 }
+
+# The exact CI-built Caddy Docker-save archive is an ALTERNATE transport, not
+# a second image authority. The current install script's own SHA-256 must
+# match its release manifest before ANY archive is accepted.
+caddy_release_checksum() {
+  local manifest="$1" filename="$2"
+  awk -v filename="$filename" '
+    $2 == filename {
+      count++
+      if (NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-fA-F]+$/) bad=1
+      else result=tolower($1)
+    }
+    END { if (count == 1 && !bad) print result }
+  ' "$manifest"
+}
+
+install_caddy_from_release_archive() {
+  local target_ref="$1" tag base manifest id_file expected_self expected_archive
+  local expected_id_sha current_self actual expected_id loaded_id archive partial cache_dir
+  local attempt rc version
+  if [[ "$requested_source" != github || "$REPOSITORY" != "lazyxu/xdrive" ||
+        "$IMAGE_REGISTRY" != "ghcr.io/lazyxu" ]]; then
+    echo "[xDrive] Caddy Release fallback is only available for official GitHub images." >&2
+    return 1
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[xDrive] Caddy Release fallback requires curl." >&2
+    return 1
+  fi
+  if [[ "$requested_channel" == master ]]; then
+    tag=snapshot
+    [[ "$IMAGE_TAG" =~ ^sha-[0-9a-f]{12}$ ]] || return 1
+  else
+    tag="$IMAGE_TAG"
+    [[ "$tag" =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || return 1
+  fi
+  base="https://github.com/lazyxu/xdrive/releases/download/$tag"
+  [[ ! -L "$STAGING_DIR" ]] || return 1
+  mkdir -p -m 0700 "$STAGING_DIR" || return 1
+  manifest="$STAGING_DIR/caddy-release-SHA256SUMS.txt"
+  id_file="$STAGING_DIR/caddy-release-image.id"
+  rm -f "$manifest" "$id_file"
+  echo "[xDrive] Caddy GHCR pull failed; trying exact CI-built GitHub Release archive..."
+  if ! curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
+      -o "$manifest" "$base/SHA256SUMS.txt" </dev/null; then
+    echo "[xDrive] Caddy Release checksum manifest unavailable." >&2
+    return 1
+  fi
+  expected_self="$(caddy_release_checksum "$manifest" xdrive-server-install.sh)"
+  expected_archive="$(caddy_release_checksum "$manifest" xdrive-caddy-image.tar.gz)"
+  expected_id_sha="$(caddy_release_checksum "$manifest" xdrive-caddy-image.id)"
+  current_self="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+  if [[ ! "$expected_self" =~ ^[0-9a-f]{64}$ || "$expected_self" != "$current_self" ||
+        ! "$expected_archive" =~ ^[0-9a-f]{64}$ ||
+        ! "$expected_id_sha" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "[xDrive] Caddy Release archive is not bound to this exact published installer; rejecting stale Snapshot." >&2
+    return 1
+  fi
+  if ! curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
+      -o "$id_file" "$base/xdrive-caddy-image.id" </dev/null; then
+    return 1
+  fi
+  [[ -f "$id_file" && ! -L "$id_file" ]] || return 1
+  [[ "$(sha256sum "$id_file" | awk '{print $1}')" == "$expected_id_sha" ]] || return 1
+  expected_id="$(tr -d '\r\n' < "$id_file")"
+  [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+
+  cache_dir="$STATE_DIR/image-download-cache"
+  [[ ! -L "$cache_dir" ]] || return 1
+  mkdir -p -m 0700 "$cache_dir" || return 1
+  chmod 0700 "$cache_dir" || return 1
+  archive="$cache_dir/xdrive-caddy-${IMAGE_TAG}.tar.gz"
+  partial="$archive.part"
+  [[ ! -L "$archive" && ! -L "$partial" ]] || return 1
+  if [[ -f "$archive" &&
+        "$(sha256sum "$archive" | awk '{print $1}')" != "$expected_archive" ]]; then
+    rm -f "$archive"
+  fi
+  if [[ ! -s "$archive" ]]; then
+    # Range resume survives retries AND future update attempts. If the server
+    # rejects a Range request (curl 33), restart only this partial download.
+    for attempt in 1 2 3 4; do
+      rc=0
+      curl -fLsS --connect-timeout 15 --speed-time 60 --speed-limit 512 \
+        --max-filesize 2147483648 --continue-at - --output "$partial" \
+        "$base/xdrive-caddy-image.tar.gz" </dev/null || rc=$?
+      if [[ "$rc" == 0 ]]; then
+        break
+      fi
+      [[ "$rc" == 33 ]] && rm -f "$partial"
+      echo "[xDrive] Caddy Release download interrupted ($attempt/4), will retry using HTTP Range." >&2
+      [[ "$attempt" -lt 4 ]] || return 1
+      sleep "$((attempt * 2))"
+    done
+    [[ -f "$partial" && ! -L "$partial" ]] || return 1
+    actual="$(sha256sum "$partial" | awk '{print $1}')"
+    if [[ "$actual" != "$expected_archive" ]]; then
+      echo "[xDrive] Caddy archive checksum mismatch; refusing Docker import." >&2
+      rm -f "$partial"
+      return 1
+    fi
+    mv -f "$partial" "$archive"
+  fi
+  [[ -f "$archive" && ! -L "$archive" ]] || return 1
+  [[ "$(sha256sum "$archive" | awk '{print $1}')" == "$expected_archive" ]] || return 1
+  [[ "$(stat -c %s "$archive")" -le 2147483648 ]] || return 1
+  gzip -t "$archive" || return 1
+  if ! docker load -i "$archive" >"$LOG_DIR/caddy-image-import.log" 2>&1; then
+    echo "[xDrive] verified Caddy archive import failed; old deployment is unaffected." >&2
+    return 1
+  fi
+  loaded_id="$(docker image inspect --format '{{.Id}}' xdrive/caddy:test </dev/null 2>/dev/null)" || return 1
+  if [[ "$loaded_id" != "$expected_id" ]]; then
+    echo "[xDrive] imported Caddy image ID does not match CI artifact; refusing activation." >&2
+    return 1
+  fi
+  version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' xdrive/caddy:test </dev/null 2>/dev/null)" || return 1
+  if [[ "$version" != "$IMAGE_TAG" ]] && [[ "$tag" != snapshot || "$version" != snapshot ]]; then
+    echo "[xDrive] imported Caddy image release version mismatch." >&2
+    return 1
+  fi
+  docker tag xdrive/caddy:test "$target_ref" || return 1
+  [[ "$(docker image inspect --format '{{.Id}}' "$target_ref" </dev/null 2>/dev/null)" == "$expected_id" ]] || return 1
+  echo "[xDrive] Caddy restored from SHA-256 verified GitHub Release archive."
+}
+
+# Initialize once, including stage-5 prefetched downloads. Never truncate
+# the private pull log when stage 7 reuses the image cache.
+initialize_image_pull() {
+  [[ "${pull_initialized:-0}" == "1" ]] && return 0
+  mkdir -p "$LOG_DIR"
+  : > "$PULL_LOG"
+  chmod 600 "$PULL_LOG"
+  pull_started="$(date +%s)"
+  pull_attempts="${XD_PULL_ATTEMPTS:-3}"
+  pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
+  pull_stall_timeout="${XD_PULL_STALL_TIMEOUT_SECONDS:-60}"
+  pull_stall_log_interval="${XD_PULL_STALL_LOG_INTERVAL_SECONDS:-15}"
+  case "$pull_attempts" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_retry_delay" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_stall_timeout" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  case "$pull_stall_log_interval" in
+    ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be an integer." >&2; exit 2 ;;
+  esac
+  if (( pull_attempts < 1 || pull_attempts > 10 )); then
+    echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
+    exit 2
+  fi
+  if (( pull_stall_timeout < 2 || pull_stall_timeout > 3600 )); then
+    echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be between 2 and 3600." >&2
+    exit 2
+  fi
+  if (( pull_stall_log_interval < 1 || pull_stall_log_interval > pull_stall_timeout )); then
+    echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be between 1 and the stall timeout." >&2
+    exit 2
+  fi
+  
+  # Native layer progress is the default, just like the stage-5 target Server
+  # verifier. Keep the numeric JSON watchdog as an explicit diagnostic option.
+  pull_progress_mode="${XD_PULL_PROGRESS_MODE:-native}"
+  case "$pull_progress_mode" in
+    native)
+      echo "[xDrive] Docker native layer progress enabled for every image."
+      echo "[xDrive] Docker controls native layer progress and per-request timeouts."
+      ;;
+    json)
+      if pull_json_supported; then
+        echo "[xDrive] optional Docker Compose JSON byte-progress mode enabled."
+        echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
+      else
+        echo "[xDrive] Docker Compose JSON unavailable; using native layer progress." >&2
+        pull_progress_mode=native
+      fi
+      ;;
+    plain) echo "[xDrive] optional Docker Compose plain progress enabled." ;;
+    *)
+      echo "xDrive installer: XD_PULL_PROGRESS_MODE must be native, json or plain." >&2
+      exit 2
+      ;;
+  esac
+  pull_initialized=1
+}
+
+# Preserve the immutable local image ID from this update's completed preflight.
+declare -A prepared_image_ids=()
+declare -A prepared_image_refs=()
+prepare_target_image() {
+  local service="$1" ref="$2" id=""
+  if docker image inspect "$ref" </dev/null >/dev/null 2>&1; then
+    echo "[xDrive] prefetch $service: target image is already cached locally."
+  else
+    echo "[xDrive] prefetch $service: obtaining target image before downtime..."
+    if ! (
+      # Legacy Compose may still use old Web/Caddy image definitions or
+      # omit optional services. Pull against the verified TARGET Compose.
+      PREFETCH_COMPOSE_PATH="$STAGING_DIR/docker-compose.yml"
+      [[ -f "$PREFETCH_COMPOSE_PATH" && ! -L "$PREFETCH_COMPOSE_PATH" ]] || exit 1
+      # Process-only image overrides; preserve the live runtime .env.
+      export XD_POSTGRES_IMAGE="$target_postgres_image"
+      export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+      export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+      export XD_PHOTO_FACE_IMAGE="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+      export XD_MEDIA_WORKER_IMAGE="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+      pull_service_with_retry "$service"
+    ); then
+      if [[ "$service" != "caddy" ]] || ! install_caddy_from_release_archive "$ref"; then
+        echo "[xDrive] prefetch $service failed; the old runtime has not been stopped." >&2
+        return 1
+      fi
+    fi
+  fi
+  id="$(docker image inspect --format '{{.Id}}' "$ref" </dev/null 2>/dev/null)" || {
+    echo "[xDrive] prefetch $service: image unavailable after download." >&2
+    return 1
+  }
+  if [[ ! "$id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "[xDrive] prefetch $service: invalid Docker image identity." >&2
+    return 1
+  fi
+  prepared_image_ids["$service"]="$id"
+  prepared_image_refs["$service"]="$ref"
+}
+
 fetch() {
   local url="$1" destination="$2" label="${3:-$(basename "$2")}" tmp="$2.tmp"
   local stats size speed seconds monitor_pid=""
@@ -1668,6 +1965,18 @@ rollback_upgrade() {
   local ok=1 i
   local -a rollback_restore_args
   ROLLBACK_RUNNING=1
+  # Registry/CDN failures during prefetch must not stop the existing stack.
+  # Stage 4 can update the .env; restore only that transactional snapshot.
+  if [[ "$MAINTENANCE_STARTED" != "1" ]]; then
+    echo "[xDrive] rollback: image preflight failed before maintenance; leaving all running containers untouched." >&2
+    if ! restore_transaction_file ".env" "$ENV_PATH" 600; then
+      ROLLBACK_RUNNING=0
+      return 1
+    fi
+    rm -rf "$UPGRADE_STATE_DIR"
+    ROLLBACK_RUNNING=0
+    return 0
+  fi
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
   docker stop xdrive-caddy xdrive-photo-face xdrive-media-worker xdrive-server xdrive-worker xdrive-postgres \
     xdrive-caddy-1 xdrive-photo-face-1 xdrive-media-worker-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
@@ -2286,7 +2595,15 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   if [[ "$upgrade_backup_verifier" == "target" ]]; then
     if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
       echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
-      if ! docker pull "$target_server_image" </dev/null; then
+      initialize_image_pull
+      # Use the SAME bounded retries as the later native service pulls.
+      # Even when other services opt into JSON diagnostics, this verifier
+      # pulls the exact published Server tag directly, not through old Compose.
+      if ! (
+        export XD_SERVER_IMAGE="$target_server_image"
+        pull_progress_mode=native
+        pull_service_with_retry server
+      ); then
         echo "xDrive installer: cannot fetch pinned target verifier; refusing to enter backup without verified image." >&2
         exit 1
       fi
@@ -2296,6 +2613,26 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     echo "[xDrive] stage-5 verifier: legacy runtime deep mode (explicit opt-out)."
   fi
 
+  if [[ "${XD_INSTALL_NO_START:-0}" != "1" ]]; then
+    # Acquire every required target image while the previous release is alive.
+    # Only the child sees the target Compose and new image refs; backup and rollback
+    # continue to read the untouched old release references from the .env.
+    initialize_image_pull
+    echo "[xDrive] prefetching published target images before maintenance..."
+    target_postgres_image="${XD_POSTGRES_IMAGE:-$(env_value XD_POSTGRES_IMAGE)}"
+    target_postgres_image="${target_postgres_image:-postgres:17-alpine}"
+    prepare_target_image postgres "$target_postgres_image"
+    prepare_target_image server "$target_server_image"
+    prepare_target_image caddy "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+    if compose_profile_enabled photo-intelligence; then
+      prepare_target_image photo-face "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+    fi
+    if compose_profile_enabled media-worker; then
+      prepare_target_image media-worker "$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+    fi
+    echo "[xDrive] all target images are ready locally; entering maintenance window."
+  fi
+  MAINTENANCE_STARTED=1
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
   docker stop xdrive-caddy xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
@@ -2441,18 +2778,6 @@ echo "Host manager:    $HOST_MANAGER_PATH"
 echo "User PATH file:  $SHELL_RC_PATH"
 echo "Current terminal: run: source \"$SHELL_RC_PATH\""
 rm -rf "$STAGING_DIR"
-
-compose() {
-  local -a profile_args=()
-  if compose_profile_enabled photo-intelligence; then
-    profile_args+=(--profile photo-intelligence)
-  fi
-  if compose_profile_enabled media-worker; then
-    profile_args+=(--profile media-worker)
-  fi
-  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-}
-
 compose_with_stdin() {
   local -a profile_args=()
   if compose_profile_enabled photo-intelligence; then
@@ -2506,46 +2831,7 @@ fi
 
 stage 7 "pull images and start services"
 echo "[xDrive] pulling container images; detailed Docker output is captured in $PULL_LOG"
-: > "$PULL_LOG"
-chmod 600 "$PULL_LOG"
-pull_started="$(date +%s)"
-pull_attempts="${XD_PULL_ATTEMPTS:-3}"
-pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
-pull_stall_timeout="${XD_PULL_STALL_TIMEOUT_SECONDS:-60}"
-pull_stall_log_interval="${XD_PULL_STALL_LOG_INTERVAL_SECONDS:-15}"
-case "$pull_attempts" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_retry_delay" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_stall_timeout" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-case "$pull_stall_log_interval" in
-  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be an integer." >&2; exit 2 ;;
-esac
-if (( pull_attempts < 1 || pull_attempts > 10 )); then
-  echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
-  exit 2
-fi
-if (( pull_stall_timeout < 2 || pull_stall_timeout > 3600 )); then
-  echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be between 2 and 3600." >&2
-  exit 2
-fi
-if (( pull_stall_log_interval < 1 || pull_stall_log_interval > pull_stall_timeout )); then
-  echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be between 1 and the stall timeout." >&2
-  exit 2
-fi
-
-pull_progress_mode="plain"
-if pull_json_supported; then
-  pull_progress_mode="json"
-  echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
-  echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
-else
-  echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
-fi
+initialize_image_pull
 
 pull_services=(postgres server caddy)
 if compose_profile_enabled photo-intelligence; then
@@ -2555,7 +2841,22 @@ if compose_profile_enabled media-worker; then
   pull_services+=(media-worker)
 fi
 for pull_service in "${pull_services[@]}"; do
-  pull_service_with_retry "$pull_service"
+  if [[ -n "${prepared_image_ids[$pull_service]:-}" ]]; then
+    current_image_id="$(docker image inspect --format '{{.Id}}' "${prepared_image_refs[$pull_service]}" </dev/null 2>/dev/null || true)"
+    if [[ "$current_image_id" != "${prepared_image_ids[$pull_service]}" ]]; then
+      echo "[xDrive] prepared $pull_service image ID changed before activation; refusing deployment." >&2
+      exit 1
+    fi
+    echo "[xDrive] pull $pull_service skipped: same image prepared before maintenance."
+    continue
+  fi
+  if ! pull_service_with_retry "$pull_service"; then
+    # A new installation also needs the same offline-capable Caddy fallback.
+    if [[ "$pull_service" != caddy ]] ||
+       ! install_caddy_from_release_archive "$(env_value XD_CADDY_IMAGE)"; then
+      exit 1
+    fi
+  fi
 done
 
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."

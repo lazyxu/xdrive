@@ -56,6 +56,7 @@ import type {
   XDriveTransportResult,
 } from '../transport-result'
 import type { MediaGalleryDataSource } from './MediaGallery'
+import type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt'
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveMediaGalleryDeleteOperation } from './MediaGalleryCleanupTask'
 
@@ -360,7 +361,9 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   downloadItems?: (
     items: MediaItem[],
+    clientRequestID?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   exportLivePhoto?: (
     item: MediaItem,
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
@@ -811,10 +814,15 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     downloadItems: port.downloadItems
-      ? async (items) => {
-          await resolveXDriveTransport(port.downloadItems!(items))
+      ? async (items, clientRequestID) => {
+          const result = await resolveXDriveTransport(port.downloadItems!(items, clientRequestID))
+          // The native Desktop save dialog may be cancelled before the Agent
+          // creates any transfer. Propagate only this bounded save outcome.
+          if (result && typeof result === 'object' && 'saved' in result &&
+              typeof result.saved === 'boolean') return { saved: result.saved }
         }
       : undefined,
+    viewerDownloadReceipt: port.viewerDownloadReceipt,
     exportLivePhoto: port.exportLivePhoto
       ? async (item) => {
           await resolveXDriveTransport(port.exportLivePhoto!(item))

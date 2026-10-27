@@ -54,7 +54,7 @@ export function XDriveBaiduServerAPIDetail({
       : service.health_state === 'not-checked' ? '尚未检测' : '无法确认'
 
   return (
-    <Box data-xdrive-baidu-server-flat="true" sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
+    <Box data-xdrive-baidu-server-flat="true" sx={{ width: '100%', minWidth: 0 }}>
       <Paper variant="outlined" id="dependency-baidu-map-status-header"
         sx={{ borderRadius: 2, p: { xs: 1.5, sm: 2 }, scrollMarginTop: 72 }}>
         <Stack spacing={1}>

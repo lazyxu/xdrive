@@ -261,11 +261,14 @@ export default function App({
 
   const mediaSelectionJobsSupported =
     agent.hello?.capabilities.includes('media-selection-jobs') ?? false
+  const viewerDownloadCorrelationSupported =
+    agent.hello?.capabilities.includes('transfer-download-correlation') ?? false
   const mediaGallerySource = useMemo(
     () => createDesktopMediaGalleryDataSource(
       window.xdriveDesktop.agent, mediaSelectionJobsSupported,
+      viewerDownloadCorrelationSupported,
     ),
-    [mediaSelectionJobsSupported],
+    [mediaSelectionJobsSupported, viewerDownloadCorrelationSupported],
   )
 
   const uploadGalleryFiles = async () => {
@@ -3212,6 +3215,7 @@ export default function App({
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
               transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
+              viewerDownloadReceipt: mediaGallerySource.viewerDownloadReceipt,
               transfers: transfers.transfers,
               actionIntent: cloudFileActionIntent,
               onActionIntentConsumed: (id) => {

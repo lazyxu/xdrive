@@ -152,3 +152,35 @@ test('P0-4 startup suppresses ticket Referer but restores origin-only SDK policy
   assert.ok(app.indexOf('xDriveTakeMapScopeHandoffFromURL(window)') <
     app.indexOf('xDriveRestoreMapReferrerAfterScrub(window)'))
 })
+
+
+test('P0-4 in-flight map mode handoff is fenced to the issued Owner, filter and BD09 camera',()=>{
+  const original={ownerScope:'owner-a',photoScopeKey:'["manual:Trip",[["favorite",true]]]',
+    camera:{coordinate_space:'bd09ll',latitude:35.5,longitude:139.5,zoom:11}}
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+    ...original,camera:{...original.camera},
+  }),true)
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+    ...original,ownerScope:'owner-b',
+  }),false,'Owner switch invalidates an issued one-use ticket')
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+    ...original,photoScopeKey:'["",[]]',
+  }),false,'filter/album change must not navigate to the former private scope')
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+    ...original,camera:{...original.camera,zoom:12},
+  }),false,'gesture invalidates camera captured at ticket issuance')
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+    ...original,camera:null,
+  }),false,'clearing camera invalidates a camera-bound ticket')
+  const noCamera={...original,camera:null}
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(noCamera,{...noCamera}),true)
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(noCamera,original),false)
+  const map=fs.readFileSync(path.join(root,'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
+  assert.match(map,/xDrivePlacesMapHandoffFenceMatches\(issuedFence/)
+  assert.match(map,/cancelStaleHandoff\(\)/)
+  assert.match(map,/currentHandoffOwnerScope, currentHandoffPhotoScopeKey/)
+  assert.match(map,/priorCamera\.latitude !== camera\.latitude/)
+  assert.ok(map.indexOf('xDrivePlacesMapHandoffFenceMatches(issuedFence') <
+    map.indexOf('window.location.replace(url)'),
+    'do not navigate with a stale issued ticket')
+})

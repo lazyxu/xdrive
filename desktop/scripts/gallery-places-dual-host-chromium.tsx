@@ -1,8 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from '@fixture/surface'
 import { XDriveMediaGalleryViewer } from '@fixture/viewer'
 import { XDriveMediaGalleryPage } from '@fixture/gallery-page'
+import { XDriveMediaGalleryPlacesMap } from '../../ui/shared/src/mui/MediaGalleryPlacesMap'
+import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
+import type { XDriveBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
+import { xDriveTakeMapScopeHandoffFromURL, xDriveRestoreMapReferrerAfterScrub } from '../../web/src/mapScopeHandoff'
 import { xDriveRememberPlacesDrawerViewerReturn } from '../../ui/shared/src/media-gallery-places-photo-drawer'
 import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import { xDriveBaiduNativeViewportRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
@@ -12,15 +19,33 @@ type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favori
 const mode = new URLSearchParams(location.search).get('mode') === 'isolated' ? 'isolated' : 'inline'
 const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
+const darkMapAppearance = new URLSearchParams(location.search).get('ui_scheme') === 'dark'
+const darkMapTheme = createTheme({palette:{mode:'dark'}})
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
 const favoritesMapEntry = new URLSearchParams(location.search).get('start_favorites') === '1'
 // Controlled Owner GPS -> BD-09 delayed derivative. The mounted SDK starts
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
+const videoPosterMode = new URLSearchParams(location.search).get('map_h264') === '1'
+const realHEICMode = genuineGin &&
+  new URLSearchParams(location.search).get('map_real_heic') === '1'
+// The genuine Web bootstrap must inspect and scrub the opaque one-use URL
+// before a React map, SDK loader or private Owner Cell can mount.
+const fullDocumentHandoff = genuineGin &&
+  new URLSearchParams(location.search).get('handoff_doc') === '1'
+const initialHandoff = fullDocumentHandoff
+  ? xDriveTakeMapScopeHandoffFromURL(window) : {state:'none' as const}
+if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
 let derivedLocationReady = !delayedBD09
+let savedSyntheticPoster: Blob | null = null
+// An opt-in synthetic failure during a *post-ready* restricted Owner query.
+// The next identical retry must recover without remounting either SDK Host.
+const testCellsFailure = new URLSearchParams(location.search).get('cells_failure') === '1'
+let failFavoriteCellsOnce = false
 let ownerAccess: Promise<string> | undefined
-const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
+const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner'+
+  (realHEICMode?'?account=heic':''),
   {cache:'no-store'}).then(async response=>{
   if(!response.ok)throw Error('real Gin Owner not authenticated')
   const result=await response.json()
@@ -49,7 +74,10 @@ const probe = ((window as any).__mapProbe = {
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoOpens:[] as any[],
-  bd09Completions:0,
+  bd09Completions:0,failedOwnerCellsReads:[] as any[],
+  h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
+  heic:{reads:0,bytes:0,mime:'',nodeID:0},
+  handoff:{state:initialHandoff.state,issues:0,consumes:0},
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -64,13 +92,19 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   return {coordinate_space:'bd09ll' as const,index_scope:'owner_gps_auto_index' as const,
     grid_columns:8,grid_rows:8,total_count:count,
     cells:[{cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
-      node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude}]}
+      node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
+      ...(videoPosterMode?{media_kind:'video' as const}:{})}]}
 }
 const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey:string)=>{
   if(signal.aborted)throw Error('aborted')
   if(albumKey!=='' || (filters?.favorite!==undefined && filters.favorite!==true))
     throw Error('unexpected Owner scope')
   const favorite=filters?.favorite===true
+  if(testCellsFailure && !genuineGin && favorite && failFavoriteCellsOnce){
+    failFavoriteCellsOnce=false
+    probe.failedOwnerCellsReads.push({favorite,albumKey})
+    throw Error('synthetic_post_ready_owner_cells_network_failure')
+  }
   let data
   if(genuineGin){
     const query=geometry(bounds)
@@ -123,12 +157,53 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
     items:range.items?.length||0,realGin:genuineGin})
   return range
 }
-const loadThumbnail=async(_id:number,signal?:AbortSignal)=>{
+const loadThumbnail=async(_id:number,signal?:AbortSignal,revision?:number)=>{
+  if(realHEICMode){
+    const token=await ownerToken()
+    if(signal?.aborted)throw Error('HEIC Owner thumbnail cancelled')
+    const response=await fetch('/api/v1/media/items/'+_id+
+      '/thumbnail?revision='+String(revision??1),{
+      signal,cache:'no-store',headers:{Authorization:'Bearer '+token},
+    })
+    const mime=response.headers.get('Content-Type')||''
+    if(!response.ok||!mime.startsWith('image/jpeg'))
+      throw Error('real authenticated HEIC-derived JPEG unavailable')
+    const blob=await response.blob()
+    if(blob.size<=512||blob.type!=='image/jpeg')
+      throw Error('HEIC-derived JPEG transport did not return image bytes')
+    probe.heic.reads++
+    probe.heic.bytes=blob.size
+    probe.heic.mime=blob.type
+    probe.heic.nodeID=_id
+    return URL.createObjectURL(blob)
+  }
   if(signal?.aborted)throw Error('cancelled')
+  if(videoPosterMode&&_id===75){
+    if(!savedSyntheticPoster){probe.h264.misses++;return null}
+    probe.h264.warm++
+    return URL.createObjectURL(savedSyntheticPoster)
+  }
   return 'data:image/svg+xml,'+encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96">'+
     '<rect width="96" height="96" fill="#3b82f6"/>'+
     '<circle cx="48" cy="48" r="22" fill="#e0f2fe"/></svg>')
+}
+const mapVideoPreviewURL=async(nodeID:number,kind:'image'|'video'|'live_photo',
+  signal?:AbortSignal):Promise<string|null>=>{
+  if(!videoPosterMode || nodeID!==75 || kind!=='video' || signal?.aborted) return null
+  probe.h264.previewURLs++
+  // Genuine 12-frame AVC1 bitstream is served by the local HTTPS fixture.
+  // This URL is returned by the test's trusted Owner port, never by SDK Child.
+  return location.origin+'/__fixture/h264.mp4'
+}
+const saveMapVideoPoster=async(nodeID:number,revision:number,
+  poster:Blob,signal?:AbortSignal):Promise<void>=>{
+  if(!videoPosterMode || nodeID!==75 || revision!==2 || signal?.aborted ||
+     poster.type!=='image/jpeg' || poster.size<=200)
+    throw Error('invalid synthetic Owner video Poster')
+  savedSyntheticPoster=poster
+  probe.h264.puts++
+  probe.h264.putBytes+=poster.size
 }
 const onOpenCell=(selection:any,scope:Scope)=>{
   probe.clicks.push({node:selection.node_id,asset:selection.asset_id,
@@ -326,6 +401,12 @@ function TestApp(){
         Complete synthetic Owner BD-09 indexing
       </button>
     ) : null}
+    {testCellsFailure ? (
+      <button type="button" id="fixture-arm-cells-failure"
+        onClick={()=>{failFavoriteCellsOnce=true}}>
+        Fail next signed Owner Favorites Cells request
+      </button>
+    ) : null}
     <button type="button" id="toggle-favorite" onClick={()=>setFavorite(x=>!x)}>
       Switch Owner favorite scope
     </button>
@@ -340,6 +421,8 @@ function TestApp(){
       getInlineSignedStatus={getInlineSignedStatus}
       mintChildTicket={mintChildTicket} listOwnerCells={listOwnerCells}
       listOwnerCellItems={listOwnerCellItems} loadThumbnail={loadThumbnail}
+      loadPreviewURL={videoPosterMode?mapVideoPreviewURL:undefined}
+      saveVideoPoster={videoPosterMode?saveMapVideoPoster:undefined}
       onOpenCell={onOpenCell} onOpenCellPhoto={openDrawerPhoto}
       initialCamera={probe.cameras.at(-1)}
       onOpenViewport={onOpenViewport}
@@ -366,4 +449,96 @@ function TestApp(){
     ) : null}
   </div>
 }
-createRoot(document.getElementById('root')!).render(fullGalleryPage ? <FullGalleryPage /> : <TestApp />)
+
+type FullDocumentMapState =
+  | {phase:'pending'|'denied'}
+  | {phase:'ready';scope:XDriveBaiduMapPhotoScope;camera?:XDriveBaiduNativeCameraSnapshot}
+const freshFavoritesScope:XDriveBaiduMapPhotoScope={
+  albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',favorite:true},
+}
+const handoffAPI='/api/v1/media/places/baidu-jsapi/scope-handoff'
+const postAuthenticatedMapHandoff=async (
+  suffix:string,payload:unknown,signal?:AbortSignal,
+):Promise<any>=>{
+  const token=await ownerToken()
+  if(signal?.aborted)throw Error('cancelled')
+  const response=await fetch(handoffAPI+suffix,{
+    method:'POST',cache:'no-store',signal,
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify(payload),
+  })
+  if(!response.ok)throw Error('actual Gin Owner map handoff denied')
+  return response.json()
+}
+
+/** Entire-document map mode transition using the ORIGINAL trusted Gallery
+ * Parent and Web startup scrubber, backed by actual Gin/PostgreSQL one-use
+ * handoff. A pending, revoked or reused nonce never mounts either SDK host. */
+function FullDocumentHandoffMap(){
+  const [snapshot,setSnapshot]=useState<FullDocumentMapState>(()=>
+    initialHandoff.state==='none'
+      ? {phase:'ready',scope:freshFavoritesScope}
+      : {phase:initialHandoff.state==='pending'?'pending':'denied'})
+  const claimed=useRef(false)
+  useEffect(()=>{
+    if(initialHandoff.state!=='pending'||claimed.current)return
+    claimed.current=true
+    let mounted=true
+    void postAuthenticatedMapHandoff('/consume',{
+      target_mode:initialHandoff.target,ticket:initialHandoff.ticket,
+    }).then(receipt=>{
+      if(!mounted)return
+      const scope=xDriveNormalizeBaiduMapPhotoScope(receipt?.scope)
+      const camera=receipt?.camera==null ? undefined :
+        xDriveValidBaiduNativeCameraSnapshot(receipt.camera)
+          ? receipt.camera as XDriveBaiduNativeCameraSnapshot : null
+      if(!scope||camera===null||receipt?.target_mode!==initialHandoff.target)
+        throw Error('invalid Owner handoff receipt')
+      probe.handoff.consumes++
+      probe.handoff.state='ready'
+      setSnapshot({phase:'ready',scope,camera})
+    }).catch(()=>{
+      if(!mounted)return
+      probe.handoff.state='denied'
+      setSnapshot({phase:'denied'})
+    })
+    return()=>{mounted=false}
+  },[])
+  if(snapshot.phase!=='ready')
+    return <main data-xdrive-map-handoff-denied={snapshot.phase==='denied'?'1':undefined}
+      data-xdrive-map-handoff-pending={snapshot.phase==='pending'?'1':undefined}>
+      {snapshot.phase==='denied'?'Owner map scope expired or already consumed':
+        'Validating authenticated map handoff'}
+    </main>
+  return <XDriveMediaGalleryPlacesMap
+    places={[]} totalCount={null}
+    diagnosticScope="p04-authenticated-full-document"
+    listBaiduNativeCells={listOwnerCells}
+    listBaiduNativeCellItems={listOwnerCellItems}
+    getBaiduJSAPI4Status={getInlineSignedStatus}
+    getBaiduJSAPIPrototype={getInlinePrototypeConfig}
+    mintBaiduIsolatedChildTicket={mintChildTicket}
+    loadPhotoCoverThumbnail={loadThumbnail}
+    onOpenBaiduNativeCell={onOpenCell}
+    onBaiduNativeCellInvalidated={onInvalidated}
+    initialNativeCamera={snapshot.camera}
+    mapPhotoScope={snapshot.scope}
+    onMapPhotoScopeChange={scope=>setSnapshot(previous=>
+      previous.phase==='ready'?{...previous,scope}:previous)}
+    onMapModeHandoff={async(scope,target,signal,camera)=>{
+      probe.handoff.issues++
+      const receipt=await postAuthenticatedMapHandoff('',{
+        target_mode:target,scope,...(camera?{camera}:{}),
+      },signal)
+      if(typeof receipt?.ticket!=='string'||
+        !/^[a-f0-9]{64}$/.test(receipt.ticket))
+        throw Error('invalid one-use Owner handoff ticket')
+      return receipt.ticket as string
+    }}
+    onNativeCameraChange={onCamera} onNativeCameraClear={()=>{}}/>
+}
+createRoot(document.getElementById('root')!).render(
+  fullDocumentHandoff ? <FullDocumentHandoffMap /> :
+  fullGalleryPage ? <FullGalleryPage /> :
+    darkMapAppearance ? <ThemeProvider theme={darkMapTheme}><TestApp /></ThemeProvider> :
+    <TestApp />)

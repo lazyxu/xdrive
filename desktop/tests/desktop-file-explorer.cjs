@@ -37,12 +37,18 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
     'cloudRename(node.id, node.revision, name)',
     'refreshCurrentDirectoryIfCurrent(expectedCurrentID)',
     'onRenameItem={trashActive ? undefined : renameItem}',
-    'cloudDownload(node.id, node.name)',
     'getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}',
     'backgroundMenuItems={trashActive ? [] : backgroundMenuItems}',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer operation: ${token}`)
   }
+  // Optional exact Viewer correlation reuses the authenticated native
+  // SaveDialog; ordinary FileExplorer actions still omit the nonce.
+  assert.match(explorer,
+    /window\.xdriveDesktop\.agent\.cloudDownload\(\s*node\.id,\s*node\.name,\s*clientRequestID,\s*\)/,
+    'Desktop native download must preserve optional Viewer correlation')
+  assert.match(explorer, /void downloadNode\(node\)/,
+    'ordinary FileExplorer downloads must not invent a correlation')
   assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete flow must use the shared delete-to-trash controller')
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete controller must keep Agent submission local')
   assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must own delete planning')
@@ -62,11 +68,11 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
   assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Desktop Explorer should delegate typed-path submission to the shared workspace controller')
-  assert.ok(explorer.includes('hostPort.browse.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
+  assert.ok(explorer.includes('ownerAgent.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
   assert.ok(explorer.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop typed-path traversal should use exact child lookup')
   assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal should request one indexed child')
-  assert.ok(explorer.includes('hostPort.browse.cloudChildrenPage('), 'Desktop typed-path lookup must stay on the paged Agent bridge')
-  assert.equal(explorer.includes('hostPort.browse.cloudChildren(parentID)'), false, 'Desktop typed-path traversal must not load all children')
+  assert.ok(explorer.includes('ownerAgent.cloudChildrenPage('), 'Desktop typed-path lookup must stay on the paged Agent bridge')
+  assert.equal(explorer.includes('ownerAgent.cloudChildren(parentID)'), false, 'Desktop typed-path traversal must not load all children')
   assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Desktop must not orchestrate typed-path traversal locally')
   assert.equal(explorer.includes('xDriveFileExplorerDispatchOpenItem({'), false, 'Desktop open-item dispatch should stay inside the shared workspace controller')
   assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Desktop shared workspace should preserve search crumbs')
@@ -87,7 +93,7 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared workspace controller')
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
-  assert.ok(explorer.includes('hostPort.browse.cloudSearchRange('), 'Desktop Search must use Agent range transport')
+  assert.ok(explorer.includes('ownerAgent.cloudSearchRange('), 'Desktop Search must use Agent range transport')
   assert.ok(explorer.includes('filters,'), 'Desktop Search range must forward structured filters')
   assert.ok(explorer.includes('<XDriveFileExplorerSearchFilters'), 'Desktop must render shared structured filter chips')
   assert.ok(explorer.includes('searchSort.key'), 'Desktop Search range must forward sort key')
@@ -96,7 +102,7 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.ok(explorer.includes('grouping={trashActive ? undefined : grouping}'), 'Desktop grouping must come from shared tab state')
   assert.ok(explorer.includes('onGroupingChange={trashActive ? undefined : changeGrouping}'), 'Desktop grouping changes must reload Server ranges')
   assert.ok(explorer.includes('virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')
-  assert.equal(explorer.includes('hostPort.browse.cloudSearch('), false, 'Desktop Explorer must not use cursor Search after migration')
+  assert.equal(explorer.includes('ownerAgent.cloudSearch('), false, 'Desktop Explorer must not use cursor Search after migration')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own Search request sequencing')
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop Search must not truncate the logical result set')
 })
@@ -166,7 +172,7 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
 test('Desktop FileExplorer queues copy/cut/paste through the shared operation controller', () => {
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>'), 'Desktop must consume clipboard state through the shared workspace controller')
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop must consume the shared queued-operation controller')
-  assert.ok(explorer.includes('hostPort.write.cloudCreateFileOperation('), 'Desktop must keep persistent-operation transport local')
+  assert.ok(explorer.includes('ownerAgent.cloudCreateFileOperation('), 'Desktop must keep persistent-operation transport local')
   assert.ok(explorer.includes('onQueued: onOperationQueued'), 'Desktop must surface queued operations immediately')
   assert.ok(explorer.includes('canPaste={!trashActive && fileOperationCanPaste}'), 'Desktop paste availability must come from the shared operation controller')
   assert.ok(explorer.includes('onCopyItems={trashActive ? undefined : copyItems}'), 'Desktop shared copy adapter is missing')
@@ -179,7 +185,7 @@ test('Desktop FileExplorer queues copy/cut/paste through the shared operation co
 test('Desktop FileExplorer supports bulk download and shared delete-to-trash orchestration', () => {
   assert.ok(explorer.includes('async function downloadSelected(selected: XDriveFileExplorerItem[]) {'), 'Desktop bulk download helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop bulk download must use shared download planning')
-  assert.ok(explorer.includes('hostPort.write.cloudDownloadFiles(plan.items)'), 'Desktop bulk download bridge is missing')
+  assert.ok(explorer.includes('ownerAgent.cloudDownloadFiles(plan.items)'), 'Desktop bulk download bridge is missing')
   assert.ok(explorer.includes('onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
   assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
   assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete confirmation and queue flow must be shared')
@@ -206,7 +212,7 @@ test('Desktop FileExplorer supports shared internal drag operations and local ex
   assert.equal(explorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Desktop must not plan internal drag/drop locally')
   assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Desktop internal drag must not resolve drop targets locally')
   assert.ok(explorer.includes('useXDriveFileExplorerExternalDropController<'), 'Desktop external drop should delegate target and refresh orchestration to the shared controller')
-  assert.ok(explorer.includes('hostPort.write.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
+  assert.ok(explorer.includes('ownerAgent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
   assert.ok(explorer.includes('onExternalFilesDrop={trashActive ? undefined : (files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
 
@@ -266,7 +272,7 @@ test('Desktop multi-select mutations use persistent operations instead of render
   assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must queue one delete plan')
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete must keep queued-operation transport local')
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use one shared queued-operation controller')
-  assert.ok(explorer.includes('hostPort.write.cloudCreateFileOperation('), 'Desktop must keep queued-operation transport local')
+  assert.ok(explorer.includes('ownerAgent.cloudCreateFileOperation('), 'Desktop must keep queued-operation transport local')
   assert.ok(operationController.includes('planPaste(currentID, operationOverride)'), 'shared controller must preserve clipboard operation type for paste')
   assert.ok(operationController.includes('xDriveFileExplorerDropItemsPlan('), 'shared controller must preserve copy/move operation type for drag/drop')
   assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
@@ -277,9 +283,9 @@ test('Desktop upload conflicts use the shared upload controller with capability-
   for (const token of [
     'useXDriveFileExplorerUploadController<File>({',
     'continueOnUploadError: true',
-    'hostPort.write.cloudUploadPreflight(',
-    'hostPort.write.cloudUploadPreflightBatch(',
-    'hostPort.write.cloudUploadFile(',
+    'ownerAgent.cloudUploadPreflight(',
+    'ownerAgent.cloudUploadPreflightBatch(',
+    'ownerAgent.cloudUploadFile(',
     'runTargets: runUploadTargets,',
     'runGroup: runUploadGroup,',
     '<XDriveUploadConflictDialog {...uploadConflictDialogProps}',
@@ -305,7 +311,7 @@ test('Desktop folder and mixed-selection downloads use Agent archive capability 
   for (const token of [
     'archiveDownloadSupported = false',
     'xDriveFileExplorerArchiveDownloadPlan(nodes)',
-    'hostPort.write.cloudDownloadArchive(archivePlan.ids)',
+    'ownerAgent.cloudDownloadArchive(archivePlan.ids)',
     "beginActionBusy('download-archive')",
     "actionBusy === 'download-archive'",
     "downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'",
@@ -325,9 +331,9 @@ test('Desktop FileExplorer uploads selected folders through the shared hierarchy
     'xDriveFileExplorerResolveFolderUploadTargets({',
     'xDriveFileExplorerEnsureUploadDirectory({',
     'relativePath: file.webkitRelativePath || file.name',
-    'hostPort.write.cloudCreateDirectory(id, directoryName)',
+    'ownerAgent.cloudCreateDirectory(id, directoryName)',
     'xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName)',
-    'hostPort.browse.cloudChildrenPage(',
+    'ownerAgent.cloudChildrenPage(',
     "'upload-folder'",
     'runUploadGroup({',
     'relativePath,',
@@ -392,6 +398,6 @@ test('Desktop FileExplorer remounts shared navigation when session identity key 
 
 test('Desktop media Details columns use capability-gated Agent IPC and the shared FileExplorer loader', () => {
   assert.ok(explorer.includes('mediaDetailsSupported = false'), 'Desktop media-details capability gate is missing')
-  assert.ok(explorer.includes('hostPort.media.cloudFileMediaDetails([...refs])'), 'Desktop media-details Agent bridge is missing')
+  assert.ok(explorer.includes('ownerAgent.cloudFileMediaDetails([...refs])'), 'Desktop media-details Agent bridge is missing')
   assert.ok(explorer.includes('loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}'), 'Desktop media-details loader is not wired')
 })

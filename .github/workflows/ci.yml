@@ -1090,6 +1090,8 @@ jobs:
           bash -n scripts/server-control.sh
           bash -n scripts/test-server-backup-admin-host.sh
           bash scripts/test-server-backup-admin-host.sh
+          bash -n scripts/test-server-backup-verify-report.sh
+          bash scripts/test-server-backup-verify-report.sh
           bash -n scripts/test-media-worker-control.sh
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
@@ -1107,6 +1109,7 @@ jobs:
           bash -n scripts/server-migrate-user.sh
           bash -n scripts/test-server-user-migration.sh
           bash scripts/test-server-user-migration.sh
+          python3 -m unittest discover -s scripts/ci -p 'test_backup_restore_drill_evidence.py'
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
           bash -n scripts/test-server-installer-bootstrap.sh
@@ -1568,7 +1571,21 @@ jobs:
       - name: Load exact server image tested by CI
         run: bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test
       - name: Backup, corruption detection, and restore drill
+        env:
+          XD_BACKUP_DRILL_REPORT_PATH: dist/backup-restore-drill-evidence.json
+          XD_CI_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash scripts/test-server-backup-restore.sh
+      - name: Verify isolated drill evidence and source-checkout ancestry
+        env:
+          XD_CI_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/ci/verify_backup_restore_drill_evidence.py dist/backup-restore-drill-evidence.json "$GITHUB_SHA" "$XD_CI_SOURCE_HEAD_SHA"
+      - name: Publish isolated PostgreSQL and file restore evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-server-isolated-restore-drill
+          path: dist/backup-restore-drill-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
   go-windows:
     needs: pr-scope

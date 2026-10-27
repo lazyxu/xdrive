@@ -16,6 +16,14 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && "$2" == verify && "${3:-}" == --json ]]; then
+  if [[ "${4:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
+    printf '{"protocol":"xdrive-host-backup-verify-v1","state":"failed","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":1,"cas_bytes_hashed":11,"failure_category":"object_sha256_mismatch"}\n'
+    exit 22
+  fi
+  printf '{"protocol":"xdrive-host-backup-verify-v1","state":"success","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":2,"cas_bytes_hashed":17}\n'
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == verify && "${3:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
   exit 22
 fi
@@ -85,10 +93,20 @@ PY
 # the fixed host verify command for the selected committed generation.
 write_request verify "v2-default:$v2" "" deep "" ""
 backup_admin_process_request "$dir"
-grep -Fq "backup verify $XD_CONFIG_DIR/backups/incremental/snapshots/$v2" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq "backup verify --json $XD_CONFIG_DIR/backups/incremental/snapshots/$v2" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq "backup retention-plan --repository-dir $XD_CONFIG_DIR/backups/incremental --keep-last 1 --mode deep" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
 [[ ! -e "$dir/backup-admin-active.json" ]]
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+v=e["verification"]
+assert e["action"]=="verify" and e["state"]=="success",e
+assert v["protocol"]=="xdrive-host-backup-verify-v1" and v["state"]=="success",v
+assert v["cas_objects_checked"]==2 and v["cas_bytes_hashed"]==17,v
+assert "path" not in v and "hash" not in v,v
+PY
+
 
 # A scheduled backup holds this exact lock. Admin verification must fail
 # without invoking the Manager rather than racing a snapshot/retention job.
@@ -319,4 +337,110 @@ assert events[-1]["request_id"]==f"{2:024x}"
 assert all(e["state"]=="success" and e["mode"]=="fast" for e in events)
 PY
 
-echo 'Admin Server Backup host bridge: CRUD, verification, bounded history, custom v2 and negative tests passed'
+
+# Actual stage progress, unknown totals and unsafe progress records.
+progress="$dir/backup-admin-progress.env"
+printf 'stage_current=0\nstage_total=0\nstage=create backup\nservice=备份数据库\nbytes_done=4096\nbytes_total=8192\n' > "$progress"
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="running" and x["stage"]=="备份数据库"
+assert x["bytes_done"]==4096 and x["bytes_total"]==8192
+PY
+printf 'service=校验备份完整性\nbytes_done=1536\nbytes_total=0\n' > "$progress"
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["stage"]=="校验备份完整性"
+assert x["bytes_done"]==1536 and x["bytes_total"]==0
+PY
+printf 'service=异常样本\nbytes_done=99999999999999999999\nbytes_total=bad\n' > "$progress"
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["bytes_done"]==0 and x["bytes_total"]==0
+PY
+rm "$progress"
+printf untouched > "$TMP/progress-outside"
+ln -s "$TMP/progress-outside" "$progress"
+cp "$dir/backup-admin-status.json" "$TMP/status-before-progress-symlink"
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+cmp "$dir/backup-admin-status.json" "$TMP/status-before-progress-symlink"
+[[ "$(cat "$TMP/progress-outside")" == untouched ]]
+rm "$progress"
+
+
+# Malformed native stage labels cannot poison the JSON receipt. In particular,
+# reject control characters and UTF-8 labels that exceed the 96-byte API cap.
+python3 - "$progress" <<'PY'
+import sys
+with open(sys.argv[1], "w", encoding="utf-8") as out:
+    out.write("service=错误\t标签\nbytes_done=0008\nbytes_total=0016\n")
+PY
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1], encoding="utf-8"))
+assert s["stage"]=="正在创建服务器备份", s
+assert s["bytes_done"]==8 and s["bytes_total"]==16, s
+PY
+python3 - "$progress" <<'PY'
+import sys
+with open(sys.argv[1], "w", encoding="utf-8") as out:
+    out.write("service=" + "中"*40 + "\nbytes_done=5\nbytes_total=0\n")
+PY
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1], encoding="utf-8"))
+assert s["stage"]=="正在创建服务器备份", s
+assert s["bytes_done"]==5 and s["bytes_total"]==0, s
+PY
+
+# O_NOFOLLOW also refuses oversized and invalid UTF-8 progress input,
+# preserving the previous Host status rather than inventing progress.
+printf -v enormous '%02048d' 0
+printf '%sZ' "$enormous" > "$progress"
+cp "$dir/backup-admin-status.json" "$TMP/previous-progress-status"
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+cmp "$dir/backup-admin-status.json" "$TMP/previous-progress-status"
+python3 - "$progress" <<'PY'
+import sys
+with open(sys.argv[1], "wb") as stream:
+    stream.write(b"service=\xff\xfe\nbytes_done=8\n")
+PY
+backup_admin_publish_live_progress "$dir" create 0123456789abcdef01234567 "" "$(now_utc)"
+cmp "$dir/backup-admin-status.json" "$TMP/previous-progress-status"
+
+# Recovery after a Host restart must not show stale backup progress.
+printf 'service=stale-stage\nbytes_done=5\nbytes_total=10\n' > "$progress"
+write_request verify "v2-default:$v2" "" fast "" ""
+backup_admin_recover_interrupted "$dir"
+[[ ! -e "$progress" ]]
+
+
+# Forged/oversized Host records cannot be reflected in the Admin API history.
+proof_file="$TMP/forged-verify-report.json"
+printf '{"protocol":"xdrive-host-backup-verify-v1","state":"success","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":9007199254740992,"cas_bytes_hashed":17}\n' > "$proof_file"
+backup_admin_history_append "$dir" success verify 111111111111111111111111 \
+  "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z "" "$proof_file"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert e["action"]=="verify" and "verification" not in e,e
+PY
+rm "$proof_file"
+ln -s /etc/passwd "$proof_file"
+backup_admin_history_append "$dir" success verify 222222222222222222222222 \
+  "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z "" "$proof_file"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert "verification" not in e,e
+PY
+[[ -L "$proof_file" && "$(readlink "$proof_file")" == /etc/passwd ]]
+
+echo 'Admin Server Backup host bridge: CRUD, history, live progress and safety tests passed'

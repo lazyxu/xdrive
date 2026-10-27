@@ -253,11 +253,101 @@ executed results plus a per-snapshot *last verification (historical)* receipt.
 This is not a claim that previously verified bytes remain valid: any actual
 restore re-runs the full fail-closed verification.
 
+Manual Create uses the existing `server-backup.sh` progress file.
+Host Control copies bounded, actual per-stage bytes and labels to its
+authenticated status. Web/Desktop render a determinate progress bar only
+when a trustworthy byte total is known. Unknown totals remain indeterminate;
+stage counters can reset and must not be described as an overall percentage.
+Other actions retain indeterminate progress until native evidence exists.
+Final Host terminal receipts remain authoritative.
+
+The shared administrator panel also provides an **integrity overview** based
+only on Host-discovered generations and the most recent (up to 30) operation
+receipts. It separates structurally complete file+database restore candidates,
+database-only, incomplete, inconsistent, previous verify success/failure and
+absent recent verify receipts. A failed historical check is a warning; a
+previous success is **not** a current integrity guarantee. The read-only
+"verify latest complete backup" shortcut defaults to `fast` and uses the
+same authorized fixed Host action. No client-side hash estimate or fake
+recovery-success badge is emitted.
+
+History rows now offer an individual **Host execution detail** dialog with
+start/end timestamps, actual elapsed seconds, structured result/error code,
+mode and receipt ID. Lock contention, interrupted Host actions and generic
+failures have bounded, human-readable explanations; raw Host logs and paths
+are never sent to the browser. The existing v2 retention preview displays
+actual `hashed_objects` / `hashed_bytes` when the Host reports them.
+Individual verification object counts and per-category failures are still
+unavailable from the existing Host protocol and are **explicitly not
+estimated**. This is historical diagnostic evidence, not a restore drill.
+
 Online CAS verification/repair lives in **全局存储** and Task Center;
 a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file
 recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
 is enabled by the Admin UI.
+
+## Machine-readable CAS verification statistics (source-level)
+
+The internal, read-only `xdrive-backup-repo verify --repo PATH --snapshot NAME
+--json` prints a fixed-schema JSON receipt on stdout. It preserves the
+existing deep SHA-256 verification and nonzero exit status on errors. Fields:
+`protocol`, `state`, `mode`, `objects_checked`, `bytes_hashed`, and
+optional enumerated `failure_category`. These counters come from actual
+verification work, not projected byte counts. **On failure they are partial**;
+never present them as a fully passed scan. The report deliberately omits
+paths, CAS digests and raw error messages. stderr remains a private CLI
+diagnostic channel. `--json` is not valid for create, prune, retention or
+other subcommands.
+
+The Host Manager now supports `xdrive-server backup verify --json [BACKUP_DIR]`.
+Its existing snapshot SHA256SUMS preflight and repository shared lock remain
+in effect, with **one referenced-CAS hash pass**, not two. The bounded
+`xdrive-host-backup-verify-v1` report carries `format`, `state`,
+`scope`, `cas_objects_checked`, `cas_bytes_hashed`, and a fixed failure
+category when available. On v1 these two CAS counters are zero because the
+snapshot files are verified by SHA256SUMS instead. Any v2 success requires
+valid, real CAS helper evidence. Failures retain nonzero exit status and
+partial counts; raw file paths, object hashes and logs are excluded from JSON.
+This does not prove PostgreSQL data can actually be restored and queried.
+
+This internal CAS report is **not itself a complete backup verification**:
+the Host `xdrive-server backup verify` also checks the snapshot metadata,
+SHA256SUMS and database dump. Do not advertise an internal CAS success as a
+fully restorable snapshot. Admin Host Control now persists a validated report as optional evidence on
+each verification-history record. The shared Web/Desktop detail dialog shows
+historical counts and safe failure categories without disclosing Host paths.
+This is evidence of the completed checksum/CAS check, not a restore drill.
+
+### Recoverability evidence in the Admin shared UI
+
+The **恢复能力与演练证据** section uses the selected snapshot and the
+existing authenticated Host inventory/history, not a new Docker/CLI writer.
+It shows four independent evidence classes: structural backup candidate,
+most recent historical checksum/CAS verification, most recent Host-recorded
+*actual restore action*, and isolated recovery-drill acceptance. A successful
+destructive restore action is **not** evidence of an isolated drill. History is
+bounded to 30 receipts, and no history is not a failed backup.
+
+For PR-triggered CI, `GITHUB_SHA` is a synthetic merge checkout, not
+necessarily the feature head or the eventual squash-merge commit. For the
+historical run below, the artifact's `ci_checkout_sha` is
+`316584c0b5c9b0acb8a17c337a40a339a3fff620`; GitHub's merge commit
+has `954fc13622acb83582e5e202bdad914e82e1a2e4` as its second parent.
+Future artifacts additionally include `ci_source_head_sha` and must pass
+an exact SHA/schema/checkout-ancestry validator inside the same CI run
+before upload. Neither mechanism binds artifacts to an installed Host.
+
+The only verified CI drill for feature head `954fc13622acb83582e5e202bdad914e82e1a2e4`
+is [GitHub Actions run 40499948689](https://github.com/lazyxu/xdrive/actions/runs/40499948689)
+with artifact `xdrive-server-isolated-restore-drill` (ID `12734306146`).
+This is **ephemeral CI Docker/PostgreSQL**, with actual SQL, legacy-file,
+CAS-byte and post-prune restoration assertions, **not** evidence that the
+operator's currently installed Host has been drilled. The Admin UI therefore
+does not render a green production-drill state or automatically trust CI
+artifacts. Physical Host-only acceptance is **跳过（未验收）** until separate
+Host-bound evidence exists. No new remote Admin action or production restore
+is invoked by this read-only view.
 
 ## Compression
 

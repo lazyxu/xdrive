@@ -77,3 +77,13 @@ test('Desktop permits the already present storage compression adviser', () => {
   assert.ok(desktopMain.includes("'optimization-advice'"))
   assert.ok(read('desktop/src/main/agent_client.cts').includes("'optimization-advice'"))
 })
+
+test('Admin backup progress uses the existing Host byte source with unknown totals', () => {
+  const host = read('scripts/server-control.sh')
+  const panel = read('ui/shared/src/mui/ServerBackupManagementPanel.tsx')
+  assert.match(host, /backup_admin_publish_live_progress\(\)/)
+  assert.match(host, /XD_BACKUP_PROGRESS_FILE/)
+  assert.match(panel, /data-xdrive-admin-backup-progress/)
+  assert.match(panel, /尚无可靠的字节总量/)
+  assert.match(read('internal/api/admin_backup_management.go'), /BytesDone/)
+})

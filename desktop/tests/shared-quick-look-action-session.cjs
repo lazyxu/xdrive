@@ -26,7 +26,7 @@ const resolve = name => {
   if (name === 'react' || name === 'react/jsx-runtime') return require(name)
   if (name.startsWith('@mui/icons-material/')) return () => null
   if (name === '@mui/material') return {
-    IconButton: Button, Stack: simpleHost('div'),
+    IconButton: Button, Stack: simpleHost('div'), Box: simpleHost('div'),
     Tooltip: simpleHost('tooltip'), Typography: simpleHost('span'),
   }
   if (name === '../file-preview') return { xDriveClassifyFilePreview: () => 'image' }
@@ -42,6 +42,11 @@ const resolve = name => {
   if (name === './FileOpenPreviewDialog') return {
     XDriveOpenPreviewDialog: ({ actions, children, ...props }) =>
       React.createElement('viewer-shell', props, actions, children),
+  }
+  if (name === './useViewerDownloadReceipt') return {
+    useXDriveViewerDownloadReceipt: () => ({
+      claim: () => undefined, dismiss() {}, text: '', announce: false,
+    }),
   }
   if (name === './usePreviewSlideshow') return {
     useXDrivePreviewPresentation: () => ({

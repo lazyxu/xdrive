@@ -1,0 +1,114 @@
+name: Places BD09 Owner Cells and Camera Range PostgreSQL 100k Baseline
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/api/media_places_bd09_100k_linux_test.go
+      - .github/workflows/places-bd09-owner-pg100k.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-bd09-pg100k-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  places-bd09-postgres100k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_BD09_PG100K: '1'
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_BD09_OUTPUT: ${{ github.workspace }}/artifacts/places-bd09-pg100k.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Source-exact checkout and gofmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee bd09-source-sha.txt
+          echo "XD_PLACES_BD09_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          unformatted="$(gofmt -l internal/api/media_places_bd09_100k_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_bd09_100k_linux_test.go
+            exit 1
+          fi
+      - name: Seed disposable PostgreSQL17 with genuine 100k logical Owner assets
+        shell: bash
+        env:
+          XD_PLACES_BD09_ACTION: seed
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=35m ./internal/api 2>&1 | tee bd09-seed.log
+      - name: Measure real production BD09 Cells, native Viewport and Gallery Camera Range
+        shell: bash
+        env:
+          XD_PLACES_BD09_ACTION: probe
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=22m ./internal/api 2>&1 | tee bd09-probe.log
+      - name: Validate actual 100k and scoped 10k timing, CPU, RSS and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('artifacts/places-bd09-pg100k.json')
+          assert path.is_file() and path.stat().st_size>1000
+          data=json.loads(path.read_text())
+          assert data['ci_git_head']==Path('bd09-source-sha.txt').read_text().strip()
+          assert data['owner_assets']==100000 and data['media_rows']==115000
+          assert data['subset_members']==10000 and data['sample_count']==3
+          assert data['provider_conversion_verified'] is False
+          metrics=data['metrics']
+          assert len(metrics)==14
+          assert {x['scope'] for x in metrics}=={'owner100k','owner100k_scoped_first10k_members'}
+          assert {x['operation'] for x in metrics}=={'cells','native_viewport','camera_gallery_range'}
+          for row in metrics:
+              assert len(row['latency_ms'])==3 and all(x>=0 for x in row['latency_ms'])
+              assert row['count']==row['expected'] and row['max_returned']<=64
+              assert row['p95_ms']>=row['p50_ms']>=0
+              assert row['peak_rss_kib']>0
+          print('Actual source-exact PostgreSQL Owner BD09 100k measurements verified')
+          PY
+      - name: Keep genuine SQL timing and source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-bd09-owner-pg100k-${{ github.run_id }}
+          path: |
+            artifacts/places-bd09-pg100k.json
+            bd09-seed.log
+            bd09-probe.log
+            bd09-source-sha.txt
+          if-no-files-found: warn
+          retention-days: 14

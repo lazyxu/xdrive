@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress,
   MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
 import type {
   XDriveServerBackupPage, XDriveServerBackupPort, XDriveServerBackupRequest,
-  XDriveServerBackupSnapshot,
+  XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry,
 } from '../server-backup-admin'
+import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
+  serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
+import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -36,7 +40,7 @@ function snapshotStatus(item: XDriveServerBackupSnapshot): string {
 
 
 function historicalVerification(history: XDriveServerBackupPage['history'], snapshotID: string) {
-  const latest = history?.find(e => e.action === 'verify' && e.snapshot_id === snapshotID)
+  const latest = latestServerBackupVerification(history, snapshotID)
   if (!latest) return '未校验'
   return (latest.state === 'success' ? '通过' : '失败') + ' · ' + (latest.mode || 'fast') +
     ' · ' + (latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '—') + '（历史）'
@@ -60,6 +64,7 @@ export function XDriveServerBackupManagementPanel({
     format: 'v1' | 'v2'; days: string; revision: string
   } | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
   const [confirmText, setConfirmText] = useState('')
 
   const reload = useCallback(async () => {
@@ -115,6 +120,7 @@ export function XDriveServerBackupManagementPanel({
   const busy = submitting || workStates.has(page?.operation.state || '')
   const supported = Boolean(page?.supported)
   const selected = page?.inventory.snapshots.find(item => item.id === snapshotID)
+  const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
   const keep = Number(keepLast)
@@ -181,6 +187,29 @@ export function XDriveServerBackupManagementPanel({
         </Alert>
       ) : null}
 
+
+      {page?.operation.state === 'running' ? (
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-progress>
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">
+              当前阶段：{page.operation.stage || '宿主机执行中'}
+            </Typography>
+            {Number(page.operation.bytes_total || 0) > 0 ? (
+              <LinearProgress variant="determinate" value={Math.max(0, Math.min(100,
+                100 * Number(page.operation.bytes_done || 0) / Number(page.operation.bytes_total)))} />
+            ) : <LinearProgress />}
+            <Typography variant="caption" color="text.secondary">
+              {Number(page.operation.bytes_total || 0) > 0
+                ? '当前阶段已处理 ' + displayBytes(page.operation.bytes_done || 0) +
+                  ' / ' + displayBytes(page.operation.bytes_total || 0)
+                : Number(page.operation.bytes_done || 0) > 0
+                  ? '当前阶段已处理 ' + displayBytes(page.operation.bytes_done || 0) + '（总量未知）'
+                  : '当前阶段尚无可靠的字节总量，不显示估算百分比。'}
+            </Typography>
+          </Stack>
+        </Paper>
+      ) : null}
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>创建备份</Typography>
@@ -208,6 +237,38 @@ export function XDriveServerBackupManagementPanel({
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>备份清单与验证</Typography>
+          {integrity ? (
+            <Alert severity={integrity.needsAttention ? 'warning' : 'info'}
+              data-xdrive-admin-backup-integrity-summary>
+              <Stack spacing={1}>
+                <Typography variant="body2">
+                  已发现 {integrity.snapshots} 代备份：结构完整的文件与数据库恢复候选
+                  {integrity.fullCandidates} 代；仅数据库 {integrity.databaseOnly} 代；
+                  不完整 {integrity.incomplete} 代；源数据不一致 {integrity.inconsistent} 代。
+                </Typography>
+                <Typography variant="body2">
+                  在最近最多 30 条宿主机操作记录中，各快照的最新校验结果：
+                  历史通过 {integrity.historicalPassed} 代，历史失败
+                  {integrity.historicalFailed} 代，未见近期校验记录
+                  {integrity.withoutRecentReceipt} 代。
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  结构完整和历史校验通过均不代表当前数据仍完好；恢复前必须重新校验，
+                  真正的数据库与文件恢复能力仍需独立演练。验证失败的快照不应作为可靠恢复点。
+                </Typography>
+                <Box>
+                  <XDriveActionButton disabled={disabled || !integrity.newestFullID}
+                    onClick={() => {
+                      if (integrity.newestFullID) void submit({
+                        action: 'verify', snapshot_id: integrity.newestFullID, mode: 'fast',
+                      })
+                    }}>
+                    校验最新完整备份（fast）
+                  </XDriveActionButton>
+                </Box>
+              </Stack>
+            </Alert>
+          ) : null}
           <TableContainer sx={{ maxHeight: 320 }}>
             <Table size="small" stickyHeader aria-label="服务器备份清单">
               <TableHead>
@@ -273,6 +334,10 @@ export function XDriveServerBackupManagementPanel({
         </Stack>
       </Paper>
 
+      {page?.supported
+        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />
+        : null}
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>保留计划与 v2 引用感知清理</Typography>
@@ -303,6 +368,11 @@ export function XDriveServerBackupManagementPanel({
               可考虑删除 {page.retention.drop_candidates?.length || 0} 代；
               孤儿 CAS {page.retention.unreferenced_objects || 0} 项；
               潜在逻辑空间 {displayBytes(page.retention.potential_logical_bytes)}。
+              {page.retention.hashed_objects > 0
+                ? ' 本次预览实际执行 SHA-256 的仓库对象 ' +
+                    page.retention.hashed_objects + ' 个 / ' +
+                    displayBytes(page.retention.hashed_bytes) + '。'
+                : ' 本次预览未提供已执行的仓库对象哈希数量。'}
               此报告是历史预览，并非删除授权。
             </Alert>
           ) : null}
@@ -362,7 +432,7 @@ export function XDriveServerBackupManagementPanel({
               <TableHead>
                 <TableRow>
                   <TableCell>完成时间</TableCell><TableCell>动作</TableCell><TableCell>快照</TableCell>
-                  <TableCell>结果</TableCell><TableCell>模式</TableCell><TableCell>请求号</TableCell>
+                  <TableCell>结果</TableCell><TableCell>模式</TableCell><TableCell>耗时</TableCell><TableCell>请求号</TableCell><TableCell>详情</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -373,15 +443,58 @@ export function XDriveServerBackupManagementPanel({
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
                     <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
                     <TableCell>{item.mode || '—'}</TableCell>
+                    <TableCell>{serverBackupReceiptDurationSeconds(item) === null ? '—' :
+                      serverBackupReceiptDurationSeconds(item) + ' 秒'}</TableCell>
                     <TableCell>{item.request_id || '—'}</TableCell>
+                    <TableCell>
+                      <Button size="small" onClick={() => setHistoryDetail(item)}
+                        aria-label={'查看备份操作详情 ' + item.request_id}>详情</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
-                {!page?.history?.length ? <TableRow><TableCell colSpan={6}>暂无历史操作记录。</TableCell></TableRow> : null}
+                {!page?.history?.length ? <TableRow><TableCell colSpan={8}>暂无历史操作记录。</TableCell></TableRow> : null}
               </TableBody>
             </Table>
           </TableContainer>
         </Stack>
       </Paper>
+      <Dialog open={Boolean(historyDetail)} onClose={() => setHistoryDetail(null)}
+        fullWidth maxWidth="sm" aria-label="宿主机备份执行诊断详情"
+        data-xdrive-admin-backup-history-detail>
+        <DialogTitle>宿主机备份执行记录（历史）</DialogTitle>
+        <DialogContent>
+          {historyDetail ? (
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              <Typography variant="body2">动作：{historyDetail.action} ·
+                {historyDetail.state === 'success' ? '已完成' : '失败'}</Typography>
+              <Typography variant="body2">快照：{historyDetail.snapshot_id || '—'}</Typography>
+              <Typography variant="body2">校验模式：{historyDetail.mode || '不适用'}</Typography>
+              <Typography variant="body2">开始：{historyDetail.started_at || '—'}</Typography>
+              <Typography variant="body2">结束：{historyDetail.finished_at || '—'}</Typography>
+              <Typography variant="body2">
+                执行耗时：{serverBackupReceiptDurationSeconds(historyDetail) === null
+                  ? '未知'
+                  : serverBackupReceiptDurationSeconds(historyDetail) + ' 秒'}
+              </Typography>
+              <Typography variant="body2">
+                失败代码：{historyDetail.error_code || '无'}
+              </Typography>
+              <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+                请求编号：{historyDetail.request_id || '—'}
+              </Typography>
+              <Alert severity={historyDetail.state === 'failed' ? 'warning' : 'info'}>
+                {serverBackupReceiptExplanation(historyDetail)}
+              </Alert>
+              <XDriveBackupVerificationReceipt entry={historyDetail} />
+              <Typography variant="caption" color="text.secondary">
+                对于没有新版宿主机验证报告的历史记录，仍然不推断对象数量或校验字节。
+                详细错误日志仅可由宿主机管理员本地查看。
+              </Typography>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setHistoryDetail(null)}>关闭</Button></DialogActions>
+      </Dialog>
       <Box>
         <Typography variant="body2" color="text.secondary">
           在线存储 CAS 的完整性校验与修复是另一项维护任务，不代表备份仓库可恢复。

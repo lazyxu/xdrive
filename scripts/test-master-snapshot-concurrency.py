@@ -79,9 +79,11 @@ assert """    concurrency:
       queue: max
       cancel-in-progress: false
 """ in bundle, "release bundle must queue without discarding pending publishers"
-assert "Reject stale master snapshot before channel promotion" in bundle
-assert "Refusing stale Snapshot promotion before channel update" in bundle
-assert bundle.index("- name: Reject stale master snapshot before channel promotion") < (
+assert "Classify stale master Snapshot eligibility before channel promotion" in bundle
+assert 'echo "publish=false" >> "$GITHUB_OUTPUT"' in bundle
+assert "::notice title=Superseded Snapshot" in bundle
+assert "Diverged Snapshot ancestry" in bundle
+assert bundle.index("- name: Classify stale master Snapshot eligibility before channel promotion") < (
     bundle.index("- name: Promote successful server images")
 ), "a stale completed build must not overwrite GHCR edge before being rejected"
 
@@ -108,5 +110,19 @@ assert 'ref: ${{ github.sha }}' in apk_jobs
 assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in apk_jobs
 assert "Upload exact-master Android APK" in apk_jobs
 assert "retention-days: 30" in apk_jobs
+
+# Snapshot App auth must use a numeric JWT issuer; an Iv1. Client ID creates
+# repeated 401 failures on the live GitHub endpoint.
+smoke = (root / ".github/workflows/snapshot-publisher-auth-smoke.yml").read_text(encoding="utf-8")
+auth_script = (root / "scripts/ci/mint-snapshot-publisher-token.sh").read_text(encoding="utf-8")
+assert "SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}" in release
+assert "XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}" in release
+assert "run: bash scripts/ci/mint-snapshot-publisher-token.sh" in release
+assert "XD_SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}" in smoke
+assert "run: bash scripts/ci/mint-snapshot-publisher-token.sh" in smoke
+assert '--argjson iss "$XD_SNAPSHOT_APP_ID"' in auth_script
+assert 'select([.repositories[]?.full_name] == [$repo])' in auth_script
+assert 'client-id:' not in release
+assert 'client-id:' not in smoke
 
 print("master Snapshot and disposable Android APK concurrency contract passed")

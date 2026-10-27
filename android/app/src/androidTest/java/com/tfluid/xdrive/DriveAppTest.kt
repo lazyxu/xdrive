@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -33,6 +37,11 @@ class DriveAppTest {
     private var renameCalls = 0
     private var trashCalls = 0
     private var batchTrashCalls = 0
+    private var batchCopyCalls = 0
+    private var batchMoveCalls = 0
+    private var batchTransferFixture = false
+    private val batchSecondFile = DriveNode(71, 1, "second.txt", "file",
+        size = 24, revision = 3)
     private var copyCalls = 0
     private var moveCalls = 0
     private var extraRootFile = false
@@ -54,6 +63,30 @@ class DriveAppTest {
     private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
     private var filesViewerFixture = false
+    private var filesAudioFixture = false
+    private val filesAudioNode = DriveNode(50, 1, "music.mp3", "file", size = 40, revision = 3)
+    private var filesAudioSessions = 0
+    private var filesAudioClosures = 0
+    private var filesPdfFixture = false
+    private var filesPdfReads = 0
+    private val filesPdfFixtureBytes: ByteArray by lazy {
+        val document = android.graphics.pdf.PdfDocument()
+        try {
+            for (number in 1..2) {
+                val page = document.startPage(
+                    android.graphics.pdf.PdfDocument.PageInfo.Builder(
+                        320, 440, number).create())
+                val paint = android.graphics.Paint().apply { textSize = 18f }
+                page.canvas.drawText("Owner PDF ${number}", 22f, 46f, paint)
+                document.finishPage(page)
+            }
+            ByteArrayOutputStream().also { document.writeTo(it) }.toByteArray()
+        } finally { document.close() }
+    }
+    private val filesPdfNode: DriveNode by lazy {
+        DriveNode(51, 1, "private.pdf", "file",
+            filesPdfFixtureBytes.size.toLong(), revision = 3)
+    }
     private val filesViewerNode = DriveNode(49, 1, "snapshot.jpg", "file",
         size = 32L * 1024 * 1024 + 1L, revision = 2)
     private var filesViewerDetailReads = 0
@@ -65,6 +98,8 @@ class DriveAppTest {
     private val galleryTimelineRequests = mutableListOf<Pair<Int, Boolean>>()
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryKindQueries = mutableListOf<Pair<String, String>>()
+    private val gallerySortQueries = mutableListOf<Pair<String, String>>()
+    private val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -76,6 +111,14 @@ class DriveAppTest {
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun galleryFavoriteBatch(
+            accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+        ): Int {
+            check(accessToken == "fixture" && items.size in 1..200 &&
+                items.all { it.node.id == 40L && it.node.revision == 1L })
+            galleryFavoriteCalls += (items.map { it.node.id } to favorite)
+            return items.size
+        }
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
             galleryRangeReads++
@@ -142,7 +185,14 @@ class DriveAppTest {
                 DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
                 "image", hasThumbnail = true)), 1, 0)
         }
-        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+        override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String, albumId: String?,
+            sortBy: String, sortDir: String): GalleryPage {
+            gallerySortQueries += sortBy to sortDir
+            return GalleryPage(listOf(GalleryAsset(DriveNode(48L, 1L, "sorted.jpg",
+                "file", size = 44, revision = 1), "image", hasThumbnail = true)), 1, 0)
+        }
+    override suspend fun galleryKindPage(accessToken: String, offset: Int,
             initialLatest: Boolean, search: String, kind: String): GalleryPage {
             galleryKindQueries += search to kind
             return GalleryPage(listOf(GalleryAsset(
@@ -150,6 +200,28 @@ class DriveAppTest {
                     if (kind == "video") "filtered.mp4" else "filtered.jpg",
                     "file", size = 64, revision = 1),
                 kind, hasThumbnail = true)), 1, 0)
+        }
+        override suspend fun filesPdfDownload(
+            accessToken: String, original: DriveNode,
+            openDestination: () -> java.io.OutputStream,
+            onProgress: (Long) -> Unit,
+        ): Long {
+            check(filesPdfFixture && accessToken == "fixture" && original == filesPdfNode)
+            filesPdfReads++
+            openDestination().use { it.write(filesPdfFixtureBytes) }
+            onProgress(filesPdfFixtureBytes.size.toLong())
+            return filesPdfFixtureBytes.size.toLong()
+        }
+        override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+            OwnerVideoPlayback {
+            check(filesAudioFixture && accessToken == "fixture" && node == filesAudioNode)
+            filesAudioSessions++
+            return OwnerVideoPlayback(
+                "https://fixture.invalid/api/v1/files/50/content",
+                okhttp3.OkHttpClient.Builder().addInterceptor {
+                    throw java.io.IOException("Fixture deliberately has no MP3 bytes")
+                }.build(), node.size,
+            ) { filesAudioClosures++ }
         }
         override suspend fun filesMediaItem(
             accessToken: String, node: DriveNode,
@@ -272,6 +344,30 @@ class DriveAppTest {
             mutableRootRows.removeAll { it.id in ids }
             if (70L in ids) extraRootFile = false
         }
+        override suspend fun batchCopyNodes(
+            accessToken: String, originals: List<DriveNode>, parentId: Long,
+        ): List<DriveNode> {
+            check(batchTransferFixture && accessToken == "fixture" && parentId == 1L &&
+                originals.map { it.id } == listOf(71L, 70L))
+            batchCopyCalls++
+            val copies = originals.mapIndexed { index, node ->
+                node.copy(id = 170L + index, parentId = parentId,
+                    name = node.name + " - 副本", revision = 1)
+            }
+            mutableRootRows += copies
+            return copies
+        }
+        override suspend fun batchMoveNodes(
+            accessToken: String, originals: List<DriveNode>, parentId: Long,
+        ): List<DriveNode> {
+            check(batchTransferFixture && accessToken == "fixture" && parentId == 2L &&
+                originals.map { it.id } == listOf(71L, 70L))
+            batchMoveCalls++
+            extraRootFile = false
+            batchTransferFixture = false
+            return originals.map { it.copy(parentId = parentId,
+                revision = it.revision + 1) }
+        }
         override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
             copyCalls++
             return original.copy(id = 770 + copyCalls.toLong(), parentId = parentId, revision = 1)
@@ -310,6 +406,9 @@ class DriveAppTest {
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) mutableRootRows.toList() +
+                    (if (batchTransferFixture) listOf(batchSecondFile) else emptyList()) +
+                    (if (filesAudioFixture) listOf(filesAudioNode) else emptyList()) +
+                    (if (filesPdfFixture) listOf(filesPdfNode) else emptyList()) +
                     (if (filesViewerFixture) listOf(filesViewerNode) else emptyList()) +
                     (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
                         else emptyList())
@@ -327,22 +426,43 @@ class DriveAppTest {
         onDownload: ((DriveNode) -> Unit)? = null,
         onUpload: (() -> Unit)? = null,
     ) {
-        compose.setContent { XDriveTheme {
-            DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
-        } }
+        // Read the real Compose IME inset from composition (not a fixed delay
+        // or a guessed keyboard state). Done hides the keyboard; only click
+        // once the actual inset and on-screen submit have both settled.
+        val imeBottomPx = AtomicInteger(-1)
+        compose.setContent {
+            val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+            SideEffect { imeBottomPx.set(observedImeBottom) }
+            XDriveTheme {
+                DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+            }
+        }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()
-        // Compose can complete the Done callback before Android's IME inset
-        // actually settles. Keep a real visible/enabled submit assertion; let
-        // the bounded fixture wait re-scroll only while the inset is changing.
-        // Never click an offscreen control or suppress a genuine layout failure.
-        compose.waitUntil(timeoutMillis = 10_000) {
-            val submit = compose.onNodeWithTag("auth-submit")
-            runCatching { submit.performScrollTo() }.isSuccess &&
-                runCatching { submit.assertIsDisplayed() }.isSuccess
+        // The real button must be visible and enabled after the real keyboard
+        // reports its bottom inset as zero. Preserve the original 10s bound.
+        // Only scrolling is retried while its viewport animates, not login.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                if (imeBottomPx.get() != 0) false
+                else {
+                    val submit = compose.onNodeWithTag("auth-submit")
+                    runCatching { submit.performScrollTo() }.isSuccess &&
+                        runCatching { submit.assertIsDisplayed().assertIsEnabled() }.isSuccess
+                }
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "Fixture submit not ready: imeBottomPx=${imeBottomPx.get()}, " +
+                    "screen=${current.screen}, loading=${current.loading}, " +
+                    "errorPresent=${!current.error.isNullOrBlank()}, " +
+                    "factories=${connectFactoryCalls.get()}",
+                failure,
+            )
         }
         compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         try {
@@ -357,7 +477,8 @@ class DriveAppTest {
                 "Fixture login did not reach loaded Files: " +
                     "screen=${current.screen}, loading=${current.loading}, " +
                     "loaded=${current.loaded}, itemCount=${current.items.size}, " +
-                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}",
+                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}, " +
+                    "errorPresent=${current.error != null}, imeBottomPx=${imeBottomPx.get()}",
                 failure,
             )
         }
@@ -493,6 +614,32 @@ class DriveAppTest {
         }
     }
 
+    @Test fun galleryNativeSelectionFavoritesCurrentOwnerTileWithoutOpeningViewer() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selected-mark-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("gallery-photo-viewer").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-selection-actions").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-selection-favorite").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.loading &&
+                controller.state.value.galleryItems.singleOrNull()?.favorite == true &&
+                !controller.state.value.gallerySelectionMode
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(listOf(40L) to true),
+                galleryFavoriteCalls)
+        }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+    }
+
     @Test fun nativeGalleryKindFilterUsesServerAndResetsPositionOnChangedScope() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()
@@ -538,6 +685,36 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryMediaKind.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+    }
+
+    @Test fun nativeGallerySortUsesOwnerRangeAndRestoresChronologicalDefault() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-added-desc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "added" &&
+                st.gallerySortDir == "desc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 48L
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("added" to "desc"), gallerySortQueries)
+            org.junit.Assert.assertEquals(0, controller.state.value.galleryOffset)
+        }
+        compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-captured-asc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "captured" &&
+                st.gallerySortDir == "asc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 40L
         }
     }
 
@@ -1111,6 +1288,72 @@ class DriveAppTest {
             Intent().setData(accepted)))
     }
 
+    @Test fun filesPdfVerifiedTwoPagesBackAndPrivateTempCleanup() {
+        filesPdfFixture = true
+        startAndLogin()
+        val pathBefore = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-51").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesPdfViewer == filesPdfNode
+        }
+        compose.onNodeWithTag("files-pdf-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-pdf-page-ready").fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag("files-pdf-page-count").assertTextEquals("1 / 2")
+        compose.onNodeWithTag("files-pdf-next").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-pdf-page-ready").fetchSemanticsNodes()
+                .isNotEmpty() &&
+                compose.onAllNodesWithTag("files-pdf-page-count")
+                    .fetchSemanticsNodes().isNotEmpty() &&
+                controller.state.value.filesPdfViewer == filesPdfNode
+        }
+        compose.onNodeWithTag("files-pdf-page-count").assertTextEquals("2 / 2")
+        compose.onNodeWithContentDescription("PDF 第 2 页").assertExists()
+        compose.onNodeWithTag("files-pdf-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesPdfViewer == null &&
+                compose.onAllNodesWithTag("files-item-51").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(pathBefore,
+                controller.state.value.path.map { it.id })
+            org.junit.Assert.assertEquals(1, filesPdfReads)
+        }
+        val dir = java.io.File(InstrumentationRegistry.getInstrumentation()
+            .targetContext.cacheDir, "owner-native-pdf")
+        compose.waitUntil(timeoutMillis = 10_000) {
+            dir.listFiles().orEmpty().none { it.name.startsWith("preview-") &&
+                it.name.endsWith(".pdf") }
+        }
+    }
+
+    @Test fun filesAudioUsesNativeMedia3AndReturnsToOriginalFilesWithoutRefreshing() {
+        filesAudioFixture = true
+        startAndLogin()
+        val before = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-50").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == filesAudioNode
+        }
+        compose.onNodeWithTag("files-audio-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) { filesAudioSessions == 1 }
+        compose.onNodeWithTag("files-audio-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == null &&
+                filesAudioClosures == 1
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithTag("files-item-50").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(before, controller.state.value.path.map { it.id })
+        }
+    }
+
     @Test fun filesImageUsesSameOwnerViewerAndReturnsToOriginalBrowse() {
         filesViewerFixture = true
         startAndLogin()
@@ -1140,11 +1383,100 @@ class DriveAppTest {
         var picks = 0
         startAndLogin(onUpload = { picks++ })
         compose.onNodeWithContentDescription("账户菜单").assertIsDisplayed().performClick()
-        // The account menu scrolls on short emulator screens. Verify the
-        // actual enabled SAF action is visible; keep the exact callback check.
+        // The actual platform popup can finish positioning after Compose idle.
+        // Boundedly scroll/observe the same real enabled SAF item; never retry
+        // the upload click or replace its callback with a synthetic invocation.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                runCatching {
+                    compose.onNodeWithTag("files-upload-action")
+                        .performScrollTo().assertIsDisplayed().assertIsEnabled()
+                }.isSuccess
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "SAF upload action not visible: screen=${current.screen}, " +
+                    "loading=${current.loading}, loaded=${current.loaded}",
+                failure,
+            )
+        }
         compose.onNodeWithTag("files-upload-action")
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+            .assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
+    }
+
+    @Test fun nativeBrowseSelectionCopiesTwoOwnerFilesViaOneAtomicPost() {
+        batchTransferFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        // Server fixture is folder 2, file 71, then file 70. Scroll each
+        // actual node into the 320x640 emulator viewport before touching it.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-item-70").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files").performScrollToIndex(1)
+        compose.onNodeWithTag("files-item-71").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-batch-copy-action")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-source-summary")
+            .assertTextEquals("批量 2 项")
+        compose.onNodeWithTag("files-destination-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            batchCopyCalls == 1 && controller.state.value.destinationKind == null &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, batchCopyCalls)
+            org.junit.Assert.assertEquals(0, batchMoveCalls)
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertTrue(
+                controller.state.value.items.any { it.id == 170L } &&
+                controller.state.value.items.any { it.id == 171L })
+        }
+    }
+
+    @Test fun nativeBrowseBatchMoveRequiresVerifiedOtherFolderAndOnePost() {
+        batchTransferFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        // Server fixture is folder 2, file 71, then file 70. Scroll each
+        // actual node into the 320x640 emulator viewport before touching it.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-item-70").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files").performScrollToIndex(1)
+        compose.onNodeWithTag("files-item-71").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-batch-move-action")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("files-destination-item-2").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationPath.lastOrNull()?.id == 2L &&
+                controller.state.value.destinationLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            batchMoveCalls == 1 && controller.state.value.destinationKind == null &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, batchMoveCalls)
+            org.junit.Assert.assertEquals(0, batchCopyCalls)
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertTrue(controller.state.value.items.none {
+                it.id in setOf(70L, 71L) })
+            org.junit.Assert.assertEquals(1L, controller.state.value.path.last().id)
+        }
     }
 
     @Test fun nativeDownloadMenuUsesOnlyRealCurrentFile() {

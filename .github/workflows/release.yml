@@ -236,10 +236,10 @@ jobs:
     if: inputs.publish
     needs: [verify-client-artifacts, server-images, server-deploy]
     runs-on: ubuntu-latest
-    # Client ID is not secret, but GitHub also permits storing it as a
-    # Repository Secret. Support both settings without relaxing permissions.
+    # The live GitHub JWT endpoint requires a numeric iss (App ID);
+    # the old Client ID is NOT interchangeable with this integer.
     env:
-      SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID || secrets.XD_SNAPSHOT_APP_CLIENT_ID }}
+      SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}
     # Master builds run independently, but floating edge/Snapshot promotion
     # must be serialized. queue:max preserves every pending publisher.
     concurrency:
@@ -283,6 +283,22 @@ jobs:
         with:
           name: server-deploy
           path: release
+      - name: Download exact CI-validated Caddy image archive
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          path: caddy-image
+      - name: Stage verified Caddy fallback release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s caddy-image/image.tar.gz
+          test -s caddy-image/image.id
+          [[ "$(cat caddy-image/image.ref)" == "xdrive/caddy:test" ]]
+          grep -Eq '^sha256:[0-9a-f]{64}$' caddy-image/image.id
+          gzip -t caddy-image/image.tar.gz
+          cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz
+          cp caddy-image/image.id release/xdrive-caddy-image.id
       - name: Verify single-installer distribution contract
         shell: bash
         run: |
@@ -314,6 +330,8 @@ jobs:
             xdrivenas-armada38x-*.spk \
             xdrivenas-armada38x-*.spk.sha256 \
             xdrive-server-install.sh \
+            xdrive-caddy-image.tar.gz \
+            xdrive-caddy-image.id \
             server-backup.sh \
             server-backup-scheduled.sh \
             server-restore.sh \
@@ -354,41 +372,41 @@ jobs:
           )
           gh attestation verify release/xdrive-server-install.sh "${verify_args[@]}"
           gh attestation verify release/SHA256SUMS.txt "${verify_args[@]}"
-      # Elevated Git ref permission is opt-in and never exposed to ordinary CI.
-      # Keep the original GITHUB_TOKEN fallback and the existing fail-closed
-      # temporary-ref permission probe when no publisher App is configured.
+      # Only the trusted release bundle receives an elevated App token.
+      # Fail closed until a numeric App ID and its matching PEM are configured.
       - name: Validate optional Snapshot publisher identity
         if: github.ref == 'refs/heads/master'
         shell: bash
         env:
-          HAS_SNAPSHOT_APP_CLIENT_ID: ${{ env.SNAPSHOT_APP_CLIENT_ID != '' }}
+          HAS_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID != '' }}
           HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}
         run: |
           set -euo pipefail
-          if [[ "$HAS_SNAPSHOT_APP_CLIENT_ID" != "$HAS_SNAPSHOT_APP_PRIVATE_KEY" ]]; then
-            echo "[xDrive] Snapshot publisher App configuration is incomplete; refusing publication." >&2
+          if [[ "$HAS_SNAPSHOT_APP_ID" != "true" || "$HAS_SNAPSHOT_APP_PRIVATE_KEY" != "true" ]]; then
+            echo "::error title=Incomplete Snapshot App identity::Set numeric XD_SNAPSHOT_APP_ID as a Repository Variable or Secret; keep XD_SNAPSHOT_APP_PRIVATE_KEY in Repository Secrets." >&2
             exit 1
           fi
       - name: Mint scoped Snapshot publisher token
-        if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_CLIENT_ID != ''
+        if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_ID != ''
         id: snapshot_app_token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ env.SNAPSHOT_APP_CLIENT_ID }}
-          private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-workflows: write
-      - name: Reject stale master snapshot before channel promotion
+        shell: bash
+        env:
+          XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}
+          XD_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
+        run: bash scripts/ci/mint-snapshot-publisher-token.sh
+      - name: Classify stale master Snapshot eligibility before channel promotion
         if: github.ref == 'refs/heads/master'
+        id: snapshot_eligibility
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          # Build completion order differs from commit order. Reject an old
-          # finished build BEFORE it changes floating GHCR edge image tags.
-          # This project has a snapshot tag; an unreadable tag fails closed.
+          # A superseded master commit is not a publish failure. Gate EVERY
+          # floating channel mutation, including GHCR edge, on this output.
+          # Unreadable tags, API errors, invalid or diverged ancestry still
+          # fail closed; only a verified "behind" decision is a benign skip.
           published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
           [[ "$published" =~ ^[0-9a-fA-F]{40}$ ]] || {
             echo "Snapshot tag is unavailable or is not a commit; refusing channel promotion." >&2
@@ -396,11 +414,24 @@ jobs:
           }
           relation="$(gh api "repos/$repo/compare/$published...$GITHUB_SHA" --jq '.status')"
           case "$relation" in
-            ahead|identical) ;;
-            *) echo "Refusing stale Snapshot promotion before channel update: $relation" >&2; exit 1 ;;
+            ahead|identical)
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              ;;
+            behind)
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "::notice title=Superseded Snapshot::Skipping publication for $GITHUB_SHA; a newer commit is already published."
+              ;;
+            diverged)
+              echo "::error title=Diverged Snapshot ancestry::Refusing unrelated snapshot promotion." >&2
+              exit 1
+              ;;
+            *)
+              echo "::error title=Unrecognized Snapshot ancestry::Refusing snapshot promotion: $relation" >&2
+              exit 1
+              ;;
           esac
       - name: Probe snapshot Git ref authorization before release mutation
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
@@ -443,12 +474,14 @@ jobs:
           echo "[xDrive] Snapshot ref permission probe passed for $GITHUB_SHA"
 
       - name: Log in to GHCR for channel promotion
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Promote successful server images
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -466,7 +499,7 @@ jobs:
               "ghcr.io/$owner/$image:$source_tag"
           done
       - name: Publish rolling snapshot prerelease
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash
@@ -583,9 +616,48 @@ jobs:
             echo "Deleting legacy snapshot tag: $tag"
             gh api --method DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null
           done
+
       - name: Assert distribution assets are not archive-wrapped
         shell: bash
         run: bash scripts/ci/verify-release-archive-allowlist.sh release
+      - name: Notify bounded queued-CI prune after verified Snapshot publication
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          # Optional cleanup must not turn a successful Snapshot into a
+          # failed release. Do not dispatch from an obsolete publisher.
+          if ! published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"; then
+            echo "::warning title=Snapshot prune::Cannot read public tag; manual dry-run remains available."
+            exit 0
+          fi
+          if [[ "$published" != "$GITHUB_SHA" ]]; then
+            echo "[xDrive] Skip cleanup dispatch: a newer Snapshot is already public."
+            exit 0
+          fi
+          if ! metadata="$(gh api "repos/$repo/releases/tags/snapshot")"; then
+            echo "::warning title=Snapshot prune::Cannot read release metadata; skip dispatch."
+            exit 0
+          fi
+          title="$(jq -r '.name // ""' <<< "$metadata")"
+          body="$(jq -r '.body // ""' <<< "$metadata")"
+          expected_title="xDrive snapshot ${GITHUB_SHA::12}"
+          expected_notes="$(printf 'Rolling development snapshot from master at \x60%s\x60.' "$GITHUB_SHA")"
+          if [[ "$title" != "$expected_title" || "$body" != "$expected_notes"* ]]; then
+            echo "::warning title=Snapshot prune::Release metadata is not consistent with published SHA."
+            exit 0
+          fi
+          # The existing publisher App token is restricted to this repo.
+          # No credentials, user input or untrusted SHA enter the event.
+          if ! gh api --method POST "repos/$repo/dispatches" \
+              -f event_type=xdrive_snapshot_published >/dev/null; then
+            echo "::warning title=Snapshot prune::Post-publish dispatch failed; manual dry-run remains available."
+          else
+            echo "[xDrive] Post-publish Snapshot queue-prune dispatch accepted."
+          fi
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:

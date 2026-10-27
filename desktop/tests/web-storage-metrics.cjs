@@ -21,6 +21,7 @@ const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8'),
 ].join('\n')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
+const sharedOutlet = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web global storage statistics use shared metric primitives', () => {
@@ -55,7 +56,7 @@ test('Cloud storage is one shared Web/Desktop current-account workspace', () => 
   assert.equal(cloudStorage.includes('宿主机绝对路径'), false)
   assert.equal(cloudStorage.includes('cleanupCache'), false)
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
-  assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveCloudStoragePage'))
+  assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') && sharedOutlet.includes('<XDriveCloudStoragePage'))
   assert.ok(cloudStorageAdapter.includes('export function createXDriveCloudStorageDataSource'))
   assert.ok(cloudStorageAdapter.includes('resolveXDriveTransport'))
   assert.ok(cloudStorageAdapter.includes('tolerateStatsError = false'))
@@ -93,7 +94,7 @@ test('Local storage is one shared Web/Desktop page with platform-specific sectio
   assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
   assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 8)
   assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
-  assert.ok(desktopApp.includes('localStorage: localStorageSource') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveLocalStoragePage'))
+  assert.ok(desktopApp.includes('localStorage: localStorageSource') && sharedOutlet.includes('<XDriveLocalStoragePage'))
   assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'diagnostics must not add another metric grid')
   assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16, 'diagnostics must not add pass/warn/fail metric cards')
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)

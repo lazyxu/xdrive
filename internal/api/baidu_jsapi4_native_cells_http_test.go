@@ -110,6 +110,33 @@ func TestBaiduNativeCellsActualGinNoReleaseNoLeak(t *testing.T) {
 	}
 }
 
+func TestBaiduNativeMapCoverKindIsOptInAndNeverChangesOwnerIdentity(t *testing.T) {
+	src := []baiduPhotoMapCell{{
+		CellX: 1, CellY: 2, PhotoCount: 3, AssetID: 11, NodeID: 12,
+		NodeRevision: 9, MediaKind: meta.MediaKindVideo, Latitude: 39.9, Longitude: 116.4,
+	}}
+	legacy := baiduNativeMapCoverCellsForClient(src, false)
+	if len(legacy) != 1 || legacy[0].MediaKind != "" || src[0].MediaKind != meta.MediaKindVideo {
+		t.Fatal("legacy response lost source identity or mutated original cover kind")
+	}
+	legacyJSON, err := json.Marshal(legacy)
+	if err != nil || strings.Contains(string(legacyJSON), "media_kind") ||
+		!strings.Contains(string(legacyJSON), "\"node_revision\":9") {
+		t.Fatalf("old PWA wire contract expanded: %s err=%v", legacyJSON, err)
+	}
+	opted := baiduNativeMapCoverCellsForClient(src, true)
+	optJSON, err := json.Marshal(opted)
+	if err != nil || !strings.Contains(string(optJSON), "\"media_kind\":\"video\"") {
+		t.Fatalf("new trusted Parent did not receive video media kind: %s err=%v", optJSON, err)
+	}
+	if opted[0].AssetID != legacy[0].AssetID || opted[0].NodeID != legacy[0].NodeID ||
+		opted[0].NodeRevision != legacy[0].NodeRevision ||
+		opted[0].PhotoCount != legacy[0].PhotoCount ||
+		opted[0].Latitude != legacy[0].Latitude || opted[0].Longitude != legacy[0].Longitude {
+		t.Fatal("negotiating image renderer changed Owner Cell authority")
+	}
+}
+
 func TestBaiduNativeCellsWireNoOriginalWGS84OrUnboundedPoints(t *testing.T) {
 	cells := make([]baiduPhotoMapCell, baiduPhotoMapCellMax)
 	var total int64

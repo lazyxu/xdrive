@@ -44,6 +44,16 @@ class DriveControllerTest {
         var refreshed = 0
         var refreshFailure: Exception? = null
         var loggedOut = false
+        val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
+        var galleryFavoriteFailure: Exception? = null
+        override suspend fun galleryFavoriteBatch(
+            accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+        ): Int {
+            assertEquals("access", accessToken)
+            galleryFavoriteCalls += (items.map { it.node.id } to favorite)
+            galleryFavoriteFailure?.let { throw it }
+            return items.size
+        }
         val latestGallery = GalleryAsset(
             DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
@@ -285,6 +295,53 @@ class DriveControllerTest {
 
     /** Native login no longer has a manual public-IP field. Failure text
      * must guide an actual input without changing pinned Host/SNI behavior. */
+
+    @Test fun gallerySelectionFavoriteCommitsOnceAndBackExitsBeforeFiles() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val item = c.state.value.galleryItems.single()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        assertEquals(listOf(item), c.state.value.gallerySelectedItems)
+        c.favoriteGallerySelected(true); runCurrent()
+        assertEquals(listOf(listOf(item.node.id) to true), api.galleryFavoriteCalls)
+        assertEquals(true, c.state.value.galleryItems.single().favorite)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.back()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.close()
+    }
+
+    @Test fun galleryFavoriteUncertainAckFreezesUntilReadOnlyRefresh() = runTest {
+        val api = Service().apply {
+            galleryFavoriteFailure = ApiException(503, "ACK lost")
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.favoriteGallerySelected(false); runCurrent()
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        assertTrue(c.state.value.galleryFavoriteWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.favoriteGallerySelected(false); runCurrent()
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        c.back(); runCurrent() // Read-only GET; never duplicate the PATCH.
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        assertFalse(c.state.value.galleryFavoriteWriteAttempted)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.galleryLoaded)
+        c.close()
+    }
+
     @Test fun unifiedLoginDnsFailureUsesActualServerAndOptionalLanInputs() = runTest {
         val api = object : Service() {
             override suspend fun login(username: String, password: String): AuthSession =
@@ -683,6 +740,46 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun gallerySortIsRealOwnerPaginationAndReturnsToDefaultAfterLeavingApp() = runTest {
+        val api = object : Service() {
+            val sorted = mutableListOf<Triple<String, String, Int>>()
+            override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+                initialLatest: Boolean, search: String, kind: String, albumId: String?,
+                sortBy: String, sortDir: String): GalleryPage {
+                assertEquals("access", accessToken)
+                sorted += Triple(sortBy, sortDir, offset)
+                val row = GalleryAsset(DriveNode(9000L + offset, 1, "sorted-$offset.jpg",
+                    "file", size = 20, revision = 2), "image", hasThumbnail = true)
+                return GalleryPage(listOf(row), 2, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        val oldCount = api.galleryRequests.size
+        c.changeGallerySort("bad", "desc"); runCurrent()
+        assertEquals(oldCount, api.galleryRequests.size)
+        c.changeGallerySort("added", "desc"); runCurrent()
+        assertEquals("added", c.state.value.gallerySortBy)
+        assertEquals("desc", c.state.value.gallerySortDir)
+        assertNull(c.state.value.galleryTimelineSets)
+        assertEquals(0, c.state.value.galleryOffset)
+        assertEquals(9000L, c.state.value.galleryItems.single().node.id)
+        c.galleryLoadNewer(); runCurrent()
+        assertEquals(listOf(9000L, 9001L),
+            c.state.value.galleryItems.map { it.node.id })
+        assertEquals(listOf(Triple("added", "desc", 0),
+            Triple("added", "desc", 1)), api.sorted)
+        c.openFilesApp(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        assertEquals("asc", c.state.value.gallerySortDir)
+        c.openGallery(); runCurrent()
+        assertEquals("captured", c.state.value.gallerySortBy)
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        c.close()
+    }
+
     @Test fun GallerySearchReplacesOwnerRangeAndClearsAtAppBoundary() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -798,6 +895,249 @@ class DriveControllerTest {
         assertEquals(61, c.state.value.galleryItems.size)
         assertEquals(listOf(0 to true, 60 to false, 60 to false), api.galleryRequests)
         assertEquals(990L, c.state.value.galleryItems.last().node.id)
+    }
+
+    @Test fun filesPdfPreviewIsBoundedToCurrentOwnerAndReturnsWithoutFolderReload() = runTest {
+        val pdf = DriveNode(95, 1, "file.pdf", "file", 5, revision = 4)
+        val api = object : Service() {
+            var reads = 0
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long {
+                assertEquals("access", accessToken)
+                assertEquals(pdf, original)
+                reads++
+                openDestination().use { it.write("hello".toByteArray()) }
+                onProgress(5)
+                return 5
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(folder, pdf) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val rows = c.state.value.items
+        val calls = api.calls.toList()
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        val buffer = ByteArrayOutputStream()
+        assertEquals(5L, c.downloadFilesPdf(pdf) { buffer })
+        assertArrayEquals("hello".toByteArray(), buffer.toByteArray())
+        assertEquals(5L, c.state.value.filesPdfBytes)
+        assertEquals(1, api.reads)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(0L, c.state.value.filesPdfBytes)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(rows, c.state.value.items)
+        assertEquals(calls, api.calls)
+        c.close()
+    }
+
+    @Test fun oldOwnerPdfDownloadCannotPublishAfterLogout() = runTest {
+        val pdf = DriveNode(96, 1, "file.pdf", "file", 5, revision = 4)
+        val gate = CompletableDeferred<Unit>()
+        val api = object : Service() {
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long = withContext(NonCancellable) {
+                gate.await()
+                openDestination().use { it.write("hello".toByteArray()) }
+                onProgress(5)
+                5
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(pdf)
+        val output = ByteArrayOutputStream()
+        val active = async { c.downloadFilesPdf(pdf) { output } }
+        runCurrent()
+        c.logout()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(active.isCancelled)
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(0L, c.state.value.filesPdfBytes)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.items.isEmpty())
+        c.close()
+    }
+
+    @Test fun oversizedPdfNeverRequestsOwnerPrivateBytes() = runTest {
+        val pdf = DriveNode(97, 1, "huge.pdf", "file",
+            64L * 1024 * 1024 + 1L, revision = 4)
+        val api = object : Service() {
+            var reads = 0
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long {
+                reads++
+                return 0
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(pdf)
+        val failure = runCatching { c.downloadFilesPdf(pdf) { ByteArrayOutputStream() } }
+            .exceptionOrNull()
+        assertTrue(failure is ApiException)
+        assertEquals(413, (failure as ApiException).statusCode)
+        assertEquals(0, api.reads)
+        c.back()
+        c.close()
+    }
+
+    @Test fun filesAudioOpensOwnerRangeAndBackClosesWithoutReloadingRows() = runTest {
+        val audio = DriveNode(91, 1, "song.mp3", "file", 6, revision = 4)
+        val api = object : Service() {
+            var started = 0
+            var closed = 0
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+                assertEquals("access", accessToken)
+                assertEquals(audio, node)
+                started++
+                return OwnerVideoPlayback("https://fixture.invalid/api/v1/files/91/content",
+                    okhttp3.OkHttpClient(), node.size) { closed++ }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset) }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val oldRows = c.state.value.items
+        val oldCalls = api.calls.toList()
+        c.open(audio)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        val source = c.openFilesAudioPlayback(audio)
+        assertNotNull(source)
+        assertEquals(1, api.started)
+        c.back()
+        assertNull(c.state.value.filesAudioViewer)
+        assertEquals(1, api.closed)
+        c.closeGalleryVideoPlayback(requireNotNull(source))
+        assertEquals(1, api.closed)
+        assertEquals(oldRows, c.state.value.items)
+        assertEquals(oldCalls, api.calls)
+        c.close()
+    }
+
+    @Test fun filesAudioRetryIgnoresNonCooperativePreviousOwnerStream() = runTest {
+        val audio = DriveNode(99, 1, "retry.mp3", "file", 8, revision = 2)
+        val firstGate = CompletableDeferred<Unit>()
+        var opened = 0
+        val closed = mutableListOf<Int>()
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+                OwnerVideoPlayback {
+                opened++
+                val requestNumber = opened
+                if (requestNumber == 1) withContext(NonCancellable) {
+                    firstGate.await()
+                }
+                return OwnerVideoPlayback(
+                    "https://fixture.invalid/api/v1/files/99/content",
+                    okhttp3.OkHttpClient(), node.size,
+                ) { closed += requestNumber }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(audio)
+        val stale = async { c.openFilesAudioPlayback(audio) }
+        runCurrent()
+        assertEquals(1, opened)
+        val current = requireNotNull(c.openFilesAudioPlayback(audio))
+        assertEquals(2, opened)
+        // Deliberately complete the older, uncooperative GET after retry.
+        firstGate.complete(Unit); runCurrent()
+        assertTrue(stale.isCancelled)
+        assertEquals(listOf(1), closed) // Old stream released, current stays live.
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        c.back()
+        assertEquals(listOf(1, 2), closed)
+        c.closeGalleryVideoPlayback(current) // Idempotent close.
+        assertEquals(listOf(1, 2), closed)
+        c.close()
+    }
+
+    @Test fun oldOwnerAudioStreamCannotAppearAfterLogout() = runTest {
+        val audio = DriveNode(91, 1, "song.mp3", "file", 6, revision = 4)
+        val gate = CompletableDeferred<Unit>()
+        var releases = 0
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode):
+                OwnerVideoPlayback = withContext(NonCancellable) {
+                gate.await()
+                OwnerVideoPlayback("https://fixture.invalid/files/91", okhttp3.OkHttpClient(),
+                    node.size) { releases++ }
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(audio) else emptyList(), 1, offset) }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(audio)
+        val pending = async { c.openFilesAudioPlayback(audio) }
+        runCurrent()
+        c.logout()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        assertEquals(1, releases)
+        assertNull(c.state.value.filesAudioViewer)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        c.close()
+    }
+
+    @Test fun oneFilesOwnerCanOpenPdfThenAudioWithoutLosingOwnerRows() = runTest {
+        val pdf = DriveNode(97, 1, "paper.pdf", "file", 8, revision = 2)
+        val audio = DriveNode(98, 1, "voice.mp3", "file", 8, revision = 3)
+        val api = object : Service() {
+            override suspend fun filesAudioPlayback(accessToken: String, node: DriveNode) =
+                OwnerVideoPlayback("https://fixture.invalid/files/98", okhttp3.OkHttpClient(),
+                    node.size)
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf, audio) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val first = c.state.value.items.toList()
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertNull(c.state.value.filesAudioViewer)
+        c.open(audio) // A stale/offscreen row cannot open a second Viewer.
+        assertNull(c.state.value.filesAudioViewer)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        c.open(audio)
+        assertEquals(audio, c.state.value.filesAudioViewer)
+        assertNull(c.state.value.filesPdfViewer)
+        c.open(pdf) // A new PDF can't replace audio before its resource closes.
+        assertNull(c.state.value.filesPdfViewer)
+        val playback = c.openFilesAudioPlayback(audio)
+        assertNotNull(playback)
+        c.back()
+        assertNull(c.state.value.filesAudioViewer)
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(first, c.state.value.items)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        c.close()
     }
 
     @Test fun filesMediaUsesGalleryViewerAndBackReturnsExactLoadedBrowse() = runTest {
@@ -1839,6 +2179,144 @@ class DriveControllerTest {
         assertNull(c.state.value.destinationKind)
         assertFalse(c.state.value.items.any { it.id == file.id })
         assertEquals(listOf(root), c.state.value.path)
+    }
+
+    @Test fun atomicBrowseBatchCopyUsesOnlySelectedOwnerRowsAndOneServerPost() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var batches = 0
+            override suspend fun batchCopyNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                assertEquals("access", accessToken)
+                assertEquals(root.id, parentId)
+                assertEquals(listOf(file, second), originals)
+                batches++
+                val copies = originals.mapIndexed { index, node ->
+                    node.copy(id = 110L + index, parentId = parentId,
+                        name = node.name + " - 副本", revision = 1)
+                }
+                mutationRows += copies
+                mutationListing = true
+                return copies
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        assertEquals(listOf(file, second), c.state.value.destinationSources)
+        assertEquals(root.id, c.state.value.destinationPath.single().id)
+        assertTrue(c.state.value.destinationLoaded)
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.batches)
+        assertTrue(c.state.value.items.any { it.id == 110L })
+        assertTrue(c.state.value.items.any { it.id == 111L })
+        assertTrue(c.state.value.items.any { it == file })
+        assertFalse(c.state.value.browseSelectionMode)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        assertTrue(c.state.value.destinationSources.isEmpty())
+        assertNull(c.state.value.destinationKind)
+        c.close()
+    }
+
+    @Test fun batchMoveIsOneAtomicWriteAndCannotTargetCurrentParent() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var batches = 0
+            override suspend fun batchMoveNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                batches++
+                assertEquals("access", accessToken)
+                assertEquals(listOf(file, second), originals)
+                assertEquals(folder.id, parentId)
+                mutationRows = mutationRows.filterNot { it.id in originals.map { o -> o.id } }
+                mutationListing = true
+                return originals.map { it.copy(parentId = parentId,
+                    revision = it.revision + 1) }
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        api.listing = { parent, offset ->
+            if (parent == root.id) NodeRange(
+                if (offset == 0) api.mutationRows else emptyList(),
+                api.mutationRows.size.toLong(), offset)
+            else NodeRange(emptyList(), 0, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file); c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.MOVE); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(0, api.batches) // Root is their existing parent.
+        c.enterDestinationFolder(folder); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.batches)
+        assertEquals(listOf(folder), c.state.value.items)
+        assertEquals(listOf(root), c.state.value.path)
+        assertNull(c.state.value.destinationKind)
+        assertFalse(c.state.value.browseSelectionMode)
+        c.close()
+    }
+
+    @Test fun uncertainBatchAckFreezesBrowseAndDoesNotRepeatPhysicalWrite() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = object : Service() {
+            var attempts = 0
+            override suspend fun batchCopyNodes(accessToken: String,
+                originals: List<DriveNode>, parentId: Long): List<DriveNode> {
+                attempts++
+                throw ApiException(503, "Commit ACK might have been lost")
+            }
+        }
+        api.mutationRows = listOf(folder, file, second)
+        api.mutationListing = true
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file); c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        assertFalse(c.state.value.loaded)
+        assertTrue(c.state.value.destinationWriteAttempted)
+        assertTrue(c.state.value.error.orEmpty().contains("结果未确认"))
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        c.dismissDestination()
+        assertNull(c.state.value.destinationKind)
+        c.commitDestination(); runCurrent()
+        assertEquals(1, api.attempts)
+        c.close()
+    }
+
+    @Test fun batchPickerRejectsMissingOrUnrevisionedSourceAndKeepsSelectionOnCancel() = runTest {
+        val second = DriveNode(4, 1, "notes.txt", "file", 17, revision = 2)
+        val api = Service().apply {
+            mutationRows = listOf(folder, file, second)
+            mutationListing = true
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.chooseSelectedDestination(FilesTransferKind.COPY)
+        assertNull(c.state.value.destinationKind)
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        c.toggleBrowseSelection(second)
+        c.chooseSelectedDestination(FilesTransferKind.COPY); runCurrent()
+        assertEquals(2, c.state.value.destinationSources.size)
+        c.dismissDestination(); runCurrent()
+        assertNull(c.state.value.destinationKind)
+        assertTrue(c.state.value.destinationSources.isEmpty())
+        assertEquals(setOf(file.id, second.id), c.state.value.browseSelectedIds)
+        c.setBrowseSelectionMode(false)
+        assertTrue(c.state.value.browseSelectedIds.isEmpty())
+        c.close()
     }
 
     @Test fun nativeCopyToCurrentFolderAcceptsServerGeneratedDuplicateName() = runTest {

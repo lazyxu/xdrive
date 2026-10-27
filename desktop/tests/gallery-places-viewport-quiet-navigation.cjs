@@ -12,6 +12,14 @@ const mapScopeHelper = require('./helpers/load-baidu-map-scope.cjs')
 const root = path.resolve(__dirname, '../..')
 const mapFile = path.join(root, 'ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
 const original = fs.readFileSync(mapFile, 'utf8')
+const modeFile = path.join(root, 'ui/shared/src/media-gallery-places-map-mode.ts')
+const transpiledMode = ts.transpileModule(fs.readFileSync(modeFile, 'utf8'), {
+  fileName:modeFile,
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+}).outputText
+const modeModule={exports:{}}
+new Function('module','exports',transpiledMode)(modeModule,modeModule.exports)
+const realMapMode=modeModule.exports
 
 function loadSharedMap() {
   const output = ts.transpileModule(original, { compilerOptions: {
@@ -53,24 +61,10 @@ function loadSharedMap() {
       xDriveBaiduMapDiagnosticDetails: {},
       XDRIVE_BAIDU_DIAGNOSTIC_TTL_MS: 10_000,
     },
-    '../media-gallery-places-map-mode': {
-      xDrivePlacesMapModeFromHref: href => href.includes('places_map_mode=isolated')
-        ? 'isolated' : 'prototype',
-      xDrivePlacesMapModeNavigationURL: (href, mode) => {
-        const url = new URL(href)
-        if (mode === 'isolated') url.searchParams.set('places_map_mode', 'isolated')
-        else url.searchParams.delete('places_map_mode')
-        return url.href
-      },
-      xDrivePlacesMapScopeHandoffURL: (href, mode, ticket) => {
-        if (!/^[a-f0-9]{64}$/.test(ticket)) return null
-        const url = new URL(href)
-        if (mode === 'isolated') url.searchParams.set('places_map_mode', 'isolated')
-        else url.searchParams.delete('places_map_mode')
-        url.searchParams.set('places_map_handoff',ticket)
-        return url.href
-      },
-    },
+    // Exercise the actual shared handoff URL + asynchronous identity guard.
+    // A stub that omits new production exports silently turns successful
+    // ticket issuance into a caught TypeError and masks real mode regressions.
+    '../media-gallery-places-map-mode': realMapMode,
     './MediaGalleryBaiduPrototypeMap': {
       XDriveMediaGalleryBaiduPrototypeMap: props =>
         React.createElement('old-prototype', props),
@@ -322,4 +316,75 @@ test('Desktop isolated HTTPS map never shows the Web/PWA collection Close', asyn
     node.props['data-xdrive-places-map-close'] !== undefined).length, 0)
   assert.equal(closed, 0)
   await act(async () => view.unmount())
+})
+
+
+test('pending Owner or photo-scope changes abort the ticket and keep the original map',async()=>{
+  const token='abcdef0123456789'.repeat(4)
+  const originalScope={albumKey:'manual:Family',filters:{
+    sort_by:'captured',sort_dir:'desc',favorite:true}}
+  for(const mutation of ['owner','album','favorite']){
+    global.window.location.href='https://gallery.example.test/gallery'
+    const before=global.window.location.href
+    let completeTicket,issuedSignal
+    const ticket=new Promise(resolve=>{completeTicket=resolve})
+    const props={mapPhotoScope:originalScope,diagnosticScope:'owner-a',
+      onMapModeHandoff:(_scope,_target,signal)=>{
+        issuedSignal=signal
+        return ticket
+      }}
+    const view=await render(props)
+    const switchMode=view.root.findAll(node=>
+      node.props['data-xdrive-map-mode-isolated']!==undefined)[0]
+    await act(async()=>{switchMode.props.onClick();await Promise.resolve()})
+    assert.ok(issuedSignal && !issuedSignal.aborted,mutation)
+    const changed=mutation==='owner'
+      ? {...props,diagnosticScope:'owner-b'}
+      : {...props,mapPhotoScope:mutation==='album'
+        ? {...originalScope,albumKey:'manual:Other'}
+        : {...originalScope,filters:{...originalScope.filters,favorite:false}}}
+    await act(async()=>{
+      view.update(React.createElement(PlacesMap,{...base,...changed}))
+      await Promise.resolve()
+    })
+    assert.equal(issuedSignal.aborted,true,mutation)
+    await act(async()=>{completeTicket(token);await Promise.resolve();await Promise.resolve()})
+    assert.equal(global.window.location.href,before,mutation+' must not navigate')
+    assert.equal(new URL(global.window.location.href).searchParams.has('places_map_handoff'),
+      false,mutation)
+    await act(async()=>view.unmount())
+  }
+})
+
+test('camera gesture and camera clear cancel in-flight ticket in either SDK Host',async()=>{
+  const token='abcdef0123456789'.repeat(4)
+  const camera={coordinate_space:'bd09ll',latitude:30.135,longitude:119.975,zoom:12}
+  for(const [from,action] of [['prototype','move'],['isolated','clear']]){
+    global.window.location.href='https://gallery.example.test/gallery'+
+      (from==='isolated'?'?places_map_mode=isolated':'')
+    const before=global.window.location.href
+    let issuedSignal,completeTicket
+    const pending=new Promise(resolve=>{completeTicket=resolve})
+    const view=await render({
+      initialNativeCamera:camera,
+      getBaiduJSAPI4Status:async()=>({provider:'baidu-jsapi-4.0',enabled:true,
+        activation_state:'authorized_signed_release',isolated_child_origin:'https://map.example.test'}),
+      onMapModeHandoff:(_scope,_target,signal)=>{issuedSignal=signal;return pending},
+    })
+    const switchMode=view.root.findAll(node=>node.props[
+      'data-xdrive-map-mode-'+(from==='isolated'?'prototype':'isolated')]!==undefined)[0]
+    await act(async()=>{switchMode.props.onClick();await Promise.resolve()})
+    assert.ok(issuedSignal && !issuedSignal.aborted,from)
+    const sdk=view.root.findAllByType('isolated-child')[0]
+    assert.ok(sdk,from+' shared map Host must be mounted')
+    await act(async()=>{
+      if(action==='move')sdk.props.onCamera({...camera,zoom:13})
+      else sdk.props.onCameraClear()
+      await Promise.resolve()
+    })
+    assert.equal(issuedSignal.aborted,true,from+' '+action)
+    await act(async()=>{completeTicket(token);await Promise.resolve();await Promise.resolve()})
+    assert.equal(global.window.location.href,before)
+    await act(async()=>view.unmount())
+  }
 })
