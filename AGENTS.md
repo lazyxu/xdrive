@@ -36,7 +36,7 @@ A later explicit owner decision supersedes older instructions.
 ## PR, issue and branch hygiene
 - Review least-active branches first. Delete only current exact tip proven merged, contained or safely superseded; check protection and open PR head/base, then delete with an exact-SHA lease.
 - Closed-unmerged PRs are not automatically redundant. Keep unique work until it is ported or explicitly rejected with evidence.
-- Preserve feat/sync-run-outcome-telemetry-p0-p2-20261016 until Issue #2524 resolves its remaining unique semantic differences.
+- The legacy sync-run telemetry orphan was audited in closed Issue #2524. Retire only its recorded exact SHA through reviewed deletion guards; never bulk merge its old 40-file schema or delete an advanced branch.
 - Close completed or duplicate Issues with canonical evidence; preserve actual unfinished work.
 - Avoid branch-name-only deletion and avoid bulk merge of old divergent source.
 
