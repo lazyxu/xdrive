@@ -1,0 +1,63 @@
+name: Browser Cookie HTTPS Chromium
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/auth-cookie-real-chromium.yml
+      - desktop/scripts/cookie-browser-source-playwright.cjs
+      - web/src/api.ts
+      - internal/api/auth_browser_cookie*.go
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/auth-cookie-real-chromium.yml
+      - desktop/scripts/cookie-browser-source-playwright.cjs
+      - web/src/api.ts
+      - internal/api/auth_browser_cookie*.go
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Drop old PR snapshots; keep master and manual browser validation runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  chromium-source-cookie-https:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install real production TypeScript compiler
+        run: npm --prefix web ci --no-audit --no-fund
+      - name: Install isolated Playwright Chromium driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-cookie-playwright"
+          npm install --prefix "$RUNNER_TEMP/xdrive-cookie-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo 'Installed Chrome/Chromium required' >&2
+            exit 1
+          fi
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/xdrive-cookie-playwright/node_modules/playwright-core" >> "$GITHUB_ENV"
+          openssl version
+      - name: Real HTTPS Chrome Cookie and two-tab Web Locks
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/cookie-browser-source-playwright.cjs
+          node desktop/scripts/cookie-browser-source-playwright.cjs
