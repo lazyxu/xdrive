@@ -43,6 +43,7 @@ import {
   XDriveMediaViewerContent,
   XDriveShareDialog,
   XDriveStatusAlert,
+  xDriveViewerDownloadTransferLabel,
   useXDrivePreviewPresentation,
   useXDrivePreviewSlideshow,
 } from '@xdrive/ui/mui'
@@ -64,6 +65,7 @@ import type {
   XDriveFilePreviewPresentationState,
   XDriveByteProgressHandler,
   XDriveWebAppRoute,
+  XDriveTransferTask,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 import {
@@ -97,6 +99,45 @@ const SAFE_WEB_VIEWER_READ_MESSAGES = new Set([
   '当前文件无法生成文本预览，请重试。',
 ])
 
+// Web/iOS PWA Viewer modes all display the same Owner-scoped Task Center
+// receipt. The preview host is a horizontal flex layout: progress must overlay,
+// never shrink the decoded still, native media controls, text or PDF viewport.
+// Screen readers announce only terminal/handoff updates, not every byte sample.
+function WebViewerDownloadFeedback({ download }: {
+  download: Pick<ReturnType<typeof useWebViewerDownload>,
+    'status' | 'error' | 'announceStatus'>
+}) {
+  // Keep the existing failure alert structure; external consumers and
+  // accessibility tests rely on the discoverable, sanitized retry feedback.
+  if (download.error) return (
+    <Box data-xdrive-standalone-download-error
+      sx={{
+        position: 'absolute', top: 12, left: 12, zIndex: 5,
+        maxWidth: 'calc(100% - 24px)', pointerEvents: 'none',
+      }}>
+      <XDriveStatusAlert tone="bad">{download.error}</XDriveStatusAlert>
+    </Box>
+  )
+  if (!download.status) return null
+  return (
+    <Box
+      data-xdrive-viewer-download-progress=""
+      role="status"
+      aria-live={download.announceStatus ? 'polite' : 'off'}
+      sx={{
+        position: 'absolute', top: 12, left: 12, zIndex: 5,
+        maxWidth: 'calc(100% - 24px)', px: 1.5, py: 0.75,
+        color: 'common.white', bgcolor: 'rgba(0, 0, 0, 0.68)',
+        borderRadius: 1.5, pointerEvents: 'none',
+        '& .MuiTypography-root': { color: 'inherit', overflowWrap: 'anywhere' },
+      }}
+    >
+      <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        {download.status}
+      </Typography>
+    </Box>
+  )
+}
 // One full-height terminal error state for Quick Look, media, text and audio.
 // A real click invokes the original authorized reader, never a shadow API.
 function WebViewerReadError({ message, onRetry }: {
@@ -849,20 +890,14 @@ function WebPreviewApp({
   const closeDialog = (kind: 'share' | 'tags') => {
     setVisibleDialog((current) => current?.owner === dialogOwner && current.kind === kind ? null : current)
   }
-  // The download belongs to the same authorized Owner as Share/Tags. Reject
-  // stale JSX callbacks and duplicate taps synchronously, before React renders.
-  const [busyDownloadOwner, setBusyDownloadOwner] = useState<typeof dialogOwner | null>(null)
+  // Quick Look shares the same exact Task Center download receipt as the
+  // standalone Text/Audio and Gallery viewers. Never tie its lifetime to
+  // temporary thumbnail or native media requests.
+  const download = useWebViewerDownload(api, dialogOwner, viewer.node)
   const startDownload = async () => {
-    if (!viewer.node || dialogOwnerRef.current !== dialogOwner || dialogOwner.inFlight) return
-    dialogOwner.inFlight = true
-    setBusyDownloadOwner(dialogOwner)
-    const node = viewer.node
-    try {
-      await api.download(node)
-    } finally {
-      dialogOwner.inFlight = false
-      if (dialogOwnerRef.current === dialogOwner) setBusyDownloadOwner(null)
-    }
+    if (!viewer.node || dialogOwnerRef.current !== dialogOwner ||
+        dialogOwner.inFlight) return
+    download.start()
   }
   const target = viewer.node ? {
     id: viewer.node.id,
@@ -917,12 +952,13 @@ function WebPreviewApp({
             onShare={() => openDialog('share')}
             onTags={() => openDialog('tags')}
             onDownload={startDownload}
-            downloadDisabled={busyDownloadOwner === dialogOwner}
+            downloadDisabled={download.busy}
             onError={onError}
           />
         ) : null}
         onClose={() => onClose(viewer.node)}
       >
+        <WebViewerDownloadFeedback download={download} />
         {viewer.loading ? (
           <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
@@ -1123,6 +1159,10 @@ function WebMediaViewerApp({
     }
   }
   const actionOwner = actionOwnerRef.current
+  // The authenticated Web Gallery single-item download resolves to
+  // XDriveApi.download; retain the existing server ticket/FS-access path.
+  // Its progress receipt is strictly this Node/revision/route session.
+  const viewerDownload = useWebViewerDownload(api, actionOwner, viewer.node)
   const [busyViewerAction, setBusyViewerAction] = useState<{
     owner: typeof actionOwner
     kind: 'favorite' | 'download'
@@ -1282,14 +1322,33 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
   const canDelete = Boolean(gallerySource.deleteItems && !viewer.isTrashContext)
 
   const startDownload = () => {
-    if (!viewer.node || !mediaItem || viewer.node.id !== mediaItem.node.id) return
-    // Wide and Mobile Web use the same authenticated Gallery source and the
-    // same synchronous action gate: no duplicate concurrent downloads.
+    if (!viewer.node || !mediaItem ||
+        viewer.node.id !== mediaItem.node.id ||
+        viewer.node.revision !== mediaItem.node.revision ||
+        actionOwnerRef.current !== actionOwner || actionOwner.inFlight) return
     const currentNode = viewer.node
     const currentItem = mediaItem
-    runViewerAction('download', () => gallerySource.downloadItems
-      ? gallerySource.downloadItems([currentItem])
-      : api.download(currentNode))
+    // Preserve the existing Gallery DataSource as the authority for media
+    // download, failure/retry, bulk actions and Owner revision semantics.
+    // Only the Web adapter's optional one-item path exposes its exact Task
+    // Center receipt; older/test/other hosts keep their normal delegation.
+    const sourceWithReceipt = gallerySource as MediaGalleryDataSource & {
+      downloadItemsWithReceipt?: (
+        items: Parameters<NonNullable<MediaGalleryDataSource['downloadItems']>>[0],
+        onCreated: (transferID: string) => void,
+      ) => Promise<unknown>
+    }
+    runViewerAction('download', async () => {
+      if (sourceWithReceipt.downloadItemsWithReceipt) {
+        await sourceWithReceipt.downloadItemsWithReceipt(
+          [currentItem], viewerDownload.onTransferCreated,
+        )
+      } else if (gallerySource.downloadItems) {
+        await gallerySource.downloadItems([currentItem])
+      } else {
+        await api.download(currentNode)
+      }
+    })
   }
 
   const latitude = mediaItem?.metadata.latitude
@@ -1402,7 +1461,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           onShare={openShare}
           onTags={openTags}
           onDownload={async () => { startDownload() }}
-          downloadDisabled={Boolean(actionBusy)}
+          downloadDisabled={Boolean(actionBusy) || viewerDownload.busy}
           onError={onError}
         />
       ) : (
@@ -1464,6 +1523,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         ) : undefined}
         onClose={() => onClose(viewer.node)}
       >
+        <WebViewerDownloadFeedback download={viewerDownload} />
         {viewer.loading ? (
           <WebViewerQuietFirstRead />
         ) : viewer.error || !viewer.node ? (
@@ -1568,7 +1628,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         <MenuItem aria-label="下载" onClick={() => {
           setMoreAnchor(null)
           startDownload()
-        }} disabled={Boolean(actionBusy)}>下载</MenuItem>
+        }} disabled={Boolean(actionBusy) || viewerDownload.busy}>下载</MenuItem>
       </Menu>
       {viewer.node ? <FileDialogs
         key={modalOwner.session}
@@ -1676,7 +1736,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
 // The standalone Text/PDF/Audio viewers have one authenticated download intent
 // per exact route/Owner/Node revision. A stale callback or receipt cannot act
 // on another account, and repeated taps are single-flight immediately.
-function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Node | null) {
+function useWebViewerDownload(api: XDriveApi, owner: object, node: Node | null) {
   const tokenRef = useRef({
     api, owner, nodeID: node?.id, revision: node?.revision,
   })
@@ -1693,18 +1753,54 @@ function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Nod
     busy: boolean
     error: string
   } | null>(null)
+  // Task Center is authoritative. Never guess the transfer from a filename:
+  // a second window may download an identically named file concurrently.
+  const [trackedTransfer, setTrackedTransfer] = useState<{
+    token: typeof token
+    id: string
+    task: XDriveTransferTask | null
+  } | null>(null)
+  const currentTransferID = trackedTransfer?.token === token ? trackedTransfer.id : null
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
   }, [])
+  useEffect(() => {
+    if (!currentTransferID) return
+    return api.onTransfers((items) => {
+      if (!mountedRef.current || tokenRef.current !== token) return
+      const task = items.find((candidate) =>
+        candidate.id === currentTransferID &&
+        candidate.kind === 'download' &&
+        candidate.cloud_node_id === token.nodeID) ?? null
+      setTrackedTransfer((current) => {
+        if (!current || current.token !== token || current.id !== currentTransferID ||
+            current.task === task) return current
+        return { ...current, task }
+      })
+    })
+  }, [api, currentTransferID, token])
 
+  const onTransferCreated = (id: string) => {
+    if (!node || !mountedRef.current || tokenRef.current !== token ||
+        typeof api.transfers !== 'function') return
+    // Exact Server/Web Task Center ID is required. Never guess from a
+    // filename or inspect another Owner/Node's transfer.
+    const task = api.transfers().find((candidate) =>
+      candidate.id === id && candidate.kind === 'download' &&
+      candidate.cloud_node_id === node.id) ?? null
+    if (task) setTrackedTransfer({ token, id, task })
+  }
   const start = () => {
     if (!node || !mountedRef.current || tokenRef.current !== token ||
         pendingRef.current === token) return
     pendingRef.current = token
     const downloadNode = node
+    setTrackedTransfer(null)
     setReceipt({ token, busy: true, error: '' })
-    void Promise.resolve().then(() => api.download(downloadNode)).then(() => {
+    void Promise.resolve().then(() => api.download(downloadNode, {
+      onTransferCreated,
+    })).then(() => {
       if (mountedRef.current && tokenRef.current === token) {
         setReceipt({ token, busy: false, error: '' })
       }
@@ -1720,10 +1816,18 @@ function useWebStandaloneViewerDownload(api: XDriveApi, owner: object, node: Nod
       if (pendingRef.current === token) pendingRef.current = null
     })
   }
+  const activeTask = trackedTransfer?.token === token ? trackedTransfer.task : null
+  const error = receipt?.token === token ? receipt.error : ''
   return {
     start,
+    onTransferCreated,
     busy: receipt?.token === token && receipt.busy,
-    error: receipt?.token === token ? receipt.error : '',
+    error,
+    status: !error && activeTask ? xDriveViewerDownloadTransferLabel(activeTask) : '',
+    // Live bytes may update frequently. Preserve accessible text, but announce
+    // only terminal/handoff transitions to avoid flooding VoiceOver.
+    announceStatus: Boolean(!error && activeTask &&
+      ['completed', 'failed', 'cancelled', 'handed_off'].includes(activeTask.state)),
   }
 }
 
@@ -1823,7 +1927,7 @@ function WebTextViewerApp({
   const node = read.value?.node ?? null
   const preview = read.value?.preview ?? null
   const error = read.error
-  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
+  const download = useWebViewerDownload(api, readerOwner, node)
   const [wrap, setWrap] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
@@ -1859,11 +1963,7 @@ function WebTextViewerApp({
       ) : null}
       onClose={() => onClose(node)}
     >
-      {download.error ? (
-        <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
-          <XDriveStatusAlert tone="bad">{download.error}</XDriveStatusAlert>
-        </Box>
-      ) : null}
+      <WebViewerDownloadFeedback download={download} />
       {error ? (
         <WebViewerReadError message={error} onRetry={read.retryRead} />
       ) : !node || !preview ? (
@@ -1937,7 +2037,7 @@ function WebSinglePreviewApp({
   const read = useWebViewerRemoteRead(readerOwner, loadNode)
   const node = read.value
   const error = read.error
-  const download = useWebStandaloneViewerDownload(api, readerOwner, node)
+  const download = useWebViewerDownload(api, readerOwner, node)
 
   return (
     <WebViewerFrame
@@ -1952,11 +2052,7 @@ function WebSinglePreviewApp({
       ) : null}
       onClose={() => onClose(node)}
     >
-      {download.error ? (
-        <Box data-xdrive-standalone-download-error sx={{ px: 2, py: 1 }}>
-          <XDriveStatusAlert tone="bad">{download.error}</XDriveStatusAlert>
-        </Box>
-      ) : null}
+      <WebViewerDownloadFeedback download={download} />
       {error ? (
         <WebViewerReadError
           message={error}

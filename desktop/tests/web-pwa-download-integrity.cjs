@@ -71,7 +71,8 @@ test('S4C1: zero-length valid stream commits and invalid declared sizes abort', 
 })
 test('S4C1: real API forwards metadata size and checks decoded response before success', () => {
   assert.ok(api.includes('        version.size,\n      )'))
-  assert.ok(api.includes('        node.size,\n      )'))
+  assert.match(api, /node\.size,\s*options\.onTransferCreated,\s*\)/,
+    'actual Node size and optional progress receipt both reach the authenticated sink')
   const start = api.indexOf('private async downloadAuthenticated(')
   const end = api.indexOf('async function sha256Buffer', start)
   assert.ok(start > 0 && end > start)

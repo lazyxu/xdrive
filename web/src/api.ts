@@ -3879,6 +3879,7 @@ export class XDriveApi {
   private async startNativeDownload(
     ticketPath: string, filename: string, bytesTotal = 0,
     cloudParentID?: number, cloudNodeID?: number,
+    onTransferCreated?: (transferID: string) => void,
   ) {
     const tracking = this.transferContext()
     const transferID = webTransferStore.create({
@@ -3889,6 +3890,9 @@ export class XDriveApi {
       bytesTotal,
       speedSource: 'server',
     })
+    // This is only a UI receipt: throwing from an optional observer must never
+    // strand the already-created Server download or change its Owner scope.
+    try { onTransferCreated?.(transferID) } catch { /* advisory observer */ }
     try {
       const ticket = await tracking.api().request<AuthenticatedDownloadTicket>(ticketPath, {
         method: 'POST', signal: tracking.signal,
@@ -4046,7 +4050,10 @@ export class XDriveApi {
     }
   }
 
-  async download(node: Node) {
+  async download(
+    node: Node,
+    options: { onTransferCreated?: (transferID: string) => void } = {},
+  ) {
     const tracking = this.transferContext()
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
@@ -4059,6 +4066,7 @@ export class XDriveApi {
           node.size,
           node.parent_id,
           node.id,
+          options.onTransferCreated,
         )
       }
       await this.downloadAuthenticated(
@@ -4071,6 +4079,7 @@ export class XDriveApi {
         node.parent_id,
         node.id,
         node.size,
+        options.onTransferCreated,
       )
       return true
     } catch (error) {
@@ -4337,6 +4346,7 @@ export class XDriveApi {
     cloudParentID?: number,
     cloudNodeID?: number,
     expectedContentBytes?: number,
+    onTransferCreated?: (transferID: string) => void,
   ) {
     const session = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
@@ -4347,6 +4357,9 @@ export class XDriveApi {
       kind: 'download',
       speedSource: 'client',
     }) : ''
+    if (transferID) {
+      try { onTransferCreated?.(transferID) } catch { /* advisory observer */ }
+    }
     const owned = transferID ? this.cancellableTransferContext(transferID, session) : null
     const tracking = owned?.tracking ?? session
     const wireID = transferID || networkTransferID
