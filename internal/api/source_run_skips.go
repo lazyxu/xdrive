@@ -53,9 +53,25 @@ func (s *Server) listSourceRunSkips(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// The legacy Source planner calls an excluded item "ignore"; the stored
+	// historical reason is "ignore_rule". Filter only the current Owner's
+	// verified run; a free-form query must never reach the SQL expression.
+	reason := c.Query("reason")
+	switch reason {
+	case "", "unchanged", "ignore_rule":
+	case "ignore":
+		reason = "ignore_rule"
+	default:
+		fail(c, http.StatusBadRequest, "invalid skip reason")
+		return
+	}
+	query := s.DB.Where("run_id = ? AND source_id = ?", runID, sourceID)
+	if reason != "" {
+		query = query.Where("reason = ?", reason)
+	}
 	var skips []meta.SourceRunSkip
-	if err := s.DB.Where("run_id = ? AND source_id = ?", runID, sourceID).
-		Order("skipped_at ASC, id ASC").Limit(limit).Offset(offset).Find(&skips).Error; err != nil {
+	if err := query.Order("skipped_at ASC, id ASC").
+		Limit(limit).Offset(offset).Find(&skips).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list source run skips failed")
 		return
 	}

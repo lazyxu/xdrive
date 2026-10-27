@@ -180,6 +180,34 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 		byID["ignored-new"].Size != 9 || byID["same"].Reason != "unchanged" {
 		t.Fatalf("skip snapshots lost historical metadata: %+v", skipRows)
 	}
+	// Exact historical reason filters are paged and remain tied to the same
+	// owned Source and Run. Legacy "ignore" means stored "ignore_rule".
+	for _, tc := range []struct {
+		query, externalID, reason string
+	}{
+		{"ignore_rule", "ignored-new", "ignore_rule"},
+		{"ignore", "ignored-new", "ignore_rule"},
+		{"unchanged", "same", "unchanged"},
+	} {
+		res := request(t, router, http.MethodGet, skipPath+"?limit=1&offset=0&reason="+tc.query, token, nil, http.StatusOK)
+		var rows []sourceRunSkipDTO
+		if err := json.Unmarshal(res.Body.Bytes(), &rows); err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 || rows[0].ExternalID != tc.externalID || rows[0].Reason != tc.reason {
+			t.Fatalf("skip reason %s leaked or lost run item: %+v", tc.query, rows)
+		}
+		// No second row of that reason can appear at the next offset.
+		res = request(t, router, http.MethodGet, skipPath+"?limit=1&offset=1&reason="+tc.query, token, nil, http.StatusOK)
+		if err := json.Unmarshal(res.Body.Bytes(), &rows); err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 0 {
+			t.Fatalf("skip reason %s returned extra row: %+v", tc.query, rows)
+		}
+	}
+	request(t, router, http.MethodGet, skipPath+"?reason=other", token, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, skipPath+"?reason=IGNORE_RULE", token, nil, http.StatusBadRequest)
 	var ignoredNewCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ? AND external_id = ?", source.ID, "ignored-new").
 		Count(&ignoredNewCount).Error; err != nil {
