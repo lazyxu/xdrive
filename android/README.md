@@ -531,3 +531,37 @@ annotation, editing source files, offline retention, virtualized cross-file
 preview navigation, or 1:1 physical-device screenshot verification. Exact
 source-head Android/JVM/lint/APK/API35 and branch checks are required before
 merge; unavailable device-only evidence is recorded as unverified.
+
+## Android Files/Gallery · first native transfer center (pending CI)
+
+The top-right **传输** entry in Files, Gallery and Trash opens one
+session-local transfer panel, backed exclusively by the existing SAF
+upload/download operations in DriveController.
+
+- It observes **actual Server-acknowledged upload chunks** and **actual SAF
+  download-write callbacks**, showing IEC confirmed/total bytes, percent,
+  elapsed session time, measured **whole-transfer average** and estimated
+  remaining time only when a meaningful mean and known total are available.
+  It does not invent instantaneous rates, unknown bytes, a pause/resume
+  operation, or automatic retries.
+- The active operation uses exactly the existing cancel control and Owner
+  session/TLS/If-Match/SAF pipeline. A cancelled download is labelled cancelled
+  and partial SAF output is discarded. Cancellation or ambiguous ACK during
+  upload is labelled **结果未确认** (not "已上传"), with a directory-recheck warning;
+  only a successful finalize ACK is recorded completed.
+- The most recent 20 session operations can be inspected without leaving the
+  current App. Terminal rows can be cleared without cancelling an active
+  transfer. Switching Owner, logging out or changing Server destroys all
+  filenames, progress/history and dialogs; no credentials, URIs, source bytes,
+  transfer history, or private media are persisted.
+- Scope is deliberately **single-file foreground SAF**. This is not yet the
+  full Web/Desktop transfer center, queue management, batch transfers,
+  background/notification delivery, durable resumable upload, independent
+  per-connection speed, or all-device operation history.
+
+JVM tests assert actual upload ACK, download partial bytes, failure, cancellation,
+uncertain finalization, pure elapsed/speed/ETA math, 20-row bound and logout
+privacy. API35 Compose tests cover the same top-right entry in Files/Gallery.
+**Do not mark this increment released until accurate-head Android Native/JVM,
+lint, debug APK and Compose tests pass.** Physical device inspection remains
+unverified where unavailable, not a source-test waiver.

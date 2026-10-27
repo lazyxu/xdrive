@@ -66,6 +66,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else if (filesEdit != null) filesEdit = null
         else controller.back()
     }
+    // Never restore the previous Owner's transfer pane after a login change.
+    var transferCenterOpen by remember(state.server, state.username) {
+        mutableStateOf(false)
+    }
     val photoViewerOpen = state.screen == Screen.GALLERY && state.galleryViewer != null
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
@@ -124,6 +128,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center)
                 }
+                TextButton(
+                    onClick = { transferCenterOpen = true },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("native-transfer-open"),
+                ) { Text("传输") }
                 AccountMenu(state, controller, updates?.let { it::show },
                     fileView = if (state.screen == Screen.FILES &&
                         state.filesSection == FilesSection.BROWSE) filesView else null,
@@ -162,6 +171,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.TRASH -> Trash(state, controller)
             }
         }
+    }
+    if (transferCenterOpen &&
+        state.screen in listOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) {
+        NativeTransferCenter(state, controller) { transferCenterOpen = false }
     }
     if (state.destinationKind != null) FilesDestinationDialog(state, controller)
     if (batchTrashConfirm && state.screen == Screen.FILES &&

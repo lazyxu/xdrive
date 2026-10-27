@@ -324,6 +324,37 @@ class DriveAppTest {
         compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
+    @Test fun nativeTransfersOpenFromFilesAndGalleryWithoutInventingHistory() {
+        startAndLogin()
+        compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-empty").assertIsDisplayed()
+        compose.onNodeWithText("本次登录的上传与下载 · 最近最多 20 项").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+        compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-transfer-empty").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // The normal Account menu still controls Owner logout independently.
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("退出登录").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.onNodeWithTag("native-transfer-open").assertDoesNotExist()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.nativeTransfers.isEmpty())
+        }
+    }
+
     @Test fun batchTrashRequiresExplicitConfirmationAndNeverDeletesOnCancel() {
         startAndLogin()
         compose.onNodeWithTag("xdrive-mobile-app-header").assertIsDisplayed()
