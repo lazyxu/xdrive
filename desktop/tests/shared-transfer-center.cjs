@@ -14,6 +14,7 @@ const sidebarNav = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const workspaceNavigation = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
 const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')
@@ -101,7 +102,7 @@ test('Web and Desktop both render the shared task center workspace', () => {
   assert.ok(sidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sidebarNav.includes('primary={destination.label}'), 'shared sidebar must render the Transfers label from its destination')
   assert.ok(web.includes('<XDriveWorkspaceSidebar'), 'Web must consume the shared workspace sidebar')
-  assert.ok(desktop.includes('<XDriveWorkspaceSidebar'), 'Desktop must consume the shared workspace sidebar')
+  assert.ok(desktop.includes('<XDriveApp') && sharedApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must consume the shared task navigation through one common app/sidebar')
 })
 
 test('Web upload and download operations feed persistent transfer history', () => {

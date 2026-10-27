@@ -93,7 +93,7 @@ test('Desktop delegates shared Task Center composition while retaining native tr
     'operationActions: fileOperationActions',
     'externalBusy: Boolean(busy)',
     'conflictResolutionEnabled: fileOperationConflictResolveSupported',
-    'transferBadge={taskCenter.badge}',
+    'transferBadge: taskCenter.badge,',
     'taskCenter.activeTransferCount',
     '{...taskCenter.pageProps}',
     "transferRetryingID={busy.startsWith('retry-transfer-')",
