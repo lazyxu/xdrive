@@ -249,7 +249,16 @@ export function xDrivePwaNormalizeAlbumSummaries(
 }
 
 function offlineSupported(): boolean {
-  return typeof window !== 'undefined' && window.isSecureContext && 'indexedDB' in window
+  try {
+    // Optional WebKit security/IndexedDB getters can be denied during React
+    // render. An exposed property is not proof that its factory is usable.
+    return typeof window !== 'undefined' && window.isSecureContext === true &&
+      typeof window.indexedDB?.open === 'function'
+  } catch {
+    // Unknown capability must not mount unverified private offline history or
+    // interrupt the ordinary authenticated Web/PWA first paint.
+    return false
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
