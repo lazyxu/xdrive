@@ -6,9 +6,10 @@ import {
 } from '@mui/material'
 import type {
   XDriveServerBackupPage, XDriveServerBackupPort, XDriveServerBackupRequest,
-  XDriveServerBackupSnapshot,
+  XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry,
 } from '../server-backup-admin'
-import { summarizeServerBackupIntegrity } from '../server-backup-integrity'
+import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
+  serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveSectionHeader } from './SectionHeader'
 
@@ -37,7 +38,7 @@ function snapshotStatus(item: XDriveServerBackupSnapshot): string {
 
 
 function historicalVerification(history: XDriveServerBackupPage['history'], snapshotID: string) {
-  const latest = history?.find(e => e.action === 'verify' && e.snapshot_id === snapshotID)
+  const latest = latestServerBackupVerification(history, snapshotID)
   if (!latest) return '未校验'
   return (latest.state === 'success' ? '通过' : '失败') + ' · ' + (latest.mode || 'fast') +
     ' · ' + (latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '—') + '（历史）'
@@ -61,6 +62,7 @@ export function XDriveServerBackupManagementPanel({
     format: 'v1' | 'v2'; days: string; revision: string
   } | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
   const [confirmText, setConfirmText] = useState('')
 
   const reload = useCallback(async () => {
@@ -337,6 +339,11 @@ export function XDriveServerBackupManagementPanel({
               可考虑删除 {page.retention.drop_candidates?.length || 0} 代；
               孤儿 CAS {page.retention.unreferenced_objects || 0} 项；
               潜在逻辑空间 {displayBytes(page.retention.potential_logical_bytes)}。
+              {page.retention.hashed_objects > 0
+                ? ' 本次预览实际执行 SHA-256 的仓库对象 ' +
+                    page.retention.hashed_objects + ' 个 / ' +
+                    displayBytes(page.retention.hashed_bytes) + '。'
+                : ' 本次预览未提供已执行的仓库对象哈希数量。'}
               此报告是历史预览，并非删除授权。
             </Alert>
           ) : null}
@@ -396,7 +403,7 @@ export function XDriveServerBackupManagementPanel({
               <TableHead>
                 <TableRow>
                   <TableCell>完成时间</TableCell><TableCell>动作</TableCell><TableCell>快照</TableCell>
-                  <TableCell>结果</TableCell><TableCell>模式</TableCell><TableCell>请求号</TableCell>
+                  <TableCell>结果</TableCell><TableCell>模式</TableCell><TableCell>耗时</TableCell><TableCell>请求号</TableCell><TableCell>详情</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -407,15 +414,57 @@ export function XDriveServerBackupManagementPanel({
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
                     <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
                     <TableCell>{item.mode || '—'}</TableCell>
+                    <TableCell>{serverBackupReceiptDurationSeconds(item) === null ? '—' :
+                      serverBackupReceiptDurationSeconds(item) + ' 秒'}</TableCell>
                     <TableCell>{item.request_id || '—'}</TableCell>
+                    <TableCell>
+                      <Button size="small" onClick={() => setHistoryDetail(item)}
+                        aria-label={'查看备份操作详情 ' + item.request_id}>详情</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
-                {!page?.history?.length ? <TableRow><TableCell colSpan={6}>暂无历史操作记录。</TableCell></TableRow> : null}
+                {!page?.history?.length ? <TableRow><TableCell colSpan={8}>暂无历史操作记录。</TableCell></TableRow> : null}
               </TableBody>
             </Table>
           </TableContainer>
         </Stack>
       </Paper>
+      <Dialog open={Boolean(historyDetail)} onClose={() => setHistoryDetail(null)}
+        fullWidth maxWidth="sm" aria-label="宿主机备份执行诊断详情"
+        data-xdrive-admin-backup-history-detail>
+        <DialogTitle>宿主机备份执行记录（历史）</DialogTitle>
+        <DialogContent>
+          {historyDetail ? (
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              <Typography variant="body2">动作：{historyDetail.action} ·
+                {historyDetail.state === 'success' ? '已完成' : '失败'}</Typography>
+              <Typography variant="body2">快照：{historyDetail.snapshot_id || '—'}</Typography>
+              <Typography variant="body2">校验模式：{historyDetail.mode || '不适用'}</Typography>
+              <Typography variant="body2">开始：{historyDetail.started_at || '—'}</Typography>
+              <Typography variant="body2">结束：{historyDetail.finished_at || '—'}</Typography>
+              <Typography variant="body2">
+                执行耗时：{serverBackupReceiptDurationSeconds(historyDetail) === null
+                  ? '未知'
+                  : serverBackupReceiptDurationSeconds(historyDetail) + ' 秒'}
+              </Typography>
+              <Typography variant="body2">
+                失败代码：{historyDetail.error_code || '无'}
+              </Typography>
+              <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+                请求编号：{historyDetail.request_id || '—'}
+              </Typography>
+              <Alert severity={historyDetail.state === 'failed' ? 'warning' : 'info'}>
+                {serverBackupReceiptExplanation(historyDetail)}
+              </Alert>
+              <Typography variant="caption" color="text.secondary">
+                当前协议未为逐代校验提供可靠的对象数量、校验字节数或分项错误计数，
+                因此不显示估算值。原始私有日志仅可由宿主机管理员本地查看。
+              </Typography>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setHistoryDetail(null)}>关闭</Button></DialogActions>
+      </Dialog>
       <Box>
         <Typography variant="body2" color="text.secondary">
           在线存储 CAS 的完整性校验与修复是另一项维护任务，不代表备份仓库可恢复。

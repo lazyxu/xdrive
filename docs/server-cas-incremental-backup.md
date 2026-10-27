@@ -263,6 +263,16 @@ previous success is **not** a current integrity guarantee. The read-only
 same authorized fixed Host action. No client-side hash estimate or fake
 recovery-success badge is emitted.
 
+History rows now offer an individual **Host execution detail** dialog with
+start/end timestamps, actual elapsed seconds, structured result/error code,
+mode and receipt ID. Lock contention, interrupted Host actions and generic
+failures have bounded, human-readable explanations; raw Host logs and paths
+are never sent to the browser. The existing v2 retention preview displays
+actual `hashed_objects` / `hashed_bytes` when the Host reports them.
+Individual verification object counts and per-category failures are still
+unavailable from the existing Host protocol and are **explicitly not
+estimated**. This is historical diagnostic evidence, not a restore drill.
+
 Online CAS verification/repair lives in **全局存储** and Task Center;
 a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file

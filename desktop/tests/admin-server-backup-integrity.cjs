@@ -72,3 +72,34 @@ test('no structurally complete file backup prompts attention instead of a false 
   assert.equal(result.newestFullID, null)
   assert.equal(result.needsAttention, true)
 })
+
+test('latest verification is chosen by Host completion time, not list ordering', () => {
+  const { latestServerBackupVerification } = exported
+  const old = verify('v2-default:target', 'success', '2026-10-27T10:00:00Z')
+  const recent = verify('v2-default:target', 'failed', '2026-10-27T11:00:00Z')
+  assert.equal(latestServerBackupVerification([old, recent], 'v2-default:target'), recent)
+  assert.equal(latestServerBackupVerification([recent, old], 'v2-default:target'), recent)
+  assert.equal(latestServerBackupVerification([old], 'v2-default:else'), undefined)
+})
+
+test('elapsed seconds and categories use only structured Host receipts', () => {
+  const { serverBackupReceiptDurationSeconds, serverBackupReceiptExplanation } = exported
+  const item = {
+    action: 'verify', state: 'failed', error_code: 'lock_busy',
+    started_at: '2026-10-27T10:00:00Z', finished_at: '2026-10-27T10:00:13Z',
+  }
+  assert.equal(serverBackupReceiptDurationSeconds(item), 13)
+  assert.match(serverBackupReceiptExplanation(item), /锁/)
+  assert.equal(serverBackupReceiptDurationSeconds({ ...item, finished_at: 'bad' }), null)
+  assert.equal(serverBackupReceiptDurationSeconds({
+    ...item, finished_at: '2026-10-27T09:59:59Z',
+  }), null)
+  assert.match(serverBackupReceiptExplanation({
+    ...item, error_code: 'operation_failed',
+  }), /私有日志/)
+  const component = fs.readFileSync(
+    path.join(root, 'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
+  assert.match(component, /data-xdrive-admin-backup-history-detail/)
+  assert.match(component, /当前协议未为逐代校验提供可靠的对象数量/)
+  assert.match(component, /retention.hashed_objects/)
+})

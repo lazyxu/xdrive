@@ -83,3 +83,47 @@ export function summarizeServerBackupIntegrity(
       inconsistent > 0 || historicalFailed > 0,
   }
 }
+
+/** Pick actual latest completed Host verification, not array display order. */
+export function latestServerBackupVerification(
+  history: XDriveServerBackupPage['history'],
+  snapshotID: string,
+): XDriveServerBackupHistoryEntry | undefined {
+  let latest: XDriveServerBackupHistoryEntry | undefined
+  for (const entry of history || []) {
+    if (entry.action !== 'verify' || entry.snapshot_id !== snapshotID) continue
+    if (!latest || (entry.finished_at || '') > (latest.finished_at || '')) latest = entry
+  }
+  return latest
+}
+
+/** Duration is computed only from the two authentic Host timestamps. */
+export function serverBackupReceiptDurationSeconds(
+  entry: XDriveServerBackupHistoryEntry,
+): number | null {
+  const start = Date.parse(entry.started_at || '')
+  const finish = Date.parse(entry.finished_at || '')
+  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start) return null
+  return Math.round((finish - start) / 1000)
+}
+
+/** Explain only authenticated structured error codes; never expose a raw Host log. */
+export function serverBackupReceiptExplanation(
+  entry: XDriveServerBackupHistoryEntry,
+): string {
+  if (entry.state === 'success') {
+    return entry.action === 'verify'
+      ? '宿主机记录这次校验通过。历史结果不保证快照当前仍然完整，恢复时必须重新校验。'
+      : '宿主机记录该操作完成。创建备份成功不等于实际恢复演练通过。'
+  }
+  switch (entry.error_code) {
+    case 'lock_busy':
+      return '宿主机备份、安装或定时任务锁正在被占用；未开始并行修改。'
+    case 'interrupted':
+      return '宿主机重启或操作中断，未自动重放危险操作。请重新检查后手动提交。'
+    case 'operation_failed':
+      return '宿主机报告执行失败；具体原因仅保存在宿主机私有日志，网页不会展示原始路径或日志。'
+    default:
+      return '宿主机报告失败；该历史记录没有可公开的结构化失败分类。'
+  }
+}
