@@ -314,3 +314,36 @@ func TestBackupAdminHistoryRejectsDuplicatesAndOversizedCollections(t *testing.T
 		}
 	}
 }
+
+func TestBackupAdminHostProgressValidation(t *testing.T) {
+	server, dir := readyBackupAdminTestServer(t)
+	state := backupAdminStatus{}
+	state.Protocol = backupAdminProtocol
+	state.State = "running"
+	state.Action = "create"
+	state.RequestID = "0123456789abcdef01234567"
+	state.Stage = "备份数据库"
+	state.BytesDone = 4096
+	state.BytesTotal = 8192
+	writeBackupTestJSON(t, dir, "backup-admin-status.json", state)
+	page := server.backupAdminState()
+	if !page.Supported || page.Operation.Stage != "备份数据库" ||
+		page.Operation.BytesDone != 4096 || page.Operation.BytesTotal != 8192 {
+		t.Fatalf("Host live progress not reflected: %+v", page.Operation)
+	}
+	state.BytesDone = 9000
+	writeBackupTestJSON(t, dir, "backup-admin-status.json", state)
+	page = server.backupAdminState()
+	if page.Operation.BytesDone != 0 || page.Operation.BytesTotal != 0 {
+		t.Fatalf("invalid Host progress reached UI: %+v", page.Operation)
+	}
+	// The Host emits at most 15 decimal digits; values above that would be
+	// imprecise when rendered by the shared TypeScript numeric contract.
+	state.BytesDone = 1_000_000_000_000_000
+	state.BytesTotal = 1_000_000_000_000_000
+	writeBackupTestJSON(t, dir, "backup-admin-status.json", state)
+	page = server.backupAdminState()
+	if page.Operation.BytesDone != 0 || page.Operation.BytesTotal != 0 {
+		t.Fatalf("oversized Host progress reached UI: %+v", page.Operation)
+	}
+}
