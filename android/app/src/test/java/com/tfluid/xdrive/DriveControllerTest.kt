@@ -29,6 +29,16 @@ class DriveControllerTest {
 
     private open inner class Service : XDriveService {
         val calls = mutableListOf<Pair<Long, Int>>()
+        var textPreviewReads = 0
+        var textPreviewRequest: suspend (DriveNode) -> FileTextPreview = { node ->
+            FileTextPreview("Hello xDrive", false, node.size)
+        }
+        override suspend fun textFilePreview(
+            accessToken: String, node: DriveNode,
+        ): FileTextPreview {
+            textPreviewReads++
+            return textPreviewRequest(node)
+        }
         var required = false
         var failure: Exception? = null
         var refreshed = 0
@@ -368,6 +378,71 @@ class DriveControllerTest {
         c.refresh(); runCurrent()
         assertEquals(listOf(folder), c.state.value.items)
         assertEquals(0, c.state.value.offset)
+    }
+
+    @Test fun textPreviewShowsOnlyCurrentOwnedFileAndClearsOnClose() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.showDetails(file); runCurrent()
+        assertEquals(file, c.state.value.selected)
+        assertEquals("Hello xDrive", c.state.value.fileTextPreview?.text)
+        assertEquals(42L, c.state.value.fileTextPreview?.size)
+        assertEquals(1, api.textPreviewReads)
+        assertFalse(c.state.value.fileTextPreviewLoading)
+
+        c.dismissDetails(); runCurrent()
+        assertNull(c.state.value.selected)
+        assertNull(c.state.value.fileTextPreview)
+        assertNull(c.state.value.fileTextPreviewError)
+
+        c.showDetails(folder); runCurrent()
+        assertEquals(folder, c.state.value.selected)
+        assertEquals(1, api.textPreviewReads) // No text GET for directories.
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.fileTextPreview)
+    }
+
+    @Test fun textPreviewNoncooperativeOldResultCannotOverwriteAtoBtoA() = runTest {
+        val stale = CompletableDeferred<FileTextPreview>()
+        val api = Service()
+        api.textPreviewRequest = { node ->
+            if (api.textPreviewReads == 1) withContext(NonCancellable) { stale.await() }
+            else FileTextPreview("current", false, node.size)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(file); runCurrent()
+        assertTrue(c.state.value.fileTextPreviewLoading)
+        c.dismissDetails(); runCurrent()
+        c.open(file); runCurrent()
+        assertEquals("current", c.state.value.fileTextPreview?.text)
+        stale.complete(FileTextPreview("old Owner context", false, file.size))
+        runCurrent()
+        assertEquals(2, api.textPreviewReads)
+        assertEquals("current", c.state.value.fileTextPreview?.text)
+        c.changeServer(); runCurrent()
+        assertNull(c.state.value.fileTextPreview)
+        assertNull(c.state.value.selected)
+    }
+
+    @Test fun textPreviewFailureIsExplicitAndRetryIsOnlyUserTriggered() = runTest {
+        val api = Service()
+        api.textPreviewRequest = { throw ApiException(415, "binary content") }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(file); runCurrent()
+        assertEquals(1, api.textPreviewReads)
+        assertNull(c.state.value.fileTextPreview)
+        assertEquals("当前文件不是可预览的 UTF-8 文本。", c.state.value.fileTextPreviewError)
+        runCurrent()
+        assertEquals(1, api.textPreviewReads) // Never auto retry.
+        api.textPreviewRequest = { node -> FileTextPreview("safe preview", false, node.size) }
+        c.retryTextPreview(); runCurrent()
+        assertEquals(2, api.textPreviewReads)
+        assertEquals("safe preview", c.state.value.fileTextPreview?.text)
+        assertNull(c.state.value.fileTextPreviewError)
     }
 
     @Test fun openingDetailsCancelsPendingPageSoItCannotDismissTheDialog() = runTest {

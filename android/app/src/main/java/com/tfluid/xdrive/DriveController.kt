@@ -36,6 +36,10 @@ data class DriveState(
     val focusedBrowseIndex: Int = 0,
     val focusedBrowseEpoch: Long = 0,
     val selected: DriveNode? = null,
+    /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
+    val fileTextPreview: FileTextPreview? = null,
+    val fileTextPreviewLoading: Boolean = false,
+    val fileTextPreviewError: String? = null,
     val filesSection: FilesSection = FilesSection.BROWSE,
     val collectionItems: List<DriveCollectionItem> = emptyList(),
     val collectionLoaded: Boolean = false,
@@ -124,6 +128,8 @@ class DriveController(
     private val galleryThumbnailLimit = Semaphore(4)
     private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
+    private var textPreviewEpoch = 0L
+    private var textPreviewJob: Job? = null
     private var retryPath: List<DriveNode>? = null
     private var retryOffset = 0
     private var retryAppend = false
@@ -357,10 +363,72 @@ class DriveController(
         if (!visible) return
         // The details surface belongs to the current UI generation, not a late append.
         if (state.value.loading) { invalidate(); mutableState.value = state.value.copy(loading = false) }
-        mutableState.value = state.value.copy(selected = node)
+        stopTextPreview()
+        mutableState.value = state.value.copy(selected = node,
+            fileTextPreview = null, fileTextPreviewLoading = false, fileTextPreviewError = null)
+        if (!node.isDirectory && node.revision > 0 && nativeTextPreviewCandidate(node.name))
+            retryTextPreview()
     }
 
-    fun dismissDetails() { mutableState.value = state.value.copy(selected = null) }
+    private fun stopTextPreview() {
+        textPreviewEpoch++
+        textPreviewJob?.cancel()
+        textPreviewJob = null
+    }
+
+    fun dismissDetails() {
+        stopTextPreview()
+        mutableState.value = state.value.copy(selected = null,
+            fileTextPreview = null, fileTextPreviewLoading = false, fileTextPreviewError = null)
+    }
+
+    /** Read the existing Go 1 MiB endpoint without entering the global
+     * mutation/paging request queue. Independent cancellation and generation
+     * checks prevent an A->B->A private-text replay. */
+    fun retryTextPreview() {
+        val current = state.value
+        val node = current.selected ?: return
+        if (current.screen != Screen.FILES || current.destinationKind != null ||
+            node.isDirectory || node.revision <= 0 || !nativeTextPreviewCandidate(node.name) ||
+            session == null || current.fileTextPreviewLoading) return
+        val service = api ?: return
+        stopTextPreview()
+        val previewTicket = textPreviewEpoch
+        val ownerTicket = generation
+        mutableState.value = current.copy(fileTextPreview = null,
+            fileTextPreviewLoading = true, fileTextPreviewError = null)
+        textPreviewJob = scope.launch {
+            try {
+                val preview = authenticated(service, ownerTicket) {
+                    service.textFilePreview(it, node)
+                }
+                checkCurrent(ownerTicket)
+                val latest = state.value
+                if (textPreviewEpoch == previewTicket && latest.screen == Screen.FILES &&
+                    latest.selected == node) {
+                    mutableState.value = latest.copy(fileTextPreview = preview,
+                        fileTextPreviewLoading = false, fileTextPreviewError = null)
+                }
+            } catch (_: CancellationException) {
+                // Dismiss/Owner navigation cancels the actual read and its UI.
+            } catch (failure: Exception) {
+                val latest = state.value
+                if (ownerTicket != generation || textPreviewEpoch != previewTicket ||
+                    latest.screen != Screen.FILES || latest.selected != node) return@launch
+                if (failure is ApiException && failure.statusCode == 401) {
+                    endSession(changeServer = false)
+                    return@launch
+                }
+                val message = when ((failure as? ApiException)?.statusCode) {
+                    415 -> "当前文件不是可预览的 UTF-8 文本。"
+                    404, 412 -> "文件已变化或不存在，请刷新目录。"
+                    else -> safeError(failure)
+                }
+                mutableState.value = latest.copy(fileTextPreview = null,
+                    fileTextPreviewLoading = false, fileTextPreviewError = message)
+            }
+        }
+    }
 
     /** Mutations only target the current Owner's confirmed browse directory;
      * never the Search/Recent collection, stale rows or the root itself. */
@@ -1905,6 +1973,12 @@ class DriveController(
         generation++
         active?.cancel()
         active = null
+        stopTextPreview()
+        val current = state.value
+        if (current.fileTextPreview != null || current.fileTextPreviewLoading ||
+            current.fileTextPreviewError != null)
+            mutableState.value = current.copy(fileTextPreview = null,
+                fileTextPreviewLoading = false, fileTextPreviewError = null)
         closeActiveVideoPlayback()
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }

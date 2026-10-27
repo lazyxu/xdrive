@@ -17,7 +17,98 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class XDriveApiTest {
-    @Test fun nodeLocationAndDirectoryPositionUseCurrentOwnerContracts() = runBlocking {
+    private fun textNode(revision: Int = 4, size: Long = 12L): String =
+        """{"id":7,"parent_id":1,"name":"note.txt","type":"file",
+            "size":$size,"revision":$revision}"""
+
+    @Test fun textPreviewUsesBearerAndCurrentRevisionBeforeAndAfterRead() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody(textNode()))
+            server.enqueue(MockResponse().setBody(
+                """{"text":"hello world!","truncated":false,"size":12}"""))
+            server.enqueue(MockResponse().setBody(textNode()))
+            val preview = api.textFilePreview("owner-secret",
+                DriveNode(7, 1, "note.txt", "file", 12, revision = 4))
+            assertEquals(FileTextPreview("hello world!", false, 12), preview)
+            val requests = (0 until 3).map { server.takeRequest() }
+            assertEquals(listOf("/api/v1/nodes/7",
+                "/api/v1/files/7/preview/text", "/api/v1/nodes/7"),
+                requests.map { it.path })
+            assertTrue(requests.all { it.method == "GET" &&
+                it.getHeader("Authorization") == "Bearer owner-secret" })
+            assertEquals("\"4\"", requests[1].getHeader("If-Match"))
+            assertTrue(requests.all { !it.path!!.contains("owner-secret") })
+        } }
+    }
+
+    @Test fun textPreviewRejectsStaleRevisionAndMalformedPayloadBeforeDisplay() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val original = DriveNode(7, 1, "note.txt", "file", 12, revision = 4)
+            server.enqueue(MockResponse().setBody(textNode()))
+            server.enqueue(MockResponse().setBody(
+                """{"text":"hello world!","truncated":false,"size":12}"""))
+            server.enqueue(MockResponse().setBody(textNode(revision = 5)))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.textFilePreview("owner-secret", original) }.reason)
+
+            // A binary filename/UTF-8 error is determined by Go (415), never
+            // represented as an empty successful preview.
+            server.enqueue(MockResponse().setBody(textNode()))
+            server.enqueue(MockResponse().setResponseCode(415))
+            assertEquals(415,
+                failure { api.textFilePreview("owner-secret", original) }.statusCode)
+
+            val bad = listOf(
+                """{"text":"hello world!","truncated":"false","size":12}""",
+                """{"text":"hello world!","truncated":true,"size":12}""",
+                """{"text":"too long for declared size","truncated":false,"size":12}""",
+                """{"text":"hello world!","truncated":false,"size":13}""",
+            )
+            for (payload in bad) {
+                server.enqueue(MockResponse().setBody(textNode()))
+                server.enqueue(MockResponse().setBody(payload))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.textFilePreview("owner-secret", original) }.reason)
+            }
+            assertEquals(13, server.requestCount)
+        } }
+    }
+
+    @Test fun textPreviewCapsActualUtf8BytesAndHonorsServerTruncation() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val big = DriveNode(7, 1, "note.txt", "file", 1_048_577, revision = 4)
+            server.enqueue(MockResponse().setBody(textNode(size = big.size)))
+            server.enqueue(MockResponse().setBody(
+                """{"text":"small","truncated":true,"size":1048577}"""))
+            server.enqueue(MockResponse().setBody(textNode(size = big.size)))
+            val preview = api.textFilePreview("owner-secret", big)
+            assertTrue(preview.truncated)
+            assertEquals("small", preview.text)
+
+            // Never keep more than 1 MiB in Android UI State even if an
+            // inconsistent/compromised Server sends a larger JSON body.
+            server.enqueue(MockResponse().setBody(textNode(size = big.size)))
+            server.enqueue(MockResponse().setBody(
+                """{"text":"${"x".repeat(1_048_577)}","truncated":true,"size":1048577}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.textFilePreview("owner-secret", big) }.reason)
+
+            // A valid 1 MiB text of newlines grows beyond 2 MiB in JSON
+            // escaping. The preview-only JSON cap must still accept it,
+            // without increasing the cap of any other API endpoint.
+            val escapedText = "\n".repeat(1_048_576)
+            val capped = big.copy(size = 1_048_576)
+            server.enqueue(MockResponse().setBody(textNode(size = capped.size)))
+            server.enqueue(MockResponse().setBody(
+                """{"text":${JsonPrimitive(escapedText)},"truncated":false,"size":1048576}"""))
+            server.enqueue(MockResponse().setBody(textNode(size = capped.size)))
+            val exact = api.textFilePreview("owner-secret", capped)
+            assertEquals(1_048_576, exact.text.toByteArray(Charsets.UTF_8).size)
+            assertFalse(exact.truncated)
+        } }
+    }
+
+        @Test fun nodeLocationAndDirectoryPositionUseCurrentOwnerContracts() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody("""{
                 "node_id":155,"revision":7,"node_type":"file","parent_id":20,

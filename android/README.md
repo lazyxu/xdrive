@@ -499,3 +499,35 @@ List/Grid selection without enumerating all earlier rows.
 Physical device pixel-level parity is still **not verified**. Run accurate
 SHA JVM, lint, APK, API35 Compose and Final Gate before merging; do not
 suppress or skip the safety tests.
+
+## Native Files read-only text preview (MVP)
+
+Text/code files opened from verified Files/Recent/Favorites/Search rows reuse
+the existing authenticated Go `GET /api/v1/files/:id/preview/text` endpoint.
+Android neither downloads an entire large original nor introduces a second
+content writer, WebView, new preview service, or persistent private cache.
+
+- A small filename allowlist merely controls the text-preview UI hint; the
+  **Go Server is authoritative** for UTF-8 validity, MIME rejection (HTTP 415),
+  current Owner authorization and its **1 MiB** maximum returned text.
+- Android verifies the same Owner Node's ID, parent, name, size and revision
+  **before and after** the bounded preview GET. The middle GET sends the
+  original If-Match revision; the current Server implementation does not rely
+  on that optional header, so the two authenticated Node checks are mandatory.
+- Text lives only in current dialog state and is lazily displayed in 4 KiB
+  Compose chunks. Closing, navigating, switching Server, logout or superseding
+  the same file A→B→A cancels the old request and discards its private result.
+  A 415/error never becomes a fake empty preview or auto-retry storm.
+- The general JSON cap remains 2 MiB; only the authenticated preview endpoint
+  permits a maximum 6 MiB + 1 KiB encoded JSON body, accounting for Unicode
+  control-character escaping of Go's 1 MiB UTF-8 result. The decoded result
+  is independently capped at 1 MiB.
+- Tests cover current Owner/If-Match and stale revisions (MockWebServer),
+  415/malformed/truncated/control-escaped text, Controller cancellation and
+  explicit retries, and the native API35 visible text dialog.
+
+**Not included:** PDF/image/video decoding, native Live Photo motion, PDF
+annotation, editing source files, offline retention, virtualized cross-file
+preview navigation, or 1:1 physical-device screenshot verification. Exact
+source-head Android/JVM/lint/APK/API35 and branch checks are required before
+merge; unavailable device-only evidence is recorded as unverified.

@@ -33,6 +33,28 @@ fun fileKind(name: String, directory: Boolean): String {
     }
 }
 
+/** Display hint only: the existing Go Owner text-preview endpoint is authoritative.
+ * Never try reading a media/PDF/ZIP as text just because it is a File Node. */
+internal fun nativeTextPreviewCandidate(fileName: String): Boolean {
+    val name = fileName.lowercase(Locale.ROOT)
+    val baseNames = setOf(
+        "readme", "license", "copying", "dockerfile", "makefile", "gemfile",
+        "procfile", "cmakelists.txt", ".env", ".gitignore", ".editorconfig",
+        ".dockerignore", ".npmrc",
+    )
+    if (name in baseNames || name.startsWith(".env.")) return true
+    val extension = name.substringAfterLast('.', "")
+    return extension in setOf(
+        "txt", "text", "md", "markdown", "log", "json", "jsonl", "csv", "tsv",
+        "xml", "html", "htm", "svg", "css", "scss", "less", "js", "jsx",
+        "ts", "tsx", "cjs", "mjs", "go", "kt", "kts", "java", "py", "rb",
+        "rs", "c", "h", "cc", "cpp", "hpp", "sh", "bash", "zsh", "fish",
+        "sql", "yaml", "yml", "toml", "ini", "cfg", "conf", "properties",
+        "gradle", "swift", "lua", "dart", "php", "ps1", "bat", "cmd",
+        "vue", "svelte", "lock", "patch", "tex", "graphql",
+    )
+}
+
 /** A fixed MIME allowlist for native SAF CreateDocument, not a client permission
  * decision. Unknown, compound or extensionless names stay octet-stream.
  * Do not infer a more privileged media type from remote server content.

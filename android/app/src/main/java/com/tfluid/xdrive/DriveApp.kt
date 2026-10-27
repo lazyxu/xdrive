@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -15,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -231,6 +234,54 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     Text("修改时间：${node.updatedAt.ifEmpty { "未知" }}")
                     Text("版本：${node.revision}"); Text("文件 ID：${node.id}")
+                    if (!node.isDirectory && node.revision > 0 &&
+                        nativeTextPreviewCandidate(node.name)) {
+                        HorizontalDivider()
+                        Text("文本预览", style = MaterialTheme.typography.titleSmall)
+                        when {
+                            state.fileTextPreviewLoading -> Row(
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.testTag("files-text-preview-loading"),
+                            ) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text("正在读取文本（最多 1 MiB）…")
+                            }
+                            state.fileTextPreviewError != null -> {
+                                // A State-backed property is not smart-castable in Compose.
+                                Text(requireNotNull(state.fileTextPreviewError),
+                                    modifier = Modifier.testTag("files-text-preview-error"))
+                                TextButton(onClick = controller::retryTextPreview,
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                        .testTag("files-text-preview-retry")) {
+                                    Text("重试文本预览")
+                                }
+                            }
+                            state.fileTextPreview != null -> {
+                                val preview = requireNotNull(state.fileTextPreview)
+                                Text(if (preview.truncated) "只显示前 1 MiB · 文件已截断"
+                                    else "完整文本 · ${formatSize(preview.size)}",
+                                    style = MaterialTheme.typography.bodySmall)
+                                // Virtualized chunks avoid composing a single giant Text when
+                                // Go returns a 1 MiB text file with no line breaks.
+                                val chunks = remember(preview.text) {
+                                    preview.text.chunked(4096)
+                                }
+                                if (chunks.isEmpty()) {
+                                    Text("空文件", modifier = Modifier.testTag("files-text-preview-empty"))
+                                } else {
+                                    LazyColumn(Modifier.fillMaxWidth().height(280.dp)
+                                        .testTag("files-text-preview-content")) {
+                                        items(chunks.size) { index ->
+                                            Text(chunks[index],
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }, confirmButton = { TextButton(onClick = controller::dismissDetails, modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
     }

@@ -74,6 +74,9 @@ data class DriveCrumb(val id: Long, val name: String)
 data class DriveCollectionItem(val node: DriveNode, val path: String, val crumbs: List<DriveCrumb>)
 data class FileSearchPage(val items: List<DriveCollectionItem>, val nextCursor: String)
 
+/** Bounded UTF-8 text returned by the existing Go Owner text-preview endpoint. */
+data class FileTextPreview(val text: String, val truncated: Boolean, val size: Long)
+
 /** Current Owner path from Go /nodes/:id/location, not stale search breadcrumbs. */
 data class OwnedNodeLocation(
     val nodeId: Long, val revision: Long, val parentId: Long,
@@ -140,6 +143,8 @@ interface XDriveService {
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
+    suspend fun textFilePreview(accessToken: String, node: DriveNode): FileTextPreview =
+        throw ApiException(501, "Native Owner text preview unavailable")
     suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation =
         throw ApiException(501, "Node location API unavailable")
     suspend fun childPosition(accessToken: String, parentId: Long, nodeId: Long): DirectoryItemPosition =
@@ -305,6 +310,35 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             result.string("group") != "none" ||
             result["folders_first"] != JsonPrimitive(true)) invalidPayload()
         return DirectoryItemPosition(nodeId, revision, index.toInt())
+    }
+
+    /** Read Go's current Owner-checked text preview (up to 1 MiB) and
+     * verify the exact Node/revision before AND after, fencing rename,
+     * deletion, Owner revocation and in-place updates. No local disk cache. */
+    override suspend fun textFilePreview(accessToken: String, original: DriveNode): FileTextPreview {
+        require(original.id > 0 && original.revision > 0 && original.type == "file" &&
+            original.parentId != null && original.size >= 0 && validToken(accessToken))
+        suspend fun verifyNode() {
+            val current = node(request("nodes/${original.id}", accessToken))
+            if (current.id != original.id || current.parentId != original.parentId ||
+                current.revision != original.revision || current.type != "file" ||
+                current.name != original.name || current.size != original.size)
+                invalidPayload()
+        }
+        verifyNode()
+        val dto = request("files/${original.id}/preview/text", accessToken,
+            ifMatch = original.revision)
+        val content = dto.string("text")
+        val truncated = (dto["truncated"] as? JsonPrimitive)
+            ?.takeUnless { it.isString }?.booleanOrNull ?: invalidPayload()
+        val size = dto.long("size")
+        val utf8Length = content.toByteArray(Charsets.UTF_8).size
+        val cap = 1 shl 20
+        if (size != original.size || utf8Length > cap || utf8Length.toLong() > size ||
+            content.contains('\u0000') || truncated != (size > cap.toLong()))
+            invalidPayload()
+        verifyNode()
+        return FileTextPreview(content, truncated, size)
     }
 
     override suspend fun createDirectory(accessToken: String, parentId: Long, name: String): DriveNode {
@@ -1103,7 +1137,12 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                             if (!it.isSuccessful) throw ApiException(it.code, "Server request failed", errorReason(path, it))
                             if (emptyResponse) return@use JsonObject(emptyMap())
                             val body = it.body ?: invalidPayload()
-                            val max = 2L * 1024 * 1024
+                            // Go returns up to 1 MiB of UTF-8 as JSON.
+                            // Escaped control characters can expand to 6x
+                            // before decoding; retain the strict 2 MiB bound
+                            // for every other Owner JSON response.
+                            val max = if (path.endsWith("/preview/text"))
+                                6L * 1024 * 1024 + 1024 else 2L * 1024 * 1024
                             if (body.contentLength() > max) invalidPayload()
                             val buffer = Buffer()
                             val source = body.source()

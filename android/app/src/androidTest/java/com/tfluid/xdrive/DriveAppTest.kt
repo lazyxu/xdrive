@@ -36,6 +36,8 @@ class DriveAppTest {
     private var copyCalls = 0
     private var moveCalls = 0
     private var extraRootFile = false
+    private var textPreviewFixture = false
+    private var textPreviewReads = 0
     private var locateLargeFolder = false
     private var locateRangeReads = 0
     private val locatedFile = DriveNode(1155, 1, "target-155.txt", "file", 12, revision = 2)
@@ -259,6 +261,13 @@ class DriveAppTest {
             if (original.id == 70L) extraRootFile = false
             return original.copy(parentId = parentId, revision = original.revision + 1)
         }
+        override suspend fun textFilePreview(
+            accessToken: String, node: DriveNode,
+        ): FileTextPreview {
+            check(textPreviewFixture && node.id == 3L && node.revision == 2L)
+            textPreviewReads++
+            return FileTextPreview("hello xDrive", false, node.size)
+        }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
@@ -283,7 +292,9 @@ class DriveAppTest {
                 else if (parentId == 1L) mutableRootRows.toList() +
                     (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
                         else emptyList())
-                else listOf(DriveNode(3, 2, "测试.txt", "file", 12, updatedAt = "2026-10-23T00:00:00Z"))
+                else listOf(DriveNode(3, 2, "测试.txt", "file", 12,
+                    revision = if (textPreviewFixture) 2 else 0,
+                    updatedAt = "2026-10-23T00:00:00Z"))
             return NodeRange(rows, if (paging) 101 else rows.size.toLong(), offset)
         }
     }
@@ -1027,6 +1038,29 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("files-item-2").assertDoesNotExist()
         compose.onNodeWithText("此文件夹为空").assertIsDisplayed()
+    }
+
+    @Test fun nativeFilesTextPreviewShowsBoundedRealOwnerTextAndReclaimsOnClose() {
+        textPreviewFixture = true
+        startAndLogin()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.onNodeWithText("测试.txt").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.fileTextPreview?.text == "hello xDrive" &&
+                !controller.state.value.fileTextPreviewLoading
+        }
+        compose.onNodeWithTag("files-text-preview-content").assertIsDisplayed()
+        compose.onNodeWithText("hello xDrive").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, textPreviewReads) }
+        compose.onNodeWithText("关闭").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.fileTextPreview)
+            org.junit.Assert.assertNull(controller.state.value.selected)
+        }
+        compose.onNodeWithContentDescription("返回上级").performClick()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("退出登录").performClick()
+        compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.fileTextPreview) }
     }
 
     @Test fun loginBrowseDetailsBackAndLogout() {
