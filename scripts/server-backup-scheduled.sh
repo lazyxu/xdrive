@@ -54,9 +54,9 @@ else
   trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
 fi
 if [[ "$schedule_format" == "v2" ]]; then
-  # Shared immutable CAS objects can be referenced by multiple generations.
-  # Until reference-aware GC exists, neither v2 snapshots nor repository
-  # objects are ever removed by the scheduled wrapper.
+  # Manual reference-aware GC exists as a separate administrator command.
+  # Scheduled v2 backup must NEVER invoke it: no snapshot pruning or CAS
+  # deletion is automatic, including when XD_BACKUP_RETENTION_DAYS is set.
   repo_args=()
   [[ -z "$repository_dir" ]] || repo_args=(--repository-dir "$repository_dir")
   if [[ -x "$BIN_DIR/xdrive-server" ]]; then

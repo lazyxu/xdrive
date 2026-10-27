@@ -43,7 +43,7 @@ func run(args []string) error {
 	target := f.String("target", "", "empty restore destination")
 	ownerUID := f.Int("owner-uid", -1, "host owner UID of newly created repository entries")
 	ownerGID := f.Int("owner-gid", -1, "host owner GID of newly created repository entries")
-	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (preview only)")
+	keepLast := f.Int("keep-last", 7, "retain at least this many newest v2 generations (read-only plan or explicit prune)")
 	casMode := f.String("mode", "fast", "retention-plan CAS audit: fast (size only) or deep (all SHA-256)")
 	confirmed := f.Bool("yes", false, "explicitly confirm destructive manual prune")
 	if err := f.Parse(args[1:]); err != nil {

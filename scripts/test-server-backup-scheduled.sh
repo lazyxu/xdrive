@@ -80,6 +80,10 @@ expect_args backup --incremental
 [[ "$(wc -l < "$XD_SCHEDULE_TEST_LOG")" -eq 2 ]]
 [[ -d "$old_v1" && -d "$v2_snapshot" ]]
 [[ "$(cat "$v2_object")" == 'CAS original' ]]
+# Even with the v2 manual prune available, a scheduled v2 run must never
+# create a deletion journal or invoke the explicit prune subcommand.
+[[ ! -e "$XD_CONFIG_DIR/backups/incremental/.prune-retired" ]]
+! grep -Fxq prune "$XD_SCHEDULE_TEST_LOG"
 
 # A custom absolute repository is passed as one quoted argument even if it
 # contains spaces. Verify the fallback script uses the same v2 implementation.
