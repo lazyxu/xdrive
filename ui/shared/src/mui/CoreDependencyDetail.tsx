@@ -70,7 +70,7 @@ export function XDriveCoreDependencyDetail({
 
   return (
     <Box data-xdrive-core-dependency-flat={service.id}
-      sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
+      sx={{ width: '100%', minWidth: 0 }}>
       <Paper id={`dependency-${service.id}-status-header`} variant="outlined"
         sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2, scrollMarginTop: 72 }}>
         <Stack spacing={1.5}>
