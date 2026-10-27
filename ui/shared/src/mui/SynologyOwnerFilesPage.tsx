@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
@@ -35,6 +36,14 @@ import {
 
 const pageSize = 200
 
+function supportsOwnerPreview(item: XDriveFileExplorerItem): boolean {
+  if (item.kind !== 'file') return false
+  if (xDriveFileSupportsTextPreview(item.name, item.kind)) return true
+  if (typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) return false
+  return Boolean(xDriveSynologyPlaybackMIME(item.name) ||
+    (xDriveSynologyPreviewMIME(item.name) && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
+}
+
 function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerItem {
   return {
     id: node.id,
@@ -67,7 +76,10 @@ export function XDriveSynologyOwnerFilesPage({
   const [verifiedScopeKey, setVerifiedScopeKey] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [preview, setPreview] = useState<{ scopeKey: string; item: XDriveFileExplorerItem } | null>(null)
+  const [preview, setPreview] = useState<{
+    scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
+    item: XDriveFileExplorerItem; sessionIDs?: (string | number)[]
+  } | null>(null)
   const [paging, setPaging] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [nextCursor, setNextCursor] = useState('')
@@ -83,13 +95,50 @@ export function XDriveSynologyOwnerFilesPage({
   const pendingPage = useRef<AbortController | null>(null)
   const pagingActive = useRef(false)
   const itemsRef = useRef<XDriveSynologyOwnerFileNode[]>([])
+  const verifiedOwnerRef = useRef<{
+    client: XDriveSynologyBackupLocalClient; rootRevision: number
+  } | null>(null)
 
   // A folder/sort switch renders before its request effect runs. Never hand
   // previous-owner/folder rows to the canonical FileExplorer during that gap.
   const currentScopeKey = xDriveSynologyOwnerFilesScopeKey(crumbs, sort.key, sort.direction)
-  const currentScopeVerified = verified && verifiedScopeKey === currentScopeKey
-  const previewItem = currentScopeVerified && preview?.scopeKey === currentScopeKey
-    ? preview.item : null
+  const currentScopeVerified = verified && verifiedScopeKey === currentScopeKey &&
+    verifiedOwnerRef.current?.client === client && verifiedOwnerRef.current.rootRevision === rootRevision
+  const ownerRef = useRef({ client, rootRevision, scopeKey: currentScopeKey })
+  if (ownerRef.current.client !== client || ownerRef.current.rootRevision !== rootRevision ||
+      ownerRef.current.scopeKey !== currentScopeKey) {
+    ownerRef.current = { client, rootRevision, scopeKey: currentScopeKey }
+  }
+  const owner = ownerRef.current
+  const mountedOwnerRef = useRef<typeof owner | null>(owner)
+  useLayoutEffect(() => {
+    mountedOwnerRef.current = owner
+    return () => { if (mountedOwnerRef.current === owner) mountedOwnerRef.current = null }
+  }, [owner])
+  const isCurrentOwner = useCallback(() =>
+    ownerRef.current === owner && mountedOwnerRef.current === owner, [owner])
+  const displayedItems = useMemo(
+    () => currentScopeVerified ? items.map(itemForExplorer) : [],
+    [items, currentScopeVerified],
+  )
+  const previewItems = useMemo(() => {
+    const candidates = displayedItems.filter(supportsOwnerPreview)
+    if (!preview?.sessionIDs) return candidates
+    const byID = new Map(candidates.map(item => [item.id, item]))
+    return preview.sessionIDs.flatMap(id => {
+      const item = byID.get(id)
+      return item ? [item] : []
+    })
+  }, [displayedItems, preview?.sessionIDs])
+  const previewIndex = currentScopeVerified && preview?.scopeKey === currentScopeKey &&
+    preview.rootRevision === rootRevision && preview.client === client
+    ? previewItems.findIndex(item => item.id === preview.item.id &&
+      item.revision === preview.item.revision && item.name === preview.item.name &&
+      item.size === preview.item.size)
+    : -1
+  const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : null
+  const previewPositionLabel = previewItem
+    ? `${previewIndex + 1} / ${previewItems.length} ${preview?.sessionIDs ? '已选择' : '已加载'}` : ''
   const readyDownload = currentScopeVerified &&
     verifiedDownload?.scopeKey === currentScopeKey &&
     verifiedDownload.rootRevision === rootRevision ? verifiedDownload : null
@@ -104,24 +153,42 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => xDriveSynologyLoadOwnerThumbnail(client, item, signal, onProgress), [client])
-  // Native OS/browser saving is initiated only AFTER complete Owner/revision
-  // validation and whole-file SHA-256 proof. No unsafe Server URL or token
-  // is ever exposed, and partial bytes never reach the browser download UI.
-  const downloadSelectedFiles = useCallback((selected: XDriveFileExplorerItem[]) => {
-    if (!currentScopeVerified || downloadAbort.current || selected.length !== 1) {
-      setNotice('仅能在当前已确认目录中下载一个文件。')
-      return
-    }
+  // Every entry uses the same capability check, including the actual handler.
+  // Reject unsupported/stale requests before retiring an already verified save.
+  const getDownloadDisabledReason = useCallback((
+    selected: readonly XDriveFileExplorerItem[], count = selected.length,
+  ): string | null => {
+    if (!isCurrentOwner() || !currentScopeVerified) return '当前 Server Owner 目录尚未验证'
+    if (downloadAbort.current) return '已有正在执行的文件下载'
+    if (count !== 1 || selected.length !== 1) return '暂仅支持单个文件下载'
     const item = selected[0]
-    // A stale FileExplorer/Quick Look selection from a previous Owner or
-    // folder must not silently select an unrelated current-Owner Node.
+    if (item.kind !== 'file' || typeof item.size !== 'number' ||
+        !Number.isSafeInteger(item.size) || item.size < 1 ||
+        item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
+      return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
+    }
     if (!itemsRef.current.some(node =>
       node.type === 'file' && node.id === item.id &&
       node.revision === item.revision && node.name === item.name &&
       node.size === item.size)) {
-      setNotice('文件不属于当前已核实目录，请刷新后重新选择。')
+      return '该文件不属于当前已核实的 Server Owner 目录'
+    }
+    return null
+  }, [currentScopeVerified, isCurrentOwner])
+  // Native OS/browser saving is initiated only AFTER complete Owner/revision
+  // validation and whole-file SHA-256 proof. No unsafe Server URL or token
+  // is ever exposed, and partial bytes never reach the browser download UI.
+  const downloadSelectedFiles = useCallback((selected: XDriveFileExplorerItem[]) => {
+    if (!isCurrentOwner()) return
+    const disabledReason = getDownloadDisabledReason(selected)
+    if (disabledReason) {
+      setNotice(disabledReason)
       return
     }
+    const item = selected[0]
+    // The browser save step needs a fresh user click. Reveal the existing
+    // page's progress/cancel/save controls instead of hiding them behind MUI.
+    setPreview(null)
     // Retire a previous verified but unused Blob before a different request.
     if (verifiedDownloadURL.current) {
       URL.revokeObjectURL(verifiedDownloadURL.current)
@@ -165,7 +232,46 @@ export function XDriveSynologyOwnerFilesPage({
           setDownload(null)
         }
       })
-  }, [client, currentScopeVerified, currentScopeKey, rootRevision])
+  }, [client, currentScopeKey, rootRevision, getDownloadDisabledReason, isCurrentOwner])
+
+  const cancelDownload = useCallback(() => {
+    if (!isCurrentOwner()) return
+    downloadAbort.current?.abort()
+    downloadAbort.current = null
+    setDownload(null)
+    setNotice('已取消文件下载。')
+  }, [isCurrentOwner])
+
+  const openFilePreview = useCallback((item: XDriveFileExplorerItem, sessionIDs?: (string | number)[]) => {
+    if (!isCurrentOwner() || !currentScopeVerified) return
+    const current = displayedItems.find(candidate => candidate.id === item.id &&
+      candidate.revision === item.revision && candidate.name === item.name && candidate.size === item.size)
+    if (!current || !supportsOwnerPreview(current)) {
+      setNotice('该文件类型或大小暂不支持 DSM Viewer；请通过 Desktop/Web 打开。')
+      return
+    }
+    setNotice('')
+    setPreview({ scopeKey: currentScopeKey, rootRevision, client, item: current,
+      sessionIDs: sessionIDs ? [...new Set(sessionIDs)] : undefined })
+  }, [client, currentScopeKey, rootRevision, currentScopeVerified, displayedItems, isCurrentOwner])
+
+  const movePreview = useCallback((delta: -1 | 1) => {
+    if (!isCurrentOwner() || !currentScopeVerified) return
+    setPreview(previous => {
+      if (!previous || previous.client !== client || previous.rootRevision !== rootRevision ||
+          previous.scopeKey !== currentScopeKey) return previous
+      const index = previewItems.findIndex(item => item.id === previous.item.id &&
+        item.revision === previous.item.revision)
+      const next = index >= 0 ? previewItems[index + delta] : undefined
+      return next ? { ...previous, item: next } : previous
+    })
+  }, [client, currentScopeKey, rootRevision, currentScopeVerified, previewItems, isCurrentOwner])
+  const previewDownloadReason = previewItem ? getDownloadDisabledReason([previewItem]) : null
+  const previewActions = previewItem ? [{
+    id: 'download', label: previewDownloadReason ? '下载：' + previewDownloadReason : '下载',
+    disabled: Boolean(previewDownloadReason),
+    onSelect: () => downloadSelectedFiles([previewItem]),
+  }] : []
 
   const loadMediaPreview = useCallback((
     item: XDriveFileExplorerItem,
@@ -209,6 +315,7 @@ export function XDriveSynologyOwnerFilesPage({
     pendingPage.current = controller
     pagingActive.current = false
     itemsRef.current = []
+    verifiedOwnerRef.current = null
     setItems([])
     setHasMore(false)
     setNextCursor('')
@@ -227,6 +334,7 @@ export function XDriveSynologyOwnerFilesPage({
       setItems(page.items)
       setNextCursor(page.next_cursor ?? '')
       setHasMore(page.has_more)
+      verifiedOwnerRef.current = { client, rootRevision }
       setVerifiedScopeKey(currentScopeKey)
       setVerified(true)
     }).catch(() => {
@@ -240,7 +348,7 @@ export function XDriveSynologyOwnerFilesPage({
       pageEpoch.current++
       pagingActive.current = false
     }
-  }, [client, crumbs, sort.key, sort.direction, currentScopeKey])
+  }, [client, crumbs, sort.key, sort.direction, currentScopeKey, rootRevision])
 
   const loadMore = useCallback(() => {
     const parent = crumbs[crumbs.length - 1]?.id
@@ -283,6 +391,8 @@ export function XDriveSynologyOwnerFilesPage({
   // background tab or pressing Refresh starts with a newly authenticated root,
   // rather than retaining breadcrumbs or file names from a previous Owner.
   const refreshAuthenticatedOwner = useCallback(() => {
+    mountedOwnerRef.current = null
+    verifiedOwnerRef.current = null
     // Do not carry an in-progress Owner download into another login/session.
     downloadAbort.current?.abort()
     downloadAbort.current = null
@@ -337,10 +447,6 @@ export function XDriveSynologyOwnerFilesPage({
     return () => document.removeEventListener('visibilitychange', onResume)
   }, [refreshAuthenticatedOwner])
 
-  const displayedItems = useMemo(
-    () => currentScopeVerified ? items.map(itemForExplorer) : [],
-    [items, currentScopeVerified],
-  )
   const navigateUp = useCallback(() => {
     setPreview(null)
     setCrumbs(current => current.length > 1 ? current.slice(0, -1) : current)
@@ -399,17 +505,13 @@ export function XDriveSynologyOwnerFilesPage({
             {download ? (
               <XDriveStatusAlert tone="neutral">
                 下载校验：{download.name} · {xDriveMediaByteProgressLabel(download.loaded, download.total)}
-                <XDriveActionButton compact onClick={() => {
-                  downloadAbort.current?.abort()
-                  downloadAbort.current = null
-                  setDownload(null)
-                  setNotice('已取消文件下载。')
-                }}>取消下载</XDriveActionButton>
+                <XDriveActionButton compact onClick={cancelDownload}>取消下载</XDriveActionButton>
               </XDriveStatusAlert>
             ) : null}
             <XDriveFileExplorer
               presentation="workspace"
               interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
+              suspendBackgroundThumbnails={previewItem !== null}
               items={displayedItems}
               crumbs={crumbs}
               loading={loading}
@@ -430,41 +532,17 @@ export function XDriveSynologyOwnerFilesPage({
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
+              onOpenQuickLook={request => openFilePreview(request.item, request.sessionIDs)}
               onDownloadItems={downloadSelectedFiles}
               getSelectionActionDisabledReason={(action, selected, count) => {
-                if (action !== 'download') return null
-                if (!currentScopeVerified) return '当前 Server Owner 目录尚未验证'
-                if (download) return '已有正在执行的文件下载'
-                if (count !== 1 || selected.length !== 1) return '暂仅支持单个文件下载'
-                const item = selected[0]
-                if (item.kind !== 'file' || typeof item.size !== 'number' ||
-                    !Number.isSafeInteger(item.size) || item.size < 1 ||
-                    item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
-                  return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
-                }
-                if (!itemsRef.current.some(node =>
-                  node.type === 'file' && node.id === item.id &&
-                  node.revision === item.revision && node.name === item.name &&
-                  node.size === item.size)) {
-                  return '该文件不属于当前已核实的 Server Owner 目录'
-                }
-                return null
+                return action === 'download' ? getDownloadDisabledReason(selected, count) : null
               }}
               onOpenItem={item => {
                 if (item.kind === 'dir') {
                   setPreview(null)
                   setCrumbs(current => [...current, { id: item.id, name: item.name }])
-                } else if (xDriveFileSupportsTextPreview(item.name, item.kind) ||
-                  (xDriveSynologyPreviewMIME(item.name) &&
-                    typeof item.size === 'number' && item.size > 0 &&
-                    item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
-                  (xDriveSynologyPlaybackMIME(item.name) &&
-                    typeof item.size === 'number' && Number.isSafeInteger(item.size) &&
-                    item.size > 0)) {
-                  setNotice('')
-                  setPreview({ scopeKey: currentScopeKey, item })
                 } else {
-                  setNotice('该文件类型或大小暂不支持 DSM Viewer；请通过 Desktop/Web 打开。')
+                  openFilePreview(item)
                 }
               }}
               statusText={currentScopeVerified
@@ -486,8 +564,15 @@ export function XDriveSynologyOwnerFilesPage({
         ) : null}
       </Stack>
       <XDriveFileQuickLookDialog
+        key={rootRevision + ':' + currentScopeKey}
         open={previewItem !== null}
         item={previewItem}
+        positionLabel={previewPositionLabel}
+        canPrevious={previewIndex > 0}
+        canNext={previewIndex >= 0 && previewIndex < previewItems.length - 1}
+        onPrevious={() => movePreview(-1)}
+        onNext={() => movePreview(1)}
+        actions={previewActions.map(action => ({ ...action, icon: <DownloadRoundedIcon fontSize="small" /> }))}
         loadTextPreview={loadTextPreview}
         // The SAME shared two-layer Viewer shows the current Owner's proven
         // JPEG/PNG thumbnail while the full original is still downloading.

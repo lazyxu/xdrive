@@ -13,7 +13,7 @@ A later explicit owner decision supersedes older instructions.
 - Continue the existing relevant PR when possible, rather than generating duplicates.
 - Keep changes scoped and shared among platforms. Preserve unrelated changes and real ownership boundaries.
 - Distinguish implemented, tested, CI passed, built, published, deployed and physically validated.
-- Real production or unavailable device acceptance: say **跳过（未验收）** once and continue safe independent work. Never claim skipped checks passed.
+- Real production or unavailable device acceptance: disclose **跳过（未验收）** once. When the owner has chosen to skip it, do not request confirmation again or block subsequent development. Never claim skipped checks passed.
 
 ## Git, CI and merge discipline
 - GitHub master is canonical; merge on GitHub first, then fast-forward GitLab only if not diverged. Never force overwrite GitLab changes.
@@ -41,10 +41,11 @@ A later explicit owner decision supersedes older instructions.
 - Avoid branch-name-only deletion and avoid bulk merge of old divergent source.
 
 ## Canonical UI architecture
-- Web/Desktop/Synology share the same React/MUI ui/shared shell, navigation, page components, dialogs and theme, with small genuine platform adapters.
+- Web/Desktop/Synology must share the canonical `@xdrive/ui/mui` shell (source: `ui/shared`), navigation, all pages, dialogs and theme. This covers Files/Gallery/Viewer, Push/Pull, tasks/transfers, storage, conflicts, diagnostics and admin/settings; use small genuine platform adapters and capability-scoped routes.
 - Use the term 同步文件夹. Main navigation: 概览、云端文件、同步文件夹、传输、存储、冲突、诊断. Admin: 用户管理、审计日志、全局存储、服务与依赖.
 - Desktop uses real Electron/Agent IPC; Web uses Server APIs; Synology uses authenticated DSM-local adapters with same-user and Owner checks. Never fake a platform capability, invent state or create a second DSM UI/queue/CAS writer.
-- Initial DSM 7 armada38x backup-only SPK may ship without a native MUI page. Physical DSM ACL, real first/second upload and restart/upgrade durability remain explicitly unverified until observed and do not block other work.
+- The initial DSM 7 armada38x CLI-only backup SPK release is independent of full MUI adoption and physical DSM acceptance; it may ship without a native MUI page.
+- Physical DSM share ACL, first real upload, unchanged second incremental, package stop/restart, upgrade credential/task/checkpoint persistence and effective CGI UID follow the owner's **按用户决定跳过（未验收）** decision: disclose once, continue development, and do not repeatedly seek confirmation. Required code-level security, CI and package-integrity checks still apply.
 - Mobile Web/PWA follows the full-screen iOS 27 Files/Gallery app-frame baseline, 52px header, previous-app back control, shared virtualization, preserved navigation/scroll anchor and no floating navigation or multiple tabs.
 - Android targets iOS PWA visual parity while retaining genuine native LAN and SAF capabilities; do not assert physical 1:1 without measurements/screenshots.
 

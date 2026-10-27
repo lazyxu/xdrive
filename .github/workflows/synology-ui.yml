@@ -37,6 +37,7 @@ on:
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
+      - 'web/scripts/test-synology-owner-preview.mjs'
       - 'ui/shared/src/synology-owner-thumbnail.ts'
       - 'web/scripts/test-synology-owner-thumbnail.mjs'
       - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
@@ -132,6 +133,7 @@ on:
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
+      - 'web/scripts/test-synology-owner-preview.mjs'
       - 'ui/shared/src/synology-owner-thumbnail.ts'
       - 'web/scripts/test-synology-owner-thumbnail.mjs'
       - 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'
@@ -237,6 +239,7 @@ jobs:
           node web/scripts/test-synology-owner-files.mjs
           node web/scripts/test-synology-media-preview.mjs
           node web/scripts/test-synology-owner-download.mjs
+          node web/scripts/test-synology-owner-preview.mjs
           node web/scripts/test-synology-owner-thumbnail.mjs
           node web/scripts/test-synology-media-stream.mjs
           npm run build:synology --prefix web
