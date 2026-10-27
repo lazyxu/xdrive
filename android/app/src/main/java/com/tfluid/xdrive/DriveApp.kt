@@ -28,6 +28,7 @@ import com.tfluid.xdrive.core.DriveNode
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
+        state.filesPdfViewer != null ||
         (state.screen == Screen.FILES &&
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
@@ -84,7 +85,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var transferCenterOpen by remember(state.server, state.username) {
         mutableStateOf(false)
     }
-    val photoViewerOpen = state.screen == Screen.GALLERY && state.galleryViewer != null
+    val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
+        (state.screen == Screen.FILES && state.filesPdfViewer != null)
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
@@ -173,7 +175,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
-                Screen.FILES -> filesSaveable.SaveableStateProvider(filesStateKey) {
+                Screen.FILES -> if (state.filesPdfViewer != null) {
+                    NativeFilesPdfViewer(requireNotNull(state.filesPdfViewer),
+                        controller, state.filesPdfBytes)
+                } else filesSaveable.SaveableStateProvider(filesStateKey) {
                     Files(state, controller, filesView,
                         onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
                         onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },

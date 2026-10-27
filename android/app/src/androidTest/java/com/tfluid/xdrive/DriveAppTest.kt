@@ -54,6 +54,26 @@ class DriveAppTest {
     private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
     private var filesViewerFixture = false
+    private var filesPdfFixture = false
+    private var filesPdfReads = 0
+    private val filesPdfFixtureBytes: ByteArray by lazy {
+        val document = android.graphics.pdf.PdfDocument()
+        try {
+            for (number in 1..2) {
+                val page = document.startPage(
+                    android.graphics.pdf.PdfDocument.PageInfo.Builder(
+                        320, 440, number).create())
+                val paint = android.graphics.Paint().apply { textSize = 18f }
+                page.canvas.drawText("Owner PDF ${number}", 22f, 46f, paint)
+                document.finishPage(page)
+            }
+            ByteArrayOutputStream().also { document.writeTo(it) }.toByteArray()
+        } finally { document.close() }
+    }
+    private val filesPdfNode: DriveNode by lazy {
+        DriveNode(51, 1, "private.pdf", "file",
+            filesPdfFixtureBytes.size.toLong(), revision = 3)
+    }
     private val filesViewerNode = DriveNode(49, 1, "snapshot.jpg", "file",
         size = 32L * 1024 * 1024 + 1L, revision = 2)
     private var filesViewerDetailReads = 0
@@ -150,6 +170,17 @@ class DriveAppTest {
                     if (kind == "video") "filtered.mp4" else "filtered.jpg",
                     "file", size = 64, revision = 1),
                 kind, hasThumbnail = true)), 1, 0)
+        }
+        override suspend fun filesPdfDownload(
+            accessToken: String, original: DriveNode,
+            openDestination: () -> java.io.OutputStream,
+            onProgress: (Long) -> Unit,
+        ): Long {
+            check(filesPdfFixture && accessToken == "fixture" && original == filesPdfNode)
+            filesPdfReads++
+            openDestination().use { it.write(filesPdfFixtureBytes) }
+            onProgress(filesPdfFixtureBytes.size.toLong())
+            return filesPdfFixtureBytes.size.toLong()
         }
         override suspend fun filesMediaItem(
             accessToken: String, node: DriveNode,
@@ -310,6 +341,7 @@ class DriveAppTest {
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) mutableRootRows.toList() +
+                    (if (filesPdfFixture) listOf(filesPdfNode) else emptyList()) +
                     (if (filesViewerFixture) listOf(filesViewerNode) else emptyList()) +
                     (if (extraRootFile) listOf(DriveNode(70, 1, "复制目标.txt", "file", 120, revision = 2))
                         else emptyList())
@@ -1109,6 +1141,50 @@ class DriveAppTest {
         val accepted = Uri.parse("content://fixture/export")
         org.junit.Assert.assertEquals(accepted, contract.parseResult(Activity.RESULT_OK,
             Intent().setData(accepted)))
+    }
+
+    @Test fun filesPdfVerifiedTwoPagesBackAndPrivateTempCleanup() {
+        filesPdfFixture = true
+        startAndLogin()
+        val pathBefore = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-51").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesPdfViewer == filesPdfNode
+        }
+        compose.onNodeWithTag("files-pdf-viewer").assertExists()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-pdf-page-ready").fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag("files-pdf-page-count").assertTextEquals("1 / 2")
+        compose.onNodeWithTag("files-pdf-next").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-pdf-page-ready").fetchSemanticsNodes()
+                .isNotEmpty() &&
+                compose.onAllNodesWithTag("files-pdf-page-count")
+                    .fetchSemanticsNodes().isNotEmpty() &&
+                controller.state.value.filesPdfViewer == filesPdfNode
+        }
+        compose.onNodeWithTag("files-pdf-page-count").assertTextEquals("2 / 2")
+        compose.onNodeWithContentDescription("PDF 第 2 页").assertExists()
+        compose.onNodeWithTag("files-pdf-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesPdfViewer == null &&
+                compose.onAllNodesWithTag("files-item-51").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(pathBefore,
+                controller.state.value.path.map { it.id })
+            org.junit.Assert.assertEquals(1, filesPdfReads)
+        }
+        val dir = java.io.File(InstrumentationRegistry.getInstrumentation()
+            .targetContext.cacheDir, "owner-native-pdf")
+        compose.waitUntil(timeoutMillis = 10_000) {
+            dir.listFiles().orEmpty().none { it.name.startsWith("preview-") &&
+                it.name.endsWith(".pdf") }
+        }
     }
 
     @Test fun filesImageUsesSameOwnerViewerAndReturnsToOriginalBrowse() {
