@@ -28,6 +28,26 @@ runs even though nothing was actually tested.
   records. The evidence is the **conclusion for the exact SHA**, not the
   number of rows in Actions.
 
+## Repeated PR synchronizations and job backlogs
+
+A pull request whose diff matches several standalone workflows will enqueue
+all of them after each head update (even if the latest individual commit did
+not modify those paths). Path scoping alone cannot cancel older SHA runs.
+Use workflow-level PR-specific cancellation, without sacrificing independent
+`master`/tag/manual run artifacts:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+Do not share group keys between different workflows, and do not key master
+runs only by branch: an adjacent snapshot must not evict another snapshot's
+build or release prerequisite. Historical completed/cancelled runs stay in
+GitHub's audit history. Do not rewrite PR heads simply to retrigger CI;
+check the unchanged source diff and existing passing evidence first.
+
 ## Verification
 
 ```sh

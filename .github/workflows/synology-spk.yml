@@ -34,6 +34,12 @@ on:
 permissions:
   contents: read
 
+# Keep only the newest check for each PR. Do not cancel independent master
+# snapshots, tagged releases, or manually requested runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   armada38x:
     runs-on: ubuntu-latest
