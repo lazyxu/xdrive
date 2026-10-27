@@ -37,14 +37,18 @@ export function backupVerificationSummary(entry: XDriveServerBackupHistoryEntry)
     receipt.cas_bytes_hashed >= 0 ? receipt.cas_bytes_hashed : null
   return {
     available: count !== null && hashedBytes !== null,
-    title: receipt.state === 'success'
-      ? '快照与其引用 CAS 的本次校验通过（历史）'
-      : '快照或其引用 CAS 的本次校验失败（历史）',
+    title: receipt.state === 'failed'
+      ? '快照或其引用 CAS 的检查失败（历史）'
+      : entry.state === 'failed'
+        ? '快照与引用 CAS 检查通过，但整体管理员校验失败（历史）'
+        : '快照与其引用 CAS 的本次校验通过（历史）',
     count, hashedBytes,
     category: receipt.failure_category
       ? classes[receipt.failure_category] || '未识别的失败类别' : '',
-    note: receipt.format === 'v1'
-      ? 'v1 使用独立 SHA256SUMS 校验备份文件；CAS 对象数为零不代表没有检查文件。'
-      : 'v2 数值为本次引用 CAS 检查的真实计数；失败时为部分计数。deep 模式可能额外审计仓库孤儿对象。',
+    note: entry.state === 'failed' && receipt.state === 'success'
+      ? '基础快照/CAS 阶段通过，但后续深度仓库审计或附加步骤失败；本次管理员校验整体未通过。'
+      : receipt.format === 'v1'
+        ? 'v1 使用独立 SHA256SUMS 校验备份文件；CAS 对象数为零不代表没有检查文件。'
+        : 'v2 数值为本次引用 CAS 检查的真实计数；失败时为部分计数。deep 模式可能额外审计仓库孤儿对象。',
   }
 }

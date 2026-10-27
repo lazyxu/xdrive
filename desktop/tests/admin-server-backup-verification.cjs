@@ -59,3 +59,19 @@ test('v1 zero CAS counters do not imply that no backup bytes were checked', () =
   assert.match(panel, /data-xdrive-admin-backup-progress/)
   assert.match(panel, /data-xdrive-admin-backup-history-detail/)
 })
+
+test('a successful CAS check cannot conceal a failed overall deep Host operation', () => {
+  const result = summarize({
+    action: 'verify', state: 'failed', mode: 'deep',
+    error_code: 'operation_failed',
+    verification: {
+      state: 'success', format: 'v2',
+      cas_objects_checked: 2, cas_bytes_hashed: 128,
+    },
+  })
+  assert.equal(result.available, true)
+  assert.match(result.title, /整体管理员校验失败/)
+  assert.match(result.note, /整体未通过/)
+  assert.equal(result.count, 2)
+  assert.equal(result.hashedBytes, 128)
+})
