@@ -50,6 +50,7 @@ test('Chromium tests real MUI component at 320/390/1280 including fenced source 
   assert.match(browser, /data-xdrive-core-dependency-flat/)
   assert.match(browser, /data-xdrive-baidu-jsapi4-admin/)
   assert.match(browser, /Math\.abs\(upperGap - lowerGap\) <= 2/)
+  assert.match(browser, /Caddy Status\/HTTPS\/AliDNS\/Save use equal vertical gaps/)
   assert.match(browser, /1740: real shared MUI uses screenshot dark-mode theme/)
   assert.match(fixture, /data-xdrive-fixture-theme=\{fixtureTheme\}/)
   assert.match(browser, /new URL\(route\.request\(\)\.url\(\)\)\.origin !== origin/)
