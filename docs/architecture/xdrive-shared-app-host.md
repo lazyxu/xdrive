@@ -113,3 +113,19 @@ unverified Synology administrator session.
 Desktop Overview, full Files, Conflicts, Diagnostics and general Settings
 still need controller extraction; this is NOT completion of full DSM data
 capabilities.
+
+
+## Shared Conflict and Diagnostics routes
+
+The Conflict page's complete MUI composition now lives in
+`ui/shared/src/mui/ConflictsPage.tsx`, with a narrow typed conflict model;
+the Desktop-only implementation is retired to a compatibility re-export.
+Desktop's actual Agent conflict read/open/resolve callbacks remain Host
+services. Diagnostics already used one canonical `XDriveDiagnosticsPage`;
+Desktop now supplies its real restart, reconnect, repair, log/export and
+settings actions as data props to the same outlet, while DSM retains its
+separately authenticated diagnostic read adapter.
+
+Only the Desktop Overview and full Files controllers remain outside the
+common page outlet. This does not imply Synology supports absent Agent
+capabilities or Server administrator roles.

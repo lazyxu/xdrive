@@ -79,6 +79,7 @@ for (const key of [
   'local-storage', 'cloud-storage',
   'admin-maintenance', 'admin-users', 'admin-audit',
   'admin-storage', 'admin-services',
+  'conflicts', 'diagnostics',
 ]) {
   assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
     'Desktop common outlet must dispatch: ' + key)
@@ -112,6 +113,11 @@ assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
 assert.equal(desktop.includes('<XDriveMediaGalleryPage'), false)
 assert.equal(desktop.includes('<XDriveSourceManager'), false)
 assert.equal(desktop.includes('<XDriveTaskCenterPage'), false)
+assert.ok(desktop.includes('conflictsPage: {') && desktop.includes('diagnosticsPage: {') &&
+  sharedOutlet.includes('<XDriveConflictsPage') && sharedOutlet.includes('<XDriveDiagnosticsPage'),
+  'Conflicts and Diagnostics must use the same shared React/MUI outlet')
+assert.equal(desktop.includes('<DesktopConflictsPage'), false)
+assert.equal(desktop.includes('<DesktopDiagnosticsPage'), false)
 assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')

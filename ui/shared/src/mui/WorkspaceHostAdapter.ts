@@ -12,6 +12,8 @@ import type XDriveAdminAuditPage from './AdminAuditPage'
 import type XDriveGlobalStorageStatsPage from './GlobalStorageStatsPage'
 import type { XDriveSystemMaintenancePage } from './SystemMaintenancePage'
 import type { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
+import type { XDriveConflictsPageProps } from './ConflictsPage'
+import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -31,6 +33,8 @@ export type XDriveWorkspaceHostServices = {
   readonly adminAuditPage?: ComponentProps<typeof XDriveAdminAuditPage>
   readonly adminStoragePage?: ComponentProps<typeof XDriveGlobalStorageStatsPage>
   readonly adminServicesPage?: ComponentProps<typeof XDriveServiceDependenciesPage>
+  readonly conflictsPage?: XDriveConflictsPageProps
+  readonly diagnosticsPage?: ComponentProps<typeof XDriveDiagnosticsPage>
 }
 
 export type XDriveWorkspaceHostAdapter = {

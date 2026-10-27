@@ -6,6 +6,8 @@ import { XDriveSourceManager } from './SourceManager'
 import { XDriveSynologyOwnerFilesPage } from './SynologyOwnerFilesPage'
 import { XDriveDeviceBackupPage } from './DeviceBackupPage'
 import { XDriveSynologyDiagnosticsPanel } from './SynologyDiagnosticsPanel'
+import { XDriveConflictsPage } from './ConflictsPage'
+import { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import { XDriveTaskCenterPage } from './TaskCenterPage'
 import { XDriveCloudStoragePage } from './CloudStoragePage'
 import { XDriveLocalStoragePage } from './LocalStoragePage'
@@ -74,8 +76,16 @@ export function XDriveAppPageOutlet({
             localBackupClient={local} source={services.deviceBackups} />
         )
         break
+      case 'conflicts':
+        if (services.conflictsPage) page = (
+          <XDriveConflictsPage {...services.conflictsPage} />
+        )
+        break
       case 'diagnostics':
-        if (local) page = <XDriveSynologyDiagnosticsPanel key={revision} client={local} />
+        if (services.diagnosticsPage) page = (
+          <XDriveDiagnosticsPage {...services.diagnosticsPage} />
+        )
+        else if (local) page = <XDriveSynologyDiagnosticsPanel key={revision} client={local} />
         break
       case 'transfers':
       case 'global-tasks':

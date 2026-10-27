@@ -98,8 +98,6 @@ import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XD
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
-import { DesktopConflictsPage } from './DesktopConflictsPage'
-import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { desktopShareDialogAdapter } from './fileDialogAdapters'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
@@ -2800,6 +2798,69 @@ export default function App({
   },
       localStorage: localStorageSource,
       cloudStorage: cloudStorageSource,
+      conflictsPage: {
+          conflicts: conflicts,
+          busy: Boolean(busy),
+          onRefresh: () => { void loadConflicts() },
+          onOpenBoth: (item) => {
+              void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))
+            },
+          onKeepServer: (item) => {
+              requestConfirmation(
+                '保留服务器版本？',
+                '这会保留服务器版本并删除本地冲突副本。',
+                '保留服务器版本',
+                () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            },
+          onKeepLocal: (item) => {
+              requestConfirmation(
+                '保留本地版本？',
+                '这会使用本地冲突副本替换服务器版本。',
+                '保留本地版本',
+                () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            },
+      },
+      diagnosticsPage: {
+          diagnostics: diagnostics,
+          busy: busy,
+          paused: Boolean(status?.paused),
+          onRun: () => { void loadDiagnostics() },
+          onRestartAgent: () => { void restartAgent().then(() => loadDiagnostics()) },
+          onReconnect: () => {
+              void runDiagnosticAction(
+                'reconnect',
+                () => window.xdriveDesktop.agent.reconnect(),
+                '同步引擎已重新连接。',
+              )
+            },
+          onRepairSyncRoot: () => {
+              void runDiagnosticAction(
+                'repair-sync-root',
+                () => window.xdriveDesktop.agent.repairSyncRoot(),
+                '同步根目录已修复并重新连接。',
+              )
+            },
+          onOpenStorage: () => setView('local-storage'),
+          onOpenSettings: () => setSettingsOpen(true),
+          onOpenUpdateSettings: () => {
+              setSettingsOpen(true)
+              window.setTimeout(() => {
+                document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }, 120)
+            },
+          onOpenLogs: () => {
+              void run(
+                'open-logs',
+                () => window.xdriveDesktop.agent.openLogs(),
+                '已打开 xDrive 日志。',
+              )
+            },
+          onExport: () => { void exportDiagnostics() },
+      },
       adminMaintenancePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
@@ -3247,74 +3308,9 @@ export default function App({
 
 
 
-        {view === 'conflicts' && (
-          <DesktopConflictsPage
-            conflicts={conflicts}
-            busy={Boolean(busy)}
-            onRefresh={() => { void loadConflicts() }}
-            onOpenBoth={(item) => {
-              void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))
-            }}
-            onKeepServer={(item) => {
-              requestConfirmation(
-                '保留服务器版本？',
-                '这会保留服务器版本并删除本地冲突副本。',
-                '保留服务器版本',
-                () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
-                'warning',
-              )
-            }}
-            onKeepLocal={(item) => {
-              requestConfirmation(
-                '保留本地版本？',
-                '这会使用本地冲突副本替换服务器版本。',
-                '保留本地版本',
-                () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
-                'warning',
-              )
-            }}
-          />
-        )}
+        
 
-        {view === 'diagnostics' && (
-          <DesktopDiagnosticsPage
-            diagnostics={diagnostics}
-            busy={busy}
-            paused={Boolean(status?.paused)}
-            onRun={() => { void loadDiagnostics() }}
-            onRestartAgent={() => { void restartAgent().then(() => loadDiagnostics()) }}
-            onReconnect={() => {
-              void runDiagnosticAction(
-                'reconnect',
-                () => window.xdriveDesktop.agent.reconnect(),
-                '同步引擎已重新连接。',
-              )
-            }}
-            onRepairSyncRoot={() => {
-              void runDiagnosticAction(
-                'repair-sync-root',
-                () => window.xdriveDesktop.agent.repairSyncRoot(),
-                '同步根目录已修复并重新连接。',
-              )
-            }}
-            onOpenStorage={() => setView('local-storage')}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenUpdateSettings={() => {
-              setSettingsOpen(true)
-              window.setTimeout(() => {
-                document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }, 120)
-            }}
-            onOpenLogs={() => {
-              void run(
-                'open-logs',
-                () => window.xdriveDesktop.agent.openLogs(),
-                '已打开 xDrive 日志。',
-              )
-            }}
-            onExport={() => { void exportDiagnostics() }}
-          />
-        )}
+        
 
       </XDriveWorkspaceContent>
 
