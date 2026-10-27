@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withPermit
 enum class Screen { CONNECT, LOGIN, PASSWORD, FILES, GALLERY, TRASH }
 enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 enum class FilesTransferKind { COPY, MOVE }
+enum class GalleryPrimaryTab { LIBRARY, COLLECTIONS }
 
 data class DriveState(
     val screen: Screen = Screen.CONNECT,
@@ -69,6 +70,10 @@ data class DriveState(
     val trashLoaded: Boolean = false,
     /** Lost restore ACK freezes further writes until a successful authenticated GET. */
     val trashRestoreAttempted: Boolean = false,
+    val galleryPrimaryTab: GalleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+    val galleryAlbums: List<GalleryAlbum> = emptyList(),
+    val galleryAlbumsLoaded: Boolean = false,
+    val gallerySelectedAlbum: GalleryAlbum? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -1301,6 +1306,9 @@ class DriveController(
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadSaved = false, fileDownloadError = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
+            galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+            galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+            gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             galleryTimelineSets = null, galleryJumpIndex = null,
@@ -1318,6 +1326,9 @@ class DriveController(
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false,
             fileDownloadError = null, fileDownloadBytes = 0, fileDownloadTotal = 0,
+            galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+            galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+            gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             galleryTimelineSets = null, galleryJumpIndex = null,
@@ -1326,8 +1337,118 @@ class DriveController(
         if (!state.value.loaded) refresh()
     }
 
+
+    /** Session-scoped real PhotoCollections; never derive from sparse tiles. */
+    fun openGalleryCollections() {
+        val previous = state.value
+        if (previous.screen != Screen.GALLERY || session == null || api == null ||
+            previous.galleryViewer != null || previous.fileUploadActive ||
+            previous.fileDownloadActive ||
+            previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS) return
+        invalidate()
+        mutableState.value = previous.copy(
+            galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
+            gallerySelectedAlbum = null, loading = false, error = null,
+            galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
+            galleryTotal = 0, galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
+            gallerySelected = null, galleryViewer = null)
+        if (!state.value.galleryAlbumsLoaded) readGalleryAlbums()
+    }
+
+    private fun readGalleryAlbums() {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            current.gallerySelectedAlbum != null || current.loading || session == null) return
+        request { ticket ->
+            val albums = authenticated(service, ticket) { service.galleryAlbums(it) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY ||
+                latest.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+                latest.gallerySelectedAlbum != null) throw CancellationException()
+            mutableState.value = latest.copy(galleryAlbums = albums,
+                galleryAlbumsLoaded = true, error = null)
+        }
+    }
+
+    /** A visible Gallery refresh must really re-fetch its current Owner albums,
+     * never expose an inert action on the Collections overview. */
+    fun refreshGalleryAlbums() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            current.gallerySelectedAlbum != null || current.loading || session == null) return
+        invalidate()
+        mutableState.value = current.copy(
+            loading = false, error = null, galleryAlbumsLoaded = false,
+            galleryAlbums = emptyList())
+        readGalleryAlbums()
+    }
+
+    fun retryGalleryAlbums() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            current.gallerySelectedAlbum != null || current.loading ||
+            current.galleryAlbumsLoaded) return
+        readGalleryAlbums()
+    }
+
+    fun openGalleryLibrary() {
+        val previous = state.value
+        if (previous.screen != Screen.GALLERY || session == null ||
+            previous.galleryViewer != null || previous.fileUploadActive ||
+            previous.fileDownloadActive ||
+            (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+                previous.gallerySelectedAlbum == null)) return
+        invalidate()
+        mutableState.value = previous.copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+            gallerySelectedAlbum = null, loading = false, error = null,
+            galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
+            galleryTotal = 0, gallerySearchQuery = "", galleryMediaKind = "",
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
+            gallerySelected = null, galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    fun openGalleryAlbum(album: GalleryAlbum) {
+        val previous = state.value
+        if (previous.screen != Screen.GALLERY || session == null ||
+            previous.loading || previous.galleryViewer != null ||
+            previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            previous.gallerySelectedAlbum != null || !previous.galleryAlbumsLoaded ||
+            previous.galleryAlbums.none { it == album }) return
+        invalidate()
+        mutableState.value = previous.copy(gallerySelectedAlbum = album,
+            loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
+            galleryOffset = 0, galleryTotal = 0, gallerySearchQuery = "",
+            galleryMediaKind = "", galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
+            gallerySelected = null, galleryViewer = null)
+        loadGallery(initialLatest = true)
+    }
+
+    fun closeGalleryAlbum() {
+        val previous = state.value
+        if (previous.screen != Screen.GALLERY ||
+            previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            previous.gallerySelectedAlbum == null || previous.galleryViewer != null) return
+        invalidate()
+        mutableState.value = previous.copy(gallerySelectedAlbum = null,
+            loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
+            galleryOffset = 0, galleryTotal = 0, galleryTimelineSets = null,
+            galleryJumpIndex = null, galleryJumpEpoch = previous.galleryJumpEpoch + 1,
+            galleryPageIntent = "", gallerySelected = null, galleryViewer = null)
+    }
+
     fun refreshGallery() {
-        if (state.value.screen != Screen.GALLERY) return
+        if (state.value.screen != Screen.GALLERY ||
+            (state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                state.value.gallerySelectedAlbum == null)) return
         invalidate() // Stop prior Owner range before replacing its query intent.
         mutableState.value = state.value.copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -1343,7 +1464,9 @@ class DriveController(
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
-        if (current.screen != Screen.GALLERY || session == null || api == null) return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
+            current.gallerySelectedAlbum != null || session == null || api == null) return
         val query = input.trim()
         if (query.length > 200 || query == current.gallerySearchQuery) return
         invalidate() // Cancel the previous query and prevent A→B→A stale replies.
@@ -1364,7 +1487,9 @@ class DriveController(
     fun filterGalleryKind(kind: String) {
         if (kind != "" && kind != "image" && kind != "video") return
         val current = state.value
-        if (current.screen != Screen.GALLERY || session == null || api == null ||
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
+            current.gallerySelectedAlbum != null || session == null || api == null ||
             kind == current.galleryMediaKind) return
         invalidate() // Cancels prior Range/thumbnail/Viewer and fences stale replies.
         mutableState.value = current.copy(loading = false, error = null,
@@ -1382,7 +1507,9 @@ class DriveController(
     /** Retry only the failed Owner GET; failed jumps retain their exact index. */
     fun retryGallery() {
         val current = state.value
-        if (current.screen != Screen.GALLERY || current.loading) return
+        if (current.screen != Screen.GALLERY || current.loading ||
+            (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                current.gallerySelectedAlbum == null)) return
         if (!current.galleryLoaded) {
             if (current.galleryJumpIndex != null) loadGalleryJump(current.galleryJumpIndex)
             else refreshGallery()
@@ -1416,13 +1543,15 @@ class DriveController(
         val service = api ?: return
         val search = current.gallerySearchQuery
         val kind = current.galleryMediaKind
+        val albumId = current.gallerySelectedAlbum?.id
         mutableState.value = current.copy(galleryPageIntent = "newer")
         request { ticket ->
-            val page = fetchGalleryPage(service, ticket, offset, false, search, kind)
+            val page = fetchGalleryPage(service, ticket, offset, false, search, kind, albumId)
             checkCurrent(ticket)
             val latest = state.value
             if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search ||
-                latest.galleryMediaKind != kind) throw CancellationException()
+                latest.galleryMediaKind != kind || latest.gallerySelectedAlbum?.id != albumId)
+                throw CancellationException()
             if (!latest.galleryLoaded || page.totalCount != latest.galleryTotal ||
                 page.offset != offset || page.items.isEmpty() ||
                 latest.galleryOffset.toLong() + latest.galleryItems.size != offset.toLong() ||
@@ -1461,12 +1590,14 @@ class DriveController(
         val total = current.galleryTotal
         val search = current.gallerySearchQuery
         val kind = current.galleryMediaKind
+        val albumId = current.gallerySelectedAlbum?.id
         request { ticket ->
-            val page = fetchGalleryPage(service, ticket, offset, false, search, kind)
+            val page = fetchGalleryPage(service, ticket, offset, false, search, kind, albumId)
             checkCurrent(ticket)
             val latest = state.value
             if (latest.screen != Screen.GALLERY || latest.galleryJumpIndex != offset ||
-                latest.gallerySearchQuery != search || latest.galleryMediaKind != kind)
+                latest.gallerySearchQuery != search || latest.galleryMediaKind != kind ||
+                latest.gallerySelectedAlbum?.id != albumId)
                 throw CancellationException()
             if (page.offset != offset || page.totalCount != total || page.items.isEmpty() ||
                 offset.toLong() + page.items.size > total)
@@ -1478,9 +1609,10 @@ class DriveController(
 
     private suspend fun fetchGalleryPage(
         service: XDriveService, ticket: Long, offset: Int, initialLatest: Boolean,
-        search: String, kind: String,
+        search: String, kind: String, albumId: String? = null,
     ): GalleryPage = authenticated(service, ticket) {
         when {
+            albumId != null -> service.galleryAlbumPage(it, albumId, offset, initialLatest)
             kind.isNotEmpty() -> service.galleryKindPage(it, offset, initialLatest, search, kind)
             search.isNotEmpty() -> service.gallerySearchPage(it, offset, initialLatest, search)
             else -> service.galleryPage(it, offset, initialLatest)
@@ -1494,12 +1626,15 @@ class DriveController(
         val requestedOffset = if (initialLatest) 0 else (current.galleryOffset - 60).coerceAtLeast(0)
         val search = current.gallerySearchQuery
         val kind = current.galleryMediaKind
+        val albumId = current.gallerySelectedAlbum?.id
+        if (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS && albumId == null) return
         request { ticket ->
-            val page = fetchGalleryPage(service, ticket, requestedOffset, initialLatest, search, kind)
+            val page = fetchGalleryPage(service, ticket, requestedOffset, initialLatest, search, kind, albumId)
             checkCurrent(ticket)
             val latest = state.value
             if (latest.screen != Screen.GALLERY || latest.gallerySearchQuery != search ||
-                latest.galleryMediaKind != kind) throw CancellationException()
+                latest.galleryMediaKind != kind || latest.gallerySelectedAlbum?.id != albumId)
+                throw CancellationException()
             if (initialLatest) {
                 mutableState.value = latest.copy(
                     galleryItems = page.items, galleryOffset = page.offset,
@@ -1761,6 +1896,8 @@ class DriveController(
             when {
                 current.gallerySelected != null -> dismissGalleryInfo()
                 current.galleryViewer != null -> dismissGalleryViewer()
+                current.gallerySelectedAlbum != null -> closeGalleryAlbum()
+                current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> openGalleryLibrary()
                 else -> openFilesApp()
             }
             return
@@ -1922,7 +2059,9 @@ class DriveController(
                 fileUploadActive = false, fileUploadCommitted = false,
                 galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
                 galleryLoaded = false, gallerySelected = null, galleryViewer = null,
-                trashItems = emptyList(), trashTotal = 0,
+                galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+                galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                gallerySelectedAlbum = null, trashItems = emptyList(), trashTotal = 0,
                 trashLoaded = false, trashRestoreAttempted = false)
             throw CancellationException()
         }

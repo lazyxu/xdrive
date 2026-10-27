@@ -57,7 +57,8 @@ internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = wh
 }
 
 /** Native Owner Gallery with same Server range for wall and search, never a local
- * filter of the few visible thumbnails. Full Collections controls follow later. */
+ * filter of the few visible thumbnails. Real Owner Collections use the
+ * native GalleryCollections screen and the same Gallery member Range. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ColumnScope.Gallery(
@@ -101,17 +102,32 @@ internal fun ColumnScope.Gallery(
 
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
+        Text(state.gallerySelectedAlbum?.name ?: if (state.gallerySearchQuery.isEmpty()) "图库" else "搜索结果",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         // Preserve the real Server query clear action without a second bottom row.
-        if (state.gallerySearchQuery.isNotEmpty()) {
+        if (state.gallerySelectedAlbum == null &&
+            state.gallerySearchQuery.isNotEmpty()) {
             TextButton(onClick = { controller.searchGallery("") },
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-search-clear")) { Text("清除") }
+        }
+        if (state.gallerySelectedAlbum == null) {
+            TextButton(
+                onClick = { kindMenuOpen = true },
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-kind-filter")
+                    .semantics {
+                        stateDescription = when (state.galleryMediaKind) {
+                            "image" -> "仅照片"
+                            "video" -> "仅视频"
+                            else -> "全部媒体"
+                        }
+                    },
+            ) { Text("分类") }
         }
         Box {
             IconButton(
@@ -335,6 +351,8 @@ internal fun ColumnScope.Gallery(
             }
         }
     }
+    // iOS PWA primary capsule: the middle action must be the real
+    // Collections page, never an unrelated media kind filter.
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding()
             .testTag("gallery-bottom-dock"),
@@ -345,48 +363,54 @@ internal fun ColumnScope.Gallery(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                modifier = Modifier.weight(1f).widthIn(max = 288.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                shape = RoundedCornerShape(50.dp),
-                tonalElevation = 2.dp,
-            ) {
-                Row(Modifier.fillMaxWidth().padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.weight(1f).heightIn(min = 44.dp)
-                            .background(MaterialTheme.colorScheme.surface,
-                                RoundedCornerShape(50.dp))
-                            .testTag("gallery-library-tab"),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("图库", style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary)
-                    }
+            if (state.gallerySelectedAlbum != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                    shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,
+                ) {
                     TextButton(
-                        onClick = { kindMenuOpen = true },
-                        contentPadding = PaddingValues(horizontal = 5.dp),
-                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                            .testTag("gallery-kind-filter")
-                            .semantics {
-                                stateDescription = when (state.galleryMediaKind) {
-                                    "image" -> "仅照片"
-                                    "video" -> "仅视频"
-                                    else -> "全部媒体"
-                                }
-                            },
-                    ) { Text("分类", maxLines = 1) }
+                        onClick = controller::closeGalleryAlbum,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-album-back"),
+                    ) { Text("返回精选集") }
                 }
+            } else {
+                Surface(
+                    modifier = Modifier.weight(1f).widthIn(max = 288.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                    shape = RoundedCornerShape(50.dp),
+                    tonalElevation = 2.dp,
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.weight(1f).heightIn(min = 44.dp)
+                                .background(MaterialTheme.colorScheme.surface,
+                                    RoundedCornerShape(50.dp))
+                                .testTag("gallery-library-tab"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("图库", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                        TextButton(
+                            onClick = controller::openGalleryCollections,
+                            contentPadding = PaddingValues(horizontal = 5.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                                .testTag("gallery-open-collections"),
+                        ) { Text("精选集", maxLines = 1) }
+                    }
+                }
+                TextButton(
+                    onClick = {
+                        searchDraft = state.gallerySearchQuery
+                        searchOpen = true
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
+                        .testTag("gallery-search-button"),
+                ) { Text("搜索", maxLines = 1) }
             }
-            TextButton(
-                onClick = {
-                    searchDraft = state.gallerySearchQuery
-                    searchOpen = true
-                },
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
-                    .testTag("gallery-search-button"),
-            ) { Text("搜索", maxLines = 1) }
         }
     }
     if (kindMenuOpen) {
@@ -402,7 +426,7 @@ internal fun ColumnScope.Gallery(
             ) {
                 Text("分类", style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(bottom = 4.dp))
-                Text("仅展示已支持的媒体类型；精选集和相册集合仍待开发。",
+                Text("按媒体类型筛选当前账户的整个图库；精选集在底部单独打开。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 for ((value, label) in listOf(
