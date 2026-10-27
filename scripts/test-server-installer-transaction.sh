@@ -694,7 +694,7 @@ grep -q 'pull server complete.' "$TMP/incremental-success.out"
 # any new application container or migration is started. Rollback must restore
 # the old deployment without a database restore and must keep the host manager
 # available for another xdrive-server update.
-rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored"
+rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored" "$TMP/state/cached-images"
 set +e
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=permanent \
