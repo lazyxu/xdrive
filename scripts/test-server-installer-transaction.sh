@@ -99,7 +99,19 @@ case "$url" in
     ;;
   */deploy/docker-compose.yml)
     emit 'name: xdrive
-services: {}
+services:
+  postgres:
+    image: ${XD_POSTGRES_IMAGE:-postgres:17-alpine}
+  server:
+    image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+  caddy:
+    image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
+  photo-face:
+    profiles: ["photo-intelligence"]
+    image: ${XD_PHOTO_FACE_IMAGE:-ghcr.io/lazyxu/xdrive-photo-face:latest}
+  media-worker:
+    profiles: ["media-worker"]
+    image: ${XD_MEDIA_WORKER_IMAGE:-ghcr.io/lazyxu/xdrive-media-worker:latest}
 '
     ;;
   */deploy/Caddyfile)
@@ -243,10 +255,12 @@ if [[ "$1" != "compose" ]]; then
 fi
 
 progress_mode=""
+compose_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     compose) shift ;;
-    --profile|--env-file|-f) shift 2 ;;
+    --profile|--env-file) shift 2 ;;
+    -f) compose_file="$2"; shift 2 ;;
     --progress) progress_mode="$2"; shift 2 ;;
     *) break ;;
   esac
@@ -264,6 +278,17 @@ case "$1" in
     ;;
   pull)
     service="${2:-all}"
+    if [[ "${TEST_REQUIRE_TARGET_COMPOSE:-0}" == 1 ]]; then
+      expected_target="$XD_CONFIG_DIR/state/install-staging/docker-compose.yml"
+      [[ "$compose_file" == "$expected_target" && -f "$compose_file" ]] || {
+        echo "prefetch used old deployment Compose: $compose_file" >&2
+        exit 12
+      }
+      grep -Fq 'image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}' "$compose_file" || {
+        echo "prefetch manifest lacks target Caddy service" >&2
+        exit 12
+      }
+    fi
     count_file="$TEST_STATE/pull-count-$service"
     count="$(cat "$count_file" 2>/dev/null || echo 0)"
     count=$((count + 1))
@@ -404,6 +429,7 @@ set +e
 rm -f "$TMP/state"/pull-count-*
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=transient \
+TEST_REQUIRE_TARGET_COMPOSE=1 \
 TEST_HEALTH_OK=0 \
 TEST_BACKUP_LEGACY_DERIVED_FAIL=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
@@ -772,6 +798,7 @@ mkdir -p "$TMP/caddy-preflight-fail-state"
 set +e
 TEST_STATE="$TMP/caddy-preflight-fail-state" \
 TEST_PULL_MODE=caddy-permanent \
+TEST_REQUIRE_TARGET_COMPOSE=1 \
 TEST_HEALTH_OK=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/caddy-preflight-fail-config" \

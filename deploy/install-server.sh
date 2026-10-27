@@ -625,7 +625,9 @@ compose() {
   if compose_profile_enabled media-worker; then
     profile_args+=(--profile media-worker)
   fi
-  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  # Prefetch only uses the checksum-verified TARGET Compose.
+  # The previous config and rollback still use COMPOSE_PATH.
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" "$@" </dev/null
 }
 
 pull_json_supported() {
@@ -649,7 +651,7 @@ pull_service_json() {
     if compose_profile_enabled media-worker; then
       profile_args+=(--profile media-worker)
     fi
-    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "${PREFETCH_COMPOSE_PATH:-$COMPOSE_PATH}" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
     render_pull_json "$service" "$pid_file" "$watermark_file"
@@ -929,7 +931,11 @@ prepare_target_image() {
   else
     echo "[xDrive] prefetch $service: obtaining target image before downtime..."
     if ! (
-      # Process-only override: the current .env must remain usable for backups.
+      # Legacy Compose may still use old Web/Caddy image definitions or
+      # omit optional services. Pull against the verified TARGET Compose.
+      PREFETCH_COMPOSE_PATH="$STAGING_DIR/docker-compose.yml"
+      [[ -f "$PREFETCH_COMPOSE_PATH" && ! -L "$PREFETCH_COMPOSE_PATH" ]] || exit 1
+      # Process-only image overrides; preserve the live runtime .env.
       export XD_POSTGRES_IMAGE="$target_postgres_image"
       export XD_SERVER_IMAGE="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
       export XD_CADDY_IMAGE="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
@@ -2540,7 +2546,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
 
   if [[ "${XD_INSTALL_NO_START:-0}" != "1" ]]; then
     # Acquire every required target image while the previous release is alive.
-    # Only the child Compose pull sees new image refs; backup and rollback
+    # Only the child sees the target Compose and new image refs; backup and rollback
     # continue to read the untouched old release references from the .env.
     initialize_image_pull
     echo "[xDrive] prefetching published target images before maintenance..."
