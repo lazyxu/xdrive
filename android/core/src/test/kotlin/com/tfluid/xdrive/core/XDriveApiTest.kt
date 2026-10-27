@@ -57,6 +57,51 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun filesPdfPreviewUsesExactOwnerRevisionAndEtagShaCheckedBytes() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val payload = "%PDF-1.4\n%%EOF".toByteArray()
+            val node = DriveNode(27, 1, "private.pdf", "file",
+                payload.size.toLong(), revision = 4)
+            val nodeJson = """{"id":27,"parent_id":1,"name":"private.pdf",
+                "type":"file","size":${payload.size},"revision":4}"""
+            val digest = MessageDigest.getInstance("SHA-256").digest(payload)
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
+            server.enqueue(MockResponse().setBody(nodeJson))
+            server.enqueue(MockResponse().setBody(String(payload))
+                .addHeader("ETag", "\"4\"")
+                .addHeader("X-Content-SHA256", digest))
+            server.enqueue(MockResponse().setBody(nodeJson))
+            val copied = ByteArrayOutputStream()
+            val progress = mutableListOf<Long>()
+            assertEquals(payload.size.toLong(), api.filesPdfDownload(
+                "owner-secret", node, { copied }, { progress += it }))
+            assertArrayEquals(payload, copied.toByteArray())
+            assertEquals(payload.size.toLong(), progress.last())
+            val requests = (0 until 3).map { server.takeRequest() }
+            assertEquals(listOf("/api/v1/nodes/27",
+                "/api/v1/files/27/content", "/api/v1/nodes/27"),
+                requests.map { it.path })
+            assertTrue(requests.all {
+                it.method == "GET" && it.getHeader("Authorization") == "Bearer owner-secret"
+            })
+
+            server.enqueue(MockResponse().setBody(nodeJson.replace(
+                "\"revision\":4", "\"revision\":5")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesPdfDownload("owner-secret", node,
+                    { ByteArrayOutputStream() }) }.reason)
+            // The Owner node may change *after* the byte stream ACK.
+            server.enqueue(MockResponse().setBody(nodeJson))
+            server.enqueue(MockResponse().setBody(String(payload))
+                .addHeader("ETag", "\"4\""))
+            server.enqueue(MockResponse().setBody(nodeJson.replace(
+                "\"revision\":4", "\"revision\":5")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesPdfDownload("owner-secret", node,
+                    { ByteArrayOutputStream() }) }.reason)
+        } }
+    }
+
     @Test fun textPreviewUsesBearerAndCurrentRevisionBeforeAndAfterRead() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody(textNode()))

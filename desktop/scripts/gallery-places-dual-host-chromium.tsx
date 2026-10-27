@@ -19,6 +19,10 @@ const favoritesMapEntry = new URLSearchParams(location.search).get('start_favori
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
 let derivedLocationReady = !delayedBD09
+// An opt-in synthetic failure during a *post-ready* restricted Owner query.
+// The next identical retry must recover without remounting either SDK Host.
+const testCellsFailure = new URLSearchParams(location.search).get('cells_failure') === '1'
+let failFavoriteCellsOnce = false
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner',
   {cache:'no-store'}).then(async response=>{
@@ -49,7 +53,7 @@ const probe = ((window as any).__mapProbe = {
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoOpens:[] as any[],
-  bd09Completions:0,
+  bd09Completions:0,failedOwnerCellsReads:[] as any[],
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
@@ -71,6 +75,11 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
   if(albumKey!=='' || (filters?.favorite!==undefined && filters.favorite!==true))
     throw Error('unexpected Owner scope')
   const favorite=filters?.favorite===true
+  if(testCellsFailure && !genuineGin && favorite && failFavoriteCellsOnce){
+    failFavoriteCellsOnce=false
+    probe.failedOwnerCellsReads.push({favorite,albumKey})
+    throw Error('synthetic_post_ready_owner_cells_network_failure')
+  }
   let data
   if(genuineGin){
     const query=geometry(bounds)
@@ -324,6 +333,12 @@ function TestApp(){
       <button type="button" id="fixture-finish-bd09"
         onClick={()=>{derivedLocationReady=true;probe.bd09Completions++}}>
         Complete synthetic Owner BD-09 indexing
+      </button>
+    ) : null}
+    {testCellsFailure ? (
+      <button type="button" id="fixture-arm-cells-failure"
+        onClick={()=>{failFavoriteCellsOnce=true}}>
+        Fail next signed Owner Favorites Cells request
       </button>
     ) : null}
     <button type="button" id="toggle-favorite" onClick={()=>setFavorite(x=>!x)}>

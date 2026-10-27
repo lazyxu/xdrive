@@ -800,6 +800,107 @@ class DriveControllerTest {
         assertEquals(990L, c.state.value.galleryItems.last().node.id)
     }
 
+    @Test fun filesPdfPreviewIsBoundedToCurrentOwnerAndReturnsWithoutFolderReload() = runTest {
+        val pdf = DriveNode(95, 1, "file.pdf", "file", 5, revision = 4)
+        val api = object : Service() {
+            var reads = 0
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long {
+                assertEquals("access", accessToken)
+                assertEquals(pdf, original)
+                reads++
+                openDestination().use { it.write("hello".toByteArray()) }
+                onProgress(5)
+                return 5
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(folder, pdf) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val rows = c.state.value.items
+        val calls = api.calls.toList()
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        val buffer = ByteArrayOutputStream()
+        assertEquals(5L, c.downloadFilesPdf(pdf) { buffer })
+        assertArrayEquals("hello".toByteArray(), buffer.toByteArray())
+        assertEquals(5L, c.state.value.filesPdfBytes)
+        assertEquals(1, api.reads)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(0L, c.state.value.filesPdfBytes)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(rows, c.state.value.items)
+        assertEquals(calls, api.calls)
+        c.close()
+    }
+
+    @Test fun oldOwnerPdfDownloadCannotPublishAfterLogout() = runTest {
+        val pdf = DriveNode(96, 1, "file.pdf", "file", 5, revision = 4)
+        val gate = CompletableDeferred<Unit>()
+        val api = object : Service() {
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long = withContext(NonCancellable) {
+                gate.await()
+                openDestination().use { it.write("hello".toByteArray()) }
+                onProgress(5)
+                5
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(pdf)
+        val output = ByteArrayOutputStream()
+        val active = async { c.downloadFilesPdf(pdf) { output } }
+        runCurrent()
+        c.logout()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(active.isCancelled)
+        assertNull(c.state.value.filesPdfViewer)
+        assertEquals(0L, c.state.value.filesPdfBytes)
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertTrue(c.state.value.items.isEmpty())
+        c.close()
+    }
+
+    @Test fun oversizedPdfNeverRequestsOwnerPrivateBytes() = runTest {
+        val pdf = DriveNode(97, 1, "huge.pdf", "file",
+            64L * 1024 * 1024 + 1L, revision = 4)
+        val api = object : Service() {
+            var reads = 0
+            override suspend fun filesPdfDownload(
+                accessToken: String, original: DriveNode,
+                openDestination: () -> OutputStream, onProgress: (Long) -> Unit,
+            ): Long {
+                reads++
+                return 0
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(pdf) else emptyList(), 1, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(pdf)
+        val failure = runCatching { c.downloadFilesPdf(pdf) { ByteArrayOutputStream() } }
+            .exceptionOrNull()
+        assertTrue(failure is ApiException)
+        assertEquals(413, (failure as ApiException).statusCode)
+        assertEquals(0, api.reads)
+        c.back()
+        c.close()
+    }
+
     @Test fun filesMediaUsesGalleryViewerAndBackReturnsExactLoadedBrowse() = runTest {
         val photo = DriveNode(91, 1, "family.jpg", "file", 5, revision = 4)
         val api = object : Service() {
