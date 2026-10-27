@@ -367,7 +367,7 @@ incomplete "successful" drill. Large production archives will often require
 a different, separately specified disk sandbox; the current RAM-only mode
 must **not** pretend to prove recoverability for multi-TiB repositories.
 
-The CAS stage starts a `--network none`, `--read-only`, no-capabilities,
+The CAS stage starts as the invoking Host backup owner (not privileged Docker root), using `--network none`, `--read-only`, no-capabilities,
 no-new-privileges Docker helper with bounded memory/PIDs, one strictly
 **read-only backup repository mount** and a disposable `/data` tmpfs. It
 physically restores the referenced CAS objects and legacy file archive.

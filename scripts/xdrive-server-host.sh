@@ -1372,7 +1372,7 @@ backup_prune_cmd() {
 # server-restore.sh: all restored database/file content stays in bounded RAM.
 backup_isolated_drill_worker() {
   local target="$1" limit="$2" repo snapshot real lock cid live mount image
-  local cap=$((limit * 1024 * 1024)) value file pgcode token n cas_name db_name
+  local cap=$((limit * 1024 * 1024)) value file pgcode token n cas_name db_name user_uid user_gid
   [[ "$target" == /* && -d "$target" && ! -L "$target" ]] || return 3
   real="$(readlink -f -- "$target" 2>/dev/null || true)"
   [[ -n "$real" && -d "$real" ]] || return 3
@@ -1454,6 +1454,9 @@ PY
   [[ -n "$image" ]] || return 6
   docker image inspect "$image" >/dev/null 2>&1 || return 6
   docker image inspect postgres:17-alpine >/dev/null 2>&1 || return 6
+  user_uid="$(id -u)" || return 6
+  user_gid="$(id -g)" || return 6
+  [[ "$user_uid" =~ ^[0-9]+$ && "$user_gid" =~ ^[0-9]+$ ]] || return 6
   token="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')" || return 6
   [[ "$token" =~ ^[0-9a-f]{16}$ ]] || return 6
   cas_name="xd-drill-cas-$token"
@@ -1466,8 +1469,8 @@ PY
       docker run --pull never --rm --name "$cas_name" --network none \
       --read-only --cap-drop ALL --security-opt no-new-privileges \
       --pids-limit 64 --cpus 2 --memory "$((limit+256))m" \
-      --memory-swap "$((limit+256))m" --user 0:0 \
-      --tmpfs "/data:rw,nosuid,nodev,noexec,size=${limit}m,mode=0700" \
+      --memory-swap "$((limit+256))m" --user "$user_uid:$user_gid" \
+      --tmpfs "/data:rw,nosuid,nodev,noexec,size=${limit}m,uid=$user_uid,gid=$user_gid,mode=0700" \
       --mount "type=bind,src=$repo,dst=/repo,readonly" \
       --entrypoint /usr/local/bin/xdrive-backup-repo "$image" \
       restore --repo /repo --snapshot "$snapshot" --target /data </dev/null
