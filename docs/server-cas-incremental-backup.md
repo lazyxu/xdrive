@@ -359,7 +359,8 @@ touching any live file data:
 xdrive-server backup drill "/absolute/path/to/incremental/snapshots/xdrive-backup-YYYYMMDDTHHMMSSZ" --max-mib 1024
 ```
 
-Allowed memory quota: 256–8192 MiB, default 1024 MiB. The v2 snapshot
+Allowed memory quota: 256–8192 MiB, default 1024 MiB. The v2 snapshot must belong to the default or explicitly configured Host
+repository inventory, be marked consistent, and include full file data. It
 must be committed, checksum-valid and within the quota, with a safe shared
 repository lock and locally cached xDrive Server and `postgres:17-alpine`
 Docker images. Exceeding the quota causes an explicit failure, not an

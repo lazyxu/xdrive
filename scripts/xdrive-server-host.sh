@@ -1382,6 +1382,15 @@ backup_isolated_drill_worker() {
   repo="$(readlink -f -- "$(dirname "$(dirname "$real")")" 2>/dev/null || true)"
   [[ -n "$repo" && "$real" == "$repo/snapshots/$snapshot" ]] || return 3
   [[ ! -L "$repo" && ! -L "$repo/snapshots" ]] || return 3
+  # Only repositories already recognized by the Host inventory may enter
+  # a sandbox. Arbitrary absolute filesystem locations remain prohibited.
+  backup_snapshot_roots || return 3
+  local allowed_root accepted=false
+  for allowed_root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
+    allowed_root="$(readlink -m -- "$allowed_root" 2>/dev/null || true)"
+    if [[ "$allowed_root" == "$repo/snapshots" ]]; then accepted=true; break; fi
+  done
+  [[ "$accepted" == true ]] || return 3
   # Never mount an online data directory, even as a read-only backup alias.
   for value in "$XDRIVE_HOME/data" "$(env_value XD_FILES_DATA_DIR)" \
       "$(env_value XD_POSTGRES_DATA_DIR)"; do
@@ -1411,7 +1420,8 @@ backup_isolated_drill_worker() {
   flock -s -n 7 || return 75
   [[ -f "$real/manifest.json" && ! -L "$real/manifest.json" ]] || return 4
   grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$real/manifest.json" || return 4
-  if grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$real/manifest.json"; then return 4; fi
+  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
+  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
   for file in database.dump verify.json manifest.json objects.index legacy.tar SHA256SUMS.txt; do
     [[ -f "$real/$file" && ! -L "$real/$file" ]] || return 4
   done
