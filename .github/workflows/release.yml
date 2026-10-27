@@ -479,21 +479,38 @@ jobs:
           for check_attempt in 1 2 3 4 5; do
             release_json="$(gh api "repos/$repo/releases/tags/snapshot")"
             actual_names="$(jq -r '.assets[].name' <<< "$release_json" | LC_ALL=C sort)"
-            if [[ "$actual_names" == "$expected_names" ]]; then
-              digest_mismatch=0
-              for path in release/*; do
-                name="$(basename "$path")"
-                expected_digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
-                actual_digest="$(jq -r --arg n "$name" '[.assets[] | select(.name == $n) | .digest] | if length == 1 then .[0] else empty end' <<< "$release_json")"
-                if [[ "$actual_digest" != "$expected_digest" ]]; then
-                  digest_mismatch=1
-                  break
-                fi
-              done
-              if [[ "$digest_mismatch" == 0 ]]; then
+            # Verify every new artifact before deleting superseded SPKs.
+            # Failed or partial uploads must preserve the previous release.
+            digest_mismatch=0
+            for path in release/*; do
+              name="$(basename "$path")"
+              expected_digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
+              actual_digest="$(jq -r --arg n "$name" '[.assets[] | select(.name == $n) | .digest] | if length == 1 then .[0] else empty end' <<< "$release_json")"
+              if [[ "$actual_digest" != "$expected_digest" ]]; then
+                digest_mismatch=1
+                break
+              fi
+            done
+            if [[ "$digest_mismatch" == 0 ]]; then
+              if [[ "$actual_names" == "$expected_names" ]]; then
                 remote_complete=1
                 break
               fi
+              # Versioned Synology installers change names each build.
+              # --clobber leaves old versions in place; prune ONLY older SPKs
+              # after all expected digests match, retaining the exact-set gate
+              # for unrelated unexpected files.
+              while IFS=$'\t' read -r old_asset_id old_asset_name; do
+                if [[ "$old_asset_name" =~ ^xdrivenas-armada38x-[0-9][0-9A-Za-z.-]*\.spk(\.sha256)?$ &&
+                      ! -f "release/$old_asset_name" ]]; then
+                  [[ "$old_asset_id" =~ ^[0-9]+$ ]] || {
+                    echo "Invalid superseded Snapshot asset ID." >&2
+                    exit 1
+                  }
+                  echo "[xDrive] Removing superseded Snapshot SPK: $old_asset_name"
+                  gh api --method DELETE "repos/$repo/releases/assets/$old_asset_id" >/dev/null
+                fi
+              done < <(jq -r '.assets[] | "\(.id)\t\(.name)"' <<< "$release_json")
             fi
             if [[ "$check_attempt" -lt 5 ]]; then
               echo "[xDrive] remote Snapshot digests not yet consistent ($check_attempt/5); retrying..." >&2
