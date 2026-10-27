@@ -18,7 +18,8 @@ const availabilitySearch = read('cmd', 'xdrive-agent', 'file_availability_search
 const sharedSearch = read('ui', 'shared', 'src', 'file-explorer-search.ts')
 const sharedSearchFilters = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearchFilters.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
-const desktopOverview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const desktopOverview = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
+const desktopOverviewPort = read('desktop', 'src', 'renderer', 'desktopOverviewAdapter.ts')
 const sharedHome = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -250,13 +251,13 @@ test('Desktop overview reuses shared Home FileExplorer visuals and platform avai
   }
   for (const token of [
     'xDriveFileExplorerAvailabilityFromSnapshot',
-    'getFileAvailabilityBatch(paths)',
+    'port.getFileAvailabilityBatch(paths)',
     'availability: availability(projected)',
   ]) {
     assert.ok(desktopOverview.includes(token), 'Desktop overview availability adapter missing: ' + token)
   }
   assert.equal(
-    desktopOverview.includes('StarRoundedIcon'),
+    desktopOverview.includes('StarRoundedIcon') || desktopOverviewPort.includes('StarRoundedIcon'),
     false,
     'favorite rows must show the file visual, not replace it with a star primary icon',
   )
