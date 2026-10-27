@@ -27,6 +27,7 @@ cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 args="$*"
+if [[ -n "${TEST_STATE:-}" ]]; then printf '%s\n' "$args" >> "$TEST_STATE/docker-args"; fi
 if [[ "$1" == "--version" ]]; then echo "Docker version test"; exit 0; fi
 if [[ "$1" == "compose" && "$2" == "version" ]]; then echo "Docker Compose version v2.test"; exit 0; fi
 if [[ "$1" == "info" ]]; then
@@ -94,14 +95,20 @@ if [[ "$1" == "compose" ]]; then
           mismatch) echo 'server version: test'; echo 'commit: ffffffffffffffffffffffffffffffffffffffff'; exit 0 ;;
           poison) echo 'ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak'; exit 0 ;;
           unavailable) exit 2 ;;
+          hang) sleep 30; exit 0 ;;
         esac
       fi
       if [[ "$*" == *"caddy-host witness-check"* ]]; then
         case "${XD_TEST_CADDY_WITNESS:-missing}" in
           observed) echo 'Caddy local observation: local-https-observed'; exit 0 ;;
           leaked) echo 'Caddy local observation: ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak'; exit 1 ;;
+          hang) sleep 30; exit 0 ;;
           *) echo 'Caddy local observation: snapshot-missing'; exit 1 ;;
         esac
+      fi
+      if [[ "${XD_TEST_CAS_HANG:-0}" == "1" && "$*" == *"storage health"* ]]; then
+        sleep 30
+        exit 0
       fi
       echo 'cas metadata health: status=ok ready=3 deleting=0 stale_deleting=0 missing_metadata=0 refcount_mismatch=0 state_mismatch=0 size_mismatch=0 key_hash_mismatch=0 invalid_state=0'
       exit 0
@@ -145,6 +152,19 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
   bash "$DOCTOR" >"$TMP/report" 2>"$TMP/err"
 
 grep -q '^xDrive server diagnostic report' "$TMP/report"
+grep -q '^profile: fast ' "$TMP/report"
+grep -q '\[SKIP\] public HTTPS' "$TMP/report"
+grep -q '\[SKIP\] external network' "$TMP/report"
+grep -q '\[SKIP\] container logs' "$TMP/report"
+# Default doctor must not contact update hosts or read Blob bytes.
+if grep -Eq 'storage verify|storage scrub|storage fsck' "$TMP/state/docker-args"; then
+  echo "fast doctor unexpectedly started full storage verification" >&2
+  exit 1
+fi
+if grep -Fq 'https://api.github.com/' "$TMP/state/curl-args"; then
+  echo "fast doctor unexpectedly checked external update hosts" >&2
+  exit 1
+fi
 grep -q '^---- installation environment ----$' "$TMP/report"
 grep -q '^xDrive installation environment$' "$TMP/report"
 grep -Eq 'Docker mode[[:space:]]+rootful$' "$TMP/report"
@@ -217,6 +237,8 @@ grep -q '\[WARN\] Caddy bridge access.*reason=group-mismatch' "$TMP/report-group
 XD_TEST_CADDY_WITNESS=observed TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report-caddy-observed" 2>"$TMP/err-caddy-observed"
 grep -q '\[PASS\] Caddy Host witness' "$TMP/report-caddy-observed"
+grep -q 'fresh local HTTPS evidence' "$TMP/report-caddy-observed"
+
 grep -q '\[PASS\] Caddy bridge access.*running Server verified fixed Host Control' "$TMP/report-caddy-observed"
 XD_TEST_CADDY_WITNESS=observed XD_TEST_CADDY_MOUNT=mismatch TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report-group-wrong-mount" 2>"$TMP/err-group-wrong-mount"
@@ -229,11 +251,17 @@ grep -q 'unsupported-or-unavailable-server-witness' "$TMP/report-caddy-leak"
 ! grep -Fq 'poison-must-not-leak' "$TMP/report-caddy-leak" "$TMP/err-caddy-leak"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
 grep -q '/api/v1/readyz' "$TMP/state/curl-args"
+: > "$TMP/state/curl-args"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" --deep >"$TMP/report-deep" 2>"$TMP/err-deep"
+grep -q '^profile: deep ' "$TMP/report-deep"
 grep -q 'https://api.github.com/' "$TMP/state/curl-args"
 grep -q 'https://github.com/' "$TMP/state/curl-args"
 grep -q 'https://release-assets.githubusercontent.com/' "$TMP/state/curl-args"
 grep -q 'https://ghcr.io/v2/' "$TMP/state/curl-args"
 grep -q 'https://pkg-containers.githubusercontent.com/' "$TMP/state/curl-args"
+grep -Fq -- '---- recent container logs' "$TMP/report-deep"
+grep -q '<redacted>' "$TMP/report-deep"
 grep -q 'summary:' "$TMP/report"
 
 cat >> "$TMP/home/config/.env" <<'EOF'
@@ -242,7 +270,7 @@ XD_IMAGE_REGISTRY=registry.gitlab.example/xuliang/xdrive
 EOF
 : > "$TMP/state/curl-args"
 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
-  bash "$DOCTOR" >"$TMP/report-gitlab" 2>"$TMP/err-gitlab"
+  bash "$DOCTOR" --deep >"$TMP/report-gitlab" 2>"$TMP/err-gitlab"
 grep -q 'source=gitlab channel=master' "$TMP/report-gitlab"
 grep -q 'http://gitlab.t-fluid.com:1080/xuliang/xdrive' "$TMP/state/curl-args"
 grep -q 'http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive' "$TMP/state/curl-args"
@@ -258,7 +286,30 @@ for secret in super-secret-db-password super-secret-jwt super-secret-alidns toke
     exit 1
   fi
 done
-grep -q '<redacted>' "$TMP/report"
+grep -q '<redacted>' "$TMP/report-deep"
+
+# Slow Docker Exec operations must time out without hanging, reading Blob
+# files, leaking stdout/stderr, or incorrectly reporting success.
+XD_TEST_CAS_HANG=1 XD_TEST_CADDY_WITNESS=hang XD_TEST_SERVER_COMMIT=hang \
+  TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  timeout --kill-after=2s 25s bash "$DOCTOR" >"$TMP/report-timeouts" 2>"$TMP/err-timeouts"
+grep -q 'CAS metadata health.*timed out after 4s' "$TMP/report-timeouts"
+grep -q 'Caddy Server revision.*reason=running-version-unavailable' "$TMP/report-timeouts"
+grep -q 'Caddy Host witness.*reason=witness-timeout' "$TMP/report-timeouts"
+grep -q 'summary:' "$TMP/report-timeouts"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-timeouts" "$TMP/err-timeouts"
+
+# A series of individually bounded operations must still obey the whole-report
+# watchdog. Shorten the budget *only in a disposable copy* to avoid a slow CI.
+sed 's/^  FAST_BUDGET_SECONDS=30$/  FAST_BUDGET_SECONDS=2/' "$DOCTOR" > "$TMP/server-doctor-budget2.sh"
+budget_status=0
+XD_TEST_CAS_HANG=1 TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" \
+  HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  timeout --kill-after=2s 10s bash "$TMP/server-doctor-budget2.sh" \
+  >"$TMP/report-total-budget" 2>"$TMP/err-total-budget" || budget_status=$?
+test "$budget_status" -eq 124
+grep -q 'doctor total timeout: diagnostic incomplete after 2s' "$TMP/err-total-budget"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-total-budget" "$TMP/err-total-budget"
 
 
 # Exercise fixed Host Control group repair without mutating test-host ownership.

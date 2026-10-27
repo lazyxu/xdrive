@@ -2,6 +2,7 @@
 set -u
 umask 077
 
+DOCTOR_ORIGINAL_ARGS=("$@")
 XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 CONFIG_DIR=""
 DATA_DIR=""
@@ -9,17 +10,22 @@ STATE_DIR=""
 COMPOSE_PATH=""
 ENV_PATH=""
 STRICT=0
+PROFILE=fast
 PASS_COUNT=0
 WARN_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
 usage() {
   cat <<'EOF'
-Usage: server-doctor.sh [--config-dir DIR] [--strict]
+Usage: server-doctor.sh [--config-dir DIR] [--fast|--deep] [--strict]
 
 Generates a read-only, automatically redacted xDrive server diagnostic report.
-By default diagnostics do not change configuration, restart containers, or
-modify data. --strict returns non-zero when one or more checks fail.
+--fast (default) runs bounded health probes without traversing files, contacting
+external update hosts, or collecting container logs. --deep additionally checks
+external connectivity and recent logs, with longer probe timeouts. Neither mode
+reads Blob contents or computes SHA-256; use storage verify separately.
+--strict returns non-zero when one or more checks fail.
 EOF
 }
 
@@ -27,6 +33,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --strict) STRICT=1; shift ;;
+    --fast) PROFILE=fast; shift ;;
+    --deep) PROFILE=deep; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -37,6 +45,53 @@ DATA_DIR="$XDRIVE_HOME/data"
 STATE_DIR="$XDRIVE_HOME/state"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 ENV_PATH="$CONFIG_DIR/.env"
+
+# GNU timeout is required: never silently fall back to a potentially hanging
+# Docker/Server probe. Docker and metadata timeouts are per invocation.
+if ! command -v timeout >/dev/null 2>&1; then
+  echo "xdrive-server doctor: GNU timeout is required for bounded diagnostics" >&2
+  exit 2
+fi
+
+# A bounded Docker invocation is not a bounded diagnostic report: several
+# independently stalled probes could accumulate. Apply a whole-report
+# watchdog, including the installation summary and cleanup. An incomplete
+# report must exit nonzero even without --strict, never masquerade as healthy.
+if [[ "${XD_DOCTOR_BUDGET_CHILD:-0}" != "1" ]]; then
+  FAST_BUDGET_SECONDS=30
+  DEEP_BUDGET_SECONDS=180
+  report_budget="$FAST_BUDGET_SECONDS"
+  [[ "$PROFILE" == deep ]] && report_budget="$DEEP_BUDGET_SECONDS"
+  report_status=0
+  XD_DOCTOR_BUDGET_CHILD=1 timeout --signal=TERM --kill-after=2s "${report_budget}s" \
+    bash "$0" "${DOCTOR_ORIGINAL_ARGS[@]}" || report_status=$?
+  if [[ "$report_status" -eq 124 || "$report_status" -eq 137 ]]; then
+    printf '[WARN] doctor total timeout: diagnostic incomplete after %ss (profile=%s; not a PASS)\n' \
+      "$report_budget" "$PROFILE" >&2
+  fi
+  exit "$report_status"
+fi
+
+DOCKER_PROBE_SECONDS=6
+CAS_TIMEOUT_SECONDS=4
+WITNESS_TIMEOUT_SECONDS=5
+VERSION_TIMEOUT_SECONDS=5
+SUMMARY_TIMEOUT_SECONDS=5
+if [[ "$PROFILE" == deep ]]; then
+  DOCKER_PROBE_SECONDS=15
+  CAS_TIMEOUT_SECONDS=30
+  WITNESS_TIMEOUT_SECONDS=15
+  VERSION_TIMEOUT_SECONDS=10
+  SUMMARY_TIMEOUT_SECONDS=10
+fi
+bounded() {
+  local seconds="$1"
+  shift
+  timeout --signal=TERM --kill-after=2s "${seconds}s" "$@" </dev/null
+}
+docker_probe() {
+  bounded "$DOCKER_PROBE_SECONDS" docker "$@"
+}
 
 safe_path() {
   local value="$1"
@@ -82,6 +137,7 @@ record() {
     PASS) PASS_COUNT=$((PASS_COUNT + 1)) ;;
     WARN) WARN_COUNT=$((WARN_COUNT + 1)) ;;
     FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
+    SKIP) SKIP_COUNT=$((SKIP_COUNT + 1)) ;;
   esac
   printf '[%s] %-22s %s\n' "$status" "$name" "$detail"
 }
@@ -128,7 +184,7 @@ caddy_bridge_mount_state() {
   [[ -d "$host" && ! -L "$host" ]] || { echo host-directory-unavailable; return; }
   id="$(compose ps -q server 2>/dev/null | head -n1 || true)"
   [[ -n "$id" ]] || { echo server-container-unavailable; return; }
-  raw="$(timeout 4s docker inspect --format '{{range .Mounts}}{{if eq .Destination "/host-control"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}' "$id" 2>/dev/null)" || { echo docker-inspect-unavailable; return; }
+  raw="$(bounded 4 docker inspect --format '{{range .Mounts}}{{if eq .Destination "/host-control"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}' "$id" 2>/dev/null)" || { echo docker-inspect-unavailable; return; }
   [[ -n "$raw" ]] || { echo mount-missing; return; }
   case "$raw" in
     bind\|/*\|true) ;;
@@ -161,7 +217,7 @@ caddy_bridge_group_hint() {
 caddy_running_server_revision_state() {
   local expected raw actual
   expected="$(env_value XD_RELEASE_COMMIT)"
-  raw="$(timeout 5s docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server version 2>/dev/null | head -c 2048)" ||
+  raw="$(set -o pipefail; bounded "$VERSION_TIMEOUT_SECONDS" docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server version 2>/dev/null | head -c 2048)" ||
     { echo running-version-unavailable; return; }
   actual="$(printf '%s\n' "$raw" | LC_ALL=C sed -nE 's/^commit: ([0-9a-f]{40})$/\1/p' | head -n1)"
   [[ "$actual" =~ ^[0-9a-f]{40}$ ]] || { echo running-commit-unavailable; return; }
@@ -171,7 +227,7 @@ caddy_running_server_revision_state() {
 }
 
 compose() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  docker_probe compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
 
 container_report() {
@@ -181,9 +237,9 @@ container_report() {
     record FAIL "container $service" "container not found"
     return
   fi
-  state="$(docker inspect "$id" --format '{{.State.Status}}' </dev/null 2>/dev/null || true)"
-  health="$(docker inspect "$id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' </dev/null 2>/dev/null || true)"
-  image="$(docker inspect "$id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  state="$(docker_probe inspect "$id" --format '{{.State.Status}}' </dev/null 2>/dev/null || true)"
+  health="$(docker_probe inspect "$id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' </dev/null 2>/dev/null || true)"
+  image="$(docker_probe inspect "$id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
   if [[ "$state" == "running" && ( "$health" == "healthy" || "$health" == "none" ) ]]; then
     record PASS "container $service" "state=$state health=$health image=$image"
   else
@@ -198,7 +254,7 @@ volume_report() {
     record WARN "$service data mount" "container not found"
     return
   fi
-  info="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{if .Name}}volume={{.Name}}{{else}}bind={{.Source}}{{end}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
+  info="$(docker_probe inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{if .Name}}volume={{.Name}}{{else}}bind={{.Source}}{{end}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
   if [[ -n "$info" ]]; then
     record PASS "$service data mount" "$info -> $destination"
   else
@@ -211,11 +267,12 @@ echo "generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "home:   $(safe_path "$XDRIVE_HOME")"
 echo "config: $(safe_path "$CONFIG_DIR")"
 echo "redaction: passwords, JWTs, access/refresh tokens, Authorization headers and home paths are redacted"
+echo "profile: $PROFILE (Blob file traversal and SHA-256 verification are not part of doctor)"
 echo
 echo "---- installation environment ----"
 summary_manager="$XDRIVE_HOME/bin/xdrive-server"
 if [[ -x "$summary_manager" ]]; then
-  if ! XD_STATUS_REDACT_HOME=1 XD_CONFIG_DIR="$XDRIVE_HOME" "$summary_manager" status --summary-only 2>/dev/null | redact_stream; then
+  if ! (set -o pipefail; XD_STATUS_REDACT_HOME=1 XD_CONFIG_DIR="$XDRIVE_HOME" bounded "$SUMMARY_TIMEOUT_SECONDS" "$summary_manager" status --summary-only 2>/dev/null | redact_stream); then
     record WARN "environment summary" "host manager summary failed; continuing with detailed diagnostics"
   fi
 else
@@ -224,9 +281,9 @@ fi
 echo
 
 if command -v docker >/dev/null 2>&1; then
-  record PASS "Docker" "$(docker --version </dev/null 2>/dev/null || echo installed)"
-  if docker info </dev/null >/dev/null 2>&1; then
-    security_options="$(docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
+  record PASS "Docker" "$(docker_probe --version </dev/null 2>/dev/null || echo installed)"
+  if docker_probe info </dev/null >/dev/null 2>&1; then
+    security_options="$(docker_probe info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
     if printf '%s' "$security_options" | grep -qi rootless; then
       docker_mode="rootless"
     else
@@ -242,8 +299,8 @@ else
   record FAIL "Docker" "docker command not found"
 fi
 
-if docker compose version </dev/null >/dev/null 2>&1; then
-  record PASS "Docker Compose" "$(docker compose version </dev/null 2>/dev/null | head -n1)"
+if docker_probe compose version </dev/null >/dev/null 2>&1; then
+  record PASS "Docker Compose" "$(docker_probe compose version </dev/null 2>/dev/null | head -n1)"
 else
   record FAIL "Docker Compose" "docker compose v2 unavailable"
 fi
@@ -310,7 +367,7 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   pg_password="$(env_value POSTGRES_PASSWORD)"
   pg_image=""
   if [[ -n "$pg_id" ]]; then
-    pg_image="$(docker inspect "$pg_id" --format '{{.Image}}' </dev/null 2>/dev/null || true)"
+    pg_image="$(docker_probe inspect "$pg_id" --format '{{.Image}}' </dev/null 2>/dev/null || true)"
   fi
   # The DB container's own IP and the Server's actual network path can have
   # different pg_hba.conf rules. Verify using the PostgreSQL image as a
@@ -318,11 +375,11 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   if [[ -z "$pg_id" || -z "$pg_password" ]]; then
     record FAIL "PostgreSQL auth" "PostgreSQL container or configured password unavailable"
   elif [[ -z "$server_id" ||
-       "$(docker inspect "$server_id" --format '{{.State.Running}}' </dev/null 2>/dev/null || true)" != "true" ]]; then
+       "$(docker_probe inspect "$server_id" --format '{{.State.Running}}' </dev/null 2>/dev/null || true)" != "true" ]]; then
     record WARN "PostgreSQL auth" "Server is not running; cannot verify its actual database connection path"
   elif [[ ! "$pg_image" =~ ^sha256:[[:xdigit:]]{64}$ ]]; then
     record FAIL "PostgreSQL auth" "local PostgreSQL client image is unavailable; no password conclusion"
-  elif PGPASSWORD="$pg_password" docker run --rm --pull never --network "container:$server_id" \
+  elif PGPASSWORD="$pg_password" docker_probe run --rm --pull never --network "container:$server_id" \
       --entrypoint psql -e PGPASSWORD -e PGCONNECT_TIMEOUT=5 "$pg_image" \
       -h postgres -U xdrive -d xdrive -Atqc 'SELECT 1' </dev/null >/dev/null 2>&1; then
     record PASS "PostgreSQL auth" "xdrive role authenticates from the live Server network"
@@ -330,15 +387,21 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
     record FAIL "PostgreSQL auth" "Server-network login probe failed; check credentials, Docker network and local client availability"
   fi
 
+  # storage health checks CAS *database references*, not Blob bytes. Even this
+  # SQL can grow expensive on large libraries, so fail open on a time limit.
   cas_health=""
-  if cas_health="$(compose exec -T server xdrive-server storage health 2>&1)"; then
-    if [[ "$cas_health" == *"status=warning"* ]]; then
-      record WARN "CAS metadata health" "$cas_health"
-    else
-      record PASS "CAS metadata health" "$cas_health"
-    fi
+  cas_health_status=0
+  cas_health="$(bounded "$CAS_TIMEOUT_SECONDS" docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server storage health 2>&1)" || cas_health_status=$?
+  if [[ "$cas_health_status" -eq 124 || "$cas_health_status" -eq 137 ]]; then
+    record WARN "CAS metadata health" "timed out after ${CAS_TIMEOUT_SECONDS}s; incomplete, run doctor --deep"
+  elif [[ "$cas_health_status" -ne 0 ]]; then
+    record FAIL "CAS metadata health" "Server storage health command failed (exit=$cas_health_status)"
+  elif [[ "$cas_health" == *"status=warning"* ]]; then
+    record WARN "CAS metadata health" "$cas_health"
+  elif [[ "$cas_health" == *"cas metadata health: status=ok"* ]]; then
+    record PASS "CAS metadata health" "$cas_health"
   else
-    record FAIL "CAS metadata health" "${cas_health:-health command failed}"
+    record WARN "CAS metadata health" "unrecognized Server health output; check Server version"
   fi
 
   volume_report postgres /var/lib/postgresql/data
@@ -381,16 +444,21 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   # Same actual Server mount and reader as the Admin UI; never infer
   # observability from a healthy Caddy alone. Avoid printing untrusted CLI
   # output, which an older or misrouted binary might fill with secrets.
-  caddy_witness_output=""
   caddy_witness_verified=0
-  if caddy_witness_output="$(compose exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" &&
-      [[ "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
-    caddy_witness_verified=1
+  caddy_witness_output=""
+  caddy_witness_status=0
+  caddy_witness_output="$(bounded "$WITNESS_TIMEOUT_SECONDS" docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" || caddy_witness_status=$?
+  if [[ "$caddy_witness_status" -eq 0 && "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
     record PASS "Caddy Host witness" "running Server sees fresh local HTTPS evidence (not WAN or applied-revision proof)"
+    caddy_witness_verified=1
   else
-    caddy_witness_reason="$(printf '%s' "$caddy_witness_output" | sed -n 's/^Caddy local observation: //p')"
+    if [[ "$caddy_witness_status" -eq 124 || "$caddy_witness_status" -eq 137 ]]; then
+      caddy_witness_reason="witness-timeout"
+    else
+      caddy_witness_reason="$(printf '%s' "$caddy_witness_output" | sed -n 's/^Caddy local observation: //p')"
+    fi
     case "$caddy_witness_reason" in
-      control-not-configured|heartbeat-missing|heartbeat-unreadable|heartbeat-invalid|heartbeat-stale|snapshot-missing|snapshot-unreadable|snapshot-invalid|snapshot-stale|snapshot-invalid-or-changing|gateway-healthy|gateway-unhealthy|gateway-starting|gateway-running-unverified|gateway-stopped|gateway-unknown|https-not-configured|domain-tls-unverified|lan-tls-unverified)
+      witness-timeout|control-not-configured|heartbeat-missing|heartbeat-unreadable|heartbeat-invalid|heartbeat-stale|snapshot-missing|snapshot-unreadable|snapshot-invalid|snapshot-stale|snapshot-invalid-or-changing|gateway-healthy|gateway-unhealthy|gateway-starting|gateway-running-unverified|gateway-stopped|gateway-unknown|https-not-configured|domain-tls-unverified|lan-tls-unverified)
         ;;
       *) caddy_witness_reason="unsupported-or-unavailable-server-witness" ;;
     esac
@@ -407,7 +475,7 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
       snapshot-stale:stale)
         record WARN "Caddy Host correlation" "host-snapshot-stale; check Host Control sampler cadence"
         ;;
-      unsupported-or-unavailable-server-witness:*)
+      unsupported-or-unavailable-server-witness:*|witness-timeout:*)
         record WARN "Caddy Host correlation" "running-server-witness-cli-unavailable; verify deployed Server image version"
         ;;
     esac
@@ -451,7 +519,7 @@ else
   record PASS "host layout" "canonical config/bin/data/backups/logs/state layout"
 fi
 
-legacy_volumes="$(docker volume ls -q --filter 'label=com.docker.compose.project=xdrive' 2>/dev/null | grep -E '(_|^)(postgres-data|file-data|caddy-data|caddy-config)$' || true)"
+legacy_volumes="$(docker_probe volume ls -q --filter 'label=com.docker.compose.project=xdrive' 2>/dev/null | grep -E '(_|^)(postgres-data|file-data|caddy-data|caddy-config)$' || true)"
 if [[ -n "$legacy_volumes" ]]; then
   record WARN "legacy volumes" "$(printf '%s' "$legacy_volumes" | tr '\n' ' ') retained for migration safety"
 fi
@@ -459,7 +527,7 @@ fi
 if command -v df >/dev/null 2>&1; then
   df_line="$(df -hP "$XDRIVE_HOME" 2>/dev/null | tail -n1 || true)"
   [[ -n "$df_line" ]] && record PASS "xDrive disk" "$df_line" || record WARN "xDrive disk" "unable to read filesystem usage"
-  docker_root="$(docker info --format '{{.DockerRootDir}}' </dev/null 2>/dev/null || true)"
+  docker_root="$(docker_probe info --format '{{.DockerRootDir}}' </dev/null 2>/dev/null || true)"
   if [[ -n "$docker_root" ]]; then
     root_line="$(df -hP "$docker_root" 2>/dev/null | tail -n1 || true)"
     [[ -n "$root_line" ]] && record PASS "Docker disk" "$root_line" || record WARN "Docker disk" "unable to read Docker filesystem usage"
@@ -474,15 +542,21 @@ if [[ -n "$domain" ]]; then
   port="${https_port:-8443}"
   url="https://$domain"
   [[ "$port" != "443" ]] && url+=":$port"
-  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/readyz" >/dev/null 2>&1; then
+  local_https_seconds=4
+  [[ "$PROFILE" == deep ]] && local_https_seconds=8
+  if command -v curl >/dev/null 2>&1 && curl -fsS --connect-timeout 2 --max-time "$local_https_seconds" --resolve "$domain:$port:$probe_ip" "$url/api/v1/readyz" >/dev/null 2>&1; then
     record PASS "TLS/local HTTPS" "$url certificate and readiness endpoint verified"
   else
     record FAIL "TLS/local HTTPS" "$url failed certificate/readiness verification"
   fi
-  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 "$url/api/v1/readyz" >/dev/null 2>&1; then
-    record PASS "public HTTPS" "$url reachable through normal DNS/routing"
+  if [[ "$PROFILE" == deep ]]; then
+    if command -v curl >/dev/null 2>&1 && curl -fsS --connect-timeout 5 --max-time 8 "$url/api/v1/readyz" >/dev/null 2>&1; then
+      record PASS "public HTTPS" "$url reachable through normal DNS/routing"
+    else
+      record WARN "public HTTPS" "$url not reachable from this host through normal DNS/routing"
+    fi
   else
-    record WARN "public HTTPS" "$url not reachable from this host through normal DNS/routing"
+    record SKIP "public HTTPS" "fast profile; run doctor --deep for public DNS/routing"
   fi
 else
   record WARN "TLS" "XD_DOMAIN is empty; server is in HTTP/private mode"
@@ -490,7 +564,7 @@ fi
 
 shell_proxy=0
 [[ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]] && shell_proxy=1
-docker_proxy="$(docker info --format '{{.HTTPSProxy}}' </dev/null 2>/dev/null || true)"
+docker_proxy="$(docker_probe info --format '{{.HTTPSProxy}}' </dev/null 2>/dev/null || true)"
 if [[ "$shell_proxy" == "1" && -z "$docker_proxy" ]]; then
   record WARN "Docker HTTPS proxy" "shell HTTPS_PROXY is set but Docker daemon proxy is empty; registry pulls may bypass the shell proxy"
 elif [[ -n "$docker_proxy" ]]; then
@@ -499,7 +573,7 @@ else
   record PASS "Docker HTTPS proxy" "not configured; Docker uses direct registry access"
 fi
 
-if command -v curl >/dev/null 2>&1; then
+if [[ "$PROFILE" == deep ]] && command -v curl >/dev/null 2>&1; then
   external_http_check() {
     local name="$1" url="$2" result code remote connect tls total speed
     result="$(curl -sS -L --connect-timeout 5 --max-time 8 -o /dev/null \
@@ -529,21 +603,28 @@ if command -v curl >/dev/null 2>&1; then
     external_http_check "GHCR registry" "https://ghcr.io/v2/"
     external_http_check "Container CDN" "https://pkg-containers.githubusercontent.com/"
   fi
-else
+elif [[ "$PROFILE" == deep ]]; then
   record WARN "external network" "curl unavailable; update-provider network checks skipped"
-fi
-
-echo
-echo "---- recent container logs (last 100 lines, redacted) ----"
-if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>&1; then
-  services=(postgres server worker caddy)
-  compose logs --tail=100 --no-color "${services[@]}" 2>&1 | redact_stream || true
 else
-  echo "logs unavailable because Docker/Compose configuration is incomplete"
+  record SKIP "external network" "fast profile; run doctor --deep for update-provider connectivity"
+fi
+
+if [[ "$PROFILE" == deep ]]; then
+  echo
+  echo "---- recent container logs (last 100 lines, redacted) ----"
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>&1; then
+    services=(postgres server worker caddy)
+    (set -o pipefail; compose logs --tail=100 --no-color "${services[@]}" 2>&1 | redact_stream) ||
+      record WARN "container logs" "could not read logs before timeout"
+  else
+    record SKIP "container logs" "Docker/Compose configuration incomplete"
+  fi
+else
+  record SKIP "container logs" "fast profile; run doctor --deep for recent logs"
 fi
 
 echo
-echo "summary: $PASS_COUNT pass, $WARN_COUNT warn, $FAIL_COUNT fail"
+echo "summary: $PASS_COUNT pass, $WARN_COUNT warn, $FAIL_COUNT fail, $SKIP_COUNT skip"
 if [[ "$FAIL_COUNT" -eq 0 ]]; then
   echo "doctor result: usable; review warnings if present"
 else
