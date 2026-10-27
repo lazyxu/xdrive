@@ -46,7 +46,7 @@ export type XDriveOverviewPort = {
   }>>
   getLocalDiskSpace(): Promise<XDriveOverviewDiskSpace>
   openPath(relativePath: string): Promise<void>
-  loadThumbnail(item: XDriveFileExplorerItem, signal?: AbortSignal): Promise<string | null>
+  loadThumbnail(item: XDriveFileExplorerItem, signal?: AbortSignal): Promise<string | null | undefined>
 }
 export type XDriveOverviewPageProps = {
   port: XDriveOverviewPort
@@ -103,9 +103,8 @@ export function XDriveOverviewPage({
   onOpenTransfers,
   onOpenConflicts,
   onError,
-}: XDriveOverviewPageProps
-}) {
-  const overviewLifecycleKey = `${status?.server ?? ''}\\n${status?.username ?? ''}`
+}: XDriveOverviewPageProps) {
+  const overviewLifecycleKey = `${status?.server ?? ''}\n${status?.username ?? ''}`
   type RecentSnapshot = { scope: string; rows: XDriveFileRecentItem<Node>[] }
   type FavoriteSnapshot = { scope: string; rows: XDriveFileFavoriteItem<Node>[] }
   const [recentSnapshot, setRecentSnapshot] = useState<RecentSnapshot | null>(null)
@@ -256,7 +255,7 @@ export function XDriveOverviewPage({
   const openCloudItem = async (
     item: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
   ) => {
-    const relativePath = item.path.replace(/^\\/+/, '')
+    const relativePath = item.path.replace(/^\/+/, '')
     if (!relativePath) { onOpenFiles(); return }
     try { await port.openPath(relativePath) } catch {
       onError('无法打开当前文件，请刷新后重试。')
