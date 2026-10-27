@@ -40,7 +40,11 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
       inspectionGeneration.current += 1
       inspectionRef.current?.abort()
       inspectionRef.current = null
+      // The dialog can stay mounted across account/session switches. Only
+      // show the result of an inspection or install click in this opening.
       setChecking(false)
+      setChecks(null)
+      setFeedback(null)
       setDeviceEvidence(null)
       setDeviceEvidencePending(false)
       setDeviceEvidenceError(false)
@@ -82,7 +86,9 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
     })
   }
   const standalone = state.displayMode !== 'browser'
-  const outcome = feedback ?? state.lastPromptOutcome
+  // An earlier global install hint is not the result of this dialog opening.
+  // A pending browser prompt remains protected by dialogGeneration above.
+  const outcome = feedback
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" fullScreen={compact}
       aria-labelledby="xdrive-pwa-install-title" data-xdrive-pwa-install-dialog>
