@@ -34,7 +34,8 @@ back to v1 is done by removing the setting or setting it to `v1`.
 automatically deletes v2 snapshots, shared CAS objects, or historical v1
 snapshots. Retention stays enabled only while scheduled backup format is v1.
 Manual `backup --incremental`, pre-upgrade safety backups, and restore logic
-are unchanged. A reference-aware v2 GC is still a separate future feature.
+are unchanged. An explicit reference-aware **manual** v2 prune is available below; automatic
+v2 retention and GC remain disabled.
 
 Use `--repository-dir ABSOLUTE_PATH` for a manual v2 backup on a separate
 disk; the absolute path must not point into the live files mount. Do not
@@ -95,7 +96,9 @@ are never published.
   database/file replacement. v2 capture already takes an exclusive flock.
   Competing repository operations fail closed without stopping services.
   The lock must be an existing real file; no reader creates or truncates it.
-  This is a prerequisite for future pruning, **not** an enabled CAS GC.
+  These leases also prevent verification/restore from racing the existing
+  **explicit manual** prune. They do not enable scheduled pruning or
+  automatic CAS GC.
 - Do not move a v2 snapshot directory without also moving its sibling
   `objects/` repository; the entire repository is the portable backup unit.
 - The encrypted connector credentials in the database still require the
