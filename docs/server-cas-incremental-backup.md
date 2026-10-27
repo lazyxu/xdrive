@@ -253,6 +253,16 @@ executed results plus a per-snapshot *last verification (historical)* receipt.
 This is not a claim that previously verified bytes remain valid: any actual
 restore re-runs the full fail-closed verification.
 
+The shared administrator panel also provides an **integrity overview** based
+only on Host-discovered generations and the most recent (up to 30) operation
+receipts. It separates structurally complete file+database restore candidates,
+database-only, incomplete, inconsistent, previous verify success/failure and
+absent recent verify receipts. A failed historical check is a warning; a
+previous success is **not** a current integrity guarantee. The read-only
+"verify latest complete backup" shortcut defaults to `fast` and uses the
+same authorized fixed Host action. No client-side hash estimate or fake
+recovery-success badge is emitted.
+
 Online CAS verification/repair lives in **全局存储** and Task Center;
 a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file

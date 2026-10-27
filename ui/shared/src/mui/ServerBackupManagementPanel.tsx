@@ -8,6 +8,7 @@ import type {
   XDriveServerBackupPage, XDriveServerBackupPort, XDriveServerBackupRequest,
   XDriveServerBackupSnapshot,
 } from '../server-backup-admin'
+import { summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveSectionHeader } from './SectionHeader'
 
@@ -115,6 +116,7 @@ export function XDriveServerBackupManagementPanel({
   const busy = submitting || workStates.has(page?.operation.state || '')
   const supported = Boolean(page?.supported)
   const selected = page?.inventory.snapshots.find(item => item.id === snapshotID)
+  const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
   const keep = Number(keepLast)
@@ -208,6 +210,38 @@ export function XDriveServerBackupManagementPanel({
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>备份清单与验证</Typography>
+          {integrity ? (
+            <Alert severity={integrity.needsAttention ? 'warning' : 'info'}
+              data-xdrive-admin-backup-integrity-summary>
+              <Stack spacing={1}>
+                <Typography variant="body2">
+                  已发现 {integrity.snapshots} 代备份：结构完整的文件与数据库恢复候选
+                  {integrity.fullCandidates} 代；仅数据库 {integrity.databaseOnly} 代；
+                  不完整 {integrity.incomplete} 代；源数据不一致 {integrity.inconsistent} 代。
+                </Typography>
+                <Typography variant="body2">
+                  在最近最多 30 条宿主机操作记录中，各快照的最新校验结果：
+                  历史通过 {integrity.historicalPassed} 代，历史失败
+                  {integrity.historicalFailed} 代，未见近期校验记录
+                  {integrity.withoutRecentReceipt} 代。
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  结构完整和历史校验通过均不代表当前数据仍完好；恢复前必须重新校验，
+                  真正的数据库与文件恢复能力仍需独立演练。验证失败的快照不应作为可靠恢复点。
+                </Typography>
+                <Box>
+                  <XDriveActionButton disabled={disabled || !integrity.newestFullID}
+                    onClick={() => {
+                      if (integrity.newestFullID) void submit({
+                        action: 'verify', snapshot_id: integrity.newestFullID, mode: 'fast',
+                      })
+                    }}>
+                    校验最新完整备份（fast）
+                  </XDriveActionButton>
+                </Box>
+              </Stack>
+            </Alert>
+          ) : null}
           <TableContainer sx={{ maxHeight: 320 }}>
             <Table size="small" stickyHeader aria-label="服务器备份清单">
               <TableHead>
