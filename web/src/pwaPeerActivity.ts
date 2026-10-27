@@ -138,14 +138,22 @@ export function startXDrivePwaPeerActivityObservation(): void {
     return
   }
   subscribeXDrivePwaWindowActivity(broadcastStatus)
-  window.addEventListener('pageshow', broadcastStatus)
-  window.addEventListener('pagehide', () => {
-    // A frozen tab is unknown, never a positive "all clear" signal.
-    if (sender && channel) send({ kind: 'status', sender, sequence: ++sequence,
-      observed: false, busy: false })
-  })
-  document.addEventListener('visibilitychange', broadcastStatus)
-  window.setInterval(() => { broadcastStatus(); publish() }, heartbeatMS)
+  // All lifecycle hints are optional. A managed/restricted Safari Web App can
+  // deny one listener without disabling initial anonymous peer announcements
+  // or the independent supported listeners.
+  try { window.addEventListener('pageshow', broadcastStatus) } catch { /* optional */ }
+  try {
+    window.addEventListener('pagehide', () => {
+      // A frozen tab is unknown, never a positive "all clear" signal.
+      if (sender && channel) send({ kind: 'status', sender, sequence: ++sequence,
+        observed: false, busy: false })
+    })
+  } catch { /* optional */ }
+  try { document.addEventListener('visibilitychange', broadcastStatus) } catch { /* optional */ }
+  try { window.setInterval(() => { broadcastStatus(); publish() }, heartbeatMS) } catch {
+    // No polling fallback: missing heartbeats must not be interpreted as safe
+    // cross-window idleness, and the first authenticated Web paint is unaffected.
+  }
   publish()
   if (sender) send({ kind: 'hello', sender })
   broadcastStatus()
