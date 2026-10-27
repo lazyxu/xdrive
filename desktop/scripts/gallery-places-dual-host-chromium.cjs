@@ -1307,6 +1307,80 @@ async function testDelayedBD09Map(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Post-ready Server /cells failure is different from a valid zero-photo map.
+// Run the SAME shipped React Parent + private cover logic under both SDK Hosts.
+async function testOwnerCellsFailureRetry(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try {
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+'&cells_failure=1',
+      {waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>window.__mapProbe?.ready===true)
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    // Await the initial *live* SDK Camera query before inducing a new
+    // favorite-scope request, so a pending startup event cannot steal fault.
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===9&&q.bounds.west===100&&q.bounds.south===20&&
+      q.bounds.east===125&&q.bounds.north===40))
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const sdkBefore=mode==='inline' ? inlineSDKLoads : childSDKLoads
+    await page.locator('#fixture-arm-cells-failure').click()
+    await page.locator('#toggle-favorite').click()
+    const warning=page.locator('[data-xdrive-places-cells-query-error]')
+    await warning.waitFor({state:'visible'})
+    const empty=await page.evaluate(()=>({
+      faults:window.__mapProbe.failedOwnerCellsReads,
+      stalePins:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      failureText:document.querySelector('[data-xdrive-places-cells-query-error]')?.textContent || '',
+      sdkFailed:window.__mapProbe.failed,
+    }))
+    record(mode+': genuine post-ready Owner Cells fault clears stale private cover pins',
+      empty.faults.length===1&&empty.faults[0].favorite===true&&
+      empty.faults[0].albumKey===''&&empty.stalePins===0&&!empty.sdkFailed)
+    record(mode+': failed map query is not mislabeled as an empty GPS photo map',
+      empty.failureText.includes('定位照片范围读取或校验失败')&&
+      empty.failureText.includes('重试定位照片')&&
+      !empty.failureText.includes('暂无可显示的定位照片'))
+    await page.locator('[data-xdrive-places-cells-query-retry]').click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const image=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return Boolean(image?.complete&&image.naturalWidth>0)
+    })
+    const restored=await page.evaluate(()=>({
+      errorStillVisible:Boolean(document.querySelector('[data-xdrive-places-cells-query-error]')),
+      favorites:window.__mapProbe.queries.filter(q=>q.favorite===true),
+      faults:window.__mapProbe.failedOwnerCellsReads.length,
+      sdkFailed:window.__mapProbe.failed,
+    }))
+    record(mode+': retry restores decoded favorites only under the same Owner scope',
+      !restored.errorStillVisible&&!restored.sdkFailed&&restored.faults===1&&
+      restored.favorites.some(q=>q.albumKey===''&&q.count===3))
+    record(mode+': Owner Cells retry reuses the mounted SDK Host',
+      (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkBefore)
+    await cover.click()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const drawerCount=await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()
+    record(mode+': recovered favorites cover opens only the authorized 3-photo drawer',
+      drawerCount===3&&errors.length===0)
+  } finally {await context.close()}
+}
+
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -1397,6 +1471,8 @@ async function main(){
     if(!ginURL){
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
+      await testOwnerCellsFailureRetry(browser,'inline',port)
+      await testOwnerCellsFailureRetry(browser,'isolated',port)
     }
     if(ginURL){
       const inlinePage=await testFullGalleryPage(browser,'inline',port)
