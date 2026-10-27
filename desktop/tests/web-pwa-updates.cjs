@@ -7,7 +7,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../..')
 const source = fs.readFileSync(path.join(root, 'web/src/pwaUpdates.ts'), 'utf8')
 function harness({ supported = true, secure = true, waiting = true, online = true, updateGate = null, lookupGate = null,
-  channelFailure = null } = {}) {
+  channelFailure = null, windowEventFailure = null } = {}) {
   const events = new Map(), workerEvents = new Map(), regEvents = new Map(), messages = []
   let checked = 0, channelClosed = 0
   const registration = {
@@ -21,7 +21,15 @@ function harness({ supported = true, secure = true, waiting = true, online = tru
     async getRegistration() { return lookupGate ? await lookupGate : registration },
     addEventListener(kind, fn) { workerEvents.set(kind, fn) },
   }
-  const win = { isSecureContext: secure, addEventListener(kind, fn) { events.set(kind, fn) } }
+  const win = {
+    isSecureContext: secure,
+    addEventListener(kind, fn) {
+      if (windowEventFailure === kind || windowEventFailure === 'all') {
+        throw new Error('Safari denied optional Window event: ' + kind)
+      }
+      events.set(kind, fn)
+    },
+  }
   const navigator = { onLine: online, ...(supported ? { serviceWorker: worker } : {}) }
   class Channel {
     constructor(name) {
@@ -471,4 +479,32 @@ test('S3A Safari: denied secure-context getter cannot block pre-React version ob
   })
   assert.equal(await h.mod.checkXDrivePwaUpdate(), 'unsupported')
   assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(/)
+})
+
+test('S3A Safari: denied optional Window event preserves update discovery and manual checks', async () => {
+  const names = ['online', 'offline', 'pageshow', 'xdrive-pwa-registered']
+  for (const denied of [...names, 'all']) {
+    const h = harness({ waiting: true, windowEventFailure: denied })
+    assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation(), denied)
+    await flush()
+    assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting',
+      'initial worker discovery cannot depend on an optional Window event')
+    assert.equal(h.workerEvents.has('controllerchange'), true,
+      'controller changes remain observable if a Window event is denied')
+    assert.equal(h.regEvents.has('updatefound'), true,
+      'registration discovery must install its own observer')
+    assert.equal(h.checked, 0, 'startup never calls registration.update()')
+    for (const name of names) {
+      assert.equal(h.events.has(name), name !== denied && denied !== 'all',
+        'one denied Window event must not suppress other supported listeners')
+    }
+    h.registration.waiting = null
+    h.workerEvents.get('controllerchange')()
+    await flush()
+    assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle',
+      'a retired waiting worker must not remain visible')
+    assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked',
+      'manual revalidation must still work even if all Window events are denied')
+    assert.equal(h.checked, 1)
+  }
 })
