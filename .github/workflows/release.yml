@@ -214,6 +214,10 @@ jobs:
     if: inputs.publish
     needs: [verify-client-artifacts, server-images, server-deploy]
     runs-on: ubuntu-latest
+    # Client ID is not secret, but GitHub also permits storing it as a
+    # Repository Secret. Support both settings without relaxing permissions.
+    env:
+      SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID || secrets.XD_SNAPSHOT_APP_CLIENT_ID }}
     # Master builds run independently, but floating edge/Snapshot promotion
     # must be serialized. queue:max preserves every pending publisher.
     concurrency:
@@ -335,7 +339,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         shell: bash
         env:
-          HAS_SNAPSHOT_APP_CLIENT_ID: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID != '' }}
+          HAS_SNAPSHOT_APP_CLIENT_ID: ${{ env.SNAPSHOT_APP_CLIENT_ID != '' }}
           HAS_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY != '' }}
         run: |
           set -euo pipefail
@@ -344,11 +348,11 @@ jobs:
             exit 1
           fi
       - name: Mint scoped Snapshot publisher token
-        if: github.ref == 'refs/heads/master' && vars.XD_SNAPSHOT_APP_CLIENT_ID != ''
+        if: github.ref == 'refs/heads/master' && env.SNAPSHOT_APP_CLIENT_ID != ''
         id: snapshot_app_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ vars.XD_SNAPSHOT_APP_CLIENT_ID }}
+          client-id: ${{ env.SNAPSHOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-workflows: write
