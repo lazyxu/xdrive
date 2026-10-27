@@ -100,7 +100,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveParseWebAppHash, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
 import PublicShareView from './PublicShare'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
@@ -374,6 +374,7 @@ function App({
   const lastNonOfflineHashRef = useRef(
     window.location.hash === '#/offline/files' ? '#/app/files' : window.location.hash,
   )
+  const standaloneRouteRef = useRef(Boolean(publicShareToken || offlineSnapshotRoute))
   useEffect(() => {
     const syncShareRoute = () => {
       const nextHash = window.location.hash
@@ -387,9 +388,23 @@ function App({
         setOfflineSnapshotRoute(false)
         return
       }
-      if (nextHash !== '#/offline/files') lastNonOfflineHashRef.current = nextHash
-      setPublicShareToken(xDrivePublicShareTokenFromHash(nextHash))
-      setOfflineSnapshotRoute(nextHash === '#/offline/files')
+      const nextShare = xDrivePublicShareTokenFromHash(nextHash)
+      const nextOffline = nextHash === '#/offline/files'
+      // Standalone Share/offline pages do not mount webAppRuntime. Switch
+      // BEFORE their new thumbnail providers mount, so they capture their
+      // own page, not the previous account's foreground scope. Do not preempt
+      // ordinary authenticated /app history here: the dirty-admin guard in
+      // webAppRuntime must decide first whether that navigation is allowed.
+      if (nextShare) xDriveEnterForegroundPage('web:public-share')
+      else if (nextOffline) xDriveEnterForegroundPage('web:offline')
+      else if (standaloneRouteRef.current) {
+        const committed = xDriveParseWebAppHash(nextHash)
+        if (committed) xDriveEnterForegroundPage('web:' + committed.app)
+      }
+      standaloneRouteRef.current = Boolean(nextShare || nextOffline)
+      if (!nextOffline) lastNonOfflineHashRef.current = nextHash
+      setPublicShareToken(nextShare)
+      setOfflineSnapshotRoute(nextOffline)
     }
     window.addEventListener('hashchange', syncShareRoute)
     window.addEventListener('popstate', syncShareRoute)
