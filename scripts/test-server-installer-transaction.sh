@@ -994,6 +994,7 @@ for scenario in target-new target-cached target-orphan target-no-image; do
   mkdir -p "$scenario_state"
   set +e
   XD_UPGRADE_BACKUP_VERIFIER=target \
+  XD_PULL_RETRY_DELAY_SECONDS=0 \
   TEST_TARGET_IMAGE_PRESENT="$cached" \
   TEST_TARGET_PULL_FAIL="$pull_fail" \
   TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL="$corrupt" \
@@ -1022,6 +1023,7 @@ for scenario in target-new target-cached target-orphan target-no-image; do
   fi
   if [[ "$pull_fail" == 1 && "$cached" == 0 ]]; then
     grep -q 'cannot fetch pinned target verifier' "$TMP/$scenario.err"
+    [[ "$(grep -c '^pull ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$scenario_state/docker-calls")" -eq 3 ]]
     [[ ! -e "$scenario_state/backup-images" ]]
     continue
   fi

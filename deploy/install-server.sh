@@ -2595,8 +2595,15 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   if [[ "$upgrade_backup_verifier" == "target" ]]; then
     if ! docker image inspect "$target_server_image" </dev/null >/dev/null 2>&1; then
       echo "[xDrive] preparing published target Server verifier before maintenance: $target_server_image"
-      write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "server" 0 0
-      if ! docker pull "$target_server_image" </dev/null; then
+      initialize_image_pull
+      # Use the SAME bounded retries as the later native service pulls.
+      # Even when other services opt into JSON diagnostics, this verifier
+      # pulls the exact published Server tag directly, not through old Compose.
+      if ! (
+        export XD_SERVER_IMAGE="$target_server_image"
+        pull_progress_mode=native
+        pull_service_with_retry server
+      ); then
         echo "xDrive installer: cannot fetch pinned target verifier; refusing to enter backup without verified image." >&2
         exit 1
       fi
