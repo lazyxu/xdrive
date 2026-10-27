@@ -85,4 +85,28 @@ assert bundle.index("- name: Reject stale master snapshot before channel promoti
     bundle.index("- name: Promote successful server images")
 ), "a stale completed build must not overwrite GHCR edge before being rejected"
 
-print("master snapshot concurrency / early publication contract passed")
+
+# The standalone APK is disposable and has no Snapshot publish dependency.
+# Keep only the newest automatic master push APK; preserve each manual build.
+apk = (root / ".github/workflows/android-master-apk.yml").read_text(encoding="utf-8")
+header, marker, apk_jobs = apk.partition("\njobs:\n")
+assert marker, "Android Master APK jobs are missing"
+assert "push:\n    branches: [master]" in header
+assert "  workflow_dispatch:" in header
+assert header.count("\nconcurrency:\n") == 1
+apk_group = re.findall(r"(?m)^  group: (.+)$", header)
+assert apk_group == [
+    "xdrive-android-master-apk-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'latest-master' || github.run_id }}"
+], "Android automatic APK must share the master slot while manual runs stay unique"
+apk_cancel = re.findall(r"(?m)^  cancel-in-progress: (.+)$", header)
+assert apk_cancel == [
+    "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
+], "only outdated automatic master APKs may be cancelled"
+assert "  build-master-apk:" in apk_jobs and "    if: github.ref == 'refs/heads/master'" in apk_jobs
+assert "    needs:" not in apk_jobs, "Android debug Artifact must remain independent of Snapshot and required CI"
+assert 'ref: ${{ github.sha }}' in apk_jobs
+assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in apk_jobs
+assert "Upload exact-master Android APK" in apk_jobs
+assert "retention-days: 30" in apk_jobs
+
+print("master Snapshot and disposable Android APK concurrency contract passed")
