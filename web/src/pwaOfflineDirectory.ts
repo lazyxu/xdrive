@@ -249,7 +249,16 @@ export function xDrivePwaNormalizeAlbumSummaries(
 }
 
 function offlineSupported(): boolean {
-  return typeof window !== 'undefined' && window.isSecureContext && 'indexedDB' in window
+  try {
+    return typeof window !== 'undefined' &&
+      window.isSecureContext === true &&
+      typeof window.indexedDB?.open === 'function'
+  } catch {
+    // An installed/restricted Safari Web App can deny optional secure-context
+    // or IndexedDB getters. Unknown capability is unavailable, not a reason
+    // to crash the shared authenticated PWA UI or restore offline history.
+    return false
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {

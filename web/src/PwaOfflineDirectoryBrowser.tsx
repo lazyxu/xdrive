@@ -99,15 +99,18 @@ export default function PwaOfflineDirectoryBrowser({
       validationController.current?.abort()
       setVerification('unverified')
     }
-    window.addEventListener('online', markOnline)
-    window.addEventListener('offline', markOffline)
+    // These browser connection hints are optional. Restricted Safari hosts
+    // may deny either listener independently; this must never crash the
+    // historical-only view or suppress the supported listener.
+    try { window.addEventListener('online', markOnline) } catch { /* optional */ }
+    try { window.addEventListener('offline', markOffline) } catch { /* optional */ }
     return () => {
       active = false
       sequence.current += 1
       validationController.current?.abort()
       stop()
-      window.removeEventListener('online', markOnline)
-      window.removeEventListener('offline', markOffline)
+      try { window.removeEventListener('online', markOnline) } catch { /* optional */ }
+      try { window.removeEventListener('offline', markOffline) } catch { /* optional */ }
     }
   }, [])
 
