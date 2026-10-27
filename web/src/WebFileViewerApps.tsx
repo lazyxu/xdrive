@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { XDriveRoutedGalleryThumbnailBorrower } from './routedGalleryThumbnailBridge'
 import type { FocusEvent as ReactFocusEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
@@ -975,6 +976,7 @@ function WebMediaViewerApp({
   route,
   api,
   gallerySource,
+  onBorrowGalleryThumbnail,
   shareDialogAdapter,
   onNavigate,
   onShowInFolder,
@@ -987,6 +989,7 @@ function WebMediaViewerApp({
   route: Extract<XDriveWebAppRoute, { app: 'media-viewer' }>
   api: XDriveApi
   gallerySource: MediaGalleryDataSource
+  onBorrowGalleryThumbnail?: XDriveRoutedGalleryThumbnailBorrower
   shareDialogAdapter: XDriveShareDialogAdapter
   onNavigate: (nodeID: number) => void
   onShowInFolder?: (location: NodeLocation) => void
@@ -1005,6 +1008,27 @@ function WebMediaViewerApp({
     wantsMedia: true,
     onNavigate,
   })
+  // The routed Viewer only borrows a warmed cache URL from the still-mounted
+  // Gallery that opened THIS exact context. A cold/direct/foreign-context
+  // Viewer keeps its original Owner-scoped thumbnail transport.
+  const loadRoutedGalleryThumbnail = useCallback(async (
+    target: XDriveFilePreviewTarget,
+    signal?: AbortSignal,
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
+    if (signal?.aborted) return null
+    const nodeID = Number(target.id)
+    const revision = Number(target.revision)
+    const lease = onBorrowGalleryThumbnail?.(route.params.context, nodeID, revision)
+    if (lease) {
+      if (signal?.aborted) {
+        lease.release()
+        return null
+      }
+      return lease
+    }
+    return gallerySource.loadThumbnail(nodeID, signal, revision, onProgress)
+  }, [gallerySource, onBorrowGalleryThumbnail, route.params.context])
   const mediaItem = viewer.mediaItem
   // The actual routed Viewer is common to Mobile Web and wide Web. An iOS 27
   // compact rail cannot show ten 44px controls at 390px without sideways
@@ -1457,6 +1481,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           key={modalOwner.session}
           item={mediaItem}
           loadThumbnail={gallerySource.loadThumbnail}
+          loadBorrowedThumbnail={onBorrowGalleryThumbnail ? loadRoutedGalleryThumbnail : undefined}
           loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
           loadPreviewURL={gallerySource.loadPreviewURL}
           onPresentationStateChange={slideshowPresentation.onPresentationStateChange}
@@ -1966,6 +1991,7 @@ export function WebFileViewerApps({
   route,
   api,
   gallerySource,
+  onBorrowGalleryThumbnail,
   shareDialogAdapter,
   onReplaceRoute,
   onShowInFolder,
@@ -1978,6 +2004,7 @@ export function WebFileViewerApps({
   route: XDriveWebAppRoute
   api: XDriveApi
   gallerySource: MediaGalleryDataSource
+  onBorrowGalleryThumbnail?: XDriveRoutedGalleryThumbnailBorrower
   shareDialogAdapter: XDriveShareDialogAdapter
   onReplaceRoute: (route: XDriveWebAppRoute) => void
   onShowInFolder?: (location: NodeLocation) => void
@@ -2009,6 +2036,7 @@ export function WebFileViewerApps({
         route={route}
         api={api}
         gallerySource={gallerySource}
+        onBorrowGalleryThumbnail={onBorrowGalleryThumbnail}
         shareDialogAdapter={shareDialogAdapter}
         onNavigate={(nodeID) => onReplaceRoute({
           app: 'media-viewer',

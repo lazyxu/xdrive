@@ -180,7 +180,7 @@ import {
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
-import type { XDriveFilePreviewImageLoader } from './FilePreviewSurface'
+import type { XDriveBorrowedPreviewImageURL, XDriveFilePreviewImageLoader } from './FilePreviewSurface'
 import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveShareDialog } from './ShareDialog'
 import type { XDriveShareDialogAdapter } from './ShareDialog'
@@ -223,6 +223,10 @@ import type {
 } from './MediaGalleryThumbnailScheduler'
 
 export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler, bypassHTTPCache?: boolean) => Promise<string | null>
+/** Transient bridge registration for the mounted Gallery's current cache. */
+export type XDriveMediaGalleryThumbnailCacheRegistrar = (
+  borrower: (nodeID: number, revision: number) => XDriveBorrowedPreviewImageURL | null,
+) => () => void
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
@@ -653,6 +657,8 @@ export interface XDriveMediaGalleryPageProps {
     camera?:XDriveBaiduNativeCameraSnapshot)=>Promise<string>
   onSectionRouteChange?: (section: MediaGallerySection) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
+  /** Optional Web/PWA routed Viewer lease. No Owner token or URLs are persisted. */
+  onRegisterViewerThumbnailCache?: XDriveMediaGalleryThumbnailCacheRegistrar
   onShowInFolder?: (location: NodeLocation) => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
   onOpenBaiduMapDiagnostics?: () => void
@@ -675,6 +681,7 @@ export function XDriveMediaGalleryPage({
   onMapModeHandoff,
   onSectionRouteChange,
   onOpenViewer,
+  onRegisterViewerThumbnailCache,
   onShowInFolder,
   onOpenSecureDesktopMap,
   onOpenBaiduMapDiagnostics,
@@ -3902,6 +3909,7 @@ export function XDriveMediaGalleryPage({
         key={preferenceScope || 'gallery-default'}
         parentReportsViewerActionErrors={Boolean(onError)}
         preferenceScope={preferenceScope}
+        onRegisterViewerThumbnailCache={onRegisterViewerThumbnailCache}
         mobileWebChrome={mobileWebChrome}
         onUploadRequested={onUploadRequested}
         mobileCollectionsOverview={mobileCollectionsOverview}
@@ -4602,6 +4610,7 @@ export interface XDriveMediaGalleryProps {
   onShareItem?: (item: MediaItem) => void
   shareDialogOpen?: boolean
   onOpenViewer?: (item: MediaItem, logicalIndex: number) => void
+  onRegisterViewerThumbnailCache?: XDriveMediaGalleryThumbnailCacheRegistrar
   onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
   onPermanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
@@ -6332,6 +6341,7 @@ export function XDriveMediaGallery({
   onShareItem,
   shareDialogOpen = false,
   onOpenViewer,
+  onRegisterViewerThumbnailCache,
   onRestoreTrashItems,
   onPermanentlyDeleteTrashItems,
   onSetTags,
@@ -6401,6 +6411,12 @@ export function XDriveMediaGallery({
       return loadThumbnail(nodeID, signal, revision, onProgress)
     }, [thumbnailScheduler, loadThumbnail],
   )
+  // Registration is tied to this exact mounted Gallery/scheduler instance.
+  // Unmounting or changing Owner releases only its own registration; an old
+  // React cleanup cannot erase a newer account's active cache borrower.
+  useEffect(() => onRegisterViewerThumbnailCache?.(
+    (nodeID, revision) => thumbnailScheduler.borrowCachedForViewer(nodeID, revision),
+  ), [onRegisterViewerThumbnailCache, thumbnailScheduler])
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
   const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   const [placesMobileMode, setPlacesMobileMode] = useState<'map' | 'list'>('map')
