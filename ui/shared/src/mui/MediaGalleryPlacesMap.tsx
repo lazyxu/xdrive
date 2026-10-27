@@ -4,13 +4,13 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
-  xDriveBaiduMapScopeSurvivesFullReload,
+  xDriveBaiduMapScopeSurvivesFullReload, xDriveBaiduMapPhotoScopeKey,
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import { XDriveMediaGalleryBaiduIsolatedPhotoSurface } from './MediaGalleryBaiduIsolatedPhotoSurface'
-import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL, xDrivePlacesMapScopeHandoffURL } from '../media-gallery-places-map-mode'
+import { xDrivePlacesMapModeFromHref, xDrivePlacesMapModeNavigationURL, xDrivePlacesMapScopeHandoffURL, xDrivePlacesMapHandoffFenceMatches } from '../media-gallery-places-map-mode'
 import {
   xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure,
   xDriveReadBaiduMapDiagnostic, xDriveSubscribeBaiduMapDiagnostics,
@@ -102,7 +102,28 @@ export function XDriveMediaGalleryPlacesMap({
     return () => window.removeEventListener('blur', dismissMapMenus)
   }, [dismissMapMenus])
   const handoffAbort = useRef<AbortController | null>(null)
+  const currentHandoffOwnerScope = diagnosticScope ?? ''
+  const currentHandoffPhotoScopeKey = xDriveBaiduMapPhotoScopeKey(mapPhotoScope)
+  const currentHandoffIdentity = useRef({
+    ownerScope: currentHandoffOwnerScope, photoScopeKey: currentHandoffPhotoScopeKey,
+  })
+  currentHandoffIdentity.current = {
+    ownerScope: currentHandoffOwnerScope, photoScopeKey: currentHandoffPhotoScopeKey,
+  }
+  const cancelStaleHandoff = useCallback(() => {
+    const inFlight = handoffAbort.current
+    if (!inFlight) return
+    inFlight.abort()
+    handoffAbort.current = null
+    setModeSwitching(false)
+    setModeWarning('地图范围或位置已变化，请重新选择地图模式。')
+  }, [])
   useEffect(() => () => { handoffAbort.current?.abort() }, [])
+  // External Owner, album or filter changes must cancel the old one-use
+  // ticket request, not navigate the new Gallery with the old snapshot.
+  useEffect(() => {
+    cancelStaleHandoff()
+  }, [currentHandoffOwnerScope, currentHandoffPhotoScopeKey, cancelStaleHandoff])
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
   const mapMode = desktopOnly ? 'isolated' : xDrivePlacesMapModeFromHref(
@@ -133,11 +154,22 @@ export function XDriveMediaGalleryPlacesMap({
     handoffAbort.current?.abort()
     const controller = new AbortController()
     handoffAbort.current = controller
+    const issuedFence = {
+      ownerScope: currentHandoffOwnerScope,
+      photoScopeKey: xDriveBaiduMapPhotoScopeKey(scope),
+      camera: cameraRef.current ? { ...cameraRef.current } : null,
+    }
     setModeSwitching(true)
     setModeWarning('')
     void onMapModeHandoff(scope, next, controller.signal,
       cameraRef.current ?? undefined).then(ticket => {
       if (controller.signal.aborted || handoffAbort.current !== controller) return
+      if (!xDrivePlacesMapHandoffFenceMatches(issuedFence, {
+        ...currentHandoffIdentity.current, camera: cameraRef.current,
+      })) {
+        setModeWarning('地图范围或位置已变化，请重新选择地图模式。')
+        return
+      }
       const url = xDrivePlacesMapScopeHandoffURL(window.location.href, next, ticket)
       if (!url) throw new Error('invalid-handoff')
       window.location.replace(url)
@@ -166,18 +198,26 @@ export function XDriveMediaGalleryPlacesMap({
     xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera) ? { ...initialNativeCamera } : null,
   )
   const clearCamera = useCallback(() => {
+    // Clearing an SDK camera is itself a new location selection. An already
+    // issued one-use handoff must not linger until its async reply arrives.
+    if (cameraRef.current && handoffAbort.current) cancelStaleHandoff()
     cameraRef.current = null
     onNativeCameraClear?.()
-  }, [onNativeCameraClear])
+  }, [onNativeCameraClear, cancelStaleHandoff])
   const rememberCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
     if (!xDriveValidBaiduNativeCameraSnapshot(camera)) return
+    const priorCamera = cameraRef.current
+    if (handoffAbort.current && (!priorCamera ||
+      priorCamera.latitude !== camera.latitude ||
+      priorCamera.longitude !== camera.longitude ||
+      priorCamera.zoom !== camera.zoom)) cancelStaleHandoff()
     // The same signed SDK camera callback works in both modes, including an
     // isolated Child whose pointer events never enter the Parent document.
     dismissMapMenus()
     cameraRef.current = { coordinate_space: 'bd09ll', latitude: camera.latitude,
       longitude: camera.longitude, zoom: camera.zoom }
     onNativeCameraChange?.(camera)
-  }, [onNativeCameraChange, dismissMapMenus])
+  }, [onNativeCameraChange, dismissMapMenus, cancelStaleHandoff])
   const [diagnosis, setDiagnosis] = useState<{ scope: string; value: XDriveBaiduMapDiagnostic | null }>(
     { scope: diagnosticScope ?? '', value: null },
   )
@@ -252,7 +292,11 @@ export function XDriveMediaGalleryPlacesMap({
     const next = xDriveNormalizeBaiduMapPhotoScope({
       filters: {...mapPhotoScope.filters,...patch},albumKey,
     })
-    if (next) onMapPhotoScopeChange(next)
+    if (next) {
+      // User-driven filters invalidate even before React commits a re-render.
+      cancelStaleHandoff()
+      onMapPhotoScopeChange(next)
+    }
   }
   const sortValue = (mapPhotoScope.filters.sort_by ?? 'captured') + ':' +
     (mapPhotoScope.filters.sort_dir ?? 'desc')
@@ -380,7 +424,12 @@ export function XDriveMediaGalleryPlacesMap({
                     ...(mapPhotoScope.filters.time_zone ? {time_zone:mapPhotoScope.filters.time_zone}: {})},
                   albumKey:'',
                 })
-                if (next) onMapPhotoScopeChange(next)
+                if (next) {
+                  // The user can reset the scope while the ticket is pending.
+                  // Cancel synchronously, before Parent props update.
+                  cancelStaleHandoff()
+                  onMapPhotoScopeChange(next)
+                }
               }}>清除筛选</Button>
           </Stack>
         </Box>
