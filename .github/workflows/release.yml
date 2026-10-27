@@ -283,6 +283,22 @@ jobs:
         with:
           name: server-deploy
           path: release
+      - name: Download exact CI-validated Caddy image archive
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          path: caddy-image
+      - name: Stage verified Caddy fallback release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s caddy-image/image.tar.gz
+          test -s caddy-image/image.id
+          [[ "$(cat caddy-image/image.ref)" == "xdrive/caddy:test" ]]
+          grep -Eq '^sha256:[0-9a-f]{64}$' caddy-image/image.id
+          gzip -t caddy-image/image.tar.gz
+          cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz
+          cp caddy-image/image.id release/xdrive-caddy-image.id
       - name: Verify single-installer distribution contract
         shell: bash
         run: |
@@ -314,6 +330,8 @@ jobs:
             xdrivenas-armada38x-*.spk \
             xdrivenas-armada38x-*.spk.sha256 \
             xdrive-server-install.sh \
+            xdrive-caddy-image.tar.gz \
+            xdrive-caddy-image.id \
             server-backup.sh \
             server-backup-scheduled.sh \
             server-restore.sh \
