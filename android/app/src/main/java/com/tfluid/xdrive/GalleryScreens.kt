@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -105,42 +107,11 @@ internal fun ColumnScope.Gallery(
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box {
-            IconButton(
-                onClick = { kindMenuOpen = true },
-                modifier = Modifier.size(48.dp)
-                    .semantics {
-                        stateDescription = when (state.galleryMediaKind) {
-                            "image" -> "仅照片"
-                            "video" -> "仅视频"
-                            else -> "全部媒体"
-                        }
-                    }
-                    .testTag("gallery-kind-filter"),
-            ) {
-                Icon(painterResource(R.drawable.xd_more_vert), "图库媒体筛选")
-            }
-            DropdownMenu(expanded = kindMenuOpen,
-                onDismissRequest = { kindMenuOpen = false },
-                containerColor = MaterialTheme.colorScheme.surface) {
-                for ((value, label) in listOf(
-                    "" to "全部媒体", "image" to "仅照片", "video" to "仅视频"
-                )) {
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        trailingIcon = {
-                            if (state.galleryMediaKind == value)
-                                Text("✓", color = MaterialTheme.colorScheme.primary)
-                        },
-                        modifier = Modifier.testTag("gallery-kind-" +
-                            if (value.isEmpty()) "all" else value),
-                        onClick = {
-                            kindMenuOpen = false
-                            controller.filterGalleryKind(value)
-                        },
-                    )
-                }
-            }
+        // Preserve the real Server query clear action without a second bottom row.
+        if (state.gallerySearchQuery.isNotEmpty()) {
+            TextButton(onClick = { controller.searchGallery("") },
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-search-clear")) { Text("清除") }
         }
         Box {
             IconButton(
@@ -173,6 +144,20 @@ internal fun ColumnScope.Gallery(
                     onClick = {
                         preferredColumns = (preferredColumns + 1).coerceAtMost(10)
                         displayMenuOpen = false
+                    },
+                )
+                // Day-scale is in PWA More rather than the floating
+                // Year/Month/All capsule; keep the real indexed day jump.
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("按日浏览") },
+                    enabled = state.gallerySearchQuery.isEmpty() &&
+                        state.galleryTimelineSets?.day?.isNotEmpty() == true,
+                    modifier = Modifier.testTag("gallery-day-scale-more"),
+                    onClick = {
+                        displayMenuOpen = false
+                        timeScale = "day"
+                        timePickerOpen = true
                     },
                 )
                 HorizontalDivider()
@@ -296,61 +281,151 @@ internal fun ColumnScope.Gallery(
         }
     }
     val timeSets = state.galleryTimelineSets
+    // PWA source has a time capsule above a separate primary/Search dock.
+    // Android has no actual Collections client yet: preserve a functional
+    // native classification action rather than adding a fake Collections tab.
     if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
-        // The index belongs to the authenticated Server Range, never the
-        // handful of thumbnails currently loaded in LazyVerticalGrid.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                .testTag("gallery-time-dock"),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically) {
-            for ((scale, label) in listOf(
-                "year" to "年", "month" to "月", "day" to "日", "all" to "全部"
-            )) {
-                val enabled = scale == "all" || timeSets.forScale(scale).isNotEmpty()
-                TextButton(
-                    onClick = {
-                        timeScale = scale
-                        if (scale == "all") {
-                            timePickerOpen = false
-                            if (state.galleryJumpIndex != null) controller.refreshGallery()
-                        } else timePickerOpen = true
-                    },
-                    enabled = enabled && !state.loading,
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                        .testTag("gallery-time-scale-" + scale),
-                ) {
-                    Text(label, color = if (timeScale == scale)
-                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                shape = RoundedCornerShape(50.dp),
+                tonalElevation = 2.dp,
+            ) {
+                Row(Modifier.padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for ((scale, label) in listOf(
+                        "year" to "年", "month" to "月", "all" to "全部"
+                    )) {
+                        val enabled = !state.loading &&
+                            (scale == "all" || timeSets.forScale(scale).isNotEmpty())
+                        Box(
+                            modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
+                                .background(
+                                    if (timeScale == scale) MaterialTheme.colorScheme.surface
+                                    else Color.Transparent,
+                                    RoundedCornerShape(50.dp),
+                                )
+                                .clickable(enabled = enabled) {
+                                    timeScale = scale
+                                    if (scale == "all") {
+                                        timePickerOpen = false
+                                        if (state.galleryJumpIndex != null)
+                                            controller.refreshGallery()
+                                    } else timePickerOpen = true
+                                }
+                                .semantics { selected = timeScale == scale }
+                                .testTag("gallery-time-scale-" + scale),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(label,
+                                modifier = Modifier.padding(horizontal = 10.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (!enabled)
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                else if (timeScale == scale)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
                 }
             }
         }
-        if (timeScale != "all" && timeSets.forScale(timeScale).isNotEmpty()) {
-            TextButton(
-                onClick = { timePickerOpen = true },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
-                    .testTag("gallery-time-jump-open"),
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding()
+            .testTag("gallery-bottom-dock"),
+        color = Color.Transparent,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.weight(1f).widthIn(max = 288.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                shape = RoundedCornerShape(50.dp),
+                tonalElevation = 2.dp,
             ) {
-                Text("按" + when (timeScale) {
-                    "year" -> "年份"
-                    "month" -> "月份"
-                    else -> "日期"
-                } + "跳转（真实图库索引）")
+                Row(Modifier.fillMaxWidth().padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.weight(1f).heightIn(min = 44.dp)
+                            .background(MaterialTheme.colorScheme.surface,
+                                RoundedCornerShape(50.dp))
+                            .testTag("gallery-library-tab"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("图库", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    TextButton(
+                        onClick = { kindMenuOpen = true },
+                        contentPadding = PaddingValues(horizontal = 5.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                            .testTag("gallery-kind-filter")
+                            .semantics {
+                                stateDescription = when (state.galleryMediaKind) {
+                                    "image" -> "仅照片"
+                                    "video" -> "仅视频"
+                                    else -> "全部媒体"
+                                }
+                            },
+                    ) { Text("分类", maxLines = 1) }
+                }
             }
+            TextButton(
+                onClick = {
+                    searchDraft = state.gallerySearchQuery
+                    searchOpen = true
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
+                    .testTag("gallery-search-button"),
+            ) { Text("搜索", maxLines = 1) }
         }
     }
-
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-        if (state.gallerySearchQuery.isNotEmpty()) {
-            TextButton(onClick = { controller.searchGallery("") },
-                modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-clear")) {
-                Text("清除筛选")
+    if (kindMenuOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { kindMenuOpen = false },
+            modifier = Modifier.testTag("gallery-kind-sheet"),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 420.dp)
+                    .padding(horizontal = 16.dp).padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("分类", style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 4.dp))
+                Text("仅展示已支持的媒体类型；精选集和相册集合仍待开发。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for ((value, label) in listOf(
+                    "" to "全部媒体", "image" to "仅照片", "video" to "仅视频"
+                )) {
+                    TextButton(
+                        onClick = {
+                            kindMenuOpen = false
+                            controller.filterGalleryKind(value)
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("gallery-kind-" +
+                                if (value.isEmpty()) "all" else value),
+                    ) {
+                        Row(Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(label)
+                            if (state.galleryMediaKind == value)
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
             }
-        }
-        FilledTonalButton(onClick = {
-            searchDraft = state.gallerySearchQuery
-            searchOpen = true
-        }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-button")) {
-            Text("搜索")
         }
     }
     if (timePickerOpen && timeSets != null && timeScale != "all" &&

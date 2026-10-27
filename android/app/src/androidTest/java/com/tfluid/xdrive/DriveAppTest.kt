@@ -427,7 +427,20 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithTag("switch-to-gallery").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.galleryLoaded }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-library-tab").assertIsDisplayed()
+        // No returned Owner index means no artificial timeline.
+        compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
+        val left = compose.onNodeWithTag("gallery-library-tab")
+            .fetchSemanticsNode().boundsInRoot.center
+        val middle = compose.onNodeWithTag("gallery-kind-filter")
+            .fetchSemanticsNode().boundsInRoot.center
+        val right = compose.onNodeWithTag("gallery-search-button")
+            .fetchSemanticsNode().boundsInRoot.center
+        org.junit.Assert.assertTrue(left.x < middle.x && middle.x < right.x)
+        org.junit.Assert.assertTrue(kotlin.math.abs(left.y - right.y) < 16f)
         compose.onNodeWithTag("gallery-kind-filter").performClick()
+        compose.onNodeWithTag("gallery-kind-sheet").assertExists()
         compose.onNodeWithTag("gallery-kind-video").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryMediaKind == "video" &&
@@ -475,6 +488,8 @@ class DriveAppTest {
             org.junit.Assert.assertEquals(121L, controller.state.value.galleryTotal)
         }
         val beforeJump = galleryTimelineRequests.size
+        compose.onNodeWithTag("gallery-time-dock").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-time-scale-day").assertDoesNotExist()
         compose.onNodeWithTag("gallery-time-scale-year").performClick()
         compose.onNodeWithTag("gallery-time-groups").assertExists()
         compose.onNodeWithTag("gallery-time-group-2026").performClick()

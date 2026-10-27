@@ -226,3 +226,11 @@ node scripts/shared-ui.mjs --check
 - 该增量仍须在**独立 master 基线、准确 HEAD**上通过 Android JVM/Lint/APK、
   API35 Compose 与适用 GitHub 保护检查后才能合入。
   Live Motion、Collection、媒体地图、批量导出、传输中心及像素级 1:1 尚未完成。
+
+## P0-07 续 · Android Gallery PWA 双层底部控件候选（2026-10-27，#2792）
+
+- 以当下实际 `ui/shared/src/mui/MobileGalleryChrome.tsx` 为准：上层是「年/月/全部」时间胶囊；下层是「图库/精选集」主导航与右侧搜索。此前 Android 将这些操作分散显示；本 PR 先恢复双层圆角半透明视觉结构、保留 Android navigation bar 安全区，真实像素和悬浮覆盖仍未完成。
+- Android 尚没有真正的 Owner「精选集」数据与页面，不显示假「精选集」。下层只展示当前「图库」与**真实可操作**的「分类」面板（Server 全部媒体/照片/视频筛选），搜索复用现有 Owner Range；这是清楚标明的部分对齐，而非完全 1:1。
+- 上层年/月/全部只在服务器提供可信 `timeline_group_sets`、未搜索时显示；按日的真实索引选择入口移到顶部「显示选项」菜单（与 PWA More 层级一致）。点击年份/月份仍只用原 Server 绝对 Range；「全部」回到真实最新页。
+- API35 回归补充底层「图库/分类/搜索」顺序、无索引不渲染时间层、索引存在时上层可见与无独立「日」按钮；其余用户数据隔离、Gallery Viewer、搜索、缩略图、密度选项、取消行为不改变。
+- 此 PR 仅 3 个 Android UI/测试/文档文件，不加新的后端或其他业务 Writer。源码准确 HEAD CI/Final Gate 运行后再合入；物理 Android/iOS27 视觉 1:1 和真正的精选集产品仍未完成，验收按用户决定跳过（未验收）。
