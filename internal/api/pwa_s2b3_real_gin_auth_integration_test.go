@@ -170,6 +170,31 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	const foreignPassword = "PwaRealGin-Foreign_2026!"
 	ownerToken := createTestUser(t, db, router, ownerName, ownerPassword)
 	foreignToken := createTestUser(t, db, router, foreignName, foreignPassword)
+
+	// Cookie-only E2E accounts: keep all legacy S2B3/transfer fixtures intact.
+	// The password account exercises the actual forced-change React form.
+	// The admin calls the real Gin revoke-sessions API, never an admin mock.
+	cookieHTTPS := os.Getenv("XD_PWA_S2B3_COOKIE_HTTPS") == "1"
+	var passwordOwnerID uint64
+	if cookieHTTPS {
+		const passOwner = "pwa-cookie-password-user"
+		const adminOwner = "pwa-cookie-admin"
+		_ = createTestUser(t, db, router, passOwner, "PwaCookieOld-TestOnly_2026!")
+		if err := db.Model(&meta.User{}).Where("username = ?", passOwner).
+			Update("must_change_password", true).Error; err != nil {
+			t.Fatal(err)
+		}
+		var passwordUser meta.User
+		if err := db.Where("username = ?", passOwner).First(&passwordUser).Error; err != nil {
+			t.Fatal(err)
+		}
+		passwordOwnerID = passwordUser.ID
+		_ = createTestUser(t, db, router, adminOwner, "PwaCookieAdmin-TestOnly_2026!")
+		if err := db.Model(&meta.User{}).Where("username = ?", adminOwner).
+			Update("role", meta.UserRoleAdmin).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", ownerToken, nil, http.StatusOK)
 	folder := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
@@ -590,7 +615,6 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	})
 	// Opt-in browser Cookie E2E: serve the genuine compiled Web and Gin on
 	// the SAME TLS origin. Existing HTTP S2B3 and upload fixtures stay unchanged.
-	cookieHTTPS := os.Getenv("XD_PWA_S2B3_COOKIE_HTTPS") == "1"
 	var peer *httptest.Server
 	if cookieHTTPS {
 		peer = httptest.NewTLSServer(mux)
@@ -607,6 +631,11 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		"real_gin":      true, "postgresql": true, "local_cas": true,
 		"intercepted_api": false, "physical_device": false,
 		"cookie_https": cookieHTTPS,
+	}
+	if cookieHTTPS {
+		ready["password_username"] = "pwa-cookie-password-user"
+		ready["password_user_id"] = passwordOwnerID
+		ready["admin_username"] = "pwa-cookie-admin"
 	}
 	if wakeMode {
 		ready["pwa_s4d2_wake"] = true
@@ -654,6 +683,27 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 
 	select {
 	case <-done:
+		// Verify true database revocation after the Chrome password/administration
+		// sequence. Do not confuse a hidden React view with revoked server tokens.
+		if cookieHTTPS {
+			var passwordOwner meta.User
+			if err := db.First(&passwordOwner, passwordOwnerID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if passwordOwner.SessionVersion < 3 || passwordOwner.MustChangePassword ||
+				auth.CheckPassword(passwordOwner.PasswordHash, "PwaCookieNew-TestOnly_2026!") != nil {
+				t.Fatal("Cookie E2E password rotation or admin SessionVersion revoke missing")
+			}
+			var active int64
+			if err := db.Model(&meta.RefreshToken{}).
+				Where("user_id = ? AND revoked_at IS NULL", passwordOwnerID).
+				Count(&active).Error; err != nil {
+				t.Fatal(err)
+			}
+			if active != 0 {
+				t.Fatal("Cookie E2E admin revoke left live refresh credentials")
+			}
+		}
 		// Browser tests cannot mutate/cross owners; recheck production data.
 		ownerRead := requestNode(t, router, http.MethodGet,
 			fmt.Sprintf("/api/v1/nodes/%d", folder.ID), ownerToken, nil, http.StatusOK)
