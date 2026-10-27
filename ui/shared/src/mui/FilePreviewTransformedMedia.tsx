@@ -157,6 +157,8 @@ export function XDriveTransformedVideoPreview({
   onReady,
   onWaiting,
   onBufferChange,
+  onSeeking,
+  onSeeked,
   onError,
 }: {
   src: string
@@ -165,6 +167,8 @@ export function XDriveTransformedVideoPreview({
   onReady?: () => void
   onWaiting?: () => void
   onBufferChange?: (event: SyntheticEvent<HTMLVideoElement>) => void
+  onSeeking?: (event: SyntheticEvent<HTMLVideoElement>) => void
+  onSeeked?: (event: SyntheticEvent<HTMLVideoElement>) => void
   onError?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -226,7 +230,14 @@ export function XDriveTransformedVideoPreview({
             video.currentTime = trimStart
           }
         }}
-        onSeeking={clampToWindow}
+        onSeeking={(event) => {
+          clampToWindow()
+          onSeeking?.(event)
+        }}
+        onSeeked={(event) => {
+          onBufferChange?.(event)
+          onSeeked?.(event)
+        }}
         onTimeUpdate={(event) => {
           onBufferChange?.(event)
           const video = videoRef.current

@@ -61,6 +61,62 @@ test('video busy state follows first frame and later buffering', async () => {
   }
 })
 
+test('native media seek uses the actual current buffer window and stays busy until decoded', async () => {
+  for (const scenario of [
+    { name: 'clip.mp4', kind: 'video', initialReady: 'onLoadedData' },
+    { name: 'track.mp3', kind: 'audio', initialReady: 'onLoadedMetadata' },
+  ]) {
+    const renderer = await mountMedia(scenario.name)
+    try {
+      const native = renderer.root.findByType(scenario.kind)
+      const current = ({ at, readyState, range }) => ({
+        currentTarget: {
+          currentTime: at,
+          duration: 150,
+          readyState,
+          buffered: {
+            length: range ? 1 : 0,
+            start: () => range[0],
+            end: () => range[1],
+          },
+        },
+      })
+      await act(async () => native.props[scenario.initialReady]())
+      assert.equal(root(renderer, scenario.kind).props['aria-busy'], undefined)
+      await act(async () => native.props.onSeeking(current({
+        at: 82, readyState: 1, range: null,
+      })))
+      assert.equal(root(renderer, scenario.kind).props['aria-busy'], true,
+        'native Seek must suspend ready state immediately, even before Waiting')
+      let labels = renderer.root.findAll(n =>
+        n.props?.['data-xdrive-media-loading-stage'] === 'buffering')
+        .map(n => n.props['aria-label'])
+      assert.ok(labels.includes('正在缓冲…'),
+        'a seek into an unbuffered region must not claim 00:00 has been received')
+      await act(async () => native.props.onSeeked(current({
+        at: 82, readyState: 1, range: null,
+      })))
+      assert.equal(root(renderer, scenario.kind).props['aria-busy'], true,
+        'seeked without HAVE_CURRENT_DATA is not a presented frame')
+      await act(async () => native.props.onProgress(current({
+        at: 82, readyState: 2, range: [75, 88],
+      })))
+      labels = renderer.root.findAll(n =>
+        n.props?.['data-xdrive-media-loading-stage'] === 'buffering')
+        .map(n => n.props['aria-label'])
+      assert.ok(labels.includes('缓冲 01:15–01:28 / 02:30'),
+        'report only the native buffered TimeRange containing the requested position')
+      await act(async () => native.props.onSeeked(current({
+        at: 82, readyState: 2, range: [75, 88],
+      })))
+      assert.equal(root(renderer, scenario.kind).props['aria-busy'], undefined,
+        'a paused seek with decoded current data can finish without Playing')
+    } finally {
+      await act(async () => renderer.unmount())
+    }
+  }
+})
+
 test('audio and PDF stay busy until their renderer is ready and use shared fallback', async () => {
   for (const scenario of [
     { name: 'track.mp3', kind: 'audio', host: 'audio', ready: 'onLoadedMetadata' },
@@ -96,6 +152,21 @@ test('transformed video forwards ready and waiting events', async () => {
     assert.equal(root(renderer, 'video').props['aria-busy'], undefined)
     await act(async () => video.props.onWaiting())
     assert.equal(root(renderer, 'video').props['aria-busy'], true)
+    await act(async () => video.props.onCanPlay())
+    assert.equal(root(renderer, 'video').props['aria-busy'], undefined)
+    // Keep the existing edited trim/rotation and native player; Seeking must
+    // use that element's own actual TimeRanges, never the original Node size.
+    const changed = { currentTarget: {
+      currentTime: 16, duration: 90, readyState: 1,
+      buffered: { length: 0, start: () => 0, end: () => 0 },
+    } }
+    await act(async () => video.props.onSeeking(changed))
+    assert.equal(root(renderer, 'video').props['aria-busy'], true)
+    await act(async () => video.props.onSeeked(changed))
+    assert.equal(root(renderer, 'video').props['aria-busy'], true)
+    changed.currentTarget.readyState = 2
+    await act(async () => video.props.onSeeked(changed))
+    assert.equal(root(renderer, 'video').props['aria-busy'], undefined)
   } finally {
     if (renderer) await act(async () => renderer.unmount())
   }
