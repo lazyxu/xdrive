@@ -292,6 +292,10 @@
         map.centerAndZoom(
           new sdk.Point(data.camera.longitude,data.camera.latitude),
           data.camera.zoom)
+        // Some SDK builds do not emit moveend after API-driven camera moves.
+        // A Viewer return or late BD-09 backfill still needs a fresh Owner
+        // Camera Range; share the native-event debounce to avoid duplicates.
+        scheduleViewport()
       } catch { send('map-failed') }
     }
   }

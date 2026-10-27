@@ -150,6 +150,45 @@ test('original Child VM applies only valid post-ready BD09 return camera',async(
   assert.equal(f.moves.length,before,'old generation cannot restore after disposal')
 })
 
+test('programmatic BD09 restore schedules an Owner viewport without SDK moveend',async()=>{
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),
+    kind:'map-session',ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.nativeEvents.has('moveend'),'map SDK listeners attached')
+  const count=kind=>f.sent.filter(event=>event.message.kind===kind).length
+  await waitForChild(()=>count('viewport')===1,'initial Owner viewport reported')
+  const priorViewport=count('viewport'), priorCamera=count('camera')
+  const priorCancel=count('cancel')
+  const camera={coordinate_space:'bd09ll',latitude:34.68,longitude:135.5,zoom:11}
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind:'restore-camera',camera})
+  assert.deepEqual(f.moves.at(-1),{
+    latitude:camera.latitude,longitude:camera.longitude,zoom:camera.zoom})
+  // The synthetic SDK intentionally emits NO moveend/zoomend for centerAndZoom.
+  assert.equal(count('viewport'),priorViewport,
+    'no Owner range request before the normal 500ms quiet period')
+  await waitForChild(()=>count('viewport')===priorViewport+1,
+    'one fresh bounded viewport must follow a silent programmatic restore')
+  assert.equal(count('camera'),priorCamera+1)
+  assert.equal(count('cancel'),priorCancel,
+    'a programmatic camera restore must not forge a user gesture')
+  const observed=f.sent.filter(event=>event.message.kind==='viewport').at(-1)
+  assert.equal(observed.message.bounds.coordinate_space,'bd09ll')
+  assert.deepEqual(Object.keys(observed.message.bounds).sort(),
+    ['coordinate_space','east','north','south','west'])
+  assert(!JSON.stringify(f.sent).includes('asset_id'),
+    'Child must not expose Owner photo IDs')
+  const priorDisposed=count('viewport')
+  f.events.get('pagehide')?.()
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind:'restore-camera',camera})
+  await new Promise(resolve=>setTimeout(resolve,550))
+  assert.equal(count('viewport'),priorDisposed,
+    'revoked Child cannot send late Owner viewport requests')
+})
+
 test('native zoomend/moveend coalesce into ONE viewport after 500ms; start cancels immediately',async()=>{
   const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
   f.sendObject(f.parent,'https://gallery.example.net',init)
