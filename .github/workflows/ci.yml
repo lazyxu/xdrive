@@ -2990,6 +2990,7 @@ jobs:
           python3 scripts/test-snapshot-release-notes.py
           python3 scripts/test-snapshot-publish-guards.py
           python3 scripts/test-snapshot-tag-preflight.py
+          python3 scripts/test-snapshot-app-token.py
           python3 scripts/test-snapshot-publish-runtime.py
           python3 scripts/test-github-release-archive-contract.py
           go test ./cmd/backuprepo -count=1
