@@ -935,23 +935,23 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
     await bootOriginalAuthenticatedApp(auditor,base)
     await switchActualApp(auditor,'文件','files')
     await switchActualApp(win,'图库','gallery')
-    // Reuse the already accepted real Owner JPEG -> H264 -> Back route.
-    // Its actual presented video frame and exact deep virtual-grid anchor
-    // establish a real visible H264 tile before the independent P1Q probe.
-    // Do NOT mutate fake DOM, jump directly to a Node, or start the Go
-    // logout stopwatch until the new signed request is in flight.
+    // The accepted real JPEG Viewer/Back path hydrates the same deep,
+    // authenticated Gallery virtual-grid and preserves its scroll anchor.
+    // Crucially DO NOT open H264 before enabling the independent Range probe:
+    // reopening the warmed video can reuse Chromium media resources, so a
+    // second signed HTTP 206 in-flight Range is not guaranteed. The first
+    // genuinely opened H264 Viewer must be the measured logout target.
     const warmJPEG=await p1MeasureRealViewerBack(win)
-    const warmH264=await p1MeasureRealH264ViewerMotion(win)
-    assert(warmJPEG.passed&&warmJPEG.returned.scrollDelta<=2&&
-      warmH264.passed&&warmH264.restoredScrollDelta<=2&&
-      warmH264.presentedFrameDelta>=1,
-      'P1Q cannot begin logout without real decoded JPEG/H264 Viewer Back')
+    assert(warmJPEG.passed&&warmJPEG.returned.sameDocument&&
+      warmJPEG.returned.sameHost&&warmJPEG.returned.sameGrid&&
+      warmJPEG.returned.scrollDelta<=2,
+      'P1Q cannot begin logout without real decoded JPEG Viewer Back')
     const enabled=await fetch(base+'/__perf/viewer-video-range-enable',{method:'POST'})
     assert.equal(enabled.status,204,'P1Q original Go signed Range probe disabled')
     const zero=await p1ViewerVideoProbeStats(base)
     assert.equal(zero.started,0,'signed Range measurement must start at zero')
-    // Keep the exact H264 tile restored by the genuine warm H264 Viewer
-    // Back; resetting the scroll to the very end would discard that anchor.
+    // Keep the original deep JPEG Viewer Back anchor. A genuine unvisited
+    // H264 tile is selected from the same actual mounted virtualized Grid.
     const tile=await until(async()=>win.webContents.executeJavaScript(
       '('+p1VisibleH264Tile.toString()+')()',true),
       25000,'real Owner deep H264 photo wall tile missing')

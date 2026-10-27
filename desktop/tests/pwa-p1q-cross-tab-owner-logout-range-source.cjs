@@ -14,7 +14,9 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     "await switchActualApp(auditor,'文件','files')",
     "await switchActualApp(win,'图库','gallery')",
     'const warmJPEG=await p1MeasureRealViewerBack(win)',
-    'const warmH264=await p1MeasureRealH264ViewerMotion(win)',
+    'warmJPEG.returned.sameGrid',
+    'The first',
+    'genuinely opened H264 Viewer',
     "visibleButtonCenter(auditor,'打开应用导航')",
     "second window mounted real account navigation drawer",
     'p1OriginalSignedVideoElement.toString()',
@@ -30,10 +32,10 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
   const p1q=d.slice(p1qStart,p1qEnd)
   assert.ok(p1qStart>0&&p1qEnd>p1qStart)
   assert.ok(p1q.indexOf('const warmJPEG=await p1MeasureRealViewerBack(win)') <
-    p1q.indexOf('const warmH264=await p1MeasureRealH264ViewerMotion(win)'))
-  assert.ok(p1q.indexOf('const warmH264=await p1MeasureRealH264ViewerMotion(win)') <
     p1q.indexOf("await fetch(base+'/__perf/viewer-video-range-enable'"),
-    'genuine deep JPEG/H264 frame and return anchor must precede the Go Range probe')
+    'genuine JPEG Viewer Back must hydrate the deep Gallery before Range probe')
+  assert.doesNotMatch(p1q,/p1MeasureRealH264ViewerMotion\(win\)/,
+    'never warm the video original before measuring the real signed Range')
   assert.doesNotMatch(p1q,/p1RestoreDeepVideoViewport\.toString\(\)/,
     'P1Q must not discard the real H264 Viewer Back scroll anchor')
   assert.match(d,/p1QAccountButtonPoint\.toString\(\)/)
