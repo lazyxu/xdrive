@@ -137,10 +137,32 @@ jobs:
             pids+=("$!")
           done
 
-          status=0
+          failed=()
           for i in "${!pids[@]}"; do
             if ! wait "${pids[$i]}"; then
-              echo "failed to push ${names[$i]}:$remote_tag" >&2
+              failed+=("$i")
+            fi
+          done
+
+          # GHCR sometimes reports "unknown blob" for a parallel manifest
+          # publish while other images in this exact batch succeed. Retry
+          # ONLY failed images, serially and with bounded backoff, preserving
+          # the original CI-built local image and immutable SHA tag.
+          # Persistent registry errors still fail the release gate.
+          status=0
+          for i in "${failed[@]}"; do
+            remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$i]}:$remote_tag"
+            pushed=0
+            for retry in 1 2; do
+              echo "[xDrive] Retrying exact GHCR image ${names[$i]} ($retry/2)" >&2
+              sleep "$((retry * 4))"
+              if docker push "$remote"; then
+                pushed=1
+                break
+              fi
+            done
+            if [[ "$pushed" != "1" ]]; then
+              echo "failed to push ${names[$i]}:$remote_tag after bounded retries" >&2
               status=1
             fi
           done
