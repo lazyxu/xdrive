@@ -207,9 +207,20 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
   bash "$DOCTOR" >"$TMP/report-host-stale" 2>"$TMP/err-host-stale"
 grep -q 'Caddy Host producer.*snapshot=stale' "$TMP/report-host-stale"
 
+# Group mismatch stays WARN without proof, clears only with matching bind + live witness.
+host_group="$(stat -c %g "$TMP/home/state/control")"
+printf 'XD_SERVER_GID=%s\n' "$((host_group + 1))" >> "$TMP/home/config/.env"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-group-unverified" 2>"$TMP/err-group-unverified"
+grep -q '\[WARN\] Caddy bridge access.*reason=group-mismatch' "$TMP/report-group-unverified"
+
 XD_TEST_CADDY_WITNESS=observed TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report-caddy-observed" 2>"$TMP/err-caddy-observed"
 grep -q '\[PASS\] Caddy Host witness' "$TMP/report-caddy-observed"
+grep -q '\[PASS\] Caddy bridge access.*running Server verified fixed Host Control' "$TMP/report-caddy-observed"
+XD_TEST_CADDY_WITNESS=observed XD_TEST_CADDY_MOUNT=mismatch TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-group-wrong-mount" 2>"$TMP/err-group-wrong-mount"
+grep -q '\[WARN\] Caddy bridge access.*reason=group-mismatch' "$TMP/report-group-wrong-mount"
 grep -q 'fresh local HTTPS evidence' "$TMP/report-caddy-observed"
 
 XD_TEST_CADDY_WITNESS=leaked TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
@@ -250,59 +261,80 @@ done
 grep -q '<redacted>' "$TMP/report"
 
 
-# Execute only the exact installer ACL helper in a disposable fixture; the
-# function itself must never call Docker, Caddy, DNS or modify .env.
-mkdir -p "$TMP/acl/state/control"
-printf 'alive\n' > "$TMP/acl/state/control/heartbeat"
-printf 'fake\n' > "$TMP/acl/state/control/caddy-runtime-status.json"
-awk '/^prepare_caddy_host_bridge_access\(\) \{/{copy=1}copy{print}copy&&/^}/{exit}' \
+# Exercise fixed Host Control group repair without mutating test-host ownership.
+mkdir -p "$TMP/group/state/control"
+printf 'alive\n' > "$TMP/group/state/control/heartbeat"
+printf 'fake\n' > "$TMP/group/state/control/caddy-runtime-status.json"
+printf 'fake\n' > "$TMP/group/state/control/caddy-env-observed.json"
+awk '/^prepare_caddy_host_bridge_group_access\(\) \{/{copy=1}copy{print}copy&&/^}/{exit}' \
   "$ROOT/deploy/install-server.sh" > "$TMP/caddy-bridge-function.sh"
 test -s "$TMP/caddy-bridge-function.sh"
 (
   source "$TMP/caddy-bridge-function.sh"
-  STATE_DIR="$TMP/acl/state"
-  SERVER_UID=65532
+  STATE_DIR="$TMP/group/state"
   SERVER_GID=65532
   DOCKER_MODE=rootful
   docker_security_options='[]'
-  export XD_TEST_ACL_LOG="$TMP/state/acls"
-  setfacl() { printf '%s\n' "$*" >> "$XD_TEST_ACL_LOG"; }
+  GROUP_LOG="$TMP/state/chgrp-log"
+  : > "$GROUP_LOG"
+  ACTOR_UID=0
+  DIR_GID_MATCH=0
+  id() {
+    if [[ "${1:-}" == -u ]]; then printf '%s\n' "$ACTOR_UID"
+    else command id "$@"; fi
+  }
   stat() {
-    if [[ "$*" == *'%g'* ]]; then echo 1000
-    elif [[ "$*" == *'%u'* ]]; then id -u
+    if [[ "${1:-}" == -c && "${2:-}" == '%g' ]]; then
+      if { [[ "${@: -1}" == "$STATE_DIR/control" && "$DIR_GID_MATCH" == 1 ]]; } ||
+          grep -Fxq "${@: -1}" "$GROUP_LOG"; then
+        echo "$SERVER_GID"
+      else echo 1000; fi
+    elif [[ "${1:-}" == -c && "${2:-}" == '%a' ]]; then echo 660
     else command stat "$@"; fi
   }
-  prepare_caddy_host_bridge_access >/dev/null
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
-  grep -Fq 'u:65532:rwx,d:u:65532:rwx' "$XD_TEST_ACL_LOG"
-  grep -Fq 'u:65532:rw-' "$XD_TEST_ACL_LOG"
+  chgrp() {
+    [[ "$#" == 4 && "$1" == -h && "$2" == "$SERVER_GID" && "$3" == -- ]] || return 2
+    printf '%s\n' "$4" >> "$GROUP_LOG"
+  }
+  prepare_caddy_host_bridge_group_access > "$TMP/state/root-group-success"
+  test "$(wc -l < "$GROUP_LOG")" -eq 4
+  for target in "$STATE_DIR/control" "$STATE_DIR/control/heartbeat" "$STATE_DIR/control/caddy-runtime-status.json" "$STATE_DIR/control/caddy-env-observed.json"; do
+    grep -Fxq "$target" "$GROUP_LOG"
+  done
+  grep -q 'standard Unix permissions' "$TMP/state/root-group-success"
+
+  : > "$GROUP_LOG"
+  ACTOR_UID=1000
+  prepare_caddy_host_bridge_group_access >/dev/null 2> "$TMP/state/unprivileged.err"
+  test ! -s "$GROUP_LOG"
+  grep -q 'one-time root group/mode repair' "$TMP/state/unprivileged.err"
+
+  ACTOR_UID=0
   DOCKER_MODE=rootless
-  prepare_caddy_host_bridge_access >/dev/null 2>&1
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  prepare_caddy_host_bridge_group_access >/dev/null 2>&1
+  test ! -s "$GROUP_LOG"
   DOCKER_MODE=rootful
-  docker_security_options='["name=userns"]'
-  prepare_caddy_host_bridge_access >/dev/null 2>&1
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
-  docker_security_options=''
-  prepare_caddy_host_bridge_access >/dev/null 2>&1
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
-  docker_security_options='null'
-  prepare_caddy_host_bridge_access >/dev/null 2>&1
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
-  docker_security_options='[malformed]'
-  prepare_caddy_host_bridge_access >/dev/null 2>&1
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 3
+  for sec in '["name=userns"]' '' null '[malformed]'; do
+    docker_security_options="$sec"
+    prepare_caddy_host_bridge_group_access >/dev/null 2>&1
+    test ! -s "$GROUP_LOG"
+  done
+
+  # Directory group matches; only pre-existing fixed observations need repair.
   docker_security_options='["name=seccomp,profile=builtin","name=cgroupns"]'
-  prepare_caddy_host_bridge_access >/dev/null
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 6
-  docker_security_options='[]'
-  stat() {
-    if [[ "$*" == *'%g'* ]]; then echo 65532
-    elif [[ "$*" == *'%u'* ]]; then id -u
-    else command stat "$@"; fi
-  }
-  prepare_caddy_host_bridge_access >/dev/null
-  test "$(wc -l < "$XD_TEST_ACL_LOG")" -eq 6
+  DIR_GID_MATCH=1
+  prepare_caddy_host_bridge_group_access >/dev/null
+  test "$(wc -l < "$GROUP_LOG")" -eq 3
+  ! grep -Fxq "$STATE_DIR/control" "$GROUP_LOG"
+
+  : > "$GROUP_LOG"
+  mv "$STATE_DIR/control/caddy-env-observed.json" "$STATE_DIR/control/caddy-env-observed.json.saved"
+  ln -s "$TMP/state/outside" "$STATE_DIR/control/caddy-env-observed.json"
+  prepare_caddy_host_bridge_group_access >/dev/null 2>"$TMP/state/symlink.err"
+  test ! -s "$GROUP_LOG"
+  grep -q 'unexpected Host Control observation file type' "$TMP/state/symlink.err"
 )
 
+# No shell runtime references to external filesystem ACL binaries.
+! grep -Eq 'setfacl|getfacl' "$ROOT/deploy/install-server.sh" "$ROOT/scripts/server-doctor.sh"
 echo "server doctor tests passed"
