@@ -227,6 +227,8 @@ export type AgentTransfer = {
   relative_path?: string
   cloud_parent_id?: number
   cloud_node_id?: number
+  /** Exact Agent-issued download task correlation for one Desktop Viewer. */
+  client_request_id?: string
   local_revealable?: boolean
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
   direction: 'upload' | 'download' | 'local' | string
@@ -4509,6 +4511,15 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/download', {
       id,
       destination,
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  /** Opt-in exact Task Center correlation. Old cloudDownload callers stay byte-for-byte unchanged. */
+  cloudDownloadWithClientRequestID(id: number, destination: string, clientRequestID: string) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/download', {
+      id,
+      destination,
+      client_request_id: clientRequestID,
     }, 6 * 60 * 60 * 1000)
   }
 

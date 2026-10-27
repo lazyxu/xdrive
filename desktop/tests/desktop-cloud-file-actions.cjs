@@ -45,7 +45,10 @@ test('Desktop renderer never chooses or receives raw local paths for cloud trans
   assert.ok(main.includes("ipcMain.handle('agent:cloud-upload-files'"), 'main process upload orchestration is missing')
   assert.ok(main.includes("ipcMain.handle('agent:cloud-download'"), 'main process download orchestration is missing')
   assert.ok(preload.includes("cloudUploadFiles: (parentID: number) =>"), 'renderer upload API should accept only the cloud parent id')
-  assert.ok(preload.includes("cloudDownload: (id: number, name: string) =>"), 'renderer download API should expose only cloud identity/name')
+  assert.ok(preload.includes("cloudDownload: (id: number, name: string, clientRequestID?: string) =>"),
+    'renderer download API must accept only cloud identity/name and an opaque optional correlation')
+  assert.ok(types.includes("cloudDownload: (id: number, name: string, clientRequestID?: string)"),
+    'renderer type must expose the same path-free optional correlation contract')
   assert.equal(preload.includes('cloudUpload: (parentID: number, localPath'), false, 'renderer must not provide arbitrary upload paths')
   assert.equal(preload.includes('cloudDownload: (id: number, destination'), false, 'renderer must not provide arbitrary download destinations')
 })

@@ -39,7 +39,10 @@ test('Desktop Agent records cloud location IDs and Desktop resolves via authenti
   assert.match(model, /CloudParentID\s+uint64\s+`json:"cloud_parent_id,omitempty"`/)
   assert.match(model, /CloudNodeID\s+uint64\s+`json:"cloud_node_id,omitempty"`/)
   assert.match(agent, /agentCloudTransferLocation\{ParentID: parentID\}/)
-  assert.match(agent, /agentCloudTransferLocation\{NodeID: id\}/)
+  assert.match(agent, /agentCloudTransferLocation\{NodeID: id, ClientRequestID: clientRequestID\}/,
+    'exact Node identity must remain, with only a validated optional Viewer correlation')
+  assert.match(model, /ClientRequestID\s+string\s+`json:"client_request_id,omitempty"`/,
+    'correlation remains an opaque transfer receipt, never a local path')
   assert.match(desktop, /window\.xdriveDesktop\.agent\.getNodeLocation\(locatorID\)/)
   assert.match(desktop, /revealCloudNodeInDirectory\(dir, nodeID, ancestry\)/)
   assert.match(desktop, /await loadCloudDirectory\(parentID, ancestry\)/)
