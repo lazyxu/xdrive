@@ -163,7 +163,6 @@ export type DesktopFileExplorerHostPort = {
   readonly requestViewport: typeof xDriveDesktopViewportRequest
   readonly leasePreviewURL: typeof xDriveLeaseDesktopPreviewURL
   readonly releaseDiscardedPreviewURL: typeof xDriveReleaseDiscardedDesktopPreviewURL
-  readonly agent: DesktopFileExplorerAgentPort
   readonly native: Pick<Window['xdriveDesktop'], 'copyText' | 'startNativeDragOut'>
 }
 
@@ -304,7 +303,6 @@ export function createDesktopFileExplorerHostPort(): DesktopFileExplorerHostPort
     requestViewport: xDriveDesktopViewportRequest,
     leasePreviewURL: xDriveLeaseDesktopPreviewURL,
     releaseDiscardedPreviewURL: xDriveReleaseDiscardedDesktopPreviewURL,
-    agent: files,
     native: Object.freeze({
       copyText: desktop.copyText,
       startNativeDragOut: desktop.startNativeDragOut,

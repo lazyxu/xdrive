@@ -284,7 +284,7 @@ export default function DesktopFileExplorer({
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
-  const ownerAgent = hostPort.agent
+  // Explicit Owner browse, media and write capability groups.
   const nativePort = hostPort.native
   const [createOpen, setCreateOpen] = useState(false)
   const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
@@ -356,7 +356,7 @@ export default function DesktopFileExplorer({
   useEffect(() => {
     let active = true
     setSearchSourceOptions([])
-    void ownerAgent.getSources().then((result) => {
+    void hostPort.browse.getSources().then((result) => {
       if (active && result.ok) {
         setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
       }
@@ -389,17 +389,17 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: recentSupported,
     loadItems: async () => {
-      const result = await ownerAgent.cloudFileRecent(16)
+      const result = await hostPort.browse.cloudFileRecent(16)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     touchItem: async (nodeID) => {
-      const result = await ownerAgent.cloudTouchFileRecent(nodeID)
+      const result = await hostPort.write.cloudTouchFileRecent(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     clearItems: async () => {
-      const result = await ownerAgent.cloudClearFileRecent()
+      const result = await hostPort.write.cloudClearFileRecent()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -480,7 +480,7 @@ export default function DesktopFileExplorer({
     navigationSessionStorageKey,
     onNavigationStateChange,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
-      const result = await ownerAgent.cloudSearchRange(
+      const result = await hostPort.browse.cloudSearchRange(
         query,
         offset,
         limit,
@@ -499,12 +499,12 @@ export default function DesktopFileExplorer({
       }
     },
     loadRoot: async () => {
-      const result = await ownerAgent.cloudRoot()
+      const result = await hostPort.browse.cloudRoot()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     findChildDirectory: async (parentID, name) => {
-      const result = await ownerAgent.cloudChildrenPage(
+      const result = await hostPort.browse.cloudChildrenPage(
         parentID,
         xDriveFileExplorerPathLookupPageOptions(name),
       )
@@ -524,7 +524,7 @@ export default function DesktopFileExplorer({
       parentID,
       cursor,
       loadPage: async (id, options) => {
-        const result = await ownerAgent.cloudChildrenPage(id, options)
+        const result = await hostPort.browse.cloudChildrenPage(id, options)
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
@@ -536,22 +536,22 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: quickAccessSupported,
     loadItems: async () => {
-      const result = await ownerAgent.cloudFileQuickAccess()
+      const result = await hostPort.browse.cloudFileQuickAccess()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     pinItem: async (nodeID) => {
-      const result = await ownerAgent.cloudPinFileQuickAccess(nodeID)
+      const result = await hostPort.write.cloudPinFileQuickAccess(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     unpinItem: async (nodeID) => {
-      const result = await ownerAgent.cloudUnpinFileQuickAccess(nodeID)
+      const result = await hostPort.write.cloudUnpinFileQuickAccess(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     reorderItems: async (nodeIDs) => {
-      const result = await ownerAgent.cloudReorderFileQuickAccess(nodeIDs)
+      const result = await hostPort.write.cloudReorderFileQuickAccess(nodeIDs)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -560,62 +560,62 @@ export default function DesktopFileExplorer({
 
   const organizationAdapter = useMemo(() => ({
     listTags: async () => {
-      const result = await ownerAgent.cloudFileTags()
+      const result = await hostPort.browse.cloudFileTags()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     createTag: async (name: string, color: string) => {
-      const result = await ownerAgent.cloudCreateFileTag(name, color)
+      const result = await hostPort.write.cloudCreateFileTag(name, color)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     updateTag: async (id: number, input: { name?: string; color?: string }) => {
-      const result = await ownerAgent.cloudUpdateFileTag(id, input)
+      const result = await hostPort.write.cloudUpdateFileTag(id, input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     deleteTag: async (id: number) => {
-      const result = await ownerAgent.cloudDeleteFileTag(id)
+      const result = await hostPort.write.cloudDeleteFileTag(id)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     queryNodeTags: async (nodeIDs: number[]) => {
-      const result = await ownerAgent.cloudQueryFileNodeTags(nodeIDs)
+      const result = await hostPort.browse.cloudQueryFileNodeTags(nodeIDs)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     addTagNodes: async (tagID: number, nodeIDs: number[]) => {
-      const result = await ownerAgent.cloudSetFileTagNodes(tagID, nodeIDs, true)
+      const result = await hostPort.write.cloudSetFileTagNodes(tagID, nodeIDs, true)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     removeTagNodes: async (tagID: number, nodeIDs: number[]) => {
-      const result = await ownerAgent.cloudSetFileTagNodes(tagID, nodeIDs, false)
+      const result = await hostPort.write.cloudSetFileTagNodes(tagID, nodeIDs, false)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     listSavedSearches: async () => {
-      const result = await ownerAgent.cloudFileSavedSearches()
+      const result = await hostPort.browse.cloudFileSavedSearches()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     createSavedSearch: async (input: AgentFileSavedSearchInput) => {
-      const result = await ownerAgent.cloudCreateFileSavedSearch(input)
+      const result = await hostPort.write.cloudCreateFileSavedSearch(input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     updateSavedSearch: async (id: number, input: AgentFileSavedSearchInput) => {
-      const result = await ownerAgent.cloudUpdateFileSavedSearch(id, input)
+      const result = await hostPort.write.cloudUpdateFileSavedSearch(id, input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     deleteSavedSearch: async (id: number) => {
-      const result = await ownerAgent.cloudDeleteFileSavedSearch(id)
+      const result = await hostPort.write.cloudDeleteFileSavedSearch(id)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     reorderSavedSearches: async (ids: number[]) => {
-      const result = await ownerAgent.cloudReorderFileSavedSearches(ids)
+      const result = await hostPort.write.cloudReorderFileSavedSearches(ids)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -650,7 +650,7 @@ export default function DesktopFileExplorer({
     cursor: string,
     _signal: AbortSignal,
   ) => {
-    const result = await ownerAgent.cloudChildrenPage(Number(parentID), {
+    const result = await hostPort.browse.cloudChildrenPage(Number(parentID), {
       cursor: cursor || undefined,
       limit: 200,
       sort: 'name',
@@ -667,17 +667,17 @@ export default function DesktopFileExplorer({
     lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: favoritesSupported,
     loadItems: async () => {
-      const result = await ownerAgent.cloudFileFavorites()
+      const result = await hostPort.browse.cloudFileFavorites()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     favoriteItem: async (nodeID) => {
-      const result = await ownerAgent.cloudFavoriteFile(nodeID)
+      const result = await hostPort.write.cloudFavoriteFile(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     unfavoriteItem: async (nodeID) => {
-      const result = await ownerAgent.cloudUnfavoriteFile(nodeID)
+      const result = await hostPort.write.cloudUnfavoriteFile(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -700,14 +700,14 @@ export default function DesktopFileExplorer({
     fileName: (file) => file.name,
     fileSize: (file) => file.size,
     preflight: async (parentID, file, _signal, groupID) => {
-      const result = await ownerAgent.cloudUploadPreflight(
+      const result = await hostPort.write.cloudUploadPreflight(
         parentID, file.name, transferGroupUploadCancelSupported ? groupID : undefined,
       )
       if (!result.ok) throwDesktopUploadError(result.error)
       return result.data
     },
     preflightBatch: async (targets, _signal, groupID) => {
-      const result = await ownerAgent.cloudUploadPreflightBatch(
+      const result = await hostPort.write.cloudUploadPreflightBatch(
         targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
         transferGroupUploadCancelSupported ? groupID : undefined,
       )
@@ -715,7 +715,7 @@ export default function DesktopFileExplorer({
       return result.data
     },
     upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
-      const result = await ownerAgent.cloudUploadFile(
+      const result = await hostPort.write.cloudUploadFile(
         parentID,
         file,
         conflictPolicy,
@@ -730,7 +730,7 @@ export default function DesktopFileExplorer({
           (task.state === 'cancelling' || task.state === 'cancelled'))
         : undefined,
       startGroup: async (input) => {
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'start_group',
           file_name: input.fileName,
           path: input.path,
@@ -743,7 +743,7 @@ export default function DesktopFileExplorer({
         return result.data.id
       },
       startChild: async (groupID, input) => {
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'start_child',
           parent_id: groupID,
           file_name: input.fileName,
@@ -767,7 +767,7 @@ export default function DesktopFileExplorer({
             start,
             start + desktopTransferLifecycleChildBatchSize,
           )
-          const result = await ownerAgent.transferLifecycle({
+          const result = await hostPort.write.transferLifecycle({
             action: 'start_children',
             parent_id: groupID,
             children: batch.map((input) => ({
@@ -791,7 +791,7 @@ export default function DesktopFileExplorer({
       } : undefined,
       begin: async (id, input) => {
         const group = input?.group
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'begin',
           id,
           ...(group ? {
@@ -808,7 +808,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       progress: async (id, done, total) => {
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'progress',
           id,
           bytes_done: done,
@@ -817,7 +817,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       updateGroup: async (id, group) => {
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'update_group',
           id,
           scan_complete: group.scanComplete,
@@ -832,7 +832,7 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
       },
       finish: async (id, input) => {
-        const result = await ownerAgent.transferLifecycle({
+        const result = await hostPort.write.transferLifecycle({
           action: 'finish',
           id,
           state: input.state,
@@ -868,7 +868,7 @@ export default function DesktopFileExplorer({
     canPaste,
     clearSearch,
     submitOperation: async (plan) => {
-      const result = await ownerAgent.cloudCreateFileOperation(
+      const result = await hostPort.write.cloudCreateFileOperation(
         plan.operation,
         plan.items,
         plan.parentID,
@@ -932,7 +932,7 @@ export default function DesktopFileExplorer({
     // Inspector/Quick Look close, navigation or Owner session replacement.
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => ownerAgent.cloudTextPreview(Number(item.id), requestID),
+      (requestID) => hostPort.media.cloudTextPreview(Number(item.id), requestID),
     )
     return result.ok ? result.data : null
   }, [textPreviewSupported])
@@ -947,7 +947,7 @@ export default function DesktopFileExplorer({
     const requestID = nextDesktopFilePropertiesRequestID()
     const refs = xDriveFileExplorerPropertiesRefs(selected)
     const cancel = () => {
-      void ownerAgent.cloudCancelFilePropertiesStats(requestID)
+      void hostPort.media.cloudCancelFilePropertiesStats(requestID)
     }
     if (signal.aborted) {
       cancel()
@@ -955,7 +955,7 @@ export default function DesktopFileExplorer({
     }
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await ownerAgent.cloudFilePropertiesStats(
+      const result = await hostPort.media.cloudFilePropertiesStats(
         refs,
         requestID,
       )
@@ -974,7 +974,7 @@ export default function DesktopFileExplorer({
     signal: AbortSignal,
   ) => {
     if (!mediaDetailsSupported || signal.aborted) return []
-    const result = await ownerAgent.cloudFileMediaDetails([...refs])
+    const result = await hostPort.media.cloudFileMediaDetails([...refs])
     if (signal.aborted) return []
     if (!result.ok) throw new Error(result.error.message)
     return result.data
@@ -987,12 +987,12 @@ export default function DesktopFileExplorer({
     if (!mediaPropertiesSupported || item.kind !== 'file') return null
     const requestID = nextDesktopFilePropertiesRequestID()
     const cancel = () => {
-      void ownerAgent.cancelMediaItem(requestID)
+      void hostPort.media.cancelMediaItem(requestID)
     }
     if (signal.aborted) return null
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await ownerAgent.getMediaItem(Number(item.id), requestID)
+      const result = await hostPort.media.getMediaItem(Number(item.id), requestID)
       if (signal.aborted) return null
       if (!result.ok) throw new Error(result.error.message)
       return result.data
@@ -1005,7 +1005,7 @@ export default function DesktopFileExplorer({
     if (!nodeLocationSupported) throw new Error('当前 Agent 不支持文件位置查询，请更新客户端核心组件。')
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => ownerAgent.getNodeLocation(nodeID, requestID),
+      (requestID) => hostPort.browse.getNodeLocation(nodeID, requestID),
     )
     if (!result.ok) throw new Error(result.error.message)
     return result.data
@@ -1022,7 +1022,7 @@ export default function DesktopFileExplorer({
       try {
         const result = await hostPort.requestViewport(
           signal,
-          (requestID) => ownerAgent.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
+          (requestID) => hostPort.media.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1033,7 +1033,7 @@ export default function DesktopFileExplorer({
         return null
       }
     }
-    const agent = ownerAgent
+    const agent = hostPort.media
     const discardLate = (late: { ok: boolean; data?: string }) => {
       if (late.ok && typeof late.data === 'string') {
         hostPort.releaseDiscardedPreviewURL(late.data,
@@ -1070,7 +1070,7 @@ export default function DesktopFileExplorer({
 
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => ownerAgent.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
+      (requestID) => hostPort.media.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
     )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
@@ -1081,7 +1081,7 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
     onStage?.('video_read')
 
-    const agent = ownerAgent
+    const agent = hostPort.media
     const preview = await hostPort.requestViewport(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
@@ -1126,7 +1126,7 @@ export default function DesktopFileExplorer({
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
     const lifecycleGeneration = actionGenerationRef.current
-    const agent = ownerAgent
+    const agent = hostPort.media
     const fetchMotion = async (requestID?: string) => {
       const result = await agent.getMediaLivePhotoMotion(Number(item.id), onProgress, requestID)
       if (signal?.aborted && result.ok) {
@@ -1290,7 +1290,7 @@ export default function DesktopFileExplorer({
         const items: AgentFileAvailabilityBatchItem[] = []
         for (let offset = 0; offset < paths.length; offset += desktopFileAvailabilityBatchLimit) {
           const batchPaths = paths.slice(offset, offset + desktopFileAvailabilityBatchLimit)
-          const result = await ownerAgent.getFileAvailabilityBatch(batchPaths)
+          const result = await hostPort.browse.getFileAvailabilityBatch(batchPaths)
           if (cancelled || requestID !== availabilityRequestRef.current) return
           if (!result.ok) {
             rejectProbe(result.error.code)
@@ -1397,7 +1397,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`availability-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await ownerAgent.setFileAvailability(
+      const result = await hostPort.write.setFileAvailability(
         relativePath,
         action,
       )
@@ -1444,7 +1444,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`${reveal ? 'reveal' : 'open'}-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await ownerAgent.openPath(relativePath, reveal)
+      const result = await hostPort.write.openPath(relativePath, reveal)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1463,7 +1463,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`open-with-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await ownerAgent.openWith(relativePath)
+      const result = await hostPort.write.openWith(relativePath)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1477,7 +1477,7 @@ export default function DesktopFileExplorer({
     const busyToken = beginActionBusy(`download-${node.id}`)
     if (!busyToken) return
     try {
-      const result = await ownerAgent.cloudDownload(node.id, node.name)
+      const result = await hostPort.write.cloudDownload(node.id, node.name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1543,12 +1543,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
       parentID,
       name,
       createDirectory: async (id, directoryName) => {
-        const result = await ownerAgent.cloudCreateDirectory(id, directoryName)
+        const result = await hostPort.write.cloudCreateDirectory(id, directoryName)
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
       findExistingDirectory: async (id, directoryName) => {
-        const result = await ownerAgent.cloudChildrenPage(
+        const result = await hostPort.browse.cloudChildrenPage(
           id,
           xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName),
         )
@@ -1600,7 +1600,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('upload')
     if (!busyToken) return
     try {
-      const result = await ownerAgent.cloudUploadFiles(expectedCurrentID)
+      const result = await hostPort.write.cloudUploadFiles(expectedCurrentID)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1645,7 +1645,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('create-folder')
     if (!busyToken) return
     try {
-      const result = await ownerAgent.cloudCreateDirectory(expectedCurrentID, name)
+      const result = await hostPort.write.cloudCreateDirectory(expectedCurrentID, name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
@@ -1705,7 +1705,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const busyToken = beginActionBusy('rename-' + node.id)
     if (!busyToken) throw new Error('当前有文件操作正在进行，请稍后重试。')
     try {
-      const result = await ownerAgent.cloudRename(node.id, node.revision, name)
+      const result = await hostPort.write.cloudRename(node.id, node.revision, name)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       clearSearch()
@@ -1844,7 +1844,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       if (!busyToken) return
       const reportDownloadResult = onDownloadStart?.()
       try {
-        const result = await ownerAgent.cloudDownloadFolder(
+        const result = await hostPort.write.cloudDownloadFolder(
           folder.id,
           folder.parent_id,
         )
@@ -1881,7 +1881,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       const busyToken = beginActionBusy('download-archive')
       if (!busyToken) return
       try {
-        const result = await ownerAgent.cloudDownloadArchive(archivePlan.ids)
+        const result = await hostPort.write.cloudDownloadArchive(archivePlan.ids)
         if (!isActionBusyCurrent(busyToken)) return
         if (!result.ok) {
           onError(result.error.message)
@@ -1902,7 +1902,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     if (!busyToken) return
     const reportDownloadResult = onDownloadStart?.()
     try {
-      const result = await ownerAgent.cloudDownloadFiles(plan.items)
+      const result = await hostPort.write.cloudDownloadFiles(plan.items)
       if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
@@ -1952,7 +1952,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       const busyToken = beginActionBusy('drop-upload')
       if (!busyToken) return false
       try {
-        const result = await ownerAgent.cloudUploadDroppedFiles(parentID, files)
+        const result = await hostPort.write.cloudUploadDroppedFiles(parentID, files)
         if (!isActionBusyCurrent(busyToken)) return false
         if (!result.ok) {
           onError(result.error.message)
@@ -2081,7 +2081,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         locateCurrentChild={childPositionSupported && !trashActive && searchState.results === null
           ? async (parentID, nodeID, targetSort, targetGrouping, signal) => {
               const result = await hostPort.requestViewport(signal, (requestID) =>
-                ownerAgent.cloudChildPosition(
+                hostPort.browse.cloudChildPosition(
                   parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, requestID,
                 ),
               )
