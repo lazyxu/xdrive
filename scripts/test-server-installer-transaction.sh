@@ -269,7 +269,11 @@ case "$1" in
     count=$((count + 1))
     printf '%s\n' "$count" > "$count_file"
     mode="${TEST_PULL_MODE:-success}"
-    if [[ "$mode" == "permanent" || ( "$mode" == "caddy-permanent" && "$service" == "caddy" ) ||
+    if [[ "$mode" == "caddy-permanent" && "$service" == "caddy" ]]; then
+      echo 'failed to copy: Get "https://pkg-containers.githubusercontent.com/ghcrblobs02/blob?sig=never-print": net/http: TLS handshake timeout' >&2
+      exit 1
+    fi
+    if [[ "$mode" == "permanent" ||
         ( "$mode" == "transient" && "$service" == "postgres" && "$count" -lt 3 ) ]]; then
       echo "failed to copy: read tcp: connection reset by peer" >&2
       exit 1
@@ -437,6 +441,7 @@ grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
 grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
 grep -q 'pull postgres.*4.0 KiB / 4.0 KiB (100%)' "$TMP/upgrade.out"
+grep -q 'reported layer bytes complete; waiting for Docker image readiness' "$TMP/upgrade.out"
 # All target images must be pulled before stopping the old gateway.
 first_stop_line="$(grep -n '^stop xdrive-caddy' "$TMP/state/docker-calls" | head -n1 | cut -d: -f1)"
 [[ -n "$first_stop_line" ]]
@@ -780,6 +785,11 @@ set -e
 [[ "$caddy_preflight_status" -ne 0 ]]
 [[ "$(cat "$TMP/caddy-preflight-fail-state/pull-count-caddy")" == 3 ]]
 grep -q 'prefetch caddy failed; the old runtime has not been stopped' "$TMP/caddy-preflight-fail.err"
+grep -q 'Docker registry/CDN TLS handshake timed out' "$TMP/caddy-preflight-fail.err"
+if grep -q 'sig=never-print' "$TMP/caddy-preflight-fail.err"; then
+  echo "signed CDN query leaked into public installer error output" >&2
+  exit 1
+fi
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/caddy-preflight-fail.err"
 if grep -Eq '(^stop | up -d| --force-recreate)' "$TMP/caddy-preflight-fail-state/docker-calls"; then
   echo "Caddy CDN failure touched the existing runtime" >&2
