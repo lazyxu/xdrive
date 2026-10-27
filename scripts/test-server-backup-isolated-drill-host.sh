@@ -12,7 +12,7 @@ snapshot="$XD_CONFIG_DIR/backups/incremental/snapshots/xdrive-backup-20261027T12
 mkdir -p "$snapshot"
 printf 'db' > "$snapshot/database.dump"
 printf 'verify' > "$snapshot/verify.json"
-printf '{"format_version":2,"file_data_included":true}\n' > "$snapshot/manifest.json"
+printf '{"format_version":2,"consistency_verified":true,"file_data_included":true}\n' > "$snapshot/manifest.json"
 : > "$snapshot/objects.index"
 : > "$snapshot/legacy.tar"
 (cd "$snapshot"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
@@ -66,4 +66,32 @@ x=json.load(open(sys.argv[1]))
 assert x["state"]=="failed" and x["failure_category"]=="invalid_snapshot_checksum",x
 PY
 [[ ! -e "$XD_DRILL_TEST_SENTINEL" ]]
-echo 'Host v2 offline drill: invalid args, checksum, symlink and no-Docker preflight passed'
+# An unknown but apparently valid v2 repository must not be mounted.
+rogue="$TMP/unknown/snapshots/xdrive-backup-20261027T120000Z"
+mkdir -p "$rogue"
+if "$manager" backup drill "$rogue" > "$TMP/unknown.json" 2>/dev/null; then
+  echo 'unknown repository accepted' >&2; exit 1
+fi
+python3 - "$TMP/unknown.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1]))
+assert x["failure_category"]=="unsafe_snapshot",x
+PY
+# Quota must fail before any container is run, not after allocating data.
+rm "$XD_CONFIG_DIR/backups/incremental/.backup.lock"
+mv "$TMP/real-lock" "$XD_CONFIG_DIR/backups/incremental/.backup.lock"
+printf '{"format_version":2,"consistency_verified":true,"file_data_included":true}\n' > "$snapshot/manifest.json"
+printf 'db' > "$snapshot/database.dump"
+printf '%064d\t%d\n' 0 300000000 > "$snapshot/objects.index"
+(cd "$snapshot"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
+if "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/quota.json" 2>/dev/null; then
+  echo 'overquota v2 snapshot accepted' >&2; exit 1
+fi
+python3 - "$TMP/quota.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1]))
+assert x["state"]=="failed" and x["failure_category"]=="sandbox_quota_exceeded",x
+assert x["production_verified"] is False,x
+PY
+[[ ! -e "$XD_DRILL_TEST_SENTINEL" ]]
+echo 'Host offline drill: source allowlist, checksums, symlink, quota and no-container safety passed'
