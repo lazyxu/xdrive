@@ -154,6 +154,11 @@ async function checkWidth(width, port) {
       await page.locator('[data-xdrive-system-dependencies-filter]').count() === 5)
     record(width + ': overview has no document horizontal overflow', await noOverflow(page))
     await screenshot(page, 'overview-' + width)
+    if (width === 1740) {
+      record('1740: real shared MUI uses screenshot dark-mode theme',
+        await page.locator('[data-xdrive-real-admin-fixture]')
+          .getAttribute('data-xdrive-fixture-theme') === 'dark')
+    }
     await auditAllDependencyWidths(page, width)
     if (width === 899 || width === 900) {
       await page.locator('[data-xdrive-system-dependency-overview-card="baidu-map"]').click()
