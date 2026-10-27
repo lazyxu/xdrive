@@ -207,13 +207,18 @@ internal fun ColumnScope.Gallery(
         }
     }
 
+    val timeSets = state.galleryTimelineSets
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().testTag("gallery-wall")) {
         val columns = galleryVisibleColumns(maxWidth.value, preferredColumns)
         val tileGap = 4.dp // Shared PWA Gallery grid gap.
         val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
+        // The PWA dock overlays the photo wall. Preserve real scroll/last-row
+        // clearance for both capsules, without shrinking the Owner grid height.
+        val dockClearance = if (timeSets != null &&
+            state.gallerySearchQuery.isEmpty()) 144.dp else 88.dp
         val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
-            (maxHeight - (cellWidth + tileGap) * rows - 8.dp).coerceAtLeast(0.dp)
+            (maxHeight - (cellWidth + tileGap) * rows - dockClearance).coerceAtLeast(0.dp)
         } else 0.dp
 
         // Initial tail is sparse: prefetch one earlier Range before first positioning.
@@ -273,7 +278,7 @@ internal fun ColumnScope.Gallery(
             columns = GridCells.Fixed(columns),
             state = gridState,
             modifier = Modifier.fillMaxSize().testTag("gallery-grid"),
-            contentPadding = PaddingValues(bottom = 8.dp),
+            contentPadding = PaddingValues(bottom = dockClearance),
             horizontalArrangement = Arrangement.spacedBy(tileGap),
             verticalArrangement = Arrangement.spacedBy(tileGap),
         ) {
@@ -295,12 +300,11 @@ internal fun ColumnScope.Gallery(
                 GalleryTile(item, controller, bitmaps, containTiles)
             }
         }
-    }
-    val timeSets = state.galleryTimelineSets
-    // PWA source has a time capsule above a separate primary/Search dock.
-    // Android has no actual Collections client yet: preserve a functional
-    // native classification action rather than adding a fake Collections tab.
-    if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
+        // iOS/PWA floating chrome shares the Gallery wall's viewport.
+        // Actual Collections, time, filter and search behaviors remain intact.
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .testTag("gallery-floating-chrome")) {
+            if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                 .testTag("gallery-time-dock"),
@@ -411,6 +415,8 @@ internal fun ColumnScope.Gallery(
                         .testTag("gallery-search-button"),
                 ) { Text("搜索", maxLines = 1) }
             }
+        }
+    }
         }
     }
     if (kindMenuOpen) {
