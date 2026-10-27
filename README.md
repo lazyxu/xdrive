@@ -317,13 +317,15 @@ The Docker deployment installs five maintenance tools in `~/.xd`:
 ~/.xd/bin/server-doctor.sh
 ```
 
-For support and troubleshooting, run:
+For support and troubleshooting, use the host-side Doctor:
 
 ```bash
-~/.xd/bin/server-doctor.sh
+xdrive-server doctor              # default: fast, bounded local health checks
+xdrive-server doctor --deep       # opt-in: external reachability and recent logs
+xdrive-server doctor --strict     # automation: nonzero exit for real failures
 ```
 
-It checks Docker/Compose, current release state, container health, PostgreSQL authentication, lightweight CAS metadata health, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, the selected update provider/registry reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
+Default **fast** diagnostics check Docker/Compose, the pinned release, container health, live PostgreSQL authentication, bounded CAS **metadata-only** consistency, Caddy Host observation, local readiness, mounts, disk space and upgrade/rollback state. Docker and Server probes have individual timeouts, and fast mode has an overall 30-second watchdog (deep mode: 180 seconds). An exceeded overall budget exits nonzero with an incomplete-diagnostic warning; a slow individual CAS query is reported as `WARN`, not as `PASS`. Fast mode skips update-provider/public-network probes and container-log collection. Use `--deep` to opt into those network checks and the last 100 redacted container log lines, and to allow longer probe timeouts. Both modes are read-only and neither walks all Blob files nor hashes file contents. Full file/content integrity is a separate operation under **Consistency verification** below. Use `--strict` when automation should fail on actual diagnostic failures; warnings and skipped checks remain distinguishable from passed checks.
 
 By default, the installer registers a daily scheduled backup at 03:17 local server time and retains seven days. Override with `XD_BACKUP_SCHEDULE` and `XD_BACKUP_RETENTION_DAYS`. Scheduled runs skip rather than overlap if a previous backup is still running.
 

@@ -630,17 +630,17 @@ The summary explicitly reports:
 - every exact volume from `state/legacy-volumes-retained`, including whether it is present and whether a container still references it;
 - the normal Compose service table unless `--summary-only` is requested.
 
-`server-doctor.sh` prints the same installation-environment section at the top of its redacted diagnostic report and then continues with deeper checks:
+`server-doctor.sh` prints the same installation-environment section at the top of its redacted diagnostic report. By default, `xdrive-server doctor` runs **fast** diagnostics:
 
-- current Unix user and whether Docker is usable without sudo;
-- container state and health;
-- PostgreSQL authentication and CAS metadata health;
-- HTTP/HTTPS readiness;
-- update-provider connectivity;
-- host-layout consistency and legacy-layout warnings;
-- recent redacted container logs.
+- current Unix user, Docker/Compose availability, running container state and health;
+- live PostgreSQL authentication and a time-bounded CAS **metadata-only** check (fast timeout `4s`);
+- Caddy Host observation and Server witness (fast timeout `5s`); host group ownership is advisory until the actual Server witness proves access;
+- local HTTPS readiness, data mounts, disk usage, upgrade/rollback lock state, and legacy-layout warnings;
+- bounded per-invocation Docker/Server operations and a 30-second total fast-mode watchdog (deep: 180 seconds). A CAS timeout becomes an incomplete `WARN`, not a false `PASS`; an exceeded whole-report deadline exits nonzero and reports an incomplete diagnostic.
 
-Doctor keeps its existing redaction contract: home-relative paths are displayed with `~` and secrets are never printed. Diagnostics are read-only.
+External update-provider and public HTTPS reachability checks, plus the last 100 container log lines, are skipped in the default fast profile. Run `xdrive-server doctor --deep` to include them and permit longer probe timeouts. The report shows a `profile:` header and separate pass/warn/fail/skip counts. Neither Doctor profile traverses Blob files or computes file SHA-256; use `xdrive-server storage verify` when physical-content integrity evidence is required. `--strict` returns nonzero on an actual failed diagnostic, not on a skipped or timed-out advisory check.
+
+Doctor keeps its redaction contract: home-relative paths are displayed with `~` and secrets are never printed. Both profiles are read-only.
 
 ## CI contract
 
