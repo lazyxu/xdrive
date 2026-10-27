@@ -4,11 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.compose.ui.test.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
@@ -468,7 +468,8 @@ class DriveAppTest {
                 "Fixture login did not reach loaded Files: " +
                     "screen=${current.screen}, loading=${current.loading}, " +
                     "loaded=${current.loaded}, itemCount=${current.items.size}, " +
-                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}",
+                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}, " +
+                    "errorPresent=${current.error != null}, imeBottomPx=${imeBottomPx.get()}",
                 failure,
             )
         }
