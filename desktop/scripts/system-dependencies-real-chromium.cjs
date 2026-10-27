@@ -67,7 +67,7 @@ async function auditAllDependencyWidths(page, width) {
     await page.locator('[data-xdrive-system-dependency-detail]').waitFor()
     const geometry = await page.evaluate((serviceID) => {
       const owner = document.querySelector('[data-xdrive-system-dependency-detail]')
-      if (!owner) return { aligned: false, baiduGaps: false }
+      if (!owner) return { aligned: false, baiduGaps: false, caddyGaps: false }
       const root = owner.getBoundingClientRect()
       const topLevel = serviceID === 'caddy'
         ? '[data-xdrive-caddy-v1-detail]'
@@ -83,7 +83,25 @@ async function auditAllDependencyWidths(page, width) {
           Math.abs(box.right - root.right) <= 2 &&
           panel.scrollWidth <= panel.clientWidth + 2
       })
-      if (serviceID !== 'baidu-map') return { aligned, baiduGaps: true }
+      if (serviceID === 'caddy') {
+        const caddyCards = [
+          '#caddy-v1-overview > .MuiPaper-root',
+          '[data-xdrive-admin-caddy-https-desired]',
+          '[data-xdrive-admin-caddy-alidns]',
+          '[data-xdrive-caddy-v11-atomic-save]',
+        ].map((selector) => owner.querySelector(selector))
+        if (caddyCards.some((card) => !card)) {
+          return { aligned: false, baiduGaps: true, caddyGaps: false }
+        }
+        const boxes = caddyCards.map((card) => card.getBoundingClientRect())
+        const cardEdges = boxes.every((box) => Math.abs(box.left - root.left) <= 2 &&
+          Math.abs(box.right - root.right) <= 2)
+        const gaps = boxes.slice(1).map((box, index) => box.top - boxes[index].bottom)
+        return { aligned: aligned && cardEdges, baiduGaps: true,
+          caddyGaps: gaps.every((gap) => gap >= 8 && gap <= 24 &&
+            Math.abs(gap - gaps[0]) <= 2) }
+      }
+      if (serviceID !== 'baidu-map') return { aligned, baiduGaps: true, caddyGaps: true }
       const status = owner.querySelector('#dependency-baidu-map-status-header')
       const config = owner.querySelector('#dependency-baidu-map-config-header')
       const browser = owner.querySelector('[data-xdrive-baidu-jsapi4-admin]')
@@ -98,6 +116,9 @@ async function auditAllDependencyWidths(page, width) {
           Math.abs(upperGap - lowerGap) <= 2 }
     }, id)
     record(width + ': ' + id + ' uses identical full-width detail edges', geometry.aligned)
+    if (id === 'caddy') {
+      record(width + ': Caddy Status/HTTPS/AliDNS/Save use equal vertical gaps', geometry.caddyGaps)
+    }
     if (id === 'baidu-map') {
       record(width + ': Baidu Server/Browser sections have equal vertical gaps', geometry.baiduGaps)
       await screenshot(page, 'baidu-map-' + width)
