@@ -498,6 +498,94 @@ class DriveControllerTest {
         assertEquals(listOf(folder), c.state.value.items)
     }
 
+
+    @Test fun realOwnerAlbumsOpenNativeRangeViewerAndReturnWithoutInventingMedia() = runTest {
+        val trip = GalleryAlbum("manual:trip", "manual", "旅途", 1, 3, 0)
+        val imported = GalleryAlbum("source:phone-1", "imported", "手机", 0, 1, 0)
+        val photo = GalleryAsset(
+            DriveNode(3888, 1, "trip.jpg", "file", size = 18, revision = 2),
+            "image", hasThumbnail = false)
+        val requested = mutableListOf<String>()
+        var albumReads = 0
+        val service = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                albumReads++
+                return listOf(trip, imported)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                requested += albumId
+                return GalleryPage(if (albumId == trip.id) listOf(photo) else emptyList(),
+                    if (albumId == trip.id) 1 else 0, 0)
+            }
+        }
+        val c = controller(this, service)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertEquals(listOf(trip, imported), c.state.value.galleryAlbums)
+        assertEquals(1, albumReads)
+        c.refreshGalleryAlbums(); runCurrent()
+        assertEquals(2, albumReads)
+        assertEquals(listOf(trip, imported), c.state.value.galleryAlbums)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertFalse(c.state.value.galleryLoaded)
+
+        c.openGalleryAlbum(trip); runCurrent()
+        assertEquals(trip, c.state.value.gallerySelectedAlbum)
+        assertEquals(listOf(trip.id), requested)
+        assertEquals(photo, c.state.value.galleryItems.single())
+        c.openGalleryViewer(photo)
+        assertEquals(photo, c.state.value.galleryViewer)
+        c.back()
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(trip, c.state.value.gallerySelectedAlbum)
+        c.back()
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertEquals(listOf(trip, imported), c.state.value.galleryAlbums)
+        c.openGalleryAlbum(trip.copy(revision = 99))
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertEquals(1, requested.size)
+        c.openGalleryAlbum(imported); runCurrent()
+        assertEquals(imported, c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryLoaded)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        c.closeGalleryAlbum()
+        c.openGalleryLibrary(); runCurrent()
+        assertEquals(GalleryPrimaryTab.LIBRARY, c.state.value.galleryPrimaryTab)
+        assertNotNull(c.state.value.galleryItems.firstOrNull())
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.galleryAlbums.isEmpty())
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.close()
+    }
+
+    @Test fun cancelledAlbumsGetNeverPublishesAfterReturningToPhotoLibrary() = runTest {
+        val album = GalleryAlbum("manual:late", "manual", "迟到", 1, 1, 0)
+        val gate = CompletableDeferred<Unit>()
+        val api = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                withContext(NonCancellable) { gate.await() }
+                return listOf(album)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertTrue(c.state.value.loading)
+        c.openGalleryLibrary(); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals(GalleryPrimaryTab.LIBRARY, c.state.value.galleryPrimaryTab)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertTrue(c.state.value.galleryAlbums.isEmpty())
+        c.close()
+    }
+
     @Test fun GalleryKindFiltersEntireOwnerRangeAndKeepsSearchScope() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()

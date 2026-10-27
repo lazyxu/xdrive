@@ -46,9 +46,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.server}:${state.username}"
+    val galleryAlbumsStateKey = "gallery-albums:${state.server}:${state.username}"
     if (state.screen == Screen.GALLERY) {
         DisposableEffect(galleryStateKey) {
-            onDispose { gallerySaveable.removeState(galleryStateKey) }
+            onDispose {
+                gallerySaveable.removeState(galleryStateKey)
+                gallerySaveable.removeState(galleryAlbumsStateKey)
+            }
         }
     }
     var filesView by rememberSaveable { mutableStateOf(initialFilesView) }
@@ -154,6 +158,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             if (photo.mediaKind == "video")
                                 GalleryVideoPlayer(photo, controller, galleryThumbnails)
                             else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                        }
+                    } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                        state.gallerySelectedAlbum == null) {
+                        gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
+                            GalleryCollections(state, controller)
                         }
                     } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
                         Gallery(state, controller, galleryThumbnails)
@@ -307,8 +316,12 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     enabled = !state.loading,
                     onClick = {
                         expanded = false
-                        if (state.screen == Screen.GALLERY) controller.refreshGallery()
-                        else if (state.screen == Screen.TRASH) controller.refreshTrash()
+                        if (state.screen == Screen.GALLERY) {
+                            if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                                state.gallerySelectedAlbum == null)
+                                controller.refreshGalleryAlbums()
+                            else controller.refreshGallery()
+                        } else if (state.screen == Screen.TRASH) controller.refreshTrash()
                         else controller.refresh()
                     })
                 HorizontalDivider()

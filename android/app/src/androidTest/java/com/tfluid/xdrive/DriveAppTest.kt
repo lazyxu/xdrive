@@ -433,12 +433,14 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
         val left = compose.onNodeWithTag("gallery-library-tab")
             .fetchSemanticsNode().boundsInRoot.center
-        val middle = compose.onNodeWithTag("gallery-kind-filter")
+        val middle = compose.onNodeWithTag("gallery-open-collections")
             .fetchSemanticsNode().boundsInRoot.center
         val right = compose.onNodeWithTag("gallery-search-button")
             .fetchSemanticsNode().boundsInRoot.center
         org.junit.Assert.assertTrue(left.x < middle.x && middle.x < right.x)
         org.junit.Assert.assertTrue(kotlin.math.abs(left.y - right.y) < 16f)
+        // The actual Collections tab replaces the interim Classification
+        // shortcut; classification remains usable in the Gallery header.
         compose.onNodeWithTag("gallery-kind-filter").performClick()
         compose.onNodeWithTag("gallery-kind-sheet").assertExists()
         compose.onNodeWithTag("gallery-kind-video").performClick()
