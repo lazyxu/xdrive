@@ -66,3 +66,17 @@ Run `node web/scripts/check-synology-desktop-backup-parity.mjs`,
 `npm run build:synology --prefix web`, the Desktop renderer TypeScript
 checks, and existing executable DSM authentication/Owner/Root tests.
 Physical DSM tests cannot be claimed without real device evidence.
+
+
+## Host data-port migration (follow-on)
+
+DSM no longer owns a `pages: { render() }` JSX registry. Its entry only
+supplies the real Agent/CGI, device backup, cloud and browser-storage ports.
+The shared `XDriveAppPageOutlet` composes all currently supported page JSX
+and renders explicit unavailable states for missing ports.
+
+**Not yet completed:** Desktop's stateful controller and page composition
+still live in `desktop/src/renderer/App.tsx`; its full FileExplorer must
+converge with the transitional DSM Owner-read bridge on host-neutral ports.
+Gallery/map, Pull, transfer history, conflicts and administrator features
+still require real authorized DSM transports, never fabricated success.

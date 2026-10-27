@@ -19,6 +19,8 @@ const sharedHome = read('ui/shared/src/mui/HomePage.tsx')
 const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
 const desktopShell = read('desktop/src/renderer/App.tsx')
 const appShell = read('ui/shared/src/mui/XDriveApp.tsx')
+const appPageOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 const routeRegistry = read('ui/shared/src/mui/WorkspaceRoute.ts')
 const sidebar = read('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const nav = read('ui/shared/src/mui/WorkspaceNavigation.tsx')
@@ -128,7 +130,7 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !synologyFiles.includes('searchEnabled={false}') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
-    !dsmEntry.includes('<XDriveSynologyOwnerFilesPage key={pageRevision} client={local}') ||
+    !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision} client={local}') ||
     !ownerQuotaIPC.includes('cloud-quota-read') ||
     !ownerQuotaIPC.includes('"/v1/cloud/quota"') ||
     !backupOnly.includes('"GET /v1/cloud/quota"') ||
@@ -139,8 +141,8 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !cloudStoragePage.includes('activeRequest.current?.abort()') ||
     !nasAdapter.includes("'/v1/cloud-quota'") ||
     !nasAdapter.includes('createXDriveSynologyCloudStorageDataSource') ||
-    !dsmEntry.includes('<XDriveCloudStoragePage key={pageRevision} source={ownerCloudStorage}') ||
-    !dsmEntry.includes('clearOnRefresh') ||
+    !appPageOutlet.includes('<XDriveCloudStoragePage key={revision} source={services.cloudStorage} clearOnRefresh') ||
+    !appPageOutlet.includes('clearOnRefresh') ||
     !agentRead.includes('device-backup-read') ||
     !agentRead.includes('"/v1/device-backups"') ||
     !agentRead.includes('"/v1/device-backups/runs?"') ||
@@ -177,7 +179,7 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
     !appShell.includes('selected={view}') ||
     !appShell.includes('onSelect={onNavigate}') ||
     !appShell.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)') ||
-    !appShell.includes('host.adminRoleVerified !== true') ||
+    !appPageOutlet.includes('host.adminRoleVerified !== true') ||
     !dsmEntry.includes('<XDriveAppPageOutlet view={selected} host={host}') ||
     !routeRegistry.includes('XDRIVE_APP_WORKSPACE_ROUTES') ||
     !routeRegistry.includes('xDriveWorkspaceRouteRequiresAdmin') ||
@@ -190,17 +192,17 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
 if (dsmEntry.includes('coreKeys=') ||
     !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
     !routeRegistry.includes('xDriveWorkspaceNavigationAllowed') ||
-    !dsmEntry.includes("pages: {") ||
-    !dsmEntry.includes("'device-backup': { render:") ||
-    !dsmEntry.includes("'cloud-storage': { render:") ||
-    !appShell.includes('if (!page)') ||
-    !appShell.includes('此宿主尚未接通当前功能') ||
-    /window\.xdriveDesktop|ipcRenderer/.test(appShell)) {
+    dsmEntry.includes('pages: {') ||
+    !hostContract.includes('readonly deviceBackups?: XDriveDeviceBackupDataSource') ||
+    !hostContract.includes('readonly cloudStorage?: XDriveCloudStorageDataSource') ||
+    !appPageOutlet.includes('if (!page)') ||
+    !appPageOutlet.includes('此宿主尚未接通当前功能') ||
+    /window\.xdriveDesktop|ipcRenderer/.test(appShell + appPageOutlet)) {
   throw new Error('DSM full route registry or Host capability boundary is broken')
 }
 if (dsmEntry.includes('coreKeys=') ||
     !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
-    !dsmEntry.includes('<XDriveHomePage key={pageRevision} localBackupClient={local}') ||
+    !appPageOutlet.includes('<XDriveHomePage key={revision} localBackupClient={local}') ||
     !sharedHome.includes('export function XDriveHomePage(props:') ||
     !sharedHome.includes('<XDriveSynologyHomeOverview') ||
     !nasHome.includes('void client.list(abort.signal)') ||
@@ -208,14 +210,14 @@ if (dsmEntry.includes('coreKeys=') ||
     !nasHome.includes("quotaLoading ? '读取中' : '未检测'") ||
     !nasHome.includes('formatBytes(quota.physical_used_bytes)') ||
     !sharedHome.includes('onOpenCloudStorage={props.onOpenCloudStorage}') ||
-    !dsmEntry.includes("onOpenCloudStorage={() => setSelected('cloud-storage')}") ||
+    !appPageOutlet.includes("onOpenCloudStorage={navigate('cloud-storage')}") ||
     !nasHome.includes('云端账号配额') ||
     !nasHome.includes('value="未检测"') ||
     !muiExports.includes("export * from './SynologyHomeOverview'") ||
     !sidebar.includes('primaryKeys: compactPrimaryKeys') ||
     !nav.includes('primaryKeys ??') ||
-    !dsmEntry.includes('<XDriveTaskCenterPage') ||
-    !dsmEntry.includes('localBackupClient={local}') ||
+    !appPageOutlet.includes('<XDriveTaskCenterPage') ||
+    !appPageOutlet.includes('localBackupClient={local}') ||
     !taskPage.includes('<XDriveSynologyLocalTaskSection') ||
     !taskSection.includes('client.inspect(selectedID, abort.signal)') ||
     !taskSection.includes('xDriveValidateSynologyLocalBatch(selectedID, snapshot)') ||
@@ -223,8 +225,8 @@ if (dsmEntry.includes('coreKeys=') ||
     !taskStatus.includes('current_cas_verified !== false') ||
     !muiExports.includes("export * from './SynologyLocalTaskSection'") ||
     !dsmEntry.includes('showLocalStorage: true') ||
-    !dsmEntry.includes('<XDriveLocalStoragePage') ||
-    !dsmEntry.includes('source={browserStorage}') ||
+    !appPageOutlet.includes('<XDriveLocalStoragePage') ||
+    !appPageOutlet.includes('source={services.localStorage}') ||
     !muiExports.includes("export * from '../synology-browser-storage'") ||
     !browserStorage.includes('navigator.storage.estimate()') ||
     !browserStorage.includes('clear_supported: false') ||
@@ -233,7 +235,7 @@ if (dsmEntry.includes('coreKeys=') ||
     !sidebar.includes('coreKeys={coreKeys}') ||
     !nav.includes('coreKeys === undefined || coreKeys.includes(item.key)') ||
     dsmEntry.includes('window.xdriveDesktop') ||
-    dsmEntry.includes('localStorage')) {
+    dsmEntry.includes('window.localStorage')) {
   throw new Error('DSM navigation advertised unavailable pages or bypassed scoped adapters')
 }
 if (!desktop.includes('verifiedLocalDeviceID === device.id && !device.revoked') ||
@@ -244,7 +246,8 @@ if (!desktop.includes('verifiedLocalDeviceID === device.id && !device.revoked') 
 if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !desktop.includes('export function XDriveDeviceBackupPage(') ||
     !desktop.includes('<XDriveSynologyBackupLocalPanel client={props.localBackupClient}') ||
-    !dsmEntry.includes('<XDriveDeviceBackupPage key={pageRevision} localBackupClient={local} source={ownerBackupRead}') ||
+    !appPageOutlet.includes('<XDriveDeviceBackupPage key={revision}') ||
+    !appPageOutlet.includes('localBackupClient={local} source={services.deviceBackups}') ||
     !dsmEntry.includes('createXDriveSynologyOwnerBackupSource(local)') ||
     !desktop.includes('账号设备（只读）') ||
     !desktop.includes('<XDriveDeviceBackupServerPage source={props.source} />') ||
@@ -263,7 +266,7 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !dsmEntry.includes('xDriveSettingsSidebarDestination()') ||
     !deskDiag.includes('XDriveDiagnosticsPage as DesktopDiagnosticsPage') ||
     !nasDiag.includes('<XDriveDiagnosticsPage') ||
-    !dsmEntry.includes('<XDriveSynologyDiagnosticsPanel') ||
+    !appPageOutlet.includes('<XDriveSynologyDiagnosticsPanel') ||
     dsmEntry.includes('coreKeys=') ||
     !nav.includes('xDriveDiagnosticsSidebarDestination') ||
     !diag.includes('scopeNotice') ||

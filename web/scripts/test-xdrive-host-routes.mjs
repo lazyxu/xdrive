@@ -51,6 +51,8 @@ for (const bogus of ['', '__proto__', 'gallery/../admin-users', 'admin-typo']) {
 }
 
 const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
+const sharedOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
 assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
@@ -58,14 +60,20 @@ assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
 assert.ok(sharedApp.includes('onSelect={onNavigate}') &&
   sharedApp.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)'),
   'the shared sidebar must not forward unknown or unverified admin routes')
-assert.ok(sharedApp.includes('host.adminRoleVerified !== true'),
+assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
   'shared outlet must reject unverified administrative session')
-assert.ok(sharedApp.includes('if (!page)'),
+assert.ok(sharedOutlet.includes('if (!page)'),
   'unimplemented DSM host operations must fail as unavailable, not silently succeed')
 assert.ok(dsm.includes('<XDriveAppPageOutlet view={selected} host={host}'),
   'DSM must use shared route dispatch')
+assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
+  !dsm.includes('<XDriveDeviceBackupPage'),
+  'DSM provides domain ports and no independent page JSX')
+assert.ok(dsm.includes('services: {') && hostContract.includes('XDriveWorkspaceHostServices') &&
+  sharedOutlet.includes('switch (view)') && sharedOutlet.includes('services.deviceBackups'),
+  'shared page outlet composes pages using authenticated host data')
 assert.ok(!dsm.includes('coreKeys='),
   'DSM must not maintain a reduced alternative navigation')
-assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp),
+assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')
