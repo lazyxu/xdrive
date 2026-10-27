@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Only disposable automatic master debug APK builds share a slot.
+  # Each workflow_dispatch run is independent and is never evicted.
+  # This is separate from exact-SHA CI, Snapshot and tagged releases.
+  group: xdrive-android-master-apk-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'latest-master' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+
 jobs:
   build-master-apk:
     if: github.ref == 'refs/heads/master'
