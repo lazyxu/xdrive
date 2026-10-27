@@ -4,6 +4,8 @@ import androidx.annotation.OptIn
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,6 +13,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -29,6 +36,40 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import com.tfluid.xdrive.core.GalleryAsset
+
+/** Observe a deliberate horizontal swipe without consuming Media3 touch events.
+ * The bottom player-control area is excluded so seeking does not change files.
+ * Native media controls retain full ownership of their touch and seek events. */
+private fun Modifier.galleryVideoSwipeNavigation(
+    video: GalleryAsset, controller: DriveController,
+): Modifier = pointerInput(controller, video.node.id, video.node.revision) {
+    val threshold = 72.dp.toPx()
+    val protectedHeader = 52.dp.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(
+            requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val origin = down.position
+        var singlePointer = true
+        while (true) {
+            val frame = awaitPointerEvent(PointerEventPass.Initial)
+            if (frame.changes.count { it.pressed } > 1) singlePointer = false
+            val pointer = frame.changes.firstOrNull { it.id == down.id } ?: break
+            if (!pointer.pressed) {
+                val dx = pointer.position.x - origin.x
+                val dy = pointer.position.y - origin.y
+                if (singlePointer &&
+                    origin.y >= protectedHeader && origin.y < size.height * 0.78f &&
+                    pointer.uptimeMillis - down.uptimeMillis <= 800L &&
+                    kotlin.math.abs(dx) >= threshold &&
+                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f &&
+                    controller.state.value.galleryViewer == video) {
+                    controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
+                }
+                break
+            }
+        }
+    }
+}
 
 /** Real Owner video playback: no public media ticket or local loopback proxy.
  * Video decoding and playback/seek/buffering are delegated to Media3. */
@@ -107,7 +148,24 @@ internal fun GalleryVideoPlayer(
             if (source != null) controller.closeGalleryVideoPlayback(source)
         }
     }
-    Column(Modifier.fillMaxSize().background(Color.Black).testTag("gallery-video-viewer")) {
+    val older = controller.galleryViewerNeighbor(-1)
+    val newer = controller.galleryViewerNeighbor(1)
+    Column(
+        Modifier.fillMaxSize().background(Color.Black).testTag("gallery-video-viewer")
+            .galleryVideoSwipeNavigation(video, controller)
+            .semantics {
+                customActions = buildList {
+                    if (older != null) add(CustomAccessibilityAction("上一项") {
+                        controller.shiftGalleryViewer(-1)
+                        true
+                    })
+                    if (newer != null) add(CustomAccessibilityAction("下一项") {
+                        controller.shiftGalleryViewer(1)
+                        true
+                    })
+                }
+            },
+    ) {
         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = controller::dismissGalleryViewer,

@@ -740,7 +740,7 @@ class DriveControllerTest {
         assertEquals(2119L, c.state.value.galleryViewer?.node?.id)
     }
 
-    @Test fun galleryViewerDoesNotSkipUnimplementedVideoItem() = runTest {
+    @Test fun galleryViewerSwipesImageVideoImageWithoutSkippingOrLeakingStreams() = runTest {
         val api = object : Service() {
             override suspend fun galleryPage(
                 accessToken: String, offset: Int, initialLatest: Boolean,
@@ -749,15 +749,44 @@ class DriveControllerTest {
                 GalleryAsset(DriveNode(302, 1, "b.mp4", "file", 5, revision = 1), "video"),
                 GalleryAsset(DriveNode(303, 1, "c.jpg", "file", 5, revision = 1), "image"),
             ), 3, 0)
-        }
+        }.apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
         c.openGallery(); runCurrent()
-        c.openGalleryViewer(c.state.value.galleryItems[0])
-        assertNull(c.galleryViewerNeighbor(1))
-        c.shiftGalleryViewer(1)
-        assertEquals(301L, c.state.value.galleryViewer?.node?.id)
+        val (first, video, last) = c.state.value.galleryItems
+        c.openGalleryViewer(first)
         assertNull(c.galleryViewerNeighbor(-1))
+        assertEquals(video, c.galleryViewerNeighbor(1))
+        val pending = async { c.galleryImageBytes(first) }
+        runCurrent()
+        assertEquals(1, api.downloadReads)
+
+        c.shiftGalleryViewer(1)
+        assertEquals(video, c.state.value.galleryViewer)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(pending.isCancelled) // Photo bytes cannot leak into the Video.
+        val firstVideoStream = c.openGalleryVideoPlayback(video)
+        assertNotNull(firstVideoStream)
+        assertEquals(1, api.videoSessionsOpened)
+        assertEquals(last, c.galleryViewerNeighbor(1))
+
+        c.shiftGalleryViewer(1)
+        assertEquals(last, c.state.value.galleryViewer)
+        assertEquals(1, api.videoSessionsClosed) // Closed synchronously at swipe.
+        c.closeGalleryVideoPlayback(requireNotNull(firstVideoStream)) // Idempotent.
+        assertEquals(1, api.videoSessionsClosed)
+        assertNull(c.galleryViewerNeighbor(1))
+        c.shiftGalleryViewer(-1)
+        assertEquals(video, c.state.value.galleryViewer)
+        val secondVideoStream = c.openGalleryVideoPlayback(video)
+        assertNotNull(secondVideoStream)
+        assertEquals(2, api.videoSessionsOpened)
+        c.shiftGalleryViewer(-1)
+        assertEquals(first, c.state.value.galleryViewer)
+        assertEquals(2, api.videoSessionsClosed)
+        c.dismissGalleryViewer()
+        assertNull(c.galleryViewerNeighbor(1))
+        assertEquals(2, api.videoSessionsClosed)
     }
 
     @Test fun livePhotoUsesRealStillResourceAndNeverDownloadsOuterLIVP() = runTest {

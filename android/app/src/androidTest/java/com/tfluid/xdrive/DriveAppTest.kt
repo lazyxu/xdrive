@@ -46,6 +46,7 @@ class DriveAppTest {
     private var galleryManyPhotos = false
     private var galleryTimelineFixture = false
     private var galleryVideoFixture = false
+    private var galleryMixedViewerFixture = false
     private var galleryLivePhotoFixture = false
     private var galleryLIVPFixture = false
     private var liveStillReads = 0
@@ -99,6 +100,13 @@ class DriveAppTest {
                     "file", size = if (galleryLIVPFixture)
                         80L * 1024 * 1024 else 44L, revision = 2),
                 "image", livePhoto = true, hasThumbnail = true)), 1, 0)
+            if (galleryMixedViewerFixture) return GalleryPage(listOf(
+                galleryFixture,
+                GalleryAsset(DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
+                    "video", durationMs = 10_000L, hasThumbnail = true),
+                GalleryAsset(DriveNode(46, 1, "last.jpg", "file", size = 44, revision = 2),
+                    "image", hasThumbnail = true),
+            ), 3, 0)
             if (galleryVideoFixture) return GalleryPage(listOf(GalleryAsset(
                 DriveNode(45, 1, "clip.mp4", "file", size = 100, revision = 2),
                 "video", durationMs = 10_000L, hasThumbnail = true)), 1, 0)
@@ -146,7 +154,8 @@ class DriveAppTest {
                 galleryThumbnailFailuresRemaining--
                 throw ApiException(503, "Fixture one-shot unavailable thumbnail")
             }
-            if (galleryOversizeFixture || galleryVideoFixture || galleryLivePhotoFixture) {
+            if (galleryOversizeFixture || galleryVideoFixture ||
+                galleryMixedViewerFixture || galleryLivePhotoFixture) {
                 val small = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
                 return try {
                     val output = ByteArrayOutputStream()
@@ -900,6 +909,83 @@ class DriveAppTest {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(1, videoTransportClosed)
         }
+    }
+
+    @Test fun nativeMixedGalleryViewerSwipesPhotosAndVideoAndReleasesMedia3Stream() {
+        galleryMixedViewerFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 3 &&
+                compose.onAllNodesWithTag("gallery-thumbnail-ready-40",
+                    useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-image").fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-gesture").performTouchInput { swipeLeft() }
+        // Prove the actual photo -> video state changed, then wait for the
+        // lifecycle-collected Compose viewer to render; no blind sleep.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 45L &&
+                compose.onAllNodesWithTag("gallery-video-viewer").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(45L, controller.state.value.galleryViewer?.node?.id)
+            org.junit.Assert.assertEquals(0, videoTransportClosed)
+        }
+        // A seek/control-area drag stays with native Media3. Only a swipe in
+        // the content area may navigate; the observer never consumes touches.
+        compose.onNodeWithTag("gallery-video-viewer").performTouchInput {
+            val bottom = height * 0.94f
+            swipe(
+                start = androidx.compose.ui.geometry.Offset(width * 0.9f, bottom),
+                end = androidx.compose.ui.geometry.Offset(width * 0.1f, bottom),
+            )
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(45L, controller.state.value.galleryViewer?.node?.id)
+            org.junit.Assert.assertEquals(0, videoTransportClosed)
+        }
+        // Passive observer sees the swipe before native Media3 controls, and
+        // changing the Viewer closes the old Owner Range immediately.
+        compose.onNodeWithTag("gallery-video-viewer").performTouchInput { swipeLeft() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 46L &&
+                compose.onAllNodesWithTag("gallery-photo-viewer").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(46L, controller.state.value.galleryViewer?.node?.id)
+            org.junit.Assert.assertEquals(1, videoTransportClosed)
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-photo-image").fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-photo-gesture").performTouchInput { swipeRight() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 45L &&
+                compose.onAllNodesWithTag("gallery-video-viewer").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-video-viewer").performTouchInput { swipeRight() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 40L &&
+                compose.onAllNodesWithTag("gallery-photo-viewer").fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(40L, controller.state.value.galleryViewer?.node?.id)
+            org.junit.Assert.assertEquals(2, videoTransportClosed)
+        }
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
     }
 
     @Test fun galleryInfoOffersRealOwnerPhotoSafDownloadAndNoPlaceholderWhenUnavailable() {

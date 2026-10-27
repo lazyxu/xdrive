@@ -227,6 +227,20 @@ node scripts/shared-ui.mjs --check
   API35 Compose 与适用 GitHub 保护检查后才能合入。
   Live Motion、Collection、媒体地图、批量导出、传输中心及像素级 1:1 尚未完成。
 
+## P0-08 · Android Viewer 混合照片/视频相邻切换（2026-10-27）
+
+- Viewer 在当前经过 Owner/Revision 校验、已加载的 Gallery Range 内逐项切换，支持图片、真实 Media3 视频和静态优先的 Live Photo；不再遇到视频阻断图片左右滑动，不跳过或猜测未加载的邻项。跨 Range 的按需扩展仍待后续实现。
+- 视频画面通过只观察 `PointerEventPass.Initial` 的水平滑动切换（不消费 Media3 原生事件），避开顶栏与底部 seek 控件区域；TalkBack 提供同一当前 Owner 的上一项/下一项语义操作，不叠加 iOS 不存在的悬浮箭头。
+- 视频切换在 Controller 修改当前 Viewer 之前同步关闭旧 Owner Range/transport，随后 Media3 Composable 正常 dispose；重复关闭幂等。旧图片/Live 请求维持 Viewer epoch 取消，不复用其它 Owner 的响应。
+- JVM 覆盖 image→video→image、旧图片数据取消、播放器关闭精确次数、边界、返回；API35 Compose 覆盖左右混合滑动和相册返回。**实现候选必须以准确提交 CI 成功后才算可合入**；实机编解码、iOS 视觉对照按用户决定跳过（未验收），不代表已经验证。
+
+## Android mixed Photo → Video gesture CI repair (2026-10-27)
+
+- Real API35 Android-Native CI run [#40438468815](https://github.com/lazyxu/xdrive/actions/runs/40438468815) compiled JVM/lint/APK successfully, then ran 63 Compose tests; only `nativeMixedGalleryViewerSwipesPhotosAndVideoAndReleasesMedia3Stream` failed because `gallery-video-viewer` was not rendered after a photo left swipe. This is a RED, not an acceptable green check.
+- The photo image has a nested `transformable` handler that can consume the Main-pass drag before its parent `detectHorizontalDragGestures` sees it. The photo parent now **observes** the Initial pass with no consumption, requires exactly one pointer, 72dp horizontal travel, bounded gesture duration and default zoom, and validates the exact current Owner viewer before switching to the real neighboring video/photo. Pinch/pan/Live-hold retain native ownership, and underlying Controller still performs Owner/revision/RANGE resource teardown.
+- Compose end-to-end fixture now waits for BOTH the real Controller viewer identity and the actual new UI semantic node at all four photo/video transitions, rather than assuming the immediate rendering tick equals a synchronous state transition. No mock navigation, test skipping or disabled checks.
+- New exact-head Android-native/API35 and full CI/Final Gate required; physical OEM device still 按用户决定跳过（未验收）.
+
 ## P0-07 续 · Android Gallery PWA 双层底部控件候选（2026-10-27，#2792）
 
 - 以当下实际 `ui/shared/src/mui/MobileGalleryChrome.tsx` 为准：上层是「年/月/全部」时间胶囊；下层是「图库/精选集」主导航与右侧搜索。此前 Android 将这些操作分散显示；本 PR 先恢复双层圆角半透明视觉结构、保留 Android navigation bar 安全区，真实像素和悬浮覆盖仍未完成。

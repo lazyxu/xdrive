@@ -1578,7 +1578,9 @@ class DriveController(
         activeVideoPlayback = null
     }
 
-    /** Immediate verified image neighbors, never invent a missing Range. */
+    /** Immediate verified image/video neighbors, never invent a missing Range.
+     * The native Compose host already selects the correct image or Media3
+     * renderer; do not skip videos or cross an unloaded Owner Range. */
     fun galleryViewerNeighbor(direction: Int): GalleryAsset? {
         val current = state.value
         val selected = current.galleryViewer ?: return null
@@ -1587,16 +1589,18 @@ class DriveController(
         val index = current.galleryItems.indexOfFirst { it == selected }
         if (index < 0) return null
         return current.galleryItems.getOrNull(index + direction)?.takeIf {
-            it.mediaKind == "image" && it.node.type == "file" &&
+            it.mediaKind in setOf("image", "video") && it.node.type == "file" &&
                 it.node.revision > 0 && it.node.id > 0
         }
     }
 
-    /** A new image invalidates in-flight old original reads (including the
-     * noncooperative old-A -> B -> A case) without refetching Gallery rows. */
+    /** Changing media immediately releases an old video stream and fences
+     * in-flight image/Live requests (including noncooperative A -> B -> A).
+     * Neither direction refetches Gallery rows or skips a video. */
     fun shiftGalleryViewer(direction: Int) {
         val next = galleryViewerNeighbor(direction) ?: return
         if (state.value.gallerySelected != null) return // Info dialog has priority.
+        closeActiveVideoPlayback() // Cancel native Range before Compose retires Media3.
         galleryViewerEpoch++
         mutableState.value = state.value.copy(galleryViewer = next, gallerySelected = null)
     }

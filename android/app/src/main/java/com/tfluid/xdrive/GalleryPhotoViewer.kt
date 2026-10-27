@@ -5,7 +5,8 @@ import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -162,35 +164,50 @@ internal fun GalleryPhotoViewer(
                 ) { pressed -> liveHeld = pressed }
                 // One-finger swipes are only page navigation at default zoom.
                 // Pinch/pan remains owned by the image transformable recognizer.
-                .pointerInput(photo.node.id, photo.node.revision) {
-                    var distance = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { distance = 0f },
-                        onDragEnd = {
-                            if (currentZoom <= 1.001f) {
-                                if (distance < -swipeThreshold) controller.shiftGalleryViewer(1)
-                                if (distance > swipeThreshold) controller.shiftGalleryViewer(-1)
+                // Passively observe INITIAL-pass movement before the nested
+                // image transformable can consume Main-pass drag deltas.
+                // Do not consume: pinch/pan/tap and trusted Live hold retain
+                // ownership of their gestures. Only a single pointer at 1x
+                // may navigate between adjacent Owner media (photo or video).
+                .pointerInput(controller, photo.node.id, photo.node.revision) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        val origin = down.position
+                        var singlePointer = true
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.changes.count { it.pressed } > 1)
+                                singlePointer = false
+                            val pointer = event.changes.firstOrNull {
+                                it.id == down.id
+                            } ?: break
+                            if (!pointer.pressed) {
+                                val dx = pointer.position.x - origin.x
+                                val dy = pointer.position.y - origin.y
+                                if (singlePointer && currentZoom <= 1.001f &&
+                                    pointer.uptimeMillis - down.uptimeMillis <= 800L &&
+                                    kotlin.math.abs(dx) >= swipeThreshold &&
+                                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f &&
+                                    controller.state.value.galleryViewer == photo) {
+                                    controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
+                                }
+                                break
                             }
-                            distance = 0f
-                        },
-                        onDragCancel = { distance = 0f },
-                        onHorizontalDrag = { change, drag ->
-                            if (currentZoom <= 1.001f) {
-                                distance += drag
-                                change.consume()
-                            }
-                        },
-                    )
+                        }
+                    }
                 }
                 // TalkBack exposes the same real current-Owner navigation without
                 // inventing extra iOS-foreign overlay arrows or media controls.
                 .semantics {
                     customActions = buildList {
-                        if (older != null) add(CustomAccessibilityAction("上一张照片") {
+                        if (older != null) add(CustomAccessibilityAction("上一项") {
                             controller.shiftGalleryViewer(-1)
                             true
                         })
-                        if (newer != null) add(CustomAccessibilityAction("下一张照片") {
+                        if (newer != null) add(CustomAccessibilityAction("下一项") {
                             controller.shiftGalleryViewer(1)
                             true
                         })
