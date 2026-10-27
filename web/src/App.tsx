@@ -107,6 +107,7 @@ import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
+import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
@@ -1349,6 +1350,24 @@ function FileManager({
       })
     },
   }), [api])
+  // An instance exists only for this authenticated API/Owner, never globally.
+  // Gallery and its routed Viewer are mounted siblings and borrow only through
+  // this ephemeral bridge; no private Blob URL enters route/session storage.
+  const galleryThumbnailBridge = useMemo(
+    () => new XDriveRoutedGalleryThumbnailBridge(),
+    [api, profile?.id, offlineOwner],
+  )
+  const routedGalleryContextID = route.app === 'media-viewer'
+    ? route.params.context : undefined
+  useEffect(() => {
+    if (!galleryThumbnailBridge.accepts(routedGalleryContextID)) {
+      galleryThumbnailBridge.leave()
+    }
+  }, [galleryThumbnailBridge, routedGalleryContextID])
+  // An old API/Owner bridge must not remain active after a session switch.
+  // This cleanup depends only on the bridge identity: doing it on EVERY
+  // route change would incorrectly revoke a just-activated Gallery click.
+  useEffect(() => () => galleryThumbnailBridge.leave(), [galleryThumbnailBridge])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
   const deviceBackupSource = useMemo(() => ({
     list: () => api.deviceBackups(),
@@ -2524,6 +2543,7 @@ function FileManager({
               : undefined}
             mobileWebChrome
             source={gallerySource}
+            onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
             uploadRevision={galleryUploadRevision}
             onUploadRequested={() => galleryUploadInputRef.current?.click()}
             fileOperations={fileOperations}
@@ -2568,6 +2588,7 @@ function FileManager({
                 activeIndex: context.activeIndex,
                 totalCount: context.totalCount,
               })
+              galleryThumbnailBridge.activate(contextID)
               launchWebApp({
                 app: 'media-viewer',
                 params: { node: item.node.id, context: contextID },
@@ -2698,6 +2719,7 @@ function FileManager({
           route={route}
           api={api}
           gallerySource={gallerySource}
+          onBorrowGalleryThumbnail={galleryThumbnailBridge.borrow}
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
           onShowInFolder={(location) => {
