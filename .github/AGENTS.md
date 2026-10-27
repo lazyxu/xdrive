@@ -20,6 +20,16 @@ AGENTS.md. Preserve the root policy and all other work.
   `python3 -m unittest discover -s scripts/ci -p 'test_workflow_pr_scope.py'`.
 - Do not close/reopen PRs simply to force all workflows to produce status
   records. Trigger only the required targeted workflow on the correct SHA.
+- Every independently triggered PR workflow must avoid accumulating older SHA
+  runs. Namespace workflow-level `concurrency.group` by `github.workflow` and
+  `github.event.pull_request.number`, with a unique `github.run_id` fallback
+  for non-PR runs. Use `cancel-in-progress` only for `pull_request` events;
+  never cancel master snapshot, tagged release, or manual evidence runs.
+- Do not repeatedly rebase, amend or force-push an otherwise unchanged PR merely
+  to chase every unrelated new master SHA. Preserve accepted green evidence
+  when product code and affected test inputs are unchanged and protection
+  rules allow it; do one final update only if an actual conflict, relevant
+  source/test change, or platform-required check requires it.
 - Do not disable or weaken full CI, exact-head Final Gate, owner/permissions
   validation, release prerequisites, source-provenance checks, or GitHub-first
   merge/GitLab fast-forward safety. Production-only inaccessible security
