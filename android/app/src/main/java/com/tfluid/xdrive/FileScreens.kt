@@ -356,7 +356,10 @@ private fun ColumnScope.FilesSelectionActions(
                     enabled = !state.loading && !state.browseBatchWriteAttempted &&
                         state.destinationKind == null,
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
-                Text("${state.browseSelectedIds.size} 项已选择（最多 200）",
+                // The Files header already announces selection count and 200 cap.
+                // Keep this action bar concise, avoiding two identical semantic
+                // text nodes that break accessibility and the Compose fixture.
+                Text("${state.browseSelectedIds.size} 项",
                     style = MaterialTheme.typography.bodyMedium)
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
