@@ -283,6 +283,36 @@ class DriveControllerTest {
         it.connect("https://drive.example", false)
     }
 
+    /** Native login no longer has a manual public-IP field. Failure text
+     * must guide an actual input without changing pinned Host/SNI behavior. */
+    @Test fun unifiedLoginDnsFailureUsesActualServerAndOptionalLanInputs() = runTest {
+        val api = object : Service() {
+            override suspend fun login(username: String, password: String): AuthSession =
+                throw ApiException(0, "DNS failed", ApiFailureReason.DNS)
+        }
+        val c = DriveController(this, { api })
+        c.connectAndLogin("https://drive.example", false, "", "owner", "password", true)
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertFalse(c.state.value.loading)
+        val hint = requireNotNull(c.state.value.error)
+        assertTrue(hint.contains("服务器域名"))
+        assertTrue(hint.contains("内网 IP"))
+        assertFalse(hint.contains("公网 IP"))
+        c.close()
+    }
+
+    @Test fun invalidNativeConnectionDoesNotSuggestRetiredPublicIpEntry() = runTest {
+        val c = DriveController(this, { Service() })
+        c.connect("ftp://bad.example", false)
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        val hint = requireNotNull(c.state.value.error)
+        assertTrue(hint.contains("服务器 URL"))
+        assertTrue(hint.contains("内网 IP"))
+        assertFalse(hint.contains("公网 IP"))
+        c.close()
+    }
+
     @Test fun routeProbeMustFinishBeforeLoginAndPersistsOnlyOriginBoundPreferences() = runTest {
         val selected = CompletableDeferred<String?>()
         val api = Service()
