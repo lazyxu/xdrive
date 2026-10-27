@@ -388,7 +388,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" {
 		http.NotFound(w, r)
 		return
 	}
@@ -400,6 +400,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if r.URL.Path == "/v1/schedule" {
 		if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	} else if r.URL.Path == "/v1/cloud-media-stream" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "media stream allows only GET/HEAD", http.StatusMethodNotAllowed)
 			return
 		}
 	} else if r.Method != http.MethodGet {
@@ -474,6 +479,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sendJSON(w, page)
+		return
+	}
+	// Browser-native Range playback reuses the existing Owner media reader;
+	// every request independently authenticates DSM and same-user Agent.
+	if r.URL.Path == "/v1/cloud-media-stream" {
+		reader, ok := agent.(OwnerMediaRangeReader)
+		if !ok {
+			http.Error(w, "authenticated Owner media stream unavailable", http.StatusNotImplemented)
+			return
+		}
+		serveOwnerMediaStream(w, r, reader)
 		return
 	}
 	// Fixed 256 KiB immutable media slice. The request contains only canonical

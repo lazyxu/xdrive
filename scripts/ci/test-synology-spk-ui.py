@@ -98,6 +98,10 @@ with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as body:
     assert inner["ui/backup.cgi"].mode & 0o111
     assert cgi == (root / "packaging/synology/ui/backup.cgi").read_bytes()
     assert b'backup synology-ui cgi' in cgi
+    # A real DSM <video>/<audio> HEAD probe must pass the installed shell
+    # wrapper before the Go CGI can apply Owner/authentication method gates.
+    assert b'case "${REQUEST_METHOD:-}" in GET|HEAD|POST)' in cgi
+    assert b'HTTP_COOKIE' in cgi and b'HTTPS' in cgi
     for unsafe in (b"sudo ", b"su -", b"chmod 777", b"curl ", b"wget "):
         assert unsafe not in cgi, "unsafe CGI helper"
     for size in sizes:

@@ -12,6 +12,9 @@ import {
   xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME,
   XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES,
 } from '../synology-media-preview'
+import {
+  xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
+} from '../synology-media-stream'
 import type {
   XDriveFileExplorerCrumb, XDriveFileExplorerItem, XDriveFileExplorerSort,
 } from './FileExplorer'
@@ -86,8 +89,11 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
+    if ((kind === 'video' || kind === 'audio') && xDriveSynologyPlaybackMIME(item.name)) {
+      return xDriveSynologyLoadNativeMediaStream(client, item, signal)
+    }
     if ((kind !== 'image' && kind !== 'pdf') || !xDriveSynologyPreviewMIME(item.name)) {
-      return Promise.reject(new Error('DSM 暂不支持此媒体类型的流式预览'))
+      return Promise.reject(new Error('DSM 暂不支持此媒体类型的预览'))
     }
     return xDriveSynologyLoadBoundedMediaPreview(client, item, signal, onProgress)
   }, [client])
@@ -232,7 +238,7 @@ export function XDriveSynologyOwnerFilesPage({
 
   return (
     <XDriveWorkspaceSurface presentation="page" title="云端文件"
-      subtitle="使用原有 FileExplorer 查看 Agent 当前 xDrive Server 账号文件，支持只读浏览、文本及受限图片/PDF 预览。"
+      subtitle="使用共用 FileExplorer 查看 Server Owner 文件，支持文本、受限图片/PDF 以及原生视频/音频 Range 播放。"
       pageActions={<XDriveActionButton startIcon={<RefreshRoundedIcon />}
         compact onClick={refreshAuthenticatedOwner}
         disabled={loadingRoot || (crumbs.length > 0 && (loading || paging))}>刷新</XDriveActionButton>}>
@@ -248,8 +254,8 @@ export function XDriveSynologyOwnerFilesPage({
       }}>
         <XDriveStatusAlert tone="neutral">
           本页提供经 Server Owner 鉴权的文件列表、最多 1 MiB 的文本预览，以及最多 32 MiB 的
-          JPEG/PNG/WebP/GIF/PDF 查看。视频/音频/Live、缩略图、下载、上传、移动、删除和
-          NAS 物理路径仍未开放；当前分页不代表整个目录。
+          JPEG/PNG/WebP/GIF/PDF 查看，以及 DSM 身份验证下的原生视频/音频 Range 播放。
+          Live、缩略图、下载、上传、移动、删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
         </XDriveStatusAlert>
         {rootError ? <XDriveStatusAlert tone="bad">{rootError}</XDriveStatusAlert> : null}
         {loadingRoot ? <Box data-xdrive-nas-cloud-root-first-read aria-busy
@@ -287,7 +293,10 @@ export function XDriveSynologyOwnerFilesPage({
                 } else if (xDriveFileSupportsTextPreview(item.name, item.kind) ||
                   (xDriveSynologyPreviewMIME(item.name) &&
                     typeof item.size === 'number' && item.size > 0 &&
-                    item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)) {
+                    item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
+                  (xDriveSynologyPlaybackMIME(item.name) &&
+                    typeof item.size === 'number' && Number.isSafeInteger(item.size) &&
+                    item.size > 0)) {
                   setNotice('')
                   setPreview({ scopeKey: currentScopeKey, item })
                 } else {

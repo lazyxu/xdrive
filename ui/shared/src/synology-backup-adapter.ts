@@ -38,6 +38,10 @@ export type XDriveSynologyOwnerMediaRange = {
 }
 export const XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES = 256 << 10
 
+export type XDriveSynologyOwnerStreamMIME =
+  | 'video/mp4' | 'video/webm'
+  | 'audio/mpeg' | 'audio/mp4' | 'audio/ogg' | 'audio/wav' | 'audio/flac'
+
 export type XDriveSynologyOwnerFileSort = XDriveSynologyOwnerFilePageResponse['sort']
 export type XDriveSynologyOwnerFileOrder = XDriveSynologyOwnerFilePageResponse['order']
 
@@ -117,6 +121,12 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, offset: number, length: number,
     signal?: AbortSignal,
   ): Promise<XDriveSynologyOwnerMediaRange>
+  /** Session-bound DSM URL for the browser's native HTMLMediaElement Range
+   * requests. This URL is NOT a token: DSM and Agent reauthorize every request. */
+  ownerFileMediaStreamURL(
+    nodeID: number, revision: number, total: number, sha256: string,
+    mime: XDriveSynologyOwnerStreamMIME,
+  ): string
   ownerFilesPage(
     parentID: number, limit: number, sort: XDriveSynologyOwnerFileSort,
     order: XDriveSynologyOwnerFileOrder, cursor: string, signal?: AbortSignal,
@@ -283,6 +293,25 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         offset, total: response.total, revision,
         sha256: response.sha256, data,
       }
+    },
+    ownerFileMediaStreamURL: (nodeID, revision, total, sha256, mime) => {
+      if (![nodeID, revision, total].every(value =>
+        Number.isSafeInteger(value) && value > 0) ||
+        !/^[0-9a-f]{64}$/.test(sha256) ||
+        !['video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4',
+          'audio/ogg', 'audio/wav', 'audio/flac'].includes(mime)) {
+        throw new Error('Invalid authenticated Owner playback identity')
+      }
+      // Only the trusted, same-origin DSM CGI endpoint is used; arbitrary
+      // Server/CDN URLs, bearer tokens, source paths and redirects are absent.
+      const url = new URL(endpoint.href)
+      url.searchParams.set('op', 'cloud-media-stream')
+      url.searchParams.set('node_id', String(nodeID))
+      url.searchParams.set('revision', String(revision))
+      url.searchParams.set('total', String(total))
+      url.searchParams.set('sha256', sha256)
+      url.searchParams.set('mime', mime)
+      return url.href
     },
     ownerFilesPage: async (parentID, limit, sort, order, cursor, signal) => {
       if (!Number.isSafeInteger(parentID) || parentID < 1 ||
