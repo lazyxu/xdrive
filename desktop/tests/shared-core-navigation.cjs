@@ -12,6 +12,7 @@ const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const sharedApp = read('ui', 'shared', 'src', 'mui', 'XDriveApp.tsx')
 
 test('shared core navigation owns common destinations and capability-gates local storage rendering', () => {
   assert.ok(sharedRoute.includes('export const XDRIVE_CORE_WORKSPACE_KEYS = ['), 'shared route model must own core workspace keys')
@@ -89,7 +90,9 @@ test('shared WorkspaceSidebar owns the complete sidebar composition and extensio
 
 test('Web and Desktop consume the same shared WorkspaceSidebar', () => {
   assert.equal((web.match(/<XDriveWorkspaceSidebar\b/g) || []).length, 1)
-  assert.equal((desktop.match(/<XDriveWorkspaceSidebar\b/g) || []).length, 1)
+  assert.equal((desktop.match(/<XDriveApp\b/g) || []).length, 1)
+  assert.equal((sharedApp.match(/<XDriveWorkspaceSidebar\b/g) || []).length, 1)
+  assert.ok(sharedApp.includes('selected={view}') && sharedApp.includes('onSelect={onNavigate}'), 'one shared frame must own selection and navigation')
   for (const token of [
     '<XDriveSidebarSurface',
     '<XDriveSidebarNavList',
@@ -121,7 +124,7 @@ test('Desktop extension destinations all flow through section models', () => {
   assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Diagnostics should inject into the bottom extension slot')
   assert.equal(desktop.includes('leadingItems='), false, 'Desktop should not use a parallel leading-items contract')
   assert.equal(desktop.includes('trailingItems='), false, 'Desktop should not use a parallel trailing-items contract')
-  assert.ok(desktop.includes('sections={desktopSidebarSections}'), 'Desktop must pass its extension sections to shared sidebar')
+  assert.ok(desktop.includes('sections: desktopSidebarSections,') && sharedApp.includes('{...sidebar}'), 'Desktop must pass extension sections through the common app to the shared sidebar')
 })
 
 test('Web Home and admin destinations use the same section model contract', () => {
@@ -170,7 +173,7 @@ test('user/owner and admin destinations remain separated in full Web/Desktop Sid
 })
 
 test('local storage is shared across Web and Desktop while platform adapters remain local', () => {
-  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<"), 'Desktop view type must extend the shared full workspace route model')
+  assert.ok(desktop.includes("type View = XDriveWorkspaceAppRoute"), 'Desktop view type must extend the shared full workspace route model')
   assert.ok(web.includes("type AppView = XDriveWorkspaceViewKey<"), 'Web view type must include the shared local-storage route')
   assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
   assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
@@ -182,11 +185,11 @@ test('local storage is shared across Web and Desktop while platform adapters rem
 })
 
 test('Desktop Files routing uses the shared files key directly', () => {
-  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<"), 'Desktop must use the shared workspace route key directly')
+  assert.ok(desktop.includes("type View = XDriveWorkspaceAppRoute"), 'Desktop must use the shared workspace route key directly')
   assert.equal(desktop.includes("view === 'cloud'"), false, 'legacy cloud view key must be removed')
   assert.equal(desktop.includes("setView('cloud')"), false, 'legacy cloud navigation must be removed')
-  assert.ok(desktop.includes('selected={view}'), 'Desktop shared sidebar selection should use the real view directly')
-  assert.ok(desktop.includes("onSelect={(destination) => {"), 'Desktop shared Sidebar must keep a real navigation handler')
+  assert.ok(desktop.includes('view={view}') && sharedApp.includes('selected={view}'), 'Desktop shared app must select the real workspace view directly')
+  assert.ok(desktop.includes("onNavigate={(destination) => {") && sharedApp.includes('onSelect={onNavigate}'), 'Desktop navigation must reach the shared sidebar handler')
   assert.ok(desktop.includes("setView(destination as View)"), 'Desktop shared sidebar should route directly')
   assert.ok(desktop.includes("setSystemDependenciesNavigationResetKey((value) => value + 1)"),
     'system dependencies entry must reset to overview without changing the global App Frame')
