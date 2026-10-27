@@ -54,6 +54,11 @@ export function XDriveMediaGalleryViewerLocationDialog({
               onClick={() => { onClose(); onOpenDynamicMap?.() }}>
               打开照片地图
             </Button>
+            {!onOpenDynamicMap ? (
+              <Typography variant="caption" color="text.secondary" role="status">
+                当前照片集合暂不能安全映射到地图，请从支持地图的图库或相册范围进入。
+              </Typography>
+            ) : null}
           </Stack>
         ) : (
           <Typography role="status" color="text.secondary" sx={{p:2}}>

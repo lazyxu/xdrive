@@ -180,3 +180,95 @@ test('both full-document map runtime transitions reject signed Owner scope loss'
     null,
   ]) assert.equal(safe(scopeValue),false,JSON.stringify(scopeValue))
 })
+
+test('Viewer location can open map only after current Owner map admission succeeds', () => {
+  const gallery = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGallery.tsx'),'utf8')
+  const start = gallery.indexOf('  const showMapFromCurrentGallery = () => {')
+  const end = gallery.indexOf('\n  const appliedScopeLabel =',start)
+  assert.ok(start >= 0 && end > start)
+  const source = gallery.slice(start,end)
+  // Execute the real shared navigation action with controlled Owner/Range
+  // state, not a duplicate authorization implementation.
+  const run = (overrides = {}) => {
+    const events = []
+    const currentSource = {}
+    const env = {
+      onOpenSecureDesktopMap: undefined,
+      collectionTargetRef: {current:{kind:'all',id:'',query:{}}},
+      setError: message => { if (message) events.push(['error',message]) },
+      leaveBaiduCellWall: () => events.push(['return-to-map']),
+      loading: false, collectionError: null, currentAlbum: null,
+      xDriveGalleryMapEntryScope: () => ({ok:true,scope:{
+        albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'},
+      }}),
+      section:'library',query:{},
+      gallerySortRef:{current:{by:'captured',dir:'desc'}},
+      mediaTimeZoneRef:{current:'Asia/Tokyo'},activeMediaType:'',
+      foldDuplicates:false,currentFolderView:null,currentSuggestedPerson:null,
+      currentPerson:null,currentPet:null,currentMemory:null,currentCleanupReview:null,
+      mapGalleryVisibleAnchorRef:{current:null},
+      mediaGalleryQuerySignature: () => 'accepted-range',
+      preferenceScope:'owner-A', source:currentSource,
+      mapGalleryEntryReturnRef:{current:null},
+      changeBaiduMapPhotoScope: () => events.push(['map-scope']),
+      setMobileCollectionsOverview: () => {},
+      selectSection: section => events.push(['section',section]),
+      ...overrides,
+    }
+    const names=Object.keys(env)
+    const make=new Function(...names,source+'\nreturn showMapFromCurrentGallery;')
+    const perform=make(...names.map(name=>env[name]))
+    return {accepted:perform(),events,entry:env.mapGalleryEntryReturnRef.current}
+  }
+  const accepted=run()
+  assert.equal(accepted.accepted,true)
+  assert.deepEqual(accepted.events,[['map-scope'],['section','places']])
+  assert.equal(accepted.entry.owner,'owner-A')
+  assert.equal(accepted.entry.section,'library')
+  for(const [label,override] of [
+    ['pending Range',{loading:true}],
+    ['failed Range',{collectionError:new Error('offline')}],
+    ['no accepted owner Range',{collectionTargetRef:{current:null}}],
+    ['stale album identity',{collectionTargetRef:{current:{kind:'album',id:'old',query:{}}}}],
+    ['unsupported private filters',{xDriveGalleryMapEntryScope:()=>({ok:false})}],
+  ]) {
+    const denied=run(override)
+    assert.equal(denied.accepted,false,label)
+    assert.ok(denied.events.length > 0,label)
+    assert.ok(denied.events.every(event=>event[0]==='error'),label)
+    assert.equal(denied.entry,null,label)
+  }
+  const cell=run({collectionTargetRef:{current:{kind:'baidu-cell'}}})
+  assert.equal(cell.accepted,true)
+  assert.deepEqual(cell.events,[['return-to-map']])
+  assert.equal(cell.entry,null)
+  const viewport=run({collectionTargetRef:{current:{kind:'baidu-viewport'}}})
+  assert.equal(viewport.accepted,true)
+  assert.deepEqual(viewport.events,[['return-to-map']])
+  const desktopEvents=[]
+  const desktop=run({onOpenSecureDesktopMap:scope=>desktopEvents.push(scope)})
+  assert.equal(desktop.accepted,true)
+  assert.equal(desktopEvents.length,1)
+  assert.ok(desktop.events.every(event=>event[0]!=='section'))
+  assert.equal(desktop.entry,null)
+})
+
+test('Viewer->Map keeps preview open on rejection and never widens to an unscoped tab', () => {
+  const gallery = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGallery.tsx'),'utf8')
+  const marker=gallery.indexOf('      <XDriveMediaGalleryViewer\\n'.replace('\\n','\n'))
+  assert.ok(marker >= 0)
+  const handler=gallery.slice(marker,gallery.indexOf('positionLabel=',marker))
+  assert.match(handler,/onOpenDynamicMap=\{onShowMap && \(showGalleryMapEntry \|\| nativeCellWall\)/)
+  assert.match(handler,/if \(!onShowMap\(\)\) return/)
+  assert.ok(handler.indexOf('if (!onShowMap()) return') <
+    handler.indexOf('closeMediaPreview()'))
+  assert.doesNotMatch(handler,/onSectionChange\?\.\('places'\)/)
+  const location=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx'),'utf8')
+  assert.match(location,/disabled=\{!onOpenDynamicMap\}/)
+  assert.match(location,/当前照片集合暂不能安全映射到地图/)
+  assert.match(location,/role="status"/)
+})
+
