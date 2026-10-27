@@ -48,6 +48,10 @@ export type XDriveOverviewPort = {
   openPath(relativePath: string): Promise<void>
   loadThumbnail(item: XDriveFileExplorerItem, signal?: AbortSignal): Promise<string | null | undefined>
 }
+// Stable cold/unauthorized lists: do not restart effects on every paint.
+const EMPTY_RECENT: XDriveFileRecentItem<Node>[] = []
+const EMPTY_FAVORITES: XDriveFileFavoriteItem<Node>[] = []
+
 export type XDriveOverviewPageProps = {
   port: XDriveOverviewPort
   status?: XDriveOverviewStatus
@@ -113,8 +117,8 @@ export function XDriveOverviewPage({
   const [favoriteFailure, setFavoriteFailure] = useState<{ scope: string; message: string } | null>(null)
   const recentVerified = recentSnapshot?.scope === overviewLifecycleKey
   const favoritesVerified = favoriteSnapshot?.scope === overviewLifecycleKey
-  const recentItems = recentVerified ? recentSnapshot.rows : []
-  const favoriteItems = favoritesVerified ? favoriteSnapshot.rows : []
+  const recentItems = recentVerified ? recentSnapshot.rows : EMPTY_RECENT
+  const favoriteItems = favoritesVerified ? favoriteSnapshot.rows : EMPTY_FAVORITES
   // Error and accepted snapshots must always belong to the currently
   // authenticated Owner; old account A never paints during A -> B switching.
   const recentError = recentFailure?.scope === overviewLifecycleKey ? recentFailure.message : undefined
