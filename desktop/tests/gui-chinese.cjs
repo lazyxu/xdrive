@@ -37,13 +37,14 @@ const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 
 const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'fileDialogAdapters.ts'), 'utf8')
 const desktopOverviewPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'OverviewPage.tsx'), 'utf8')
 const desktopOverviewPort = fs.readFileSync(path.join(root, 'src', 'renderer', 'desktopOverviewAdapter.ts'), 'utf8')
-const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
+const desktopConflictsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
 const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DiagnosticsPage.tsx'), 'utf8')
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
   rendererApp,
+  sharedHostSections,
   sharedSourceManager,
   sharedSettingsDialog,
   sharedCloudStoragePage,
