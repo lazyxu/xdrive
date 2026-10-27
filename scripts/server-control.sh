@@ -2492,6 +2492,67 @@ backup_admin_status() {
   chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-status.json"
 }
 
+
+# Persist only Host-observed terminal results; bounded to 30 receipts. No
+# renderer path, log contents or credentials can enter this private record.
+backup_admin_history_append() {
+  local dir="$1" state="$2" action="$3" id="$4" snapshot="$5" mode="$6"
+  local started="$7" finished="$8" error_code="$9"
+  python3 - "$dir/backup-admin-history.json" "$state" "$action" "$id" \
+    "$snapshot" "$mode" "$started" "$finished" "$error_code" <<'PY'
+import json, os, re, stat, sys, tempfile
+path,state,action,rid,snapshot,mode,started,finished,code=sys.argv[1:]
+if state not in ("success","failed") or action not in ("create","verify","plan","restore","delete","prune","policy"):
+    sys.exit(2)
+if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
+    sys.exit(2)
+if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
+    sys.exit(2)
+if (action in ("verify","restore","delete")) != bool(snapshot):
+    sys.exit(2)
+if (action in ("verify","plan")) != (mode in ("fast","deep")):
+    sys.exit(2)
+if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",started) and
+        re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",finished)):
+    sys.exit(2)
+old=[]
+if os.path.lexists(path):
+    st=os.lstat(path)
+    if not stat.S_ISREG(st.st_mode) or st.st_size>32768:
+        sys.exit(2)
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,"rb") as f: raw=f.read(32769)
+    if len(raw)>32768: sys.exit(2)
+    data=json.loads(raw)
+    if not isinstance(data,dict) or data.get("protocol")!="xdrive-backup-admin-history-v1":
+        sys.exit(2)
+    old=data.get("operations")
+    if not isinstance(old,list) or len(old)>30: sys.exit(2)
+entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
+    snapshot_id=snapshot,mode=mode,state=state,started_at=started,
+    finished_at=finished,error_code=code)
+events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
+raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
+                ensure_ascii=False,separators=(",",":"))+"\n").encode()
+if len(raw)>32768: sys.exit(2)
+fd,tmp=tempfile.mkstemp(prefix=".backup-admin-history.",dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd,"wb") as f:
+        os.fchmod(f.fileno(),0o660)
+        f.write(raw); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp,path)
+    # A renamed receipt is crash-durable only after syncing the containing
+    # directory. A failure remains a warning and cannot falsify backup status.
+    directory_fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+finally:
+    if os.path.exists(tmp): os.unlink(tmp)
+PY
+}
+
 backup_admin_write_policy() {
   local fmt="$1" days="$2" expected="$3" tmp install_lock="$STATE_DIR/install.lock"
   local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
@@ -2719,11 +2780,18 @@ backup_admin_process_request() {
       [[ "$result" == 0 ]] || rm -f "$tmp"
     fi
   fi
+  local finished="$(now_utc)" history_state=success history_error=""
   if [[ "$result" == 0 ]]; then
-    backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$(now_utc)"
+    backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$finished"
   else
-    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" operation_failed "操作失败；请查看宿主机私有日志。" "$started" "$(now_utc)"
+    history_state=failed
+    history_error=operation_failed
+    [[ "$result" == 75 ]] && history_error=lock_busy
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "操作失败；请查看宿主机私有日志。" "$started" "$finished"
   fi
+  # A history I/O failure cannot change the actual backup outcome.
+  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" ||
+    echo "[xDrive] warning: private backup history not persisted" >&2
   rm -f "$active"
   backup_admin_inventory "$dir" || true
 }
@@ -2737,7 +2805,14 @@ backup_admin_recover_interrupted() {
   # No queued or active destructive action is replayed across Host restarts.
   # A new explicit Admin confirmation is required after inspecting the state.
   [[ -f "$interrupted_request" ]] || interrupted_request="$dir/backup-admin-request.json"
-  backup_admin_status "$dir" failed     "$(json_value "$interrupted_request" action)"     "$(json_value "$interrupted_request" request_id)"     "$(json_value "$interrupted_request" snapshot_id)"     interrupted "上次备份操作被中断；如需继续请重新确认。" "" "$(now_utc)"
+  local old_action old_id old_snapshot old_mode finished
+  old_action="$(json_value "$interrupted_request" action)"
+  old_id="$(json_value "$interrupted_request" request_id)"
+  old_snapshot="$(json_value "$interrupted_request" snapshot_id)"
+  old_mode="$(json_value "$interrupted_request" mode)"
+  finished="$(now_utc)"
+  backup_admin_status "$dir" failed "$old_action" "$old_id" "$old_snapshot" interrupted "上次备份操作被中断；如需继续请重新确认。" "" "$finished"
+  backup_admin_history_append "$dir" failed "$old_action" "$old_id" "$old_snapshot" "$old_mode" "$finished" "$finished" interrupted || true
   rm -f -- "$dir/backup-admin-active.json" "$dir/backup-admin-request.json"
 }
 

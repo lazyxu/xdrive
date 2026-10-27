@@ -247,6 +247,12 @@ Desktop uses the same MUI panel via fixed Agent IPC methods with an independent 
 If the Host Control runner or current inventory is unavailable, the UI
 is disabled rather than pretending the operation succeeded.
 
+Host Control now persists the latest 30 terminal administrator backup outcomes
+in a bounded private JSON history file. Shared Web/Desktop UI shows these
+executed results plus a per-snapshot *last verification (historical)* receipt.
+This is not a claim that previously verified bytes remain valid: any actual
+restore re-runs the full fail-closed verification.
+
 Online CAS verification/repair lives in **全局存储** and Task Center;
 a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file

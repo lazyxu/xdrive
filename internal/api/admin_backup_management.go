@@ -96,11 +96,67 @@ type backupAdminRetention struct {
 	HashedBytes           int64    `json:"hashed_bytes"`
 }
 type backupAdminPage struct {
-	Supported bool                  `json:"supported"`
-	Message   string                `json:"message,omitempty"`
-	Inventory backupAdminInventory  `json:"inventory"`
-	Operation backupAdminStatus     `json:"operation"`
-	Retention *backupAdminRetention `json:"retention,omitempty"`
+	Supported bool                      `json:"supported"`
+	Message   string                    `json:"message,omitempty"`
+	Inventory backupAdminInventory      `json:"inventory"`
+	Operation backupAdminStatus         `json:"operation"`
+	Retention *backupAdminRetention     `json:"retention,omitempty"`
+	History   []backupAdminHistoryEntry `json:"history,omitempty"`
+}
+
+// Host-authored historical receipts, not current snapshot integrity guarantees.
+type backupAdminHistoryEntry struct {
+	backupAdminStatus
+	Mode string `json:"mode,omitempty"`
+}
+
+type backupAdminHistory struct {
+	Protocol   string                    `json:"protocol"`
+	Operations []backupAdminHistoryEntry `json:"operations"`
+}
+
+func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
+	if len(events) > 30 {
+		return false
+	}
+	seen := make(map[string]bool, len(events))
+	for _, e := range events {
+		if e.Protocol != backupAdminProtocol || len(e.RequestID) != 24 ||
+			strings.Trim(e.RequestID, "0123456789abcdef") != "" || seen[e.RequestID] ||
+			(e.State != "success" && e.State != "failed") || len(e.ErrorCode) > 60 ||
+			(e.SnapshotID != "" && !backupAdminSnapshotID.MatchString(e.SnapshotID)) {
+			return false
+		}
+		switch e.Action {
+		case "verify":
+			if e.SnapshotID == "" || (e.Mode != "fast" && e.Mode != "deep") {
+				return false
+			}
+		case "plan":
+			if e.SnapshotID != "" || (e.Mode != "fast" && e.Mode != "deep") {
+				return false
+			}
+		case "restore", "delete":
+			if e.SnapshotID == "" || e.Mode != "" {
+				return false
+			}
+		case "create", "prune", "policy":
+			if e.SnapshotID != "" || e.Mode != "" {
+				return false
+			}
+		default:
+			return false
+		}
+		start, startErr := time.Parse(time.RFC3339, e.StartedAt)
+		finish, endErr := time.Parse(time.RFC3339, e.FinishedAt)
+		if startErr != nil || endErr != nil || finish.Before(start) ||
+			time.Until(finish) > 15*time.Second ||
+			(e.State == "success" && e.ErrorCode != "") {
+			return false
+		}
+		seen[e.RequestID] = true
+	}
+	return true
 }
 
 func readSafeBackupAdminJSON(dir, name string, maxSize int64, out any) error {
@@ -207,6 +263,11 @@ func (s *Server) backupAdminState() backupAdminPage {
 		report.Mode == "read_only" && report.KeepLast >= 1 && report.KeepLast <= 1000 &&
 		!report.DeleteEnabled && len(report.KeepSnapshots) <= 100 && len(report.DropCandidates) <= 100 {
 		page.Retention = &report
+	}
+	var history backupAdminHistory
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-history.json", 32<<10, &history); err == nil &&
+		history.Protocol == "xdrive-backup-admin-history-v1" && validBackupAdminHistory(history.Operations) {
+		page.History = history.Operations
 	}
 	if _, err := os.Lstat(filepath.Join(dir, "backup-admin-active.json")); err == nil &&
 		page.Operation.State != "running" {

@@ -34,6 +34,14 @@ function snapshotStatus(item: XDriveServerBackupSnapshot): string {
   return '不完整'
 }
 
+
+function historicalVerification(history: XDriveServerBackupPage['history'], snapshotID: string) {
+  const latest = history?.find(e => e.action === 'verify' && e.snapshot_id === snapshotID)
+  if (!latest) return '未校验'
+  return (latest.state === 'success' ? '通过' : '失败') + ' · ' + (latest.mode || 'fast') +
+    ' · ' + (latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '—') + '（历史）'
+}
+
 export function XDriveServerBackupManagementPanel({
   port, onOpenStorage,
 }: {
@@ -206,6 +214,7 @@ export function XDriveServerBackupManagementPanel({
                 <TableRow>
                   <TableCell>选择</TableCell><TableCell>快照</TableCell>
                   <TableCell>创建时间</TableCell><TableCell>格式</TableCell><TableCell>状态</TableCell>
+                   <TableCell>最近验证（历史）</TableCell>
                   <TableCell align="right">本代占用</TableCell>
                 </TableRow>
               </TableHead>
@@ -222,11 +231,12 @@ export function XDriveServerBackupManagementPanel({
                     <TableCell>{item.created_at ? new Date(item.created_at).toLocaleString() : '—'}</TableCell>
                     <TableCell>{item.format}</TableCell>
                     <TableCell>{snapshotStatus(item)}</TableCell>
+                     <TableCell>{historicalVerification(page?.history, item.id)}</TableCell>
                     <TableCell align="right">{displayBytes(item.bytes)}</TableCell>
                   </TableRow>
                 ))}
                 {!page?.inventory.snapshots.length ? (
-                  <TableRow><TableCell colSpan={6}>尚无已发现的服务器快照。</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7}>尚无已发现的服务器快照。</TableCell></TableRow>
                 ) : null}
               </TableBody>
             </Table>
@@ -338,6 +348,38 @@ export function XDriveServerBackupManagementPanel({
               当前自定义 v2 仓库：{page.inventory.policy.repository}。修改或清空此宿主机路径需要本地管理员配置。
             </Typography>
           ) : null}
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-history>
+        <Stack spacing={1.5}>
+          <Typography variant="subtitle1" fontWeight={600}>宿主机备份操作与校验历史</Typography>
+          <Typography variant="body2" color="text.secondary">
+            最多保留 30 条真实执行结果。历史验证通过不代表当前仍完整；每次恢复前都重新校验。
+          </Typography>
+          <TableContainer sx={{ maxHeight: 320 }}>
+            <Table size="small" stickyHeader aria-label="服务器备份操作历史">
+              <TableHead>
+                <TableRow>
+                  <TableCell>完成时间</TableCell><TableCell>动作</TableCell><TableCell>快照</TableCell>
+                  <TableCell>结果</TableCell><TableCell>模式</TableCell><TableCell>请求号</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {(page?.history || []).map(item => (
+                  <TableRow key={item.request_id}>
+                    <TableCell>{item.finished_at ? new Date(item.finished_at).toLocaleString() : '—'}</TableCell>
+                    <TableCell>{item.action}</TableCell>
+                    <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
+                    <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
+                    <TableCell>{item.mode || '—'}</TableCell>
+                    <TableCell>{item.request_id || '—'}</TableCell>
+                  </TableRow>
+                ))}
+                {!page?.history?.length ? <TableRow><TableCell colSpan={6}>暂无历史操作记录。</TableCell></TableRow> : null}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Stack>
       </Paper>
       <Box>
