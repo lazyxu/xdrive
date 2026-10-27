@@ -71,6 +71,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     original: pendingImage(), thumbnail: pendingImage(),
   })
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [thumbnailProgress, setThumbnailProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const [retryNonce, setRetryNonce] = useState(0)
   const sourceIdentity = JSON.stringify([target.id, target.revision, kind])
   // Capture the source AND attempt in each retry handler. A retained callback
@@ -117,6 +118,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     const loaders = loadersRef.current
     decodingRef.current.clear()
     setProgress({ loadedBytes: 0 })
+    setThumbnailProgress({ loadedBytes: 0 })
     setSources({
       original: { url: '', status: loaders.loadPreviewURL ? 'loading' : 'failed', attempt: attemptsRef.current.original },
       thumbnail: { url: '', status: loaders.loadImagePreview ? 'loading' : 'failed', attempt: attemptsRef.current.thumbnail },
@@ -205,6 +207,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       const controller = new AbortController()
       controllers.set(role, controller)
       if (role === 'original') setProgress({ loadedBytes: 0 })
+      else setThumbnailProgress({ loadedBytes: 0 })
       setSources((current) => ({ ...current, [role]: pendingImage(attempt) }))
       void load(role, () => loader(controller.signal, attempt), attempt, controller.signal)
     }
@@ -226,7 +229,13 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       // a first frame while the original is downloading or decoding.
       startOriginal()
       start('thumbnail', current.loadImagePreview
-        ? (signal) => current.loadImagePreview!(current.target, signal) : undefined)
+        ? (signal, attempt) => current.loadImagePreview!(current.target, signal,
+          (loadedBytes, totalBytes) => {
+            if (generationRef.current === generation &&
+                attemptsRef.current.thumbnail === attempt && !signal.aborted) {
+              setThumbnailProgress({ loadedBytes, totalBytes })
+            }
+          }) : undefined)
     }
     const requestOwner = retrySource
     retryOriginalRef.current = () => {
@@ -296,6 +305,12 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   }, [failImage, readyRole, readyURL, renderGeneration, readySource])
   const loading = sources.original.status === 'loading' ||
     (!readySource && sources.thumbnail.status === 'loading')
+  // While waiting for the very first decoded frame, report the thumbnail's
+  // measured body bytes if available. Once a thumbnail is visible, never
+  // mislabel those bytes as the still-loading original's transfer progress.
+  const showingThumbnailTransfer = !readySource &&
+    sources.thumbnail.status === 'loading' && thumbnailProgress.loadedBytes > 0
+  const visibleProgress = showingThumbnailTransfer ? thumbnailProgress : progress
   const failed = !readySource && !loading
   const canRetry = hasPreviewURL || hasImagePreview
   const retryPreview = () => {
@@ -392,8 +407,9 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
           : { position: 'absolute', inset: 0 }}>
           <XDriveMediaLoadingProgress
             compact={Boolean(readySource)}
-            stage={sources.original.url ? 'decode' : 'transfer'}
-            {...progress}
+            stage={showingThumbnailTransfer ? 'transfer'
+              : sources.original.url ? 'decode' : 'transfer'}
+            {...visibleProgress}
           />
         </Box>
       ) : null}

@@ -724,3 +724,89 @@ test('Audio Viewer reports native buffered time, never synthetic byte completion
     await act(async () => renderer.unmount())
   }
 })
+
+
+test('semantic Gallery Viewer forwards measured thumbnail bytes with the current Node revision', async () => {
+  const { XDriveMediaViewerContent } = loadShared(
+    path.join(repo, 'ui/shared/src/mui/MediaViewerContent.tsx'),
+    { './FilePreviewSurface': {
+      XDriveFilePreviewSurface: props => React.createElement('test-thumbnail-source', props),
+    } }, new Map(),
+  )
+  const calls = []
+  const loadThumbnail = async (nodeID, signal, revision, onProgress) => {
+    calls.push({ nodeID, signal, revision, onProgress })
+    return null
+  }
+  const item = revision => ({
+    node: { id: 811, revision, name: 'still.jpg', type: 'file', size: 8192 },
+    metadata: { mime_type: 'image/jpeg', media_kind: 'image', has_thumbnail: true },
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveMediaViewerContent, {
+        item: item(1), loadThumbnail,
+      }))
+    })
+    const originalLoader = renderer.root.findByType('test-thumbnail-source').props.loadImagePreview
+    const signal = new AbortController().signal
+    const seen = []
+    await originalLoader(null, signal, (...bytes) => seen.push(bytes))
+    assert.equal(calls[0].nodeID, 811)
+    assert.equal(calls[0].revision, 1)
+    assert.equal(calls[0].signal, signal)
+    calls[0].onProgress(512, 1024)
+    assert.deepEqual(seen, [[512, 1024]], 'the Viewer must not drop the binary observer')
+    await act(async () => {
+      renderer.update(React.createElement(XDriveMediaViewerContent, {
+        item: item(2), loadThumbnail,
+      }))
+    })
+    const currentLoader = renderer.root.findByType('test-thumbnail-source').props.loadImagePreview
+    assert.notEqual(currentLoader, originalLoader)
+    await currentLoader(null, signal, () => {})
+    assert.equal(calls[1].revision, 2, 'new revisions request their own thumbnail bytes')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('first-frame Viewer reports actual thumbnail transfer and fences old revision callbacks', async () => {
+  const reads = []
+  const thumbnail = (target, signal, onProgress) => new Promise(resolve =>
+    reads.push({ revision: target.revision, signal, onProgress, resolve }))
+  const target = revision => ({ id: 819, revision, name: 'image.jpg', kind: 'file' })
+  let renderer
+  const status = () => {
+    const visible = renderer.root.findAll(node =>
+      typeof node.type === 'string' && node.props['data-xdrive-media-loading-progress'])
+    assert.equal(visible.length, 1, 'only one visible preview loading status')
+    return visible[0].props['aria-label']
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: target(1), loadImagePreview: thumbnail,
+      }))
+    })
+    assert.equal(reads.length, 1)
+    await act(async () => reads[0].onProgress(256, 1024))
+    assert.match(status(), /0\.3 \/ 1\.0 KiB/, 'show measured thumbnail bytes before a decoded frame')
+    await act(async () => {
+      renderer.update(React.createElement(XDriveFilePreviewSurface, {
+        target: target(2), loadImagePreview: thumbnail,
+      }))
+    })
+    assert.equal(reads.length, 2)
+    assert.equal(reads[0].signal.aborted, true, 'retired thumbnail fetch must be cancelled')
+    await act(async () => reads[0].onProgress(1024, 1024))
+    assert.equal(status(), '正在加载…', 'late progress from a prior revision is never shown')
+    await act(async () => reads[1].onProgress(512, 1024))
+    assert.match(status(), /0\.5 \/ 1\.0 KiB/)
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.equal(reads[1].signal.aborted, true)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
