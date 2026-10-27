@@ -14,11 +14,10 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
   invariant(owner === 'lazyxu' && repo === 'xdrive', 'not lazyxu/xdrive')
   invariant(Number.isSafeInteger(maxCancels) && maxCancels >= 1 && maxCancels <= 25, 'invalid cancellation budget')
   invariant(typeof dryRun === 'boolean', 'invalid dry-run argument')
-  invariant(context.eventName === 'workflow_dispatch' || context.eventName === 'release', 'unsupported event')
-  if (context.eventName === 'release') {
-    const evt = context.payload?.release
-    invariant(evt?.tag_name === 'snapshot' && evt?.prerelease === true && evt?.draft === false,
-      'only a published/edited Snapshot release may trigger automatic pruning')
+  invariant(context.eventName === 'workflow_dispatch' || context.eventName === 'repository_dispatch', 'unsupported event')
+  if (context.eventName === 'repository_dispatch') {
+    invariant(context.payload?.action === 'xdrive_snapshot_published',
+      'only the explicit Snapshot-published event may trigger automatic pruning')
   }
 
   // The source of truth is the current ref plus completed Release metadata,
