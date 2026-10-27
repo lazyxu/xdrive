@@ -40,6 +40,7 @@ test('empty-map refresh reuses the original scoped Camera and never steals an in
       refreshFilteredCells,lifetime:{signal:{aborted:false}},failed:false,
       lastViewport:{current:{bounds:b,live:true}},
       activeQuery:null,acceptedScope:{current:{key:'owner:favorite'}},
+      failedCellsScopeRef:{current:null},scope:'owner-one',
       filterRef:{current:{key:'owner:favorite'}},
       initialWorldEmpty:false,cameraTouched:true,
       queryCells:(bounds,live)=>{visited.push({bounds,live});return Promise.resolve(true)},
@@ -69,6 +70,20 @@ test('empty-map refresh reuses the original scoped Camera and never steals an in
   const changed=run({acceptedScope:{current:{key:'prior'}}})
   changed.handler(true)
   assert.equal(changed.visited.length,0,'a different Owner/photo filter cannot poll')
+  const recover=run({acceptedScope:{current:null},
+    failedCellsScopeRef:{current:{owner:'owner-one',key:'owner:favorite'}}})
+  recover.handler(true)
+  assert.equal(recover.visited.length,1,
+    'only a previously failed exact Owner filter may retry without accepted Cells')
+  const otherScope=run({acceptedScope:{current:null},
+    failedCellsScopeRef:{current:{owner:'owner-one',key:'owner:previous'}}})
+  otherScope.handler(true)
+  assert.equal(otherScope.visited.length,0,'never retry an old Owner/album filter')
+  const otherOwner=run({acceptedScope:{current:null},
+    failedCellsScopeRef:{current:{owner:'owner-two',key:'owner:favorite'}}})
+  otherOwner.handler(true)
+  assert.equal(otherOwner.visited.length,0,
+    'even matching filter keys cannot retry across Owner sessions')
   const aborted=run({lifetime:{signal:{aborted:true}}})
   aborted.handler(true)
   assert.equal(aborted.visited.length,0)

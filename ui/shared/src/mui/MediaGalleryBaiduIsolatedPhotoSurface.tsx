@@ -117,6 +117,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const filterRef = useRef({key:currentFilterKey,snapshot:scopeSnapshot})
   filterRef.current = {key:currentFilterKey,snapshot:scopeSnapshot}
   const acceptedScope = useRef<{key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
+  const failedCellsScopeRef = useRef<{owner:string;key:string} | null>(null)
   const acceptedCells = useRef<MediaBaiduNativeCellSelection[]>([])
   const lastViewport = useRef<{bounds:Bounds;live:boolean}|null>(null)
   const refreshFilteredCells = useRef<((skipPending?:boolean) => void) | null>(null)
@@ -139,6 +140,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const [projected,setProjected] = useState<
     XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
   const [error,setError] = useState(false)
+  const [failedCellsScope,setFailedCellsScope] = useState<{owner:string;key:string} | null>(null)
   type DrawerView = {
     selection: MediaBaiduNativeCellSelection
     key: string
@@ -291,6 +293,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       activeQuery = null
       acceptedScope.current = null
       acceptedCells.current = []
+      failedCellsScopeRef.current = null
+      setFailedCellsScope(null)
       closeDrawer()
       setAccessible([])
       setSummary(null)
@@ -457,7 +461,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         return true
       } catch {
-        if(!request.signal.aborted && !lifetime.signal.aborted && run===generation) {
+        if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
+            approved.key===filterRef.current.key) {
+          // A failed/invalid Owner Cells response has NO media authority.
+          // Preserve only the scope identity for an explicit guarded retry.
+          const failureScope = {owner:scope ?? '',key:approved.key}
+          failedCellsScopeRef.current = failureScope
+          setFailedCellsScope(failureScope)
           frame.replaceAuthorizedCells([])
           setSummary(null)
           latestAcceptedViewport.current = null
@@ -473,7 +483,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     refreshFilteredCells.current=(skipPending=false)=>{
       if(lifetime.signal.aborted || failed || !lastViewport.current ||
          (skipPending && (activeQuery ||
-           acceptedScope.current?.key!==filterRef.current.key)))return
+           (acceptedScope.current?.key!==filterRef.current.key &&
+             (failedCellsScopeRef.current?.owner!==(scope ?? '') ||
+               failedCellsScopeRef.current?.key!==filterRef.current.key)))))return
       const last=lastViewport.current
       const worldwideDiscovery = skipPending && initialWorldEmpty && !cameraTouched
       const bounds = worldwideDiscovery
@@ -706,6 +718,26 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           ) : null}
         </Box>
       ):null}
+        {phase === 'ready' && failedCellsScope?.owner === (scope ?? '') &&
+            failedCellsScope.key === currentFilterKey &&
+            !activeDrawer ? (
+          <Box role="alert" data-xdrive-places-cells-query-error
+            sx={{position:'absolute',left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
+              right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
+              bottom:{xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
+              zIndex:6,display:'flex',alignItems:'center',gap:1,flexWrap:'wrap',
+              p:1,bgcolor:'background.paper',borderRadius:2,boxShadow:3}}>
+            <Typography variant="caption" color="text.secondary">
+              定位照片范围读取或校验失败，未显示未经确认的照片。
+            </Typography>
+            <Button size="small" variant="outlined"
+              data-xdrive-places-cells-query-retry
+              sx={{minHeight:44,textTransform:'none'}}
+              onClick={() => refreshFilteredCells.current?.(true)}>
+              重试定位照片
+            </Button>
+          </Box>
+        ) : null}
         {activeDrawer && loadThumbnail ? (
           <XDriveMediaGalleryPlacesPhotoDrawer
             items={activeDrawer.items} total={activeDrawer.total}
