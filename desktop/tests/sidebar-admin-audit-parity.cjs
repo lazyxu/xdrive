@@ -7,6 +7,8 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
 const shared = read('ui', 'shared', 'src', 'mui', 'AdminAuditPage.tsx')
 const web = read('web', 'src', 'AdminAudit.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
 const main = read('desktop', 'src', 'main', 'index.cts')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const globals = read('desktop', 'src', 'renderer', 'global.d.ts')
@@ -19,7 +21,7 @@ const port = read('ui', 'shared', 'src', 'admin-management.ts')
 
 test('Web and Desktop use the identical snapshot-bound virtualized audit page', () => {
   assert.ok(web.includes("export { XDriveAdminAuditPage as default } from '@xdrive/ui/mui'"))
-  assert.ok(desktop.includes('<XDriveAdminAuditPage api={adminAuditPort} />'))
+  assert.ok(desktop.includes('adminAuditPage:') && desktop.includes('api: adminAuditPort') && outlet.includes('<XDriveAdminAuditPage {...services.adminAuditPage} />'))
   for (const token of ['useXDriveVirtualCollection<AuditEvent>', 'virtualCollection.ensureViewport(',
     'snapshotMaxIDRef', 'api.adminAuditRange({', 'data-xdrive-admin-audit-mobile-list']) {
     assert.ok(shared.includes(token), 'missing shared audit contract: ' + token)
@@ -28,8 +30,8 @@ test('Web and Desktop use the identical snapshot-bound virtualized audit page', 
 })
 
 test('Desktop audit path is admin-only, bounded and cancellable to Go', () => {
-  assert.ok(desktop.includes("key: 'admin-audit', label: '审计日志'"))
-  assert.ok(desktop.includes("view === 'admin-audit' && status?.role === 'admin'"))
+  assert.ok(sections.includes("key: 'admin-audit', label: '审计日志'"))
+  assert.ok(desktop.includes("adminAuditPage: status?.role === 'admin'") && outlet.includes("case 'admin-audit':"))
   assert.ok(desktop.includes("capabilities.includes('admin-audit')"))
   assert.ok(desktop.includes('xDriveDesktopViewportRequest(signal'))
   assert.ok(main.includes("requireAgentCapability(hello, 'admin-audit')"))
