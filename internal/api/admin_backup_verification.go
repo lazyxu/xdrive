@@ -4,13 +4,13 @@ import "strings"
 
 // A fixed-schema Host receipt. Never include raw paths, object hashes or logs.
 type backupAdminVerificationReceipt struct {
-	Protocol          string ${tick}json:"protocol"${tick}
-	State             string ${tick}json:"state"${tick}
-	Format            string ${tick}json:"format"${tick}
-	Scope             string ${tick}json:"scope"${tick}
-	CASObjectsChecked int64  ${tick}json:"cas_objects_checked"${tick}
-	CASBytesHashed    int64  ${tick}json:"cas_bytes_hashed"${tick}
-	FailureCategory   string ${tick}json:"failure_category,omitempty"${tick}
+	Protocol          string `json:"protocol"`
+	State             string `json:"state"`
+	Format            string `json:"format"`
+	Scope             string `json:"scope"`
+	CASObjectsChecked int64  `json:"cas_objects_checked"`
+	CASBytesHashed    int64  `json:"cas_bytes_hashed"`
+	FailureCategory   string `json:"failure_category,omitempty"`
 }
 
 func validBackupVerificationReceipt(e backupAdminHistoryEntry) bool {
