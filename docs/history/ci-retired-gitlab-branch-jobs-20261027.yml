@@ -1,0 +1,1778 @@
+# NON-EXECUTABLE HISTORICAL CI CONTRACT, archived 2026-10-27.
+# Not inside .github/workflows or the GitLab root configuration.
+# No automatic or manual GitHub Actions jobs are created from this file.
+# Preserve the 50 original benchmark test definitions and diagnostics; restore
+# only the needed subset to a reviewed paths-scoped / manual workflow when used.
+obs-p003-quantile-overhead:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  variables:
+    GOMAXPROCS: "4"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/obs-p003-bounded-quantile-overhead-20261017"'
+    - if: '$CI_COMMIT_BRANCH == "perf/obs-p003-bounded-quantile-overhead-20261017"'
+  script:
+    - |
+      set -euo pipefail
+      # Real measurement gate, not a CI-parity name-only placeholder.
+      frozen=docs/performance-evidence/obs-p003/frozen-original-observability.go.txt
+      test "$(git hash-object "$frozen")" = "9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a"
+      files="$(gofmt -l internal/api/observability.go internal/api/storage_performance_histogram.go internal/api/storage_performance_window.go internal/api/storage_performance_histogram_test.go internal/api/storage_performance_histogram_benchmark_test.go)"
+      test -z "$files" || { printf 'gofmt mismatch: %s\n' "$files"; exit 1; }
+      mkdir -p obs-p003-results
+      {
+        printf 'EXACT_SOURCE_HEAD=%s\nCI_JOB_ID=%s\n' "$(git rev-parse HEAD)" "$CI_JOB_ID"
+        go version
+        sha256sum internal/api/observability.go internal/api/storage_performance_histogram_benchmark_test.go "$frozen"
+      } > obs-p003-results/source.txt
+      go test -mod=readonly ./internal/api -run '^TestOBSP003' -bench '^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)$' -cpu=4 -benchtime=450ms -count=3 -benchmem -timeout=20m -v | tee obs-p003-results/run.log
+      awk '
+        function median(k, a,b,c,t) {
+          a=v[k,1];b=v[k,2];c=v[k,3]
+          if(a>b){t=a;a=b;b=t}
+          if(b>c){t=b;b=c;c=t}
+          if(a>b){t=a;a=b;b=t}
+          return b
+        }
+        $1 ~ /^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)-4$/ {
+          k=$1;sub(/^BenchmarkOBSP003/,"",k);sub(/-4$/,"",k)
+          n[k]++;if(n[k]>3)bad=1
+          v[k,n[k]]=$3+0
+          if(k ~ /^(Original|Candidate)/ && (($5+0)!=0 || ($7+0)!=0))bad=1
+          if((k=="PeriodicSample" || k=="AdminRecentRead") && (($3+0)>2000000 || ($5+0)>65536))bad=1
+        }
+        END {
+          split("OriginalSequential CandidateSequential OriginalParallel CandidateParallel PeriodicSample AdminRecentRead",names," ")
+          for(i=1;i<=6;i++)if(n[names[i]]!=3){print "n3 missing: " names[i] > "/dev/stderr";bad=1}
+          if(!bad){
+            so=median("OriginalSequential");sc=median("CandidateSequential")
+            po=median("OriginalParallel");pc=median("CandidateParallel")
+            printf "OBS_P003_AB original/candidate sequential %.3f/%.3f ns/op parallel %.3f/%.3f ns/op\n",so,sc,po,pc
+            if(so<=0 || po<=0 || sc>so*1.25 || pc>po*1.25 || sc-so>50 || pc-po>50)bad=1
+          }
+          if(bad){print "OBS_P003_AB_RED" > "/dev/stderr";exit 1}
+          print "OBS_P003_AB_ACCEPT"
+        }
+      ' obs-p003-results/run.log | tee obs-p003-results/decision.txt
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - obs-p003-results/
+
+media-shared-progress-chromium:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "feat/media-shared-progress-p0c"'
+    - if: '$CI_COMMIT_BRANCH == "feat/media-shared-progress-p0c"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p media-progress-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/media-shared-progress-chromium-main.cjs
+      cat media-progress-results/chromium-http-media-progress.json
+  artifacts:
+    name: "media-shared-progress-chromium-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/media-progress-results/chromium-http-media-progress.json
+
+gallery-first-open-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_FIRST_OPEN_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-100k-thumbnail-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-100k-thumbnail-baseline"'
+  script:
+    - go test -run '^TestMediaGalleryFirstOpenPerformance100K$' -count=1 -v ./internal/api
+
+photoasset-owner-node-preload-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_PHOTOASSET_NODE_PRELOAD_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-node-preload-100k/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-node-preload-100k/'
+  script:
+    - go test -run '^TestPhotoAssetOwnerNodePreload100K$' -count=1 -timeout=12m -v ./internal/photoasset
+
+photoasset-owner-reconcile-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_PHOTOASSET_OWNER_RECONCILE_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-reconcile-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-reconcile-100k-/'
+  script:
+    - go test -run '^TestPhotoAssetOwnerReconcilePerformance100K$' -count=1 -timeout=17m -v ./internal/api
+
+photoasset-owner-alloc-profile-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_PHOTOASSET_OWNER_WRITE_DIAGNOSTIC: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-alloc-profile-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-alloc-profile-100k-/'
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p photoasset-profile
+      go test -run '^TestPhotoAssetOwnerReconcilePerformance100K$' -count=1 -timeout=17m -v -cpuprofile=photoasset-profile/cpu.pprof -memprofile=photoasset-profile/alloc.pprof -memprofilerate=16384 ./internal/api 2>&1 | tee photoasset-profile/bench.log
+      go tool pprof -sample_index=alloc_space -top -nodecount=30 photoasset-profile/alloc.pprof 2>&1 | tee photoasset-profile/alloc-top.txt
+      go tool pprof -sample_index=inuse_space -top -nodecount=30 photoasset-profile/alloc.pprof 2>&1 | tee photoasset-profile/inuse-top.txt
+      go tool pprof -top -nodecount=30 photoasset-profile/cpu.pprof 2>&1 | tee photoasset-profile/cpu-top.txt
+  artifacts:
+    name: "photoasset-owner-100k-profile-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - photoasset-profile/
+
+photoasset-owner-write-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_PHOTOASSET_OWNER_RECONCILE_PERF: "1"
+    XD_PHOTOASSET_OWNER_WRITE_DIAGNOSTIC: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-write-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-write-100k-/'
+  script:
+    - go test -run '^TestPhotoAssetOwnerReconcilePerformance100K$' -count=1 -timeout=17m -v ./internal/api
+
+photoasset-owner-stale-prune-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_PHOTOASSET_STALE_PRUNE_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-stale-prune-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-stale-prune-100k-/'
+  script:
+    - go test -run '^TestPhotoAssetStalePrunePerformance100K$' -count=1 -timeout=17m -v ./internal/photoasset
+
+gallery-cleanup-extreme-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_CLEANUP_EXTREME_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/gallery-cleanup-extreme-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/gallery-cleanup-extreme-100k-/'
+  script:
+    - go test -run '^TestGalleryCleanupExtremeGroupsPerformance100K$' -count=1 -timeout=30m -v ./internal/api
+
+gallery-entry-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_ENTRY_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/gallery-entry-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/gallery-entry-100k-/'
+  script:
+    - go test -run '^TestGalleryEntryEndpointsPerformance100K$' -count=1 -timeout=25m -v ./internal/api
+
+gallery-fold-10k-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  timeout: 35m
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_FOLD_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-fold-10k-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-fold-10k-100k"'
+  script:
+    - go test -run '^TestGalleryVerifiedFoldPerformance10K100K$' -count=1 -timeout=27m -v ./internal/api
+
+gallery-first-visible-server-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_FIRST_VISIBLE_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-first-visible-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-first-visible-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
+  script:
+    - go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api
+    - |
+      if [[ "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_BRANCH:-}}" == "perf/gallery-renderer-first-paint-100k" ]]; then
+        XD_FILEEXPLORER_MEDIA_SERVER_PERF=1 go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
+      fi
+
+gallery-hover-short-preview-4k:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-hover-short-preview-4k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-hover-short-preview-4k"'
+  script:
+    - |
+      set -euo pipefail
+      if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+      fi
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-short-preview-4k-main.cjs
+      cat perf-results/gallery-hover-short-preview-4k.json
+  artifacts:
+    name: "gallery-hover-short-preview-4k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-hover-short-preview-4k.json
+
+gallery-hover-real-codecs-4k:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-hover-real-codecs-4k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-hover-real-codecs-4k"'
+  script:
+    - |
+      set -euo pipefail
+      if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+      fi
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-4k-real-codec-trial-main.cjs
+      cat perf-results/gallery-hover-4k-real-codec-trial.json
+  artifacts:
+    name: "gallery-hover-real-codecs-4k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-hover-4k-real-codec-trial.json
+
+gallery-hover-original-video-trial:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-hover-original-video-trial"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-hover-original-video-trial"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-original-video-trial-main.cjs
+      cat perf-results/gallery-hover-original-video-trial.json
+  artifacts:
+    name: "gallery-hover-original-video-trial-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-hover-original-video-trial.json
+
+gallery-video-poster-viewport-cancel-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-video-poster-viewport-cancel-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-video-poster-viewport-cancel-100k"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      node scripts/gallery-video-poster-viewport-cancel.cjs paired
+      cat perf-results/gallery-video-poster-cancel-paired.json
+  artifacts:
+    name: "gallery-video-poster-viewport-cancel-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-video-poster-cancel-*.json
+
+gallery-video-poster-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-first-visible-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-first-visible-100k"'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends         xvfb         libasound2         libatk-bridge2.0-0         libgbm1         libgtk-3-0         libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-video-poster-performance-main.cjs
+      cat perf-results/gallery-video-poster-performance.json
+  artifacts:
+    name: "gallery-video-poster-performance-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-video-poster-performance.json
+
+file-explorer-video-poster-server-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEEXPLORER_VIDEO_POSTER_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-video-poster-server-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-video-poster-server-100k"'
+  script:
+    - go test -run '^TestFileExplorerVideoPosterCachePerformance100K$' -count=1 -v ./internal/api
+
+file-explorer-search-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEEXPLORER_SEARCH_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-search-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-search-100k-baseline"'
+  script:
+    - go test -run '^TestFileExplorerSearchPerformanceBaseline100K$' -count=1 -v ./internal/api
+
+file-explorer-directory-sort-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEEXPLORER_DIRECTORY_SORT_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\\/file-explorer-directory-sort-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\\/file-explorer-directory-sort-/'
+  script:
+    - go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
+
+file-explorer-thumbnail-transport-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  variables:
+    XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-thumbnail-warm-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-thumbnail-warm-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-thumbnail-warm-cache"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-thumbnail-warm-cache"'
+  script:
+    - go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline$' -count=1 -v ./internal/client
+    - go test -run '^TestFileExplorerDesktopThumbnailWarmAgentCachePerformance$' -count=1 -v ./cmd/xdrive-agent
+
+file-explorer-virtual-collection-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  variables:
+    XD_FILEEXPLORER_VIRTUAL_COLLECTION_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-virtual-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-virtual-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
+
+file-explorer-range-count-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEEXPLORER_RANGE_COUNT_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/file-explorer-range-count-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/file-explorer-range-count-/'
+  script:
+    - go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
+
+file-explorer-trash-permanent-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_TRASH_PERMANENT_HTTP_PERF: "1"
+    GIT_DEPTH: "5"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-trash-permanent-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-trash-permanent-100k"'
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p performance-results
+      results_dir="$PWD/performance-results"
+      after_dir="$PWD"
+      before_dir="$(mktemp -d)"
+      git archive HEAD^ | tar -x -C "$before_dir"
+      cp internal/api/trash_permanent_real_http_100k_performance_integration_test.go "$before_dir/internal/api/"
+      for count in 10000 100000; do
+        for sample in 1 2 3; do
+          order="before after"
+          if [ "$sample" -eq 2 ]; then order="after before"; fi
+          for arm in $order; do
+            target="$after_dir"
+            expected=1
+            if [ "$arm" = before ]; then target="$before_dir"; expected=0; fi
+            (
+              cd "$target"
+              XD_TRASH_PERMANENT_HTTP_COUNT="$count" XD_TRASH_PERMANENT_HTTP_EXPECT_FIXED="$expected" \
+                go test -run '^TestTrashPermanentDeleteRealHTTPPerformance10K100K$' -count=1 -timeout=8m -v ./internal/api
+            ) | tee "$results_dir/$count-$sample-$arm.log"
+          done
+        done
+        test "$(grep -l TRASH_PERMANENT_REAL_HTTP_PERF "performance-results/$count"-*-*.log | wc -l)" -eq 6
+      done
+      git rev-parse HEAD > performance-results/after-sha.txt
+      git rev-parse HEAD^ > performance-results/before-sha.txt
+      sha256sum internal/api/trash_permanent_real_http_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      rm -rf -- "$before_dir"
+  artifacts:
+    name: "file-explorer-trash-permanent-100k-paired-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+file-explorer-trash-restore-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_TRASH_RESTORE_HTTP_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-trash-restore-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-trash-restore-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p performance-results
+      for count in 10000 100000; do
+        for sample in 1 2 3; do
+          XD_TRASH_RESTORE_HTTP_COUNT="$count" \
+            go test -run '^TestTrashRestoreRealHTTPPerformance10K100K$' -count=1 -timeout=5m -v ./internal/api \
+            | tee "performance-results/${count}-sample-${sample}.log"
+        done
+        test "$(grep -l TRASH_RESTORE_REAL_HTTP_PERF performance-results/${count}-sample-*.log | wc -l)" -eq 3
+      done
+      git rev-parse HEAD > performance-results/source-sha.txt
+      sha256sum internal/api/trash_restore_real_http_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+  artifacts:
+    name: "file-explorer-trash-restore-100k-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+file-operation-queued-delete-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEOP_QUEUED_DELETE_100K_PERF: "1"
+    GIT_DEPTH: "5"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-operation-queued-delete-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-operation-queued-delete-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      original_dir="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-queued-delete-100k-before.XXXXXX")"
+      trap 'rm -rf -- "$original_dir"' EXIT
+      git archive HEAD^ | tar -x -C "$original_dir"
+      cp internal/api/file_operation_queued_delete_100k_performance_integration_test.go "$original_dir/internal/api/"
+      mkdir -p performance-results
+      git rev-parse HEAD^ > performance-results/before-sha.txt
+      git rev-parse HEAD > performance-results/after-sha.txt
+      sha256sum internal/api/file_operation_queued_delete_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      after_dir="$(pwd)"
+      for sample in 1 2 3; do
+        arms=(before after)
+        if (( sample % 2 == 0 )); then arms=(after before); fi
+        for arm in "${arms[@]}"; do
+          workdir="$after_dir"
+          expected_fixed=1
+          if [[ "$arm" == before ]]; then
+            workdir="$original_dir"
+            expected_fixed=0
+          fi
+          echo "=== $arm sample=$sample expected_fixed=$expected_fixed ==="
+          (
+            cd "$workdir"
+            XD_FILEOP_QUEUED_DELETE_100K_EXPECT_FIXED="$expected_fixed" \
+              go test -run '^TestFileOperationQueuedDeleteExecutor100K$' -count=1 -timeout=6m -v ./internal/api
+          ) | tee "performance-results/$arm-sample-$sample.log"
+        done
+      done
+      test "$(grep -l FILEOP_EXECUTOR_DELETE_100K performance-results/before-sample-*.log | wc -l)" -eq 3
+      test "$(grep -l FILEOP_EXECUTOR_DELETE_100K performance-results/after-sample-*.log | wc -l)" -eq 3
+  artifacts:
+    name: "file-operation-queued-delete-100k-paired-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+file-operation-delete-subtree-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEOP_DELETE_100K_PERF: "1"
+    GIT_DEPTH: "5"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-operation-delete-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-operation-delete-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      original_dir="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-delete-100k-before.XXXXXX")"
+      trap 'rm -rf -- "$original_dir"' EXIT
+      git archive HEAD^ | tar -x -C "$original_dir"
+      cp internal/api/file_operation_delete_subtree_100k_performance_integration_test.go "$original_dir/internal/api/"
+      mkdir -p performance-results
+      git rev-parse HEAD^ > performance-results/before-sha.txt
+      git rev-parse HEAD > performance-results/after-sha.txt
+      sha256sum internal/api/file_operation_delete_subtree_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      current_dir="$(pwd)"
+      for sample in 1 2 3; do
+        arms=(before after)
+        if (( sample % 2 == 0 )); then arms=(after before); fi
+        for arm in "${arms[@]}"; do
+          workdir="$current_dir"
+          fixed=1
+          if [[ "$arm" == before ]]; then
+            workdir="$original_dir"
+            fixed=0
+          fi
+          echo "=== $arm sample=$sample fixed=$fixed ==="
+          (
+            cd "$workdir"
+            XD_FILEOP_DELETE_100K_EXPECT_FIXED="$fixed" go test -run '^TestFileOperationSoftDeleteSubtree100K$' -count=1 -timeout=7m -v ./internal/api
+          ) | tee "performance-results/$arm-sample-$sample.log"
+        done
+      done
+      test "$(grep -l FILEOP_DELETE_SUBTREE_100K performance-results/before-sample-*.log | wc -l)" -eq 3
+      test "$(grep -l FILEOP_DELETE_SUBTREE_100K performance-results/after-sample-*.log | wc -l)" -eq 3
+  artifacts:
+    name: "file-operation-delete-subtree-100k-paired-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+file-explorer-go-context-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_FILEEXPLORER_GO_CONTEXT_CANCEL_PERF: "1"
+    GIT_DEPTH: "5"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-go-context-cancel-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-go-context-cancel-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      repo_root="$(pwd)"
+      original_dir="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-file-explorer-cancel-before.XXXXXX")"
+      trap 'rm -rf -- "$original_dir"' EXIT
+      git archive HEAD^ | tar -x -C "$original_dir"
+      cp internal/api/file_explorer_go_context_cancel_performance_integration_test.go "$original_dir/internal/api/file_explorer_go_context_cancel_performance_integration_test.go"
+      mkdir -p performance-results
+      git rev-parse HEAD^ > performance-results/before-source.txt
+      git rev-parse HEAD > performance-results/after-source.txt
+      sha256sum internal/api/file_explorer_go_context_cancel_performance_integration_test.go > performance-results/test-harness-sha256.txt
+      for sample in 1 2 3; do
+        arms=(before after)
+        if (( sample % 2 == 0 )); then arms=(after before); fi
+        for arm in "${arms[@]}"; do
+          source_dir="$repo_root"
+          expected_fixed="1"
+          if [[ "$arm" == before ]]; then
+            source_dir="$original_dir"
+            expected_fixed="0"
+          fi
+          echo "=== $arm sample=$sample fixed=$expected_fixed source=$source_dir ==="
+          (
+            cd "$source_dir"
+            XD_FILEEXPLORER_GO_CONTEXT_CANCEL_EXPECT_FIXED="$expected_fixed"               go test -run '^TestFileExplorerRequestContextCancellation100K$' -count=1 -timeout=8m -v ./internal/api
+          ) | tee "performance-results/$arm-sample-$sample.log"
+        done
+      done
+      test "$(grep -l FILEEXPLORER_GO_CONTEXT_CANCEL_100K performance-results/before-sample-*.log | wc -l)" -eq 3
+      test "$(grep -l FILEEXPLORER_GO_CONTEXT_CANCEL_100K performance-results/after-sample-*.log | wc -l)" -eq 3
+  artifacts:
+    name: "file-explorer-go-context-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+gallery-go-context-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_GO_CONTEXT_CANCEL_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-go-context-cancel-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-go-context-cancel-100k-baseline"'
+  script:
+    - go test -run '^TestGalleryRequestContextCancellation100K$' -count=1 -timeout=12m -v ./internal/api
+
+gallery-range-cancel-100k-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/gallery-range-cancel-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/gallery-range-cancel-100k-/'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      node scripts/gallery-range-request-cancel-performance.cjs paired
+      cat perf-results/gallery-range-cancel-100k-paired.json
+  artifacts:
+    name: "gallery-range-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-range-cancel-100k-paired.json
+
+file-explorer-viewport-cancel-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/viewport-cancel-request-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/viewport-cancel-request-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/viewport-request-cancel-transport"'
+    - if: '$CI_COMMIT_BRANCH == "perf/viewport-request-cancel-transport"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      node scripts/thumbnail-request-cancel-performance.cjs paired
+      cat perf-results/thumbnail-request-cancel-paired.json
+  artifacts:
+    name: "viewport-cancel-http-paired-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/thumbnail-request-cancel-paired.json
+
+file-explorer-media-renderer-trace:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/file-explorer-media-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/file-explorer-media-/'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        xvfb \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_FILE_EXPLORER_PERF=1 npm --prefix desktop run build:renderer
+      VITE_XDRIVE_FILE_EXPLORER_PERF=1 npm --prefix web run build
+      cd desktop
+      mkdir -p perf-results
+      for surface in desktop web; do
+        for scenario in image-cold image-warm video-icons; do
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-media-trace-main.cjs "$surface" "$scenario"
+        done
+      done
+      gzip -f perf-results/*-trace.json
+  artifacts:
+    name: "file-explorer-media-renderer-traces-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/
+
+large-transfer-web-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  variables:
+    GIT_DEPTH: "4"
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-web-memory-1gib"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-web-memory-1gib"'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        xvfb \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      git checkout --detach "${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      if [[ "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_BRANCH:-}}" == "perf/large-transfer-web-memory-1gib" ]]; then
+        bash scripts/ci/test-large-transfer-performance-paired.sh HEAD^
+        exit 0
+      fi
+      cd desktop
+      rm -rf large-transfer-perf-results
+      mkdir -p large-transfer-perf-results
+      for scenario in upload download download-discard; do
+        for sample in 1 2 3; do
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/large-transfer-performance-main.cjs "$scenario" "sample-$sample"
+        done
+      done
+      test "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9
+  artifacts:
+    name: "web-large-transfer-1gib-4gib-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/large-transfer-perf-results/
+
+large-transfer-agent-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+      variables:
+        XD_LARGE_TRANSFER_SIZE_GIB: "4"
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
+      variables:
+        XD_LARGE_TRANSFER_SIZE_GIB: "4"
+  script:
+    - |
+      set -euo pipefail
+      out="$CI_PROJECT_DIR/large-transfer-agent-results"
+      rm -rf "$out"
+      mkdir -p "$out"
+      for scenario in upload download; do
+        for sample in 1 2 3; do
+          XD_LARGE_TRANSFER_PERF=1 \
+          XD_LARGE_TRANSFER_SCENARIO="$scenario" \
+          XD_LARGE_TRANSFER_SAMPLE="sample-$sample" \
+          XD_LARGE_TRANSFER_PERF_OUTPUT="$out" \
+            go test -run '^TestLargeTransferPerformanceBaselineLargeFile$' -count=1 -v ./cmd/xdrive-agent
+        done
+      done
+      test "$(find "$out" -maxdepth 1 -type f -name 'agent-*.json' | wc -l)" -eq 6
+  artifacts:
+    name: "agent-large-transfer-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - large-transfer-agent-results/
+
+gallery-web-real-cold-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/gallery-web-real-cold-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/gallery-web-real-cold-100k-/'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd web && npm install --no-audit --no-fund)
+      (cd desktop && npm install --no-audit --no-fund)
+      VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      cd desktop
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-real-cold-firstpaint-main.cjs
+      cat gallery-real-cold-results/summary.json
+  artifacts:
+    name: "gallery-web-real-cold-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-real-cold-results/
+
+gallery-agent-real-ipc-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_AGENT_BINARY: "desktop/gallery-agent-ipc-bin/xdrive-agent"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-agent-ipc-cold-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-agent-ipc-cold-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      bash scripts/ci/install-node22.sh
+      (cd web && npm install --no-audit --no-fund)
+      (cd desktop && npm install --no-audit --no-fund)
+      npm --prefix web run build -- --config vite.config.ts
+      npm --prefix desktop run build:main
+      mkdir -p desktop/gallery-agent-ipc-bin
+      go build -o desktop/gallery-agent-ipc-bin/xdrive-agent ./cmd/xdrive-agent
+      node --check desktop/scripts/gallery-agent-ipc-real-100k.cjs
+      node desktop/scripts/gallery-agent-ipc-real-100k.cjs
+  artifacts:
+    name: "gallery-agent-ipc-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-agent-ipc-100k-results/
+
+gallery-desktop-real-first-paint-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_AGENT_BINARY: "desktop/gallery-desktop-agent-bin/xdrive-agent"
+    XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "0"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-real-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-desktop-real-first-paint-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-media-progress-100k"'
+      variables:
+        XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "1"
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-desktop-media-progress-100k"'
+      variables:
+        XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd web && npm install --no-audit --no-fund)
+      (cd desktop && npm install --no-audit --no-fund)
+      npm --prefix web run build -- --config vite.config.ts
+      npm --prefix desktop run build
+      mkdir -p desktop/gallery-desktop-agent-bin
+      go build -o desktop/gallery-desktop-agent-bin/xdrive-agent ./cmd/xdrive-agent
+      node --check desktop/scripts/gallery-desktop-real-cold-electron-main.cjs
+      node --check desktop/scripts/gallery-desktop-real-cold-runner.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
+      cat desktop/gallery-desktop-real-cold-results/summary.json
+  artifacts:
+    name: "gallery-desktop-real-first-paint-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-desktop-real-cold-results/
+
+gallery-web-real-fold-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-web-fold-browser-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-web-fold-browser-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd web && npm install --no-audit --no-fund)
+      (cd desktop && npm install --no-audit --no-fund)
+      VITE_XDRIVE_GALLERY_REAL_FOLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      node --check desktop/scripts/gallery-web-real-fold-main.cjs
+      cd desktop
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-real-fold-main.cjs
+      cat gallery-web-real-fold-results/summary.json
+  artifacts:
+    name: "gallery-web-real-fold-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-web-real-fold-results/
+
+gallery-fold-stage-profile-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: 'xdrive'
+    POSTGRES_PASSWORD: 'xdrive'
+    POSTGRES_DB: 'xdrive_test'
+    XD_TEST_DATABASE_URL: 'postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable'
+    XD_GALLERY_FOLD_STAGE_PERF: '1'
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-fold-stage-profile-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-fold-stage-profile-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      if [ -n "$(gofmt -l internal/api/gallery_fold_stage_profile_performance_integration_test.go)" ]; then
+        gofmt -d internal/api/gallery_fold_stage_profile_performance_integration_test.go
+        exit 1
+      fi
+      mkdir -p gallery-fold-stage-profile-100k-results
+      go test -run '^TestGalleryFoldStagesPerformance100K$' -count=1 -timeout=22m -v ./internal/api | tee gallery-fold-stage-profile-100k-results/native-postgres17.log
+      grep 'GALLERY_FOLD_STAGE_100K_REPORT' gallery-fold-stage-profile-100k-results/native-postgres17.log
+  artifacts:
+    name: 'gallery-fold-stage-profile-100k-$CI_COMMIT_SHORT_SHA'
+    expire_in: 7 days
+    when: always
+    paths:
+      - gallery-fold-stage-profile-100k-results/
+
+gallery-renderer-first-paint-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-media-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-media-first-paint-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        xvfb \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix desktop run build:renderer
+      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      cd desktop
+      rm -rf gallery-perf-results
+      mkdir -p gallery-perf-results
+      for surface in desktop web; do
+        for scenario in image-cold image-warm video-cold video-warm live-cold live-warm; do
+          for sample in 1 2 3; do
+            xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
+          done
+        done
+      done
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 36
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 36
+      gzip -f gallery-perf-results/*-trace.json
+  artifacts:
+    name: "gallery-renderer-first-paint-traces-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-perf-results/
+
+gallery-thumbnail-web-overwrite:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "test/media-thumbnail-http-revision"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-thumbnail-revision-main.cjs
+  artifacts:
+    name: gallery-thumbnail-web-overwrite-$CI_COMMIT_SHORT_SHA
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-web-thumbnail-revision.json
+
+gallery-thumbnail-agent-overwrite:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "test/media-thumbnail-http-revision"'
+  script:
+    - |
+      set -euo pipefail
+      go test -run '^TestAgentCloudMediaThumbnailOverwriteRevalidatesUnknownRevision$' -count=1 -v ./cmd/xdrive-agent
+
+gallery-video-signed-range-server:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_REAL_SIGNED_VIDEO_RANGE_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-video-signed-range-server"'
+  script:
+    - |
+      set -euo pipefail
+      go test -run '^TestGalleryVideoSignedPreviewRangeRealServerBaseline$' -count=1 -timeout=12m -v ./internal/api
+
+gallery-desktop-signed-video-proxy:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: test
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-signed-video-proxy"'
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y --no-install-recommends xvfb xauth libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 libgbm1 libx11-xcb1 libxss1 libdrm2 fonts-liberation
+      bash scripts/ci/install-node22.sh
+      go build -o "$CI_PROJECT_DIR/.cache/xdrive-agent-proxy-fixture" ./cmd/xdrive-agent
+      export XD_GALLERY_AGENT_BINARY="$CI_PROJECT_DIR/.cache/xdrive-agent-proxy-fixture"
+      cd desktop
+      npm install --no-audit --no-fund
+      npm run build:main
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-desktop-signed-video-proxy-main.cjs
+  artifacts:
+    name: gallery-desktop-signed-proxy-$CI_COMMIT_SHORT_SHA
+    when: always
+    expire_in: 7 days
+    paths:
+      - desktop/perf-results/gallery-desktop-signed-video-proxy.json
+      - desktop/perf-results/gallery-real-gin.log
+      - desktop/perf-results/real-production-agent.log
+
+trash-range-go-context-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_TRASH_RANGE_GO_CONTEXT_CANCEL_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/trash-range-go-context-cancel-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/trash-range-go-context-cancel-100k"'
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p performance-results
+      results_dir="$PWD/performance-results"
+      before_dir="$(mktemp -d)"
+      git worktree add --detach "$before_dir" HEAD^
+      cp internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go "$before_dir/internal/api/"
+      for sample in 1 2 3; do
+        if [ "$sample" -eq 2 ]; then
+          phases=(after before)
+        else
+          phases=(before after)
+        fi
+        for phase in "${phases[@]}"; do
+          if [ "$phase" = before ]; then
+            target="$before_dir"
+            expected=0
+          else
+            target="$PWD"
+            expected=1
+          fi
+          (
+            cd "$target"
+            XD_TRASH_RANGE_GO_CONTEXT_CANCEL_EXPECT_FIXED="$expected" \
+              go test -run '^TestTrashRangeRequestContextCancellation100K$' -count=1 -timeout=8m -v ./internal/api \
+              | tee "$results_dir/sample-$sample-$phase.log"
+          )
+        done
+      done
+      test "$(grep -l TRASH_RANGE_GO_CONTEXT_CANCEL_100K performance-results/sample-*-*.log | wc -l)" -eq 6
+      git rev-parse HEAD > performance-results/after-sha.txt
+      git rev-parse HEAD^ > performance-results/before-sha.txt
+      sha256sum internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      git worktree remove --force "$before_dir"
+  artifacts:
+    name: "trash-range-go-context-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+gallery-thumbnail-go-context-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_GALLERY_THUMBNAIL_GO_CONTEXT_CANCEL_100K_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-thumbnail-http-cancel-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-thumbnail-http-cancel-100k-baseline"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p performance-results
+      for sample in 1 2 3; do
+        go test -run '^TestGalleryThumbnailRequestContextCancellation100K$' -count=1 -timeout=6m -v ./internal/api \
+          | tee "performance-results/sample-${sample}.log"
+      done
+      test "$(grep -l 'GALLERY_THUMBNAIL_GO_CONTEXT_CANCEL_100K' performance-results/sample-*.log | wc -l)" -eq 3
+      git rev-parse HEAD > performance-results/source-sha.txt
+      sha256sum internal/api/gallery_thumbnail_http_go_context_cancel_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
+file-explorer-real-h264-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-h264-poster-web-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-h264-poster-web-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd desktop && npm install --no-audit --no-fund)
+      cd desktop
+      node --check scripts/file-explorer-real-h264-100k-main.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-real-h264-100k-main.cjs
+      cat real-h264-100k-results/summary.json
+  artifacts:
+    name: "file-explorer-real-h264-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/real-h264-100k-results/
+
+file-explorer-real-h264-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-real-h264-cancel-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-real-h264-cancel-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd desktop && npm install --no-audit --no-fund)
+      cd desktop
+      node --check scripts/file-explorer-real-h264-cancel-100k-main.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-real-h264-cancel-100k-main.cjs
+      cat real-h264-cancel-100k-results/summary.json
+  artifacts:
+    name: "file-explorer-real-h264-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/real-h264-cancel-100k-results/
+
+gallery-real-web-scroll-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-real-web-viewport-scroll-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-real-web-viewport-scroll-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      cd desktop
+      node --check scripts/gallery-real-web-scroll-cancel-100k-main.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-real-web-scroll-cancel-100k-main.cjs
+      cat gallery-real-scroll-cancel-results/summary.json
+  artifacts:
+    name: "gallery-real-web-scroll-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-real-scroll-cancel-results/
+
+file-explorer-real-web-scroll-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-real-web-scroll-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-real-web-scroll-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      cd desktop
+      node --check scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+      cat file-explorer-real-scroll-results/summary.json
+  artifacts:
+    name: "file-explorer-real-web-scroll-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/file-explorer-real-scroll-results/

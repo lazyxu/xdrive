@@ -59,8 +59,8 @@ test('same-runner three matched 100k ON/OFF pairs retain cold fixture isolation 
 })
 
 test('existing real PostgreSQL/Gin/CAS 100k benchmark stays scoped on GitHub and GitLab', () => {
-  const github = read('.github/workflows/ci.yml')
-  const gitlab = read('.gitlab-ci.yml')
+  const github = read('docs/history/ci-retired-github-head-ref-jobs-20261027.yml')
+  const gitlab = read('docs/history/ci-retired-gitlab-branch-jobs-20261027.yml')
   assert.match(github, /gallery-web-real-cold-100k-performance:/)
   assert.match(github, /startsWith\(github\.head_ref, 'perf\/gallery-web-real-cold-100k-'\)/)
   assert.match(github, /gallery-web-real-cold-firstpaint-main\.cjs/)

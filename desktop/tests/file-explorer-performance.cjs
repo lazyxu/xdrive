@@ -24,7 +24,7 @@ const mediaTraceHarness = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 's
 const desktopRendererMain = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'main.tsx'), 'utf8')
 const webRendererMain = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'main.tsx'), 'utf8')
 const mediaTraceRunner = fs.readFileSync(path.join(repoRoot, 'desktop', 'scripts', 'file-explorer-media-trace-main.cjs'), 'utf8')
-const ciWorkflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+const ciWorkflow = fs.readFileSync(path.join(repoRoot, 'docs', 'history', 'ci-retired-github-head-ref-jobs-20261027.yml'), 'utf8')
 const webViteConfig = fs.readFileSync(path.join(repoRoot, 'web', 'vite.config.ts'), 'utf8')
 
 function loadPerformanceTypeScriptModule(relativePath) {

@@ -338,8 +338,8 @@ test('Gallery renderer first-paint benchmark isolates transport from renderer mo
     path.join(repo, 'desktop', 'scripts', 'gallery-renderer-first-paint-trace-main.cjs'),
     'utf8',
   )
-  const githubCI = fs.readFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'utf8')
-  const gitlabCI = fs.readFileSync(path.join(repo, '.gitlab-ci.yml'), 'utf8')
+  const githubCI = fs.readFileSync(path.join(repo, 'docs', 'history', 'ci-retired-github-head-ref-jobs-20261027.yml'), 'utf8')
+  const gitlabCI = fs.readFileSync(path.join(repo, 'docs/history/ci-retired-gitlab-branch-jobs-20261027.yml'), 'utf8')
 
   for (const token of [
     'gridCommitToThumbnailRequestMs',
@@ -368,8 +368,8 @@ test('Gallery 100k homogeneous image, video and Live Photo renderer benchmark is
     path.join(repo, 'desktop', 'scripts', 'gallery-renderer-first-paint-trace-main.cjs'),
     'utf8',
   )
-  const githubCI = fs.readFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'utf8')
-  const gitlabCI = fs.readFileSync(path.join(repo, '.gitlab-ci.yml'), 'utf8')
+  const githubCI = fs.readFileSync(path.join(repo, 'docs', 'history', 'ci-retired-github-head-ref-jobs-20261027.yml'), 'utf8')
+  const gitlabCI = fs.readFileSync(path.join(repo, 'docs/history/ci-retired-gitlab-branch-jobs-20261027.yml'), 'utf8')
   for (const scenarioName of ['image-cold', 'image-warm', 'video-cold', 'video-warm', 'live-cold', 'live-warm']) {
     assert.ok(harness.includes("'" + scenarioName + "'"), 'missing harness scenario: ' + scenarioName)
     assert.ok(traceMain.includes("'" + scenarioName + "'"), 'missing trace scenario: ' + scenarioName)

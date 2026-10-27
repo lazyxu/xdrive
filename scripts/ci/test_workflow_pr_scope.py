@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source-only regressions for GitHub PR workflow trigger scoping."""
 import fnmatch
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -115,6 +116,32 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual((total, scoped), (2, 1))
             self.assertEqual(len(errors), 1)
             self.assertIn("bad.yaml", errors[0])
+
+
+    def test_core_ci_has_no_dormant_branch_only_benchmark_jobs(self):
+        """Core CI must not show dozens of Skipped jobs on every master push."""
+        core = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
+        source = core.read_text(encoding="utf-8")
+        body = source.split("\njobs:\n", 1)[1]
+        markers = list(re.finditer(r"(?m)^  ([a-z][a-z0-9-]*):\s*$", body))
+        jobs = {}
+        for i, marker in enumerate(markers):
+            end = markers[i + 1].start() if i + 1 < len(markers) else len(body)
+            jobs[marker.group(1)] = body[marker.start():end]
+        required = {"android-native", "go-linux-api", "go-linux", "go-windows",
+                    "web", "desktop-tests", "server-validation", "server-image",
+                    "final-gate", "publish-master", "publish-stable",
+                    "photo-ocr-master-smoke"}
+        self.assertTrue(required <= set(jobs), required - set(jobs))
+        for name, job in jobs.items():
+            # Evaluate only the job header. Steps may legitimately use
+            # github.head_ref for conditional targeted tests within real gates.
+            header = job.split("\n    steps:", 1)[0]
+            if "github.head_ref" not in header:
+                continue
+            self.assertEqual(name, "photo-ocr-master-smoke",
+                             f"{name} is a branch-only job in broad CI")
+            self.assertIn("github.ref == 'refs/heads/master'", header)
 
     def test_validator_catches_broad_and_fixtureless_trigger(self):
         with tempfile.TemporaryDirectory() as temp:

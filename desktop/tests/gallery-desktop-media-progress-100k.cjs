@@ -65,8 +65,8 @@ test('100k Desktop progress is measured after first visible decoded paint withou
 })
 
 test('existing Desktop 100k benchmark remains provider-scoped on both GitHub and GitLab', () => {
-  const gh = read('.github/workflows/ci.yml')
-  const gl = read('.gitlab-ci.yml')
+  const gh = read('docs/history/ci-retired-github-head-ref-jobs-20261027.yml')
+  const gl = read('docs/history/ci-retired-gitlab-branch-jobs-20261027.yml')
   assert.match(gh, /gallery-desktop-real-first-paint-100k-performance:/)
   assert.ok(gh.includes("github.head_ref == 'perf/gallery-desktop-media-progress-100k'"))
   assert.ok(gh.includes("XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE:"))
