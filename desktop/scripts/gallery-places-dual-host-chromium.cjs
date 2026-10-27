@@ -33,7 +33,8 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
-  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],realHEICMapCoverModes:[],
+  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
+  realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -1661,7 +1662,9 @@ async function testMapColdH264Poster(browser,mode,port){
  * with production ThumbnailWithAlpha in the opt-in Gin fixture and fetched
  * over its authenticated Owner /thumbnail route. No Browser HEIC decoder or
  * fake image MIME is involved: both SDK Hosts reuse the same React cover. */
-async function testRealHEICOwnerMapCover(browser,mode,port){
+async function testRealHEICOwnerMapCover(browser,mode,port,kind='heic'){
+  assert(kind==='heic'||kind==='livp','only genuine reviewed HEIC media cases')
+  const isLIVP=kind==='livp'
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',
     ignoreHTTPSErrors:true,serviceWorkers:'block'})
@@ -1676,27 +1679,29 @@ async function testRealHEICOwnerMapCover(browser,mode,port){
   })
   try{
     await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+
-      '&map_real_heic=1',{waitUntil:'domcontentloaded'})
+      (isLIVP?'&map_real_livp=1':'&map_real_heic=1'),{waitUntil:'domcontentloaded'})
     await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
     const image=page.locator('[data-xdrive-places-trusted-photo-cover] img').first()
     await image.waitFor({state:'visible'})
-    await page.waitForFunction(()=>{
+    await page.waitForFunction(kind=>{
       const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
       return img instanceof HTMLImageElement&&img.complete&&
         img.naturalWidth===512&&img.naturalHeight===512&&
         (img.currentSrc||img.src).startsWith('blob:')&&
-        window.__mapProbe?.heic?.reads>=1
-    })
+        window.__mapProbe?.[kind]?.reads>=1
+    },kind)
     const proof=await page.evaluate(async()=>{
       const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
       await img.decode()
-      return {heic:{...window.__mapProbe.heic},
+      const proof={...window.__mapProbe[location.search.includes('map_real_livp=1')
+        ? 'livp':'heic']}
+      return {heic:proof,
         photoCount:window.__mapProbe.queries.map(q=>q.count),
-        nodeID:window.__mapProbe.heic.nodeID,
+        nodeID:proof.nodeID,
         pixelSize:[img.naturalWidth,img.naturalHeight],
         blobSource:(img.currentSrc||img.src).startsWith('blob:')}
     })
-    record(mode+': genuine HEIC original becomes decoded cached Owner JPEG map cover',
+    record(mode+': '+kind+' original becomes decoded cached Owner JPEG map cover',
       proof.heic.mime==='image/jpeg'&&proof.heic.bytes>512&&
       proof.pixelSize[0]===512&&proof.pixelSize[1]===512&&
       proof.blobSource&&proof.photoCount.length>0&&
@@ -1708,12 +1713,48 @@ async function testRealHEICOwnerMapCover(browser,mode,port){
       })
       return reply.status
     },proof.nodeID)
-    record(mode+': original Owner cannot read a separate HEIC Owner thumbnail',
+    record(mode+': original Owner cannot read a separate '+kind+' Owner thumbnail',
       foreign===403||foreign===404)
-    record(mode+': HEIC cover never sends Node or original bytes to the SDK Child',
+    record(mode+': '+kind+' cover never sends Node or original bytes to the SDK Child',
       errors.length===0&&requests.every(x=>
         x.host==='gallery'||x.host==='child'))
-    summary.realHEICMapCoverModes.push(mode)
+    if(isLIVP){
+      const liveReceipt=await page.evaluate(async nodeID=>{
+        const {token}=await fetch('/__fixture/map-owner?account=livp',
+          {cache:'no-store'}).then(r=>r.json())
+        const headers={Authorization:'Bearer '+token}
+        const item=await fetch('/api/v1/media/items/'+nodeID,{
+          cache:'no-store',headers}).then(r=>r.json())
+        const issued=await fetch('/api/v1/media/items/'+nodeID+
+          '/live-photo-motion-ticket',{method:'POST',cache:'no-store',headers})
+        if(!issued.ok)return {livePhoto:item.live_photo,motionIssued:false}
+        const ticket=await issued.json()
+        if(typeof ticket.url!=='string' ||
+          !ticket.url.startsWith('/api/v1/media-live-photo-motion/') ||
+          ticket.url.startsWith('//'))return {motionIssued:false}
+        const motion=await fetch(ticket.url,{
+          cache:'no-store',headers:{Range:'bytes=0-31'}})
+        const data=await motion.arrayBuffer()
+        const originalOwner=await fetch('/__fixture/map-owner',
+          {cache:'no-store'}).then(r=>r.json())
+        const forbidden=await fetch('/api/v1/media/items/'+nodeID+
+          '/live-photo-motion-ticket',{method:'POST',cache:'no-store',
+          headers:{Authorization:'Bearer '+originalOwner.token}})
+        return {livePhoto:item.live_photo,container:item.metadata?.container_kind,
+          motionIssued:true,mime:motion.headers.get('content-type'),
+          status:motion.status,bytes:data.byteLength,
+          denied:forbidden.status}
+      },proof.nodeID)
+      record(mode+': real LIVP HEIC photo exposes same Owner-bound motion Range',
+        liveReceipt.livePhoto===true&&liveReceipt.container==='livp'&&
+        liveReceipt.motionIssued===true&&
+        liveReceipt.mime?.startsWith('video/quicktime')&&
+        liveReceipt.status===206&&liveReceipt.bytes===32&&
+        [403,404].includes(liveReceipt.denied))
+      summary.realLIVPMapCoverModes.push(mode)
+    }else{
+      summary.realHEICMapCoverModes.push(mode)
+    }
   }finally{await context.close()}
 }
 async function main(){
@@ -1750,7 +1791,8 @@ async function main(){
         pathname==='/api/v1/media/items' ||
         pathname.startsWith('/api/v1/media/items/') ||
         pathname.startsWith('/api/v1/files/') ||
-        pathname.startsWith('/api/v1/file-preview/')))
+        pathname.startsWith('/api/v1/file-preview/') ||
+        pathname.startsWith('/api/v1/media-live-photo-motion/')))
       return proxyRealGin(req,res)
     if(gallery&&pathname==='/__fixture/h264.mp4'&&req.method==='GET'){
       // Single same-origin test-only signed-Preview substitute; browser
@@ -1865,6 +1907,10 @@ async function main(){
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
         summary.realHEICMapCoverModes.join(',')==='inline,isolated')
+      await testRealHEICOwnerMapCover(browser,'inline',port,'livp')
+      await testRealHEICOwnerMapCover(browser,'isolated',port,'livp')
+      record('both SDK Hosts decoded HEIC LIVP still and authorized motion',
+        summary.realLIVPMapCoverModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}
