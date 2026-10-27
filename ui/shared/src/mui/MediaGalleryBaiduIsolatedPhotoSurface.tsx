@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
@@ -225,8 +225,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
   const trustedSummary = scopeIsCurrent ? summary : null
-  // Refresh the existing isolated map: never remount its SDK for a filter.
-  useEffect(() => {
+  // Revoke stale SDK pins before the browser can paint a changed Owner
+  // Album/favorite/date/type scope. queryCells synchronously cancels the old
+  // Camera/Cells and clears the Child markers before awaiting the new Owner
+  // Range. Both inline and isolated Hosts use this exact trusted Parent.
+  // Reuse the existing map frame instead of remounting its third-party SDK.
+  useLayoutEffect(() => {
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
     refreshFilteredCells.current?.()
