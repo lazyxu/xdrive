@@ -1,3 +1,6 @@
+import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
+
 /**
  * The only Desktop/Electron transport map for the FileExplorer controller.
  *
@@ -72,6 +75,9 @@ export type DesktopFileExplorerAgentPort = Pick<
 >
 
 export type DesktopFileExplorerHostPort = {
+  readonly requestViewport: typeof xDriveDesktopViewportRequest
+  readonly leasePreviewURL: typeof xDriveLeaseDesktopPreviewURL
+  readonly releaseDiscardedPreviewURL: typeof xDriveReleaseDiscardedDesktopPreviewURL
   readonly agent: DesktopFileExplorerAgentPort
   readonly native: Pick<Window['xdriveDesktop'], 'copyText' | 'startNativeDragOut'>
 }
@@ -146,6 +152,9 @@ export function createDesktopFileExplorerHostPort(): DesktopFileExplorerHostPort
   } satisfies DesktopFileExplorerAgentPort)
 
   return Object.freeze({
+    requestViewport: xDriveDesktopViewportRequest,
+    leasePreviewURL: xDriveLeaseDesktopPreviewURL,
+    releaseDiscardedPreviewURL: xDriveReleaseDiscardedDesktopPreviewURL,
     agent: files,
     native: Object.freeze({
       copyText: desktop.copyText,

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
-import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -932,7 +930,7 @@ export default function DesktopFileExplorer({
     if (!textPreviewSupported || item.kind !== 'file' || signal?.aborted) return null
     // Reuse the sender-scoped viewport cancel protocol. Abort promptly on
     // Inspector/Quick Look close, navigation or Owner session replacement.
-    const result = await xDriveDesktopViewportRequest(
+    const result = await hostPort.requestViewport(
       signal,
       (requestID) => ownerAgent.cloudTextPreview(Number(item.id), requestID),
     )
@@ -1005,7 +1003,7 @@ export default function DesktopFileExplorer({
 
   const loadNodeLocation = useCallback(async (nodeID: number, signal?: AbortSignal) => {
     if (!nodeLocationSupported) throw new Error('当前 Agent 不支持文件位置查询，请更新客户端核心组件。')
-    const result = await xDriveDesktopViewportRequest(
+    const result = await hostPort.requestViewport(
       signal,
       (requestID) => ownerAgent.getNodeLocation(nodeID, requestID),
     )
@@ -1022,7 +1020,7 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || item.kind !== 'file') return null
     if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
       try {
-        const result = await xDriveDesktopViewportRequest(
+        const result = await hostPort.requestViewport(
           signal,
           (requestID) => ownerAgent.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
         )
@@ -1038,28 +1036,28 @@ export default function DesktopFileExplorer({
     const agent = ownerAgent
     const discardLate = (late: { ok: boolean; data?: string }) => {
       if (late.ok && typeof late.data === 'string') {
-        xDriveReleaseDiscardedDesktopPreviewURL(late.data,
+        hostPort.releaseDiscardedPreviewURL(late.data,
           (url) => agent.releaseCloudFilePreviewURL(url))
       }
     }
     if (kind === 'live_photo') {
-      const result = await xDriveDesktopViewportRequest(
+      const result = await hostPort.requestViewport(
         signal,
         (requestID) => agent.getMediaLivePhotoStill(Number(item.id), requestID),
         discardLate,
       )
       return result.ok
-        ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
+        ? hostPort.leasePreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
         : null
     }
     if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
-    const result = await xDriveDesktopViewportRequest(
+    const result = await hostPort.requestViewport(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
       discardLate,
     )
     return result.ok
-      ? xDriveLeaseDesktopPreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
+      ? hostPort.leasePreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
       : null
   }, [previewStreamSupported])
 
@@ -1070,7 +1068,7 @@ export default function DesktopFileExplorer({
       lifecycleGeneration === actionGenerationRef.current && !signal?.aborted
     )
 
-    const result = await xDriveDesktopViewportRequest(
+    const result = await hostPort.requestViewport(
       signal,
       (requestID) => ownerAgent.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
     )
@@ -1084,11 +1082,11 @@ export default function DesktopFileExplorer({
     onStage?.('video_read')
 
     const agent = ownerAgent
-    const preview = await xDriveDesktopViewportRequest(
+    const preview = await hostPort.requestViewport(
       signal,
       (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
       (late) => {
-        if (late.ok) xDriveReleaseDiscardedDesktopPreviewURL(late.data,
+        if (late.ok) hostPort.releaseDiscardedPreviewURL(late.data,
           (url) => agent.releaseCloudFilePreviewURL(url))
       },
     )
@@ -1138,7 +1136,7 @@ export default function DesktopFileExplorer({
       return result
     }
     const result = signal
-      ? await xDriveDesktopViewportRequest(signal, fetchMotion)
+      ? await hostPort.requestViewport(signal, fetchMotion)
       : await fetchMotion()
     if (!result.ok) return null
     // The local proxy URL belongs to the original request. A completed ticket
@@ -2082,7 +2080,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
         locateCurrentChild={childPositionSupported && !trashActive && searchState.results === null
           ? async (parentID, nodeID, targetSort, targetGrouping, signal) => {
-              const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
+              const result = await hostPort.requestViewport(signal, (requestID) =>
                 ownerAgent.cloudChildPosition(
                   parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, requestID,
                 ),
