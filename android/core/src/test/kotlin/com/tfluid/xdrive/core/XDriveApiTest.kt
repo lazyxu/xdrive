@@ -102,6 +102,43 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun filesAudioPlaybackVerifiesNodeAndPinsRangeBearerAndRevision() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val audio = DriveNode(7, 1, "song.mp3", "file", 6, revision = 4)
+            server.enqueue(MockResponse().setBody("""{
+                "id":7,"parent_id":1,"name":"song.mp3","type":"file",
+                "size":6,"revision":4
+            }"""))
+            server.enqueue(MockResponse().setResponseCode(206).setBody("abcd")
+                .addHeader("ETag", "\"4\"")
+                .addHeader("Content-Range", "bytes 0-3/6"))
+            val playback = api.filesAudioPlayback("owner-secret", audio)
+            playback.use {
+                val call = it.client.newCall(Request.Builder().url(it.url)
+                    .header("Range", "bytes=0-3").build())
+                call.execute().use { response ->
+                    assertEquals(206, response.code)
+                    assertEquals("abcd", response.body!!.string())
+                }
+            }
+            val detail = server.takeRequest()
+            val streaming = server.takeRequest()
+            assertEquals("/api/v1/nodes/7", detail.path)
+            assertEquals("/api/v1/files/7/content", streaming.path)
+            assertEquals("Bearer owner-secret", detail.getHeader("Authorization"))
+            assertEquals("Bearer owner-secret", streaming.getHeader("Authorization"))
+            assertEquals("\"4\"", streaming.getHeader("If-Match"))
+            assertEquals("bytes=0-3", streaming.getHeader("Range"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "id":7,"parent_id":1,"name":"song.mp3","type":"file",
+                "size":6,"revision":5
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesAudioPlayback("owner-secret", audio) }.reason)
+        } }
+    }
+
     @Test fun textPreviewUsesBearerAndCurrentRevisionBeforeAndAfterRead() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody(textNode()))
