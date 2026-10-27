@@ -347,12 +347,15 @@ rather than mounting arbitrary external data. No verification bypass or
 database restore is introduced. Note: an absent/stale
 `.xdrive-uploads/.ownership-v1` marker can cause the built-in preparer
 to traverse the full file storage tree during an explicit preparation.
-A warning that Host Control cannot use the Server GID because the host
-`setfacl` utility is missing is **separate** from CAS backup verification:
-it affects Caddy/Server observation, not the PostgreSQL or CAS files. On
-Debian/Ubuntu the optional `acl` package supplies `setfacl`; the installer
-does not demand host-root privileges just to install it. Do not change the
-whole `~/.xd` tree ownership or loosen storage modes to hide this warning.
+A Host Control GID/mode mismatch is separate from CAS backup verification:
+it affects only Host Control observation. The installer requires no extra
+filesystem ACL packages or tools; standard Unix owner/group/mode suffice.
+If the installer user cannot set GID 65532, root should repair only fixed
+state/control (GID 65532 and mode 2770) and the existing heartbeat/Caddy
+observation files (GID 65532 and mode 0660). For Rootless/userns Docker,
+the mapped host identity must be determined; do not assume GID 65532.
+Check the running Server with xdrive-server doctor. Never recursively
+modify ~/.xd storage or loosen its permissions to hide this warning.
 Old root-to-user migrations wrote a `state/migrated-from-root` marker but
 sometimes left `XD_CADDY_ASSET_DIR`, `XD_GEONAMES_HOST_DIR`,
 `XD_MEDIA_WORKER_RUNTIME_DIR` and `XD_PHOTO_FACE_RUNTIME_DIR` pointing

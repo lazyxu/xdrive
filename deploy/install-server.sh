@@ -173,59 +173,69 @@ prepare_host_layout() {
   done
 }
 
-# Non-root Rootful installations may own the fixed control directory but be
-# unable to chgrp it to the container's numeric GID (65532). Its 2770 mode
-# then hides fresh Caddy observations from the running Server. Only grant the
-# EXISTING, intended Server UID access to this fixed bridge, never chmod o+rwx
-# or change container identity/storage ownership. Rootless/userns-remapped
-# container IDs cannot be mapped to the host UID safely in this function.
-prepare_caddy_host_bridge_access() {
-  local dir="$STATE_DIR/control" actual_gid owner_gid file fallback_ok=1
+# Fixed Host Control bridge: standard Unix group access, no external ACL tools.
+# Never infer host numeric IDs in Rootless/userns-remapped Docker.
+prepare_caddy_host_bridge_group_access() {
+  local dir="$STATE_DIR/control" actual_gid file file_gid file_mode needs_repair=0 repaired=0
   [[ -d "$dir" && ! -L "$dir" ]] || {
-    echo "[xDrive] WARNING: fixed Host Control bridge directory is unavailable or not a real directory; Caddy is unchanged." >&2
+    echo "[xDrive] WARNING: fixed Host Control directory missing or not a real directory; Caddy unchanged." >&2
     return 0
   }
   actual_gid="$(stat -c '%g' -- "$dir" 2>/dev/null || true)"
   [[ "$actual_gid" =~ ^[0-9]{1,10}$ ]] || {
-    echo "[xDrive] WARNING: Host Control group metadata unavailable; ACL untouched, verify running Server with doctor." >&2
+    echo "[xDrive] WARNING: Host Control directory GID unavailable; run xdrive-server doctor." >&2
     return 0
   }
-  [[ "$actual_gid" != "$SERVER_GID" ]] || return 0
-  # A Docker info failure or unrecognized SecurityOptions JSON must NOT be
-  # treated as evidence that user namespace remapping is absent.
   if [[ "$DOCKER_MODE" != rootful ||
         ! "$docker_security_options" =~ ^\[(\"[^\"]*\"(,\"[^\"]*\")*)?\]$ ||
         "$docker_security_options" == *userns* ]]; then
-    echo "[xDrive] WARNING: Rootless, userns or unverified Docker security mode; no unsafe Host Control UID ACL attempted. Verify via xdrive-server doctor." >&2
+    [[ "$actual_gid" == "$SERVER_GID" ]] ||
+      echo "[xDrive] WARNING: Rootless/userns or unverified Docker security mode; no unmapped numeric host GID repair attempted. Run xdrive-server doctor." >&2
     return 0
   fi
-  if ! command -v setfacl >/dev/null 2>&1; then
-    echo "[xDrive] WARNING: Host Control cannot use the intended Server GID and POSIX ACL utility is absent; Server observation may be unavailable. Install ACL support and verify with doctor." >&2
-    return 0
-  fi
-  owner_gid="$(stat -c '%u' -- "$dir" 2>/dev/null || true)"
-  if [[ "$(id -u)" != 0 && "$owner_gid" != "$(id -u)" ]]; then
-    echo "[xDrive] WARNING: Host Control directory not owned by installer; refusing ACL mutation. Caddy remains untouched." >&2
-    return 0
-  fi
-  # Only the original fixed bridge receives ACL; never the whole home,
-  # Caddy certificates, keyring, database, or arbitrary host paths.
-  if ! setfacl -m "u:${SERVER_UID}:rwx,d:u:${SERVER_UID}:rwx" -- "$dir" 2>/dev/null; then
-    echo "[xDrive] WARNING: Host Control Server ACL could not be established; verify mount and permissions with doctor." >&2
-    return 0
-  fi
-  for file in "$dir/heartbeat" "$dir/caddy-runtime-status.json"; do
-    [[ -e "$file" ]] || continue
-    if [[ ! -f "$file" || -L "$file" ]] ||
-        ! setfacl -m "u:${SERVER_UID}:rw-" -- "$file" 2>/dev/null; then
-      fallback_ok=0
+  [[ "$actual_gid" == "$SERVER_GID" ]] || needs_repair=1
+  for file in "$dir/heartbeat" "$dir/caddy-runtime-status.json" "$dir/caddy-env-observed.json"; do
+    [[ -e "$file" || -L "$file" ]] || continue
+    if [[ -L "$file" || ! -f "$file" ]]; then
+      echo "[xDrive] WARNING: unexpected Host Control observation file type; refusing group changes." >&2
+      return 0
     fi
+    file_gid="$(stat -c '%g' -- "$file" 2>/dev/null || true)"
+    file_mode="$(stat -c '%a' -- "$file" 2>/dev/null || true)"
+    [[ "$file_gid" == "$SERVER_GID" && "$file_mode" == 660 ]] || needs_repair=1
   done
-  if [[ "$fallback_ok" == 1 ]]; then
-    echo "[xDrive] Host Control fixed Server UID access restored through POSIX ACL; real running-Server witness still requires verification."
-  else
-    echo "[xDrive] WARNING: Host Control ACL was partial; existing snapshot metadata cannot prove Server read access." >&2
+  [[ "$needs_repair" == 1 ]] || return 0
+  if [[ "$(id -u)" != 0 ]]; then
+    echo "[xDrive] WARNING: Host Control needs Server GID $SERVER_GID (directory 2770, observations 0660). Run one-time root group/mode repair on fixed state/control, then xdrive-server doctor; no extra package or Caddy restart required." >&2
+    return 0
   fi
+  if [[ "$actual_gid" != "$SERVER_GID" ]]; then
+    if ! chgrp -h "$SERVER_GID" -- "$dir"; then
+      echo "[xDrive] WARNING: root could not repair fixed Host Control directory group; run doctor." >&2
+      return 0
+    fi
+    repaired=1
+  fi
+  # Host publishers create 0660 files. Only use non-dereferencing chgrp -h
+  # on existing regular observations; never chmod a host-writable path as root
+  # because it might be replaced by a symlink after the type check.
+  for file in "$dir/heartbeat" "$dir/caddy-runtime-status.json" "$dir/caddy-env-observed.json"; do
+    [[ -e "$file" || -L "$file" ]] || continue
+    if [[ -L "$file" || ! -f "$file" ]]; then
+      echo "[xDrive] WARNING: observation is not regular; no group changes attempted." >&2
+      continue
+    fi
+    file_gid="$(stat -c '%g' -- "$file" 2>/dev/null || true)"
+    file_mode="$(stat -c '%a' -- "$file" 2>/dev/null || true)"
+    if [[ "$file_gid" != "$SERVER_GID" ]]; then
+      if chgrp -h "$SERVER_GID" -- "$file"; then repaired=1
+      else echo "[xDrive] WARNING: fixed observation group repair failed; run doctor." >&2; fi
+    fi
+    [[ "$file_mode" == 660 ]] ||
+      echo "[xDrive] WARNING: fixed observation mode is not 0660; inspect and correct as host root, then run doctor." >&2
+  done
+  [[ "$repaired" != 1 ]] ||
+    echo "[xDrive] Fixed Host Control group access repaired with standard Unix permissions; verify the live Server witness."
 }
 
 detect_shell_rc() {
@@ -2008,7 +2018,7 @@ ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 ensure_env XD_STORAGE_INVENTORY_INTERVAL_SECONDS "${XD_STORAGE_INVENTORY_INTERVAL_SECONDS:-300}"
 set_env XD_HOST_CONTROL_HOST_DIR "$STATE_DIR/control"
-prepare_caddy_host_bridge_access
+prepare_caddy_host_bridge_group_access
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"

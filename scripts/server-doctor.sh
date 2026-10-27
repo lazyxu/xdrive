@@ -144,8 +144,8 @@ caddy_bridge_mount_state() {
   else echo mount-source-mismatch; fi
 }
 
-# Numeric GID mismatches may still work with ACL. Rootless group IDs are
-# namespace-remapped; an actual running Server witness is the proof.
+# Numeric host GID is advisory with Rootless or userns remapping;
+# only a running Server witness proves actual bridge readability.
 caddy_bridge_group_hint() {
   local host="$1" gid expected
   [[ -d "$host" && ! -L "$host" ]] || { echo unknown; return; }
@@ -154,7 +154,7 @@ caddy_bridge_group_hint() {
   expected="$(env_value XD_SERVER_GID)"
   [[ "$expected" =~ ^[0-9]{1,10}$ ]] || expected=65532
   if [[ "$gid" == "$expected" ]]; then echo group-matched-not-proof
-  else echo group-mismatch-or-acl; fi
+  else echo group-mismatch; fi
 }
 
 # Never print CLI output: it may be an old binary or unexpected data.
@@ -360,11 +360,6 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
     record WARN "Caddy Server mount" "reason=$caddy_mount_state; inspect fixed /host-control bind without touching Caddy"
   fi
   caddy_group_hint="$(caddy_bridge_group_hint "$caddy_host_dir")"
-  if [[ "$caddy_group_hint" == group-matched-not-proof ]]; then
-    record PASS "Caddy bridge access" "numeric GID matches (not proof of running Server read access)"
-  else
-    record WARN "Caddy bridge access" "reason=$caddy_group_hint; verify Server UID/GID, Rootless namespace and POSIX ACL"
-  fi
   caddy_running_rev="$(caddy_running_server_revision_state)"
   if [[ "$caddy_running_rev" == matches-pinned-commit ]]; then
     record PASS "Caddy Server revision" "running Server matches pinned deployment commit (not latest release proof)"
@@ -387,8 +382,10 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
   # observability from a healthy Caddy alone. Avoid printing untrusted CLI
   # output, which an older or misrouted binary might fill with secrets.
   caddy_witness_output=""
+  caddy_witness_verified=0
   if caddy_witness_output="$(compose exec -T server xdrive-server caddy-host witness-check 2>/dev/null)" &&
       [[ "$caddy_witness_output" == "Caddy local observation: local-https-observed" ]]; then
+    caddy_witness_verified=1
     record PASS "Caddy Host witness" "running Server sees fresh local HTTPS evidence (not WAN or applied-revision proof)"
   else
     caddy_witness_reason="$(printf '%s' "$caddy_witness_output" | sed -n 's/^Caddy local observation: //p')"
@@ -414,6 +411,15 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
         record WARN "Caddy Host correlation" "running-server-witness-cli-unavailable; verify deployed Server image version"
         ;;
     esac
+  fi
+  # A numeric GID mismatch alone is not proof of failed access; require a
+  # fresh witness on the exact bind mount before clearing the advisory warning.
+  if [[ "$caddy_group_hint" == group-matched-not-proof ]]; then
+    record PASS "Caddy bridge access" "numeric GID matches (not proof of running Server read access)"
+  elif [[ "$caddy_witness_verified" == 1 && "$caddy_mount_state" == matched-metadata-only ]]; then
+    record PASS "Caddy bridge access" "running Server verified fixed Host Control access despite numeric GID mismatch"
+  else
+    record WARN "Caddy bridge access" "reason=$caddy_group_hint; verify standard Unix group ownership/modes and Docker Rootless/userns mapping"
   fi
 fi
 
