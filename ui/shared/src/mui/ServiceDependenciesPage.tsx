@@ -1905,7 +1905,8 @@ export function XDriveServiceDependenciesPage({
               return (
                 <Box key={selectedPage} component="section" aria-label={
                   selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label ?? group.label
-                } data-xdrive-system-dependency-detail>
+                } data-xdrive-system-dependency-detail
+                  sx={{ width: '100%', minWidth: 0 }}>
                   <Button size="small" variant="text" color="inherit" startIcon={<ArrowBackRoundedIcon />}
                     sx={{ mb: 1, color: 'text.secondary' }}
                     onClick={() => choosePage('overview')}>返回总览</Button>
@@ -1958,10 +1959,7 @@ export function XDriveServiceDependenciesPage({
                         onClearCancel={() => setClearConfirmOpen(false)}
                         onClearConfirm={() => { void applyBaiduMap(true) }}
                       />
-                      <Box data-xdrive-baidu-jsapi-separate sx={{ mt: 2 }}>
-                        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                          动态地图 JSAPI 4.0（独立 Browser AK）
-                        </Typography>
+                      <Box data-xdrive-baidu-jsapi-separate sx={{ width: '100%', minWidth: 0 }}>
                         <XDriveBaiduJSAPIDesiredPanel source={source}
                           mode="all" refreshID={refreshID}
                           diagnosticScope={diagnosticScope}
@@ -1993,7 +1991,7 @@ export function XDriveServiceDependenciesPage({
                     return (
                       <Paper key={sectionKey} component="section" variant="outlined"
                         data-xdrive-flat-dependency-section={sectionTab}
-                        sx={{ borderRadius: 2, mb: 1.25, overflow: 'hidden' }}>
+                        sx={{ width: '100%', minWidth: 0, borderRadius: 2, mb: 1.25, overflow: 'hidden' }}>
                         <Box id={`dependency-${selectedPage}-${sectionTab}-header`}
                           sx={{ px: { xs: 1.5, sm: 2 }, pt: 1.5, scrollMarginTop: 72 }}>
                           <Typography fontWeight={700} variant="subtitle2">

@@ -48,12 +48,15 @@ test('all task variants use a single MUI card chrome and section language', () =
 })
 
 test('Web and Desktop use real route changes for personal/global tasks', () => {
-  for (const app of [web, desktop]) {
-    assert.ok(app.includes('globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}'))
-    assert.ok(app.includes('onBackgroundScopeChange={(scope) => {'))
-    assert.ok(app.includes("scope === 'global' ? 'global-tasks' : 'transfers'"))
-    assert.ok(app.includes('<XDriveTaskCenterPage'))
-  }
+  assert.ok(web.includes('globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}'))
+  assert.ok(web.includes('onBackgroundScopeChange={(scope) => {'))
+  assert.ok(web.includes("scope === 'global' ? 'global-tasks' : 'transfers'"))
+  assert.ok(web.includes('<XDriveTaskCenterPage'))
+  assert.ok(desktop.includes('taskCenterPage: {'))
+  assert.ok(desktop.includes('globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled)'))
+  assert.ok(desktop.includes('onBackgroundScopeChange: (scope) => {'))
+  assert.ok(desktop.includes("scope === 'global' ? 'global-tasks' : 'transfers'"))
+  assert.ok(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveTaskCenterPage'))
   assert.ok(controller.includes('port.loadGlobalPage'))
   assert.ok(controller.includes("effectiveScope === 'global'"))
 })

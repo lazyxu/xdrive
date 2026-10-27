@@ -141,7 +141,7 @@ test('P58: no wrapping on narrow viewports; no duplicate Gallery/API or thumbnai
   assert.ok(source.includes('<XDriveMediaGalleryCoverThumbnail'))
   assert.ok(gallery.includes('<XDriveMediaGalleryAlbumOrganizer'))
   assert.ok(web.includes('<XDriveMediaGalleryPage'))
-  assert.ok(desktop.includes('<XDriveMediaGalleryPage'))
+  assert.ok(desktop.includes('galleryPage: {') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveMediaGalleryPage'))
   assert.equal(source.includes('flexWrap="wrap" useFlexGap'), false)
   assert.equal(source.includes('api.listAlbumFolders('), false)
 })

@@ -7,6 +7,8 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
 const web = read('web', 'src', 'WebOverviewPage.tsx')
 const home = read('ui','shared','src','mui','HomePage.tsx')
 const desktop = read('desktop','src','renderer','App.tsx')
+const sharedOutlet = read('ui','shared','src','mui','XDriveAppPageOutlet.tsx')
+const sharedOverview = read('ui','shared','src','mui','OverviewPage.tsx')
 
 test('Home Recent/Favorites never advertise a false zero before an authorized first read', () => {
   assert.ok(web.includes('const listsVerified = acceptedLists !== null'))
@@ -39,7 +41,11 @@ test('a failed read cannot claim a true empty list or discard last accepted item
   assert.ok(home.includes('收藏'))
   assert.ok(home.includes('recentVerified = true'))
   assert.ok(home.includes('favoritesVerified = true'))
-  assert.ok(desktop.includes("view === 'overview'"), 'Desktop overview remains independent and unchanged')
+  assert.ok(desktop.includes('overviewPage: {') && sharedOutlet.includes('<XDriveOverviewPage'),
+    'Desktop Overview must use the common Host data-driven renderer')
+  assert.ok(sharedOverview.includes('recentSnapshot?.scope === overviewLifecycleKey') &&
+    sharedOverview.includes('favoriteSnapshot?.scope === overviewLifecycleKey'),
+    'Owner switch must not retain old account Home items')
 })
 
 test('existing thumbnails and file navigation are preserved independently', () => {

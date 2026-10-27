@@ -42,7 +42,7 @@ test('owning Desktop stages only advisory identity evidence through real authent
   assert.match(preload, /stageDeviceBackupLocalEvidence:/)
   assert.match(preload, /cancelDeviceBackupLocalEvidence:/)
   assert.match(globals, /XDriveLocalBackupEvidence/)
-  assert.match(app, /localEvidence=\{localBackupEvidence\}/)
+  assert.match(app, /localEvidence:\s*localBackupEvidence/)
   assert.match(page, /localEvidence && verifiedLocalDeviceID === device.id && !device.revoked/)
   assert.match(page, /evidenceTarget.source === source/)
   assert.match(dialog, /crypto.randomUUID\(\)/)

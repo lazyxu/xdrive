@@ -5,9 +5,13 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
-const overview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const overview = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
+const desktopOverviewPort = read('desktop', 'src', 'renderer', 'desktopOverviewAdapter.ts')
 const sharedHome = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
-const conflicts = read('desktop', 'src', 'renderer', 'DesktopConflictsPage.tsx')
+const conflicts = read('ui', 'shared', 'src', 'mui', 'ConflictsPage.tsx')
+const desktopConflictAlias = read('desktop', 'src', 'renderer', 'DesktopConflictsPage.tsx')
+const app = read('desktop', 'src', 'renderer', 'App.tsx')
+const commonOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const styles = read('desktop', 'src', 'renderer', 'styles.css')
 const metrics = read('ui', 'shared', 'src', 'mui', 'MetricCards.tsx')
 
@@ -39,7 +43,10 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     'failedTransfer',
     'failedOperation',
     'failedBackgroundTask',
-  ]) assert.ok(overview.includes(token), `Desktop Home adapter missing: ${token}`)
+  ]) assert.ok((overview + desktopOverviewPort).includes(token), `shared Home or Desktop port missing: ${token}`)
+  assert.equal(overview.includes('window.xdriveDesktop'), false, 'shared Overview cannot call Electron IPC')
+  assert.ok(app.includes('overviewPage: {') && commonOutlet.includes('<XDriveOverviewPage'),
+    'Desktop Home must be mounted through the common shared outlet')
   for (const diagnostic of ['IPC ', 'title="Agent"', '修订号', '桌面桥接']) {
     assert.equal(overview.includes(diagnostic), false, `Desktop home must not expose diagnostic chrome: ${diagnostic}`)
   }
@@ -64,6 +71,9 @@ test('Desktop conflicts uses standard MUI surfaces instead of bespoke conflict-r
     assert.equal(styles.includes(`.${legacy}`), false)
   }
   assert.ok(conflicts.includes('<XDriveStatePanel message="没有未解决的冲突。" />'))
+  assert.ok(desktopConflictAlias.includes('XDriveConflictsPage as DesktopConflictsPage'))
+  assert.ok(app.includes('conflictsPage: {') && commonOutlet.includes('<XDriveConflictsPage'),
+    'Desktop conflicts must share the same MUI page through typed Host data')
 })
 
 

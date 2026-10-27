@@ -33,7 +33,7 @@ test('Own-only Desktop cloud target update cannot borrow Web or foreign mutation
   assert.match(ipc, /"device-backup-local-target"/)
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-target'\)/)
   assert.match(preload, /retargetDeviceBackupLocalSource:/)
-  assert.match(app, /localTarget=\{localBackupTarget\}/)
+  assert.match(app, /localTarget:\s*localBackupTarget/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /actions\.retarget\(sourceID, settings\.revision, target\.id\)/)
   assert.doesNotMatch(web, /localTarget=/)

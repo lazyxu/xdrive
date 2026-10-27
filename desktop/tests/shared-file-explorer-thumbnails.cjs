@@ -12,7 +12,7 @@ const visual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.
 const properties = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const recent = read('ui', 'shared', 'src', 'mui', 'FileExplorerRecentController.ts')
-const overview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const overview = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 
 test('FileExplorer thumbnail loading is one shared provider/cache/scheduler', () => {

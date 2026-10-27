@@ -104,7 +104,7 @@ test('shared overview follows fixed service navigation with compact cards and no
   assert.equal((page.match(/\{dependencyNote\}/g) || []).length, 1)
   assert.ok(page.includes('data-xdrive-system-dependencies-safety-note'))
   assert.ok(web.includes('XDriveServiceDependenciesPage'))
-  assert.ok(desktop.includes('XDriveServiceDependenciesPage'))
+  assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
   for (const forbidden of ['docker.sock', 'localStorage.setItem']) {
     assert.equal(page.includes(forbidden), false)
   }

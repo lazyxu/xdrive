@@ -172,5 +172,5 @@ test('P66: shared Browser/Desktop Source manager preserves same Source adapter a
   assert.ok(manager.includes('<XDriveSourceManagerListPage'))
   assert.ok(manager.includes('adapter.sourceOverview()'))
   assert.ok(web.includes('<XDriveSourceManager'))
-  assert.ok(desktop.includes('<XDriveSourceManager'))
+  assert.ok(desktop.includes('remotePullPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSourceManager'))
 })

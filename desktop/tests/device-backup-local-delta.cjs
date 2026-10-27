@@ -37,7 +37,7 @@ test('owning Desktop local delta stays private, cancellable and not Web enabled'
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-delta'\)/)
   assert.match(preload, /getDeviceBackupLocalDelta:/)
   assert.match(preload, /cancelDeviceBackupLocalDelta:/)
-  assert.match(app, /localDelta=\{localBackupDelta\}/)
+  assert.match(app, /localDelta:\s*localBackupDelta/)
   assert.match(page, /localDelta && verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /crypto\.randomUUID\(\)/)
   assert.match(dialog, /actions\.cancel\(requestID\)/)

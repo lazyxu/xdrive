@@ -8,7 +8,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const home = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
-const desktopHome = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const desktopHome = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
+const desktopPort = read('desktop', 'src', 'renderer', 'desktopOverviewAdapter.ts')
 const webHome = read('web', 'src', 'WebOverviewPage.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 
@@ -62,11 +63,13 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
 })
 
 test('Desktop-only local disk and availability remain outside the shared Home contract', () => {
-  assert.ok(desktopHome.includes('getLocalDiskSpace()'))
-  assert.ok(desktopHome.includes('getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopPort.includes('getLocalDiskSpace()'))
+  assert.ok(desktopPort.includes('getFileAvailabilityBatch(paths)'))
   assert.ok(desktopHome.includes('xDriveFileExplorerAvailabilityFromSnapshot'))
   assert.equal(webHome.includes('getLocalDiskSpace'), false)
   assert.equal(webHome.includes('getFileAvailabilityBatch'), false)
+  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths)'))
+  assert.equal(desktopHome.includes('window.xdriveDesktop'), false)
 })
 
 
@@ -77,7 +80,7 @@ test('Home video cards use the same persisted-first poster resolver on Web and D
   assert.ok(home.includes('signal?: AbortSignal'), 'shared Home must forward the provider cancellation signal')
   assert.ok(provider.includes('scheduleFileThumbnail((signal) => loadThumbnail(') &&
     provider.includes('requestedItem, signal,') && provider.includes('scheduled.cancel()'))
-  for (const adapter of [webHome, desktopHome]) {
+  for (const adapter of [webHome, desktopPort]) {
     assert.ok(adapter.includes("xDriveFileKind(item.name, item.kind) !== 'video'"), 'non-video thumbnails must not open media previews')
     assert.ok(adapter.includes('xDriveResolveMediaVideoPoster({'), 'video Home cards must try persisted poster first')
     assert.ok(adapter.includes('revision: Number(item.revision)'), 'poster backfill must use the current node revision')
@@ -88,7 +91,7 @@ test('Home video cards use the same persisted-first poster resolver on Web and D
   }
   assert.ok(webHome.includes('api.filePreviewURL(nodeID, requestSignal)'))
   assert.ok(webHome.includes('api.mediaVideoPoster(id, revision, poster, requestSignal)'))
-  assert.ok(desktopHome.includes('xDriveDesktopViewportRequest('))
-  assert.ok(desktopHome.includes('agent.cloudFilePreviewURL(nodeID)'))
-  assert.ok(desktopHome.includes('agent.putMediaVideoPoster(id, revision, bytes)'))
+  assert.ok(desktopPort.includes('xDriveDesktopViewportRequest('))
+  assert.ok(desktopPort.includes('agent.cloudFilePreviewURL(nodeID)'))
+  assert.ok(desktopPort.includes('agent.putMediaVideoPoster(id, revision, bytes)'))
 })

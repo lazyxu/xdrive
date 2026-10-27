@@ -39,7 +39,7 @@ test('owning Desktop snapshot is private, cancellable, journal-only and not Web 
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-snapshot'\)/)
   assert.match(preload, /saveDeviceBackupLocalSnapshot:/)
   assert.match(preload, /cancelDeviceBackupLocalSnapshot:/)
-  assert.match(app, /localSnapshot=\{localBackupSnapshot\}/)
+  assert.match(app, /localSnapshot:\s*localBackupSnapshot/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /crypto\.randomUUID\(\)/)
   assert.match(dialog, /actions\.cancel\(request\.current\)/)
