@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/auth-cookie-real-ui-gin.yml'
       - 'desktop/scripts/pwa-cookie-real-gin-browser.cjs'
+      - 'desktop/tests/shared-file-explorer-navigation-pane.cjs'
+      - 'desktop/tests/shared-file-explorer-navigation.cjs'
+      - 'ui/shared/src/mui/FileExplorerNavigation.ts'
+      - 'ui/shared/src/mui/FileExplorerNavigationPane.tsx'
       - 'internal/api/pwa_s2b3_real_gin_auth_integration_test.go'
       - 'internal/api/auth_browser_cookie*.go'
       - 'web/src/App.tsx'
@@ -15,6 +19,10 @@ on:
     paths:
       - '.github/workflows/auth-cookie-real-ui-gin.yml'
       - 'desktop/scripts/pwa-cookie-real-gin-browser.cjs'
+      - 'desktop/tests/shared-file-explorer-navigation-pane.cjs'
+      - 'desktop/tests/shared-file-explorer-navigation.cjs'
+      - 'ui/shared/src/mui/FileExplorerNavigation.ts'
+      - 'ui/shared/src/mui/FileExplorerNavigationPane.tsx'
       - 'internal/api/pwa_s2b3_real_gin_auth_integration_test.go'
       - 'internal/api/auth_browser_cookie*.go'
       - 'web/src/App.tsx'
@@ -66,6 +74,9 @@ jobs:
         run: |
           set -euo pipefail
           npm --prefix web ci --no-audit --no-fund
+          # Execute the real guarded navigation persistence callback regression.
+          NODE_PATH="$GITHUB_WORKSPACE/web/node_modules" node --test desktop/tests/shared-file-explorer-navigation-pane.cjs
+          NODE_PATH="$GITHUB_WORKSPACE/web/node_modules" node --test desktop/tests/shared-file-explorer-navigation.cjs
           npm --prefix web run build
           node --check desktop/scripts/pwa-cookie-real-gin-browser.cjs
           go test -c -o "$RUNNER_TEMP/xdrive-cookie-real-gin.test" ./internal/api
@@ -120,7 +131,7 @@ jobs:
           node desktop/scripts/pwa-cookie-real-gin-browser.cjs \
             --ready="$READY" --output-dir="$OUT"
           wait "$FIXTURE_PID" || { echo "Real Gin fixture verification failed"; exit 1; }
-          node -e "const s=require('./desktop/cookie-ui-real-gin-results/summary.json'); const fields=['passed','realWebUI','realGin','realPostgreSQL','realHTTPS','loginFromUI','secureHttpOnly','accessMemoryOnly','privateBearerRead','cookieNotBearer','coldRestore','twoTabRestore','wrongOwnerRejected','logoutFromUI','postLogoutFailClosed','forcedPasswordForm','passwordCookieRotated','stalePasswordJWTRejected','stalePasswordCookieRejected','passwordColdRestore','oldPasswordRejected','newPasswordAccepted','adminRevoke204','adminRevokedJWT','adminRevokedCookie','adminRevokedBrowserUI','legacyJSONUpgradePreserved','legacyJSONColdRestore','legacyJSONLogout204','legacyCookieOnReauthentication','legacyCookieColdRestore']; if(s.apiMocks || fields.some(x=>s[x]!==true))process.exit(1)"
+          node -e "const s=require('./desktop/cookie-ui-real-gin-results/summary.json'); const fields=['passed','realWebUI','realGin','realPostgreSQL','realHTTPS','loginFromUI','secureHttpOnly','accessMemoryOnly','privateBearerRead','cookieNotBearer','coldRestore','twoTabRestore','wrongOwnerRejected','logoutFromUI','postLogoutFailClosed','forcedPasswordForm','passwordCookieRotated','stalePasswordJWTRejected','stalePasswordCookieRejected','passwordColdRestore','oldPasswordRejected','newPasswordAccepted','adminRevoke204','adminRevokedJWT','adminRevokedCookie','adminRevokedBrowserUI','legacyJSONUpgradePreserved','legacyJSONColdRestore','legacyJSONLogout204','legacyCookieOnReauthentication','legacyCookieColdRestore','offlineLogoutLocalImmediate','offlineLogoutTombstoneRetained','offlineRestartNoPrivateRestore','onlineTombstoneRemoteRevoked','offlineOldRefreshRejected','restrictedLockGetterFallback','restrictedLockRequestFallback','deniedStorageMemoryOnly','deniedStorageNoOwnerlessRefresh']; if(s.apiMocks || fields.some(x=>s[x]!==true))process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
