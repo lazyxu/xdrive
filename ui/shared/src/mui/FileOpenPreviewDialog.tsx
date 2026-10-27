@@ -1,3 +1,4 @@
+import { xDriveAcquireViewerForeground } from './ViewerForegroundPriority'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -60,6 +61,12 @@ export function XDriveOpenPreviewDialog({
   // a desktop modal or hide its mobile filmstrip and action rail.
   // Non-immersive Files / Quick Look retain their existing pointer contract.
   // Fine-pointer immersive Viewer still wakes its chrome on mouse movement.
+  // Same shared preview chrome is mounted by Files Quick Look, Gallery,
+  // map/album media and Desktop/DSM hosts, without separate schedulers.
+  const viewerPriorityOwner = useRef<object>({})
+  useLayoutEffect(() => open
+    ? xDriveAcquireViewerForeground(viewerPriorityOwner.current)
+    : undefined, [open])
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
   const ultraNarrowViewport = useMediaQuery('(max-width:367.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')

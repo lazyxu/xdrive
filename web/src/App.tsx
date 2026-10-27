@@ -1,3 +1,4 @@
+import { xDriveAcquireViewerForeground } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
@@ -1103,6 +1104,13 @@ function FileManager({
     if (main) main.scrollTop = 0
   }, [appView])
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
+  // All routed Viewer entries converge here: Files, search, Gallery, album,
+  // maps and standalone image/video/text/PDF/audio. Popstate/back is included.
+  // The lease starts before paint, even if the Viewer bundle is still lazy.
+  const viewerPriorityOwner = useRef<object>({})
+  useLayoutEffect(() => viewerActive
+    ? xDriveAcquireViewerForeground(viewerPriorityOwner.current)
+    : undefined, [viewerActive])
   // A conservative PWA update/unload blocker: an open media editor might
   // contain unsaved edits even when its exact draft state is not observable.
   const [mediaEditorActive, setMediaEditorActive] = useState(false)
