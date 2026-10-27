@@ -259,7 +259,7 @@ async function testFullDocumentMapHandoff(browser,from,port){
     record(from+': original Owner Favorites map is mounted before document handoff',
       (await page.evaluate(()=>window.__mapProbe.queries))
         .every(q=>q.favorite===true&&q.albumKey===''))
-    await page.locator('[data-xdrive-places-map-more-menu] summary').click()
+    await page.locator('[data-xdrive-places-map-more-menu] > summary').click()
     await page.locator('[data-xdrive-map-mode-'+target+']').click()
     await page.waitForURL(url=>url.searchParams.get('places_map_scope_required')==='1'&&
       (target==='prototype'?!url.searchParams.has('places_map_mode'):
