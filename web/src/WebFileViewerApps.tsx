@@ -61,6 +61,7 @@ import type {
   NodeLocation,
   XDriveFilePreviewTarget,
   XDriveFilePreviewPresentationState,
+  XDriveByteProgressHandler,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
@@ -875,10 +876,16 @@ function WebPreviewApp({
   const quickLookKind = target ? xDriveClassifyFilePreview(target) : 'none'
   const quickLookSlideshowEligible = quickLookKind === 'image' || quickLookKind === 'live_photo'
 
-  const loadThumbnail = useCallback(async (_target: XDriveFilePreviewTarget, signal?: AbortSignal) => {
+  const loadThumbnail = useCallback(async (
+    _target: XDriveFilePreviewTarget,
+    signal?: AbortSignal,
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
     if (!viewer.node) return null
     try {
-      return URL.createObjectURL(await api.mediaThumbnail(viewer.node.id, signal, viewer.node.revision))
+      return URL.createObjectURL(await api.mediaThumbnail(
+        viewer.node.id, signal, viewer.node.revision, onProgress,
+      ))
     } catch {
       return null
     }

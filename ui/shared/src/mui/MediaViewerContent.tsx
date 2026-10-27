@@ -71,9 +71,9 @@ export function XDriveMediaViewerContent({
     return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision, onProgress)
   }, [item.node.id, item.node.name, item.node.revision, loadPreviewURL])
 
-  const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal) => {
+  const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal, onProgress) => {
     if (!item.metadata.has_thumbnail) return null
-    return loadThumbnail(item.node.id, signal, item.node.revision)
+    return loadThumbnail(item.node.id, signal, item.node.revision, onProgress)
   }, [item.metadata.has_thumbnail, item.node.id, item.node.revision, loadThumbnail])
 
   const loadOpenLivePhotoMotion = useCallback((
