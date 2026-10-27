@@ -37,7 +37,7 @@ class GalleryFloatingChromeLayoutTest {
         scope.cancel()
     }
 
-    private fun render(indexedTimeline: Boolean) {
+    private fun render(indexedTimeline: Boolean, sortBy: String = "captured", sortDir: String = "asc") {
         val timeline = if (indexedTimeline) GalleryTimelineSets(
             year = listOf(GalleryTimelineGroup("2026", 1, 0)),
             month = listOf(GalleryTimelineGroup("2026-10", 1, 0)),
@@ -49,6 +49,8 @@ class GalleryFloatingChromeLayoutTest {
             galleryItems = listOf(photo),
             galleryTotal = 1,
             galleryTimelineSets = timeline,
+            gallerySortBy = sortBy,
+            gallerySortDir = sortDir,
         )
         compose.setContent {
             XDriveTheme {
@@ -84,5 +86,15 @@ class GalleryFloatingChromeLayoutTest {
         val wall = compose.onNodeWithTag("gallery-grid").fetchSemanticsNode().boundsInRoot
         val dock = compose.onNodeWithTag("gallery-bottom-dock").fetchSemanticsNode().boundsInRoot
         assertTrue("primary dock must float over scrolling wall", dock.top < wall.bottom - 8f)
+    }
+
+    @Test fun nonChronologicalOwnerSortDoesNotShowDateCapsule() {
+        render(indexedTimeline = true, sortBy = "added", sortDir = "desc")
+        compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+        val wall = compose.onNodeWithTag("gallery-grid").fetchSemanticsNode().boundsInRoot
+        val dock = compose.onNodeWithTag("gallery-bottom-dock").fetchSemanticsNode().boundsInRoot
+        assertTrue("sorted Owner gallery retains floating primary navigation",
+            dock.top < wall.bottom - 8f)
     }
 }

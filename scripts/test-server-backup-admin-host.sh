@@ -16,6 +16,14 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && "$2" == verify && "${3:-}" == --json ]]; then
+  if [[ "${4:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
+    printf '{"protocol":"xdrive-host-backup-verify-v1","state":"failed","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":1,"cas_bytes_hashed":11,"failure_category":"object_sha256_mismatch"}\n'
+    exit 22
+  fi
+  printf '{"protocol":"xdrive-host-backup-verify-v1","state":"success","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":2,"cas_bytes_hashed":17}\n'
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == verify && "${3:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
   exit 22
 fi
@@ -85,10 +93,20 @@ PY
 # the fixed host verify command for the selected committed generation.
 write_request verify "v2-default:$v2" "" deep "" ""
 backup_admin_process_request "$dir"
-grep -Fq "backup verify $XD_CONFIG_DIR/backups/incremental/snapshots/$v2" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq "backup verify --json $XD_CONFIG_DIR/backups/incremental/snapshots/$v2" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq "backup retention-plan --repository-dir $XD_CONFIG_DIR/backups/incremental --keep-last 1 --mode deep" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
 [[ ! -e "$dir/backup-admin-active.json" ]]
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+v=e["verification"]
+assert e["action"]=="verify" and e["state"]=="success",e
+assert v["protocol"]=="xdrive-host-backup-verify-v1" and v["state"]=="success",v
+assert v["cas_objects_checked"]==2 and v["cas_bytes_hashed"]==17,v
+assert "path" not in v and "hash" not in v,v
+PY
+
 
 # A scheduled backup holds this exact lock. Admin verification must fail
 # without invoking the Manager rather than racing a snapshot/retention job.
@@ -402,5 +420,27 @@ printf 'service=stale-stage\nbytes_done=5\nbytes_total=10\n' > "$progress"
 write_request verify "v2-default:$v2" "" fast "" ""
 backup_admin_recover_interrupted "$dir"
 [[ ! -e "$progress" ]]
+
+
+# Forged/oversized Host records cannot be reflected in the Admin API history.
+proof_file="$TMP/forged-verify-report.json"
+printf '{"protocol":"xdrive-host-backup-verify-v1","state":"success","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":9007199254740992,"cas_bytes_hashed":17}\n' > "$proof_file"
+backup_admin_history_append "$dir" success verify 111111111111111111111111 \
+  "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z "" "$proof_file"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert e["action"]=="verify" and "verification" not in e,e
+PY
+rm "$proof_file"
+ln -s /etc/passwd "$proof_file"
+backup_admin_history_append "$dir" success verify 222222222222222222222222 \
+  "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z "" "$proof_file"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert "verification" not in e,e
+PY
+[[ -L "$proof_file" && "$(readlink "$proof_file")" == /etc/passwd ]]
 
 echo 'Admin Server Backup host bridge: CRUD, history, live progress and safety tests passed'

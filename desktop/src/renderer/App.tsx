@@ -59,7 +59,6 @@ import {
   XDriveCloudStoragePage,
   createXDriveCloudStorageDataSource,
   XDriveLocalStoragePage,
-  XDriveWorkspaceSidebar,
   xDriveDiagnosticsSidebarDestination,
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
@@ -75,7 +74,7 @@ import {
   XDriveTaskCenterPage,
   XDriveFileExplorerActionFeedback,
   XDriveTransferPopover,
-  XDriveWorkspaceShell,
+  XDriveApp,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
@@ -91,7 +90,7 @@ import type {
   XDriveFileExplorerNavigationState,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
-  XDriveWorkspaceViewKey,
+  XDriveWorkspaceAppRoute,
   XDriveStatusTone,
   XDriveLocalStorageDataSource,
 } from '@xdrive/ui/mui'
@@ -118,7 +117,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services' | 'admin-maintenance'>
+type View = XDriveWorkspaceAppRoute
 
 type ConfirmDialogState = {
   title: string
@@ -274,11 +273,14 @@ export default function App({
 
   const mediaSelectionJobsSupported =
     agent.hello?.capabilities.includes('media-selection-jobs') ?? false
+  const viewerDownloadCorrelationSupported =
+    agent.hello?.capabilities.includes('transfer-download-correlation') ?? false
   const mediaGallerySource = useMemo(
     () => createDesktopMediaGalleryDataSource(
       window.xdriveDesktop.agent, mediaSelectionJobsSupported,
+      viewerDownloadCorrelationSupported,
     ),
-    [mediaSelectionJobsSupported],
+    [mediaSelectionJobsSupported, viewerDownloadCorrelationSupported],
   )
 
   const uploadGalleryFiles = async () => {
@@ -2869,23 +2871,25 @@ export default function App({
   )
 
   return renderDesktopFrame(
-    <XDriveWorkspaceShell>
-      <XDriveWorkspaceSidebar
-        ariaLabel="桌面版侧边栏"
-        navAriaLabel="桌面版功能区"
-        className="sidebar"
-        selected={view}
-        transferBadge={taskCenter.badge}
-        showLocalStorage
-        sections={desktopSidebarSections}
-        storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}
-        onSelect={(destination) => {
-          if (destination === 'admin-services') {
-            setSystemDependenciesNavigationResetKey((value) => value + 1)
-          }
-          setView(destination as View)
-        }}
-      />
+    <XDriveApp
+      host={{ platform: 'desktop', adminRoleVerified: status?.role === 'admin' }}
+      view={view}
+      sidebar={{
+        ariaLabel: '桌面版侧边栏',
+        navAriaLabel: '桌面版功能区',
+        className: 'sidebar',
+        transferBadge: taskCenter.badge,
+        showLocalStorage: true,
+        sections: desktopSidebarSections,
+        storageSummary: xDriveWorkspaceStorageSummary(cloudQuota),
+      }}
+      onNavigate={(destination) => {
+        if (destination === 'admin-services') {
+          setSystemDependenciesNavigationResetKey((value) => value + 1)
+        }
+        setView(destination as View)
+      }}
+    >
 
       <XDriveWorkspaceContent presentation={xDriveWorkspacePresentation(view)}>
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
@@ -3124,6 +3128,7 @@ export default function App({
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
               transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
+              viewerDownloadReceipt: mediaGallerySource.viewerDownloadReceipt,
               transfers: transfers.transfers,
               actionIntent: cloudFileActionIntent,
               onActionIntentConsumed: (id) => {
@@ -3409,7 +3414,7 @@ export default function App({
         onConfirm={() => void confirmPendingAction()}
       />
 
-    </XDriveWorkspaceShell>,
+    </XDriveApp>,
     desktopTitlebarActions,
   )
 }

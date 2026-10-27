@@ -37,10 +37,10 @@ jobs:
             const dryRun = context.eventName === 'workflow_dispatch' &&
               String(context.payload.inputs?.dry_run) === 'true';
 
-            // Unique work: do not erase even if its old PR has been closed.
-            const preserved = new Set([
-              'feat/sync-run-outcome-telemetry-p0-p2-20261016',
-            ]);
+            // Open PR head/base and exact-tip evidence guard all remaining work.
+            // #2524 is closed after a semantic audit; its immutable source tip
+            // may be retired only by the explicitly reviewed entry below.
+            const preserved = new Set();
 
             // Closed unmerged source PR -> accepted consolidated PR.
             // Only retire the source when the target is actually merged to master
@@ -60,6 +60,11 @@ jobs:
             // source tips and independently reviewed accepted-master evidence.
             // No branch-name-only or closed-PR-only deletion is permitted.
             const exactRetirements = new Map([
+              ['feat/sync-run-outcome-telemetry-p0-p2-20261016@d2d9e87c7f1597ab0412c101806218a9c1acf17d', {
+                closedIssue: 2524,
+                requiredMergedPulls: [2800],
+                why: 'closed #2524 audit: v1 retains verified CAS/resume totals and Owner detail; permanent category histogram and obsolete old part accounting explicitly rejected',
+              }],
               ['fix/ci-storage-verify-summary-gofmt-20261025@1410eadf89875aa234a9468fa05e3e0a2b37ce8a', {
                 closedPull: 2701,
                 acceptedAncestor: '9f8d03431eb4f63d9d1c676d53b7db07ae9c6a12',

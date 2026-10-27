@@ -15,6 +15,8 @@ tar -C "$tmp/package" -cf "$spk" .
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 printf 'fake CLI asset' > "$tmp/release/xdrive-backup-linux-amd64.tar.gz"
 printf 'fake CLI asset' > "$tmp/release/xdrive-backup-windows-amd64.zip"
+printf 'fixture Caddy image' > "$tmp/release/xdrive-caddy-image.tar.gz"
+printf 'sha256:%064d\n' 0 > "$tmp/release/xdrive-caddy-image.id"
 
 bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release"
 bash "$ROOT/scripts/ci/verify-release-archive-allowlist.sh" "$tmp/release"

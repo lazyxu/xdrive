@@ -113,37 +113,10 @@ func TestBaiduGeoconvQuotaAcrossIndependentPostgresPools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	caps := baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 3, OwnerPoints: 4, FleetPoints: 6}
-	for i := 0; i < 2; i++ {
-		if err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 10, 2, caps); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), peer, 10, 1, caps); !errors.Is(err, errBaiduGeoconvQuotaDenied) {
-		t.Fatal("owner budget bypassed")
-	}
-	if fleet := read(0); fleet.Requests != 2 || fleet.Points != 4 {
-		t.Fatalf("denied owner consumed fleet: %+v", fleet)
-	}
-	if err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), peer, 11, 2, caps); err != nil {
-		t.Fatal(err)
-	}
-	if err := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 11, 1, caps); !errors.Is(err, errBaiduGeoconvQuotaDenied) {
-		t.Fatal("fleet quota bypassed")
-	}
-	if fleet, a, b := read(0), read(10), read(11); fleet.Requests != 3 ||
-		fleet.Points != 6 || a.Requests != 2 || a.Points != 4 ||
-		b.Requests != 1 || b.Points != 2 {
-		t.Fatalf("counter drift: fleet=%+v a=%+v b=%+v", fleet, a, b)
-	}
-	// Simultaneous callers through independent DB pools cannot oversubscribe
-	// fleet or Owner limits. A fleet denial must leave the private row intact.
-	// These counters intentionally reset at PostgreSQL's UTC minute boundary.
-	// If concurrent admissions straddle that boundary, a total above six is
-	// expected across two separate minute windows, not quota oversubscription.
-	// Retry the WHOLE workload with fresh rows so each assertion checks one
-	// PostgreSQL clock minute; never discard a failed same-minute assertion.
-	parallel := baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 6, OwnerPoints: 3, FleetPoints: 6}
+	// Both the Owner and fleet denials must be checked inside ONE database
+	// minute. A new minute legitimately resets the counters: retry the
+	// *entire* sequence only if PostgreSQL crossed that boundary, never skip
+	// a same-minute over-admission.
 	databaseMinute := func() int64 {
 		t.Helper()
 		var minute int64
@@ -153,6 +126,56 @@ func TestBaiduGeoconvQuotaAcrossIndependentPostgresPools(t *testing.T) {
 		}
 		return minute
 	}
+	caps := baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 3, OwnerPoints: 4, FleetPoints: 6}
+	sequentialValidated := false
+	for attempt := 0; attempt < 3; attempt++ {
+		reset()
+		startMinute := databaseMinute()
+		firstErr := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 10, 2, caps)
+		secondErr := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 10, 2, caps)
+		ownerDenied := reserveBaiduGeoconvQuotaWithLimits(context.Background(), peer, 10, 1, caps)
+		fleetAfterOwnerDenied := read(0)
+		otherOwnerErr := reserveBaiduGeoconvQuotaWithLimits(context.Background(), peer, 11, 2, caps)
+		fleetDenied := reserveBaiduGeoconvQuotaWithLimits(context.Background(), db, 11, 1, caps)
+		endMinute := databaseMinute()
+		if endMinute != startMinute {
+			t.Logf("PostgreSQL minute changed (%d -> %d) during sequential quota assertions; rerun with fresh counters", startMinute, endMinute)
+			continue
+		}
+		if firstErr != nil || secondErr != nil {
+			t.Fatalf("initial quotas unexpectedly rejected: first=%v second=%v", firstErr, secondErr)
+		}
+		if !errors.Is(ownerDenied, errBaiduGeoconvQuotaDenied) {
+			t.Fatalf("owner budget bypassed: %v", ownerDenied)
+		}
+		if fleetAfterOwnerDenied.Requests != 2 || fleetAfterOwnerDenied.Points != 4 {
+			t.Fatalf("denied owner consumed fleet: %+v", fleetAfterOwnerDenied)
+		}
+		if otherOwnerErr != nil {
+			t.Fatalf("other Owner unexpectedly rejected: %v", otherOwnerErr)
+		}
+		if !errors.Is(fleetDenied, errBaiduGeoconvQuotaDenied) {
+			t.Fatalf("fleet quota bypassed: %v", fleetDenied)
+		}
+		if fleet, a, b := read(0), read(10), read(11); fleet.Requests != 3 ||
+			fleet.Points != 6 || a.Requests != 2 || a.Points != 4 ||
+			b.Requests != 1 || b.Points != 2 {
+			t.Fatalf("counter drift: fleet=%+v a=%+v b=%+v", fleet, a, b)
+		}
+		sequentialValidated = true
+		break
+	}
+	if !sequentialValidated {
+		t.Fatal("sequential quota assertions crossed a PostgreSQL minute on all three attempts")
+	}
+	// Simultaneous callers through independent DB pools cannot oversubscribe
+	// fleet or Owner limits. A fleet denial must leave the private row intact.
+	// These counters intentionally reset at PostgreSQL's UTC minute boundary.
+	// If concurrent admissions straddle that boundary, a total above six is
+	// expected across two separate minute windows, not quota oversubscription.
+	// Retry the WHOLE workload with fresh rows so each assertion checks one
+	// PostgreSQL clock minute; never discard a failed same-minute assertion.
+	parallel := baiduGeoconvQuotaLimits{OwnerRequests: 2, FleetRequests: 6, OwnerPoints: 3, FleetPoints: 6}
 	validated := false
 	for attempt := 0; attempt < 3; attempt++ {
 		reset()

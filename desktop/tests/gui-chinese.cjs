@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
@@ -224,9 +225,9 @@ test('desktop keeps global sync, settings and account actions in the window titl
 })
 
 test('desktop sidebar uses the shared complete sidebar renderer with Desktop-only extensions', () => {
-  assert.ok(rendererApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must render the shared complete sidebar')
+  assert.ok(rendererApp.includes('<XDriveApp') && sharedXDriveApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must mount the shared app frame which owns the complete sidebar')
   assert.ok(rendererApp.includes('showLocalStorage'), 'Desktop must opt into Local Storage')
-  assert.ok(rendererApp.includes('sections={desktopSidebarSections}'), 'Desktop extensions should use the shared section model')
+  assert.ok(rendererApp.includes('sections: desktopSidebarSections,') && sharedXDriveApp.includes('{...sidebar}'), 'Desktop extensions must be forwarded through the shared app to the same sidebar')
   assert.equal(rendererApp.includes('leadingItems='), false, 'Desktop must not keep the legacy leading-items extension contract')
   assert.equal(rendererApp.includes('trailingItems='), false, 'Desktop must not keep the legacy trailing-items extension contract')
   assert.ok(rendererApp.includes("key: 'overview',\n      placement: 'before-core'"), 'Desktop overview should be injected before shared core navigation')
@@ -261,11 +262,13 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(sharedSidebarNav.includes('icon={destination.icon}'), 'shared sidebar must render the icon supplied by each core destination')
   assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
+  assert.ok(sharedXDriveApp.includes('selected={view}') && sharedXDriveApp.includes('onSelect={onNavigate}'), 'shared app must preserve selection and navigation dispatch')
+  assert.ok(rendererApp.includes("host={{ platform: 'desktop', adminRoleVerified: status?.role === 'admin' }}"), 'Desktop must identify its real platform adapter')
   assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
   for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
     assert.equal(rendererApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
   }
-  assert.ok(renderer.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared sidebar/workspace shell')
+  assert.ok(rendererApp.includes('<XDriveApp') && sharedXDriveApp.includes('<XDriveWorkspaceShell'), 'Desktop should use the shared app frame owning the shared workspace shell')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own the standard sidebar width token')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'shared workspace shell should own the compact sidebar width token')
   assert.equal(styles.includes('.shell {'), false, 'Desktop should not keep a duplicate local workspace grid')

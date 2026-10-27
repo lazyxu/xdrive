@@ -109,4 +109,18 @@ assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in apk_jobs
 assert "Upload exact-master Android APK" in apk_jobs
 assert "retention-days: 30" in apk_jobs
 
+# Snapshot App auth must use a numeric JWT issuer; an Iv1. Client ID creates
+# repeated 401 failures on the live GitHub endpoint.
+smoke = (root / ".github/workflows/snapshot-publisher-auth-smoke.yml").read_text(encoding="utf-8")
+auth_script = (root / "scripts/ci/mint-snapshot-publisher-token.sh").read_text(encoding="utf-8")
+assert "SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}" in release
+assert "XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}" in release
+assert "run: bash scripts/ci/mint-snapshot-publisher-token.sh" in release
+assert "XD_SNAPSHOT_APP_ID: ${{ vars.XD_SNAPSHOT_APP_ID || secrets.XD_SNAPSHOT_APP_ID }}" in smoke
+assert "run: bash scripts/ci/mint-snapshot-publisher-token.sh" in smoke
+assert '--argjson iss "$XD_SNAPSHOT_APP_ID"' in auth_script
+assert 'select([.repositories[]?.full_name] == [$repo])' in auth_script
+assert 'client-id:' not in release
+assert 'client-id:' not in smoke
+
 print("master Snapshot and disposable Android APK concurrency contract passed")

@@ -906,6 +906,21 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 	})
 }
 
+// Capability is visible only if this authenticated Agent actually supports
+// recording the optional nonce. A Desktop connected to an older Agent must
+// keep the legacy save action usable rather than sending an unsupported ID.
+func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
+	capabilities := desktopIPCCapabilitiesForRuntime(h.backupOnly)
+	if !h.backupOnly {
+		if _, supported := h.ctrl.(interface {
+			CloudDownloadWithClientRequestID(context.Context, uint64, string, string) error
+		}); supported {
+			capabilities = append(capabilities, "transfer-download-correlation")
+		}
+	}
+	return capabilities
+}
+
 func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCHello{
 		RuntimeMode:      desktopIPCRuntimeMode(h.backupOnly),
@@ -916,7 +931,7 @@ func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 		PID:              os.Getpid(),
 		Platform:         runtime.GOOS,
 		Arch:             runtime.GOARCH,
-		Capabilities:     desktopIPCCapabilitiesForRuntime(h.backupOnly),
+		Capabilities:     h.viewerDownloadCapabilities(),
 	})
 }
 

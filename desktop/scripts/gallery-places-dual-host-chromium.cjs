@@ -36,6 +36,14 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   favoriteMapCloseModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
+const h264GoSource=fs.readFileSync(path.join(root,
+  'internal/api/media_gallery_first_visible_performance_integration_test.go'),'utf8')
+const h264Match=/galleryFirstVisibleVideoMP4Base64\s*=\s*"([A-Za-z0-9+/=]+)"/.exec(h264GoSource)
+assert(h264Match,'existing genuine H264 test fixture missing')
+const h264Movie=Buffer.from(h264Match[1],'base64')
+assert(h264Movie.length>1000&&h264Movie.length<65536&&
+  h264Movie.subarray(0,128).includes(Buffer.from('ftyp')),
+  'only bounded genuine MP4 test bytes permitted')
 const sdkStub='('+function sdkFactory(){
   class Point {constructor(lng,lat){this.lng=lng;this.lat=lat}}
   class Size {constructor(width,height){this.width=width;this.height=height}}
@@ -1440,6 +1448,40 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     })
     record(mode+': '+scheme+' 844x390 landscape map stays within safe viewport',
       landscape.height>=180&&landscape.bottom<=390-8)
+    // iOS 27 map parity must cover the actual 899/900 breakpoint in both
+    // orientations as well as the narrower 375px iPhone. Execute on the same
+    // already-mounted trusted React Parent and both SDK Hosts: a source-only
+    // CSS assertion cannot prove the photos stay visible after a real resize.
+    for (const [width,height] of [[375,812],[899,390],[900,390],
+      [899,1200],[900,1200]]) {
+      await page.setViewportSize({width,height})
+      const bounds=await page.evaluate(()=>{
+        const rect=selector=>{
+          const element=document.querySelector(selector)
+          if(!element)return null
+          const box=element.getBoundingClientRect()
+          return {left:box.left,right:box.right,top:box.top,
+            bottom:box.bottom,width:box.width,height:box.height}
+        }
+        return {map:rect('[data-xdrive-places-cluster-overview]'),
+          cover:rect('[data-xdrive-places-trusted-photo-cover]'),
+          strip:rect('[data-xdrive-places-photo-collection-strip]'),
+          count:document.querySelector('[data-xdrive-places-photo-count-badge]')?.textContent,
+          regionLabel:document.querySelector('[aria-label="定位照片聚集地图"]')?.getAttribute('role')}
+      })
+      const inside=(outer,inner)=>Boolean(outer&&inner&&
+        inner.left>=outer.left-1&&inner.right<=outer.right+1&&
+        inner.top>=outer.top-1&&inner.bottom<=outer.bottom+1)
+      record(mode+': '+scheme+' '+width+'x'+height+
+        ' map and signed-photo cover remain within the usable viewport',
+        bounds.map&&bounds.map.width>0&&bounds.map.height>=180&&
+        bounds.map.bottom<=height-8&&bounds.map.right<=width+1&&
+        inside(bounds.map,bounds.cover)&&bounds.cover.width>=44&&
+        bounds.cover.height>=44&&bounds.count==='9')
+      record(mode+': '+scheme+' '+width+'x'+height+
+        ' shared photo strip stays inside map bounds',
+        inside(bounds.map,bounds.strip)&&bounds.strip.width>=44)
+    }
     await page.setViewportSize({width:390,height:844})
     await cover.focus()
     const focused=await cover.evaluate(element=>document.activeElement===element)
@@ -1461,6 +1503,76 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     record(mode+': '+scheme+' lower photo strip keyboard Enter reopens Owner drawer',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===9&&
       errors.length===0)
+  }finally{await context.close()}
+}
+
+// Real AVC1/H264 sample from the existing Go Gallery test source. No new
+// network download, synthetic codec label, or invented poster byte sequence.
+async function testMapColdH264Poster(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+'&map_h264=1',
+      {waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>window.__mapProbe?.ready === true)
+    const sdkLoads=mode==='inline' ? inlineSDKLoads : childSDKLoads
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    await page.waitForFunction(()=>window.__mapProbe?.h264.puts >= 1)
+    await page.waitForFunction(()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return img instanceof HTMLImageElement && img.complete &&
+        img.naturalWidth>0 && img.naturalHeight>0 &&
+        (img.currentSrc||img.src).startsWith('blob:')
+    })
+    const proof=await page.evaluate(async()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      await img.decode()
+      await new Promise(resolve=>requestAnimationFrame(()=>
+        requestAnimationFrame(resolve)))
+      return {dimensions:[img.naturalWidth,img.naturalHeight],
+        currentSrc:(img.currentSrc||img.src).startsWith('blob:'),
+        h264:{...window.__mapProbe.h264},
+        queries:window.__mapProbe.queries.map(q=>({count:q.count,favorite:q.favorite,album:q.albumKey})),
+        failed:window.__mapProbe.failed}
+    })
+    record(mode+': real H264 cold Owner preview produces decoded 512px-bounded JPEG map cover',
+      proof.currentSrc&&proof.dimensions[0]>0&&proof.dimensions[0]<=512&&
+      proof.dimensions[1]>0&&proof.dimensions[1]<=512&&
+      proof.h264.misses>=1&&proof.h264.previewURLs>=1&&
+      proof.h264.puts>=1&&proof.h264.putBytes>200&&
+      proof.queries.every(q=>!q.favorite&&q.album==='')&&!proof.failed)
+    const warmBefore=proof.h264.warm
+    await page.locator('#toggle-favorite').click()
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.waitForFunction(before=>window.__mapProbe?.h264.warm>before,
+      warmBefore)
+    await page.waitForFunction(()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return img instanceof HTMLImageElement&&img.complete&&
+        img.naturalWidth>0&&img.naturalHeight>0
+    })
+    const warm=await page.evaluate(()=>({
+      h264:{...window.__mapProbe.h264},
+      favorite:window.__mapProbe.queries.some(q=>q.favorite&&q.count===3),
+      errored:window.__mapProbe.failed,
+    }))
+    record(mode+': same Owner video uses warm persisted-Poster path after Favorites revalidation',
+      warm.h264.warm>=1&&warm.favorite&&!warm.errored&&errors.length===0)
+    record(mode+': video poster does not remount SDK or grant third-party media access',
+      (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkLoads&&
+      requests.every(x=>x.host==='gallery'||x.host==='child'))
   }finally{await context.close()}
 }
 
@@ -1496,6 +1608,25 @@ async function main(){
         pathname.startsWith('/api/v1/files/') ||
         pathname.startsWith('/api/v1/file-preview/')))
       return proxyRealGin(req,res)
+    if(gallery&&pathname==='/__fixture/h264.mp4'&&req.method==='GET'){
+      // Single same-origin test-only signed-Preview substitute; browser
+      // Range seeks read exactly the pre-existing real AVC1/H264 bitstream.
+      const requestRange=typeof req.headers.range==='string'
+        ? /^bytes=(\d+)-(\d*)$/.exec(req.headers.range) : null
+      if(req.headers.range && !requestRange)
+        return content(res,416,'text/plain','invalid media Range')
+      const begin=requestRange?Number(requestRange[1]):0
+      const end=requestRange&&requestRange[2]
+        ? Number(requestRange[2]):h264Movie.length-1
+      if(!Number.isSafeInteger(begin)||!Number.isSafeInteger(end)||
+         begin<0||end<begin||end>=h264Movie.length)
+        return content(res,416,'text/plain','invalid media Range')
+      const bytes=h264Movie.subarray(begin,end+1)
+      return content(res,requestRange?206:200,'video/mp4',bytes,{
+        'Accept-Ranges':'bytes','Content-Length':String(bytes.length),
+        ...(requestRange?{'Content-Range':'bytes '+begin+'-'+end+'/'+h264Movie.length}:{})
+      })
+    }
     if(gallery&&pathname==='/bundle.js')
       return content(res,200,'text/javascript',fs.readFileSync(path.join(temp,'bundle.js')))
     if(child&&pathname==='/_xdrive_baidu_isolated/index.html')
@@ -1554,6 +1685,8 @@ async function main(){
     if(!ginURL){
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
+      await testMapColdH264Poster(browser,'inline',port)
+      await testMapColdH264Poster(browser,'isolated',port)
       await testOwnerCellsFailureRetry(browser,'inline',port)
       await testOwnerCellsFailureRetry(browser,'isolated',port)
       for(const scheme of ['light','dark']){

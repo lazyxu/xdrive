@@ -71,7 +71,7 @@ test('P0-C2b2 navigates the ACTUAL signed App Files↔Gallery on the SAME docume
     'earliest, firstErr := server.queryMediaItemRange(',
     'UnknownFirst: true, TimeZone: "UTC"',
     'earliest.Offset != 0 || len(earliest.Items) != 100',
-    'headImages, headVideos, headLive := galleryFirstVisibleSeedObjects(',
+    'headImages, headVideos, headLive = galleryFirstVisibleSeedObjects(',
     't, db, countingStore, earliest.Items,',
     'P0C2_SPA_MEDIA_RANGE',
     'P0C2_SPA_UNWATCHED_FIXTURE_THUMBNAIL',
@@ -79,6 +79,11 @@ test('P0-C2b2 navigates the ACTUAL signed App Files↔Gallery on the SAME docume
     '&meta.PhotoPerson{},',
     '&meta.FileRecentAccess{},',
   ]) assert(fixture.includes(marker), 'missing real signed App / Mobile tail fixture: '+marker)
+  // P1P's genuine SHA-distinct CAS originals must remain read-only; old
+  // P0-C2b2 bounded first-page seeding still executes unchanged otherwise.
+  assert.match(fixture,
+    /headImages, headVideos, headLive = galleryPhysicalMixedViewportIDs\(t, earliest\.Items\)\s*\} else \{\s*headImages, headVideos, headLive = galleryFirstVisibleSeedObjects\(/,
+    'physical-corpus preservation must not replace the legacy bounded head seeder')
   assert(originalMain.includes('<App appearance={appearance} onAppearanceChange={changeAppearance} />'))
   assert(!runner.includes('location.hash ='), 'direct synthetic URL mutation not a UI click')
 })

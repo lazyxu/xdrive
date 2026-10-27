@@ -110,7 +110,8 @@ type backupAdminPage struct {
 // Host-authored historical receipts, not current snapshot integrity guarantees.
 type backupAdminHistoryEntry struct {
 	backupAdminStatus
-	Mode string `json:"mode,omitempty"`
+	Mode         string                          `json:"mode,omitempty"`
+	Verification *backupAdminVerificationReceipt `json:"verification,omitempty"`
 }
 
 type backupAdminHistory struct {
@@ -128,6 +129,9 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			strings.Trim(e.RequestID, "0123456789abcdef") != "" || seen[e.RequestID] ||
 			(e.State != "success" && e.State != "failed") || len(e.ErrorCode) > 60 ||
 			(e.SnapshotID != "" && !backupAdminSnapshotID.MatchString(e.SnapshotID)) {
+			return false
+		}
+		if !validBackupVerificationReceipt(e) {
 			return false
 		}
 		switch e.Action {

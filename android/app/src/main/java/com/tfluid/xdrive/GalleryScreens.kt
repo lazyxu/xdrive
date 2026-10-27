@@ -73,7 +73,8 @@ internal fun ColumnScope.Gallery(
     var containTiles by rememberSaveable { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
     var kindMenuOpen by remember { mutableStateOf(false) }
-    var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind) {
+    var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind,
+        state.gallerySortBy, state.gallerySortDir) {
         mutableStateOf("all")
     }
     var timePickerOpen by remember { mutableStateOf(false) }
@@ -144,6 +145,29 @@ internal fun ColumnScope.Gallery(
             DropdownMenu(expanded = displayMenuOpen,
                 onDismissRequest = { displayMenuOpen = false },
                 containerColor = MaterialTheme.colorScheme.surface) {
+                // Same four real sorting choices as iOS PWA, using Go Owner Range.
+                for ((sort, label) in listOf(
+                    ("captured" to "asc") to "拍摄时间 · 最早在前",
+                    ("captured" to "desc") to "拍摄时间 · 最新在前",
+                    ("added" to "asc") to "加入时间 · 最早在前",
+                    ("added" to "desc") to "加入时间 · 最新在前"
+                )) {
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (state.gallerySortBy == sort.first &&
+                                state.gallerySortDir == sort.second)
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.testTag(
+                            "gallery-sort-${sort.first}-${sort.second}"),
+                        onClick = {
+                            displayMenuOpen = false
+                            controller.changeGallerySort(sort.first, sort.second)
+                        },
+                    )
+                }
+                HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text("放大缩略图") },
                     enabled = preferredColumns > 2,
@@ -200,6 +224,8 @@ internal fun ColumnScope.Gallery(
                 .testTag("gallery-retry-page")) {
             Text(when {
                 !state.galleryLoaded && state.galleryJumpIndex != null -> "重试日期跳转"
+                state.galleryPageIntent == "newer" &&
+                    state.gallerySortDir == "desc" -> "重试加载更早的照片"
                 state.galleryPageIntent == "newer" -> "重试加载较新的照片"
                 state.galleryLoaded -> "重试加载更早的照片"
                 else -> "重新加载照片"
@@ -208,16 +234,18 @@ internal fun ColumnScope.Gallery(
     }
 
     val timeSets = state.galleryTimelineSets
+    // Indexed PWA year/month dock requires canonical captured/ascending order.
+    val showTimeDock = timeSets != null && state.gallerySearchQuery.isEmpty() &&
+        state.gallerySortBy == "captured" && state.gallerySortDir == "asc"
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().testTag("gallery-wall")) {
         val columns = galleryVisibleColumns(maxWidth.value, preferredColumns)
         val tileGap = 4.dp // Shared PWA Gallery grid gap.
         val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
-        // The PWA dock overlays the photo wall. Preserve real scroll/last-row
-        // clearance for both capsules, without shrinking the Owner grid height.
-        val dockClearance = if (timeSets != null &&
-            state.gallerySearchQuery.isEmpty()) 144.dp else 88.dp
-        val blankTop = if (state.galleryLoaded && state.galleryItems.isNotEmpty()) {
+        // Floating PWA controls overlay this wall; keep genuine scroll clearance.
+        val dockClearance = if (showTimeDock) 144.dp else 88.dp
+        val blankTop = if (state.gallerySortDir == "asc" &&
+            state.galleryLoaded && state.galleryItems.isNotEmpty()) {
             (maxHeight - (cellWidth + tileGap) * rows - dockClearance).coerceAtLeast(0.dp)
         } else 0.dp
 
@@ -239,7 +267,9 @@ internal fun ColumnScope.Gallery(
             } else {
                 val last = state.galleryItems.lastIndex
                 if (last >= 0) {
-                    gridState.scrollToItem(last + if (blankTop > 0.dp) 1 else 0)
+                    val first = if (state.gallerySortDir == "desc") 0
+                        else last + (if (blankTop > 0.dp) 1 else 0)
+                    gridState.scrollToItem(first)
                 }
                 positioned = true
             }
@@ -300,123 +330,122 @@ internal fun ColumnScope.Gallery(
                 GalleryTile(item, controller, bitmaps, containTiles)
             }
         }
-        // iOS/PWA floating chrome shares the Gallery wall's viewport.
-        // Actual Collections, time, filter and search behaviors remain intact.
+        // Native functional Gallery controls float over this same Owner grid.
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .testTag("gallery-floating-chrome")) {
-            if (timeSets != null && state.gallerySearchQuery.isEmpty()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                .testTag("gallery-time-dock"),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                shape = RoundedCornerShape(50.dp),
-                tonalElevation = 2.dp,
-            ) {
-                Row(Modifier.padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for ((scale, label) in listOf(
-                        "year" to "年", "month" to "月", "all" to "全部"
-                    )) {
-                        val enabled = !state.loading &&
-                            (scale == "all" || timeSets.forScale(scale).isNotEmpty())
-                        Box(
-                            modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
-                                .background(
-                                    if (timeScale == scale) MaterialTheme.colorScheme.surface
-                                    else Color.Transparent,
-                                    RoundedCornerShape(50.dp),
-                                )
-                                .clickable(enabled = enabled) {
-                                    timeScale = scale
-                                    if (scale == "all") {
-                                        timePickerOpen = false
-                                        if (state.galleryJumpIndex != null)
-                                            controller.refreshGallery()
-                                    } else timePickerOpen = true
+            if (showTimeDock && timeSets != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                        .testTag("gallery-time-dock"),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                        shape = RoundedCornerShape(50.dp),
+                        tonalElevation = 2.dp,
+                    ) {
+                        Row(Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for ((scale, label) in listOf(
+                                "year" to "年", "month" to "月", "all" to "全部"
+                            )) {
+                                val enabled = !state.loading &&
+                                    (scale == "all" || timeSets.forScale(scale).isNotEmpty())
+                                Box(
+                                    modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
+                                        .background(
+                                            if (timeScale == scale) MaterialTheme.colorScheme.surface
+                                            else Color.Transparent,
+                                            RoundedCornerShape(50.dp),
+                                        )
+                                        .clickable(enabled = enabled) {
+                                            timeScale = scale
+                                            if (scale == "all") {
+                                                timePickerOpen = false
+                                                if (state.galleryJumpIndex != null)
+                                                    controller.refreshGallery()
+                                            } else timePickerOpen = true
+                                        }
+                                        .semantics { selected = timeScale == scale }
+                                        .testTag("gallery-time-scale-" + scale),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(label,
+                                        modifier = Modifier.padding(horizontal = 10.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (!enabled)
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        else if (timeScale == scale)
+                                            MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface)
                                 }
-                                .semantics { selected = timeScale == scale }
-                                .testTag("gallery-time-scale-" + scale),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(label,
-                                modifier = Modifier.padding(horizontal = 10.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (!enabled)
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else if (timeScale == scale)
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface)
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-    // iOS PWA primary capsule: the middle action must be the real
-    // Collections page, never an unrelated media kind filter.
-    Surface(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding()
-            .testTag("gallery-bottom-dock"),
-        color = Color.Transparent,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (state.gallerySelectedAlbum != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                    shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,
+            // iOS PWA primary capsule: the middle action must be the real
+            // Collections page, never an unrelated media kind filter.
+            Surface(
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding()
+                    .testTag("gallery-bottom-dock"),
+                color = Color.Transparent,
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
-                        onClick = controller::closeGalleryAlbum,
-                        modifier = Modifier.heightIn(min = 48.dp)
-                            .testTag("gallery-album-back"),
-                    ) { Text("返回精选集") }
-                }
-            } else {
-                Surface(
-                    modifier = Modifier.weight(1f).widthIn(max = 288.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                    shape = RoundedCornerShape(50.dp),
-                    tonalElevation = 2.dp,
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.weight(1f).heightIn(min = 44.dp)
-                                .background(MaterialTheme.colorScheme.surface,
-                                    RoundedCornerShape(50.dp))
-                                .testTag("gallery-library-tab"),
-                            contentAlignment = Alignment.Center,
+                    if (state.gallerySelectedAlbum != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                            shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,
                         ) {
-                            Text("图库", style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary)
+                            TextButton(
+                                onClick = controller::closeGalleryAlbum,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("gallery-album-back"),
+                            ) { Text("返回精选集") }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier.weight(1f).widthIn(max = 288.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                            shape = RoundedCornerShape(50.dp),
+                            tonalElevation = 2.dp,
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.weight(1f).heightIn(min = 44.dp)
+                                        .background(MaterialTheme.colorScheme.surface,
+                                            RoundedCornerShape(50.dp))
+                                        .testTag("gallery-library-tab"),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("图库", style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                TextButton(
+                                    onClick = controller::openGalleryCollections,
+                                    contentPadding = PaddingValues(horizontal = 5.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                                        .testTag("gallery-open-collections"),
+                                ) { Text("精选集", maxLines = 1) }
+                            }
                         }
                         TextButton(
-                            onClick = controller::openGalleryCollections,
-                            contentPadding = PaddingValues(horizontal = 5.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                                .testTag("gallery-open-collections"),
-                        ) { Text("精选集", maxLines = 1) }
+                            onClick = {
+                                searchDraft = state.gallerySearchQuery
+                                searchOpen = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
+                                .testTag("gallery-search-button"),
+                        ) { Text("搜索", maxLines = 1) }
                     }
                 }
-                TextButton(
-                    onClick = {
-                        searchDraft = state.gallerySearchQuery
-                        searchOpen = true
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
-                        .testTag("gallery-search-button"),
-                ) { Text("搜索", maxLines = 1) }
             }
-        }
-    }
         }
     }
     if (kindMenuOpen) {

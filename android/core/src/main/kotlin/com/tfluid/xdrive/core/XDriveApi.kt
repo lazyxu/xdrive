@@ -206,6 +206,13 @@ interface XDriveService {
         throw ApiException(501, "Copy API unavailable")
     suspend fun moveNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode =
         throw ApiException(501, "Move API unavailable")
+    /** Atomic Go batch copy/move: one Owner transaction, never per-item retries. */
+    suspend fun batchCopyNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch copy unavailable")
+    suspend fun batchMoveNodes(accessToken: String, originals: List<DriveNode>,
+        parentId: Long): List<DriveNode> =
+        throw ApiException(501, "Atomic batch move unavailable")
     suspend fun trashNodes(accessToken: String, originals: List<DriveNode>) {
         throw ApiException(501, "Batch Trash API unavailable")
     }
@@ -247,6 +254,10 @@ interface XDriveService {
     suspend fun galleryKindPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, kind: String): GalleryPage =
         throw ApiException(501, "Gallery Owner kind filter unavailable")
+    /** Nondefault iOS PWA sort stays on the authoritative Owner Range. */
+    suspend fun gallerySortedPage(accessToken: String, offset: Int, initialLatest: Boolean,
+        search: String, kind: String, albumId: String?, sortBy: String, sortDir: String): GalleryPage =
+        throw ApiException(501, "Gallery Owner sort unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -484,6 +495,62 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             moved.name != original.name || moved.type != original.type ||
             moved.revision <= original.revision) invalidPayload()
         return moved
+    }
+
+    /** Reuse the existing authenticated JSON transport and the Server's
+     * atomic 200-item transaction. Validation after ACK must fail closed:
+     * Controller will freeze writes if any returned identity is inconsistent.
+     * Never replay a POST after timeout or an uncertain acknowledgement. */
+    override suspend fun batchCopyNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "copy")
+
+    override suspend fun batchMoveNodes(
+        accessToken: String, originals: List<DriveNode>, parentId: Long,
+    ): List<DriveNode> = batchTransfer(accessToken, originals, parentId, "move")
+
+    private suspend fun batchTransfer(
+        token: String, originals: List<DriveNode>, parentId: Long, operation: String,
+    ): List<DriveNode> {
+        require(operation in setOf("copy", "move") && validToken(token) &&
+            parentId > 0 && originals.size in 1..200 &&
+            originals.map { it.id }.toSet().size == originals.size &&
+            originals.all { it.id > 0 && it.parentId != null &&
+                it.revision > 0 && it.type in setOf("file", "dir") &&
+                !(it.isDirectory && it.id == parentId) }) {
+            "Invalid atomic batch"
+        }
+        if (operation == "move") require(originals.none { it.parentId == parentId }) {
+            "Source is already in target folder"
+        }
+        val requestItems = JsonArray(originals.map { original ->
+            JsonObject(mapOf("id" to JsonPrimitive(original.id),
+                "revision" to JsonPrimitive(original.revision)))
+        })
+        val body = JsonObject(mapOf(
+            "items" to requestItems, "parent_id" to JsonPrimitive(parentId)))
+        // Copying large directory trees may outlive the ordinary 30s JSON
+        // timeout. Keep the original pinned Owner/TLS client, but extend the
+        // bounded idle timeout for this one physical transaction, never retry.
+        val answer = request("nodes/batch/$operation", token, bodyObject = body,
+            longRunning = true)
+        val operationID = answer.string("operation_id")
+        if (operationID.isBlank() || operationID.length > 64) invalidPayload()
+        val returned = answer["items"] as? JsonArray ?: invalidPayload()
+        if (returned.size != originals.size) invalidPayload()
+        val rows = returned.map { node(it as? JsonObject ?: invalidPayload()) }
+        if (rows.map { it.id }.toSet().size != rows.size) invalidPayload()
+        val originalsIds = originals.map { it.id }.toSet()
+        for ((index, row) in rows.withIndex()) {
+            val original = originals[index]
+            if (row.parentId != parentId || row.type != original.type ||
+                row.size != original.size || row.revision <= 0) invalidPayload()
+            if (operation == "copy") {
+                if (row.id in originalsIds) invalidPayload()
+            } else if (row.id != original.id || row.name != original.name ||
+                row.revision <= original.revision) invalidPayload()
+        }
+        return rows
     }
 
     /** Atomic Go batch Trash, capped at 200 Server-verified revisions.
@@ -864,16 +931,30 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return ownerGalleryPage(accessToken, offset, initialLatest, search, kind)
     }
 
+    /** Reuse the existing Owner-authenticated media Range, including album scopes. */
+    override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+        initialLatest: Boolean, search: String, kind: String, albumId: String?,
+        sortBy: String, sortDir: String): GalleryPage {
+        require(sortBy in setOf("captured", "added") && sortDir in setOf("asc", "desc"))
+        require(kind in setOf("", "image", "video") && search.length <= 200 &&
+            search == search.trim())
+        if (albumId != null) require(validGalleryAlbumId(albumId))
+        return ownerGalleryPage(accessToken, offset, initialLatest, search, kind, albumId,
+            sortBy, sortDir)
+    }
+
     private suspend fun ownerGalleryPage(accessToken: String, offset: Int,
         initialLatest: Boolean, search: String, mediaKind: String = "",
-        albumId: String? = null): GalleryPage {
+        albumId: String? = null, sortBy: String = "captured",
+        sortDir: String = "asc"): GalleryPage {
         require(offset >= 0 && (!initialLatest || offset == 0))
         val query = mutableMapOf(
             "range" to "true", "limit" to "60", "offset" to offset.toString(),
-            "sort_by" to "captured", "sort_dir" to "asc",
+            "sort_by" to sortBy, "sort_dir" to sortDir,
             "unknown_first" to "true", "fold_duplicates" to "true",
         )
-        if (initialLatest) query["initial_position"] = "latest"
+        // Descending already starts with the newest item at offset zero.
+        if (initialLatest && sortDir == "asc") query["initial_position"] = "latest"
         if (search.isNotEmpty()) query["q"] = search
         if (mediaKind.isNotEmpty()) query["kind"] = mediaKind
         val result = if (albumId == null) request("media/items", accessToken, query = query)
@@ -917,7 +998,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (items.map { it.node.id }.toSet().size != items.size ||
             (total > returnedOffset && items.isEmpty())) invalidPayload()
         return GalleryPage(items, total, returnedOffset.toInt(), 60,
-            parseGalleryTimelineSets(result["timeline_group_sets"], total))
+            if (sortBy == "captured" && sortDir == "asc")
+                parseGalleryTimelineSets(result["timeline_group_sets"], total) else null)
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups

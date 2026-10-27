@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './test-xdrive-host-routes.mjs'
 // Source-level Desktop/DSM view parity; NOT a physical DSM acceptance test.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -17,6 +18,8 @@ const dsmEntry = read('web/src/synology.tsx')
 const sharedHome = read('ui/shared/src/mui/HomePage.tsx')
 const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
 const desktopShell = read('desktop/src/renderer/App.tsx')
+const appShell = read('ui/shared/src/mui/XDriveApp.tsx')
+const routeRegistry = read('ui/shared/src/mui/WorkspaceRoute.ts')
 const sidebar = read('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const nav = read('ui/shared/src/mui/WorkspaceNavigation.tsx')
 const diag = read('ui/shared/src/mui/DiagnosticsPage.tsx')
@@ -165,16 +168,38 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     /window\.xdriveDesktop|ipcRenderer|localStorage|sessionStorage/.test(nas)) {
   throw new Error('DSM attempted an independent/Desktop-privileged backup frontend')
 }
-// The entire NAS app must now mount the same shell, sidebar and content
-// components as Desktop, without making unsupported pages clickable.
-for (const shared of ['XDriveWorkspaceShell', 'XDriveWorkspaceSidebar',
-  'XDriveWorkspaceContent']) {
-  if (!dsmEntry.includes('<' + shared) || !desktopShell.includes('<' + shared)) {
-    throw new Error('DSM and Desktop do not share workspace component: ' + shared)
-  }
+// DSM and Desktop must both mount the canonical full application frame.
+if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
+    !dsmEntry.includes('<XDriveWorkspaceContent') ||
+    !desktopShell.includes('<XDriveWorkspaceContent') ||
+    !appShell.includes('<XDriveWorkspaceShell') ||
+    !appShell.includes('<XDriveWorkspaceSidebar') ||
+    !appShell.includes('selected={view}') ||
+    !appShell.includes('onSelect={onNavigate}') ||
+    !appShell.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)') ||
+    !appShell.includes('host.adminRoleVerified !== true') ||
+    !dsmEntry.includes('<XDriveAppPageOutlet view={selected} host={host}') ||
+    !routeRegistry.includes('XDRIVE_APP_WORKSPACE_ROUTES') ||
+    !routeRegistry.includes('xDriveWorkspaceRouteRequiresAdmin') ||
+    !muiExports.includes("export * from './XDriveApp'")) {
+  throw new Error('Desktop and DSM lost the canonical host-neutral xDrive application')
 }
-if (!dsmEntry.includes("coreKeys={['files', 'device-backup', 'transfers', 'local-storage', 'cloud-storage']}") ||
-    !dsmEntry.includes("compactPrimaryKeys={['overview', 'files', 'device-backup', 'transfers']}") ||
+// DSM must keep every standard Desktop route visible, while rendering honest
+// unavailable states for unimplemented transport capabilities, not fake data.
+// Server Owner role remains authoritative for admin routes.
+if (dsmEntry.includes('coreKeys=') ||
+    !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
+    !routeRegistry.includes('xDriveWorkspaceNavigationAllowed') ||
+    !dsmEntry.includes("pages: {") ||
+    !dsmEntry.includes("'device-backup': { render:") ||
+    !dsmEntry.includes("'cloud-storage': { render:") ||
+    !appShell.includes('if (!page)') ||
+    !appShell.includes('此宿主尚未接通当前功能') ||
+    /window\.xdriveDesktop|ipcRenderer/.test(appShell)) {
+  throw new Error('DSM full route registry or Host capability boundary is broken')
+}
+if (dsmEntry.includes('coreKeys=') ||
+    !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
     !dsmEntry.includes('<XDriveHomePage key={pageRevision} localBackupClient={local}') ||
     !sharedHome.includes('export function XDriveHomePage(props:') ||
     !sharedHome.includes('<XDriveSynologyHomeOverview') ||
@@ -197,7 +222,7 @@ if (!dsmEntry.includes("coreKeys={['files', 'device-backup', 'transfers', 'local
     !taskStatus.includes('retirement_safe !== false') ||
     !taskStatus.includes('current_cas_verified !== false') ||
     !muiExports.includes("export * from './SynologyLocalTaskSection'") ||
-    !dsmEntry.includes('showLocalStorage') ||
+    !dsmEntry.includes('showLocalStorage: true') ||
     !dsmEntry.includes('<XDriveLocalStoragePage') ||
     !dsmEntry.includes('source={browserStorage}') ||
     !muiExports.includes("export * from '../synology-browser-storage'") ||
@@ -239,7 +264,7 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !deskDiag.includes('XDriveDiagnosticsPage as DesktopDiagnosticsPage') ||
     !nasDiag.includes('<XDriveDiagnosticsPage') ||
     !dsmEntry.includes('<XDriveSynologyDiagnosticsPanel') ||
-    !dsmEntry.includes("coreKeys={['files', 'device-backup', 'transfers', 'local-storage', 'cloud-storage']}") ||
+    dsmEntry.includes('coreKeys=') ||
     !nav.includes('xDriveDiagnosticsSidebarDestination') ||
     !diag.includes('scopeNotice') ||
     !nasAdapter.includes('await api.list(signal)') ||

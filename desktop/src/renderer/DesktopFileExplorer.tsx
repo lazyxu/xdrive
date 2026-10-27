@@ -68,6 +68,7 @@ import type {
   XDriveMediaLoadStage,
   XDriveFileExplorerWorkspaceVirtualDirectory,
   XDriveTrashDialogAdapter,
+  XDriveViewerDownloadReceiptPort,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerGrouping,
@@ -213,6 +214,7 @@ export default function DesktopFileExplorer({
   transferLifecycleSupported = false,
   transferLifecycleBatchSupported = false,
   transferGroupUploadCancelSupported = false,
+  viewerDownloadReceipt,
   transfers = [],
   actionIntent,
   onActionIntentConsumed,
@@ -276,6 +278,7 @@ export default function DesktopFileExplorer({
   transferLifecycleSupported?: boolean
   transferLifecycleBatchSupported?: boolean
   transferGroupUploadCancelSupported?: boolean
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   transfers?: readonly AgentTransfer[]
   actionIntent?: DesktopFileExplorerActionIntent | null
   onActionIntentConsumed?: (id: number) => void
@@ -1470,17 +1473,29 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const downloadNode = async (node: AgentCloudNode) => {
+  const downloadNode = async (
+    node: AgentCloudNode, clientRequestID?: string,
+  ): Promise<{ saved: boolean }> => {
     const busyToken = beginActionBusy(`download-${node.id}`)
-    if (!busyToken) return
+    if (!busyToken) return { saved: false }
     try {
-      const result = await window.xdriveDesktop.agent.cloudDownload(node.id, node.name)
-      if (!isActionBusyCurrent(busyToken)) return
+      // Optional nonce is forwarded through the existing authenticated native
+      // SaveDialog. Old Agents and normal actions keep the original two args.
+      const result = await window.xdriveDesktop.agent.cloudDownload(
+        node.id, node.name, clientRequestID,
+      )
+      if (!isActionBusyCurrent(busyToken)) return { saved: false }
       if (!result.ok) {
         onError(result.error.message)
-        return
+        return { saved: false }
       }
       if (result.data.saved) onFeedback('good', `${node.name} 已保存。`)
+      return { saved: result.data.saved }
+    } catch {
+      // Native IPC errors may contain a private destination or token. The
+      // host already owns feedback; do not put an untrusted path in Viewer.
+      onError('下载失败，请在任务中心查看或重试。')
+      return { saved: false }
     } finally {
       finishActionBusy(busyToken)
     }
@@ -2218,6 +2233,17 @@ const desktopTransferLifecycleChildBatchSize = 1000
         canRedo={!trashActive && canRedo}
         onRedo={trashActive ? undefined : onRedo}
         onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}
+        viewerDownloadReceipt={trashActive ? undefined : viewerDownloadReceipt}
+        onQuickLookDownloadWithReceipt={
+          !trashActive && viewerDownloadReceipt ? (item, clientRequestID) => {
+            const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+            if (!node || node.type !== 'file' || node.id !== Number(item.id)) {
+              onError('文件已变化，请返回文件列表后重新打开。')
+              return Promise.resolve({ saved: false })
+            }
+            return downloadNode(node, clientRequestID)
+          } : undefined
+        }
         folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}
         onDeleteItems={trashActive ? undefined : (selected) => {
           if (!allowSelectionAction('delete', selected)) return

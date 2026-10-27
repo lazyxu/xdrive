@@ -1985,7 +1985,9 @@ export class XDriveApi {
       return Promise.reject(new Error('Invalid or cancelled BD09 cell scope'))
     return this.request<MediaBaiduNativeCellsPage>(
       '/api/v1/media/places/baidu-jsapi/cells?' + q.toString(),
-      { signal, cache: 'no-store' },
+      { signal, cache: 'no-store', headers: {
+        'X-XDrive-Map-Cover-Kind': 'video-poster-v1',
+      } },
     ).then(page => {
       if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page, bounds))
         throw new Error('Invalid BD09 cell response')

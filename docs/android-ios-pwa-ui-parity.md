@@ -2,6 +2,8 @@
 
 > **2026-10-27 当期源代码补充（以此节优先，以下 2026-10-25 记录是开发历史，不再是现状）。** Android 已合入真实 Files/Recent/Favorites/Search、SAF 上传下载、回收站、图库/精选集 Owner Range、图片/Media3/Live Viewer、Keystore 会话与基础传输面板。#2816 真实相册封面、#2821 Files 缩略图、#2824 登录错误提示和 #2828 Files → 原生 Viewer 已合入 master。当前候选将真实图库跨 Range 左右滑动、加载失败重试与原生 Files 的单文件返回逻辑合并；准确 HEAD CI 尚需验证。
 
+> **2026-10-27 当期源码状态（本段优先，下面历史记录保留仅供追踪）**：Android 已合入 Files Owner 缩略图（#2821）、真实相册封面（#2816）、登录错误提示（#2824）、Files → Native Viewer（#2828）、跨 Owner Gallery 分页 Viewer（#2822）、私有 64 MiB PdfRenderer 原生 PDF Viewer（#2841）。图片/视频/Live Photo 和 PDF 基础 Viewer 不应重复开发。原生音频 Viewer #2837 仍是 Draft，准确 HEAD Android CI 待验证。本次候选接入 Go 已有的 200 项单事务 `nodes/batch/copy` 和 `nodes/batch/move`，为 Files 选中项提供原生复制/移动和 Owner 目标选择器，待准确提交验证；不能提前视为合入。
+
 ### 当前最小可用差距（按产品入口）
 
 | 表面 | 已有基础 | 尚需收尾 |

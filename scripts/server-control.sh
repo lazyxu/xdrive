@@ -2552,11 +2552,11 @@ PY
 }
 backup_admin_history_append() {
   local dir="$1" state="$2" action="$3" id="$4" snapshot="$5" mode="$6"
-  local started="$7" finished="$8" error_code="$9"
+  local started="$7" finished="$8" error_code="$9" proof_path="${10:-}"
   python3 - "$dir/backup-admin-history.json" "$state" "$action" "$id" \
-    "$snapshot" "$mode" "$started" "$finished" "$error_code" <<'PY'
+    "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
-path,state,action,rid,snapshot,mode,started,finished,code=sys.argv[1:]
+path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
 if state not in ("success","failed") or action not in ("create","verify","plan","restore","delete","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
@@ -2586,6 +2586,54 @@ if os.path.lexists(path):
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
+
+# New Host verification evidence is optional; older history remains usable.
+# Strictly allowlist fixed-schema counters and enumerations. Raw logs, CAS
+# digests, and Host paths never enter this persistent shared record.
+if action=="verify" and proof_path:
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+                raise ValueError("unsafe report file")
+            raw_report=f.read(2049)
+        if not 0 < len(raw_report) <= 2048:
+            raise ValueError("oversized report")
+        def reject_duplicates(pairs):
+            value={}
+            for key,item in pairs:
+                if key in value: raise ValueError("duplicate field")
+                value[key]=item
+            return value
+        proof=json.loads(raw_report.decode("utf-8"),object_pairs_hook=reject_duplicates)
+        required={"protocol","state","format","scope","cas_objects_checked","cas_bytes_hashed"}
+        optional={"failure_category"}
+        allowed={"missing_object","object_sha256_mismatch","object_size_mismatch",
+            "unsafe_repository","unsafe_snapshot","unsafe_object_bucket",
+            "unreadable_or_unsafe_object","object_read_failed","measurement_overflow",
+            "invalid_object_index","invalid_legacy_archive",
+            "snapshot_outside_repository","invalid_cas_report",
+            "snapshot_verification_failed"}
+        category=proof.get("failure_category","") if isinstance(proof,dict) else ""
+        fmt="v1" if snapshot.startswith("v1:") else "v2"
+        if (not isinstance(proof,dict) or not required <= proof.keys() or
+            set(proof)-required-optional or
+            proof["protocol"]!="xdrive-host-backup-verify-v1" or
+            proof["state"] not in ("success","failed") or
+            proof["format"]!=fmt or proof["scope"]!="backup_snapshot_and_referenced_cas" or
+            (state=="success" and proof["state"]!="success") or
+            type(category) is not str or (category and category not in allowed) or
+            (proof["state"]=="failed" and not category)):
+            raise ValueError("invalid verification schema")
+        for key in ("cas_objects_checked","cas_bytes_hashed"):
+            if type(proof[key]) is not int or not 0 <= proof[key] <= 9007199254740991:
+                raise ValueError("invalid count")
+        if fmt=="v1" and (proof["cas_objects_checked"] or proof["cas_bytes_hashed"]):
+            raise ValueError("impossible v1 CAS counts")
+        entry["verification"]=proof
+    except (OSError,ValueError,UnicodeError,TypeError,KeyError):
+        pass  # Never fabricate evidence, and never leak raw error details.
 events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
 raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
                 ensure_ascii=False,separators=(",",":"))+"\n").encode()
@@ -2722,7 +2770,11 @@ backup_admin_execute() {
     verify)
       [[ "$mode" == fast || "$mode" == deep ]] || return 2
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
-      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      if [[ -n "${XD_BACKUP_ADMIN_VERIFY_JSON_FILE:-}" ]]; then
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify --json "$target" > "$XD_BACKUP_ADMIN_VERIFY_JSON_FILE" || return
+      else
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      fi
       if [[ "$mode" == deep && "$snapshot" == v2-* ]]; then
         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --repository-dir "$(dirname "$(dirname "$target")")" --keep-last 1 --mode deep
       fi ;;
@@ -2767,6 +2819,7 @@ backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
   local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
   local progress_file="$dir/backup-admin-progress.env"
+  local verify_file=""
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
   mv -- "$request" "$active" || return 0
   protocol="$(json_value "$active" protocol)"
@@ -2789,6 +2842,10 @@ backup_admin_process_request() {
   started="$(now_utc)"
   backup_admin_status "$dir" running "$action" "$id" "$snapshot" "" "宿主机正在执行备份操作。" "$started" ""
   log="$LOG_DIR/backup-admin-last.log"
+  if [[ "$action" == verify ]]; then
+    # Only Host-owned random temporary inode; no predictable browser path.
+    verify_file="$(mktemp "$LOG_DIR/.backup-admin-verify.XXXXXXXX" 2>/dev/null || true)"
+  fi
   # Keep the Host Control heartbeat fresh during long pg_dump, hashing and
   # restoration. The backup-operation flock is inherited by the child: a
   # crashed runner cannot overlap a still-running privileged backup command.
@@ -2814,6 +2871,7 @@ backup_admin_process_request() {
         rm -f -- "$progress_file"
         ( umask 077
           if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
+          if [[ "$action" == verify ]]; then export XD_BACKUP_ADMIN_VERIFY_JSON_FILE="$verify_file"; fi
           XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm"
         ) > "$log" 2>&1 &
         pid=$!
@@ -2854,9 +2912,12 @@ backup_admin_process_request() {
     backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "操作失败；请查看宿主机私有日志。" "$started" "$finished"
   fi
   # A history I/O failure cannot change the actual backup outcome.
-  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" ||
+  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "$verify_file" ||
     echo "[xDrive] warning: private backup history not persisted" >&2
   rm -f "$active"
+  if [[ -n "$verify_file" && -f "$verify_file" && ! -L "$verify_file" ]]; then
+    rm -f -- "$verify_file"
+  fi
   if [[ -f "$progress_file" && ! -L "$progress_file" ]]; then rm -f -- "$progress_file"; fi
   backup_admin_inventory "$dir" || true
 }

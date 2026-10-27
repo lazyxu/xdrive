@@ -33,6 +33,11 @@ class DriveAppTest {
     private var renameCalls = 0
     private var trashCalls = 0
     private var batchTrashCalls = 0
+    private var batchCopyCalls = 0
+    private var batchMoveCalls = 0
+    private var batchTransferFixture = false
+    private val batchSecondFile = DriveNode(71, 1, "second.txt", "file",
+        size = 24, revision = 3)
     private var copyCalls = 0
     private var moveCalls = 0
     private var extraRootFile = false
@@ -89,6 +94,7 @@ class DriveAppTest {
     private val galleryTimelineRequests = mutableListOf<Pair<Int, Boolean>>()
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryKindQueries = mutableListOf<Pair<String, String>>()
+    private val gallerySortQueries = mutableListOf<Pair<String, String>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -166,7 +172,14 @@ class DriveAppTest {
                 DriveNode(46, 1, "search-result.jpg", "file", size = 64, revision = 1),
                 "image", hasThumbnail = true)), 1, 0)
         }
-        override suspend fun galleryKindPage(accessToken: String, offset: Int,
+        override suspend fun gallerySortedPage(accessToken: String, offset: Int,
+            initialLatest: Boolean, search: String, kind: String, albumId: String?,
+            sortBy: String, sortDir: String): GalleryPage {
+            gallerySortQueries += sortBy to sortDir
+            return GalleryPage(listOf(GalleryAsset(DriveNode(48L, 1L, "sorted.jpg",
+                "file", size = 44, revision = 1), "image", hasThumbnail = true)), 1, 0)
+        }
+    override suspend fun galleryKindPage(accessToken: String, offset: Int,
             initialLatest: Boolean, search: String, kind: String): GalleryPage {
             galleryKindQueries += search to kind
             return GalleryPage(listOf(GalleryAsset(
@@ -318,6 +331,30 @@ class DriveAppTest {
             mutableRootRows.removeAll { it.id in ids }
             if (70L in ids) extraRootFile = false
         }
+        override suspend fun batchCopyNodes(
+            accessToken: String, originals: List<DriveNode>, parentId: Long,
+        ): List<DriveNode> {
+            check(batchTransferFixture && accessToken == "fixture" && parentId == 1L &&
+                originals.map { it.id } == listOf(71L, 70L))
+            batchCopyCalls++
+            val copies = originals.mapIndexed { index, node ->
+                node.copy(id = 170L + index, parentId = parentId,
+                    name = node.name + " - 副本", revision = 1)
+            }
+            mutableRootRows += copies
+            return copies
+        }
+        override suspend fun batchMoveNodes(
+            accessToken: String, originals: List<DriveNode>, parentId: Long,
+        ): List<DriveNode> {
+            check(batchTransferFixture && accessToken == "fixture" && parentId == 2L &&
+                originals.map { it.id } == listOf(71L, 70L))
+            batchMoveCalls++
+            extraRootFile = false
+            batchTransferFixture = false
+            return originals.map { it.copy(parentId = parentId,
+                revision = it.revision + 1) }
+        }
         override suspend fun copyNode(accessToken: String, original: DriveNode, parentId: Long): DriveNode {
             copyCalls++
             return original.copy(id = 770 + copyCalls.toLong(), parentId = parentId, revision = 1)
@@ -356,6 +393,7 @@ class DriveAppTest {
                         DriveNode(200, 1, "第二相册", "dir")
                         else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
                 else if (parentId == 1L) mutableRootRows.toList() +
+                    (if (batchTransferFixture) listOf(batchSecondFile) else emptyList()) +
                     (if (filesAudioFixture) listOf(filesAudioNode) else emptyList()) +
                     (if (filesPdfFixture) listOf(filesPdfNode) else emptyList()) +
                     (if (filesViewerFixture) listOf(filesViewerNode) else emptyList()) +
@@ -586,6 +624,36 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryMediaKind.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 46L
+        }
+    }
+
+    @Test fun nativeGallerySortUsesOwnerRangeAndRestoresChronologicalDefault() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-added-desc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "added" &&
+                st.gallerySortDir == "desc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 48L
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("added" to "desc"), gallerySortQueries)
+            org.junit.Assert.assertEquals(0, controller.state.value.galleryOffset)
+        }
+        compose.onNodeWithTag("gallery-time-dock").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-sort-captured-asc").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            val st = controller.state.value
+            st.galleryLoaded && !st.loading && st.gallerySortBy == "captured" &&
+                st.gallerySortDir == "asc" &&
+                st.galleryItems.singleOrNull()?.node?.id == 40L
         }
     }
 
@@ -1259,6 +1327,79 @@ class DriveAppTest {
         compose.onNodeWithTag("files-upload-action")
             .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
+    }
+
+    @Test fun nativeBrowseSelectionCopiesTwoOwnerFilesViaOneAtomicPost() {
+        batchTransferFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        // Server fixture is folder 2, file 71, then file 70. Scroll each
+        // actual node into the 320x640 emulator viewport before touching it.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-item-70").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files").performScrollToIndex(1)
+        compose.onNodeWithTag("files-item-71").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-batch-copy-action")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-source-summary")
+            .assertTextEquals("批量 2 项")
+        compose.onNodeWithTag("files-destination-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            batchCopyCalls == 1 && controller.state.value.destinationKind == null &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, batchCopyCalls)
+            org.junit.Assert.assertEquals(0, batchMoveCalls)
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertTrue(
+                controller.state.value.items.any { it.id == 170L } &&
+                controller.state.value.items.any { it.id == 171L })
+        }
+    }
+
+    @Test fun nativeBrowseBatchMoveRequiresVerifiedOtherFolderAndOnePost() {
+        batchTransferFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithTag("files-select-mode").performClick()
+        // Server fixture is folder 2, file 71, then file 70. Scroll each
+        // actual node into the 320x640 emulator viewport before touching it.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-item-70").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files").performScrollToIndex(1)
+        compose.onNodeWithTag("files-item-71").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-batch-move-action")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("files-destination-item-2").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.destinationPath.lastOrNull()?.id == 2L &&
+                controller.state.value.destinationLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-destination-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            batchMoveCalls == 1 && controller.state.value.destinationKind == null &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, batchMoveCalls)
+            org.junit.Assert.assertEquals(0, batchCopyCalls)
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertTrue(controller.state.value.items.none {
+                it.id in setOf(70L, 71L) })
+            org.junit.Assert.assertEquals(1L, controller.state.value.path.last().id)
+        }
     }
 
     @Test fun nativeDownloadMenuUsesOnlyRealCurrentFile() {

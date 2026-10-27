@@ -85,6 +85,8 @@ data class DriveState(
     val galleryLoaded: Boolean = false,
     val gallerySearchQuery: String = "",
     val galleryMediaKind: String = "",
+    val gallerySortBy: String = "captured",
+    val gallerySortDir: String = "asc",
     val galleryTimelineSets: GalleryTimelineSets? = null,
     val galleryJumpIndex: Int? = null,
     val galleryJumpEpoch: Long = 0,
@@ -99,6 +101,9 @@ data class DriveState(
     val viewerReturnToFiles: Boolean = false,
     val destinationKind: FilesTransferKind? = null,
     val destinationSource: DriveNode? = null,
+    /** Nonempty only for an atomic batch Copy/Move of 1–200 confirmed rows.
+     * The legacy single-node picker continues to use destinationSource. */
+    val destinationSources: List<DriveNode> = emptyList(),
     val destinationPath: List<DriveNode> = emptyList(),
     val destinationFolders: List<DriveNode> = emptyList(),
     val destinationOffset: Int = 0,
@@ -115,7 +120,8 @@ data class DriveState(
 }
 
 private fun DriveState.withoutDestination(): DriveState = copy(
-    destinationKind = null, destinationSource = null, destinationPath = emptyList(),
+    destinationKind = null, destinationSource = null, destinationSources = emptyList(),
+    destinationPath = emptyList(),
     destinationFolders = emptyList(), destinationOffset = 0, destinationTotal = 0,
     destinationLoaded = false, destinationSubmitting = false,
     destinationWriteAttempted = false,
@@ -921,11 +927,42 @@ class DriveController(
         }
     }
 
+    /** Atomic 1–200 batch Copy/Move. Source rows and revisions are frozen
+     * from the already-authenticated visible Files selection; no per-file HTTP
+     * writes, no guessed Node and no cross-Owner selection. */
+    fun chooseSelectedDestination(kind: FilesTransferKind) {
+        val current = state.value
+        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
+            !current.loaded || current.loading || current.destinationKind != null ||
+            !current.browseSelectionMode || current.error != null ||
+            current.browseBatchWriteAttempted || current.path.isEmpty() ||
+            current.filesPdfViewer != null ||
+            current.browseSelectedIds.size !in 1..200 || session == null) return
+        val sourceID = current.path.last().id
+        val rows = current.items.filter { it.id in current.browseSelectedIds &&
+            it.parentId == sourceID && it.revision > 0 }
+        if (rows.size != current.browseSelectedIds.size ||
+            rows.map { it.id }.toSet().size != rows.size) return
+        val service = api ?: return
+        mutableState.value = current.copy(destinationKind = kind,
+            destinationSource = rows.first(), destinationSources = rows,
+            destinationPath = emptyList(), destinationFolders = emptyList(),
+            destinationOffset = 0, destinationTotal = 0,
+            destinationLoaded = false, destinationSubmitting = false,
+            destinationWriteAttempted = false)
+        request { ticket ->
+            val root = authenticated(service, ticket) { service.root(it) }
+            checkCurrent(ticket)
+            loadDestination(service, listOf(root), 0, ticket)
+        }
+    }
+
     fun chooseDestination(node: DriveNode, kind: FilesTransferKind) {
         val current = editableBrowseState(node) ?: return
         val service = api ?: return
         mutableState.value = current.copy(
             destinationKind = kind, destinationSource = node,
+            destinationSources = emptyList(),
             destinationPath = emptyList(), destinationFolders = emptyList(),
             destinationOffset = 0, destinationTotal = 0, destinationLoaded = false,
             destinationSubmitting = false, destinationWriteAttempted = false)
@@ -948,8 +985,10 @@ class DriveController(
         if (current.destinationKind == null || !current.destinationLoaded ||
             current.loading || current.destinationFolders.none { it == node } ||
             !node.isDirectory) return
-        if (current.destinationSource?.isDirectory == true &&
-            node.id == current.destinationSource.id) return
+        val sources = current.destinationSources.ifEmpty {
+            listOfNotNull(current.destinationSource)
+        }
+        if (sources.any { it.isDirectory && it.id == node.id }) return
         val service = api ?: return
         val path = current.destinationPath + node
         // Record the *requested* destination before the GET starts. If the
@@ -987,14 +1026,17 @@ class DriveController(
         val current = state.value
         if (current.destinationKind == null || current.loading ||
             current.destinationSubmitting || current.destinationWriteAttempted) return
+        val service = api ?: return
         if (current.destinationPath.isEmpty()) {
-            val node = current.destinationSource ?: return
-            val kind = current.destinationKind
-            dismissDestination()
-            chooseDestination(node, kind)
+            // Re-read the same trusted root without discarding frozen batch
+            // identities or accidentally restarting the single-file picker.
+            request { ticket ->
+                val root = authenticated(service, ticket) { service.root(it) }
+                checkCurrent(ticket)
+                loadDestination(service, listOf(root), 0, ticket)
+            }
             return
         }
-        val service = api ?: return
         val path = current.destinationPath.toList()
         request { ticket -> loadDestination(service, path, 0, ticket) }
     }
@@ -1027,37 +1069,55 @@ class DriveController(
         )
     }
 
-    /** No token refresh/replay for either physical copy or move commit. */
+    /** Server commits batch Copy/Move in one SQL transaction. No token
+     * refresh/replay for either individual or batch physical writes. */
     fun commitDestination() {
         val current = state.value
         val source = current.destinationSource ?: return
         val kind = current.destinationKind ?: return
+        val frozenBatch = current.destinationSources
+        val sources = frozenBatch.ifEmpty { listOf(source) }
         if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
             current.loading || current.destinationSubmitting || current.destinationWriteAttempted ||
-            !current.destinationLoaded || current.error != null || current.destinationPath.isEmpty() ||
-            current.path.isEmpty() || current.items.none { it == source } ||
-            source.parentId != current.path.last().id) return
+            !current.destinationLoaded || current.error != null ||
+            current.destinationPath.isEmpty() || current.path.isEmpty() ||
+            sources.size !in 1..200 || sources.map { it.id }.toSet().size != sources.size ||
+            sources.any { it.parentId != current.path.last().id || it.revision <= 0 ||
+                current.items.none { visible -> visible == it } }) return
+        if (frozenBatch.isNotEmpty() && (!current.browseSelectionMode ||
+            current.browseSelectedIds != frozenBatch.map { it.id }.toSet())) return
         val targetID = current.destinationPath.last().id
-        if (kind == FilesTransferKind.MOVE && source.parentId == targetID) return
-        if (source.isDirectory && current.destinationPath.any { it.id == source.id }) return
+        if (kind == FilesTransferKind.MOVE && sources.any { it.parentId == targetID }) return
+        if (sources.any { it.isDirectory &&
+            current.destinationPath.any { target -> target.id == it.id } }) return
         val service = api ?: return
         val path = current.path.toList()
+        val selectedIds = sources.map { it.id }.toSet()
         mutableState.value = current.copy(
             destinationSubmitting = true, destinationWriteAttempted = true)
         request { ticket ->
-            val result = authenticatedMutation(ticket) {
-                if (kind == FilesTransferKind.COPY) service.copyNode(it, source, targetID)
-                else service.moveNode(it, source, targetID)
+            val results = authenticatedMutation(ticket) { token ->
+                if (frozenBatch.isNotEmpty()) {
+                    if (kind == FilesTransferKind.COPY)
+                        service.batchCopyNodes(token, frozenBatch, targetID)
+                    else service.batchMoveNodes(token, frozenBatch, targetID)
+                } else {
+                    listOf(if (kind == FilesTransferKind.COPY)
+                        service.copyNode(token, source, targetID)
+                    else service.moveNode(token, source, targetID))
+                }
             }
             checkCurrent(ticket)
-            mutableState.value = state.value.withoutDestination()
+            mutableState.value = state.value.withoutDestination().copy(
+                browseSelectionMode = false, browseSelectedIds = emptySet(),
+                browseBatchWriteAttempted = false)
             reconcileBrowseAfterCommit(service, path, ticket) { fresh ->
                 if (kind == FilesTransferKind.MOVE) fresh.copy(
-                    items = fresh.items.filterNot { it.id == source.id },
-                    totalCount = (fresh.totalCount - 1).coerceAtLeast(0))
+                    items = fresh.items.filterNot { it.id in selectedIds },
+                    totalCount = (fresh.totalCount - sources.size).coerceAtLeast(0L))
                 else if (targetID == path.last().id) fresh.copy(
-                    items = (fresh.items + result).distinctBy { it.id },
-                    totalCount = fresh.totalCount + 1)
+                    items = (fresh.items + results).distinctBy { it.id },
+                    totalCount = fresh.totalCount + results.size)
                 else fresh
             }
         }
@@ -1498,6 +1558,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1518,6 +1579,7 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
@@ -1677,6 +1739,29 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** All four iOS PWA sorts reload real Owner pages, never cached tile subsets. */
+    fun changeGallerySort(by: String, dir: String) {
+        if (by !in setOf("captured", "added") || dir !in setOf("asc", "desc")) return
+        val current = state.value
+        if (current.screen != Screen.GALLERY ||
+            (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                current.gallerySelectedAlbum == null) ||
+            current.galleryViewer != null || current.gallerySelected != null ||
+            session == null || api == null ||
+            (current.gallerySortBy == by && current.gallerySortDir == dir)) return
+        invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
+        mutableState.value = current.copy(loading = false, error = null,
+            fileExportPending = null, fileExportOrigin = null,
+            fileDownloadActive = false, fileDownloadSaved = false, fileDownloadError = null,
+            fileDownloadBytes = 0, fileDownloadTotal = 0,
+            gallerySortBy = by, gallerySortDir = dir, galleryItems = emptyList(),
+            galleryOffset = 0, galleryTotal = 0, galleryLoaded = false,
+            gallerySelected = null, galleryViewer = null,
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "")
+        loadGallery(initialLatest = true)
+    }
+
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
@@ -1782,7 +1867,9 @@ class DriveController(
     fun jumpGalleryToGroup(scale: String, key: String) {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
-            current.gallerySearchQuery.isNotEmpty() || session == null || api == null) return
+            current.gallerySearchQuery.isNotEmpty() ||
+            current.gallerySortBy != "captured" || current.gallerySortDir != "asc" ||
+            session == null || api == null) return
         val group = current.galleryTimelineSets?.forScale(scale)
             ?.firstOrNull { it.key == key && it.itemCount > 0 } ?: return
         if (group.startIndex.toLong() >= current.galleryTotal) return
@@ -1827,7 +1914,12 @@ class DriveController(
         service: XDriveService, ticket: Long, offset: Int, initialLatest: Boolean,
         search: String, kind: String, albumId: String? = null,
     ): GalleryPage = authenticated(service, ticket) {
+        val sortBy = state.value.gallerySortBy
+        val sortDir = state.value.gallerySortDir
         when {
+            sortBy != "captured" || sortDir != "asc" ->
+                service.gallerySortedPage(it, offset, initialLatest, search, kind, albumId,
+                    sortBy, sortDir)
             albumId != null -> service.galleryAlbumPage(it, albumId, offset, initialLatest)
             kind.isNotEmpty() -> service.galleryKindPage(it, offset, initialLatest, search, kind)
             search.isNotEmpty() -> service.gallerySearchPage(it, offset, initialLatest, search)

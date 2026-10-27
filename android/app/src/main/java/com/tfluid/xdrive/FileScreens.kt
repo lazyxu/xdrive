@@ -345,20 +345,39 @@ private fun ColumnScope.FilesSelectionActions(
     Surface(Modifier.fillMaxWidth().navigationBarsPadding()
         .padding(horizontal = 12.dp, vertical = 6.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { controller.setBrowseSelectionMode(false) },
-                enabled = !state.loading && !state.browseBatchWriteAttempted,
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
-            Text("${state.browseSelectedIds.size} 项", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = onBatchTrash,
-                enabled = state.browseSelectedIds.isNotEmpty() &&
-                    !state.loading && state.error == null &&
-                    !state.browseBatchWriteAttempted,
-                modifier = Modifier.testTag("files-batch-trash-action")
-                    .heightIn(min = 48.dp)) { Text("移到回收站") }
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            val ready = state.browseSelectedIds.isNotEmpty() &&
+                !state.loading && state.error == null &&
+                !state.browseBatchWriteAttempted && state.destinationKind == null
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { controller.setBrowseSelectionMode(false) },
+                    enabled = !state.loading && !state.browseBatchWriteAttempted &&
+                        state.destinationKind == null,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+                // The Files header already announces selection count and 200 cap.
+                // Keep this action bar concise, avoiding two identical semantic
+                // text nodes that break accessibility and the Compose fixture.
+                Text("${state.browseSelectedIds.size} 项",
+                    style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly) {
+                TextButton(onClick = {
+                    controller.chooseSelectedDestination(FilesTransferKind.COPY)
+                }, enabled = ready,
+                    modifier = Modifier.testTag("files-batch-copy-action")
+                        .heightIn(min = 48.dp)) { Text("复制到…") }
+                TextButton(onClick = {
+                    controller.chooseSelectedDestination(FilesTransferKind.MOVE)
+                }, enabled = ready,
+                    modifier = Modifier.testTag("files-batch-move-action")
+                        .heightIn(min = 48.dp)) { Text("移动到…") }
+                TextButton(onClick = onBatchTrash, enabled = ready,
+                    modifier = Modifier.testTag("files-batch-trash-action")
+                        .heightIn(min = 48.dp)) { Text("移到回收站") }
+            }
         }
     }
 }
@@ -547,11 +566,14 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
 internal fun FilesDestinationDialog(state: DriveState, controller: DriveController) {
     val kind = state.destinationKind ?: return
     val source = state.destinationSource ?: return
+    val sources = state.destinationSources.ifEmpty { listOf(source) }
+    val isBatch = state.destinationSources.isNotEmpty()
     val submitting = state.destinationSubmitting
     val isCopy = kind == FilesTransferKind.COPY
     val destination = state.destinationPath.lastOrNull()
-    val forbidden = source.isDirectory && state.destinationPath.any { it.id == source.id }
-    val sameParent = !isCopy && destination?.id == source.parentId
+    val forbidden = sources.any { node -> node.isDirectory &&
+        state.destinationPath.any { it.id == node.id } }
+    val sameParent = !isCopy && sources.any { it.parentId == destination?.id }
     val canCommit = !state.loading && !submitting && !state.destinationWriteAttempted &&
         state.destinationLoaded && destination != null && !forbidden && !sameParent &&
         state.error == null
@@ -561,8 +583,10 @@ internal fun FilesDestinationDialog(state: DriveState, controller: DriveControll
         title = { Text(if (isCopy) "复制到文件夹" else "移动到文件夹") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(source.name, style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(if (isBatch) "批量 ${sources.size} 项" else source.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("files-destination-source-summary"))
                 Text("目标：" + (if (state.destinationPath.isEmpty()) "正在读取…"
                     else state.destinationPath.joinToString(" / ") { it.name.ifBlank { "浏览" } }),
                     style = MaterialTheme.typography.bodySmall,
@@ -579,7 +603,7 @@ internal fun FilesDestinationDialog(state: DriveState, controller: DriveControll
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)
                         .testTag("files-destination-list")) {
                         items(state.destinationFolders, key = { it.id }) { folder ->
-                            val disallowed = source.isDirectory && folder.id == source.id
+                            val disallowed = sources.any { it.isDirectory && it.id == folder.id }
                             TextButton(onClick = { controller.enterDestinationFolder(folder) },
                                 enabled = !state.loading && !submitting && !disallowed,
                                 modifier = Modifier.fillMaxWidth()
@@ -620,7 +644,9 @@ internal fun FilesDestinationDialog(state: DriveState, controller: DriveControll
             TextButton(onClick = controller::commitDestination, enabled = canCommit,
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("files-destination-confirm")) {
-                Text(if (isCopy) "复制到这里" else "移动到这里")
+                Text(if (isBatch)
+                    "${if (isCopy) "复制" else "移动"} ${sources.size} 项到这里"
+                    else if (isCopy) "复制到这里" else "移动到这里")
             }
         },
         dismissButton = {
