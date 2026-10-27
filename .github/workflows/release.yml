@@ -616,9 +616,48 @@ jobs:
             echo "Deleting legacy snapshot tag: $tag"
             gh api --method DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null
           done
+
       - name: Assert distribution assets are not archive-wrapped
         shell: bash
         run: bash scripts/ci/verify-release-archive-allowlist.sh release
+      - name: Notify bounded queued-CI prune after verified Snapshot publication
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          # Optional cleanup must not turn a successful Snapshot into a
+          # failed release. Do not dispatch from an obsolete publisher.
+          if ! published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"; then
+            echo "::warning title=Snapshot prune::Cannot read public tag; manual dry-run remains available."
+            exit 0
+          fi
+          if [[ "$published" != "$GITHUB_SHA" ]]; then
+            echo "[xDrive] Skip cleanup dispatch: a newer Snapshot is already public."
+            exit 0
+          fi
+          if ! metadata="$(gh api "repos/$repo/releases/tags/snapshot")"; then
+            echo "::warning title=Snapshot prune::Cannot read release metadata; skip dispatch."
+            exit 0
+          fi
+          title="$(jq -r '.name // ""' <<< "$metadata")"
+          body="$(jq -r '.body // ""' <<< "$metadata")"
+          expected_title="xDrive snapshot ${GITHUB_SHA::12}"
+          expected_notes="$(printf 'Rolling development snapshot from master at \x60%s\x60.' "$GITHUB_SHA")"
+          if [[ "$title" != "$expected_title" || "$body" != "$expected_notes"* ]]; then
+            echo "::warning title=Snapshot prune::Release metadata is not consistent with published SHA."
+            exit 0
+          fi
+          # The existing publisher App token is restricted to this repo.
+          # No credentials, user input or untrusted SHA enter the event.
+          if ! gh api --method POST "repos/$repo/dispatches" \
+              -f event_type=xdrive_snapshot_published >/dev/null; then
+            echo "::warning title=Snapshot prune::Post-publish dispatch failed; manual dry-run remains available."
+          else
+            echo "[xDrive] Post-publish Snapshot queue-prune dispatch accepted."
+          fi
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:

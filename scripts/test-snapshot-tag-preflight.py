@@ -49,11 +49,12 @@ assert '--argjson iss "$XD_SNAPSHOT_APP_ID"' in issuer
 assert 'permissions:{contents:"write",workflows:"write"}' in issuer
 assert 'select([.repositories[]?.full_name] == [$repo])' in issuer
 token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
-assert release.count(token) == 3, "preflight, permission probe and Snapshot publish must share token"
+assert release.count(token) == 4, "preflight, ref probe, publish and post-publish dispatch must share the scoped token"
 assert release.count("GH_TOKEN: ${{ github.token }}") == 2, "attestation check and stable publish keep original token"
 assert release.index(token) < release.index(marker)
 assert token in release.split(marker, 1)[1].split("      - name: Log in to GHCR for channel promotion", 1)[0]
 assert token in release.split("      - name: Publish rolling snapshot prerelease", 1)[1].split("      - name: Assert distribution assets", 1)[0]
+assert token in release.split("      - name: Notify bounded queued-CI prune after verified Snapshot publication", 1)[1].split("      - name: Publish GitHub Release", 1)[0]
 
 # Only a positively verified superseded master may be classified as a benign
 # non-publish. All floating-channel mutation steps are gated by its exact output.
