@@ -120,7 +120,7 @@ jobs:
           node desktop/scripts/pwa-cookie-real-gin-browser.cjs \
             --ready="$READY" --output-dir="$OUT"
           wait "$FIXTURE_PID" || { echo "Real Gin fixture verification failed"; exit 1; }
-          node -e "const s=require('./desktop/cookie-ui-real-gin-results/summary.json'); const fields=['passed','realWebUI','realGin','realPostgreSQL','realHTTPS','loginFromUI','secureHttpOnly','accessMemoryOnly','privateBearerRead','cookieNotBearer','coldRestore','twoTabRestore','wrongOwnerRejected','logoutFromUI','postLogoutFailClosed','forcedPasswordForm','passwordCookieRotated','stalePasswordJWTRejected','stalePasswordCookieRejected','passwordColdRestore','oldPasswordRejected','newPasswordAccepted','adminRevoke204','adminRevokedJWT','adminRevokedCookie','adminRevokedBrowserUI']; if(s.apiMocks || fields.some(x=>s[x]!==true))process.exit(1)"
+          node -e "const s=require('./desktop/cookie-ui-real-gin-results/summary.json'); const fields=['passed','realWebUI','realGin','realPostgreSQL','realHTTPS','loginFromUI','secureHttpOnly','accessMemoryOnly','privateBearerRead','cookieNotBearer','coldRestore','twoTabRestore','wrongOwnerRejected','logoutFromUI','postLogoutFailClosed','forcedPasswordForm','passwordCookieRotated','stalePasswordJWTRejected','stalePasswordCookieRejected','passwordColdRestore','oldPasswordRejected','newPasswordAccepted','adminRevoke204','adminRevokedJWT','adminRevokedCookie','adminRevokedBrowserUI','legacyJSONUpgradePreserved','legacyJSONColdRestore','legacyJSONLogout204','legacyCookieOnReauthentication','legacyCookieColdRestore']; if(s.apiMocks || fields.some(x=>s[x]!==true))process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

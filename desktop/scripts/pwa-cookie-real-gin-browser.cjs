@@ -51,6 +51,9 @@ const summary = {
   newPasswordAccepted: false, adminRevoke204: false,
   adminRevokedJWT: false, adminRevokedCookie: false,
   adminRevokedBrowserUI: false,
+  legacyJSONUpgradePreserved: false, legacyJSONColdRestore: false,
+  legacyJSONLogout204: false, legacyCookieOnReauthentication: false,
+  legacyCookieColdRestore: false,
   passed: false, failedAt: null,
 }
 let checkpoint = 'startup'
@@ -83,6 +86,7 @@ async function main() {
   let browser
   let context
   let passwordContext
+  let legacyContext
   let adminRequest
   try {
     browser = await chromium.launch({
@@ -370,6 +374,118 @@ async function main() {
     assert.equal(afterRevokeStorage.tokenStored, false)
     summary.adminRevokedBrowserUI = true
 
+    // Upgrade an ACTUAL previously issued native/legacy JSON session: no
+    // fabricated JWT and no browser Cookie mode on the initial cold boot.
+    // Product policy is to preserve a valid legacy session until the next
+    // interactive login, not forcibly expire it at upgrade time.
+    checkpoint = 'legacy-JSON-credential-fixture'
+    const legacyLogin = await adminRequest.post(origin + '/api/v1/auth/login', {
+      data: {
+        username: ready.username,
+        password: 'PwaRealGin-TestOnly_2026!',
+      },
+    })
+    assert.equal(legacyLogin.status(), 200)
+    const legacySession = await legacyLogin.json()
+    assert(typeof legacySession.access_token === 'string' &&
+      legacySession.access_token.length > 16)
+    assert(typeof legacySession.refresh_token === 'string' &&
+      legacySession.refresh_token.length > 16)
+    assert.notEqual(legacySession.browser_session, true)
+    legacyContext = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      ignoreHTTPSErrors: true, serviceWorkers: 'block', locale: 'zh-CN',
+    })
+    const legacyPage = await legacyContext.newPage()
+    legacyPage.setDefaultTimeout(30000)
+    await legacyPage.goto(origin + '/' + deepLink, { waitUntil: 'domcontentloaded' })
+    await legacyPage.locator('#web-login-username').waitFor()
+    // Model pre-upgrade durable localStorage, using credentials issued by
+    // genuine Gin /auth/login, then restart actual React on that same origin.
+    await legacyPage.evaluate(session => {
+      localStorage.setItem('xdrive.remember_login', 'true')
+      localStorage.setItem('xdrive.username', session.username)
+      localStorage.setItem('xdrive.last_username', session.username)
+      localStorage.setItem('xdrive.access_token', session.access_token)
+      localStorage.setItem('xdrive.token', session.access_token)
+      localStorage.setItem('xdrive.refresh_token', session.refresh_token)
+      localStorage.setItem('xdrive.access_expires_at',
+        String(Date.now() + Number(session.expires_in) * 1000))
+      localStorage.removeItem('xdrive.auth_cookie_mode')
+    }, legacySession)
+    checkpoint = 'legacy-JSON-restore-on-upgraded-HTTPS-Web'
+    const legacyPrivateRead = legacyPage.waitForResponse(
+      isResponse(folderPath, 'GET', 200))
+    await legacyPage.reload({ waitUntil: 'domcontentloaded' })
+    await legacyPrivateRead
+    assert.equal(await legacyPage.locator('#web-login-username').count(), 0)
+    const oldStorage = await inspectPrivateStorage(legacyPage)
+    assert.equal(oldStorage.mode, null)
+    assert.equal(oldStorage.owner, ready.username)
+    assert.equal(oldStorage.tokenStored, true, 'valid pre-upgrade JSON session must survive')
+    assert.equal(oldStorage.cookieVisible, false)
+    assert.equal(await refreshCookie(legacyContext), undefined)
+    summary.legacyJSONUpgradePreserved = true
+
+    checkpoint = 'legacy-JSON-second-cold-reload'
+    const legacyReadAgain = legacyPage.waitForResponse(
+      isResponse(folderPath, 'GET', 200))
+    await legacyPage.reload({ waitUntil: 'domcontentloaded' })
+    await legacyReadAgain
+    assert.equal(await legacyPage.locator('#web-login-username').count(), 0)
+    assert.equal((await inspectPrivateStorage(legacyPage)).tokenStored, true)
+    summary.legacyJSONColdRestore = true
+
+    // Explicit logout and fresh login is the documented migration boundary:
+    // legacy JSON is revoked and only the new HttpOnly Cookie remains durable.
+    checkpoint = 'legacy-JSON-explicit-logout'
+    const oldLogoutResponse = legacyPage.waitForResponse(
+      isResponse('/api/v1/auth/logout', 'POST', 204))
+    await legacyPage.getByRole('button',
+      { name: '账户菜单' }).first().click()
+    await legacyPage.getByRole('menuitem',
+      { name: '退出登录' }).click()
+    await oldLogoutResponse
+    await legacyPage.locator('#web-login-username').waitFor()
+    const signedOutLegacy = await inspectPrivateStorage(legacyPage)
+    assert.equal(signedOutLegacy.tokenStored, false)
+    assert.equal(await refreshCookie(legacyContext), undefined)
+    summary.legacyJSONLogout204 = true
+
+    checkpoint = 'legacy-to-Cookie-interactive-login'
+    const legacyToCookie = legacyPage.waitForResponse(
+      isResponse(browserLogin, 'POST', 200))
+    const legacyCookiePrivateRead = legacyPage.waitForResponse(
+      isResponse(folderPath, 'GET', 200))
+    await legacyPage.locator('#web-login-username').fill(ready.username)
+    await legacyPage.locator('#web-login-password').fill('PwaRealGin-TestOnly_2026!')
+    assert.equal(await legacyPage.getByRole('checkbox',
+      { name: '保持登录' }).isChecked(), true)
+    await legacyPage.getByRole('button',
+      { name: '登录', exact: true }).click()
+    const upgradedResponse = await legacyToCookie
+    const upgradedBody = await upgradedResponse.json()
+    assert.equal(upgradedBody.browser_session, true)
+    assert.equal(upgradedBody.refresh_token || '', '')
+    await legacyCookiePrivateRead
+    requirePrivateState(await inspectPrivateStorage(legacyPage))
+    const upgradedCookie = await refreshCookie(legacyContext)
+    assert(upgradedCookie?.httpOnly && upgradedCookie.secure)
+    summary.legacyCookieOnReauthentication = true
+
+    checkpoint = 'upgraded-legacy-Cookie-cold-restore'
+    const upgradedRefresh = legacyPage.waitForResponse(
+      isResponse(browserRefresh, 'POST', 200))
+    const upgradedRead = legacyPage.waitForResponse(
+      isResponse(folderPath, 'GET', 200))
+    await legacyPage.reload({ waitUntil: 'domcontentloaded' })
+    await upgradedRefresh
+    await upgradedRead
+    requirePrivateState(await inspectPrivateStorage(legacyPage))
+    assert.notEqual((await refreshCookie(legacyContext))?.value,
+      upgradedCookie.value, 'new cookie must rotate after cold restore')
+    summary.legacyCookieColdRestore = true
+
     checkpoint = 'finish-isolated-real-Gin'
     const finished = await after.evaluate(async () =>
       (await fetch('/__test/pwa-s2b3/finish', { method: 'POST' })).status)
@@ -386,6 +502,7 @@ async function main() {
     fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     console.log('COOKIE_UI_REAL_GIN_EVIDENCE ' + JSON.stringify(summary))
     await adminRequest?.dispose()
+    await legacyContext?.close()
     await passwordContext?.close()
     await context?.close()
     await browser?.close()
