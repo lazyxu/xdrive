@@ -39,6 +39,15 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
+    val filesSaveable = rememberSaveableStateHolder()
+    val filesStateKey = "files:${state.server}:${state.username}"
+    // Keep scroll/selection viewport during the scoped Files -> Gallery Viewer.
+    // Destroy saveable state on Owner change or leaving Files for normal Gallery.
+    if (state.screen == Screen.FILES || state.viewerReturnToFiles) {
+        DisposableEffect(filesStateKey) {
+            onDispose { filesSaveable.removeState(filesStateKey) }
+        }
+    }
     // A decoded Gallery tile can paint the first Viewer frame immediately.
     // Screen/Owner/session changes discard all cached private bitmaps.
     val galleryThumbnails = remember(state.server, state.username,
@@ -154,12 +163,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
-                Screen.FILES -> Files(state, controller, filesView,
-                    onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
-                    onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
-                    onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
-                    onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
-                    onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
+                Screen.FILES -> filesSaveable.SaveableStateProvider(filesStateKey) {
+                    Files(state, controller, filesView,
+                        onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
+                        onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
+                        onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
+                        onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
+                        onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
+                }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
                     if (photo != null) {

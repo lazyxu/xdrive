@@ -21,6 +21,42 @@ class XDriveApiTest {
         """{"id":7,"parent_id":1,"name":"note.txt","type":"file",
             "size":$size,"revision":$revision}"""
 
+    @Test fun filesMediaItemVerifiesOwnerRevisionAndServerMediaType() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val file = DriveNode(27, 1, "family.jpg", "file", 5, revision = 4)
+            server.enqueue(MockResponse().setBody("""{
+                "node":{"id":27,"parent_id":1,"name":"family.jpg",
+                    "type":"file","size":5,"revision":4},
+                "metadata":{"media_kind":"image","has_thumbnail":true},
+                "live_photo":false
+            }"""))
+            val media = api.filesMediaItem("owner-secret", file)
+            assertEquals(file, media.node)
+            assertEquals("image", media.mediaKind)
+            assertTrue(media.hasThumbnail)
+            val req = server.takeRequest()
+            assertEquals("/api/v1/media/items/27", req.path)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertFalse(req.path!!.contains("owner-secret"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "node":{"id":27,"parent_id":1,"name":"family.jpg",
+                    "type":"file","size":5,"revision":5},
+                "metadata":{"media_kind":"image","has_thumbnail":true}
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesMediaItem("owner-secret", file) }.reason)
+            server.enqueue(MockResponse().setBody("""{
+                "node":{"id":27,"parent_id":1,"name":"family.jpg",
+                    "type":"file","size":5,"revision":4},
+                "metadata":{"media_kind":"video","has_thumbnail":true},
+                "live_photo":true
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.filesMediaItem("owner-secret", file) }.reason)
+        } }
+    }
+
     @Test fun textPreviewUsesBearerAndCurrentRevisionBeforeAndAfterRead() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody(textNode()))
