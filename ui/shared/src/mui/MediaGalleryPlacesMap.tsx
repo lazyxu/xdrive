@@ -198,9 +198,12 @@ export function XDriveMediaGalleryPlacesMap({
     xDriveValidBaiduNativeCameraSnapshot(initialNativeCamera) ? { ...initialNativeCamera } : null,
   )
   const clearCamera = useCallback(() => {
+    // Clearing an SDK camera is itself a new location selection. An already
+    // issued one-use handoff must not linger until its async reply arrives.
+    if (cameraRef.current && handoffAbort.current) cancelStaleHandoff()
     cameraRef.current = null
     onNativeCameraClear?.()
-  }, [onNativeCameraClear])
+  }, [onNativeCameraClear, cancelStaleHandoff])
   const rememberCamera = useCallback((camera: XDriveBaiduNativeCameraSnapshot) => {
     if (!xDriveValidBaiduNativeCameraSnapshot(camera)) return
     const priorCamera = cameraRef.current
@@ -421,7 +424,12 @@ export function XDriveMediaGalleryPlacesMap({
                     ...(mapPhotoScope.filters.time_zone ? {time_zone:mapPhotoScope.filters.time_zone}: {})},
                   albumKey:'',
                 })
-                if (next) onMapPhotoScopeChange(next)
+                if (next) {
+                  // The user can reset the scope while the ticket is pending.
+                  // Cancel synchronously, before Parent props update.
+                  cancelStaleHandoff()
+                  onMapPhotoScopeChange(next)
+                }
               }}>清除筛选</Button>
           </Stack>
         </Box>
