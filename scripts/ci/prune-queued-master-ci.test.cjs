@@ -6,7 +6,7 @@ const {pruneQueuedMasterCI} = require('./prune-queued-master-ci.cjs')
 const sha = c => c.repeat(40)
 const snapshot = sha('b'), currentMaster = sha('c'), old = sha('a'), unpublished = sha('d')
 function fixture(options={}) {
-  const calls = {cancel:[], get:[], compare:[], list:[]}
+  const calls = {cancel:[], get:[], compare:[], list:[], jobs:[]}
   const run = (id, head_sha=old, extra={}) => ({
     id, head_sha, status:'queued', run_attempt:1, name:'CI', event:'push', head_branch:'master',
     path:'.github/workflows/ci.yml', created_at:'2026-10-27T03:00:00Z', ...extra,
@@ -29,6 +29,13 @@ function fixture(options={}) {
     actions:{
       listWorkflowRuns:async(args)=>{calls.list.push(args);return {data:{workflow_runs:runs}}},
       getWorkflowRun:async(args)=>{calls.get.push(args);const obj=runs.find(x=>x.id===args.run_id);return {data: options.startedId===args.run_id ? {...obj,status:'in_progress'} : obj}},
+      listJobsForWorkflowRun:async(args)=>{
+        calls.jobs.push(args)
+        if(options.jobsError)throw Object.assign(new Error('job list unavailable'),{status:503})
+        const rows=options.jobsById?.[args.run_id] ??
+          [{id:1000+args.run_id,run_id:args.run_id,status:'queued',conclusion:null}]
+        return {data:{total_count:options.jobsTotalCount ?? rows.length,jobs:rows}}
+      },
       cancelWorkflowRun:async(args)=>{calls.cancel.push(args.run_id);return {status:202}},
     }
   }}
@@ -127,4 +134,60 @@ test('a newly queued manual re-run after initial scan is preserved', async()=>{
   assert.equal(r.cancelled,0)
   assert.equal(r.audit[0].action,'preserved-changed')
   assert.deepEqual(t.calls.cancel,[])
+})
+
+test('GitHub queued workflow containing an in-progress child is never cancelled', async()=>{
+  const t=fixture({jobsById:{1:[
+    {id:10,run_id:1,status:'queued',conclusion:null},
+    {id:11,run_id:1,status:'in_progress',conclusion:null},
+  ]}})
+  const r=await pruneQueuedMasterCI(t)
+  assert.equal(r.cancelled,0)
+  assert.equal(r.eligible,0)
+  assert.equal(r.audit[0].action,'preserved-started-or-unknown-jobs')
+  assert.deepEqual(t.calls.cancel,[])
+  assert.equal(t.calls.jobs.length,1)
+})
+
+test('completed successful child job preserves queued workflow even in dry-run', async()=>{
+  const jobsById={1:[
+    {id:10,run_id:1,status:'queued',conclusion:null},
+    {id:11,run_id:1,status:'completed',conclusion:'success'},
+  ]}
+  for(const dryRun of [false,true]){
+    const t=fixture({jobsById})
+    const r=await pruneQueuedMasterCI({...t,dryRun})
+    assert.equal(r.cancelled,0)
+    assert.equal(r.eligible,0)
+    assert.equal(r.audit[0].action,'preserved-started-or-unknown-jobs')
+    assert.deepEqual(t.calls.cancel,[])
+  }
+})
+
+test('queued and skipped-only jobs remain eligible for bounded pruning', async()=>{
+  const t=fixture({jobsById:{1:[
+    {id:10,run_id:1,status:'queued',conclusion:null},
+    {id:11,run_id:1,status:'completed',conclusion:'skipped'},
+  ]}})
+  const r=await pruneQueuedMasterCI(t)
+  assert.equal(r.cancelled,1)
+  assert.equal(r.eligible,1)
+  assert.deepEqual(t.calls.cancel,[1])
+})
+
+test('unknown, oversized, truncated or mismatched child job inventories fail closed', async()=>{
+  for(const options of [
+    {jobsError:true},
+    {jobsById:{1:[]}},
+    {jobsTotalCount:101},
+    {jobsTotalCount:2},
+    {jobsById:{1:[{id:10,run_id:999,status:'queued',conclusion:null}]}},
+  ]){
+    const t=fixture(options)
+    const r=await pruneQueuedMasterCI(t)
+    assert.equal(r.cancelled,0)
+    assert.equal(r.eligible,0)
+    assert.deepEqual(t.calls.cancel,[])
+    assert.match(r.audit[0].action,/^preserved-/)
+  }
 })

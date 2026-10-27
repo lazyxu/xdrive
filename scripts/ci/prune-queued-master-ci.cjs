@@ -92,13 +92,10 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
       ancestorCache.set(run.head_sha, isAncestor)
     }
     if (!isAncestor) continue
-    eligible++
-    const entry = {run_id: run.id, head_sha: run.head_sha, action: dryRun ? 'would-cancel' : 'preserved'}
-    if (dryRun) {
-      audit.push(entry)
-      continue
-    }
-    // A queued run can start while this workflow is checking ancestry.
+    const entry = {run_id: run.id, head_sha: run.head_sha, action: 'preserved'}
+
+    // Before even reporting a dry-run candidate, re-read its exact run.
+    // GitHub may retain 'queued' workflow status after child jobs have STARTED.
     let current
     try {
       current = (await github.rest.actions.getWorkflowRun({owner, repo, run_id: run.id})).data
@@ -113,6 +110,40 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
       current?.event !== 'push' || current?.head_branch !== 'master' ||
       current?.name !== 'CI' || current?.path !== '.github/workflows/ci.yml') {
       entry.action = 'preserved-changed'
+      audit.push(entry)
+      continue
+    }
+
+    // The WORKFLOW status alone does not prove that any job is unstarted.
+    // Inspect every child job: a partial/unknown inventory fails closed.
+    // Only never-executed queued jobs and conditionally skipped jobs qualify.
+    let jobSnapshot
+    try {
+      jobSnapshot = (await github.rest.actions.listJobsForWorkflowRun({
+        owner, repo, run_id: run.id, per_page: 100,
+      })).data
+    } catch (error) {
+      core.warning(`Preserving CI #${run.id}: child jobs unavailable (${error.status || 'unknown'})`)
+      entry.action = 'preserved-jobs-unavailable'
+      audit.push(entry)
+      continue
+    }
+    const jobs = jobSnapshot?.jobs
+    if (!Number.isSafeInteger(jobSnapshot?.total_count) ||
+      jobSnapshot.total_count < 1 || jobSnapshot.total_count > 100 ||
+      !Array.isArray(jobs) || jobs.length !== jobSnapshot.total_count ||
+      !jobs.every(job => job.run_id === run.id &&
+        (job.status === 'queued' ||
+         (job.status === 'completed' && job.conclusion === 'skipped')))) {
+      entry.action = 'preserved-started-or-unknown-jobs'
+      audit.push(entry)
+      continue
+    }
+    // There is no atomic GitHub API 'cancel only if no job has started'.
+    // This immediate status check narrows but cannot eliminate that race.
+    eligible++
+    if (dryRun) {
+      entry.action = 'would-cancel'
       audit.push(entry)
       continue
     }
