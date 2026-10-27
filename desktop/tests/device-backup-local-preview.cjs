@@ -37,7 +37,7 @@ test('native Desktop preview remains private and cancels all the way into Go con
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-preview'\)/)
   assert.match(preload, /getDeviceBackupLocalPreview:/)
   assert.match(preload, /cancelDeviceBackupLocalPreview:/)
-  assert.match(app, /localPreview=\{localBackupPreview\}/)
+  assert.match(app, /localPreview:\s*localBackupPreview/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /previewTarget\.source === source/)
   assert.match(dialog, /crypto\.randomUUID\(\)/)

@@ -43,7 +43,7 @@ test('physical CAS preflight is owning-Desktop-only and aggregate-redacted throu
   assert.match(preload, /getDeviceBackupLocalEvidencePreflight/)
   assert.match(preload, /cancelDeviceBackupLocalEvidencePreflight/)
   assert.match(types, /XDriveLocalBackupEvidencePreflight/)
-  assert.match(app, /localEvidencePreflight=\{localBackupEvidencePreflight\}/)
+  assert.match(app, /localEvidencePreflight:\s*localBackupEvidencePreflight/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /evidencePreflightTarget\.source === source/)
   assert.match(dialog, /physical_unobserved_files/)
