@@ -1706,6 +1706,7 @@ async function testRealHEICOwnerMapCover(browser,mode,port){
     record(mode+': HEIC cover never sends Node or original bytes to the SDK Child',
       errors.length===0&&requests.every(x=>
         x.host==='gallery'||x.host==='child'))
+    summary.realHEICMapCoverModes.push(mode)
   }finally{await context.close()}
 }
 async function main(){
@@ -1855,7 +1856,8 @@ async function main(){
         summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
-      summary.realHEICMapCoverModes=['inline','isolated']
+      record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
+        summary.realHEICMapCoverModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}
