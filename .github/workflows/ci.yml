@@ -1092,6 +1092,8 @@ jobs:
           bash scripts/test-server-backup-admin-host.sh
           bash -n scripts/test-server-backup-verify-report.sh
           bash scripts/test-server-backup-verify-report.sh
+          bash -n scripts/test-server-backup-isolated-drill-host.sh
+          bash scripts/test-server-backup-isolated-drill-host.sh
           bash -n scripts/test-media-worker-control.sh
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh

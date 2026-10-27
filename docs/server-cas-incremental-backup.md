@@ -349,6 +349,44 @@ artifacts. Physical Host-only acceptance is **跳过（未验收）** until sepa
 Host-bound evidence exists. No new remote Admin action or production restore
 is invoked by this read-only view.
 
+## Manual Host-only offline v2 recovery drill
+
+The local Host CLI can now exercise a **previously committed v2 backup** in
+disposable memory without connecting to PostgreSQL, stopping Server/Worker or
+touching any live file data:
+
+```bash
+xdrive-server backup drill "/absolute/path/to/incremental/snapshots/xdrive-backup-YYYYMMDDTHHMMSSZ" --max-mib 1024
+```
+
+Allowed memory quota: 256–8192 MiB, default 1024 MiB. The v2 snapshot
+must be committed, checksum-valid and within the quota, with a safe shared
+repository lock and locally cached xDrive Server and `postgres:17-alpine`
+Docker images. Exceeding the quota causes an explicit failure, not an
+incomplete "successful" drill. Large production archives will often require
+a different, separately specified disk sandbox; the current RAM-only mode
+must **not** pretend to prove recoverability for multi-TiB repositories.
+
+The CAS stage starts a `--network none`, `--read-only`, no-capabilities,
+no-new-privileges Docker helper with bounded memory/PIDs, one strictly
+**read-only backup repository mount** and a disposable `/data` tmpfs. It
+physically restores the referenced CAS objects and legacy file archive.
+PostgreSQL starts a separate non-root, network-disabled
+`postgres:17-alpine` tmpfs container, receives `database.dump` **only
+on stdin**, creates a private database cluster, runs
+`pg_restore --exit-on-error` and queries the restored system tables.
+There is **no Host bind mount** in the PostgreSQL container and no
+connection to the production database, Docker socket mount, or online file
+storage. Containers are removed when the bounded execution terminates.
+
+The fixed-schema stdout includes `files_restored`, `postgresql_restored`,
+`failure_category` and `production_verified:false`. A partial stage
+cannot be called successful. This is a **Host-local CLI only** in the first
+iteration: there is no Web/Desktop remote trigger or Host-attested durable
+history yet. The Admin read-only evidence panel continues to show
+`跳过（未验收）` until a separately authenticated, source-bound receipt
+exists. A sandbox drill is not production recovery acceptance.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and
