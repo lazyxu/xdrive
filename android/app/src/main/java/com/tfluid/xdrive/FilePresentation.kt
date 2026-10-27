@@ -33,6 +33,12 @@ fun fileKind(name: String, directory: Boolean): String {
     }
 }
 
+/** Files media thumbnails are optional derived Owner JPEGs, never originals.
+ * Only current, revisioned, positive-size media Files may request a thumbnail. */
+internal fun nativeFileThumbnailCandidate(node: DriveNode): Boolean =
+    node.type == "file" && node.id > 0 && node.revision > 0 && node.size > 0 &&
+        fileKind(node.name, false) in setOf("image", "video")
+
 /** Display hint only: the existing Go Owner text-preview endpoint is authoritative.
  * Never try reading a media/PDF/ZIP as text just because it is a File Node. */
 internal fun nativeTextPreviewCandidate(fileName: String): Boolean {

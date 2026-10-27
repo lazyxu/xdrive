@@ -1,6 +1,9 @@
 package com.tfluid.xdrive
 
+import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -28,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.DriveCollectionItem
 import com.tfluid.xdrive.core.DriveNode
 import com.tfluid.xdrive.core.validDriveNodeName
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 
 internal enum class FilesEditKind { CREATE_FOLDER, RENAME, TRASH }
 internal data class FilesEditIntent(val kind: FilesEditKind, val node: DriveNode? = null)
@@ -76,13 +85,18 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
     val folderKey = state.path.map { it.id }
     val anchors = remember { FilesViewportAnchors() }
+    // 48 decoded thumbnails, 64 negative hints. In-memory for this Files screen
+    // only; unmount on logout/Owner switch, never store private bytes on disk.
+    val thumbnailCache = remember { LruCache<String, ImageBitmap>(48) }
+    val thumbnailFailures = remember { mutableStateMapOf<String, Boolean>() }
     var globalSearchText by remember { mutableStateOf("") }
 
     if (state.filesSection != FilesSection.BROWSE) {
         // A new Owner-scoped section or search query must not inherit the
         // old collection's virtual-list viewport or long-press menu state.
         key(state.filesSection, state.searchQuery) {
-            FilesCollection(state, controller, pageColor, rowColor)
+            FilesCollection(state, controller, pageColor, rowColor,
+                thumbnailCache, thumbnailFailures)
         }
         FilesSectionsBar(state.filesSection, controller::changeFilesSection)
         return
@@ -240,7 +254,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                             .semantics { selected = node.id in state.browseSelectedIds })
                                     Spacer(Modifier.width(8.dp))
                                 }
-                                FileGlyph(node)
+                                FileGlyph(node, controller, thumbnailCache, thumbnailFailures)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                     Text(node.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
@@ -254,7 +268,9 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                 FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                                     onRename = onRename, onTrash = onTrash,
                                     onCopy = onCopy, onMove = onMove,
-                                    onDownload = onDownload, canMutate = !state.loading)
+                                    onDownload = onDownload, canMutate = !state.loading,
+                                 onRetryThumbnail = if (thumbnailFailures[filesThumbnailKey(node)] == true)
+                                     ({ thumbnailFailures.remove(filesThumbnailKey(node)); Unit }) else null)
                         }
                         if (node.id != state.items.lastOrNull()?.id)
                             HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outline)
@@ -299,7 +315,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                     onCheckedChange = null,
                                     modifier = Modifier.testTag("files-select-${node.id}")
                                         .semantics { selected = node.id in state.browseSelectedIds })
-                            FileGlyph(node, 64)
+                            FileGlyph(node, controller, thumbnailCache, thumbnailFailures, 64)
                             Text(node.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
                                 textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
@@ -307,7 +323,9 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                             FilesContextMenu(node, contextOpen, { contextOpen = false }, controller,
                                 onRename = onRename, onTrash = onTrash,
                                 onCopy = onCopy, onMove = onMove,
-                                onDownload = onDownload, canMutate = !state.loading)
+                                onDownload = onDownload, canMutate = !state.loading,
+                                 onRetryThumbnail = if (thumbnailFailures[filesThumbnailKey(node)] == true)
+                                     ({ thumbnailFailures.remove(filesThumbnailKey(node)); Unit }) else null)
                     }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
@@ -348,7 +366,9 @@ private fun ColumnScope.FilesSelectionActions(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveController,
-    pageColor: Color, rowColor: Color) {
+    pageColor: Color, rowColor: Color,
+    thumbnailCache: LruCache<String, ImageBitmap>,
+    thumbnailFailures: MutableMap<String, Boolean>) {
     val title = when (state.filesSection) {
         FilesSection.RECENT -> "最近"
         FilesSection.FAVORITES -> "收藏"
@@ -417,7 +437,7 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                                 onLongClick = { contextOpen = true })
                             .heightIn(min = 68.dp).padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            FileGlyph(item.node)
+                            FileGlyph(item.node, controller, thumbnailCache, thumbnailFailures)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(item.node.name, style = MaterialTheme.typography.bodyLarge,
@@ -430,7 +450,9 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                             }
                         }
                         FilesContextMenu(item.node, contextOpen, { contextOpen = false }, controller,
-                            item, state.filesSection)
+                            item, state.filesSection,
+                            onRetryThumbnail = if (thumbnailFailures[filesThumbnailKey(item.node)] == true)
+                                ({ thumbnailFailures.remove(filesThumbnailKey(item.node)); Unit }) else null)
                     }
                     if (item.node.id != state.collectionItems.lastOrNull()?.node?.id)
                         HorizontalDivider(Modifier.padding(start = 68.dp),
@@ -476,7 +498,8 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
     section: FilesSection = FilesSection.BROWSE,
     onRename: ((DriveNode) -> Unit)? = null, onTrash: ((DriveNode) -> Unit)? = null,
     onCopy: ((DriveNode) -> Unit)? = null, onMove: ((DriveNode) -> Unit)? = null,
-    onDownload: ((DriveNode) -> Unit)? = null, canMutate: Boolean = true) {
+    onDownload: ((DriveNode) -> Unit)? = null, canMutate: Boolean = true,
+    onRetryThumbnail: (() -> Unit)? = null) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface) {
         if (node.isDirectory) DropdownMenuItem(text = { Text("打开文件夹") },
@@ -507,6 +530,10 @@ private fun FilesContextMenu(node: DriveNode, expanded: Boolean, dismiss: () -> 
             else DropdownMenuItem(text = { Text("加入收藏") },
                 onClick = { dismiss(); controller.favoriteFile(node) })
         }
+        if (onRetryThumbnail != null) DropdownMenuItem(
+            text = { Text("重试缩略图") },
+            modifier = Modifier.testTag("files-thumbnail-retry-${node.id}"),
+            onClick = { dismiss(); onRetryThumbnail() })
         DropdownMenuItem(text = { Text("属性") }, onClick = {
             dismiss()
             controller.showDetails(node)
@@ -557,7 +584,7 @@ internal fun FilesDestinationDialog(state: DriveState, controller: DriveControll
                                 enabled = !state.loading && !submitting && !disallowed,
                                 modifier = Modifier.fillMaxWidth()
                                     .testTag("files-destination-item-${folder.id}")) {
-                                FileGlyph(folder, size = 32)
+                                XDriveFileIcon(folder, size = 32.dp)
                                 Spacer(Modifier.width(10.dp))
                                 Text(folder.name, Modifier.weight(1f), textAlign = TextAlign.Start,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -654,15 +681,50 @@ internal fun FilesEditDialog(
     )
 }
 
+/** Render only the 4 MiB revision-checked derived JPEG, never an original file.
+ * Lazy item removal cancels the request; failures preserve existing icons and
+ * only resume via the current long-press context menu. */
+private fun filesThumbnailKey(node: DriveNode): String = "${node.id}:${node.revision}"
+
 @Composable
-private fun FileGlyph(node: DriveNode, size: Int = 40) {
-    val description = when (fileKind(node.name, node.isDirectory)) {
-        "folder" -> "文件夹"
-        "pdf" -> "PDF"
+private fun FileGlyph(node: DriveNode, controller: DriveController,
+    thumbnails: LruCache<String, ImageBitmap>,
+    failures: MutableMap<String, Boolean>, size: Int = 40) {
+    val key = filesThumbnailKey(node)
+    val eligible = nativeFileThumbnailCandidate(node)
+    var bitmap by remember(key, thumbnails) { mutableStateOf(thumbnails.get(key)) }
+    val failed = failures[key] == true
+    LaunchedEffect(key, eligible, failed) {
+        if (!eligible || failed || bitmap != null) return@LaunchedEffect
+        val bytes = controller.filesThumbnail(node)
+        val decoded = bytes?.let {
+            withContext(Dispatchers.Default) {
+                try { decodeGalleryThumbnail(it) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
+        }
+        if (decoded != null) {
+            thumbnails.put(key, decoded)
+            bitmap = decoded
+        } else {
+            failures[key] = true
+            if (failures.size > 64) failures.remove(failures.keys.first())
+        }
+    }
+    val description = when {
+        bitmap != null -> "媒体缩略图"
+        node.isDirectory -> "文件夹"
+        fileKind(node.name, false) == "pdf" -> "PDF"
         else -> "文件类型"
     }
-    Box(Modifier.semantics { contentDescription = description }) {
-        XDriveFileIcon(node, size = size.dp)
+    Box(Modifier.size(size.dp).semantics { contentDescription = description }) {
+        val image = bitmap
+        if (image != null) Image(image, contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
+                .testTag("files-thumbnail-ready-${node.id}"))
+        else XDriveFileIcon(node, size = size.dp)
     }
 }
 

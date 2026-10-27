@@ -1,9 +1,22 @@
 package com.tfluid.xdrive
 
+import com.tfluid.xdrive.core.DriveNode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FilePresentationTest {
+    @Test fun nativeMediaThumbnailsNeedVisibleRevisionedFiles() {
+        assertTrue(nativeFileThumbnailCandidate(DriveNode(10, 1, "a.jpg", "file", 32, revision = 1)))
+        assertTrue(nativeFileThumbnailCandidate(DriveNode(11, 1, "clip.MP4", "file", 4096, revision = 9)))
+        assertFalse(nativeFileThumbnailCandidate(DriveNode(12, 1, "movie.mp4", "dir", 4096, revision = 1)))
+        assertFalse(nativeFileThumbnailCandidate(DriveNode(13, 1, "notes.md", "file", 55, revision = 1)))
+        assertFalse(nativeFileThumbnailCandidate(DriveNode(14, 1, "a.png", "file", 5, revision = 0)))
+        assertFalse(nativeFileThumbnailCandidate(DriveNode(0, 1, "a.png", "file", 5, revision = 1)))
+        assertFalse(nativeFileThumbnailCandidate(DriveNode(15, 1, "empty.jpg", "file", 0, revision = 1)))
+    }
+
     @Test fun textPreviewHintMatchesRecognizedFileFamiliesAndNeverClaimsMedia() {
         listOf("README", "sample.TXT", "code.KT", "config.yaml",
             ".env.production", "Dockerfile", "metrics.csv", "patch.patch")

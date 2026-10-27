@@ -773,6 +773,47 @@ class DriveControllerTest {
         assertNull(c.state.value.galleryViewer)
     }
 
+    @Test fun filesThumbnailAcceptsOnlyCurrentOwnerFileRevision() = runTest {
+        val photo = DriveNode(199L, 1, "camera.heic", "file", size = 1024, revision = 7)
+        val api = Service().apply {
+            listing = { _, offset ->
+                NodeRange(if (offset == 0) listOf(photo) else emptyList(), 1, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertArrayEquals(byteArrayOf(1, 2, 3), c.filesThumbnail(photo))
+        assertEquals(1, api.thumbnailReads)
+        assertNull(c.filesThumbnail(photo.copy(revision = 8)))
+        assertNull(c.filesThumbnail(photo.copy(name = "camera.txt")))
+        assertNull(c.filesThumbnail(file))
+        assertEquals(1, api.thumbnailReads)
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        assertNull(c.filesThumbnail(photo))
+        c.logout(); runCurrent()
+        assertNull(c.filesThumbnail(photo))
+        assertEquals(1, api.thumbnailReads)
+    }
+
+    @Test fun filesThumbnailRejectsLateSectionReturn() = runTest {
+        val photo = DriveNode(199L, 1, "camera.jpg", "file", size = 128, revision = 1)
+        val api = Service().apply {
+            listing = { _, offset ->
+                NodeRange(if (offset == 0) listOf(photo) else emptyList(), 1, offset)
+            }
+            thumbnailGate = CompletableDeferred()
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val old = async { c.filesThumbnail(photo) }; runCurrent()
+        assertEquals(1, api.thumbnailReads)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        api.thumbnailGate?.complete(Unit); runCurrent()
+        assertTrue(old.isCancelled)
+        assertNull(c.filesThumbnail(photo))
+    }
+
     @Test fun oversizedGalleryOriginalFallsBackToVerifiedThumbnailWithoutDownloadingFullBytes() = runTest {
         val api = object : Service() {
             override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean) =
