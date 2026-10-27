@@ -561,6 +561,37 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `Gallery sorting requests Server Owner Range instead of locally reordering tiles`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[{"node":{"id":79,"parent_id":1,"name":"clip.mp4",
+                    "type":"file","size":256,"revision":2},
+                    "metadata":{"media_kind":"video","has_thumbnail":true}}],
+                "total_count":1,"offset":0,"limit":60
+            }"""))
+            val page = api.gallerySortedPage("owner-secret", 0, true,
+                "sunset", "video", null, "added", "desc")
+            assertEquals(79L, page.items.single().node.id)
+            assertNull(page.timeline)
+            val req = server.takeRequest()
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("added", req.requestUrl!!.queryParameter("sort_by"))
+            assertEquals("desc", req.requestUrl!!.queryParameter("sort_dir"))
+            assertEquals("sunset", req.requestUrl!!.queryParameter("q"))
+            assertEquals("video", req.requestUrl!!.queryParameter("kind"))
+            assertEquals("true", req.requestUrl!!.queryParameter("range"))
+            assertNull(req.requestUrl!!.queryParameter("initial_position"))
+            for ((by, dir) in listOf("invalid" to "asc", "added" to "wrong")) {
+                try {
+                    api.gallerySortedPage("owner-secret", 0, true, "", "",
+                        null, by, dir)
+                    fail("Invalid server sort accepted")
+                } catch (_: IllegalArgumentException) { }
+            }
+            assertEquals(1, server.requestCount)
+        } }
+    }
+
     @Test fun `Gallery search is remote Owner query with the same sparse latest Range`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody("""{
