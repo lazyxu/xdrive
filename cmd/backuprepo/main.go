@@ -32,6 +32,10 @@ func main() {
 	}
 }
 func run(args []string) error {
+	return runWithReportWriter(args, os.Stdout)
+}
+
+func runWithReportWriter(args []string, reportOutput io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune [flags]")
 	}
@@ -139,7 +143,7 @@ func run(args []string) error {
 		}
 		if *jsonReport {
 			report, verifyErr := verifyWithReport(root, snap, true)
-			if err := writeVerificationReport(os.Stdout, report); err != nil {
+			if err := writeVerificationReport(reportOutput, report); err != nil {
 				return err
 			}
 			return verifyErr

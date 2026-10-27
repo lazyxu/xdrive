@@ -118,3 +118,47 @@ func TestStructuredVerificationRejectsUnsafeFlagsAndRecordsPartialWork(t *testin
 		t.Fatal("unsafe snapshot was accepted")
 	}
 }
+
+func TestStructuredVerificationCLIJSONUsesNonzeroExitOnCorruption(t *testing.T) {
+	base := t.TempDir()
+	source := filepath.Join(base, "data")
+	repo := filepath.Join(base, "repo")
+	if err := os.Mkdir(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload := "preserved and verified"
+	hash := testCAS(t, source, payload)
+	if err := capture(source, repo, snapshotPath(t, repo, "generation1")); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"verify", "--repo", repo, "--snapshot", "generation1", "--json"}
+	var output bytes.Buffer
+	if err := runWithReportWriter(args, &output); err != nil {
+		t.Fatal(err)
+	}
+	var passed verificationReport
+	if err := json.Unmarshal(output.Bytes(), &passed); err != nil {
+		t.Fatal(err)
+	}
+	if passed.State != "success" || passed.ObjectsChecked != 1 || passed.BytesHashed != int64(len(payload)) {
+		t.Fatalf("CLI did not return actual successful hash counts: %+v", passed)
+	}
+	if err := os.WriteFile(objectPath(repo, hash), []byte(strings.Repeat("B", len(payload))), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	if err := runWithReportWriter(args, &output); err == nil {
+		t.Fatal("CLI silently accepted same-size CAS corruption")
+	}
+	var failed verificationReport
+	if err := json.Unmarshal(output.Bytes(), &failed); err != nil {
+		t.Fatal(err)
+	}
+	if failed.State != "failed" || failed.FailureCategory != "object_sha256_mismatch" ||
+		failed.ObjectsChecked != 0 || failed.BytesHashed != int64(len(payload)) {
+		t.Fatalf("CLI output falsely claimed full verification: %+v", failed)
+	}
+	if strings.Contains(output.String(), base) || strings.Contains(output.String(), hash) {
+		t.Fatal("CLI JSON exposed private storage details")
+	}
+}
