@@ -5,6 +5,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
@@ -413,22 +417,43 @@ class DriveAppTest {
         onDownload: ((DriveNode) -> Unit)? = null,
         onUpload: (() -> Unit)? = null,
     ) {
-        compose.setContent { XDriveTheme {
-            DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
-        } }
+        // Read the real Compose IME inset from composition (not a fixed delay
+        // or a guessed keyboard state). Done hides the keyboard; only click
+        // once the actual inset and on-screen submit have both settled.
+        val imeBottomPx = AtomicInteger(-1)
+        compose.setContent {
+            val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+            SideEffect { imeBottomPx.set(observedImeBottom) }
+            XDriveTheme {
+                DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+            }
+        }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()
-        // Compose can complete the Done callback before Android's IME inset
-        // actually settles. Keep a real visible/enabled submit assertion; let
-        // the bounded fixture wait re-scroll only while the inset is changing.
-        // Never click an offscreen control or suppress a genuine layout failure.
-        compose.waitUntil(timeoutMillis = 10_000) {
-            val submit = compose.onNodeWithTag("auth-submit")
-            runCatching { submit.performScrollTo() }.isSuccess &&
-                runCatching { submit.assertIsDisplayed() }.isSuccess
+        // The real button must be visible and enabled after the real keyboard
+        // reports its bottom inset as zero. Preserve the original 10s bound.
+        // Only scrolling is retried while its viewport animates, not login.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                if (imeBottomPx.get() != 0) false
+                else {
+                    val submit = compose.onNodeWithTag("auth-submit")
+                    runCatching { submit.performScrollTo() }.isSuccess &&
+                        runCatching { submit.assertIsDisplayed().assertIsEnabled() }.isSuccess
+                }
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "Fixture submit not ready: imeBottomPx=${imeBottomPx.get()}, " +
+                    "screen=${current.screen}, loading=${current.loading}, " +
+                    "errorPresent=${!current.error.isNullOrBlank()}, " +
+                    "factories=${connectFactoryCalls.get()}",
+                failure,
+            )
         }
         compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         try {
@@ -1322,10 +1347,26 @@ class DriveAppTest {
         var picks = 0
         startAndLogin(onUpload = { picks++ })
         compose.onNodeWithContentDescription("账户菜单").assertIsDisplayed().performClick()
-        // The account menu scrolls on short emulator screens. Verify the
-        // actual enabled SAF action is visible; keep the exact callback check.
+        // The actual platform popup can finish positioning after Compose idle.
+        // Boundedly scroll/observe the same real enabled SAF item; never retry
+        // the upload click or replace its callback with a synthetic invocation.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                runCatching {
+                    compose.onNodeWithTag("files-upload-action")
+                        .performScrollTo().assertIsDisplayed().assertIsEnabled()
+                }.isSuccess
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "SAF upload action not visible: screen=${current.screen}, " +
+                    "loading=${current.loading}, loaded=${current.loaded}",
+                failure,
+            )
+        }
         compose.onNodeWithTag("files-upload-action")
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+            .assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 
