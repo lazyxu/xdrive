@@ -339,6 +339,84 @@ class XDriveApiTest {
         } }
     }
 
+    @Test fun `album cover resolves current Owner node revision before bounded thumbnail`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip", "manual", "旅途", 5, 3, 0, 17)
+            server.enqueue(MockResponse().setBody("""{
+                "node":{"id":17,"parent_id":1,"name":"cover.jpg","type":"file",
+                    "size":2048,"revision":12},
+                "metadata":{"media_kind":"image","has_thumbnail":true}
+            }"""))
+            val jpeg = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 1, 2,
+                0xff.toByte(), 0xd9.toByte())
+            server.enqueue(MockResponse().setHeader("Content-Type", "image/jpeg")
+                .setBody(Buffer().write(jpeg)))
+            val cover = api.galleryAlbumCover("owner-secret", album)!!
+            assertEquals(17L, cover.nodeId)
+            assertEquals(12L, cover.revision)
+            assertArrayEquals(jpeg, cover.jpegBytes)
+            val a = server.takeRequest()
+            val b = server.takeRequest()
+            assertEquals("GET", a.method)
+            assertEquals("/api/v1/media/items/17", a.path)
+            assertEquals("Bearer owner-secret", a.getHeader("Authorization"))
+            assertEquals("GET", b.method)
+            assertEquals("/api/v1/media/items/17/thumbnail?revision=12", b.path)
+            assertEquals("Bearer owner-secret", b.getHeader("Authorization"))
+            assertEquals("image/jpeg", b.getHeader("Accept"))
+            assertFalse((a.path + b.path).contains("owner-secret"))
+        } }
+    }
+
+    @Test fun `album cover without a real Server ID or derived thumbnail never guesses bytes`() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            assertNull(api.galleryAlbumCover("owner-secret",
+                GalleryAlbum("manual:empty", "manual", "空", 0, 1, 0)))
+            assertEquals(0, server.requestCount)
+
+            server.enqueue(MockResponse().setBody("""{
+                "node":{"id":17,"parent_id":1,"name":"no-poster.mp4","type":"file",
+                    "size":2048,"revision":5},
+                "metadata":{"media_kind":"video","has_thumbnail":false}
+            }"""))
+            assertNull(api.galleryAlbumCover("owner-secret",
+                GalleryAlbum("manual:video", "manual", "视频", 1, 2, 0, 17)))
+            val request = server.takeRequest()
+            assertEquals("/api/v1/media/items/17", request.path)
+            assertEquals(1, server.requestCount)
+        } }
+    }
+
+    @Test fun `album cover rejects stale or unrelated metadata before thumbnail request`() = runBlocking {
+        val bad = listOf(
+            """{"node":{"id":18,"parent_id":1,"name":"other.jpg","type":"file",
+                "size":1024,"revision":3},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}""",
+            """{"node":{"id":17,"parent_id":1,"name":"folder","type":"dir",
+                "size":0,"revision":3},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}""",
+            """{"node":{"id":17,"parent_id":1,"name":"stale.jpg","type":"file",
+                "size":1024,"revision":0},
+                "metadata":{"media_kind":"image","has_thumbnail":true}}""",
+            """{"node":{"id":17,"parent_id":1,"name":"nonmedia.bin","type":"file",
+                "size":1024,"revision":3},
+                "metadata":{"media_kind":"other","has_thumbnail":true}}""",
+            """{"node":{"id":17,"parent_id":1,"name":"invalid.jpg","type":"file",
+                "size":1024,"revision":3},
+                "metadata":{"media_kind":"image","has_thumbnail":"true"}}""",
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip", "manual", "Trip", 1, 1, 0, 17)
+            for (data in bad) {
+                server.enqueue(MockResponse().setBody(data))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.galleryAlbumCover("owner-secret", album) }.reason)
+                assertEquals("/api/v1/media/items/17", server.takeRequest().path)
+            }
+            assertEquals(bad.size, server.requestCount) // no thumbnail GET
+        } }
+    }
+
     @Test fun `Gallery Owner Range starts at real chronological tail and preserves absolute offset`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody("""{

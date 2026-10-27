@@ -499,6 +499,51 @@ class DriveControllerTest {
     }
 
 
+    @Test fun albumCoverRequiresCurrentOwnerAlbumAndSuppressesLateCrossTabBytes() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旅途", 1, 3, 0, 17)
+        val gate = CompletableDeferred<Unit>()
+        var coverCalls = 0
+        val server = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String) = listOf(album)
+            override suspend fun galleryAlbumCover(
+                accessToken: String, selected: GalleryAlbum,
+            ): GalleryAlbumCover {
+                assertEquals("access", accessToken)
+                assertEquals(album, selected)
+                coverCalls++
+                withContext(NonCancellable) { gate.await() }
+                return GalleryAlbumCover(17, 4, byteArrayOf(1, 2, 3))
+            }
+        }
+        val c = controller(this, server)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertNull(c.galleryAlbumCover(album.copy(revision = 9)))
+        assertEquals(0, coverCalls)
+
+        var leaked: GalleryAlbumCover? = null
+        var cancelled = false
+        val pending = launch {
+            try { leaked = c.galleryAlbumCover(album) }
+            catch (_: CancellationException) { cancelled = true }
+        }
+        runCurrent()
+        assertEquals(1, coverCalls)
+        c.openGalleryLibrary(); runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        pending.join()
+        assertTrue(cancelled)
+        assertNull(leaked)
+        assertTrue(c.state.value.galleryAlbums.isNotEmpty())
+        assertEquals(GalleryPrimaryTab.LIBRARY, c.state.value.galleryPrimaryTab)
+        c.logout(); runCurrent()
+        assertTrue(c.state.value.galleryAlbums.isEmpty())
+        c.close()
+    }
+
     @Test fun realOwnerAlbumsOpenNativeRangeViewerAndReturnWithoutInventingMedia() = runTest {
         val trip = GalleryAlbum("manual:trip", "manual", "旅途", 1, 3, 0)
         val imported = GalleryAlbum("source:phone-1", "imported", "手机", 0, 1, 0)
