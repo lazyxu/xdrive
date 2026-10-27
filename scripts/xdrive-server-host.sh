@@ -1059,9 +1059,9 @@ backup_verify_cmd() {
     ) || { echo "xdrive-server: v2 checksum manifest mismatch: $dir" >&2; return 1; }
   else
     (
-      cd "$dir"
-      sha256sum -c SHA256SUMS.txt
-    )
+      cd "$dir" || exit 1
+      sha256sum -c SHA256SUMS.txt || exit 1
+    ) || return 1
   fi
   if [[ "$backup_version" == "2" ]]; then
     [[ "$(basename "$(dirname "$dir")")" == "snapshots" ]] || {
@@ -1084,12 +1084,12 @@ backup_verify_cmd() {
         --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
         --entrypoint /usr/local/bin/xdrive-backup-repo \
         "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" --json \
-        </dev/null > "$XD_BACKUP_VERIFY_CAS_REPORT_FILE"
+        </dev/null > "$XD_BACKUP_VERIFY_CAS_REPORT_FILE" || return $?
     else
     docker run --rm --user 0:0 \
       --mount "type=bind,src=$repository_dir,dst=/repo,readonly" \
       --entrypoint /usr/local/bin/xdrive-backup-repo \
-      "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" </dev/null
+      "$server_image" verify --repo /repo --snapshot "$(basename "$dir")" </dev/null || return $?
     fi
   fi
   created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
