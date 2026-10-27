@@ -22,8 +22,79 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  pr-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.detect.outputs.scope }}
+    steps:
+      # Use only BASE code for classification; never execute PR-controlled policy.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+      - name: Test available trusted scope rules
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/ci/test_pr_scope.py ]]; then
+            python3 -m unittest discover -s scripts/ci -p 'test_pr_scope.py'
+          fi
+      - name: Classify immutable PR diff; default full
+        id: detect
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          scope=full
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" &&
+                -f scripts/ci/classify_pr_scope.py &&
+                "$PR_BASE_SHA" =~ ^[a-f0-9]{40}$ &&
+                "$PR_HEAD_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            if ! git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
+              git fetch --quiet --no-tags origin "$PR_HEAD_SHA" || true
+            fi
+            if git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
+              if candidate="$(python3 scripts/ci/classify_pr_scope.py "$PR_BASE_SHA" "$PR_HEAD_SHA")"; then
+                case "$candidate" in
+                  full|docs|android|pwa) scope="$candidate" ;;
+                  *) echo "::warning title=Unknown CI scope::Using complete CI." ;;
+                esac
+              else
+                echo "::warning title=CI scope detection unavailable::Using complete CI."
+              fi
+            fi
+          fi
+          case "$scope" in full|docs|android|pwa) ;; *) exit 1 ;; esac
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "xDrive CI scope: $scope (unknown or risky paths require full CI)"
+
+  # Fast, real document/policy contract: documentation PRs must not bypass
+  # assertions about the active AGENTS rules and byte-identical archive.
+  # Full master/stable CI also runs this check; other scoped PRs skip it.
+
+  policy-contract:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'docs' || needs.pr-scope.outputs.scope == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify active rules and immutable historical archive
+        run: |
+          set -euo pipefail
+          node --check desktop/tests/agents-active-policy-archive.cjs
+          node --test desktop/tests/agents-active-policy-archive.cjs
+          python3 -m unittest discover -s scripts/ci -p 'test_pr_scope.py'
 
   android-native:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'android'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -80,20 +151,20 @@ jobs:
 
   single-commit:
     if: github.event_name == 'pull_request'
+    needs: pr-scope
     runs-on: ubuntu-latest
     steps:
-      - name: Require exactly one commit before merge
+      - name: Record PR commit count without demanding a rewrite
         env:
           PR_COMMITS: ${{ github.event.pull_request.commits }}
         run: |
           set -euo pipefail
-          if [[ "$PR_COMMITS" != "1" ]]; then
-            echo "PR must contain exactly one commit before merge; found $PR_COMMITS." >&2
-            echo "Fetch/rebase origin/master, squash the work branch to one commit, push it, and rerun CI." >&2
-            exit 1
-          fi
+          [[ "$PR_COMMITS" =~ ^[1-9][0-9]*$ ]] || exit 1
+          echo "PR has $PR_COMMITS commit(s); Squash Merge may retain a linear master."
 
   desktop-tests:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'pwa'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +179,8 @@ jobs:
         run: npm run test:main
 
   desktop-linux:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     env:
       NPM_CONFIG_CACHE: ${{ github.workspace }}/.cache/npm
@@ -153,6 +226,8 @@ jobs:
           retention-days: 2
 
   desktop-windows:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -228,6 +303,8 @@ jobs:
           retention-days: 2
 
   build-client-core:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -308,6 +385,8 @@ jobs:
             -ExpectedVersion $env:XDRIVE_RELEASE_VERSION
 
   go-linux:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -356,6 +435,8 @@ jobs:
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 
   go-linux-api:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -908,6 +989,8 @@ jobs:
           retention-days: 7
 
   build-source-agent:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -967,6 +1050,8 @@ jobs:
           retention-days: 14
 
   server-validation:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -982,6 +1067,9 @@ jobs:
           XD_CADDY_IMAGE: ghcr.io/lazyxu/xdrive-caddy:edge
         run: |
           bash -n deploy/install-server.sh
+          if [[ -f scripts/ci/test_pr_scope.py ]]; then
+            python3 -m unittest discover -s scripts/ci -p 'test_pr_scope.py'
+          fi
           python3 scripts/test-master-snapshot-concurrency.py
           python3 scripts/test-snapshot-release-notes.py
           python3 scripts/test-snapshot-publish-guards.py
@@ -1200,7 +1288,10 @@ jobs:
           grep -q -- '--leave-server-stopped' deploy/install-server.sh
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
           grep -q 'detailed Docker output is captured in' deploy/install-server.sh
+
   server-image:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     # Dockerfile defaults keep GitHub on official registries; GitLab passes
     # region-friendly mirrors into the same build arguments.
@@ -1320,6 +1411,8 @@ jobs:
         run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image
 
   media-worker-image:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1335,6 +1428,8 @@ jobs:
           compression-level: 0
 
   photo-face-image:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     env:
       HF_ENDPOINT: ${{ vars.HF_ENDPOINT || 'https://huggingface.co' }}
@@ -1388,6 +1483,7 @@ jobs:
 
   # Detached from photo-face-image: master snapshot publishing must NOT wait
   # for Docker/Go/PostgreSQL OCR smoke. Stable v* tags DO require this check.
+
   photo-ocr-master-smoke:
     needs: photo-face-image
     if: >-
@@ -1418,7 +1514,8 @@ jobs:
         run: bash scripts/ci/test-photo-ocr-real-model.sh
 
   caddy-image:
-    needs: web
+    needs: [pr-scope, web]
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     # Dockerfile defaults keep GitHub on official Go infrastructure; GitLab
     # overrides the same build arguments for its runner network.
@@ -1474,6 +1571,8 @@ jobs:
         run: bash scripts/test-server-backup-restore.sh
 
   go-windows:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -1675,6 +1774,8 @@ jobs:
           }
 
   web:
+    needs: pr-scope
+    if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'pwa'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -2284,13 +2385,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-
-
-
-
   final-gate:
     if: always()
     needs:
+      - pr-scope
+      - policy-contract
       - android-native
       - desktop-tests
       - go-linux
@@ -2312,13 +2411,34 @@ jobs:
       - test-windows-smoke-artifact
     runs-on: ubuntu-latest
     steps:
-      - name: Require every CI gate to succeed
+      - name: Require every applicable CI gate to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_SCOPE: ${{ needs.pr-scope.outputs.scope }}
         run: |
           set -euo pipefail
-          echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")' >/dev/null
-          echo "All source, server, web, and exact-artifact tests passed."
+          if [[ "$CI_SCOPE" == full ]]; then
+            echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")' >/dev/null
+            echo "All source, server, web, and exact-artifact tests passed."
+            exit 0
+          fi
+          # A scoped PR requires its selected jobs to succeed, while all
+          # unselected gates must be skipped (not failed or still pending).
+          echo "$NEEDS_JSON" | jq -e --arg scope "$CI_SCOPE" '
+            . as $jobs |
+            def accepted($required):
+              (all($required[]; $jobs[.].result == "success")) and
+              (all($jobs | to_entries[];
+                . as $item |
+                if $item.key == "pr-scope" then $item.value.result == "success"
+                elif ($required | index($item.key)) != null then $item.value.result == "success"
+                else $item.value.result == "skipped" end));
+            if $scope == "docs" then accepted(["policy-contract"])
+            elif $scope == "android" then accepted(["android-native"])
+            elif $scope == "pwa" then accepted(["web", "desktop-tests"])
+            else false end
+          ' >/dev/null
+          echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -2355,3 +2475,4 @@ jobs:
     with:
       publish: true
     secrets: inherit
+

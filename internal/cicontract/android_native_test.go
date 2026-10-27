@@ -39,8 +39,17 @@ func androidStep(job map[string]any, key, value string) map[string]any {
 // Validate the parsed job, rather than matching unrelated strings elsewhere in CI.
 func validateAndroidWorkflow(workflow map[string]any) error {
 	job := androidJob(workflow, "android-native")
-	if job == nil || job["runs-on"] != "ubuntu-latest" || job["if"] != nil || job["continue-on-error"] != nil {
-		return fmt.Errorf("Android must be an unconditional required hosted Linux job")
+	if job == nil || job["runs-on"] != "ubuntu-latest" || job["continue-on-error"] != nil {
+		return fmt.Errorf("Android must remain a required hosted Linux job")
+	}
+	const requiredScope = "needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'android'"
+	if job["needs"] != "pr-scope" || job["if"] != requiredScope {
+		return fmt.Errorf("Android must run for all master/stable builds and for every Android-only PR")
+	}
+	scope := androidJob(workflow, "pr-scope")
+	if scope == nil || scope["runs-on"] != "ubuntu-latest" || scope["if"] != nil ||
+		scope["continue-on-error"] != nil || androidStep(scope, "name", "Classify immutable PR diff; default full") == nil {
+		return fmt.Errorf("Android CI scope must be derived from the trusted base and fail closed")
 	}
 	steps, _ := job["steps"].([]any)
 	for _, raw := range steps {
@@ -98,13 +107,20 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 	if !slices.Contains(needs, any("android-native")) || gate["if"] != "always()" || gate["continue-on-error"] != nil {
 		return fmt.Errorf("Final Gate must always require Android")
 	}
-	check := androidStep(gate, "name", "Require every CI gate to succeed")
+	check := androidStep(gate, "name", "Require every applicable CI gate to succeed")
+	if check == nil {
+		return fmt.Errorf("Final Gate check is missing")
+	}
 	env, _ := check["env"].(map[string]any)
 	run, _ := check["run"].(string)
-	if check == nil || check["if"] != nil || check["continue-on-error"] != nil || env["NEEDS_JSON"] != "${{ toJSON(needs) }}" ||
+	if check["if"] != nil || check["continue-on-error"] != nil || env["NEEDS_JSON"] != "${{ toJSON(needs) }}" ||
+		env["CI_SCOPE"] != "${{ needs.pr-scope.outputs.scope }}" ||
+		!strings.Contains(run, `if [[ "$CI_SCOPE" == full ]]`) ||
 		!strings.Contains(run, `echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")' >/dev/null`) ||
-		!strings.HasPrefix(run, "set -euo pipefail\n") || strings.Contains(run, "||") {
-		return fmt.Errorf("Final Gate must fail unless every dependency succeeds")
+		!strings.Contains(run, `accepted(["android-native"])`) ||
+		!strings.Contains(run, `else $item.value.result == "skipped" end`) ||
+		!strings.HasPrefix(run, "set -euo pipefail\n") || strings.Contains(run, "|| true") {
+		return fmt.Errorf("Final Gate must require full CI on master/stable, and actual Android success for scoped PRs")
 	}
 	return nil
 }
@@ -149,7 +165,7 @@ func TestAndroidNativeCIRejectsWeakenedGates(t *testing.T) {
 			androidStep(androidJob(w, "android-native"), "uses", "android-actions/setup-android@v3")["with"].(map[string]any)["packages"] = "tools platform-tools"
 		},
 		"gate accepts failure": func(w map[string]any) {
-			androidStep(androidJob(w, "final-gate"), "name", "Require every CI gate to succeed")["run"] = "exit 0"
+			androidStep(androidJob(w, "final-gate"), "name", "Require every applicable CI gate to succeed")["run"] = "exit 0"
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

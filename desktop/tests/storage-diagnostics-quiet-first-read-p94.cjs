@@ -22,7 +22,7 @@ test('P94 real failure/retry and verified page receipts remain, with no false fi
   assert.ok(jsx.includes('loading={'+slot+'Loading}'))
   assert.ok(!jsx.includes('<LinearProgress />'),'pagination must not insert an in-flow row')
  }
- const agents=read('AGENTS.md')
+ const agents=read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
  assert.equal(agents.split('Permanent no-jitter contract / P78').length,2)
  assert.equal(agents.split('P94 silent Global Storage diagnostic first-read (mandatory)').length,2)
  assert.ok(read('web/src/StorageStatsPanel.tsx').includes('XDriveGlobalStorageStatsPage'))

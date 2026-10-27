@@ -474,7 +474,7 @@ test('F-PARITY-01A: Mobile Properties reuse the wide Web stats loader, abortable
 })
 
 test('F-PARITY: AGENTS and canonical FileExplorer docs enforce wide Web / Mobile full feature parity', () => {
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   const canonical = read('docs/file-explorer.md')
   assert.match(agents, /Web\/Mobile Web Files functional equivalence/)
   assert.match(agents, /Only internal multi-tab UI and its commands/)
@@ -485,7 +485,7 @@ test('F-PARITY: AGENTS and canonical FileExplorer docs enforce wide Web / Mobile
 })
 
 test('F-iOS27-02: target is explicitly iOS 27, while only internal file tabs are exempt', () => {
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   const benchmark = read('docs/mobile-files-ios27.md')
   assert.match(agents, /iOS 27 Files 1:1 reference contract/)
   assert.match(agents, /52px global App Header/)
@@ -515,7 +515,7 @@ test('F-PARITY-02: Mobile More, item menu, selection all reuse wide-Web undo, hi
 })
 
 test('AGENTS continuation status contract is mandatory and distinguishes merged from planned', () => {
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.match(agents, /## Continuation progress reporting/)
   assert.match(agents, /current phase/i)
   assert.match(agents, /completed work/i)

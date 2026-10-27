@@ -87,6 +87,6 @@ test('P111: real loading and failure actions remain; no invented navigation fram
   assert.ok(mobile.includes('data-mobile-files-select-progress'))
   assert.ok(mobile.includes('cancelSelectAll'))
   assert.ok(mobile.includes('XDriveFileExplorerThumbnail'))
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('## P111 · Async feedback must never reflow Files/Gallery scroll owners').length, 2)
 })

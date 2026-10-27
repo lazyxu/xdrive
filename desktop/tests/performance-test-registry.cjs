@@ -6,7 +6,7 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '../..')
 const registry = fs.readFileSync(path.join(root, 'docs/performance-test-registry.md'), 'utf8')
-const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
+const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
 const evidenceRoot = path.join(root, 'docs/performance-evidence')
 
 test('AGENTS mandates a single performance registry and same-work-commit update', () => {

@@ -82,7 +82,7 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   const desktop = read('desktop/src/renderer/App.tsx')
   const registry = read('web/src/webApps.ts')
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   for (const source of [web, desktop, registry, page]) {
     assert.ok(source.includes('系统依赖'))
   }

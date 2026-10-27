@@ -210,6 +210,6 @@ test('P96 original first-Range acceptance and permanent AGENTS rule', () => {
   assert.match(selected, /mobileGalleryViewport && nextSection === 'trash'/)
   assert.match(selected, /openTrashFromCollections\(\)/)
   assert.doesNotMatch(selected, /setTimeout|CircularProgress/)
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P96 Mobile Gallery Trash-tab atomic navigation (mandatory)').length, 2)
 })

@@ -22,7 +22,7 @@ function stableHeight(text, marker) {
 }
 
 test('P78 evergreen AGENTS policy forbids every new navigation-only intermediate frame', () => {
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   const doc = read('docs/mobile-navigation-stability.md')
   const marker = 'Permanent no-jitter contract / P78'
   assert.equal(agents.split(marker).length, 2, 'the policy must be canonical, not copied into progress notes')

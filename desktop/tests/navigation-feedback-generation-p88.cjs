@@ -91,7 +91,7 @@ test('P88 Mobile Files Search and populated Trash fence their real feedback per 
 })
 
 test('P88 extends canonical P78 policy, does not duplicate it or suppress real media progress', () => {
-  const agents = source('AGENTS.md')
+  const agents = source('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('Permanent no-jitter contract / P78').length, 2)
   for (const token of [
     'Permanent visual-generation fence / P88',

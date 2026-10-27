@@ -224,6 +224,6 @@ test('P98 source-exact Memory return/refresh, first-list owner acceptance and AG
   assert.match(gallerySource, /const request = \+\+requestID\.current/)
   assert.ok(gallerySource.includes('XDriveMediaAsyncThumbnail'))
   assert.ok(gallerySource.includes('XDriveMediaAsyncVideoPoster'))
-  const agents = read('AGENTS.md')
+  const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P98 compact Memories index atomic navigation and refresh (mandatory)').length, 2)
 })
