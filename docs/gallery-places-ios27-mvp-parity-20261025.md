@@ -85,3 +85,17 @@ does not validate the newly changed exact SHA: rerun real P0-17 and full
 CI / Final Gate before Ready/Rebase Merge. Production-only unreachable safety
 acceptance: **按用户决定跳过（未验收）**. Source-level Owner/Consent/Origin/CSP/
 revocation isolation remains mandatory.
+
+## 2026-10-27 · latest mainline gap classification (supersedes the dated status table above)
+
+This is a **source audit and work sequence**, not a screenshot/physical-device acceptance claim. The earlier Oct 25 entries saying #2616 is draft, selected nearby is absent or 390px short-touch handling is not implemented are dated and no longer a trustworthy description of latest `master`.
+
+| Priority | Current source reality | Still to complete / accept |
+| --- | --- | --- |
+| P0 | Inline and isolated HTTPS Child already mount the **same** `MediaGalleryBaiduIsolatedPhotoSurface`, signed Owner /cells /cell-items, thumbnail cover, photo drawer, virtual wall/Viewer, scoped filter + one-shot map-mode handoff. | #2762's filter-prepaint old-marker invalidation must pass CI and merge; real browser transitions under slow/failing/revoked Owner results; no duplicate Host implementation. |
+| P0 | Per-photo Consent grant/revoke and production operator account-proof are **not runtime eligibility gates**. Automatic Owner GPS backlog planner/consumer and real Server-AK Geoconv are implemented. | Real newly indexed and legacy GPS conversion completion, missing BD-09 retry/backoff, quota/failure UI, all indexed photos correctly counted. No artificial account review or per-photo consent reintroduction. |
+| P0 | Current shared Parent has map-first toolbar, cover clusters, camera Count, selected-location photo sheet and contextual `显示附近照片`, one-shot Owner range Viewer and return history. Mobile short-touch pointerup + compatibility-click dedup is coded. | Apple Photos Library / Collection / Trips / Recents / Info → Show Map entry/Back matrix, changing Owner/Album during Viewer/reload, decoded HEIC/Live/video covers, native iOS Safari gesture screenshot proof. |
+| P1 | One 52px xDrive Mobile Header, safe-area-aware shared drawer, keyboard/Escape/click-away and 44px control implementations exist. | iOS 27 actual 375/390/899/900/landscape safe-area, pan/pinch/selection behavior, light/dark, reduced-motion, VoiceOver parity; avoid claiming pixel 1:1 before comparison. |
+| P1 | Existing Owner bounds/cell-range/cancel hooks and specialized dual-Host Chromium P0-17 suite exist. | Controlled mixed real Postgres 10k/100k matched BEFORE/AFTER: first paint, actual decoded cover latency, SQL P50/P95, CPU/RSS, viewport Abort→Go ctx.Done, cross-platform coverage. |
+
+**Rule:** The server should only attempt real Provider operations when configured and technically possible; the product must not add a separate human-verification flag. Ordinary Owner login, source revision, signed bounded Scope, Browser AK/SDK HTTPS Origin/CSP and real Provider failures remain mandatory execution checks. Production account evidence and inaccessible device security acceptance are permanently skipped as nonblocking **未验收**, not represented as passed.

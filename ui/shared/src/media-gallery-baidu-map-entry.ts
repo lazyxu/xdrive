@@ -29,7 +29,7 @@ const supported = new Set([
  * query and replace a scoped wall with the owner's whole library.
  *
  * Account identity, original WGS84, media IDs and URLs are not serialized.
- * The Server independently enforces Owner, Album, Consent and revision.
+ * The Server independently enforces Owner, Album membership, current GPS/Node revision and media access; no per-photo map Consent gate.
  */
 export function xDriveGalleryMapEntryScope(input: XDriveGalleryMapEntry): XDriveGalleryMapEntryResult {
   const deny = (reason: 'unsupported-collection' | 'unsupported-filter') =>

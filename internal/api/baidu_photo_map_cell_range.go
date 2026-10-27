@@ -18,7 +18,7 @@ import (
 // A3h-W1: one server-verified BD09 bin from an exact 8x8 /cells response.
 // This is NOT an original WGS84 box, a share-token capability, or a grant
 // from a provider-controlled JS click. Every member must still pass the
-// original Owner, explicit consent and source revision SQL predicate.
+// original Owner, Gallery membership, valid GPS and source-revision SQL predicate.
 type baiduPhotoMapCellSelection struct {
 	Bounds                 baiduPhotoMapBounds
 	CellX                  int
@@ -136,7 +136,7 @@ func parseBaiduNativeMapCellItems(raw string) (baiduPhotoMapCellSelection, int, 
 	return selection, limit, offset, options, nil
 }
 
-// The same production source + consent predicate and exact grid math as
+// The same Owner/GPS/source-revision predicate and exact grid math as
 // /cells, but filter to the chosen bin and return ONLY bounded Node IDs via a
 // PostgreSQL subquery. Gallery's original ranged query owns Count, sorting,
 // sparse page, virtual timeline, metadata/Live still and Viewer semantics.

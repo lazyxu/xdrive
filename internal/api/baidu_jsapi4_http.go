@@ -175,9 +175,10 @@ func (s *Server) baiduJSAPI4LoaderHTTP(c *gin.Context) {
 	c.Data(http.StatusOK, "application/javascript; charset=utf-8", body)
 }
 
-// This handler can be registered ONLY at a source-approved, exact child path.
-// There is no /_BMapService/* catch-all: until private entitlement/HAR review
-// establishes the immutable manifest the real Router registers ZERO children.
+// A compiled, fixed-provider Baidu serviceHost family reaches this bounded
+// handler through the common resource dispatcher. The dispatcher does not grant
+// arbitrary URL/Host/path/query access: every call uses the strict source
+// policy and Owner/map-session checks, without a human HAR/licence review gate.
 // Cookie, release, quota, Browser AK revision and Owner are all rechecked
 // before returning any bytes, using the same Server transport as the Loader.
 func (s *Server) baiduJSAPI4ChildHTTP(c *gin.Context) {
