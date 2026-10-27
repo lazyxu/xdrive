@@ -498,7 +498,6 @@ function FullDocumentHandoffMap(){
     loadPhotoCoverThumbnail={loadThumbnail}
     onOpenBaiduNativeCell={onOpenCell}
     onBaiduNativeCellInvalidated={onInvalidated}
-    onBaiduNativeViewport={undefined}
     initialNativeCamera={snapshot.camera}
     mapPhotoScope={snapshot.scope}
     onMapPhotoScopeChange={scope=>setSnapshot(previous=>
@@ -506,7 +505,7 @@ function FullDocumentHandoffMap(){
     onMapModeHandoff={async(scope,target,signal,camera)=>{
       probe.handoff.issues++
       const receipt=await postAuthenticatedMapHandoff('',{
-        target_mode:target,scope,camera:camera??null,
+        target_mode:target,scope,...(camera?{camera}:{}),
       },signal)
       if(typeof receipt?.ticket!=='string'||
         !/^[a-f0-9]{64}$/.test(receipt.ticket))
