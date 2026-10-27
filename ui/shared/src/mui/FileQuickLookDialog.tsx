@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
-import { IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import { xDriveClassifyFilePreview } from '../file-preview'
 import type { XDriveFilePreviewTarget } from '../file-preview'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
@@ -14,6 +14,8 @@ import type {
   XDriveFilePreviewURLLoader,
 } from './FilePreviewSurface'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
+import { useXDriveViewerDownloadReceipt } from './useViewerDownloadReceipt'
+import type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt'
 import { useXDrivePreviewPresentation, useXDrivePreviewSlideshow } from './usePreviewSlideshow'
 
 export type XDriveFileQuickLookAction = {
@@ -29,6 +31,9 @@ export type XDriveFileQuickLookDialogProps<T extends XDriveFilePreviewTarget = X
   item: T | null
   positionLabel?: ReactNode
   actions?: readonly XDriveFileQuickLookAction[]
+  /** Desktop-only optional exact Agent Task Center receipt; other hosts keep default actions. */
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
+  onDownloadWithReceipt?: (item: T, clientRequestID: string) => Promise<void | { saved: boolean }>
   loadTextPreview?: XDriveFilePreviewTextLoader<T>
   loadImagePreview?: XDriveFilePreviewImageLoader<T>
   loadPreviewURL?: XDriveFilePreviewURLLoader<T>
@@ -46,6 +51,8 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   item,
   positionLabel,
   actions = [],
+  viewerDownloadReceipt,
+  onDownloadWithReceipt,
   loadTextPreview,
   loadImagePreview,
   loadPreviewURL,
@@ -87,6 +94,15 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   // Owner/Agent loader for the same Node ID. Fence dispatch synchronously; the
   // Preview Engine's byte cancellation alone does not protect UI actions.
   const chromeOwner = chromeOwnerRef.current
+  const downloadReceipt = useXDriveViewerDownloadReceipt(
+    open ? viewerDownloadReceipt : undefined,
+    chromeOwner,
+    open && item ? Number(item.id) : undefined,
+  )
+  const downloadInFlightRef = useRef({ owner: chromeOwner, busy: false })
+  if (downloadInFlightRef.current.owner !== chromeOwner) {
+    downloadInFlightRef.current = { owner: chromeOwner, busy: false }
+  }
   // A keyed FileExplorer remount can retire the entire Quick Look instance.
   // Unlike a prop change, it never gets another render to rotate chromeOwnerRef.
   // Layout cleanup revokes queued clicks before the discarded frame can act.
@@ -116,6 +132,51 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   }
   const closeIfCurrent = () => {
     if (isCurrentChromeOwner() && currentNavigationRef.current.onClose === onClose) onClose()
+  }
+
+  const downloadWithReceiptIfCurrent = (fallback: () => void) => {
+    if (!isCurrentChromeOwner() || !item) return
+    if (!viewerDownloadReceipt || !onDownloadWithReceipt) {
+      fallback()
+      return
+    }
+    const flight = downloadInFlightRef.current
+    if (flight.owner !== chromeOwner || flight.busy) return
+    flight.busy = true
+    let nonce: string | undefined
+    try {
+      nonce = downloadReceipt.claim()
+    } catch {
+      // WebCrypto is unavailable: never invent a weak correlation, but keep
+      // the original working native SaveDialog download path.
+      flight.busy = false
+      fallback()
+      return
+    }
+    if (!nonce) {
+      flight.busy = false
+      fallback()
+      return
+    }
+    const requestID = nonce
+    void Promise.resolve().then(() => {
+      // A modal can close or switch source before this microtask runs; never
+      // launch an old Owner's saved-file operation from its stale button.
+      if (!isCurrentChromeOwner()) {
+        downloadReceipt.dismiss(requestID)
+        return { saved: false }
+      }
+      return onDownloadWithReceipt(item, requestID)
+    })
+      .then((outcome) => {
+        if (outcome && outcome.saved === false) downloadReceipt.dismiss(requestID)
+      }, () => {
+        // Original Desktop file action reports failures through its host;
+        // never display an untrusted local path in Viewer feedback.
+        downloadReceipt.dismiss(requestID)
+      }).finally(() => {
+        flight.busy = false
+      })
   }
 
   const previewKind = item ? xDriveClassifyFilePreview(item) : 'none'
@@ -170,7 +231,11 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
                 if (!isCurrentChromeOwner()) return
                 const current = currentActionsRef.current.find((candidate) => candidate.id === action.id)
                 if (current && !current.disabled && current.onSelect === action.onSelect) {
-                  current.onSelect()
+                  if (action.id === 'download') {
+                    downloadWithReceiptIfCurrent(current.onSelect)
+                  } else {
+                    current.onSelect()
+                  }
                 }
               }}
             >
@@ -218,6 +283,21 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
       onNext={onNext ? nextIfCurrent : undefined}
       onClose={closeIfCurrent}
     >
+      {downloadReceipt.text ? (
+        <Box data-xdrive-quicklook-download-progress role="status"
+          aria-live={downloadReceipt.announce ? 'polite' : 'off'}
+          sx={{
+            position: 'absolute', top: 12, left: 12, zIndex: 5,
+            maxWidth: 'calc(100% - 24px)', px: 1.5, py: 0.75,
+            bgcolor: 'rgba(0,0,0,.68)', color: 'common.white',
+            borderRadius: 1.5, pointerEvents: 'none',
+            '& .MuiTypography-root': { color: 'inherit', overflowWrap: 'anywhere' },
+          }}>
+          <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {downloadReceipt.text}
+          </Typography>
+        </Box>
+      ) : null}
       <XDriveFilePreviewSurface
         key={chromeOwner.session}
         target={item}

@@ -13,7 +13,7 @@ import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
-import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, useMediaQuery } from '@mui/material'
+import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material'
 import type {
   MediaEditRecipe,
   MediaEditRecipeInput,
@@ -40,6 +40,8 @@ import { XDriveMediaGalleryViewerLocationDialog } from './MediaGalleryViewerLoca
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
+import { useXDriveViewerDownloadReceipt } from './useViewerDownloadReceipt'
+import type { XDriveViewerDownloadReceiptPort } from './useViewerDownloadReceipt'
 import type { XDriveFilePreviewImageLoader } from './FilePreviewSurface'
 import { useXDrivePreviewPresentation, useXDrivePreviewSlideshow } from './usePreviewSlideshow'
 import { xDriveClassifyFilePreview } from '../file-preview'
@@ -83,6 +85,7 @@ export function XDriveMediaGalleryViewer({
   onCancelCreativeGeneration,
   onCreativeCompleted,
   onDownload,
+  viewerDownloadReceipt,
   onExportLivePhoto,
   onShare,
   onDelete,
@@ -131,7 +134,8 @@ export function XDriveMediaGalleryViewer({
     generationID: string,
   ) => Promise<MediaCreativeGeneration>
   onCreativeCompleted?: (generation: MediaCreativeGeneration) => void
-  onDownload?: (item: MediaItem) => Promise<void>
+  onDownload?: (item: MediaItem, clientRequestID?: string) => Promise<void | { saved: boolean }>
+  viewerDownloadReceipt?: XDriveViewerDownloadReceiptPort
   onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShare?: (item: MediaItem) => void
   onDelete?: (item: MediaItem) => Promise<void>
@@ -188,6 +192,11 @@ export function XDriveMediaGalleryViewer({
     }
   }
   const actionOwner = actionOwnerRef.current
+  // Keep Agent progress isolated to this mounted Viewer, never re-render the
+  // underlying virtualized 100k Gallery on each transfer update.
+  const downloadReceipt = useXDriveViewerDownloadReceipt(
+    viewerDownloadReceipt, actionOwner, item?.node.id,
+  )
   // An unmounted Gallery Viewer receives no new render to invalidate queued
   // callbacks. Layout cleanup retires this exact media/source session.
   const mountedOwnerRef = useRef<typeof actionOwner | null>(actionOwner)
@@ -334,6 +343,24 @@ export function XDriveMediaGalleryViewer({
     }
   }, [actionOwner, item, parentReportsViewerActionErrors])
 
+  // Claim the download action before creating an Agent correlation. The
+  // existing `run` fence owns same-tick duplicate taps and A→B→A sessions.
+  const downloadCurrent = () => {
+    if (!item || !onDownload) return
+    void run('download', async () => {
+      const id = downloadReceipt.claim()
+      try {
+        const outcome = await onDownload(item, id)
+        // Native SaveDialog cancellation creates no task: don't leave a
+        // phantom pending receipt behind the current still/video.
+        if (outcome && outcome.saved === false) downloadReceipt.dismiss(id)
+      } catch (error) {
+        downloadReceipt.dismiss(id)
+        throw error
+      }
+    }).catch(() => undefined)
+  }
+
   const close = () => {
     if (!isCurrentActionOwner()) return
     // A close/reopen of the same Node still starts a fresh action session.
@@ -438,7 +465,7 @@ export function XDriveMediaGalleryViewer({
               aria-label="下载媒体"
               disabled={Boolean(busyAction)}
               onClick={() => {
-                void run('download', () => onDownload(item)).catch(() => undefined)
+                downloadCurrent()
               }}
             >
               <DownloadRoundedIcon fontSize="small" />
@@ -534,6 +561,24 @@ export function XDriveMediaGalleryViewer({
         onFullScreenChange={setFullScreenIfCurrent}
         onClose={close}
       >
+        {downloadReceipt.text ? (
+          <Box
+            data-xdrive-viewer-agent-download-progress
+            role="status"
+            aria-live={downloadReceipt.announce ? 'polite' : 'off'}
+            sx={{
+              position: 'absolute', top: 12, left: 12, zIndex: 5,
+              maxWidth: 'calc(100% - 24px)', px: 1.5, py: 0.75,
+              bgcolor: 'rgba(0,0,0,.68)', color: 'common.white',
+              borderRadius: 1.5, pointerEvents: 'none',
+              '& .MuiTypography-root': { color: 'inherit', overflowWrap: 'anywhere' },
+            }}
+          >
+            <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              {downloadReceipt.text}
+            </Typography>
+          </Box>
+        ) : null}
         {item ? (
           <XDriveMediaViewerContent
             key={actionOwner.session}
@@ -599,7 +644,7 @@ export function XDriveMediaGalleryViewer({
         {item && onDownload ? (
           <MenuItem aria-label="下载" disabled={Boolean(busyAction)} onClick={() => {
             closeMore()
-            void run('download', () => onDownload(item)).catch(() => undefined)
+            downloadCurrent()
           }}>下载</MenuItem>
         ) : null}
       </Menu>

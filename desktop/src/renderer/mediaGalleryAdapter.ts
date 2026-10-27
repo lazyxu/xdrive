@@ -11,6 +11,7 @@ import {
 export function createDesktopMediaGalleryDataSource(
   agent: Window['xdriveDesktop']['agent'],
   durableJobsSupported = false,
+  downloadCorrelationSupported = false,
 ) {
   return createXDriveMediaGalleryDataSource({
     loadMusicRoot: () => agent.cloudRoot(),
@@ -237,9 +238,30 @@ export function createDesktopMediaGalleryDataSource(
       'delete',
       items.map((item) => ({ id: item.node.id, revision: item.node.revision })),
     ),
-    downloadItems: (items) => items.length === 1
-      ? agent.cloudDownload(items[0].node.id, items[0].node.name)
+    // Preserve the existing native SaveDialog and Agent atomic-download path.
+    // Only an explicitly claimed Viewer action supplies correlation; selection
+    // and archive downloads retain their original two-argument behavior.
+    downloadItems: (items, clientRequestID) => items.length === 1
+      ? agent.cloudDownload(items[0].node.id, items[0].node.name, clientRequestID)
       : agent.cloudDownloadArchive(items.map((item) => item.node.id)),
+    // An older Agent can still save through the original two-argument API.
+    // Only a runtime-advertised capability may activate exact Viewer bytes.
+    ...(downloadCorrelationSupported && typeof globalThis.crypto?.getRandomValues === 'function'
+      ? { viewerDownloadReceipt: {
+      createRequestID: () => Array.from(
+        globalThis.crypto.getRandomValues(new Uint8Array(16)),
+        byte => byte.toString(16).padStart(2, '0'),
+      ).join(''),
+      // Subscribe only in the mounted Viewer, avoiding a Gallery-wide rerender
+      // for every streamed byte receipt. Never expose Agent local paths.
+      subscribe: listener => agent.onTransfers(snapshot => listener(snapshot.transfers)),
+      snapshot: async () => {
+        // Preload exposes getTransfers(): Promise<AgentTransfers>, not the
+        // raw AgentClient REST result. Reuse the authenticated IPC snapshot.
+        const snapshot = await agent.getTransfers()
+        return snapshot.transfers
+      },
+    } } : {}),
     exportLivePhoto: (item) => {
       const ids = xDriveCompleteLivePhotoOriginalNodeIDs(item)
       return ids.length === 1

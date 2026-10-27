@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..')
 let width = 390
 const host = tag => ({ children, ...props }) => React.createElement(tag, props, children)
 const mui = {
-  Box: host('div'), Stack: host('div'),
+  Box: host('div'), Stack: host('div'), Typography: host('span'),
   IconButton: host('button'), MenuItem: host('menuitem'),
   Menu: ({ open, children, ...props }) => open ? React.createElement('menu', props, children) : null,
   Tooltip: ({ children }) => children,
@@ -39,6 +39,13 @@ const ui = {
   './MediaGalleryViewerLocationDialog': { XDriveMediaGalleryViewerLocationDialog: () => null },
   './MediaGalleryFilmstrip': { XDriveMediaGalleryFilmstrip: () => null },
   './MediaViewerContent': { XDriveMediaViewerContent: props => React.createElement('test-media-content', props) },
+  // Non-Desktop contexts have no correlated Agent Task Center port; retain
+  // the real Viewer action/gesture behavior without inventing a download.
+  './useViewerDownloadReceipt': {
+    useXDriveViewerDownloadReceipt: () => ({
+      claim: () => undefined, dismiss: () => {}, text: '', announce: false,
+    }),
+  },
   '../media-edit': { xDriveMediaItemSupportsBasicEditing: () => true },
   '../media-viewer': { xDriveMediaCaptureTimeLabel: () => '' },
 }
