@@ -2,7 +2,7 @@
 
 ## iOS PWA parity
 
-The shared iOS PWA `MediaGallerySelectionReviewDialog.tsx` lists **only actually selected** Owner media, supporting search, remove, clear, pagination (100/page), and return. Android's native Compose Selection mode caps selections to 200 currently loaded Owner photo/video rows. This increment adds **查看已选项** and a real native dialog without creating a new Owner index, selecting unloaded Gallery Range pages, or issuing any Server write.
+The shared iOS PWA `MediaGallerySelectionReviewDialog.tsx` lists **only actually selected** Owner media, supporting search, remove, clear, pagination (100/page), and return. Android's native Compose Selection mode caps selections to 200 currently loaded Owner photo/video rows. The **查看已选项** dialog itself performs no Server write and does not create an index or select unloaded Range pages. A separate **添加到相册** action performs the real version-fenced Go membership mutation documented below.
 
 ## Behavior
 
@@ -15,7 +15,7 @@ The shared iOS PWA `MediaGallerySelectionReviewDialog.tsx` lists **only actually
 
 JVM tests cover actual selected-name search, remove and clear (with zero favorite/tags API calls), and logout isolation. API35 Compose covers real Gallery → select → review → remove → clear → return; the original Gallery floating dock reappears on selection exit. Four-sort Owner Gallery, thumbnail handling, SAF, and Viewer behavior are preserved.
 
-Stacked **candidate** on #2871: merge that base after exact-head CI, then retarget and validate this PR against latest master. Physical OEM/iOS pixel comparison/production account acceptance = **跳过（未验收）**, not passed.
+**2026-10-28 current checkpoint:** #2871 (Owner Tags) was merged into master as `6d0ac3b5`; this PR has been re-targeted directly to master and is conflict-free at this checkpoint. The new review and manual-album selection code is still **Draft / exact-head CI not yet passed**. Physical OEM/iOS pixel comparison/production account acceptance = **跳过（未验收）**, not passed.
 
 
 ## Gallery 已选照片加入已有手动相册（本 PR 后续增量）
