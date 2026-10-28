@@ -102,6 +102,11 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.Node{}, &meta.File{}, &meta.FileVersion{},
 		&meta.ContentBlob{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
+		// The real media-detail route reads Source collections to show
+		// provenance even when this isolated Owner has no connected sources.
+		// Mirror those empty production tables in this disposable fixture.
+		&meta.Source{}, &meta.SourceItem{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},

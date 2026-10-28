@@ -1745,11 +1745,16 @@ async function testRealHEICOwnerMapCover(browser,mode,port,kind='heic'){
           status:motion.status,bytes:data.byteLength,
           denied:forbidden.status}
       },proof.nodeID)
-      record(mode+': real LIVP HEIC photo exposes same Owner-bound motion Range',
-        liveReceipt.livePhoto===true&&liveReceipt.container==='livp'&&
+      // Keep all three requirements independent: if a new source/Owner
+      // regression occurs, the failure tells us precisely which contract
+      // broke without disclosing a live signed URL or bearer token.
+      record(mode+': actual Gin identifies HEIC LIVP as Live Photo',
+        liveReceipt.livePhoto===true&&liveReceipt.container==='livp')
+      record(mode+': real LIVP motion uses exact signed Owner HTTP 206 Range',
         liveReceipt.motionIssued===true&&
         liveReceipt.mime?.startsWith('video/quicktime')&&
-        liveReceipt.status===206&&liveReceipt.bytes===32&&
+        liveReceipt.status===206&&liveReceipt.bytes===32)
+      record(mode+': other Owner cannot mint LIVP motion stream ticket',
         [403,404].includes(liveReceipt.denied))
       summary.realLIVPMapCoverModes.push(mode)
     }else{
