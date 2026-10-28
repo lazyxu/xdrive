@@ -4190,4 +4190,98 @@ class DriveControllerTest {
         assertNull(c.state.value.error)
         c.close()
     }
+
+    @Test fun groupedOwnerBrowseKeepsFullServerIndexDuringPaginationAndShowInFolder() = runTest {
+        val wanted = FileBrowseArrangement("name", "asc", true, "type")
+        val groups = listOf(
+            FileBrowseGroupIndex("folder", 1, 0),
+            FileBrowseGroupIndex("ext:txt", 200, 1),
+        )
+        val requests = mutableListOf<Int>()
+        var ordinalRequests = 0
+        val api = object : Service() {
+            override suspend fun childrenArranged(
+                accessToken: String, parentId: Long, offset: Int,
+                arrangement: FileBrowseArrangement,
+            ): NodeRange {
+                if (arrangement != wanted) return children(accessToken, parentId, offset)
+                assertEquals("access", accessToken)
+                assertEquals(1L, parentId)
+                requests += offset
+                val rows = (offset until (offset + 100).coerceAtMost(201)).map { index ->
+                    when (index) {
+                        0 -> folder
+                        155 -> file
+                        else -> DriveNode(1000L + index, 1, "other-$index.txt",
+                            "file", size = 12, revision = 1)
+                    }
+                }
+                return NodeRange(rows, 201, offset,
+                    groups = if (offset == 0) groups else emptyList())
+            }
+            override suspend fun childPositionArranged(
+                accessToken: String, parentId: Long, nodeId: Long,
+                arrangement: FileBrowseArrangement,
+            ): DirectoryItemPosition {
+                assertEquals(wanted, arrangement)
+                assertEquals(1L, parentId)
+                assertEquals(file.id, nodeId)
+                ordinalRequests++
+                return DirectoryItemPosition(nodeId, file.revision, 155)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesArrangement(wanted); runCurrent()
+        assertEquals(groups, c.state.value.filesGroups)
+        assertEquals(100, c.state.value.items.size)
+        assertEquals(listOf(0), requests)
+
+        c.loadMore(); runCurrent()
+        assertEquals(200, c.state.value.items.size)
+        assertEquals(groups, c.state.value.filesGroups)
+        assertEquals(listOf(0, 100), requests)
+
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        c.locateCollectionItem(api.favoriteFile); runCurrent()
+        assertEquals(1, ordinalRequests)
+        assertEquals(listOf(0, 100, 100, 0), requests) // One grouped Range plus index.
+        assertEquals(100, c.state.value.browseWindowStart)
+        assertEquals(155 - 100, c.state.value.focusedBrowseIndex)
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        assertEquals(groups, c.state.value.filesGroups)
+        assertEquals(wanted, c.state.value.filesArrangement)
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        c.close()
+    }
+
+    @Test fun missingGroupedServerIndexDoesNotMislabelExistingBrowseRows() = runTest {
+        val wanted = FileBrowseArrangement(group = "size")
+        val api = object : Service() {
+            override suspend fun childrenArranged(
+                accessToken: String, parentId: Long, offset: Int,
+                arrangement: FileBrowseArrangement,
+            ): NodeRange {
+                if (arrangement == FileBrowseArrangement())
+                    return children(accessToken, parentId, offset)
+                return NodeRange(listOf(folder, file), 2, 0)
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(folder, file) else emptyList(), 2, offset) }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val original = c.state.value.items
+        c.changeFilesArrangement(wanted); runCurrent()
+        assertEquals(FileBrowseArrangement(), c.state.value.filesArrangement)
+        assertEquals(original, c.state.value.items)
+        assertTrue(c.state.value.filesGroups.isEmpty())
+        assertTrue(c.state.value.loaded)
+        assertNotNull(c.state.value.error)
+        c.retry(); runCurrent()
+        assertNull(c.state.value.error)
+        assertEquals(original, c.state.value.items)
+        c.close()
+    }
+
 }

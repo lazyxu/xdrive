@@ -103,15 +103,26 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         return
     }
 
+    // The Go group index describes the complete 100k directory, not the loaded
+    // subset; only materialize headers within the current Owner Range window.
+    val visualRows = remember(state.items, state.browseWindowStart,
+        state.filesGroups, state.filesArrangement) {
+        filesBrowseVisualRows(state.items, state.browseWindowStart,
+            state.filesArrangement, state.filesGroups)
+    }
+
     // Changing list ↔ grid or switching folders must use the correct index in
     // the *first rendered frame*. A post-render scrollToItem allowed the grid
     // to show item zero while the actual item-50 assertion ran (CI #40139739454).
     // Key the Lazy state by folder and view; seed it with the last observed
     // viewport index rather than scrolling asynchronously after the new UI mounts.
     key(folderKey, viewMode, state.filesArrangement, state.focusedBrowseEpoch) {
-        val targetIndex = state.focusedBrowseIndex.takeIf {
-            state.focusedBrowseNodeId != null &&
-                state.items.getOrNull(it)?.id == state.focusedBrowseNodeId
+        val targetIndex = state.focusedBrowseNodeId?.takeIf {
+            state.items.getOrNull(state.focusedBrowseIndex)?.id == it
+        }?.let { id ->
+            visualRows.indexOfFirst {
+                it is FilesBrowseVisualRow.File && it.node.id == id
+            }.takeIf { it >= 0 }
         }
         // Select the actual Node in the first frame, not only its parent folder.
         val firstItem = targetIndex ?: anchors.position(folderKey)
@@ -126,13 +137,13 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 else gridState.firstVisibleItemIndex
             }.collect { index -> anchors.record(folderKey, index) }
         }
-        LaunchedEffect(folderKey, viewMode, state.offset, state.items.size, state.hasNext, state.loading, state.error) {
+        LaunchedEffect(folderKey, viewMode, state.offset, state.items.size, visualRows.size, state.hasNext, state.loading, state.error) {
         if (state.hasNext && !state.loading && state.error == null) {
             snapshotFlow {
                 if (viewMode == FileViewMode.LIST) listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 else gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             }.collect { lastVisible ->
-                if (lastVisible >= (state.items.size - 3).coerceAtLeast(0)) controller.loadMore()
+                if (lastVisible >= (visualRows.size - 3).coerceAtLeast(0)) controller.loadMore()
             }
         }
     }
@@ -225,7 +236,11 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 if (state.loaded && state.items.isEmpty() && state.error == null && !state.loading) item {
                     Text("此文件夹为空", Modifier.padding(24.dp))
                 }
-                items(state.items, key = { it.id }) { node ->
+                items(visualRows, key = { it.stableKey }) { row ->
+                    if (row is FilesBrowseVisualRow.Header) {
+                        FilesBrowseGroupHeader(row.index, state.filesArrangement)
+                    } else {
+                    val node = (row as FilesBrowseVisualRow.File).node
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Column {
                         Box {
@@ -276,6 +291,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                         if (node.id != state.items.lastOrNull()?.id)
                             HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outline)
                     }
+                    }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty())) item(key = "paging") {
                     PageTail(state)
@@ -289,7 +305,13 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text("此文件夹为空", Modifier.padding(24.dp))
                     }
-                gridItems(state.items, key = { it.id }) { node ->
+                gridItems(visualRows, key = { it.stableKey },
+                    span = { row -> if (row is FilesBrowseVisualRow.Header)
+                        GridItemSpan(maxLineSpan) else GridItemSpan(1) }) { row ->
+                    if (row is FilesBrowseVisualRow.Header) {
+                        FilesBrowseGroupHeader(row.index, state.filesArrangement)
+                    } else {
+                    val node = (row as FilesBrowseVisualRow.File).node
                     var contextOpen by remember(node.id) { mutableStateOf(false) }
                     Box {
                         Column(Modifier.fillMaxWidth()
@@ -327,6 +349,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                                 onDownload = onDownload, canMutate = !state.loading,
                                  onRetryThumbnail = if (thumbnailFailures[filesThumbnailKey(node)] == true)
                                      ({ thumbnailFailures.remove(filesThumbnailKey(node)); Unit }) else null)
+                    }
                     }
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
@@ -483,6 +506,29 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                 ((state.searchNextCursor.isNotBlank() && state.error == null) ||
                     (state.loading && state.collectionItems.isNotEmpty())))
                 item(key = "search-paging") { PageTail(state) }
+        }
+    }
+}
+
+/** Compact real Go group metadata. Group headers consume no file paging slot. */
+@Composable
+private fun FilesBrowseGroupHeader(
+    group: com.tfluid.xdrive.core.FileBrowseGroupIndex,
+    arrangement: com.tfluid.xdrive.core.FileBrowseArrangement,
+) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+            .testTag("files-group-${group.key}")) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 34.dp)
+            .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(filesBrowseGroupLabel(arrangement, group.key),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f))
+            Text("${group.itemCount} 项",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

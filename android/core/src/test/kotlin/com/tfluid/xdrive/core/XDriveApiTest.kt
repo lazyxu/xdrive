@@ -2092,4 +2092,125 @@ class XDriveApiTest {
         try { FileBrowseArrangement(order = "sideways"); fail("Accepted invalid direction") }
         catch (_: IllegalArgumentException) {}
     }
+
+    @Test fun ownerFilesGroupsComeFromCompleteServerIndexAndMatchPosition() = runBlocking {
+        val arrangement = FileBrowseArrangement(group = "type")
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[
+                    {"id":2,"parent_id":1,"name":"Photos","type":"dir","revision":2},
+                    {"id":3,"parent_id":1,"name":"a.jpg","type":"file","revision":4},
+                    {"id":4,"parent_id":1,"name":"b.jpg","type":"file","revision":4}
+                ],"total_count":3,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"name","order":"asc",
+                "groups":[
+                    {"key":"folder","item_count":1,"start_index":0},
+                    {"key":"ext:jpg","item_count":2,"start_index":1}
+                ]
+            }"""))
+            val first = api.childrenArranged("owner-secret", 1, 0, arrangement)
+            assertEquals(3L, first.totalCount)
+            assertEquals(listOf(
+                FileBrowseGroupIndex("folder", 1, 0),
+                FileBrowseGroupIndex("ext:jpg", 2, 1),
+            ), first.groups)
+            assertEquals(listOf(2L, 3L, 4L), first.items.map { it.id })
+            val request = server.takeRequest()
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            assertEquals("type", request.requestUrl!!.queryParameter("group"))
+            assertEquals("true", request.requestUrl!!.queryParameter("folders_first"))
+            assertEquals("100", request.requestUrl!!.queryParameter("limit"))
+
+            server.enqueue(MockResponse().setBody("""{
+                "node_id":4,"revision":4,"index":2,"sort":"name","order":"asc",
+                "group":"type","folders_first":true
+            }"""))
+            val position = api.childPositionArranged("owner-secret", 1, 4, arrangement)
+            assertEquals(2, position.index)
+            val pos = server.takeRequest()
+            assertEquals("type", pos.requestUrl!!.queryParameter("group"))
+            assertEquals("Bearer owner-secret", pos.getHeader("Authorization"))
+        } }
+    }
+
+    @Test fun ownerFilesGroupIndexRejectsMissingDuplicateOverlappingAndWrongBuckets() = runBlocking {
+        val target = FileBrowseArrangement(group = "type")
+        val node = """{"id":2,"parent_id":1,"name":"a.jpg","type":"file","revision":1}"""
+        fun payload(groups: String) =
+            """{"items":[$node],"total_count":1,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"name","order":"asc",$groups}"""
+        val bad = listOf(
+            """ "groups":[{"key":"ext:jpg","item_count":1,"start_index":1}] """,
+            """ "groups":[{"key":"ext:jpg","item_count":2,"start_index":0}] """,
+            """ "groups":[{"key":"ext:jpg","item_count":0,"start_index":0}] """,
+            """ "groups":[{"key":"unknown","item_count":1,"start_index":0}] """,
+            """ "groups":[{"key":"ext:jpg","item_count":1,"start_index":0},
+                         {"key":"ext:jpg","item_count":1,"start_index":1}] """,
+            """ "groups":[] """,
+            """ "groups":"not-an-index" """,
+        )
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            server.enqueue(MockResponse().setBody("""{
+                "items":[$node],"total_count":1,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"name","order":"asc"
+            }"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.childrenArranged("owner-secret", 1, 0, target) }.reason)
+            server.takeRequest()
+            for (index in bad) {
+                server.enqueue(MockResponse().setBody(payload(index)))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.childrenArranged("owner-secret", 1, 0, target) }.reason)
+                server.takeRequest()
+            }
+            // Empty directory is valid, but only with an empty, explicit index.
+            server.enqueue(MockResponse().setBody("""{
+                "items":[],"total_count":0,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"name","order":"asc","groups":[]
+            }"""))
+            assertTrue(api.childrenArranged("owner-secret", 1, 0, target).groups.isEmpty())
+            server.takeRequest()
+
+            // A 100k directory's offset page does not send/allocate the complete
+            // group index a second time. Keep first-page metadata in Controller.
+            server.enqueue(MockResponse().setBody("""{
+                "items":[],"total_count":100,"total_count_included":true,
+                "offset":100,"limit":100,"sort":"name","order":"asc"
+            }"""))
+            assertTrue(api.childrenArranged("owner-secret", 1, 100, target).groups.isEmpty())
+            server.takeRequest()
+        } }
+    }
+
+    @Test fun ownerFilesModifiedAndSizeGroupKeysAreStrictlyValidated() = runBlocking {
+        for ((kind, key) in listOf(
+            "modified" to "month:2026-10",
+            "modified" to "unknown",
+            "size" to "tiny",
+            "size" to "large",
+        )) {
+            val arrangement = FileBrowseArrangement(group = kind)
+            MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+                server.enqueue(MockResponse().setBody("""{
+                    "items":[{"id":4,"parent_id":1,"name":"sample.jpg",
+                       "type":"file","revision":1}],
+                    "total_count":1,"total_count_included":true,
+                    "offset":0,"limit":100,"sort":"name","order":"asc",
+                    "groups":[{"key":"$key","item_count":1,"start_index":0}]
+                }"""))
+                assertEquals(key, api.childrenArranged("owner-secret", 1, 0, arrangement)
+                    .groups.single().key)
+                assertEquals(kind, server.takeRequest().requestUrl!!.queryParameter("group"))
+            } }
+        }
+        for ((kind, key) in listOf(
+            "modified" to "month:2026-13",
+            "modified" to "today",
+            "size" to "oversized",
+            "type" to "ext:",
+        )) {
+            assertFalse(validFilesGroupKey(kind, key))
+        }
+    }
+
 }

@@ -51,6 +51,8 @@ data class DriveState(
     val filesSection: FilesSection = FilesSection.BROWSE,
     /** Current login's full Owner range order, never reorder a sparse client page. */
     val filesArrangement: FileBrowseArrangement = FileBrowseArrangement(),
+    /** Genuine Owner group index for the directory's full logical range. */
+    val filesGroups: List<FileBrowseGroupIndex> = emptyList(),
     val collectionItems: List<DriveCollectionItem> = emptyList(),
     val collectionLoaded: Boolean = false,
     val searchQuery: String = "",
@@ -1417,6 +1419,20 @@ class DriveController(
                 service.childrenArranged(it, location.parentId, pageStart, arrangement)
             }
             checkCurrent(ticket)
+            // The position response is O(1). For a grouped jump into a deep
+            // 100k directory, fetch only the first bounded page to obtain Go's
+            // full group-index metadata, never enumerate preceding siblings.
+            val groups = if (arrangement.group != "none" && pageStart > 0) {
+                val first = authenticated(service, ticket) {
+                    service.childrenArranged(it, location.parentId, 0, arrangement)
+                }
+                checkCurrent(ticket)
+                if (first.offset != 0 || first.totalCount != page.totalCount ||
+                    (first.totalCount > 0L && first.groups.isEmpty()))
+                    throw ApiException(0, "Owner directory group index changed",
+                        ApiFailureReason.INVALID_RESPONSE)
+                first.groups
+            } else page.groups
             val localIndex = position.index - pageStart
             if (page.offset != pageStart || page.totalCount <= position.index.toLong() ||
                 localIndex !in page.items.indices)
@@ -1443,6 +1459,7 @@ class DriveController(
                 filesSection = FilesSection.BROWSE, path = path,
                 items = page.items, offset = pageStart, browseWindowStart = pageStart,
                 totalCount = page.totalCount, loaded = true,
+                filesGroups = groups,
                 focusedBrowseNodeId = exactNode.id, focusedBrowseIndex = localIndex,
                 focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
                 selected = null, error = null,
@@ -2991,6 +3008,7 @@ class DriveController(
                 throw ApiException(0, "Previous directory range changed", ApiFailureReason.INVALID_RESPONSE)
             mutableState.value = latest.copy(
                 items = page.items + latest.items, browseWindowStart = offset,
+                filesGroups = if (offset == 0) page.groups else latest.filesGroups,
                 focusedBrowseIndex = latest.focusedBrowseIndex + page.items.size,
                 error = null,
             )
@@ -3023,6 +3041,8 @@ class DriveController(
                 latest.path != path || latest.filesArrangement != current.filesArrangement)
                 throw CancellationException()
             if (page.offset != 0 || page.totalCount < 0 ||
+                (target.group != "none" && page.totalCount > 0L &&
+                    page.groups.isEmpty()) ||
                 page.items.size.toLong() != minOf(100L, page.totalCount) ||
                 page.items.map { it.id }.toSet().size != page.items.size ||
                 page.items.any { it.parentId != path.last().id })
@@ -3031,6 +3051,7 @@ class DriveController(
             mutableState.value = latest.copy(
                 filesArrangement = target, items = page.items, loaded = true,
                 offset = 0, browseWindowStart = 0, totalCount = page.totalCount,
+                filesGroups = page.groups,
                 focusedBrowseNodeId = null, focusedBrowseIndex = 0,
                 focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
                 browseSelectionMode = false, browseSelectedIds = emptySet(),
@@ -3075,11 +3096,20 @@ class DriveController(
         // when a stale count disagrees with the actual Server range.
         if (page.items.isEmpty() && page.totalCount > offset)
             throw ApiException(0, "Empty range with remaining count", ApiFailureReason.INVALID_RESPONSE)
+        if (arrangement.group != "none" && offset == 0 &&
+            page.totalCount > 0L && page.groups.isEmpty())
+            throw ApiException(0, "Owner Files group index missing",
+                ApiFailureReason.INVALID_RESPONSE)
         val rows = if (append) (previous.items + page.items).distinctBy { it.id } else page.items
         if (append && rows.size == previous.items.size && offset + 100L < page.totalCount)
             throw ApiException(0, "Repeated range without progress", ApiFailureReason.INVALID_RESPONSE)
         mutableState.value = previous.copy(
             path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
+            filesGroups = if (arrangement.group == "none") emptyList()
+                else if (page.offset == 0) page.groups
+                else if (previous.path == resolved &&
+                    previous.filesArrangement == arrangement) previous.filesGroups
+                else emptyList(),
             loaded = true, selected = null, error = null,
             browseWindowStart = if (append) previous.browseWindowStart else page.offset,
             focusedBrowseNodeId = if (append) previous.focusedBrowseNodeId else null,

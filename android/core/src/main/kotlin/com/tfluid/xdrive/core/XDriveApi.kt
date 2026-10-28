@@ -67,14 +67,36 @@ data class FileBrowseArrangement(
     val sort: String = "name",
     val order: String = "asc",
     val foldersFirst: Boolean = true,
+    val group: String = "none",
 ) {
     init {
         require(sort in setOf("name", "updated", "type", "size")) { "Invalid Files sort" }
         require(order in setOf("asc", "desc")) { "Invalid Files order" }
+        require(group in setOf("none", "type", "modified", "size")) { "Invalid Files grouping" }
     }
 }
 
-data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
+/** Server-indexed group spans, never client-grouped sparse directory rows. */
+data class FileBrowseGroupIndex(
+    val key: String, val itemCount: Long, val startIndex: Long,
+)
+
+internal fun validFilesGroupKey(group: String, key: String): Boolean {
+    if (key.isEmpty() || key.toByteArray(Charsets.UTF_8).size > 256) return false
+    return when (group) {
+        "type" -> key == "folder" || key == "other" ||
+            (key.startsWith("ext:") && key.length > 4)
+        "modified" -> key == "unknown" ||
+            Regex("""month:\d{4}-(0[1-9]|1[0-2])""").matches(key)
+        "size" -> key in setOf("folder", "empty", "tiny", "small", "medium", "large")
+        else -> false
+    }
+}
+
+data class NodeRange(
+    val items: List<DriveNode>, val totalCount: Long, val offset: Int,
+    val limit: Int = 100, val groups: List<FileBrowseGroupIndex> = emptyList(),
+)
 
 /** Only top-level deleted roots are recoverable; their descendants move with them. */
 data class TrashEntry(val node: DriveNode, val deletedAt: String)
@@ -411,7 +433,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(parentId > 0 && offset >= 0) { "Invalid directory range" }
         val query = mapOf("offset" to "$offset", "limit" to "100",
             "sort" to arrangement.sort, "order" to arrangement.order,
-            "group" to "none", "folders_first" to arrangement.foldersFirst.toString(),
+            "group" to arrangement.group,
+            "folders_first" to arrangement.foldersFirst.toString(),
             "include_count" to "true")
         val result = request("nodes/$parentId/children", accessToken, query = query)
         // Do not silently show a different Server ordering as if sort succeeded.
@@ -431,7 +454,36 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         if (items.size.toLong() != minOf(100L, maxOf(0L, count - offset.toLong())) ||
             items.map { it.id }.toSet().size != items.size || items.any { it.parentId != parentId }) invalidPayload()
-        return NodeRange(items, count, offset)
+
+        val rawGroups = result["groups"]
+        val groups = if (arrangement.group != "none" && offset == 0) {
+            // Go omits an empty group's optional JSON field (omitempty).
+            val entries = when (rawGroups) {
+                null, JsonNull -> if (count == 0L) JsonArray(emptyList()) else invalidPayload()
+                is JsonArray -> rawGroups
+                else -> invalidPayload()
+            }
+            if (entries.size > 25_000 || entries.size.toLong() > count) invalidPayload()
+            val keys = HashSet<String>()
+            var next = 0L
+            entries.map { raw ->
+                val group = raw as? JsonObject ?: invalidPayload()
+                val key = group.string("key")
+                val start = group.long("start_index")
+                val size = group.long("item_count")
+                if (!validFilesGroupKey(arrangement.group, key) ||
+                    !keys.add(key) || start != next || size <= 0 || size > count - next)
+                    invalidPayload()
+                next += size
+                FileBrowseGroupIndex(key, size, start)
+            }.also { if (next != count) invalidPayload() }
+        } else {
+            if (rawGroups != null && rawGroups != JsonNull &&
+                (rawGroups !is JsonArray || rawGroups.isNotEmpty()))
+                invalidPayload()
+            emptyList()
+        }
+        return NodeRange(items, count, offset, groups = groups)
     }
 
     /** Use the already-configured Owner-authenticated OkHttp request pipeline. */
@@ -476,7 +528,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(parentId > 0 && nodeId > 0 && validToken(accessToken))
         val result = request("nodes/$parentId/children/position", accessToken, query = mapOf(
             "node_id" to nodeId.toString(), "sort" to arrangement.sort,
-            "order" to arrangement.order, "group" to "none",
+            "order" to arrangement.order, "group" to arrangement.group,
             "folders_first" to arrangement.foldersFirst.toString(),
         ))
         val index = result.long("index")
@@ -485,7 +537,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             index < 0 || index > Int.MAX_VALUE ||
             result.string("sort") != arrangement.sort ||
             result.string("order") != arrangement.order ||
-            result.string("group") != "none" ||
+            result.string("group") != arrangement.group ||
             result["folders_first"] != JsonPrimitive(arrangement.foldersFirst)) invalidPayload()
         return DirectoryItemPosition(nodeId, revision, index.toInt())
     }
