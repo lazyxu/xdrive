@@ -4630,8 +4630,8 @@ export class AgentIPCClient {
     }, 45_000)
   }
 
-  cloudStorageStats() {
-    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats')
+  cloudStorageStats(signal?: AbortSignal) {
+    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats', undefined, 10_000, signal)
   }
 
   cloudCleanupStorageCache(kind: AgentStorageCacheCleanupKind) {
