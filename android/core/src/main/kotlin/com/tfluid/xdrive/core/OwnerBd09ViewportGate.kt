@@ -99,8 +99,13 @@ internal class OwnerBd09ViewportGate(
     fun succeeded(permit: Bd09ViewportPermit, cells: OwnerBd09MapCells): Boolean {
         if (inFlight != permit || permit.sessionEpoch != sessionEpoch) return false
         inFlight = null
-        if (viewport != permit.bounds || motionEpoch != permit.motionEpoch ||
-            !validCellSnapshot(permit.bounds, cells)) return false
+        if (viewport != permit.bounds || motionEpoch != permit.motionEpoch) return false
+        if (!validCellSnapshot(permit.bounds, cells)) {
+            // An invalid Owner response is a failed read, not a new permit to
+            // issue the same GET every frame until rate limits are exhausted.
+            blockedAfterFailure = permit.bounds
+            return false
+        }
         cache[permit.bounds] = cells
         delivered = true
         return true
