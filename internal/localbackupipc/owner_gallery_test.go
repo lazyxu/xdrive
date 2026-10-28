@@ -45,7 +45,9 @@ func TestOwnerGalleryReadRequiresIndependentAgentCapability(t *testing.T) {
 	if _, err := agent.OwnerGalleryAlbums(context.Background()); err == nil {
 		t.Fatal("unadvertised Owner albums capability was accessible")
 	}
-	if calls != 0 { t.Fatal("unauthorized client called the Agent") }
+	if calls != 0 {
+		t.Fatal("unauthorized client called the Agent")
+	}
 	agent.capabilities = []string{"cloud-owner-gallery-read"}
 	page, err := agent.OwnerGalleryItemsRange(context.Background(), "all", 100, 0, "")
 	if err != nil || len(page.Items) != 1 || page.Items[0].Node.ParentID != 17 {
@@ -55,8 +57,14 @@ func TestOwnerGalleryReadRequiresIndependentAgentCapability(t *testing.T) {
 	if err != nil || len(albums) != 1 || albums[0].ID != "manual:abc" {
 		t.Fatalf("genuine Owner albums read failed: %+v, %v", albums, err)
 	}
-	if calls != 2 { t.Fatalf("unexpected Agent calls: %d", calls) }
-	for _, bad := range []struct { kind string; limit, offset int; album string }{
+	if calls != 2 {
+		t.Fatalf("unexpected Agent calls: %d", calls)
+	}
+	for _, bad := range []struct {
+		kind          string
+		limit, offset int
+		album         string
+	}{
 		{"all", 0, 0, ""}, {"all", 101, 0, ""}, {"other", 100, 0, ""},
 		{"all", 100, -1, ""}, {"all", 100, 0, "../private"},
 		{"all", 100, 0, "manual:evil?op=run"},
@@ -66,5 +74,7 @@ func TestOwnerGalleryReadRequiresIndependentAgentCapability(t *testing.T) {
 			t.Errorf("invalid Owner Gallery selector admitted: %+v", bad)
 		}
 	}
-	if calls != 2 { t.Fatal("invalid range selector contacted authenticated Agent") }
+	if calls != 2 {
+		t.Fatal("invalid range selector contacted authenticated Agent")
+	}
 }

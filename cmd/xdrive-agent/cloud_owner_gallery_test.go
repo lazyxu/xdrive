@@ -47,7 +47,9 @@ func TestOwnerGalleryReadOnlyBackupOnlyCapability(t *testing.T) {
 	caps := desktopIPCCapabilitiesForRuntime(true)
 	found := false
 	for _, capability := range caps {
-		if capability == "cloud-owner-gallery-read" { found = true }
+		if capability == "cloud-owner-gallery-read" {
+			found = true
+		}
 		if capability == "media-gallery" {
 			t.Fatal("Backup-only must not gain the full Desktop media RPC")
 		}
