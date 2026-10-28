@@ -78,6 +78,10 @@ data class DriveState(
     val galleryPrimaryTab: GalleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
     val galleryAlbums: List<GalleryAlbum> = emptyList(),
     val galleryAlbumsLoaded: Boolean = false,
+    /** A possibly committed collection create POST must be reconciled by GET. */
+    val galleryAlbumCreateAttempted: Boolean = false,
+    /** POST ACK was valid; list GET may be retried, never the POST. */
+    val galleryAlbumCreateCommittedNeedsRefresh: Boolean = false,
     val gallerySelectedAlbum: GalleryAlbum? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
@@ -1577,7 +1581,8 @@ class DriveController(
 
     fun openFilesApp() {
         val current = state.value
-        if (current.screen != Screen.GALLERY || current.galleryMetadataWriteAttempted) return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryMetadataWriteAttempted || current.galleryAlbumCreateAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.FILES, loading = false, error = null,
@@ -1604,7 +1609,7 @@ class DriveController(
             previous.galleryViewer != null || previous.fileUploadActive ||
             previous.fileDownloadActive ||
             previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS ||
-            previous.galleryMetadataWriteAttempted) return
+            previous.galleryMetadataWriteAttempted || previous.galleryAlbumCreateAttempted) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(
             galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
@@ -1630,7 +1635,60 @@ class DriveController(
                 latest.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
                 latest.gallerySelectedAlbum != null) throw CancellationException()
             mutableState.value = latest.copy(galleryAlbums = albums,
-                galleryAlbumsLoaded = true, error = null)
+                galleryAlbumsLoaded = true, galleryAlbumCreateAttempted = false,
+                galleryAlbumCreateCommittedNeedsRefresh = false, error = null)
+        }
+    }
+
+    /** Create a real empty manual PhotoCollection, never a local-only album.
+     * A missing POST ACK freezes another write until explicit read-only GET. */
+    fun createGalleryManualAlbum(input: String) {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            current.gallerySelectedAlbum != null || !current.galleryAlbumsLoaded ||
+            current.loading || current.error != null ||
+            current.galleryAlbumCreateAttempted ||
+            current.galleryAlbumCreateCommittedNeedsRefresh ||
+            current.galleryMetadataWriteAttempted || session == null) return
+        val name = normalizeGalleryManualAlbumName(input)
+        if (name == null) {
+            mutableState.value = current.copy(error = "相册名称不能为空，且最多 200 个字符。")
+            return
+        }
+        mutableState.value = current.copy(galleryAlbumCreateAttempted = true)
+        request { ticket ->
+            val created = authenticatedMutation(ticket) {
+                service.createGalleryManualAlbum(it, name)
+            }
+            checkCurrent(ticket)
+            if (created.kind != "manual" || created.name != name ||
+                created.revision != 1L || created.itemCount != 0L ||
+                created.albumFolderId != 0L || created.coverNodeId != null ||
+                !created.id.startsWith("manual:") || created.id.length !in 8..512 ||
+                created.id != created.id.trim() ||
+                created.id.any { it.isISOControl() })
+                throw ApiException(0, "Manual album ACK mismatch",
+                    ApiFailureReason.INVALID_RESPONSE)
+            val acknowledged = state.value
+            mutableState.value = acknowledged.copy(
+                galleryAlbumCreateAttempted = false,
+                galleryAlbumCreateCommittedNeedsRefresh = true,
+                galleryAlbums = emptyList(), galleryAlbumsLoaded = false, error = null)
+            // ACK is final. Later failure may retry GET, never re-issue POST.
+            val albums = authenticated(service, ticket) { service.galleryAlbums(it) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY ||
+                latest.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+                latest.gallerySelectedAlbum != null ||
+                albums.none { it == created })
+                throw ApiException(0, "Created manual album missing from Owner GET",
+                    ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(galleryAlbums = albums,
+                galleryAlbumsLoaded = true, galleryAlbumCreateAttempted = false,
+                galleryAlbumCreateCommittedNeedsRefresh = false, error = null)
         }
     }
 
@@ -1662,6 +1720,7 @@ class DriveController(
         if (previous.screen != Screen.GALLERY || session == null ||
             previous.galleryViewer != null || previous.fileUploadActive ||
             previous.fileDownloadActive || previous.galleryMetadataWriteAttempted ||
+            previous.galleryAlbumCreateAttempted ||
             (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 previous.gallerySelectedAlbum == null)) return
         invalidate()
@@ -1710,7 +1769,7 @@ class DriveController(
             previous.loading || previous.galleryViewer != null ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
             previous.gallerySelectedAlbum != null || !previous.galleryAlbumsLoaded ||
-            previous.galleryMetadataWriteAttempted ||
+            previous.galleryMetadataWriteAttempted || previous.galleryAlbumCreateAttempted ||
             previous.galleryAlbums.none { it == album }) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = album,
@@ -2749,6 +2808,14 @@ class DriveController(
                     } else if (state.value.trashRestoreAttempted) {
                         mutableState.value = state.value.copy(trashLoaded = false,
                             error = "恢复结果未确认，请刷新回收站核对，勿重复提交。")
+                    } else if (state.value.galleryAlbumCreateAttempted) {
+                        mutableState.value = state.value.copy(
+                            galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                            error = "新建相册结果未确认，请刷新相册核对；不要重复提交。")
+                    } else if (state.value.galleryAlbumCreateCommittedNeedsRefresh) {
+                        mutableState.value = state.value.copy(
+                            galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                            error = "相册已创建，但列表刷新失败；请只重试读取相册。")
                     } else if (state.value.galleryMetadataWriteAttempted) {
                         mutableState.value = state.value.copy(
                             error = "图库批量操作结果未确认，请刷新核对后再操作；切勿重复提交。")

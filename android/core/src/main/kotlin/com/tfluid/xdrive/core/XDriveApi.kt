@@ -148,6 +148,29 @@ internal fun validGalleryAlbumId(id: String): Boolean =
             id.startsWith(prefix) && id.length > prefix.length
         }
 
+/** Go-compatible manual album name preflight, with Server authoritative.
+ * Reject malformed surrogate pairs rather than silently replacing characters. */
+fun normalizeGalleryManualAlbumName(input: String): String? {
+    val name = input.trim()
+    if (name.isEmpty() || name.length > 400 ||
+        name.codePointCount(0, name.length) > 200 ||
+        name.any { it.isISOControl() }) return null
+    var index = 0
+    while (index < name.length) {
+        val char = name[index]
+        when {
+            Character.isHighSurrogate(char) -> {
+                if (index + 1 >= name.length ||
+                    !Character.isLowSurrogate(name[index + 1])) return null
+                index += 2
+            }
+            Character.isLowSurrogate(char) -> return null
+            else -> index++
+        }
+    }
+    return name
+}
+
 /** Parse the same comma-separated native tag draft as the PWA, with the Go
  * limits (1..32 tags, <=64 Unicode scalars/tag, no controls). Server remains
  * the authority for Unicode normalisation, identity and metadata ownership. */
@@ -257,6 +280,9 @@ interface XDriveService {
     /** Read-only Collections: use the existing PhotoCollection and member-Range APIs. */
     suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> =
         throw ApiException(501, "Gallery albums unavailable")
+    /** One Owner-authenticated manual collection creation; no retry or second writer. */
+    suspend fun createGalleryManualAlbum(accessToken: String, name: String): GalleryAlbum =
+        throw ApiException(501, "Manual album creation unavailable")
     /** Optional: the cover Node is resolved by the same Owner Server, never
      * read from Android's local media library or guessed from album members. */
     suspend fun galleryAlbumCover(accessToken: String, album: GalleryAlbum): GalleryAlbumCover? =
@@ -879,30 +905,53 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return GalleryAsset(original, kind, captured, duration, live, thumbnail)
     }
 
+    /** Decode both Owner lists and create ACKs through one strict contract. */
+    private fun galleryAlbumDTO(entry: JsonObject): GalleryAlbum {
+        val id = entry.string("id")
+        val kind = entry.string("kind")
+        val name = entry.string("name")
+        val revision = entry.long("revision")
+        val folder = entry.long("album_folder_id")
+        val count = entry.long("item_count")
+        val cover = when (entry["cover_node_id"]) {
+            null, JsonNull -> null
+            else -> entry.long("cover_node_id").also { if (it <= 0) invalidPayload() }
+        }
+        if (!validGalleryAlbumId(id) ||
+            kind !in setOf("folder", "imported", "manual", "smart") ||
+            name.isBlank() || name.length > 400 ||
+            name.codePointCount(0, name.length) > 200 ||
+            name.any { it.isISOControl() } ||
+            count < 0 || revision < 0 || folder < 0) invalidPayload()
+        return GalleryAlbum(id, kind, name, count, revision, folder, cover)
+    }
+
     override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
         val records = requestArray("media/albums", accessToken)
         if (records.size > 4096) invalidPayload()
         val seen = HashSet<String>()
         return records.map { element ->
-            val entry = element as? JsonObject ?: invalidPayload()
-            val id = entry.string("id")
-            val kind = entry.string("kind")
-            val name = entry.string("name")
-            val revision = entry.long("revision")
-            val folder = entry.long("album_folder_id")
-            val count = entry.long("item_count")
-            val cover = when (entry["cover_node_id"]) {
-                null, JsonNull -> null
-                else -> entry.long("cover_node_id").also { if (it <= 0) invalidPayload() }
-            }
-            if (!validGalleryAlbumId(id) || !seen.add(id) ||
-                kind !in setOf("folder", "imported", "manual", "smart") ||
-                name.isBlank() || name.length > 400 ||
-                name.codePointCount(0, name.length) > 200 ||
-                name.any { it.isISOControl() } ||
-                count < 0 || revision < 0 || folder < 0) invalidPayload()
-            GalleryAlbum(id, kind, name, count, revision, folder, cover)
+            val album = galleryAlbumDTO(element as? JsonObject ?: invalidPayload())
+            if (!seen.add(album.id)) invalidPayload()
+            album
         }
+    }
+
+    /** A single POST to Go PhotoCollection; the Owner list is not synthesized. */
+    override suspend fun createGalleryManualAlbum(
+        accessToken: String, name: String,
+    ): GalleryAlbum {
+        val normalized = normalizeGalleryManualAlbumName(name)
+            ?: throw IllegalArgumentException("Invalid manual album name")
+        require(validToken(accessToken))
+        val result = galleryAlbumDTO(request(
+            "media/albums", accessToken, values = mapOf("name" to normalized),
+        ))
+        if (result.kind != "manual" || !result.id.startsWith("manual:") ||
+            result.name != normalized || result.revision != 1L ||
+            result.itemCount != 0L || result.albumFolderId != 0L ||
+            result.coverNodeId != null) invalidPayload()
+        return result
     }
 
     /** Resolve only the real Server-provided cover_node_id. The album list

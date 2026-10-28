@@ -680,6 +680,110 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun manualAlbumCreateOneAckThenAuthoritativeOwnerGet() = runTest {
+        val created = GalleryAlbum("manual:new", "manual", "旅行", 0, 1, 0)
+        val api = object : Service() {
+            var posts = 0
+            var reads = 0
+            var stored: GalleryAlbum? = null
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                reads++
+                return listOfNotNull(stored)
+            }
+            override suspend fun createGalleryManualAlbum(
+                accessToken: String, name: String,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals("旅行", name)
+                posts++
+                stored = created
+                return created
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(1, api.reads)
+        c.createGalleryManualAlbum(" 旅行 "); runCurrent()
+        assertEquals(1, api.posts)
+        assertEquals(2, api.reads)
+        assertEquals(listOf(created), c.state.value.galleryAlbums)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertFalse(c.state.value.galleryAlbumCreateAttempted)
+        assertFalse(c.state.value.galleryAlbumCreateCommittedNeedsRefresh)
+        c.close()
+    }
+
+    @Test fun manualAlbumUnknownAckFreezesWritesUntilReadOnlyOwnerGet() = runTest {
+        val api = object : Service() {
+            var posts = 0
+            var reads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                reads++
+                return emptyList()
+            }
+            override suspend fun createGalleryManualAlbum(
+                accessToken: String, name: String,
+            ): GalleryAlbum {
+                posts++
+                throw ApiException(503, "ACK missing")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.createGalleryManualAlbum("旅行"); runCurrent()
+        assertEquals(1, api.posts)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertTrue(c.state.value.galleryAlbumCreateAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.createGalleryManualAlbum("旅行"); runCurrent()
+        assertEquals(1, api.posts)
+        c.retryGalleryAlbums(); runCurrent()
+        assertEquals(2, api.reads)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertFalse(c.state.value.galleryAlbumCreateAttempted)
+        assertEquals(1, api.posts)
+        c.close()
+    }
+
+    @Test fun manualAlbumAckedButListFailureNeverReplaysPost() = runTest {
+        val created = GalleryAlbum("manual:new", "manual", "旅行", 0, 1, 0)
+        val api = object : Service() {
+            var posts = 0
+            var reads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                reads++
+                if (reads == 2) throw ApiException(503, "GET failed")
+                return if (reads > 2) listOf(created) else emptyList()
+            }
+            override suspend fun createGalleryManualAlbum(
+                accessToken: String, name: String,
+            ): GalleryAlbum {
+                posts++
+                return created
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.createGalleryManualAlbum("旅行"); runCurrent()
+        assertEquals(1, api.posts)
+        assertTrue(c.state.value.galleryAlbumCreateCommittedNeedsRefresh)
+        assertTrue(requireNotNull(c.state.value.error).contains("已创建"))
+        c.createGalleryManualAlbum("旅行"); runCurrent()
+        assertEquals(1, api.posts)
+        c.retryGalleryAlbums(); runCurrent()
+        assertEquals(listOf(created), c.state.value.galleryAlbums)
+        assertFalse(c.state.value.galleryAlbumCreateCommittedNeedsRefresh)
+        assertEquals(1, api.posts)
+        c.close()
+    }
+
     @Test fun realOwnerAlbumsOpenNativeRangeViewerAndReturnWithoutInventingMedia() = runTest {
         val trip = GalleryAlbum("manual:trip", "manual", "旅途", 1, 3, 0)
         val imported = GalleryAlbum("source:phone-1", "imported", "手机", 0, 1, 0)

@@ -538,6 +538,48 @@ class XDriveApiTest {
 
 
 
+    @Test fun manualAlbumCreateOneOwnerPostValidatesAcknowledgement() = runBlocking {
+        assertEquals("暑假 📷", normalizeGalleryManualAlbumName("  暑假 📷  "))
+        assertNull(normalizeGalleryManualAlbumName(" "))
+        assertNull(normalizeGalleryManualAlbumName("a".repeat(201)))
+        assertNull(normalizeGalleryManualAlbumName("bad\u0001name"))
+        assertNull(normalizeGalleryManualAlbumName("\uD800"))
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val ok = """{"id":"manual:generated-1","kind":"manual","name":"暑假",
+                "item_count":0,"revision":1,"album_folder_id":0}"""
+            server.enqueue(MockResponse().setResponseCode(201).setBody(ok))
+            val created = api.createGalleryManualAlbum("owner-secret", " 暑假 ")
+            assertEquals("manual:generated-1", created.id)
+            assertEquals(1L, created.revision)
+            assertEquals(0L, created.itemCount)
+            val post = server.takeRequest()
+            assertEquals("POST", post.method)
+            assertEquals("/api/v1/media/albums", post.path)
+            assertEquals("Bearer owner-secret", post.getHeader("Authorization"))
+            assertEquals("暑假", body(post)["name"]?.jsonPrimitive?.content)
+            assertFalse(post.path!!.contains("owner-secret"))
+
+            server.enqueue(MockResponse().setResponseCode(201).setBody(
+                ok.replace("\"kind\":\"manual\"", "\"kind\":\"imported\"")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.createGalleryManualAlbum("owner-secret", "暑假")
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(503).setBody(
+                """{"error":"reply lost"}"""))
+            assertEquals(503, failure {
+                api.createGalleryManualAlbum("owner-secret", "暑假")
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.createGalleryManualAlbum("owner-secret", " ")
+                fail("Empty manual album name must be rejected")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun `Gallery album listing uses true Owner PhotoCollections and rejects corrupted rows`() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             server.enqueue(MockResponse().setBody("""[
