@@ -23,10 +23,10 @@ func TestBackupAdminDBOnlyRestoreRequiresExactHostInventory(t *testing.T) {
 	}
 	writeBackupTestJSON(t, dir, "backup-admin-inventory.json", inventory)
 	invalid := []string{
-		`{"action":"restore_database_only","snapshot_id":"`+id+`","confirmation":"RESTORE `+id+`"}`,
-		`{"action":"restore_database_only","snapshot_id":"`+testBackupID+`","confirmation":"DATABASE ONLY RESTORE `+testBackupID+`"}`,
+		`{"action":"restore_database_only","snapshot_id":"` + id + `","confirmation":"RESTORE ` + id + `"}`,
+		`{"action":"restore_database_only","snapshot_id":"` + testBackupID + `","confirmation":"DATABASE ONLY RESTORE ` + testBackupID + `"}`,
 		`{"action":"restore_database_only","snapshot_id":"v1:../../etc","confirmation":"DATABASE ONLY RESTORE v1:../../etc"}`,
-		`{"action":"restore_database_only","snapshot_id":"`+id+`","confirmation":"DATABASE ONLY RESTORE `+id+`","repository_dir":"/etc"}`,
+		`{"action":"restore_database_only","snapshot_id":"` + id + `","confirmation":"DATABASE ONLY RESTORE ` + id + `","repository_dir":"/etc"}`,
 	}
 	for _, payload := range invalid {
 		code, _ := runBackupAdminAction(t, server, payload)
@@ -43,13 +43,13 @@ func TestBackupAdminDBOnlyRestoreRequiresExactHostInventory(t *testing.T) {
 		State: "complete", FileDataIncluded: true, CreatedAt: "2026-10-25T03:00:00Z",
 	})
 	writeBackupTestJSON(t, dir, "backup-admin-inventory.json", inventory)
-	body := `{"action":"restore_database_only","snapshot_id":"`+id2+`","confirmation":"DATABASE ONLY RESTORE `+id2+`"}`
+	body := `{"action":"restore_database_only","snapshot_id":"` + id2 + `","confirmation":"DATABASE ONLY RESTORE ` + id2 + `"}`
 	if code, _ := runBackupAdminAction(t, server, body); code != http.StatusConflict {
 		t.Fatalf("full v1 backup accepted as DB-only: %d", code)
 	}
 	inventory.Snapshots[0].State = "inconsistent"
 	writeBackupTestJSON(t, dir, "backup-admin-inventory.json", inventory)
-	body = `{"action":"restore_database_only","snapshot_id":"`+id+`","confirmation":"DATABASE ONLY RESTORE `+id+`"}`
+	body = `{"action":"restore_database_only","snapshot_id":"` + id + `","confirmation":"DATABASE ONLY RESTORE ` + id + `"}`
 	if code, _ := runBackupAdminAction(t, server, body); code != http.StatusConflict {
 		t.Fatalf("inconsistent DB-only snapshot accepted for destructive recovery: %d", code)
 	}
@@ -72,9 +72,9 @@ func TestBackupAdminDBOnlyRestoreRequiresExactHostInventory(t *testing.T) {
 func TestBackupAdminDBOnlyHistoryCannotMasqueradeAsFullRestore(t *testing.T) {
 	record := backupAdminHistoryEntry{
 		backupAdminStatus: backupAdminStatus{
-			Protocol: backupAdminProtocol,
+			Protocol:  backupAdminProtocol,
 			RequestID: "abcdef123456abcdef123456",
-			Action: "restore_database_only", SnapshotID: "v1:xdrive-backup-20261026T030000Z",
+			Action:    "restore_database_only", SnapshotID: "v1:xdrive-backup-20261026T030000Z",
 			State: "success", StartedAt: "2026-10-28T02:00:00Z", FinishedAt: "2026-10-28T02:01:00Z",
 		},
 	}
