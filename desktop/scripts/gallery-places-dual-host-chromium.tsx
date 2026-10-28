@@ -111,7 +111,7 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}
   const otherX=(x+3)%8,otherY=(y+3)%8
-  const other={cell_x:otherX,cell_y:otherY,photo_count:5,asset_id:34,node_id:76,
+  const other={cell_x:otherX,cell_y:otherY,photo_count:5,asset_id:134,node_id:175,
     node_revision:2,latitude:bounds.south+(otherY+0.5)*(bounds.north-bounds.south)/8,
     longitude:bounds.west+(otherX+0.5)*width/8}
   return {coordinate_space:'bd09ll' as const,index_scope:'owner_gps_auto_index' as const,
