@@ -1404,8 +1404,10 @@ export class XDriveApi {
     return result
   }
 
-  adminUsers() {
-    return this.request<AdminUser[]>('/api/v1/admin/users')
+  adminUsers(signal?: AbortSignal) {
+    // Only this disposable administrator list GET participates in renderer
+    // foreground preemption; mutation endpoints retain independent lifetimes.
+    return this.request<AdminUser[]>('/api/v1/admin/users', { signal })
   }
 
   adminAudit(params: {
