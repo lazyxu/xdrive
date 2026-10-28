@@ -107,7 +107,7 @@ func (s *Server) adminBackupSnapshotPage(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	query := c.Request.URL.Query()
 	for key, values := range query {
-		if (key != "offset" && key != "limit") || len(values) != 1 {
+		if (key != "offset" && key != "limit") || len(values) != 1 || values[0] == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_snapshot_page"})
 			return
 		}
