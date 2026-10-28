@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
- import android.provider.OpenableColumns
+import android.provider.OpenableColumns
 import android.os.Bundle
 import java.io.IOException
 import androidx.activity.result.contract.ActivityResultContracts
@@ -186,47 +186,47 @@ class MainActivity : ComponentActivity() {
                 // The app remains interactive while login/navigation is
                 // required; the review dialog appears only for a real folder.
                 Box(Modifier.fillMaxSize()) {
-                DriveApp(model.controller, model.updates, openUpdate = { url ->
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
-                        true
-                    } catch (_: ActivityNotFoundException) { false }
-                    catch (_: SecurityException) { false }
-                }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
-                    onDownload = { node ->
-                        if (model.controller.prepareFileExport(node)) {
-                            try {
-                                fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                    DriveApp(model.controller, model.updates, openUpdate = { url ->
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+                            true
+                        } catch (_: ActivityNotFoundException) { false }
+                        catch (_: SecurityException) { false }
+                    }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
+                        onDownload = { node ->
+                            if (model.controller.prepareFileExport(node)) {
+                                try {
+                                    fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                                }
+                                catch (_: Exception) { model.controller.cancelFileExport() }
                             }
-                            catch (_: Exception) { model.controller.cancelFileExport() }
+                        },
+                        onUpload = {
+                            if (model.controller.prepareFileUpload()) {
+                                try { uploadSource.launch(arrayOf("*/*")) }
+                                catch (_: Exception) { model.controller.cancelFileUploadPicker() }
+                            }
+                        })
+                    val incoming = sharedFile
+                    if (incoming != null) {
+                        // A logout/server switch invalidates a bound source grant.
+                        androidx.compose.runtime.LaunchedEffect(
+                            driveState.screen, driveState.server, driveState.username,
+                        ) {
+                            if (incoming.sourceOwner != null &&
+                                (incoming.sourceOwner != ShareOwnerIdentity(
+                                    driveState.server, driveState.username) ||
+                                    driveState.screen == Screen.LOGIN ||
+                                    driveState.screen == Screen.CONNECT ||
+                                    driveState.screen == Screen.PASSWORD)) {
+                                sharedFile = null
+                                shareError = null
+                            }
                         }
-                    },
-                    onUpload = {
-                        if (model.controller.prepareFileUpload()) {
-                            try { uploadSource.launch(arrayOf("*/*")) }
-                            catch (_: Exception) { model.controller.cancelFileUploadPicker() }
-                        }
-                    })
-                val incoming = sharedFile
-                if (incoming != null) {
-                    // A logout/server switch invalidates a bound source grant.
-                    androidx.compose.runtime.LaunchedEffect(
-                        driveState.screen, driveState.server, driveState.username,
-                    ) {
-                        if (incoming.sourceOwner != null &&
-                            (incoming.sourceOwner != ShareOwnerIdentity(
-                                driveState.server, driveState.username) ||
-                                driveState.screen == Screen.LOGIN ||
-                                driveState.screen == Screen.CONNECT ||
-                                driveState.screen == Screen.PASSWORD)) {
-                            sharedFile = null
-                            shareError = null
-                        }
+                        NativeShareReview(incoming, driveState, shareBusy, shareError,
+                            onDismiss = ::dismissIncomingShare,
+                            onConfirm = ::confirmIncomingShare)
                     }
-                    NativeShareReview(incoming, driveState, shareBusy, shareError,
-                        onDismiss = ::dismissIncomingShare,
-                        onConfirm = ::confirmIncomingShare)
-                }
                 }
             }
         }
