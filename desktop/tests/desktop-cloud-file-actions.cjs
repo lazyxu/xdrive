@@ -100,7 +100,17 @@ test('Desktop uploads dropped files through webUtils without exposing arbitrary 
 
 test('Desktop Agent bridge exposes cursor-paged cloud children without changing the legacy list contract', () => {
   assert.ok(agentClient.includes('cloudChildrenPage(parentID: number, options: {'), 'Desktop AgentClient paged children method is missing')
-  assert.ok(agentClient.includes("return this.request<AgentCloudChildrenPage>('GET'"), 'Desktop AgentClient should return a page contract')
+  // The same GET must keep the original page contract, while the optional
+  // sender-scoped AbortSignal now reaches Agent HTTP on disposable Column reads.
+  // Match the real method instead of depending on single-line source formatting.
+  const pagedClientMethod = agentClient.split('  cloudChildrenPage(')[1]
+    ?.split('  cloudChildrenRange(')[0]
+  assert.ok(pagedClientMethod, 'Desktop AgentClient paged children method is missing')
+  assert.match(pagedClientMethod,
+    /this\.request<AgentCloudChildrenPage>\(\s*'GET'[\s\S]*?10_000,\s*signal,/,
+    'Desktop AgentClient must keep GET page contract, 10s timeout and optional AbortSignal')
+  assert.match(pagedClientMethod, /signal\?: AbortSignal/,
+    'old callers omit signal; new disposable callers can abort transport')
   assert.ok(main.includes("ipcMain.handle('agent:cloud-children-page'"), 'Electron main paged children bridge is missing')
   assert.ok(preload.includes('cloudChildrenPage: ('), 'preload paged children bridge is missing')
   assert.ok(types.includes('type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>'), 'renderer paged children type must alias the shared contract')
