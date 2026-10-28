@@ -2079,6 +2079,128 @@ async function testDelayedBD09Map(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Exercise the ACTUAL production 120-second empty-map interval callback in
+// mounted Chromium, not a manual Refresh click or source regex. Capture only
+// this named timer in the Parent and invoke it synchronously: neither a
+// two-minute test sleep nor a direct fake owner /cells request is permitted.
+// Both SDK Hosts must ignore hidden tabs and recover fresh Owner BD09 photos
+// once the Parent document becomes visible, without remounting the SDK.
+async function testAutomaticBD09VisibilityRecheck(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(25000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.addInitScript(() => {
+    // page.addInitScript may run in the independent isolated Child. Only the
+    // trusted Parent document owns the actual authenticated 120s poll.
+    if(window.top!==window)return
+    const originalSet=window.setInterval.bind(window)
+    const originalClear=window.clearInterval.bind(window)
+    const syntheticTimerID=2147483001
+    window.__xdriveBD09SyntheticHidden=false
+    window.__xdriveBD09IntervalTick=null
+    window.__xdriveBD09IntervalStopped=false
+    Object.defineProperty(document,'visibilityState',{
+      configurable:true,
+      get:()=>window.__xdriveBD09SyntheticHidden?'hidden':'visible',
+    })
+    window.setInterval=(callback,interval,...args)=>{
+      if(interval===120000 && typeof callback==='function'){
+        window.__xdriveBD09IntervalTick=callback
+        window.__xdriveBD09IntervalStopped=false
+        return syntheticTimerID
+      }
+      return originalSet(callback,interval,...args)
+    }
+    window.clearInterval=id=>{
+      if(id===syntheticTimerID){
+        window.__xdriveBD09IntervalStopped=true
+        return
+      }
+      return originalClear(id)
+    }
+  })
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&delayed_bd09=1',{waitUntil:'domcontentloaded'})
+    await page.waitForFunction(()=>
+      window.__mapProbe?.ready===true &&
+      typeof window.__xdriveBD09IntervalTick==='function')
+    await page.locator('[data-xdrive-places-empty-map-recheck]')
+      .waitFor({state:'visible'})
+    await page.waitForTimeout(250)
+    const sdkAtEmpty=mode==='inline' ? inlineSDKLoads : childSDKLoads
+    const old=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      world:window.__mapProbe.queries.some(q=>q.count===0 &&
+        q.bounds.west===-180&&q.bounds.east===180),
+      pins:document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    record(mode+': pending BD09 has a real accepted empty Owner map and poll',
+      old.world && old.pins===0 && old.reads>0)
+    // This test-only button flips fixture source readiness; it must not
+    // call the manual production map Refresh button or start a new Owner read.
+    await page.locator('#fixture-finish-bd09').click()
+    const beforeTick=await page.evaluate(()=>window.__mapProbe.queries.length)
+    await page.evaluate(()=>{
+      window.__xdriveBD09SyntheticHidden=true
+      window.__xdriveBD09IntervalTick()
+    })
+    const hidden=await page.evaluate(()=>window.__mapProbe.queries.length)
+    record(mode+': hidden automatic BD09 poll leaves signed Owner query idle',
+      old.reads===beforeTick&&hidden===beforeTick)
+    await page.evaluate(()=>{
+      window.__xdriveBD09SyntheticHidden=false
+      window.__xdriveBD09IntervalTick()
+    })
+    await page.getByText('当前地图可查看 9 张照片',{exact:true})
+      .waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===9 && q.bounds.west===-180 && q.bounds.east===180))
+    await page.waitForFunction(()=>window.__xdriveBD09IntervalStopped===true)
+    const now=await page.evaluate(()=>{
+      const q=window.__mapProbe.queries
+      return {reads:q.length,
+        world:q.some(x=>x.count===9&&x.bounds.west===-180&&
+          x.bounds.east===180),
+        allOwnerScoped:q.every(x=>x.albumKey===''&&x.favorite===false),
+        oldEmptyGone:document.querySelectorAll(
+          '[data-xdrive-places-empty-map-recheck]').length===0,
+        photoButtons:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        stopped:window.__xdriveBD09IntervalStopped,
+        completion:window.__mapProbe.bd09Completions,
+        failed:window.__mapProbe.failed,
+      }
+    })
+    record(mode+': visible timer automatically recovers only fresh signed BD09',
+      now.world&&now.reads>beforeTick&&now.allOwnerScoped&&
+      now.oldEmptyGone&&now.photoButtons>0&&now.stopped&&
+      now.completion===1&&!now.failed&&errors.length===0)
+    record(mode+': automatic BD09 Owner recovery reuses mounted SDK Host',
+      (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkAtEmpty)
+    // A newly arrived photo must remain a real current authorized Cell
+    // opened through /cell-items, not an invented fallback Gallery query.
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    await page.locator('[data-xdrive-places-photo-drawer-item]')
+      .first().waitFor({state:'visible'})
+    const owner=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': automatic backfill still opens the exact 9-photo Owner Cell',
+      owner?.total===9&&owner?.items===9&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // Post-ready Server /cells failure is different from a valid zero-photo map.
 // Run the SAME shipped React Parent + private cover logic under both SDK Hosts.
 async function testOwnerCellsFailureRetry(browser,mode,port){
@@ -2725,6 +2847,8 @@ async function main(){
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
+      await testAutomaticBD09VisibilityRecheck(browser,'inline',port)
+      await testAutomaticBD09VisibilityRecheck(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)
       await testMapColdH264Poster(browser,'isolated',port)
       await testOwnerCellsFailureRetry(browser,'inline',port)
