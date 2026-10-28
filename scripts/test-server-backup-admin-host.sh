@@ -42,7 +42,15 @@ if [[ "$1" == backup && "$2" == verify && "${3:-}" == "${XD_BACKUP_ADMIN_TEST_BA
   exit 22
 fi
 if [[ "$1" == backup && "$2" == retention-plan ]]; then
-  printf '{"mode":"read_only","validation":"snapshot_sha256_and_cas_size","keep_last":2,"committed_snapshots":1,"keep_snapshots":["xdrive-backup-20261027T030000Z"],"drop_candidates":[],"retained_objects":1,"drop_only_objects":0,"unreferenced_objects":0,"drop_only_object_bytes":0,"unreferenced_bytes":0,"drop_snapshot_bytes":0,"potential_logical_bytes":0,"delete_enabled":false,"warning":"read-only","hashed_objects":0,"hashed_bytes":0}\n'
+  if [[ " $* " == *" --mode deep "* ]]; then
+    validation=snapshot_sha256_and_full_cas_sha256
+    keep_last=1
+    [[ "${XD_BACKUP_ADMIN_TEST_FAKE_DEEP:-}" != fast ]] || validation=snapshot_sha256_and_cas_size
+  else
+    validation=snapshot_sha256_and_cas_size
+    keep_last=2
+  fi
+  printf '{"mode":"read_only","validation":"%s","keep_last":%s,"committed_snapshots":1,"keep_snapshots":["xdrive-backup-20261027T030000Z"],"drop_candidates":[],"retained_objects":1,"drop_only_objects":0,"unreferenced_objects":0,"drop_only_object_bytes":0,"unreferenced_bytes":0,"drop_snapshot_bytes":0,"potential_logical_bytes":0,"delete_enabled":false,"warning":"read-only","hashed_objects":0,"hashed_bytes":0}\n' "$validation" "$keep_last"
 fi
 FAKE
 chmod 700 "$XD_CONFIG_DIR/bin/xdrive-server"
@@ -533,6 +541,19 @@ r=json.load(open(sys.argv[1],encoding="utf-8"))
 assert r["mode"]=="deep" and r["state"]=="success",r
 assert r["deep_repositories_checked"]==1 and r["deep_repositories_failed"]==0,r
 PY
+# A helper returning exit 0 but fast-mode evidence is not proof that deep CAS
+# hashing occurred. Keep the failed historical summary instead of a green pass.
+export XD_BACKUP_ADMIN_TEST_FAKE_DEEP=fast
+write_request verify_all "" "" deep "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["state"]=="failed" and r["deep_repositories_failed"]==1,r
+assert r["checked_snapshots"]==r["total_snapshots"] and r["failed_snapshots"]==0,r
+PY
+unset XD_BACKUP_ADMIN_TEST_FAKE_DEEP
 # A symlinked generation blocks the entire batch before any Host verifier is
 # invoked, and does not leak the symlink target into the report.
 ln -s /etc "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261028T010000Z"

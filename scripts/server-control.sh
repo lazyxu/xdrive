@@ -2925,9 +2925,18 @@ try:
                         timeout=1800, check=False)
                     output.seek(0)
                     raw = output.read(2049)
-                proof = json.loads(raw) if 0 < len(raw) <= 2048 else {}
+                def unique_fields(pairs):
+                    values = {}
+                    for key, value in pairs:
+                        if key in values: raise ValueError("duplicate report property")
+                        values[key] = value
+                    return values
+                proof = json.loads(raw, object_pairs_hook=unique_fields) if 0 < len(raw) <= 2048 else {}
                 expected_format = "v1" if scope == "v1" else "v2"
+                expected_fields = {"protocol", "state", "format", "scope",
+                                   "cas_objects_checked", "cas_bytes_hashed"}
                 good = (result.returncode == 0 and isinstance(proof, dict) and
+                    set(proof) == expected_fields and
                     proof.get("protocol") == "xdrive-host-backup-verify-v1" and
                     proof.get("state") == "success" and proof.get("format") == expected_format and
                     proof.get("scope") == "backup_snapshot_and_referenced_cas" and
@@ -2960,8 +2969,30 @@ try:
                             "--repository-dir", repo, "--keep-last", "1", "--mode", "deep"],
                             stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
                             timeout=1800, check=False)
-                    if result.returncode != 0: deep_failed += 1
-                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    output.seek(0)
+                    raw = output.read(131073)
+                    def unique_fields(pairs):
+                        values = {}
+                        for key, value in pairs:
+                            if key in values: raise ValueError("duplicate deep report field")
+                            values[key] = value
+                        return values
+                    proof = json.loads(raw, object_pairs_hook=unique_fields) if 0 < len(raw) <= 131072 else {}
+                    valid = (
+                        result.returncode == 0 and isinstance(proof, dict) and
+                        proof.get("mode") == "read_only" and
+                        proof.get("validation") == "snapshot_sha256_and_full_cas_sha256" and
+                        type(proof.get("keep_last")) is int and proof["keep_last"] == 1 and
+                        proof.get("delete_enabled") is False and
+                        type(proof.get("committed_snapshots")) is int and
+                        1 <= proof["committed_snapshots"] <= 1000 and
+                        type(proof.get("hashed_objects")) is int and
+                        0 <= proof["hashed_objects"] <= 1000000000 and
+                        type(proof.get("hashed_bytes")) is int and
+                        0 <= proof["hashed_bytes"] <= 9007199254740991
+                    )
+                    if not valid: deep_failed += 1
+                except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
                     deep_failed += 1
     state = ("success" if not abort and checked > 0 and checked == len(snapshots) and
              failed == 0 and deep_failed == 0 else "failed")
