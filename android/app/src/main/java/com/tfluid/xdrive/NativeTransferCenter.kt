@@ -67,17 +67,22 @@ internal fun NativeTransferCenter(
                                     MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        val progress = entry.progressFraction()
-                        val percent = when {
-                            entry.totalBytes == 0L &&
-                                entry.status == NativeTransferStatus.COMPLETED -> "100%"
-                            progress != null -> "${(progress * 100f).toInt()}%"
-                            else -> "待确认"
-                        }
+                        val percent = entry.confirmedPercent()?.let { "${it}%" }
+                            ?: "待确认"
                         Text("${formatSize(entry.transferredBytes)} / " +
                             "${formatSize(entry.totalBytes)} · $percent",
                             modifier = Modifier.testTag("native-transfer-bytes-${entry.id}"),
                             style = MaterialTheme.typography.bodySmall)
+                        if (entry.awaitingCompletionAck()) {
+                            Text(
+                                if (entry.kind == NativeTransferKind.UPLOAD)
+                                    "字节已传输，等待服务器提交确认…"
+                                else "字节已写入，等待保存完成确认…",
+                                modifier = Modifier.testTag("native-transfer-awaiting-ack-${entry.id}"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         if (entry.status == NativeTransferStatus.RUNNING) {
                             val fraction = entry.progressFraction()
                             if (fraction != null) {
