@@ -16,7 +16,9 @@ function loadShared(name) {
   const mod = { exports: {} }
   const localRequire = (request) => request === './TaskWakeRefresh'
     ? loadShared('mui/TaskWakeRefresh')
-    : request.startsWith('../') ? loadShared(request.slice(3)) : require(request)
+    : request.startsWith('./')
+      ? loadShared(path.posix.join(path.posix.dirname(name), request.slice(2)))
+      : request.startsWith('../') ? loadShared(request.slice(3)) : require(request)
   new Function('exports', 'module', 'require', 'window', output)(mod.exports, mod, localRequire, {
     setInterval: () => 1, clearInterval: () => {},
   })
@@ -63,6 +65,7 @@ function source(relative) {
 const shared = loadShared('file-explorer-controller')
 const { useXDriveFileOperationLifecycle } = loadShared('mui/FileOperationLifecycle')
 const { useXDriveFileExplorerDeleteController } = loadShared('mui/FileExplorerDeleteController')
+const { useXDriveFileExplorerOwnerActionLifecycle } = loadShared('mui/FileExplorerOwnerActionLifecycle')
 const appSource = source('desktop/src/renderer/App.tsx')
 const adapterSource = source('desktop/src/renderer/DesktopFileExplorer.tsx')
 const explorerSource = source('ui/shared/src/mui/FileExplorer.tsx')
@@ -124,12 +127,9 @@ async function mountHarness() {
       onFeedback: (message) => events.push({ type: 'delete-notice', message }),
       onError: (error) => errors.push(String(error)),
     })
-    // Run the actual adapter's state and busy-token functions, not an always-true
-    // isCurrent stub. This test remains in one mounted account lifecycle.
-    const busy = adapterSource.run([
-      ...['actionBusy', 'actionBusyRef', 'actionGenerationRef'].map((name) => adapterSource.variable(name).parent.parent.getText(adapterSource.ast)),
-      ...['beginActionBusy', 'isActionBusyCurrent', 'finishActionBusy'].map((name) => `const ${name} = ${adapterSource.expression(name)};`),
-    ].join('\n'), { ...React, isCurrentFilesOwner: () => true }, '{ actionBusy, actionBusyRef, beginActionBusy, isActionBusyCurrent, finishActionBusy }')
+    // Mount the actual shared Owner-action controller with the real Host
+    // identity; no hand-written state/always-true Owner stubs.
+    const busy = useXDriveFileExplorerOwnerActionLifecycle(agent, 'server-a\naccount-a')
     const dependencies = {
       ...shared, ...busy, useCallback: React.useCallback,
       nodeByID: new Map([[node.id, node]]), trashActive: false,

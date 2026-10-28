@@ -13,7 +13,7 @@ const repo = fileURLToPath(new URL('../../', import.meta.url))
 const read = name => fs.readFileSync(repo + name, 'utf8')
 const page = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
 const start = page.indexOf('const pageSize =')
-const end = page.indexOf('\n  return (\n    <XDriveWorkspaceSurface')
+const end = page.indexOf('\n  return (\n    <XDriveFilesWorkspacePage')
 assert.ok(start >= 0 && end > start, 'DSM controller prelude must be identifiable')
 const inspection = `
   return { displayedItems, previewItem, readyDownload, download, notice,

@@ -6,6 +6,7 @@ const path = require('node:path')
 const repoRoot = path.join(__dirname, '..', '..')
 const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const filesPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
+const sharedFilesPage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilesWorkspacePage.tsx'), 'utf8')
 const localStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
@@ -167,11 +168,13 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
     "bgcolor: 'background.paper'",
     "'& > [data-xdrive-file-explorer]'",
   ]) {
-    assert.ok(filesPage.includes(token), `missing MUI Explorer host rule: ${token}`)
+    assert.ok(sharedFilesPage.includes(token), `missing canonical shared MUI Explorer host rule: ${token}`)
   }
   assert.equal(styles.includes('.cloud-explorer-panel {'), false, 'Desktop Files host must not retain local CSS')
   assert.equal(filesPage.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use hard-coded viewport subtraction')
-  assert.ok(filesPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
+  assert.ok(filesPage.includes('overQuota={Boolean(quota?.over_quota)}') &&
+    sharedFilesPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'),
+    'Host must pass genuine quota into the same shared Files warning strip')
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through the shared operation controller', () => {
@@ -234,8 +237,9 @@ test('Desktop FileExplorer supplies preview/properties metadata through existing
 })
 
 test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
-  assert.ok(filesPage.includes('<Box'), 'Desktop Files should use a MUI workspace host')
-  assert.ok(filesPage.includes('component="section"'), 'Desktop Files should preserve section semantics')
+  assert.ok(filesPage.includes('<XDriveFilesWorkspacePage'), 'Desktop must mount the shared Files workspace')
+  assert.ok(sharedFilesPage.includes('<Box') && sharedFilesPage.includes('component="section"'),
+    'canonical shared Files workspace must preserve section semantics')
   assert.equal(filesPage.includes('cloud-explorer-panel'), false, 'Desktop Files must not retain the legacy Explorer host class')
 
   for (const selector of [

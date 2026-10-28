@@ -7,7 +7,10 @@ const ts = require('typescript')
 const repo = path.join(__dirname, '..', '..')
 
 function extractArrowFunction(name, dependencies = {}) {
-  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  const ownerLeaseFunctions = new Set(['beginActionBusy', 'isActionBusyCurrent', 'finishActionBusy'])
+  const filename = ownerLeaseFunctions.has(name)
+    ? path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerOwnerActionLifecycle.ts')
+    : path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(
     filename,
@@ -52,7 +55,7 @@ function extractArrowFunction(name, dependencies = {}) {
 
 
 function extractActionLifecycleEffect(dependencies = {}) {
-  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerOwnerActionLifecycle.ts')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(
     filename,
@@ -74,7 +77,7 @@ function extractActionLifecycleEffect(dependencies = {}) {
       ts.isArrayLiteralExpression(node.arguments[1]) &&
       node.arguments[1].elements.some((element) => (
         ts.isIdentifier(element) &&
-        element.text === 'navigationSessionStorageKey'
+        element.text === 'scopeKey'
       ))
     ) {
       effect = node.arguments[0].getText(sourceFile)
@@ -83,7 +86,7 @@ function extractActionLifecycleEffect(dependencies = {}) {
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
-  assert.ok(effect, 'missing DesktopFileExplorer local action lifecycle effect')
+  assert.ok(effect, 'missing shared Files Owner action lifecycle effect')
 
   const transpiled = ts.transpileModule(
     'const lifecycleEffect = ' + effect + ';',

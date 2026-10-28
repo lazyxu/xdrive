@@ -52,7 +52,7 @@ import {
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
-  useXDriveFileExplorerOwnerFence,
+  useXDriveFileExplorerOwnerActionLifecycle,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
   xDriveCaptureVideoPosterBlob,
@@ -301,18 +301,18 @@ export default function DesktopFileExplorer({
   const createFolderParentIDRef = useRef<number | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
-  const [actionBusy, setActionBusy] = useState('')
-  const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
-  const actionGenerationRef = useRef(1)
-  // Check the current Server/Owner synchronously, even before passive cleanup.
-  const { isCurrent: isCurrentFilesOwner } = useXDriveFileExplorerOwnerFence(
+  const {
+    actionBusy,
+    actionBusyRef,
+    actionGenerationRef,
+    beginActionBusy,
+    isActionBusyCurrent,
+    finishActionBusy,
+  } = useXDriveFileExplorerOwnerActionLifecycle(
     hostPort, navigationSessionStorageKey ?? '',
   )
 
   useEffect(() => {
-    actionGenerationRef.current += 1
-    actionBusyRef.current = null
-    setActionBusy('')
     createFolderParentIDRef.current = null
     uploadPickerParentIDRef.current = null
     folderUploadPickerParentIDRef.current = null
@@ -321,35 +321,7 @@ export default function DesktopFileExplorer({
     setTagDialogMode(null)
     setSaveSearchOpen(false)
     setRenameSavedSearch(null)
-    return () => {
-      actionGenerationRef.current += 1
-      actionBusyRef.current = null
-    }
   }, [navigationSessionStorageKey])
-
-  const beginActionBusy = useCallback((key: string) => {
-    if (!isCurrentFilesOwner() || actionBusyRef.current) return null
-    const token = { key, generation: actionGenerationRef.current }
-    actionBusyRef.current = token
-    setActionBusy(key)
-    return token
-  }, [isCurrentFilesOwner])
-
-  const isActionBusyCurrent = useCallback((
-    token: { key: string; generation: number },
-  ) => (
-    token.generation === actionGenerationRef.current &&
-    actionBusyRef.current === token &&
-    isCurrentFilesOwner()
-  ), [isCurrentFilesOwner])
-
-  const finishActionBusy = useCallback((
-    token: { key: string; generation: number },
-  ) => {
-    if (!isActionBusyCurrent(token)) return
-    actionBusyRef.current = null
-    setActionBusy('')
-  }, [isActionBusyCurrent])
 
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
