@@ -4,11 +4,13 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.tfluid.xdrive.core.DriveNode
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 
@@ -55,21 +57,24 @@ class NativeShareReviewTest {
     }
 
     @Test fun wrongOwnerOrNonBrowseNeverOffersConfirmButton() {
+        var shown by mutableStateOf(state().copy(username = "someone-else"))
+        var confirmations = 0
+        compose.setContent {
+            XDriveTheme {
+                Box(Modifier.fillMaxSize()) {
+                    NativeShareReview(incoming, shown, false, null,
+                        onDismiss = {}, onConfirm = { confirmations++ })
+                }
+            }
+        }
         for (denied in listOf(
             state().copy(username = "someone-else"),
             state().copy(screen = Screen.GALLERY),
             state().copy(filesSection = FilesSection.FAVORITES),
             state().copy(fileDownloadActive = true),
         )) {
-            var confirmations = 0
-            compose.setContent {
-                XDriveTheme {
-                    Box(Modifier.fillMaxSize()) {
-                        NativeShareReview(incoming, denied, false, null,
-                            onDismiss = {}, onConfirm = { confirmations++ })
-                    }
-                }
-            }
+            compose.runOnIdle { shown = denied }
+            compose.waitForIdle()
             compose.onNodeWithTag("native-share-not-ready").assertExists()
             compose.onNodeWithTag("native-share-confirm").assertDoesNotExist()
             compose.runOnIdle { assertEquals(0, confirmations) }
