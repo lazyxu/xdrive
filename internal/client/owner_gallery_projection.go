@@ -241,3 +241,24 @@ func ProjectOwnerGalleryAlbums(albums []MediaAlbum) ([]OwnerGalleryAlbum, error)
 	}
 	return out, nil
 }
+
+func ValidOwnerGalleryAlbums(albums []OwnerGalleryAlbum) bool {
+	if albums == nil || len(albums) > 4096 {
+		return false
+	}
+	seen := make(map[string]bool, len(albums))
+	for _, a := range albums {
+		if !ValidOwnerGalleryAlbumID(a.ID) || seen[a.ID] ||
+			(a.Kind != "folder" && a.Kind != "source" && a.Kind != "manual" &&
+				a.Kind != "smart" && a.Kind != "imported") ||
+			a.Name == "" || len(a.Name) > 512 || !utf8.ValidString(a.Name) ||
+			a.ItemCount < 0 || uint64(a.ItemCount) > ownerGalleryMaxSafe ||
+			a.AlbumFolderID > ownerGalleryMaxSafe || a.Revision > ownerGalleryMaxSafe ||
+			(a.CoverNodeID != nil && (*a.CoverNodeID == 0 ||
+				*a.CoverNodeID > ownerGalleryMaxSafe)) {
+			return false
+		}
+		seen[a.ID] = true
+	}
+	return true
+}
