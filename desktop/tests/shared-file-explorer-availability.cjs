@@ -10,6 +10,7 @@ const sharedExplorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const sharedItemVisual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
+const sharedHydration = read('ui', 'shared', 'src', 'mui', 'FileExplorerHydrationStatus.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.tsx')
 const mountState = read('internal', 'mount', 'state.go')
@@ -267,15 +268,21 @@ test('Desktop overview reuses shared Home FileExplorer visuals and platform avai
 test('Desktop FileExplorer projects path-bound hydration transfer progress without extra polling', () => {
   for (const token of [
     'desktopActiveHydrationProgress',
-    "transfer.kind !== 'hydration'",
-    "transfer.state !== 'running'",
-    '(done / total) * 100',
     'hydrationProgressByPath.has(',
     'progress: hydrationProgress ?? undefined',
     'hadHydrationTransferRef.current',
     'hasUntrackedSyncing',
+    'xDriveFileExplorerDeviceHydrationProgress(transfers)',
   ]) {
-    assert.ok(desktopExplorer.includes(token), 'hydration progress projection missing: ' + token)
+    assert.ok(desktopExplorer.includes(token), 'Desktop hydration wiring missing: ' + token)
+  }
+  for (const token of [
+    "transfer.kind !== 'hydration'",
+    "transfer.state !== 'running'",
+    '(done / total) * 100',
+    'xDriveFileExplorerDeviceHydrationPathKey(transfer.path)',
+  ]) {
+    assert.ok(sharedHydration.includes(token), 'shared hydration model missing: ' + token)
   }
   assert.ok(
     desktopApp.includes('transfers: transfers.transfers'),
