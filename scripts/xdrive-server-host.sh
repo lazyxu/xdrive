@@ -52,6 +52,7 @@ Usage:
   xdrive-server backup drill ABSOLUTE_V2_SNAPSHOT [--max-mib N]  # Host-only RAM rehearsal
   xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N] [--mode fast|deep]
   xdrive-server backup prune --keep-last N --yes [--repository-dir /absolute/local/path]
+  xdrive-server backup delete-snapshot --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --yes [--repository-dir PATH]
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -1294,10 +1295,21 @@ backup_prune_require_separate_paths() {
   esac
 }
 
-# Destructive, manual-only v2 retention. The Linux helper owns the exclusive
-# .backup.lock inside Docker; taking a second host flock would deadlock.
+# Destructive Host-only actions share one exact repository guard. The Linux
+# helper owns the exclusive .backup.lock inside Docker; never add another Host
+# lock on that inode. Selected deletion must not turn into a retention count.
 backup_prune_cmd() {
-  local repository_dir="" keep_last="" confirmed=0 server_id="" server_image="" configured=""
+  backup_prune_worker retention "$@"
+}
+backup_delete_snapshot_cmd() {
+  backup_prune_worker selected "$@"
+}
+backup_prune_worker() {
+  local operation="$1"
+  shift
+  [[ "$operation" == retention || "$operation" == selected ]] || return 2
+  local repository_dir="" keep_last="" snapshot="" confirmed=0
+  local server_id="" server_image="" configured=""
   local live_files_dir="" mounted_data_dir=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1307,8 +1319,13 @@ backup_prune_cmd() {
         shift 2
         ;;
       --keep-last)
-        [[ $# -ge 2 ]] || { echo "backup prune: missing keep count" >&2; return 2; }
+        [[ "$operation" == retention && $# -ge 2 ]] || return 2
         keep_last="$2"
+        shift 2
+        ;;
+      --snapshot)
+        [[ "$operation" == selected && $# -ge 2 ]] || return 2
+        snapshot="$2"
         shift 2
         ;;
       --yes)
@@ -1316,15 +1333,22 @@ backup_prune_cmd() {
         shift
         ;;
       *)
-        echo "usage: xdrive-server backup prune --keep-last N --yes [--repository-dir PATH]" >&2
+        echo "backup: only the documented fixed prune/delete-snapshot flags are supported" >&2
         return 2
         ;;
     esac
   done
-  [[ "$keep_last" =~ ^[1-9][0-9]*$ && "$confirmed" == "1" ]] || {
-    echo "backup prune: explicit --keep-last N --yes is required" >&2
-    return 2
-  }
+  if [[ "$operation" == retention ]]; then
+    [[ "$keep_last" =~ ^[1-9][0-9]*$ && -z "$snapshot" && "$confirmed" == 1 ]] || {
+      echo "backup prune: explicit --keep-last N --yes is required" >&2
+      return 2
+    }
+  else
+    [[ -z "$keep_last" && "$snapshot" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ && "$confirmed" == 1 ]] || {
+      echo "backup delete-snapshot: exact v2 generation name and --yes required" >&2
+      return 2
+    }
+  fi
   if [[ -z "$repository_dir" && "$(env_value XD_BACKUP_SCHEDULE_FORMAT)" == "v2" ]]; then
     configured="$(env_value XD_BACKUP_SCHEDULE_REPOSITORY_DIR)"
     [[ -z "$configured" ]] || repository_dir="$configured"
@@ -1335,6 +1359,13 @@ backup_prune_cmd() {
     return 2
   }
   repository_dir="$(cd "$repository_dir" && pwd -P)" || return 1
+  # Neither a symlink nor a non-existent generation may enter selected
+  # deletion, even though the lower-level helper independently checks this.
+  if [[ "$operation" == selected ]]; then
+    [[ -d "$repository_dir/snapshots" && ! -L "$repository_dir/snapshots" &&
+       -d "$repository_dir/snapshots/$snapshot" &&
+       ! -L "$repository_dir/snapshots/$snapshot" ]] || return 2
+  fi
   live_files_dir="${XD_FILES_DATA_DIR:-}"
   [[ -n "$live_files_dir" ]] || live_files_dir="$(env_value XD_FILES_DATA_DIR)"
   [[ -n "$live_files_dir" ]] || live_files_dir="$DATA_DIR/files"
@@ -1361,11 +1392,19 @@ backup_prune_cmd() {
     echo "backup prune: Server image is not configured" >&2
     return 1
   }
-  # One writable repository bind, no network, no automatic execution.
+  # One writable backup-repository bind, no network, no automatic execution.
+  # Both modes use the SAME verified image, live /data separation, and Docker
+  # confinement. No arbitrary image, mount or command comes from Admin UI.
+  local -a args
+  if [[ "$operation" == selected ]]; then
+    args=(delete-snapshot --repo /repo --snapshot "$snapshot" --yes)
+  else
+    args=(prune --repo /repo --keep-last "$keep_last" --yes)
+  fi
   docker run --rm --network none --user 0:0 \
     --mount "type=bind,src=$repository_dir,dst=/repo" \
     --entrypoint /usr/local/bin/xdrive-backup-repo \
-    "$server_image" prune --repo /repo --keep-last "$keep_last" --yes </dev/null
+    "$server_image" "${args[@]}" </dev/null
 }
 
 # Host-only, manually invoked v2 recovery rehearsal. Never call the live
@@ -1576,6 +1615,10 @@ backup_cmd() {
     prune)
       shift
       backup_prune_cmd "$@"
+      ;;
+    delete-snapshot)
+      shift
+      backup_delete_snapshot_cmd "$@"
       ;;
     sources)
       shift
