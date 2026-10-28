@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -47,7 +48,7 @@ class GalleryPhotoViewerTalkBackTest {
 
     private fun customActions() =
         compose.onNodeWithTag("gallery-photo-gesture", useUnmergedTree = true)
-            .fetchSemanticsNode().config[SemanticsProperties.CustomActions]
+            .fetchSemanticsNode().config[SemanticsActions.CustomActions]
 
     private fun zoomState() =
         compose.onNodeWithTag("gallery-photo-gesture", useUnmergedTree = true)
