@@ -106,6 +106,7 @@ type backupAdminPage struct {
 	Retention        *backupAdminRetention       `json:"retention,omitempty"`
 	History          []backupAdminHistoryEntry   `json:"history,omitempty"`
 	BulkVerification *backupAdminVerifyAllReport `json:"bulk_verification,omitempty"`
+	SelectedPreview  *backupAdminSelectedPreview `json:"selected_preview,omitempty"`
 }
 
 // Host-authored historical receipts, not current snapshot integrity guarantees.
@@ -137,8 +138,9 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			return false
 		}
 		switch e.Action {
-		case "verify":
-			if e.SnapshotID == "" || (e.Mode != "fast" && e.Mode != "deep") {
+		case "verify", "preview_delete":
+			if e.SnapshotID == "" || (e.Mode != "fast" && e.Mode != "deep") ||
+				(e.Action == "preview_delete" && !strings.HasPrefix(e.SnapshotID, "v2-")) {
 				return false
 			}
 		case "plan", "verify_all":
@@ -287,6 +289,25 @@ func (s *Server) backupAdminState() backupAdminPage {
 		validBackupAdminVerifyAllReport(bulk) {
 		page.BulkVerification = &bulk
 	}
+	var selected backupAdminSelectedPreview
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-selected-preview.json", 4096, &selected); err == nil &&
+		validBackupAdminSelectedPreview(selected) &&
+		page.Operation.State == "success" && page.Operation.Action == "preview_delete" &&
+		page.Operation.RequestID == selected.RequestID &&
+		page.Operation.SnapshotID == selected.SnapshotID &&
+		len(page.History) > 0 &&
+		page.History[0].Action == "preview_delete" &&
+		page.History[0].State == "success" &&
+		page.History[0].RequestID == selected.RequestID &&
+		page.History[0].SnapshotID == selected.SnapshotID &&
+		page.History[0].Mode == selected.Mode {
+		// A Host status alone is not a durable preview receipt. A failed
+		// history write must never make a selected deletion appear eligible.
+		if finished, err := time.Parse(time.RFC3339, page.Operation.FinishedAt); err == nil &&
+			time.Since(finished) >= 0 && time.Since(finished) < 15*time.Minute {
+			page.SelectedPreview = &selected
+		}
+	}
 	if _, err := os.Lstat(filepath.Join(dir, "backup-admin-active.json")); err == nil &&
 		page.Operation.State != "running" {
 		// Never claim idle/success while an active operation may be in progress.
@@ -319,6 +340,13 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.Format != "" || request.Confirmation != "" || request.KeepLast != 0 ||
 			request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("invalid verification parameters")
+		}
+	case "preview_delete":
+		if !strings.HasPrefix(request.SnapshotID, "v2-") ||
+			(request.Mode != "fast" && request.Mode != "deep") ||
+			request.Format != "" || request.Confirmation != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("selected v2 preview requires exact snapshot and fast/deep mode")
 		}
 	case "drill":
 		if !strings.HasPrefix(request.SnapshotID, "v2-") ||

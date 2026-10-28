@@ -334,14 +334,28 @@ separate from owning-device Push backups and from online CAS storage checks.
   Immutable snapshot objects are never edited. The original schedule is
   retained; changing to v2 does not enable scheduled pruning.
 - **Delete**: separate explicitly confirmed v1 snapshot deletion with a
-  restricted file allowlist; v2 deletion is only the existing
+  restricted file allowlist; v2 currently permits only the existing
   `backup prune --keep-last N --yes` and revalidates shared CAS references.
+  A selected v2 read-only impact preview is being added, **not** a new
+  browser deletion action. The Host-only selected deletion remains an
+  independently validated follow-up; never treat preview as permission to delete.
 - **Verify / restore**: checksum validation and optional full v2 CAS hashing.
   Restoration requires typing the exact snapshot identity and uses the
   original Host command with mandatory pre-restore safety backup.
   Legacy database-only snapshots are listed and remain verifiable but are
   **not** offered as a full database-and-file restore; use the explicit
   local `--database-only` recovery procedure instead.
+
+For a selected complete v2 generation, the shared administrator page can
+request an exact Host-resolved `preview_delete` operation with `fast` or `deep`.
+Host Control runs the read-only `preview-delete-snapshot` command and persists
+only a bounded, strict, source-owned receipt for the selected snapshot and
+request ID. The UI only presents the current matching successful receipt:
+selected metadata bytes, exclusive/shared CAS counts, orphan CAS and a
+logical reclaim estimate. It is **not** a destructive operation or evidence
+of actual free disk blocks. Changing the snapshot, audit mode, Host or
+operation invalidates the UI's preview. No `delete_selected` Admin action
+exists until the independent Host path, safety review and tests complete.
 
 The API itself has neither a Docker socket nor arbitrary Host file access.
 Commands are chosen from a fixed allowlist, executed only by the existing

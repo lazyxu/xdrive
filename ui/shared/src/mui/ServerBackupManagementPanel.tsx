@@ -73,6 +73,7 @@ export function XDriveServerBackupManagementPanel({
   const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
   const [confirmText, setConfirmText] = useState('')
   const [prunePreview, setPrunePreview] = useState<XDriveServerBackupPrunePreview | null>(null)
+  const [selectedPreviewRequestID, setSelectedPreviewRequestID] = useState('')
 
   const reload = useCallback(async () => {
     const generation = sessionGeneration.current
@@ -107,6 +108,7 @@ export function XDriveServerBackupManagementPanel({
     setConfirmation(null)
     setHistoryDetail(null)
     setPrunePreview(null)
+    setSelectedPreviewRequestID('')
     setNotice('')
     setSubmitting(false)
     setError('')
@@ -129,6 +131,18 @@ export function XDriveServerBackupManagementPanel({
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
   const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
   const capacity = page?.retention ? backupRetentionCapacity(page.retention) : null
+  const selectedPreview = page?.selected_preview
+  // The preview is informational only. It is never permission to delete a
+  // snapshot; the Host must independently audit CAS under an exclusive lock.
+  const selectedPreviewReady = Boolean(selectedPreview && selectedPreviewRequestID &&
+    selectedPreview.request_id === selectedPreviewRequestID &&
+    selectedPreview.snapshot_id === snapshotID && selectedPreview.mode === verifyMode &&
+    page?.operation.action === 'preview_delete' &&
+    page?.operation.request_id === selectedPreviewRequestID &&
+    page?.operation.state === 'success' &&
+    selectedPreview.report.mode === 'read_only' &&
+    selectedPreview.report.delete_enabled === false &&
+    selectedPreview.report.surviving_snapshots >= 1)
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
@@ -141,11 +155,15 @@ export function XDriveServerBackupManagementPanel({
     setError('')
     // Only an actual, successful preview from this UI session can enable prune.
     setPrunePreview(null)
+    setSelectedPreviewRequestID('')
     try {
       const result = await port.submit(request)
       if (generation !== sessionGeneration.current) return
       if (request.action === 'plan' && result.request_id) {
         setPrunePreview({ requestID: result.request_id, keepLast: request.keep_last, mode: request.mode })
+      }
+      if (request.action === 'preview_delete' && result.request_id) {
+        setSelectedPreviewRequestID(result.request_id)
       }
       setNotice('已提交宿主机任务：' + (result.request_id || '等待处理'))
       await reload()
@@ -357,7 +375,38 @@ export function XDriveServerBackupManagementPanel({
                 expected: 'DELETE ' + selected.id,
                 action: { action: 'delete', snapshot_id: selected.id, confirmation: 'DELETE ' + selected.id },
               }) }}>删除 v1 快照</XDriveActionButton>
+            <XDriveActionButton disabled={disabled || !selectedComplete || selected?.format !== 'v2'}
+              onClick={() => { if (selected) void submit({
+                action: 'preview_delete', snapshot_id: selected.id, mode: verifyMode,
+              }) }}>预览所选 v2 删除影响（只读）</XDriveActionButton>
           </Stack>
+          {selectedPreviewReady && selectedPreview ? (
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}
+              data-xdrive-admin-selected-v2-preview>
+              <Stack spacing={1}>
+                <Typography variant="subtitle2">所选 v2 代的删除影响（只读）</Typography>
+                <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                  {selectedPreview.snapshot_id} · {selectedPreview.mode} 校验；
+                  删除该代后仍保留 {selectedPreview.report.surviving_snapshots} 代。
+                </Typography>
+                <Typography variant="body2">
+                  本代私有元数据 {displayBytes(selectedPreview.report.selected_snapshot_bytes)}；
+                  独有 CAS {selectedPreview.report.exclusive_cas_objects} 个（
+                  {displayBytes(selectedPreview.report.exclusive_cas_bytes)}）；
+                  共享 CAS {selectedPreview.report.shared_cas_objects} 个（受其他代保护）；
+                  现有孤儿 CAS {selectedPreview.report.unreferenced_objects} 个。
+                </Typography>
+                <Typography variant="body2">
+                  预计可清理逻辑总量：{displayBytes(selectedPreview.report.potential_logical_bytes)}。
+                  不是实际释放的磁盘空间，且不包含硬链接、稀疏分配等影响。
+                </Typography>
+                <Alert severity="info">
+                  此报告不授予删除权限，尚未开放“单独删除 v2”操作。
+                  未来实际删除必须在宿主机独占锁下重新完成所有快照和 CAS 完整性审计。
+                </Alert>
+              </Stack>
+            </Paper>
+          ) : null}
         </Stack>
       </Paper>
 
