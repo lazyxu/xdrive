@@ -175,6 +175,15 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(sharedApp,/host\.platform.*view/)
   assert.match(synologyApp,/<XDriveApp/,
     'DSM uses the canonical Host application and must share the same page preemption')
+  assert.match(synologyApp,/const setSelected = \(next: XDriveWorkspaceAppRoute\) => \{/)
+  assert.match(synologyApp,/if \(next !== selected\) xDriveEnterForegroundPage\('synology:' \+ next\)/)
+  assert.match(synologyApp,/setSelectedActual\(next\)/)
+  assert.ok(synologyApp.indexOf("xDriveEnterForegroundPage('synology:' + next)") <
+    synologyApp.indexOf('setSelectedActual(next)'),
+    'DSM must preempt old requests before navigating to a new page')
+  assert.match(synologyApp,/onOpenBackup=\{\(\) => setSelected\('device-backup'\)\}/)
+  assert.match(synologyApp,/onNavigate=\{\(key\) => \{/,
+    'Sidebar stays behind canonical route admission')
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ view\)/)
   assert.match(web,/xDriveEnterForegroundPage\('web:public-share'\)/)
   assert.match(web,/xDriveEnterForegroundPage\('web:offline'\)/)

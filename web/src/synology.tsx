@@ -25,6 +25,7 @@ import {
   createXDriveSynologyBrowserStorageSource,
 } from '@xdrive/ui/mui'
 import type { XDriveWorkspaceAppRoute, XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
+import { xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import './styles.css'
 
 // DSM and Desktop mount the same application shell and navigation registry.
@@ -42,7 +43,15 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pageRevision, refreshPage] = useState(0)
-  const [selected, setSelected] = useState<XDriveWorkspaceAppRoute>('overview')
+  const [selected, setSelectedActual] = useState<XDriveWorkspaceAppRoute>('overview')
+  // The actual accepted Host navigation (including Home-page action links)
+  // must preempt the obsolete page BEFORE children mount. A parent layout
+  // effect alone is too late: new child thumbnail schedulers subscribe first.
+  // This is a renderer-local disposable read hint, not a Server/DSM job cancel.
+  const setSelected = (next: XDriveWorkspaceAppRoute) => {
+    if (next !== selected) xDriveEnterForegroundPage('synology:' + next)
+    setSelectedActual(next)
+  }
 
   const host: XDriveWorkspaceHostAdapter = {
     platform: 'synology',
